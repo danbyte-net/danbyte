@@ -6245,7 +6245,7 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             .get_queryset()
             .select_related("vm__status", "vlan", "vrf")
             .prefetch_related(
-                TAGS, "tagged_vlans",
+                TAGS, "tagged_vlans", "circuit_terminations__circuit",
                 assigned_ips_prefetch(
                     self.request, _get_active_tenant(self.request),
                     fk="assigned_vm_interface",
@@ -8143,7 +8143,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
     queryset = (
         CircuitTermination.objects
-        .select_related("circuit", "site", "provider_network")
+        .select_related("circuit", "site", "provider_network", "vm_interface__vm")
         .prefetch_related("terminations__cable__status")
         .order_by("term_side")
     )
@@ -8171,6 +8171,21 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"circuit_id": "Pick a circuit in the current tenant."}
             )
+        vmi = serializer.validated_data.get("vm_interface")
+        if vmi is not None and vmi.vm.tenant_id != tenant.id:
+            raise ValidationError(
+                {"vm_interface_id": "Pick a VM interface in the current tenant."}
+            )
+        if vmi is not None:
+            taken = CircuitTermination.objects.filter(vm_interface=vmi)
+            if serializer.instance is not None:
+                taken = taken.exclude(pk=serializer.instance.pk)
+            other = taken.select_related("circuit").first()
+            if other is not None:
+                raise ValidationError({
+                    "vm_interface_id": f"{vmi.name} already terminates "
+                                       f"{other.circuit.cid} side {other.term_side}."
+                })
         side = serializer.validated_data.get("term_side") or (
             serializer.instance.term_side if serializer.instance else ""
         )

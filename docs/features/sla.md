@@ -228,7 +228,8 @@ child prefixes. An address with no check is not counted, so adding a /16 does
 not bring in thousands of unmeasured rows.
 
 A **circuit** is measured on the addresses of the interfaces its ends are
-cabled to, followed through patch panels. The far side of a circuit is the
+cabled to, followed through patch panels, and of a VM interface an end lands
+on. The far side of a circuit is the
 provider's, so the trace stops at its ends. To measure it somewhere else, set
 a **monitor address** when adding it: usually the provider's far-end gateway,
 which is the address that proves the circuit carries traffic. A circuit with

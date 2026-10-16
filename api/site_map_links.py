@@ -288,7 +288,11 @@ class LinkFigures:
                     "upstream_speed_kbps": term.upstream_speed_kbps,
                 },
             }
-            if self.walker is None:
+            if term.vm_interface_id is not None:
+                # Bound to a VM interface (#432): no cable to walk.
+                ref.update(self._vm_end(term.vm_interface, term.site_id))
+                ref["site_id"] = str(term.site_id)
+            elif self.walker is None:
                 ref.update(device=None, port=None, restricted=True)
             else:
                 end = self.walker.circuit_end(term.id)
@@ -322,6 +326,9 @@ class LinkFigures:
                 "port": _port_ref("interface", iface, interface_kbps(iface.speed)),
                 "restricted": False,
             }
+        return self._vm_end(vmi, site_id)
+
+    def _vm_end(self, vmi, site_id) -> dict:
         if not self.visible.vm(vmi.vm_id):
             return _hidden_end(str(site_id))
         return {

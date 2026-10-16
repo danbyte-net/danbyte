@@ -5355,6 +5355,13 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                     obj_tenant_id = obj.device.tenant_id
                 if tenant is not None and obj_tenant_id != tenant.id:
                     raise serializers.ValidationError({side: "Pick a port in the current tenant."})
+                # A circuit end bound to a VM interface (#432) is already
+                # landed; it takes no cable as well.
+                if kind == "circuit_termination" and obj.vm_interface_id is not None:
+                    raise serializers.ValidationError(
+                        {side: f"{obj.circuit.cid} side {obj.term_side} lands on a "
+                               "VM interface and takes no cable."}
+                    )
                 clash = CableTermination.objects.filter(**{kind: obj})
                 if self.instance is not None:
                     clash = clash.exclude(cable=self.instance)
@@ -6132,6 +6139,23 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
     ip_addresses = serializers.SerializerMethodField()
+    circuit_termination = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_circuit_termination(self, obj):
+        """The circuit end landing on this interface (#432), when the caller
+        may view that end - ``{id, side, circuit: {id, cid}}`` or null."""
+        from .visible_ips import visible_children
+
+        rows = visible_children(
+            obj.circuit_terminations, self.context,
+            "circuittermination", "circuit__tenant",
+        )
+        if not rows:
+            return None
+        t = rows[0]
+        return {"id": str(t.id), "side": t.term_side,
+                "circuit": {"id": str(t.circuit_id), "cid": t.circuit.cid}}
 
     @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
@@ -6152,6 +6176,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "parent", "parent_id", "mac_address", "snmp_name",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
+                  "circuit_termination",
                   "vlan", "vlan_id", "mode", "mode_display",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids", "custom_fields",
@@ -8116,16 +8141,54 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    # The VM interface the handoff lands on instead of a cabled device port
+    # (#432). Tenant-scoped, and fenced to the caller's sites under site
+    # separation like any other site-bound pick.
+    vm_interface = serializers.SerializerMethodField()
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_vm_interface(self, obj):
+        i = obj.vm_interface
+        if i is None:
+            return None
+        return {"id": str(i.id), "name": i.name,
+                "vm": {"id": str(i.vm_id), "name": i.vm.name}}
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         site = attrs.get("site", getattr(self.instance, "site", None))
         pn = attrs.get(
             "provider_network", getattr(self.instance, "provider_network", None)
         )
+        vmi = attrs.get("vm_interface", getattr(self.instance, "vm_interface", None))
+        vm_site = vmi.vm.site if vmi is not None else None
+        # An end on a VM interface lands at the VM's site unless told
+        # otherwise (#432).
+        if vm_site is not None and not site and not pn:
+            site = attrs["site"] = vm_site
         if bool(site) == bool(pn):
             raise serializers.ValidationError(
                 "A termination lands on exactly one of a site or a provider network."
             )
+        if vmi is not None:
+            if site and vm_site is not None and vm_site.pk != site.pk:
+                raise serializers.ValidationError({
+                    "vm_interface_id": f"{vmi.vm.name} is at {vm_site.name}, "
+                                       f"not {site.name}."
+                })
+            if (
+                attrs.get("vm_interface") is not None
+                and self.instance is not None
+                and self.instance.terminations.exists()
+            ):
+                raise serializers.ValidationError({
+                    "vm_interface_id": "This end is cabled to a device port. "
+                                       "Remove the cable first."
+                })
         return attrs
 
     class Meta:
@@ -8134,6 +8197,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
                   "connected_to",
                   "site", "site_id",
                   "provider_network", "provider_network_id",
+                  "vm_interface", "vm_interface_id",
                   "port_speed_kbps", "upstream_speed_kbps", "xconnect_id",
                   "pp_info", "description", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

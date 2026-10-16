@@ -6987,8 +6987,9 @@ class Circuit(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class CircuitTermination(TimestampedModel):
     """One end (A or Z) of a circuit. Lands on **either** one of your sites or
     a provider network (exactly one), and carries the per-side physical
-    details - speeds, cross-connect ID, patch-panel info. Tenant scope is
-    inherited via circuit."""
+    details - speeds, cross-connect ID, patch-panel info. On your side it is
+    cabled to a device port or bound to a VM interface (#432), at most one of
+    the two. Tenant scope is inherited via circuit."""
 
     SIDE_CHOICES = [("A", "A"), ("Z", "Z")]
 
@@ -7003,6 +7004,16 @@ class CircuitTermination(TimestampedModel):
     )
     provider_network = models.ForeignKey(
         ProviderNetwork, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="circuit_terminations",
+    )
+    # The VM interface the handoff lands on (#432) - a cloud router such as
+    # a CHR or pfSense whose virtual NIC takes the provider's link. A VM
+    # interface is never cabled, so this stands where the cable to a device
+    # port would: an end has one or the other, never both (the termination
+    # and cable serializers refuse the mix). SET_NULL: deleting the VM must
+    # not take the circuit's end with it.
+    vm_interface = models.ForeignKey(
+        VMInterface, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="circuit_terminations",
     )
     port_speed_kbps = models.PositiveIntegerField(
@@ -7028,6 +7039,13 @@ class CircuitTermination(TimestampedModel):
             models.UniqueConstraint(
                 fields=["circuit", "term_side"],
                 name="uniq_circuittermination_circuit_side",
+            ),
+            # One circuit end per VM interface, as a device port takes one
+            # cable.
+            models.UniqueConstraint(
+                fields=["vm_interface"],
+                condition=models.Q(vm_interface__isnull=False),
+                name="uniq_circuittermination_vm_interface",
             ),
             models.CheckConstraint(
                 name="circuittermination_exactly_one_endpoint",

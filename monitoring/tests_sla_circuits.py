@@ -18,6 +18,8 @@ from api.models import (
     Interface,
     IPAddress,
     Provider,
+    VirtualMachine,
+    VMInterface,
 )
 from api.test_utils import status_for
 
@@ -70,6 +72,30 @@ class CircuitMemberTests(_Circuit):
         self.add("api.circuit", self.circuit.id, monitor_ip=gw)
         self.tr(self.edge_ip, self.ping, SEP + timedelta(days=5), "down")  # not read
         self.assertEqual(self.compute()["figures"]["availability"], 100.0)
+
+    def test_an_end_on_a_vm_interface_reads_its_addresses(self):
+        """#432: no cable to trace - the VM interface's own addresses."""
+        CableTermination.objects.all().delete()
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="kvm", slug="kvm")
+        cluster = Cluster.objects.create(tenant=self.tenant, name="c", type=ctype)
+        vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="chr", cluster=cluster, site=self.site
+        )
+        ether1 = VMInterface.objects.create(vm=vm, name="ether1")
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.77", prefix=self.prefix,
+            assigned_vm_interface=ether1,
+        )
+        CheckState.objects.create(tenant=self.tenant, target_ip=ip, template=self.ping,
+                                  kind="icmp", status="up")
+        self.tr(ip, self.ping, SEP - timedelta(days=1), "up")
+        CircuitTermination.objects.filter(circuit=self.circuit).update(vm_interface=ether1)
+        self.add("api.circuit", self.circuit.id)
+        self.tr(ip, self.ping, SEP + timedelta(days=5), "down")
+        out = self.compute()
+        self.assertAlmostEqual(out["figures"]["availability"], 50.0, places=2)
+        member = next(u for u in out["units"] if u.get("member"))
+        self.assertEqual({i["address"] for i in member["items"]}, {"10.0.0.77"})
 
     def test_an_uncabled_circuit_has_no_data(self):
         CableTermination.objects.all().delete()

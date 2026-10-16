@@ -438,7 +438,7 @@ def site_map_connections(request):
             request.user, tenant, "circuit", "view",
         )
         .select_related("provider", "type", "status")
-        .prefetch_related("terminations__site")
+        .prefetch_related("terminations__site", "terminations__vm_interface__vm")
     )
     for c in circuits:
         ends = {t.term_side: t for t in c.terminations.all()}

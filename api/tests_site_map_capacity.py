@@ -212,6 +212,29 @@ class CircuitTests(_MapBase):
         self.assertEqual(link["z"]["device"]["name"], "rtr-lon")
         self.assertEqual(link["z"]["port"]["speed_kbps"], ONE_G)
 
+    def test_an_end_on_a_vm_interface_names_the_vm(self):
+        """#432: a circuit handed to a VM's NIC draws that VM at its end,
+        named only for a caller who may view the VM."""
+        ta, tz = self._circuit()
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="kvm", slug="kvm")
+        cluster = Cluster.objects.create(tenant=self.tenant, name="c", type=ctype)
+        vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="chr-lon", cluster=cluster, site=self.lon
+        )
+        tz.vm_interface = VMInterface.objects.create(vm=vm, name="ether1")
+        tz.save()
+        z = self.edge("circuit")["links"][0]["z"]
+        self.assertEqual(z["virtual_machine"], {"id": str(vm.id), "name": "chr-lon"})
+        self.assertEqual(z["port"]["name"], "ether1")
+        self.assertEqual(z["port"]["kind"], "vm_interface")
+        self.assertEqual(z["site_id"], str(self.lon.id))
+        self.assertEqual(z["termination"]["side"], "Z")
+        self._viewer((["site", "circuit", "device", "cable"], None))
+        resp = self._get("/api/site-map/connections/?include=capacity")
+        z = resp.json()["connections"][0]["links"][0]["z"]
+        self.assertTrue(z["restricted"])
+        self.assertNotIn(b"chr-lon", resp.content)
+
     def test_nothing_known_is_null(self):
         self._circuit()
         edge = self.edge("circuit")

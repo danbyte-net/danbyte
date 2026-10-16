@@ -68,7 +68,8 @@ off:
 - **IP ranges, DHCP scopes** - their prefix's; DHCP reservations and leases,
   their scope's prefix's;
 - **VLAN groups** - their site, else their cluster's;
-- **circuit terminations** - their own site;
+- **circuit terminations** - their own site, else the site of the VM whose
+  interface they land on;
 - **FHRP group assignments, tunnel and L2VPN terminations** - their
   interface's device or VM (an L2VPN's VLAN, for a VLAN termination);
 - **routing rows** - BGP address families, redistributions and IGP

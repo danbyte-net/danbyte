@@ -110,6 +110,32 @@ lives on the side it belongs to.
    takes one cable, and the trace from that port then runs out to the
    circuit. The side then shows what it is **cabled to**.
 
+### Terminate on a virtual machine
+
+A cloud router - a MikroTik CHR, pfSense, OPNsense or VyOS VM - takes the
+provider's link on a virtual NIC, and a virtual NIC has no cable. In the
+termination dialog set **Lands on** to **VM interface**, then pick the
+**virtual machine** and its **interface** (`ether1`). A side lands on a
+device port by cable or on a VM interface, never both:
+
+- Leave **Site** empty and the side takes the VM's site. A site that
+  differs from the VM's is refused; a VM with no site needs one picked.
+- A provider-network side can land on a VM interface too: the VM's site is
+  then the side's site for [site limits](../access/site-separation.md).
+- A VM interface carries one circuit end. A cabled side can't take a VM
+  interface, and a side on a VM interface can't be cabled.
+- Deleting the VM keeps the termination and clears its VM interface.
+
+The side shows the VM and interface instead of **Cabled to**. The VM's
+**Components** tab gets a **Circuit** column naming the circuit and side, the
+[site map](site-map.md) draws the VM at that end of the circuit's line, and a
+[circuit SLA](#circuit-slas) measures the VM interface's addresses.
+
+API: `vm_interface_id` on `POST`/`PATCH /api/circuit-terminations/`;
+`vm_interface` (`{id, name, vm: {id, name}}`) on the termination and in a
+circuit's `terminations`; `circuit_termination` (`{id, side, circuit: {id,
+cid}}`) on `/api/vm-interfaces/`, shown only when you may view that end.
+
 ### Circuit status
 
 | Status | Meaning |
@@ -192,7 +218,8 @@ When nothing is known the line has no figure rather than a guess.
 
 A circuit can be a member of a
 [service level agreement](sla.md#members). It is measured on the addresses
-of the interfaces its ends are cabled to, or on a monitor address you pick,
+of the interfaces its ends are cabled to or land on (a VM interface), or on a
+monitor address you pick,
 such as the provider's far-end gateway. Carrier maintenance entered on the
 circuit is excluded like any planned maintenance.
 

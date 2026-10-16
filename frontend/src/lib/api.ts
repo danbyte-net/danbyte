@@ -5142,6 +5142,13 @@ export interface VMInterface {
   vrf: { id: string; name: string } | null
   description: string
   ip_addresses: { id: string; ip_address: string }[]
+  /** The circuit end landing on this NIC (#432), when the caller may view
+   * it. */
+  circuit_termination?: {
+    id: string
+    side: CircuitTermSide
+    circuit: { id: string; cid: string }
+  } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -9358,6 +9365,13 @@ export interface CircuitTermination {
   cable?: CableMini | null
   site: SiteOption | null
   provider_network: ProviderNetworkOption | null
+  /** The VM interface this end lands on instead of a cabled device port
+   * (#432); never both. */
+  vm_interface?: {
+    id: string
+    name: string
+    vm: { id: string; name: string }
+  } | null
   port_speed_kbps: number | null
   upstream_speed_kbps: number | null
   xconnect_id: string
@@ -9372,6 +9386,7 @@ export interface CircuitTerminationWritePayload {
   term_side: CircuitTermSide
   site_id?: string | null
   provider_network_id?: string | null
+  vm_interface_id?: string | null
   port_speed_kbps?: number | null
   upstream_speed_kbps?: number | null
   xconnect_id?: string

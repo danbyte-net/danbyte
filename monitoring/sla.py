@@ -480,8 +480,17 @@ def _circuit_addresses(circuit_ids) -> dict:
         assigned_interface_id__in=wanted
     ).values_list("pk", "assigned_interface_id"):
         by_iface[str(iface_id)].append(ip_id)
-    return {cid: [ip for i in sorted(ids) for ip in by_iface.get(i, [])]
-            for cid, ids in ifaces.items()}
+    out = {cid: [ip for i in sorted(ids) for ip in by_iface.get(i, [])]
+           for cid, ids in ifaces.items()}
+    # An end bound to a VM interface (#432) has no cable to trace: the
+    # addresses are that interface's own.
+    for circuit_id, ip_id in IPAddress.objects.filter(
+        assigned_vm_interface__circuit_terminations__circuit_id__in=circuit_ids
+    ).order_by("pk").values_list(
+        "assigned_vm_interface__circuit_terminations__circuit_id", "pk"
+    ):
+        out.setdefault(circuit_id, []).append(ip_id)
+    return out
 
 
 def _prefix_addresses(prefixes) -> dict:

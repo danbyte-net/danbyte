@@ -52,7 +52,9 @@ SITE_PATHS: dict[str, str] = {
     "sshhostkey": "device__site",
     "devicecredential": "device__site",
     "vminterface": "vm__site",
-    "circuittermination": "site",
+    # Its own site, else the VM it lands on (#432) - an end at a provider
+    # network bound to a VM interface belongs to that VM's site.
+    "circuittermination": "site|vm_interface__vm__site",
     "floorplan": "location__site",
     "floorplantile": "floor_plan__location__site",
     "floorplandrawing": "floor_plan__location__site",
