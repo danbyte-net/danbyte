@@ -265,9 +265,8 @@ make docs-build
 ```
 
 Run frontend build before typecheck because the build regenerates the TanStack
-route tree. CI uses `npm ci` and `frontend/package-lock.json`; treat npm as the
-effective package manager. The simultaneous pnpm lock/workspace is known debt,
-so do not churn both lockfiles incidentally.
+route tree. npm is the only package manager: CI, Docker and `install.sh` use
+`npm ci` and `frontend/package-lock.json`. Do not add another lockfile.
 
 CI does not necessarily run the full Django test suite: it is gated by the
 `RUN_TESTS` repository variable. Run relevant backend tests locally. Frontend
