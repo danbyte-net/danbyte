@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Command,
   CommandEmpty,
@@ -82,6 +83,7 @@ export function IdMultiSelect({
       : options
   }, [options, query])
   const allShown = shown.length > 0 && shown.every((o) => valueSet.has(o.id))
+  const fieldProps = useFieldControlProps({}, { withOwnText: true })
 
   const toggleAll = () => {
     const ids = shown.map((o) => o.id)
@@ -132,6 +134,7 @@ export function IdMultiSelect({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
+            {...fieldProps}
             type="button"
             variant="outline"
             size="sm"

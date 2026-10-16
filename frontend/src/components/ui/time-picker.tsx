@@ -4,6 +4,7 @@ import { Clock, X } from "lucide-react"
 import { useDateFormat } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Popover,
   PopoverContent,
@@ -48,6 +49,7 @@ export function TimePicker({
   const { settings } = useDateFormat()
   const twelve = settings.time_style === "12h"
   const sel = parts(value)
+  const fieldProps = useFieldControlProps({}, { withOwnText: true })
 
   const label = sel
     ? twelve
@@ -81,6 +83,7 @@ export function TimePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          {...fieldProps}
           type="button"
           variant="outline"
           disabled={disabled}

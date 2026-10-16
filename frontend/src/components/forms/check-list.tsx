@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox"
+import { NoFieldControl } from "@/components/ui/field-control"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { cn } from "@/lib/utils"
 
@@ -47,10 +48,14 @@ export function CheckList<V extends string | number>({
           key={String(o.value)}
           className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-[13px] hover:bg-muted/50"
         >
-          <Checkbox
-            checked={set.has(o.value)}
-            onCheckedChange={() => toggle(o.value)}
-          />
+          {/* Each box is named by its own row; a surrounding Field's id
+              would otherwise land on every one of them. */}
+          <NoFieldControl>
+            <Checkbox
+              checked={set.has(o.value)}
+              onCheckedChange={() => toggle(o.value)}
+            />
+          </NoFieldControl>
           {o.color ? (
             <span className="flex-1 truncate">
               <ColorBadge name={o.label} color={o.color} />

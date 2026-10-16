@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "radix-ui"
 
+import { useFieldControlProps } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
@@ -33,10 +34,12 @@ function SelectTrigger({
   className,
   size = "default",
   children,
-  ...props
+  ...rest
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  // Named "<label> <value>" inside a Field (#428).
+  const props = useFieldControlProps(rest, { withOwnText: true })
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"

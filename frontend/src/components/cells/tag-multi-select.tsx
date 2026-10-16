@@ -3,6 +3,7 @@ import { Check, ChevronsUpDown, X } from "lucide-react"
 
 import { type TagOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
   Command,
@@ -42,6 +43,7 @@ export function TagMultiSelect({
   const [open, setOpen] = useState(false)
   const valueSet = useMemo(() => new Set(value), [value])
   const selected = options.filter((o) => valueSet.has(o.id))
+  const fieldProps = useFieldControlProps({}, { withOwnText: true })
 
   function toggle(id: number) {
     const next = valueSet.has(id)
@@ -73,6 +75,7 @@ export function TagMultiSelect({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
+            {...fieldProps}
             type="button"
             variant="outline"
             size="sm"

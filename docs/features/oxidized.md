@@ -20,7 +20,8 @@ between any two versions.
 
 1. **Settings → Integrations → Oxidized config backups**. Off by default, per
    tenant. On, it adds **Oxidized** under *Integrations* in the sidebar; off,
-   the page is hidden and the API answers 404.
+   the page is hidden and the API answers 404. Opened by link, the page says
+   Oxidized is off.
 2. On the **Oxidized** page, add the connection: the URL oxidized-web answers
    on, an optional username and password for basic auth (for an oxidized-web
    behind a proxy that asks for it), TLS verification, and the matching rule.

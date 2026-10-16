@@ -3,13 +3,15 @@
 import * as React from "react"
 import { Checkbox as CheckboxPrimitive } from "radix-ui"
 
+import { useFieldControlProps } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 import { CheckIcon } from "lucide-react"
 
 function Checkbox({
   className,
-  ...props
+  ...rest
 }: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
+  const props = useFieldControlProps(rest)
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"

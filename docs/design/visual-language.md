@@ -103,6 +103,17 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset (`onPickMany` when a list collects several at once) | a bespoke fetch + list |
 
+**Labels name their control.** `Field` (and every `Form*` built on it) gives
+its `<label>` an id and hands it to the control through context: `Input`,
+`Textarea`, `SelectTrigger`, `Combobox`, `MultiCombobox`, `Checkbox`,
+`Switch`, `DatePicker`, `TimePicker`, `IdMultiSelect` and `TagMultiSelect`
+take the id, `aria-labelledby`, `aria-describedby` for the hint and error,
+and `aria-invalid` on an error. A child of `<Field>` built from these needs no
+wiring. A second control in the same field (a unit box beside a number) goes
+in `NoFieldControl` with its own `aria-label`; popover, dialog, sheet and menu
+content already cut the link. An unlabelled control outside a `Field` (a
+filter rail) takes an `aria-label`.
+
 Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
 `onChange(event)`. A Radix `SelectItem` also cannot carry `value=""`; give an

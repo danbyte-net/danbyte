@@ -21,7 +21,7 @@ surface work over it unchanged.
    like every other integration. Switching it on reveals the **Zabbix** page
    under *Integrations* in the sidebar; switching it off hides the page and
    404s the API, so a disabled integration is invisible rather than merely
-   inert.
+   inert. Opened by link, the page says Zabbix is off.
 2. Create an **API token** in Zabbix (*Users → API tokens*) and give it an
    expiry. A username and password is not enough: a token can be revoked on its
    own and is what Zabbix's own guidance points at.

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Command,
   CommandEmpty,
@@ -52,6 +53,8 @@ export interface ComboboxProps {
   noneLabel?: string
   disabled?: boolean
   className?: string
+  /** Name for a trigger with no Field label - a filter rail's picker. */
+  "aria-label"?: string
 }
 
 // Searchable single-select (shadcn Combobox pattern: Button + Popover +
@@ -67,9 +70,15 @@ export function Combobox({
   noneLabel,
   disabled,
   className,
+  "aria-label": ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const selected = options.find((o) => o.value === value)
+  // Inside a Field the trigger takes the label's id and name (#428).
+  const fieldProps = useFieldControlProps(
+    { "aria-label": ariaLabel },
+    { withOwnText: true }
+  )
 
   // Partition into sub-categories, preserving first-appearance order.
   // Ungrouped options (no `group`) collect under a heading-less section.
@@ -100,6 +109,7 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
+          {...fieldProps}
           type="button"
           variant="outline"
           role="combobox"

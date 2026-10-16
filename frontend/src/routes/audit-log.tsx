@@ -188,7 +188,10 @@ function AuditLogPage() {
                   setType(v)
                 }}
               >
-                <SelectTrigger className="h-8 w-full text-xs">
+                <SelectTrigger
+                  aria-label="Object type"
+                  className="h-8 w-full text-xs"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -216,6 +219,7 @@ function AuditLogPage() {
                 searchPlaceholder="Search users…"
                 emptyText="No users yet."
                 className="h-8 text-xs"
+                aria-label="User"
               />
             </div>
             <div>
@@ -228,7 +232,10 @@ function AuditLogPage() {
                   setVia(v)
                 }}
               >
-                <SelectTrigger className="h-8 w-full text-xs">
+                <SelectTrigger
+                  aria-label="Source"
+                  className="h-8 w-full text-xs"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

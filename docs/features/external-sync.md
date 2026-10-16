@@ -28,7 +28,8 @@ one without touching the others' sources. (Upgrading from the single combined sw
 it was on, so nothing changes.) A toggle governs the **sync machinery
 only**: while it's
 off, the connection pages, drift views and scheduled syncs are hidden and
-idle. DNS zones/records and DHCP scopes/reservations are first-class IPAM
+idle. Opening one of those pages by link or bookmark says the integration is
+off, with a link to Settings → Integrations for tenant admins. DNS zones/records and DHCP scopes/reservations are first-class IPAM
 features and stay fully usable regardless - author a **local** zone (no
 server) or a local scope, and the sync never touches them.
 

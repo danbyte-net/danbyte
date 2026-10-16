@@ -1,6 +1,7 @@
 import * as React from "react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
+import { NoFieldControl } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
@@ -72,45 +73,47 @@ function DialogContent({
   size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "6xl"
 }) {
   return (
-    <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
-      <DialogPrimitive.Content
-        data-slot="dialog-content"
-        data-size={size}
-        className={cn(
-          // max-h + overflow so a form taller than the viewport scrolls instead
-          // of spilling off-screen unreachably (the generic "modal won't
-          // scroll" bug). Callers that manage their own scroll region (flex
-          // column with an inner overflow area) override via className.
-          // Width: fit-content between a floor and the viewport. `size` is the
-          // FLOOR, not a cap - a dialog holding something wider than its size
-          // (a preview table, a long select) grows to fit rather than putting
-          // a horizontal scrollbar inside itself; the viewport minus margin is
-          // the only hard cap, and inner overflow-x wrappers engage only then
-          // (phones). Form dialogs render exactly as before: their inputs
-          // fill the floor.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[90dvh] w-fit max-w-[calc(100vw-2rem)] min-w-[min(var(--dialog-w,28rem),calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          // The floor per data-size (see the prop doc for why not className).
-          "data-[size=sm]:[--dialog-w:24rem] data-[size=md]:[--dialog-w:28rem] data-[size=lg]:[--dialog-w:32rem] data-[size=xl]:[--dialog-w:36rem] data-[size=2xl]:[--dialog-w:42rem] data-[size=3xl]:[--dialog-w:48rem] data-[size=4xl]:[--dialog-w:56rem] data-[size=5xl]:[--dialog-w:64rem] data-[size=6xl]:[--dialog-w:72rem]",
-          className
-        )}
-        {...props}
-      >
-        {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-4 right-4"
-              size="icon-sm"
-            >
-              <XIcon />
-              <span className="sr-only">Close</span>
-            </Button>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </DialogPortal>
+    <NoFieldControl>
+      <DialogPortal>
+        <DialogOverlay className={overlayClassName} />
+        <DialogPrimitive.Content
+          data-slot="dialog-content"
+          data-size={size}
+          className={cn(
+            // max-h + overflow so a form taller than the viewport scrolls instead
+            // of spilling off-screen unreachably (the generic "modal won't
+            // scroll" bug). Callers that manage their own scroll region (flex
+            // column with an inner overflow area) override via className.
+            // Width: fit-content between a floor and the viewport. `size` is the
+            // FLOOR, not a cap - a dialog holding something wider than its size
+            // (a preview table, a long select) grows to fit rather than putting
+            // a horizontal scrollbar inside itself; the viewport minus margin is
+            // the only hard cap, and inner overflow-x wrappers engage only then
+            // (phones). Form dialogs render exactly as before: their inputs
+            // fill the floor.
+            "fixed top-1/2 left-1/2 z-50 grid max-h-[90dvh] w-fit max-w-[calc(100vw-2rem)] min-w-[min(var(--dialog-w,28rem),calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // The floor per data-size (see the prop doc for why not className).
+            "data-[size=sm]:[--dialog-w:24rem] data-[size=md]:[--dialog-w:28rem] data-[size=lg]:[--dialog-w:32rem] data-[size=xl]:[--dialog-w:36rem] data-[size=2xl]:[--dialog-w:42rem] data-[size=3xl]:[--dialog-w:48rem] data-[size=4xl]:[--dialog-w:56rem] data-[size=5xl]:[--dialog-w:64rem] data-[size=6xl]:[--dialog-w:72rem]",
+            className
+          )}
+          {...props}
+        >
+          {children}
+          {showCloseButton && (
+            <DialogPrimitive.Close data-slot="dialog-close" asChild>
+              <Button
+                variant="ghost"
+                className="absolute top-4 right-4"
+                size="icon-sm"
+              >
+                <XIcon />
+                <span className="sr-only">Close</span>
+              </Button>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    </NoFieldControl>
   )
 }
 

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Command,
   CommandEmpty,
@@ -65,6 +66,7 @@ export function MultiCombobox({
   }, [options, query])
   const allShown = shown.length > 0 && shown.every((o) => picked.has(o.value))
   const full = max !== undefined && picked.size >= max
+  const fieldProps = useFieldControlProps({}, { withOwnText: true })
 
   function toggle(value: string) {
     setPicked((prev) => {
@@ -102,6 +104,7 @@ export function MultiCombobox({
     <Popover open={open} onOpenChange={close} modal>
       <PopoverTrigger asChild>
         <Button
+          {...fieldProps}
           type="button"
           variant="outline"
           role="combobox"

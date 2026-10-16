@@ -29,7 +29,8 @@ inside Danbyte instead of your own client, see
 | **Agent access: allow writes** | Also lets an assistant create, edit and delete. |
 
 With the first switch off, the endpoint answers "Integration not enabled"
-and the **Agent access** page is hidden. Both are per tenant, and both
+and the **Agent access** page is hidden; opened by link, it says agent
+access is off. Both are per tenant, and both
 need a tenant admin.
 
 Turning the first one on adds **Integrations → Agent access**, where you
