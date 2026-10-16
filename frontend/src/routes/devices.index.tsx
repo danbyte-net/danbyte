@@ -17,7 +17,7 @@ import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -26,11 +26,13 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceBulkBar } from "@/components/device-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/devices/")({
-  // Facet seeds from cross-object / dashboard deep-links, e.g. the "Devices by
-  // status / type / site / manufacturer" dashboard cards. Keys are optional so a
-  // plain `Link to="/devices"` never has to pass search.
+  // Typed deep-link params, e.g. the "Devices by status / type / site /
+  // manufacturer" dashboard cards. They are the live facet params (the rail
+  // reads every filter from the URL), declared here so links type-check. Keys
+  // are optional so a plain `Link to="/devices"` never has to pass search.
   validateSearch: (
     search: Record<string, unknown>
   ): {
@@ -67,7 +69,7 @@ export const Route = createFileRoute("/devices/")({
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 function DevicesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [selected, setSelected] = useState<Device[]>([])
 
@@ -159,29 +161,13 @@ function DevicesPage() {
     ]
   )
   const {
-    type: typeFilter,
-    status: statusFilter,
-    site: siteFilter,
-    manufacturer: manufacturerFilter,
-    coverage: coverageFilter,
-  } = Route.useSearch()
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (typeFilter) seed.type = [typeFilter]
-    if (statusFilter) seed.status = [statusFilter]
-    if (siteFilter) seed.site = [siteFilter]
-    if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
-    if (coverageFilter) seed.coverage = [coverageFilter]
-    return Object.keys(seed).length ? seed : undefined
-  }, [typeFilter, statusFilter, siteFilter, manufacturerFilter, coverageFilter])
-  const {
     rail,
     filteredRows,
     snapshot,
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows, initialEnums)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

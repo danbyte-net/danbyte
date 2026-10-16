@@ -8,13 +8,14 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type CircuitType, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { CircuitTypeDeleteDialog } from "@/components/circuit-type-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/circuit-types/")({
   component: CircuitTypesPage,
@@ -25,7 +26,7 @@ function CircuitTypesPage() {
   const canAdd = canDo("circuittype", "add")
   const canEdit = canDo("circuittype", "change")
   const canDelete = canDo("circuittype", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<CircuitType | null>(null)
   const [selectedRows, setSelectedRows] = useState<CircuitType[]>([])
 
@@ -116,7 +117,7 @@ function CircuitTypesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

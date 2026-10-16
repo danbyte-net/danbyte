@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/empty-state"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -23,6 +23,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { BoardDialog } from "@/components/planning/board-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 import { naturalCompare } from "@/lib/natural-sort"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/planning/")({
   component: BoardListPage,
@@ -36,8 +37,8 @@ function BoardListPage() {
   const qc = useQueryClient()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<PlanningBoard | null>(null)
-  const [q, setQ] = useState("")
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [selected, setSelected] = useState<PlanningBoard[]>([])
 
   const query = useQuery({
@@ -46,6 +47,26 @@ function BoardListPage() {
   })
   const allRows = query.data?.results ?? []
 
+  const tagFacets = useMemo(() => {
+    const c = new Map<string, FacetOption>()
+    for (const b of allRows)
+      for (const t of b.tags) {
+        const cur = c.get(t.slug)
+        if (cur) cur.count++
+        else
+          c.set(t.slug, {
+            value: t.slug,
+            label: t.name,
+            count: 1,
+            color: t.color || undefined,
+            textColor: t.text_color || undefined,
+            link: tagObjectsLink(t.id),
+          })
+      }
+    return [...c.values()].sort((a, b) => naturalCompare(a.label, b.label))
+  }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const tagFilter = useKnown(tagFilterRaw, tagFacets)
   const rows = useMemo(
     () =>
       allRows.filter((b) => {
@@ -54,28 +75,12 @@ function BoardListPage() {
           !`${b.name} ${b.description}`.toLowerCase().includes(q.toLowerCase())
         )
           return false
-        if (
-          tagFilter.size > 0 &&
-          !b.tags.some((t) => tagFilter.has(String(t.id)))
-        )
+        if (tagFilter.size > 0 && !b.tags.some((t) => tagFilter.has(t.slug)))
           return false
         return true
       }),
     [allRows, q, tagFilter]
   )
-
-  const tagFacets = useMemo(() => {
-    const c = new Map<string, { label: string; count: number }>()
-    for (const b of allRows)
-      for (const t of b.tags) {
-        const cur = c.get(String(t.id))
-        if (cur) cur.count++
-        else c.set(String(t.id), { label: t.name, count: 1 })
-      }
-    return [...c.entries()]
-      .map(([value, e]) => ({ value, label: e.label, count: e.count }))
-      .sort((a, b) => naturalCompare(a.label, b.label)) as FacetOption[]
-  }, [allRows])
 
   const del = useMutation({
     mutationFn: async (boards: PlanningBoard[]) => {
@@ -125,7 +130,13 @@ function BoardListPage() {
         id: "tags",
         header: "Tags",
         enableSorting: false,
-        cell: ({ row }) => <TagList tags={row.original.tags} />,
+        cell: ({ row }) => (
+          <TagList
+            tags={row.original.tags}
+            activeSlugs={tagFilter}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
+          />
+        ),
       },
       {
         id: "tasks",
@@ -148,7 +159,7 @@ function BoardListPage() {
         ),
       },
     ],
-    [canEdit, canDelete, del]
+    [canEdit, canDelete, del, tagFilter, setTagFilter]
   )
 
   return (
@@ -163,7 +174,7 @@ function BoardListPage() {
               label="Tags"
               options={tagFacets}
               selected={tagFilter}
-              onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+              onToggle={(v) => setTagFilter((s) => toggled(s, v))}
             />
           </FilterRail>
         ) : undefined

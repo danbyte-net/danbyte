@@ -9,10 +9,11 @@ import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPowerFeedColumns } from "@/components/columns/power-feed-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
 import { PowerFeedBulkBar } from "@/components/power-bulk-bars"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/power-feeds/")({
   component: PowerFeedsPage,
@@ -24,7 +25,7 @@ function PowerFeedsPage() {
   const canEdit = canDo("powerfeed", "change")
   const canDelete = canDo("powerfeed", "delete")
   const { humanIds } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<PowerFeed | null>(null)
   const [selectedRows, setSelectedRows] = useState<PowerFeed[]>([])
 
@@ -60,7 +61,7 @@ function PowerFeedsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

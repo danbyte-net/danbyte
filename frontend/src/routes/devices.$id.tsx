@@ -368,7 +368,9 @@ function Body({ device: d }: { device: Device }) {
               )}
             </>
           }
-          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          tags={
+            d.tags.length > 0 && <TagList tags={d.tags} listTo="/devices" />
+          }
           description={d.description}
         />
       }

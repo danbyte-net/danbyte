@@ -123,7 +123,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           subtitle={
             r.facility_id && <span className="font-mono">{r.facility_id}</span>
           }
-          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          tags={r.tags.length > 0 && <TagList tags={r.tags} listTo="/racks" />}
           description={r.description}
         />
       }

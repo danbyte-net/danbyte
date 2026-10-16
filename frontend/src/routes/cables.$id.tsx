@@ -200,7 +200,7 @@ function Body({ cable: c }: { cable: Cable }) {
           }
           mono
           badges={<StatusBadge status={c.status} />}
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={c.tags.length > 0 && <TagList tags={c.tags} listTo="/cables" />}
           description={c.description}
         >
           {/* The flat end-to-end run when it can be drawn; the classic A ↔ B

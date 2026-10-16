@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
-import { EyeOff } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { ArrowUpRight, EyeOff } from "lucide-react"
 
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -28,6 +29,57 @@ export interface FacetOption {
   /** Optional swatch color. When set, the label renders as a colored chip. */
   color?: string
   textColor?: string
+  /** A page about this value - shown beside the option while it is ticked
+   * (a tag's "all objects" view). */
+  link?: FacetOptionLink
+}
+
+export interface FacetOptionLink {
+  to: string
+  params?: Record<string, string>
+  search?: Record<string, string>
+  label: string
+}
+
+/** The tag page's Tagged objects tab - everything carrying the tag, across
+ * object types. */
+export function tagObjectsLink(id: number | string): FacetOptionLink {
+  return {
+    to: "/tags/$id",
+    params: { id: String(id) },
+    search: { tab: "objects" },
+    label: "All objects with this tag",
+  }
+}
+
+/** A Tags facet's options from the rows: keyed by slug, most-used first, in
+ * the tag's colour, with the link to everything else carrying it. */
+export function tagFacetOptions<T>(
+  rows: T[],
+  getTags: (row: T) => {
+    id: number | string
+    slug: string
+    name: string
+    color?: string
+    text_color?: string
+  }[]
+): FacetOption[] {
+  const out = new Map<string, FacetOption>()
+  for (const r of rows)
+    for (const t of getTags(r)) {
+      const cur = out.get(t.slug)
+      if (cur) cur.count++
+      else
+        out.set(t.slug, {
+          value: t.slug,
+          label: t.name,
+          count: 1,
+          color: t.color || undefined,
+          textColor: t.text_color || undefined,
+          link: tagObjectsLink(t.id),
+        })
+    }
+  return [...out.values()].sort((a, b) => b.count - a.count)
 }
 
 // Toggles one value in/out of a Set without mutating the original.
@@ -301,6 +353,25 @@ function FacetList({
               <span className="ml-auto text-[11px] text-muted-foreground">
                 {opt.count}
               </span>
+              {opt.link && selected.has(opt.value) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link
+                      to={opt.link.to}
+                      params={opt.link.params as never}
+                      search={opt.link.search as never}
+                      aria-label={opt.link.label}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <ArrowUpRight className="h-3 w-3" />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" variant="default">
+                    {opt.link.label}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </label>
           </li>
         ))}

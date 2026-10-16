@@ -12,11 +12,12 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { numidColumn } from "@/components/cells/numid"
 import { siteColumn } from "@/components/cells/site-cell"
 import { locationColumn } from "@/components/cells/location-cell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
 import { PowerPanelBulkBar } from "@/components/power-bulk-bars"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/power-panels/")({
   component: PowerPanelsPage,
@@ -28,7 +29,7 @@ function PowerPanelsPage() {
   const canAdd = canDo("powerpanel", "add")
   const canEdit = canDo("powerpanel", "change")
   const canDelete = canDo("powerpanel", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<PowerPanel | null>(null)
   const [selectedRows, setSelectedRows] = useState<PowerPanel[]>([])
 
@@ -99,7 +100,7 @@ function PowerPanelsPage() {
     [onDelete, humanIds, canEdit, canDelete]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useTableFilters(columns, rows)
+    useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

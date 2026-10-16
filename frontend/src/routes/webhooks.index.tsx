@@ -16,6 +16,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { WebhookDeleteDialog } from "@/components/webhook-delete-dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 // One-click "send a test delivery" for a row.
 function TestButton({ webhook }: { webhook: Webhook }) {
@@ -63,7 +64,7 @@ export const Route = createFileRoute("/webhooks/")({ component: WebhooksPage })
 function WebhooksPage() {
   const { canDo } = useMe()
   const canAdd = canDo("webhook", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Webhook | null>(null)
 
   const query = useQuery({

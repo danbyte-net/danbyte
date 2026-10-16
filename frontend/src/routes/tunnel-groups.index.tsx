@@ -7,13 +7,14 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type TunnelGroup, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
 import { TunnelGroupDeleteDialog } from "@/components/tunnel-group-delete-dialog"
 import { TunnelGroupBulkBar } from "@/components/tunnel-group-bulk-bar"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/tunnel-groups/")({
   component: TunnelGroupsPage,
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/tunnel-groups/")({
 function TunnelGroupsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("tunnelgroup", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<TunnelGroup | null>(null)
   const [selectedRows, setSelectedRows] = useState<TunnelGroup[]>([])
   const { humanIds } = useMe()
@@ -112,7 +113,7 @@ function TunnelGroupsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

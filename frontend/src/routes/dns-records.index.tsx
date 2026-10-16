@@ -11,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { DnsRecordsTable } from "@/components/integrations/dns-records-table"
 import { DnsRecordDialog } from "@/components/integrations/dns-record-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dns-records/")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -24,7 +25,7 @@ function DnsRecordsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("dnsrecord", "add")
   const [adding, setAdding] = useState(false)
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const query = useQuery({
     queryKey: ["dns-records", "all", q, zone ?? ""],
     queryFn: () => {

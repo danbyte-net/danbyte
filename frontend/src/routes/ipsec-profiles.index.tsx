@@ -7,13 +7,14 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type IPSecProfile, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
 import { IPSecProfileDeleteDialog } from "@/components/ipsec-profile-delete-dialog"
 import { IPSecProfileBulkBar } from "@/components/ipsec-profile-bulk-bar"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/ipsec-profiles/")({
   component: IPSecProfilesPage,
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/ipsec-profiles/")({
 function IPSecProfilesPage() {
   const { canDo } = useMe()
   const canAdd = canDo("ipsecprofile", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<IPSecProfile | null>(null)
   const [selectedRows, setSelectedRows] = useState<IPSecProfile[]>([])
   const { humanIds } = useMe()
@@ -52,7 +53,7 @@ function IPSecProfilesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

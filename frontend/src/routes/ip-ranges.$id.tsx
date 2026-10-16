@@ -107,7 +107,9 @@ function Body({ range: r }: { range: IPRange }) {
               {r.dhcp === "exclusion" && <DhcpBadge state="exclusion" />}
             </>
           }
-          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          tags={
+            r.tags.length > 0 && <TagList tags={r.tags} listTo="/ip-ranges" />
+          }
           description={r.description}
         />
       }

@@ -10,12 +10,13 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/providers/")({
   component: ProvidersPage,
@@ -26,7 +27,7 @@ function ProvidersPage() {
   const canAdd = canDo("provider", "add")
   const canEdit = canDo("provider", "change")
   const canDelete = canDo("provider", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Provider | null>(null)
   const [selectedRows, setSelectedRows] = useState<Provider[]>([])
 
@@ -125,7 +126,7 @@ function ProvidersPage() {
     [onDelete, canEdit, canDelete, humanIds]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useTableFilters(columns, rows)
+    useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

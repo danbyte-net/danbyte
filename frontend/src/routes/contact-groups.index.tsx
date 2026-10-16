@@ -12,13 +12,14 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { buildContactGroupColumns } from "@/components/columns/contact-group-columns"
 import { ContactGroupDeleteDialog } from "@/components/contact-group-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/contact-groups/")({
   component: ListPage,
 })
 
 function ListPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ContactGroup | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("contactgroup", "add")

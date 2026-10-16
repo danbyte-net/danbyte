@@ -325,7 +325,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
             </>
           }
           subtitle={<MastersChain prefix={p} />}
-          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          tags={
+            p.tags.length > 0 && <TagList tags={p.tags} listTo="/prefixes" />
+          }
           description={p.description}
         />
       }

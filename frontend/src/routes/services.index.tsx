@@ -11,13 +11,14 @@ import { ServiceDeleteDialog } from "@/components/service-delete-dialog"
 import { ServiceFormDialog } from "@/components/services-pane"
 import { ListPageShell } from "@/components/list-page-shell"
 import { Button } from "@/components/ui/button"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/services/")({ component: ServicesPage })
 
 function ServicesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Service | null>(null)
   const { canDo, humanIds } = useMe()
   const canDelete = canDo("service", "delete")
@@ -56,7 +57,7 @@ function ServicesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

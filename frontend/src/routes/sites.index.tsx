@@ -13,15 +13,16 @@ import {
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { SiteDeleteDialog } from "@/components/site-delete-dialog"
 import { SiteBulkBar } from "@/components/site-bulk-bar"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/sites/")({ component: SitesPage })
 
 function SitesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Site | null>(null)
   const [selectedRows, setSelectedRows] = useState<Site[]>([])
   const { canDo, humanIds } = useMe()
@@ -72,7 +73,7 @@ function SitesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

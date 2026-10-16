@@ -7,19 +7,20 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Tunnel, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
 import { TunnelDeleteDialog } from "@/components/tunnel-delete-dialog"
 import { TunnelBulkBar } from "@/components/tunnel-bulk-bar"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/tunnels/")({ component: TunnelsPage })
 
 function TunnelsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("tunnel", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Tunnel | null>(null)
   const [selectedRows, setSelectedRows] = useState<Tunnel[]>([])
   const { humanIds } = useMe()
@@ -56,7 +57,7 @@ function TunnelsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

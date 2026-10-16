@@ -13,13 +13,14 @@ import {
 } from "@/components/nat-rule-dialogs"
 import { ListPageShell } from "@/components/list-page-shell"
 import { Button } from "@/components/ui/button"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/nat-rules/")({ component: NATRulesPage })
 
 function NATRulesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<NATRule | null>(null)
   const [adding, setAdding] = useState(false)
   const { canDo, humanIds } = useMe()
@@ -54,7 +55,7 @@ function NATRulesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

@@ -94,7 +94,9 @@ function Body({ group: g }: { group: FHRPGroup }) {
               <span className="text-sm text-muted-foreground">{g.name}</span>
             )
           }
-          tags={g.tags.length > 0 && <TagList tags={g.tags} />}
+          tags={
+            g.tags.length > 0 && <TagList tags={g.tags} listTo="/fhrp-groups" />
+          }
           description={g.description}
         />
       }

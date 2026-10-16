@@ -3,7 +3,7 @@ import {
   type ColumnDef,
   type RowData,
 } from "@tanstack/react-table"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { flexRender } from "@tanstack/react-table"
 
 import { Input } from "@/components/ui/input"
@@ -15,10 +15,21 @@ import {
   FacetHeading,
   FilterRail,
   HideableFacet,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { naturalCompare } from "@/lib/natural-sort"
+import {
+  decodeList,
+  decodeRange,
+  decodeText,
+  encodeList,
+  encodeRange,
+  pruneUnknown,
+  useListSearch,
+  useSearchWriter,
+  type RangeValue,
+} from "@/lib/url-filters"
 
 /** The advanced expression's id among a list's hideable facets. */
 const EXPR_FACET_ID = "__expr"
@@ -76,6 +87,8 @@ interface TagsFacet<TRow> {
   kind: "tags"
   label?: string
   get: (row: TRow) => Array<{
+    /** The tag's id, for the rail's link to everything carrying it. */
+    id?: number | string
     slug: string
     name: string
     color?: string
@@ -135,15 +148,165 @@ declare module "@tanstack/react-table" {
 
 // ─── Internal state shapes ─────────────────────────────────────────────
 
-type EnumState = Set<string>
-type TagsState = Set<string>
-type RangeState = { min: string; max: string }
+type RangeState = RangeValue
+type FacetValue = Set<string> | RangeState
+type FacetState = Record<string, FacetValue>
 
 const EMPTY_SET: Set<string> = new Set()
+const OPEN_RANGE: RangeState = { min: "", max: "" }
 
 interface FacetEntry<TRow> {
   id: string
   def: FacetDef<TRow>
+}
+
+/** Where a list keeps its selection: React state (an embedded table) or the
+ * URL (a list page). The engine below is the same for both. */
+interface FacetStore {
+  state: FacetState
+  expr: string
+  /** Functional update of one facet - stable. */
+  update: (id: string, fn: (cur: FacetValue | undefined) => FacetValue) => void
+  setExpr: (text: string) => void
+  /** Replace every facet and the expression in one write (saved views). */
+  replaceAll: (next: FacetState, expr: string) => void
+}
+
+function useFacetEntries<TRow>(
+  columns: ColumnDef<TRow, unknown>[]
+): FacetEntry<TRow>[] {
+  // Memoize: a new facets array reference every render would cascade
+  // through every downstream useMemo and trigger an infinite update loop
+  // when the parent's selection / data changes.
+  return useMemo<FacetEntry<TRow>[]>(() => {
+    const out: FacetEntry<TRow>[] = []
+    for (const col of columns) {
+      const f = col.meta?.facet
+      if (!f) continue
+      const id =
+        col.id ?? (typeof col.header === "string" ? col.header : undefined)
+      if (!id) continue
+      out.push({ id, def: f })
+    }
+    return out
+  }, [columns])
+}
+
+function useLocalFacetStore(
+  initialEnums?: Record<string, string[]>
+): FacetStore {
+  // Lazy initializer so the seed only applies on mount - later user toggles
+  // own the state and aren't clobbered on re-render.
+  const [state, setState] = useState<FacetState>(() => {
+    if (!initialEnums) return {}
+    const seed: FacetState = {}
+    for (const [id, values] of Object.entries(initialEnums)) {
+      if (values.length) seed[id] = new Set(values)
+    }
+    return seed
+  })
+  const [expr, setExpr] = useState("")
+  const update = useCallback(
+    (id: string, fn: (cur: FacetValue | undefined) => FacetValue) =>
+      setState((s) => ({ ...s, [id]: fn(s[id]) })),
+    []
+  )
+  const replaceAll = useCallback((next: FacetState, text: string) => {
+    setState(next)
+    setExpr(text)
+  }, [])
+  return { state, expr, update, setExpr, replaceAll }
+}
+
+/** Params a facet can never be named, because the list uses them itself. */
+const RESERVED_PARAMS = new Set(["q", "expr", "tab", "sub", "page", "view"])
+
+/** The URL param each facet is kept under: the facet's id, `tag` for a tags
+ * facet, or an explicit name from `params` (a legacy deep-link name). */
+export function facetParams(
+  facets: { id: string; def: { kind: string } }[],
+  params?: Record<string, string>
+): Map<string, { param: string; range: boolean }> {
+  const out = new Map<string, { param: string; range: boolean }>()
+  const used = new Set<string>()
+  for (const { id, def } of facets) {
+    let param = params?.[id] ?? (def.kind === "tags" ? "tag" : id)
+    if (used.has(param)) param = id
+    if (RESERVED_PARAMS.has(param) || used.has(param)) param = `f_${id}`
+    used.add(param)
+    out.set(id, { param, range: def.kind === "range" })
+  }
+  return out
+}
+
+function readFacet(raw: unknown, range: boolean): FacetValue {
+  return range ? decodeRange(raw) : new Set(decodeList(raw))
+}
+
+function writeFacet(value: FacetValue | undefined): string | undefined {
+  if (!value) return undefined
+  return value instanceof Set ? encodeList(value) : encodeRange(value)
+}
+
+function useUrlFacetStore<TRow>(
+  facets: FacetEntry<TRow>[],
+  params?: Record<string, string>
+): FacetStore {
+  const search = useListSearch()
+  const write = useSearchWriter()
+  const paramsKey = JSON.stringify(params ?? {})
+  const map = useMemo(
+    () => facetParams(facets, params),
+    [facets, paramsKey]
+  )
+  const mapRef = useRef(map)
+  mapRef.current = map
+
+  // Keyed on the text of this list's own params, so the selection keeps its
+  // identity while anything else in the URL changes.
+  const sig = JSON.stringify(
+    [...map.values()].map(({ param }) => search[param] ?? null)
+  )
+  const state = useMemo(() => {
+    const out: FacetState = {}
+    for (const [id, { param, range }] of map) {
+      const raw = search[param]
+      if (raw !== undefined && raw !== null) out[id] = readFacet(raw, range)
+    }
+    return out
+  }, [sig, map])
+  const expr = decodeText(search.expr)
+
+  const update = useCallback(
+    (id: string, fn: (cur: FacetValue | undefined) => FacetValue) =>
+      write((prev) => {
+        const m = mapRef.current.get(id)
+        if (!m) return prev
+        const cur =
+          prev[m.param] === undefined
+            ? undefined
+            : readFacet(prev[m.param], m.range)
+        return { ...prev, [m.param]: writeFacet(fn(cur)) }
+      }),
+    [write]
+  )
+  const setExpr = useCallback(
+    (text: string) =>
+      write((prev) => ({ ...prev, expr: text.trim() ? text : undefined })),
+    [write]
+  )
+  const replaceAll = useCallback(
+    (next: FacetState, text: string) =>
+      write((prev) => {
+        const out = { ...prev }
+        for (const [id, { param }] of mapRef.current)
+          out[param] = writeFacet(next[id])
+        out.expr = text.trim() ? text : undefined
+        return out
+      }),
+    [write]
+  )
+  return { state, expr, update, setExpr, replaceAll }
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────────
@@ -175,58 +338,63 @@ export interface UseTableFiltersResult<TRow> {
  * the lib/filter-expr grammar), so saved views capture it too. */
 export type FilterSnapshot = Record<string, string[] | RangeState | string>
 
+interface RailOpts {
+  /** Extra controls at the top of the rail, above the facets - toggles
+   * that belong to this table but are not facets (Show available…). */
+  railExtras?: React.ReactNode
+}
+
+/**
+ * Filters for a table embedded in another page (a detail tab, a settings
+ * panel): the selection lives in React state. A list page uses
+ * {@link useUrlTableFilters} instead, so its filters live in the URL.
+ */
 export function useTableFilters<TRow>(
   columns: ColumnDef<TRow, unknown>[],
   rows: TRow[],
-  // Seed enum facets on first render, e.g. from a URL search param so a link
-  // like `/devices?type=<id>` lands on the pre-filtered table (cross-object
-  // linkage). Keyed by column.id → the values to preselect.
+  // Seed enum facets on first render. Keyed by column.id → the values to
+  // preselect.
   initialEnums?: Record<string, string[]>,
-  railOpts?: {
-    /** Extra controls at the top of the rail, above the facets - toggles
-     * that belong to this table but are not facets (Show available…). */
-    railExtras?: React.ReactNode
-  }
+  railOpts?: RailOpts
 ): UseTableFiltersResult<TRow> {
-  // Memoize: a new facets array reference every render would cascade
-  // through every downstream useMemo and trigger an infinite update loop
-  // when the parent's selection / data changes.
-  const facets = useMemo<FacetEntry<TRow>[]>(() => {
-    const out: FacetEntry<TRow>[] = []
-    for (const col of columns) {
-      const f = col.meta?.facet
-      if (!f) continue
-      const id =
-        col.id ?? (typeof col.header === "string" ? col.header : undefined)
-      if (!id) continue
-      out.push({ id, def: f })
-    }
-    return out
-  }, [columns])
+  const facets = useFacetEntries(columns)
+  const store = useLocalFacetStore(initialEnums)
+  return useFilterEngine(columns, facets, rows, store, railOpts)
+}
 
-  // Single state object keyed by column.id. Stable across renders.
-  // Lazy initializer so the seed only applies on mount - later user toggles
-  // own the state and aren't clobbered on re-render.
-  const [state, setState] = useState<
-    Record<string, EnumState | TagsState | RangeState>
-  >(() => {
-    if (!initialEnums) return {}
-    const seed: Record<string, EnumState> = {}
-    for (const [id, values] of Object.entries(initialEnums)) {
-      if (values.length) seed[id] = new Set(values)
-    }
-    return seed
-  })
+export interface UrlTableFilterOpts extends RailOpts {
+  /** A facet kept under a param other than its id, e.g. a deep-link name a
+   * dashboard already links with. Keyed by facet (column) id. */
+  params?: Record<string, string>
+}
 
-  const setEnum = (id: string, next: Set<string>) =>
-    setState((s) => ({ ...s, [id]: next }))
-  const setRange = (id: string, next: RangeState) =>
-    setState((s) => ({ ...s, [id]: next }))
+/**
+ * Filters for a list page: every facet, and the advanced filter, live in the
+ * URL (see lib/url-filters), so reload, Back and a shared link all keep them.
+ * `/devices?status=active&tag=core` lands on the filtered list.
+ */
+export function useUrlTableFilters<TRow>(
+  columns: ColumnDef<TRow, unknown>[],
+  rows: TRow[],
+  opts?: UrlTableFilterOpts
+): UseTableFiltersResult<TRow> {
+  const facets = useFacetEntries(columns)
+  const store = useUrlFacetStore(facets, opts?.params)
+  return useFilterEngine(columns, facets, rows, store, opts)
+}
+
+function useFilterEngine<TRow>(
+  columns: ColumnDef<TRow, unknown>[],
+  facets: FacetEntry<TRow>[],
+  rows: TRow[],
+  store: FacetStore,
+  railOpts?: RailOpts
+): UseTableFiltersResult<TRow> {
+  const { state, expr: exprText, update, setExpr: setExprText } = store
 
   // The advanced filter: one expression (lib/filter-expr grammar) applied on
   // top of the facets. Kept as text - the single format the builder, the text
   // editor and the saved-view snapshot all share.
-  const [exprText, setExprText] = useState("")
   const exprAst = useMemo<Expr | null>(() => {
     try {
       return parse(exprText)
@@ -234,19 +402,6 @@ export function useTableFilters<TRow>(
       return null // an invalid committed expression filters nothing
     }
   }, [exprText])
-
-  const toggleValue = useCallback((id: string, value: string) => {
-    setState((s) => {
-      const next = new Set((s[id] as Set<string> | undefined) ?? [])
-      if (next.has(value)) next.delete(value)
-      else next.add(value)
-      return { ...s, [id]: next }
-    })
-  }, [])
-  const selectedValues = useCallback(
-    (id: string) => (state[id] as Set<string> | undefined) ?? EMPTY_SET,
-    [state]
-  )
 
   // Per-facet option lists, rebuilt when rows change.
   const options = useMemo(() => {
@@ -283,6 +438,10 @@ export function useTableFilters<TRow>(
                 count: 0,
                 color: t.color,
                 textColor: t.text_color,
+                link:
+                  t.id !== undefined && t.id !== null
+                    ? tagObjectsLink(t.id)
+                    : undefined,
               }
             }
             tags[t.slug].count++
@@ -297,21 +456,67 @@ export function useTableFilters<TRow>(
     return map
   }, [rows, facets])
 
+  // The selection the list applies: a value no row carries (a stale link, a
+  // hand-typed param) is ignored rather than emptying the table.
+  const selection = useMemo(() => {
+    const out: FacetState = {}
+    for (const { id } of facets) {
+      const s = state[id]
+      if (!s) continue
+      out[id] =
+        s instanceof Set
+          ? pruneUnknown(
+              s,
+              rows.length ? (options[id] ?? []).map((o) => o.value) : null
+            )
+          : s
+    }
+    return out
+  }, [state, facets, options, rows.length])
+
+  const knownRef = useRef<Record<string, string[] | null>>({})
+  knownRef.current = Object.fromEntries(
+    Object.entries(options).map(([id, opts]) => [
+      id,
+      rows.length ? opts.map((o) => o.value) : null,
+    ])
+  )
+
+  const toggleValue = useCallback(
+    (id: string, value: string) =>
+      update(id, (cur) => {
+        const base = cur instanceof Set ? cur : EMPTY_SET
+        const next = new Set(pruneUnknown(base, knownRef.current[id]))
+        if (next.has(value)) next.delete(value)
+        else next.add(value)
+        return next
+      }),
+    [update]
+  )
+  const setRange = (id: string, next: RangeState) => update(id, () => next)
+  const selectedValues = useCallback(
+    (id: string) => {
+      const s = selection[id]
+      return s instanceof Set ? s : EMPTY_SET
+    },
+    [selection]
+  )
+
   // Apply every active filter.
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
       if (exprAst && !evaluate(exprAst, row)) return false
       for (const { id, def } of facets) {
-        const s = state[id]
+        const s = selection[id]
         if (!s) continue
 
         if (def.kind === "enum") {
-          const set = s as EnumState
+          const set = s as Set<string>
           if (set.size === 0) continue
           const v = def.get(row)
           if (v === null || v === undefined || !set.has(v)) return false
         } else if (def.kind === "tags") {
-          const set = s as TagsState
+          const set = s as Set<string>
           if (set.size === 0) continue
           const have = def.get(row).map((t) => t.slug)
           if (!have.some((slug) => set.has(slug))) return false
@@ -328,12 +533,12 @@ export function useTableFilters<TRow>(
       }
       return true
     })
-  }, [rows, state, facets, exprAst])
+  }, [rows, selection, facets, exprAst])
 
   // Count of facets with any active selection (for the page header).
   let activeCount = exprAst ? 1 : 0
   for (const { id, def } of facets) {
-    const s = state[id]
+    const s = selection[id]
     if (!s) continue
     if (def.kind === "enum" || def.kind === "tags") {
       if ((s as Set<string>).size > 0) activeCount++
@@ -365,7 +570,7 @@ export function useTableFilters<TRow>(
         {facets.map(({ id, def }) => {
           const label = def.label ?? id
           if (def.kind === "range") {
-            const cur = (state[id] as RangeState) ?? { min: "", max: "" }
+            const cur = (selection[id] as RangeState | undefined) ?? OPEN_RANGE
             return (
               <HideableFacet
                 key={id}
@@ -393,15 +598,14 @@ export function useTableFilters<TRow>(
           // rail row on it. (FacetGroup already hides an empty one.)
           if (def.kind === "enum" && def.hideWhenSingle && opts.length < 2)
             return null
-          const cur = (state[id] as Set<string>) ?? new Set<string>()
           return (
             <FacetGroup
               key={id}
               facetId={id}
               label={label}
               options={opts}
-              selected={cur}
-              onToggle={(v) => toggleInSet(cur, v, (next) => setEnum(id, next))}
+              selected={selectedValues(id)}
+              onToggle={(v) => toggleValue(id, v)}
             />
           )
         })}
@@ -410,34 +614,39 @@ export function useTableFilters<TRow>(
 
   const snapshot = useCallback((): FilterSnapshot => {
     const out: FilterSnapshot = {}
-    for (const [id, value] of Object.entries(state)) {
+    for (const [id, value] of Object.entries(selection)) {
       if (value instanceof Set) {
         if (value.size) out[id] = [...value].sort()
-      } else if (value && (value.min != null || value.max != null)) {
+      } else if (value && (value.min !== "" || value.max !== "")) {
         out[id] = value
       }
     }
     if (exprText.trim()) out.__expr = exprText
     return out
-  }, [state, exprText])
+  }, [selection, exprText])
 
-  const restore = useCallback((saved: FilterSnapshot | null | undefined) => {
-    // Replaces the selection outright rather than merging: applying a saved
-    // view must show exactly what it describes, not what it describes plus
-    // whatever was already ticked.
-    const next: Record<string, EnumState | TagsState | RangeState> = {}
-    let expr = ""
-    for (const [id, value] of Object.entries(saved ?? {})) {
-      if (id === "__expr") {
-        if (typeof value === "string") expr = value
-        continue
+  const { replaceAll } = store
+  const restore = useCallback(
+    (saved: FilterSnapshot | null | undefined) => {
+      // Replaces the selection outright rather than merging: applying a saved
+      // view must show exactly what it describes, not what it describes plus
+      // whatever was already ticked.
+      const next: FacetState = {}
+      let expr = ""
+      for (const [id, value] of Object.entries(saved ?? {})) {
+        if (id === "__expr") {
+          if (typeof value === "string") expr = value
+          continue
+        }
+        if (typeof value === "string") continue // future reserved keys
+        next[id] = Array.isArray(value)
+          ? new Set(value)
+          : { min: String(value.min ?? ""), max: String(value.max ?? "") }
       }
-      if (typeof value === "string") continue // future reserved keys
-      next[id] = Array.isArray(value) ? new Set(value) : value
-    }
-    setState(next)
-    setExprText(expr)
-  }, [])
+      replaceAll(next, expr)
+    },
+    [replaceAll]
+  )
 
   // Facet columns get the rail's selection + toggle wired into their cells:
   // a tag chip toggles its tag, and an enum badge (status, role, family…)

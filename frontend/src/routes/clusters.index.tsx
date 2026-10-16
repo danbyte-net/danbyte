@@ -12,10 +12,11 @@ import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/clusters/")({ component: ClustersPage })
 
@@ -24,7 +25,7 @@ function ClustersPage() {
   const canAdd = canDo("cluster", "add")
   const canEdit = canDo("cluster", "change")
   const canDelete = canDo("cluster", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Cluster | null>(null)
 
   const query = useQuery({
@@ -68,7 +69,7 @@ function ClustersPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

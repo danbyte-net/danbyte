@@ -13,13 +13,13 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { IpRoleDeleteDialog } from "@/components/ip-role-delete-dialog"
 import { LocalityBadge } from "@/components/locality-badge"
 import { RowActions } from "@/components/row-actions"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/ip-roles/")({ component: IpRolesPage })
 
@@ -35,8 +35,8 @@ function IpRolesPage() {
   const canAdd = canDo("iprole", "add")
   const canEdit = canDo("iprole", "change")
   const canDelete = canDo("iprole", "delete")
-  const [q, setQ] = useState("")
-  const [flagFilter, setFlagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [flagFilterRaw, setFlagFilter] = useUrlSet("flag")
   const [deleting, setDeleting] = useState<IPRole | null>(null)
 
   const query = useQuery({
@@ -48,6 +48,16 @@ function IpRolesPage() {
   })
   const allRows = query.data?.results ?? []
 
+  const facets = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const r of allRows) for (const f of flagsOf(r)) c[f] = (c[f] ?? 0) + 1
+    return [
+      { value: "gateway", label: "Gateway", count: c["gateway"] ?? 0 },
+      { value: "virtual", label: "Virtual", count: c["virtual"] ?? 0 },
+    ].filter((o) => o.count) as FacetOption[]
+  }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const flagFilter = useKnown(flagFilterRaw, facets)
   const rows = useMemo(
     () =>
       allRows.filter((r) => {
@@ -57,15 +67,6 @@ function IpRolesPage() {
       }),
     [allRows, flagFilter]
   )
-
-  const facets = useMemo(() => {
-    const c: Record<string, number> = {}
-    for (const r of allRows) for (const f of flagsOf(r)) c[f] = (c[f] ?? 0) + 1
-    return [
-      { value: "gateway", label: "Gateway", count: c["gateway"] ?? 0 },
-      { value: "virtual", label: "Virtual", count: c["virtual"] ?? 0 },
-    ].filter((o) => o.count) as FacetOption[]
-  }, [allRows])
 
   const handleDelete = useCallback((r: IPRole) => setDeleting(r), [])
   const columns = useMemo<ColumnDef<IPRole>[]>(
@@ -83,7 +84,7 @@ function IpRolesPage() {
             label="Flags"
             options={facets}
             selected={flagFilter}
-            onToggle={(v) => toggleInSet(flagFilter, v, setFlagFilter)}
+            onToggle={(v) => setFlagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

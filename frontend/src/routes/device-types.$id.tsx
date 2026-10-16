@@ -168,7 +168,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
               )}
             </>
           }
-          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          tags={
+            d.tags.length > 0 && (
+              <TagList tags={d.tags} listTo="/device-types" />
+            )
+          }
           description={d.description}
         />
       }

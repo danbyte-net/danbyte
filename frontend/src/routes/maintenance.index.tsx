@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { Plus, Wrench, Zap } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 
 import { api, type MaintenanceEvent, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
@@ -10,10 +10,11 @@ import { useDateFormat } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { actionsColumn } from "@/components/columns/actions-column"
 import { StatusBadge } from "@/components/status-badge"
 import { TimeCell } from "@/components/cells/time-ago"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/maintenance/")({
   component: MaintenancePage,
@@ -36,7 +37,7 @@ function KindCell({ event }: { event: MaintenanceEvent }) {
 }
 
 function MaintenancePage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const { canDo } = useMe()
   const { formatDateTime } = useDateFormat()
   const canAdd = canDo("maintenanceevent", "add")
@@ -183,7 +184,7 @@ function MaintenancePage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

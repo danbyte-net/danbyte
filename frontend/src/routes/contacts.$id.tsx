@@ -162,7 +162,9 @@ function Body({ contact: c }: { contact: Contact }) {
               )}
             </>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/contacts" />
+          }
         />
       }
       tabs={[

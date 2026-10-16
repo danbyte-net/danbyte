@@ -25,7 +25,7 @@ import {
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -34,6 +34,7 @@ import { tagsColumn } from "@/components/cells/tag-list"
 import { RowActions } from "@/components/row-actions"
 import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtual-chassis/")({
   component: VirtualChassisPage,
@@ -44,7 +45,7 @@ function VirtualChassisPage() {
   const canAdd = canDo("virtualchassis", "add")
   const canEdit = canDo("virtualchassis", "change")
   const canDelete = canDo("virtualchassis", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VirtualChassis | null>(null)
   const [selectedRows, setSelectedRows] = useState<VirtualChassis[]>([])
 
@@ -264,7 +265,7 @@ function VirtualChassisPage() {
     ]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useTableFilters(columns, rows)
+    useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

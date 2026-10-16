@@ -120,7 +120,7 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
               <ViolationBadge objectId={v.id} prominent />
             </>
           }
-          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          tags={v.tags.length > 0 && <TagList tags={v.tags} listTo="/vlans" />}
           description={v.description}
         />
       }

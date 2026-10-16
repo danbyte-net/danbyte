@@ -37,9 +37,13 @@ vi.mock("@/lib/api", async (orig) => ({
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({ me: {}, canDo: () => true }),
 }))
+// No router: the list's filters read an empty query string and their URL
+// writes go nowhere (the search box still follows typing).
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  useSearch: () => ({}),
+  useNavigate: () => () => Promise.resolve(),
 }))
 // The page opens on its Recorded tab - the list under test.
 vi.mock("@/lib/use-url-tab", () => ({

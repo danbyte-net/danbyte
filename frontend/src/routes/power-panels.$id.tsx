@@ -84,7 +84,11 @@ function Body({ panel: p }: { panel: PowerPanel }) {
         <DetailHero
           title={p.name}
           subtitle={p.site && <SiteCell site={p.site} />}
-          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          tags={
+            p.tags.length > 0 && (
+              <TagList tags={p.tags} listTo="/power-panels" />
+            )
+          }
         />
       }
       tabs={[

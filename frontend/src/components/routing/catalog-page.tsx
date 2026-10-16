@@ -24,7 +24,8 @@ import { DataTable, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { TableActions } from "@/components/table-actions"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
+import { useUrlSearch } from "@/lib/url-filters"
 
 // The routing catalogs (prefix lists, communities, community lists, AS-path
 // lists, policies, keychains) are seven lists of the same shape. One page
@@ -117,7 +118,7 @@ export function RoutingListPage<T extends { id: string }>({
   const canAdd = canDo(spec.objectType, "add")
   const canEdit = canDo(spec.objectType, "change")
   const canDelete = canDo(spec.objectType, "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<T | null>(null)
   const [selected, setSelected] = useState<T[]>([])
   // Tick boxes for bulk edit and the safe bulk delete (#314).
@@ -147,7 +148,7 @@ export function RoutingListPage<T extends { id: string }>({
     restore,
     activeCount,
     columns: wired,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

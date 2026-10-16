@@ -14,19 +14,20 @@ import { numidColumn } from "@/components/cells/numid"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { AsnDeleteDialog } from "@/components/asn-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/asns/")({ component: AsnsPage })
 
 function AsnsPage() {
-  const [q, setQ] = useState("")
-  const [rirFilter, setRirFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [rirFilterRaw, setRirFilter] = useUrlSet("rir")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<ASN | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("asn", "add")
@@ -42,23 +43,18 @@ function AsnsPage() {
   })
 
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((a) => {
-      if (rirFilter.size > 0) {
-        const key = a.rir?.id ?? "__none__"
-        if (!rirFilter.has(key)) return false
-      }
-      if (tagFilter.size > 0 && !a.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      return true
-    })
-  }, [allRows, rirFilter, tagFilter])
 
   const facets = useMemo(() => {
     const rirs: Record<string, { name: string; count: number }> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     for (const a of allRows) {
       const rk = a.rir?.id ?? "__none__"
@@ -67,6 +63,7 @@ function AsnsPage() {
       for (const t of a.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -91,9 +88,24 @@ function AsnsPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const rirFilter = useKnown(rirFilterRaw, facets.rirs)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((a) => {
+      if (rirFilter.size > 0) {
+        const key = a.rir?.id ?? "__none__"
+        if (!rirFilter.has(key)) return false
+      }
+      if (tagFilter.size > 0 && !a.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      return true
+    })
+  }, [allRows, rirFilter, tagFilter])
 
   const handleDelete = useCallback((a: ASN) => setDeleting(a), [])
   const columns = useMemo<ColumnDef<ASN>[]>(
@@ -104,7 +116,7 @@ function AsnsPage() {
         canDelete,
         humanIds,
         tagFilter,
-        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+        onToggleTag: (v) => setTagFilter((s) => toggled(s, v)),
       }),
     [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
@@ -119,13 +131,13 @@ function AsnsPage() {
             label="RIR"
             options={facets.rirs}
             selected={rirFilter}
-            onToggle={(v) => toggleInSet(rirFilter, v, setRirFilter)}
+            onToggle={(v) => setRirFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Tags"
             options={facets.tags}
             selected={tagFilter}
-            onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

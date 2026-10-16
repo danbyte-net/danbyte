@@ -27,6 +27,7 @@ import {
 import { EngineDetailDialog } from "@/components/engine-detail-dialog"
 import { OutpostVersions } from "@/components/outpost-versions"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/monitoring-engines")({
   component: MonitoringEnginesPage,
@@ -61,7 +62,7 @@ function MonitoringEnginesPage() {
   const driverOf = (e: MonitoringEngine) =>
     e.is_local ? undefined : driverKinds[e.kind]
   const qc = useQueryClient()
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useUrlSearch()
   const [adding, setAdding] = useState(false)
   const [enrollFor, setEnrollFor] = useState<MonitoringEngine | null>(null)
   const [token, setToken] = useState<string | null>(null)

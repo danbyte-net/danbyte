@@ -35,9 +35,12 @@ vi.mock("@/lib/use-me", () => ({
     humanIds: false,
   }),
 }))
+// No router: the list's filters read an empty query string.
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  useSearch: () => ({}),
+  useNavigate: () => () => Promise.resolve(),
 }))
 vi.mock("@/components/list-page-shell", () => ({
   ListPageShell: ({ children }: { children: ReactNode }) => (

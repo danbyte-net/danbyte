@@ -17,7 +17,7 @@ import {
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagFacetOptions,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -26,15 +26,19 @@ import { useInterfaceDriftMap } from "@/components/monitoring/device-drift-badge
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { useMe } from "@/lib/use-me"
 import { hereUrl } from "@/lib/return-url"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
+
+const statusKey = (i: Interface) => i.status?.id ?? "none"
 
 export const Route = createFileRoute("/interfaces/")({
   component: InterfacesPage,
 })
 
 function InterfacesPage() {
-  const [q, setQ] = useState("")
-  const [deviceFilter, setDeviceFilter] = useState<Set<string>>(new Set())
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [deviceFilterRaw, setDeviceFilter] = useUrlSet("device")
+  const [statusFilterRaw, setStatusFilter] = useUrlSet("status")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<Interface | null>(null)
 
   const { canDo } = useMe()
@@ -55,31 +59,23 @@ function InterfacesPage() {
   })
   const allRows = query.data?.results ?? []
 
-  const rows = useMemo(
-    () =>
-      allRows.filter(
-        (i) =>
-          (deviceFilter.size === 0 || deviceFilter.has(i.device.id)) &&
-          (statusFilter.size === 0 ||
-            statusFilter.has(i.status?.name ?? "Active"))
-      ),
-    [allRows, deviceFilter, statusFilter]
-  )
-
   // Status facet counts null as Active - that's how it reads everywhere.
+  // Keyed by status id (`none` for no status), so the URL holds ids.
   const statusFacets = useMemo(() => {
-    const c: Record<string, number> = {}
+    const c: Record<string, FacetOption> = {}
     for (const i of allRows) {
-      const name = i.status?.name ?? "Active"
-      c[name] = (c[name] ?? 0) + 1
+      const key = statusKey(i)
+      if (!c[key])
+        c[key] = {
+          value: key,
+          label: i.status?.name ?? "Active",
+          count: 0,
+          color: i.status?.color || undefined,
+          textColor: i.status?.text_color || undefined,
+        }
+      c[key].count++
     }
-    return Object.entries(c)
-      .sort(([, a], [, b]) => b - a)
-      .map<FacetOption>(([name, count]) => ({
-        value: name,
-        label: name,
-        count,
-      }))
+    return Object.values(c).sort((a, b) => b.count - a.count)
   }, [allRows])
 
   const facets = useMemo(() => {
@@ -96,6 +92,24 @@ function InterfacesPage() {
         count: v.count,
       }))
   }, [allRows])
+  const tagFacets = useMemo(
+    () => tagFacetOptions(allRows, (i) => i.tags),
+    [allRows]
+  )
+  // A value no row carries (a stale link) is ignored.
+  const deviceFilter = useKnown(deviceFilterRaw, facets)
+  const statusFilter = useKnown(statusFilterRaw, statusFacets)
+  const tagFilter = useKnown(tagFilterRaw, tagFacets)
+  const rows = useMemo(
+    () =>
+      allRows.filter(
+        (i) =>
+          (deviceFilter.size === 0 || deviceFilter.has(i.device.id)) &&
+          (statusFilter.size === 0 || statusFilter.has(statusKey(i))) &&
+          (tagFilter.size === 0 || i.tags.some((t) => tagFilter.has(t.slug)))
+      ),
+    [allRows, deviceFilter, statusFilter, tagFilter]
+  )
 
   const handleDelete = useCallback((i: Interface) => setDeleting(i), [])
   // Fleet-wide SNMP drift for every port on the page, in ONE request - the
@@ -123,6 +137,10 @@ function InterfacesPage() {
         // Only this table lets you flip a cable's status inline; the per-device
         // tables keep that control in their actions column.
         cableControl: { canEdit: canChangeCable },
+        tagFilter: {
+          activeSlugs: tagFilter,
+          onToggle: (v) => setTagFilter((s) => toggled(s, v)),
+        },
         actions: {
           editTo: "/interfaces/$id/edit",
           editParams: (i) => ({ id: i.id }),
@@ -183,6 +201,8 @@ function InterfacesPage() {
       canDeleteCable,
       canReserve,
       drift,
+      tagFilter,
+      setTagFilter,
     ]
   )
 
@@ -192,13 +212,19 @@ function InterfacesPage() {
         label="Device"
         options={facets}
         selected={deviceFilter}
-        onToggle={(v) => toggleInSet(deviceFilter, v, setDeviceFilter)}
+        onToggle={(v) => setDeviceFilter((s) => toggled(s, v))}
       />
       <FacetGroup
         label="Status"
         options={statusFacets}
         selected={statusFilter}
-        onToggle={(v) => toggleInSet(statusFilter, v, setStatusFilter)}
+        onToggle={(v) => setStatusFilter((s) => toggled(s, v))}
+      />
+      <FacetGroup
+        label="Tags"
+        options={tagFacets}
+        selected={tagFilter}
+        onToggle={(v) => setTagFilter((s) => toggled(s, v))}
       />
     </FilterRail>
   )

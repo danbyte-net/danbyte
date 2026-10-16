@@ -284,7 +284,11 @@ function Body({ s }: { s: BGPSession }) {
             </span>
           }
           description={s.description}
-          tags={s.tags.length ? <TagList tags={s.tags} /> : undefined}
+          tags={
+            s.tags.length ? (
+              <TagList tags={s.tags} listTo="/bgp-sessions" />
+            ) : undefined
+          }
         />
       }
       tabs={[

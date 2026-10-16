@@ -22,7 +22,6 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -32,6 +31,7 @@ import { ExpressionEditor } from "@/components/filter-expression"
 import type { FilterSnapshot } from "@/components/table-filters"
 import { X } from "lucide-react"
 import { naturalCompare } from "@/lib/natural-sort"
+import { toggled, useKnown, useUrlSearch, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/saved-filters")({
   validateSearch: (s: Record<string, unknown>): { edit?: string } => ({
@@ -199,9 +199,9 @@ function SavedFiltersPage() {
   const { edit } = Route.useSearch()
   const navigate = Route.useNavigate()
   const qc = useQueryClient()
-  const [q, setQ] = useState("")
-  const [listFilter, setListFilter] = useState<Set<string>>(new Set())
-  const [whoFilter, setWhoFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [listFilterRaw, setListFilter] = useUrlSet("list")
+  const [whoFilterRaw, setWhoFilter] = useUrlSet("who")
 
   const query = useQuery({
     queryKey: ["saved-views", "all"],
@@ -209,23 +209,6 @@ function SavedFiltersPage() {
       api<Paginated<SavedView>>("/api/saved-filters/?page_size=500"),
   })
   const allRows = query.data?.results ?? []
-
-  const rows = useMemo(
-    () =>
-      allRows.filter((v) => {
-        if (
-          q &&
-          !`${v.name} ${v.description}`.toLowerCase().includes(q.toLowerCase())
-        )
-          return false
-        if (listFilter.size > 0 && !listFilter.has(v.object_type)) return false
-        if (whoFilter.size === 1) {
-          if (whoFilter.has("mine") !== v.mine) return false
-        }
-        return true
-      }),
-    [allRows, q, listFilter, whoFilter]
-  )
 
   const listFacets = useMemo(() => {
     const c: Record<string, number> = {}
@@ -246,6 +229,26 @@ function SavedFiltersPage() {
       },
     ].filter((o) => o.count) as FacetOption[]
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const listFilter = useKnown(listFilterRaw, listFacets)
+  const whoFilter = useKnown(whoFilterRaw, whoFacets)
+
+  const rows = useMemo(
+    () =>
+      allRows.filter((v) => {
+        if (
+          q &&
+          !`${v.name} ${v.description}`.toLowerCase().includes(q.toLowerCase())
+        )
+          return false
+        if (listFilter.size > 0 && !listFilter.has(v.object_type)) return false
+        if (whoFilter.size === 1) {
+          if (whoFilter.has("mine") !== v.mine) return false
+        }
+        return true
+      }),
+    [allRows, q, listFilter, whoFilter]
+  )
 
   const del = useMutation({
     mutationFn: (id: string) =>
@@ -347,13 +350,13 @@ function SavedFiltersPage() {
             label="List"
             options={listFacets}
             selected={listFilter}
-            onToggle={(v) => toggleInSet(listFilter, v, setListFilter)}
+            onToggle={(v) => setListFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Owner"
             options={whoFacets}
             selected={whoFilter}
-            onToggle={(v) => toggleInSet(whoFilter, v, setWhoFilter)}
+            onToggle={(v) => setWhoFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

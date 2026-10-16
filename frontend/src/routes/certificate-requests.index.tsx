@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { dash } from "@/components/cells/dash"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { RequestCertificateDialog } from "@/components/monitoring/request-certificate-dialog"
 import { useMe } from "@/lib/use-me"
 
@@ -130,7 +130,7 @@ function CertificateRequestsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

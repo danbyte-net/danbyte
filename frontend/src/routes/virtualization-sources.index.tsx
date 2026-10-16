@@ -41,6 +41,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { TimeCell } from "@/components/cells/time-ago"
 import { VirtChangesDialog } from "@/components/integrations/virt-changes-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtualization-sources/")({
   component: VirtualizationSourcesPage,
@@ -52,7 +53,7 @@ function VirtualizationSourcesPage() {
   const canEdit = canDo("virtualizationsource", "change")
   const canDelete = canDo("virtualizationsource", "delete")
   const qc = useQueryClient()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<VirtualizationSource | null>(null)
   const [reviewing, setReviewing] = useState<VirtualizationSource | null>(null)

@@ -9,11 +9,12 @@ import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { RowActions } from "@/components/row-actions"
 import { WlanGroupDeleteDialog } from "@/components/wlan-group-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/wireless-lan-groups/")({
   component: WlanGroupsPage,
@@ -23,7 +24,7 @@ function WlanGroupsPage() {
   const { humanIds } = useMe()
   const { canDo } = useMe()
   const canAdd = canDo("wirelesslangroup", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<WirelessLANGroup | null>(null)
   const [selectedRows, setSelectedRows] = useState<WirelessLANGroup[]>([])
   const canDelete = canDo("wirelesslangroup", "delete")
@@ -115,7 +116,7 @@ function WlanGroupsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

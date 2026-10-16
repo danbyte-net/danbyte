@@ -105,7 +105,11 @@ function Body({ contract: c }: { contract: SupportContract }) {
               <ContractStateBadge state={c.state} />
             </>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && (
+              <TagList tags={c.tags} listTo="/support-contracts" />
+            )
+          }
           description={c.description}
         />
       }

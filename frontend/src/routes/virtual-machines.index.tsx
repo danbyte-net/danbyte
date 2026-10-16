@@ -20,9 +20,10 @@ import {
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
@@ -42,7 +43,7 @@ function VirtualMachinesPage() {
   const canAdd = canDo("virtualmachine", "add")
   const canEdit = canDo("virtualmachine", "change")
   const canDelete = canDo("virtualmachine", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const { device } = Route.useSearch()
 
@@ -114,7 +115,7 @@ function VirtualMachinesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

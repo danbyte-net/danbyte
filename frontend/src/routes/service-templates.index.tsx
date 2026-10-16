@@ -8,7 +8,7 @@ import { api, type Paginated, type ServiceTemplate } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { numidColumn } from "@/components/cells/numid"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -16,13 +16,14 @@ import { ServiceTemplateDeleteDialog } from "@/components/service-template-delet
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { servicePortsLabel } from "@/components/service-ports-field"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/service-templates/")({
   component: ServiceTemplatesPage,
 })
 
 function ServiceTemplatesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ServiceTemplate | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("servicetemplate", "add")
@@ -51,7 +52,7 @@ function ServiceTemplatesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

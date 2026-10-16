@@ -150,7 +150,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
           title={s.name}
           badges={<ViolationBadge objectId={s.id} prominent />}
           subtitle={s.location}
-          tags={s.tags.length > 0 && <TagList tags={s.tags} />}
+          tags={s.tags.length > 0 && <TagList tags={s.tags} listTo="/sites" />}
           description={s.description}
         >
           {s.vrfs.length > 0 && (

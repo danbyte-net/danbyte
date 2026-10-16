@@ -13,13 +13,14 @@ import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/cabinet-types/")({
   component: CabinetTypesPage,
 })
 
 function CabinetTypesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<CabinetType | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("cabinettype", "add")

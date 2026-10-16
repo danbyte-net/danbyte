@@ -102,7 +102,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
         <DetailHero
           title={c.name}
           badges={<StatusBadge status={c.status} />}
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/clusters" />
+          }
           description={c.description}
         />
       }

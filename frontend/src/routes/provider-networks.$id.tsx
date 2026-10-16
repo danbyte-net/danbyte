@@ -89,7 +89,11 @@ function Body({ network: n }: { network: ProviderNetwork }) {
               {n.provider.name}
             </Link>
           }
-          tags={n.tags.length > 0 && <TagList tags={n.tags} />}
+          tags={
+            n.tags.length > 0 && (
+              <TagList tags={n.tags} listTo="/provider-networks" />
+            )
+          }
         />
       }
       tabs={[

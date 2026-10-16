@@ -17,6 +17,7 @@ import { RowActions } from "@/components/row-actions"
 import { dash } from "@/components/kv-card"
 import { DhcpScopeDialog } from "@/components/integrations/dhcp-scope-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dhcp-scopes/")({
   component: DhcpScopesPage,
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/dhcp-scopes/")({
 function DhcpScopesPage() {
   const qc = useQueryClient()
   const { canDo } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const canManage = canDo("dhcpscope", "add")
   const canDelete = canDo("dhcpscope", "delete")

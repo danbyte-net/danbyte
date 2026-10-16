@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
@@ -10,7 +10,8 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
+import { useUrlSearch } from "@/lib/url-filters"
 
 // The capacity roll-up half of issue #64: every device with counted ports,
 // fullest first, so the patch panel about to run out is the first row you
@@ -46,8 +47,7 @@ interface RollupRow {
 }
 
 function PortUtilizationPage() {
-  const { site, rack } = Route.useSearch()
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useUrlSearch()
   const q = useQuery({
     queryKey: ["port-utilization-rollup"],
     queryFn: () =>
@@ -185,15 +185,9 @@ function PortUtilizationPage() {
     []
   )
 
-  // Seed the Site and Rack facets from the URL so the filter shows in the
-  // rail and can be cleared there. The roll-up itself stays whole: its query
-  // key is shared with the Devices list's Ports column.
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (site) seed.site = [site]
-    if (rack) seed.rack = [rack]
-    return Object.keys(seed).length ? seed : undefined
-  }, [site, rack])
+  // `?site=` / `?rack=` are the Site and Rack facet params, so a deep link
+  // shows in the rail and can be cleared there. The roll-up itself stays
+  // whole: its query key is shared with the Devices list's Ports column.
   const {
     rail,
     filteredRows,
@@ -201,7 +195,7 @@ function PortUtilizationPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, searched, initialEnums)
+  } = useUrlTableFilters(columns, searched)
 
   return (
     <ListPageShell

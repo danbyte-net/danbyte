@@ -28,6 +28,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/floorplans/")({
   component: FloorPlansPage,
@@ -37,7 +38,7 @@ function FloorPlansPage() {
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("floorplan", "add")
   const canDelete = canDo("floorplan", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<FloorPlan | null>(null)
 
   const query = useQuery({

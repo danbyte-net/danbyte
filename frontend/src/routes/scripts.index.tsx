@@ -18,7 +18,8 @@ import {
   ScriptCreateDialog,
   ScriptDeleteDialog,
 } from "@/components/script-dialogs"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/scripts/")({
   component: ScriptsPage,
@@ -28,7 +29,7 @@ function ScriptsPage() {
   const { canDo } = useMe()
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<Script | null>(null)
 
@@ -100,7 +101,7 @@ function ScriptsPage() {
     restore,
     activeCount,
     columns: wired,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

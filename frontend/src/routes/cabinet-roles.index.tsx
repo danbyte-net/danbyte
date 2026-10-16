@@ -11,15 +11,16 @@ import { buildCabinetRoleColumns } from "@/components/columns/cabinet-role-colum
 import { CabinetRoleDeleteDialog } from "@/components/cabinet-role-delete-dialog"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/cabinet-roles/")({
   component: CabinetRolesPage,
 })
 
 function CabinetRolesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<CabinetRole | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("cabinetrole", "add")
@@ -58,7 +59,7 @@ function CabinetRolesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

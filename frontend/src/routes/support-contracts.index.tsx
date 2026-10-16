@@ -7,13 +7,14 @@ import { api } from "@/lib/api"
 import type { Paginated, SupportContract } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { TableActions } from "@/components/table-actions"
 import { useMe } from "@/lib/use-me"
 import { SupportContractDeleteDialog } from "@/components/support-contract-delete-dialog"
 import { buildSupportContractColumns } from "@/components/columns/support-contract-columns"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/support-contracts/")({
   component: SupportContractsPage,
@@ -26,7 +27,7 @@ function SupportContractsPage() {
   const canDelete = canDo("supportcontract", "delete")
   // Cost is commercial data: the API leaves it out without view_cost.
   const canSeeCost = canDo("supportcontract", "view_cost")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<SupportContract | null>(null)
   const [selectedRows, setSelectedRows] = useState<SupportContract[]>([])
 
@@ -63,7 +64,7 @@ function SupportContractsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

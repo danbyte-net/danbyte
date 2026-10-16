@@ -14,12 +14,13 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { RtDeleteDialog } from "@/components/rt-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/route-targets/")({ component: RtsPage })
 
@@ -28,9 +29,9 @@ function RtsPage() {
   const canAdd = canDo("routetarget", "add")
   const canEdit = canDo("routetarget", "change")
   const canDelete = canDo("routetarget", "delete")
-  const [q, setQ] = useState("")
-  const [usageFilter, setUsageFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [usageFilterRaw, setUsageFilter] = useUrlSet("usage")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<RouteTarget | null>(null)
 
   const query = useQuery({
@@ -41,32 +42,18 @@ function RtsPage() {
       ),
   })
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((r) => {
-      if (usageFilter.size > 0) {
-        const used = r.import_vrf_count + r.export_vrf_count > 0
-        const onlyImport = r.import_vrf_count > 0 && r.export_vrf_count === 0
-        const onlyExport = r.export_vrf_count > 0 && r.import_vrf_count === 0
-        const both = r.import_vrf_count > 0 && r.export_vrf_count > 0
-        const empty = !used
-        const hit =
-          (usageFilter.has("both") && both) ||
-          (usageFilter.has("import") && onlyImport) ||
-          (usageFilter.has("export") && onlyExport) ||
-          (usageFilter.has("empty") && empty)
-        if (!hit) return false
-      }
-      if (tagFilter.size > 0 && !r.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      return true
-    })
-  }, [allRows, usageFilter, tagFilter])
 
   const facets = useMemo(() => {
     const usage: Record<string, number> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     for (const r of allRows) {
       const imp = r.import_vrf_count > 0
@@ -77,6 +64,7 @@ function RtsPage() {
       for (const t of r.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -108,9 +96,33 @@ function RtsPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const usageFilter = useKnown(usageFilterRaw, facets.usage)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((r) => {
+      if (usageFilter.size > 0) {
+        const used = r.import_vrf_count + r.export_vrf_count > 0
+        const onlyImport = r.import_vrf_count > 0 && r.export_vrf_count === 0
+        const onlyExport = r.export_vrf_count > 0 && r.import_vrf_count === 0
+        const both = r.import_vrf_count > 0 && r.export_vrf_count > 0
+        const empty = !used
+        const hit =
+          (usageFilter.has("both") && both) ||
+          (usageFilter.has("import") && onlyImport) ||
+          (usageFilter.has("export") && onlyExport) ||
+          (usageFilter.has("empty") && empty)
+        if (!hit) return false
+      }
+      if (tagFilter.size > 0 && !r.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      return true
+    })
+  }, [allRows, usageFilter, tagFilter])
 
   const handleDelete = useCallback((r: RouteTarget) => setDeleting(r), [])
 
@@ -122,7 +134,7 @@ function RtsPage() {
         canDelete,
         humanIds,
         tagFilter,
-        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+        onToggleTag: (v) => setTagFilter((s) => toggled(s, v)),
       }),
     [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
@@ -137,13 +149,13 @@ function RtsPage() {
             label="Usage"
             options={facets.usage}
             selected={usageFilter}
-            onToggle={(v) => toggleInSet(usageFilter, v, setUsageFilter)}
+            onToggle={(v) => setUsageFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Tags"
             options={facets.tags}
             selected={tagFilter}
-            onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

@@ -11,6 +11,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { buildConfigBundleColumns } from "@/components/columns/config-bundle-columns"
 import { ConfigBundleDeleteDialog } from "@/components/config-bundle-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/config-bundles/")({
   component: ConfigBundlesPage,
@@ -21,7 +22,7 @@ function ConfigBundlesPage() {
   const canAdd = canDo("configbundle", "add")
   const canEdit = canDo("configbundle", "change")
   const canDelete = canDo("configbundle", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ConfigBundle | null>(null)
 
   const query = useQuery({

@@ -19,7 +19,6 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -32,6 +31,7 @@ import { TaskStatusManager } from "@/components/planning/task-status-manager"
 import { useMe, objCan } from "@/lib/use-me"
 import { cssColor } from "@/lib/utils"
 import { naturalCompare } from "@/lib/natural-sort"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/statuses/")({
   validateSearch: (s: Record<string, unknown>): { tab?: "tasks" } => ({
@@ -93,10 +93,10 @@ function IpStatusesPage() {
   const canAdd = canDo("ipstatus", "add")
   const canEdit = canDo("ipstatus", "change")
   const canDelete = canDo("ipstatus", "delete")
-  const [q, setQ] = useState("")
-  const [flagFilter, setFlagFilter] = useState<Set<string>>(new Set())
-  const [usedBy, setUsedBy] = useState<Set<string>>(new Set())
-  const [defaulted, setDefaulted] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [flagFilterRaw, setFlagFilter] = useUrlSet("flag")
+  const [usedByRaw, setUsedBy] = useUrlSet("used_by")
+  const [defaultedRaw, setDefaulted] = useUrlSet("default")
   const [weightRange, setWeightRange] = useState<[number, number] | null>(null)
   const [deleting, setDeleting] = useState<Status | null>(null)
 
@@ -108,32 +108,6 @@ function IpStatusesPage() {
       ),
   })
   const allRows = query.data?.results ?? []
-
-  const rows = useMemo(
-    () =>
-      allRows.filter((s) => {
-        if (flagFilter.size > 0) {
-          const f = flagsOf(s)
-          if (![...flagFilter].every((x) => f.includes(x))) return false
-        }
-        if (
-          usedBy.size > 0 &&
-          ![...usedBy].some((m) => s.available_to.includes(m))
-        )
-          return false
-        if (defaulted.size === 1) {
-          const has = (s.default_for?.length ?? 0) > 0
-          if (defaulted.has("yes") !== has) return false
-        }
-        if (
-          weightRange &&
-          (s.weight < weightRange[0] || s.weight > weightRange[1])
-        )
-          return false
-        return true
-      }),
-    [allRows, flagFilter, usedBy, defaulted, weightRange]
-  )
 
   const facets = useMemo(() => {
     const c: Record<string, number> = {}
@@ -166,6 +140,35 @@ function IpStatusesPage() {
       { value: "no", label: "Not a default", count: allRows.length - yes },
     ].filter((o) => o.count) as FacetOption[]
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const usedBy = useKnown(usedByRaw, usedByFacets)
+  const defaulted = useKnown(defaultedRaw, defaultFacets)
+  const flagFilter = useKnown(flagFilterRaw, facets)
+  const rows = useMemo(
+    () =>
+      allRows.filter((s) => {
+        if (flagFilter.size > 0) {
+          const f = flagsOf(s)
+          if (![...flagFilter].every((x) => f.includes(x))) return false
+        }
+        if (
+          usedBy.size > 0 &&
+          ![...usedBy].some((m) => s.available_to.includes(m))
+        )
+          return false
+        if (defaulted.size === 1) {
+          const has = (s.default_for?.length ?? 0) > 0
+          if (defaulted.has("yes") !== has) return false
+        }
+        if (
+          weightRange &&
+          (s.weight < weightRange[0] || s.weight > weightRange[1])
+        )
+          return false
+        return true
+      }),
+    [allRows, flagFilter, usedBy, defaulted, weightRange]
+  )
 
   const weightBounds = useMemo<[number, number]>(() => {
     if (allRows.length === 0) return [0, 100]
@@ -189,19 +192,19 @@ function IpStatusesPage() {
             label="Used by"
             options={usedByFacets}
             selected={usedBy}
-            onToggle={(v) => toggleInSet(usedBy, v, setUsedBy)}
+            onToggle={(v) => setUsedBy((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Default"
             options={defaultFacets}
             selected={defaulted}
-            onToggle={(v) => toggleInSet(defaulted, v, setDefaulted)}
+            onToggle={(v) => setDefaulted((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Flags"
             options={facets}
             selected={flagFilter}
-            onToggle={(v) => toggleInSet(flagFilter, v, setFlagFilter)}
+            onToggle={(v) => setFlagFilter((s) => toggled(s, v))}
           />
           {weightBounds[0] !== weightBounds[1] && (
             <div className="space-y-2 px-1">

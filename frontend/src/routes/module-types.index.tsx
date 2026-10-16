@@ -26,13 +26,14 @@ import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/module-types/")({
   component: ModuleTypesPage,
 })
 
 function ModuleTypesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ModuleType | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("moduletype", "add")

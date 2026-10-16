@@ -8,15 +8,16 @@ import { api, type L2VPN, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { L2vpnDeleteDialog } from "@/components/l2vpn-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/l2vpns/")({ component: L2vpnsPage })
 
 function L2vpnsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<L2VPN | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("l2vpn", "add")
@@ -47,7 +48,7 @@ function L2vpnsPage() {
   )
 
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useTableFilters(columns, rows)
+    useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

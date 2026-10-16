@@ -128,7 +128,9 @@ function Body({ circuit: c }: { circuit: Circuit }) {
               <StatusBadge status={c.status} />
             </>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/circuits" />
+          }
           description={c.description}
         />
       }

@@ -11,13 +11,14 @@ import { buildCabinetColumns } from "@/components/columns/cabinet-columns"
 import { CabinetDeleteDialog } from "@/components/cabinet-delete-dialog"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/cabinets/")({ component: CabinetsPage })
 
 function CabinetsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Cabinet | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("cabinet", "add")
@@ -59,7 +60,7 @@ function CabinetsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

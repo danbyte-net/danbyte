@@ -108,7 +108,9 @@ function Body({ cabinet: c }: { cabinet: Cabinet }) {
           subtitle={
             c.facility_id && <span className="font-mono">{c.facility_id}</span>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/cabinets" />
+          }
           description={c.description}
         />
       }

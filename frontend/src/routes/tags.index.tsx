@@ -10,7 +10,6 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -18,6 +17,7 @@ import { LocalityBadge } from "@/components/locality-badge"
 import { TagDeleteDialog } from "@/components/tag-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/tags/")({ component: TagsPage })
 
@@ -26,9 +26,9 @@ function TagsPage() {
   const canAdd = canDo("tag", "add")
   const canEdit = canDo("tag", "change")
   const canDelete = canDo("tag", "delete")
-  const [q, setQ] = useState("")
-  const [usageFilter, setUsageFilter] = useState<Set<string>>(new Set())
-  const [colorFilter, setColorFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [usageFilterRaw, setUsageFilter] = useUrlSet("usage")
+  const [colorFilterRaw, setColorFilter] = useUrlSet("color")
   const [deleting, setDeleting] = useState<Tag | null>(null)
 
   const query = useQuery({
@@ -40,6 +40,29 @@ function TagsPage() {
   })
   const allRows = query.data?.results ?? []
 
+  const facets = useMemo(() => {
+    let colored = 0
+    let uncolored = 0
+    let used = 0
+    let unused = 0
+    for (const t of allRows) {
+      t.color ? colored++ : uncolored++
+      ;(t.usage_count ?? 0) > 0 ? used++ : unused++
+    }
+    return {
+      usage: [
+        { value: "used", label: "In use", count: used },
+        { value: "unused", label: "Unused", count: unused },
+      ].filter((o) => o.count) as FacetOption[],
+      color: [
+        { value: "colored", label: "Colored", count: colored },
+        { value: "uncolored", label: "No color", count: uncolored },
+      ].filter((o) => o.count) as FacetOption[],
+    }
+  }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const usageFilter = useKnown(usageFilterRaw, facets.usage)
+  const colorFilter = useKnown(colorFilterRaw, facets.color)
   const rows = useMemo(() => {
     return allRows.filter((t) => {
       if (usageFilter.size > 0) {
@@ -66,27 +89,6 @@ function TagsPage() {
     })
   }, [allRows, usageFilter, colorFilter])
 
-  const facets = useMemo(() => {
-    let colored = 0
-    let uncolored = 0
-    let used = 0
-    let unused = 0
-    for (const t of allRows) {
-      t.color ? colored++ : uncolored++
-      ;(t.usage_count ?? 0) > 0 ? used++ : unused++
-    }
-    return {
-      usage: [
-        { value: "used", label: "In use", count: used },
-        { value: "unused", label: "Unused", count: unused },
-      ].filter((o) => o.count) as FacetOption[],
-      color: [
-        { value: "colored", label: "Colored", count: colored },
-        { value: "uncolored", label: "No color", count: uncolored },
-      ].filter((o) => o.count) as FacetOption[],
-    }
-  }, [allRows])
-
   const handleDelete = useCallback((t: Tag) => setDeleting(t), [])
   const columns = useMemo<ColumnDef<Tag>[]>(
     () => buildColumns({ onDelete: handleDelete, canEdit, canDelete }),
@@ -99,13 +101,13 @@ function TagsPage() {
         label="Usage"
         options={facets.usage}
         selected={usageFilter}
-        onToggle={(v) => toggleInSet(usageFilter, v, setUsageFilter)}
+        onToggle={(v) => setUsageFilter((s) => toggled(s, v))}
       />
       <FacetGroup
         label="Color"
         options={facets.color}
         selected={colorFilter}
-        onToggle={(v) => toggleInSet(colorFilter, v, setColorFilter)}
+        onToggle={(v) => setColorFilter((s) => toggled(s, v))}
       />
     </FilterRail>
   )

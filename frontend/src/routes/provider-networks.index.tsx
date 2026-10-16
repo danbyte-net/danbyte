@@ -8,7 +8,7 @@ import { api, type Paginated, type ProviderNetwork } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -16,6 +16,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { ProviderNetworkDeleteDialog } from "@/components/provider-network-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/provider-networks/")({
   component: ProviderNetworksPage,
@@ -26,7 +27,7 @@ function ProviderNetworksPage() {
   const canAdd = canDo("providernetwork", "add")
   const canEdit = canDo("providernetwork", "change")
   const canDelete = canDo("providernetwork", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ProviderNetwork | null>(null)
   const [selectedRows, setSelectedRows] = useState<ProviderNetwork[]>([])
 
@@ -127,7 +128,7 @@ function ProviderNetworksPage() {
     [onDelete, canEdit, canDelete, humanIds]
   )
   const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useTableFilters(columns, rows)
+    useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

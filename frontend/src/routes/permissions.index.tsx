@@ -12,13 +12,14 @@ import { RowActions } from "@/components/row-actions"
 import { PermissionDeleteDialog } from "@/components/permission-delete-dialog"
 import { SiteRoleDialog } from "@/components/site-role-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/permissions/")({
   component: PermissionsPage,
 })
 
 function PermissionsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ObjectPermission | null>(null)
   const [siteRoleOpen, setSiteRoleOpen] = useState(false)
   const { canDo } = useMe()

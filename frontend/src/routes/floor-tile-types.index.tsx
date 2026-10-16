@@ -25,6 +25,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/floor-tile-types/")({
   component: FloorTileTypesPage,
@@ -35,7 +36,7 @@ function FloorTileTypesPage() {
   const canAdd = canDo("floortiletype", "add")
   const canEdit = canDo("floortiletype", "change")
   const canDelete = canDo("floortiletype", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<FloorTileType | null>(null)
 
   const query = useQuery({

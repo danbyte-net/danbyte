@@ -129,7 +129,7 @@ function VrfDetailBody({ vrf: v }: { vrf: VRF }) {
               <ViolationBadge objectId={v.id} prominent />
             </>
           }
-          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          tags={v.tags.length > 0 && <TagList tags={v.tags} listTo="/vrfs" />}
           description={v.description}
         />
       }

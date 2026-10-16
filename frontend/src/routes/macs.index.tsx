@@ -13,7 +13,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { buildMacColumns, learnedAtKey } from "@/components/columns/mac-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { MacBulkBar } from "@/components/mac-bulk-bar"
@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
+import { useUrlSearch } from "@/lib/url-filters"
 
 interface MacList {
   count: number
@@ -317,7 +318,7 @@ function RecordedMacs() {
     canDo("interface", "change") ||
     canDo("vminterface", "change") ||
     canDo("ipaddress", "change")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [adding, setAdding] = useState(false)
   const [ranges, setRanges] = useState(false)
   const [selected, setSelected] = useState<MacRow[]>([])
@@ -374,7 +375,7 @@ function RecordedMacs() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

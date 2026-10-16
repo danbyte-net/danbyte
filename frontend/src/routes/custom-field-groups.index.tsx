@@ -11,13 +11,14 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { CustomFieldGroupDeleteDialog } from "@/components/custom-field-group-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/custom-field-groups/")({
   component: CustomFieldGroupsPage,
 })
 
 function CustomFieldGroupsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<CustomFieldGroup | null>(null)
   const { canDo } = useMe()
   const canAdd = canDo("customfieldgroup", "add")

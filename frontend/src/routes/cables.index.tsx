@@ -10,7 +10,7 @@ import type { Cable, Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import { CableTraceDialog } from "@/components/cable-trace-dialog"
@@ -18,11 +18,12 @@ import { cableTint } from "@/components/cable-status-control"
 import type { CableTraceTarget } from "@/components/cable-trace-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/cables/")({ component: CablesPage })
 
 function CablesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Cable | null>(null)
   const [tracing, setTracing] = useState<CableTraceTarget | null>(null)
 
@@ -92,7 +93,7 @@ function CablesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

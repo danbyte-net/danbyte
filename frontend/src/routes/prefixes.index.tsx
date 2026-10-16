@@ -16,12 +16,16 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
-import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
+import {
+  useUrlTableFilters,
+  wireFacetColumns,
+} from "@/components/table-filters"
 import { useCustomFieldDefs } from "@/components/custom-field-display"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { useViolationMap } from "@/components/compliance/violation-badge"
 import { PrefixBulkBar } from "@/components/prefix-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -31,9 +35,10 @@ import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/prefixes/")({
   component: PrefixesPage,
-  // `?status=<id>` / `?family=4|6` seed the Status / Family facets so the
-  // dashboard "Prefixes by status" and "Prefixes by family" cards land on the
-  // pre-filtered list. Keys optional so a plain /prefixes stays valid.
+  // `?status=<id>` / `?family=4|6` are the Status / Family facet params (the
+  // rail keeps every filter in the URL), typed here for the dashboard
+  // "Prefixes by status" and "Prefixes by family" links. Keys optional so a
+  // plain /prefixes stays valid.
   validateSearch: (
     s: Record<string, unknown>
   ): { status?: string; family?: string } => {
@@ -54,7 +59,7 @@ function PrefixesPage() {
   const canAdd = canDo("prefix", "add")
   const canEdit = canDo("prefix", "change")
   const canDelete = canDo("prefix", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Prefix | null>(null)
   const [selectedRows, setSelectedRows] = useState<Prefix[]>([])
 
@@ -101,13 +106,6 @@ function PrefixesPage() {
       }),
     [cfDefs, monitoring]
   )
-  const { status: statusFilter, family: familyFilter } = Route.useSearch()
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (statusFilter) seed.status = [statusFilter]
-    if (familyFilter) seed.family = [familyFilter]
-    return Object.keys(seed).length ? seed : undefined
-  }, [statusFilter, familyFilter])
   const {
     rail,
     filteredRows,
@@ -116,7 +114,7 @@ function PrefixesPage() {
     snapshot,
     restore,
     activeCount,
-  } = useTableFilters(facetColumns, allRows, initialEnums)
+  } = useUrlTableFilters(facetColumns, allRows)
   const tagSelection = selectedValues("tags")
 
   // Filter → annotate with nesting depth → keep Global VRF on top. The

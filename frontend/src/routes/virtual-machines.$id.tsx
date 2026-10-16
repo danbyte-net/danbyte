@@ -147,7 +147,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
               )}
             </>
           }
-          tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
+          tags={
+            vm.tags.length > 0 && (
+              <TagList tags={vm.tags} listTo="/virtual-machines" />
+            )
+          }
           description={vm.description}
         />
       }

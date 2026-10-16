@@ -13,6 +13,7 @@ import { buildRegionColumns } from "@/components/columns/region-columns"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RegionDeleteDialog } from "@/components/region-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/regions/")({ component: RegionsPage })
 
@@ -21,7 +22,7 @@ function RegionsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("region", "add")
   const canEdit = canDo("region", "change")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Region | null>(null)
   const [sel, setSel] = useState<Region[]>([])
 

@@ -8,9 +8,10 @@ import type { NamedDashboard, Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { dashboardColumns } from "@/components/columns/dashboard-columns"
 import { DashboardSettingsDialog } from "@/components/dashboard/dashboard-settings"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dashboards/")({
   component: DashboardsPage,
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/dashboards/")({
 function DashboardsPage() {
   const nav = useNavigate()
   const [creating, setCreating] = useState(false)
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const query = useQuery({
     queryKey: ["dashboards"],
     queryFn: () =>
@@ -33,7 +34,11 @@ function DashboardsPage() {
       ),
     [query.data, q]
   )
-  const { rail, filteredRows, columns: wired } = useTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    columns: wired,
+  } = useUrlTableFilters(columns, rows)
   return (
     <ListPageShell
       title="Dashboards"

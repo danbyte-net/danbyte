@@ -83,7 +83,9 @@ function Body({ group: g }: { group: VirtualMachineGroup }) {
       hero={
         <DetailHero
           title={g.name}
-          tags={g.tags.length > 0 && <TagList tags={g.tags} />}
+          tags={
+            g.tags.length > 0 && <TagList tags={g.tags} listTo="/vm-groups" />
+          }
           description={g.description}
         />
       }

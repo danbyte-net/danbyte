@@ -12,18 +12,19 @@ import { buildContactColumns } from "@/components/columns/contact-columns"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ContactDeleteDialog } from "@/components/contact-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/contacts/")({ component: ContactsPage })
 
 function ContactsPage() {
-  const [q, setQ] = useState("")
-  const [groupFilter, setGroupFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [groupFilterRaw, setGroupFilter] = useUrlSet("group")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<Contact | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("contact", "add")
@@ -39,23 +40,18 @@ function ContactsPage() {
   })
 
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((cn) => {
-      if (groupFilter.size > 0) {
-        const key = cn.group?.id ?? "__none__"
-        if (!groupFilter.has(key)) return false
-      }
-      if (tagFilter.size > 0 && !cn.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      return true
-    })
-  }, [allRows, groupFilter, tagFilter])
 
   const facets = useMemo(() => {
     const groups: Record<string, { name: string; count: number }> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     for (const cn of allRows) {
       const gk = cn.group?.id ?? "__none__"
@@ -65,6 +61,7 @@ function ContactsPage() {
       for (const t of cn.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -89,9 +86,24 @@ function ContactsPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const groupFilter = useKnown(groupFilterRaw, facets.groups)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((cn) => {
+      if (groupFilter.size > 0) {
+        const key = cn.group?.id ?? "__none__"
+        if (!groupFilter.has(key)) return false
+      }
+      if (tagFilter.size > 0 && !cn.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      return true
+    })
+  }, [allRows, groupFilter, tagFilter])
 
   const handleDelete = useCallback((cn: Contact) => setDeleting(cn), [])
   const columns = useMemo<ColumnDef<Contact>[]>(
@@ -103,7 +115,7 @@ function ContactsPage() {
         // of being decorative (it was inert before the factory).
         tagFilter: {
           activeSlugs: tagFilter,
-          onToggle: (v) => toggleInSet(tagFilter, v, setTagFilter),
+          onToggle: (v) => setTagFilter((s) => toggled(s, v)),
         },
         actions: {
           editTo: canEdit ? "/contacts/$id/edit" : undefined,
@@ -124,13 +136,13 @@ function ContactsPage() {
             label="Group"
             options={facets.groups}
             selected={groupFilter}
-            onToggle={(v) => toggleInSet(groupFilter, v, setGroupFilter)}
+            onToggle={(v) => setGroupFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Tags"
             options={facets.tags}
             selected={tagFilter}
-            onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

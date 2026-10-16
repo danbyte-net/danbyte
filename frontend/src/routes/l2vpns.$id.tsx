@@ -105,7 +105,7 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
         <DetailHero
           title={v.name}
           badges={<StatusBadge status={v.status} />}
-          tags={v.tags.length > 0 && <TagList tags={v.tags} />}
+          tags={v.tags.length > 0 && <TagList tags={v.tags} listTo="/l2vpns" />}
           description={v.description}
         />
       }

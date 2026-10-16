@@ -13,6 +13,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { ConfigContextDeleteDialog } from "@/components/config-context-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 function criteria(c: ConfigContext): string {
   const parts: string[] = []
@@ -31,7 +32,7 @@ function ConfigContextsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("configcontext", "add")
   const { humanIds } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ConfigContext | null>(null)
 
   const query = useQuery({

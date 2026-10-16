@@ -72,6 +72,42 @@ manufacturer, tags - each counting the rows in every value.
 Hidden facets are saved per list for you, like a column layout (stored as the
 `facets-<list>` layout, e.g. `facets-devices`), and do not affect anyone else.
 
+## Filters and links
+
+A list's filters live in its address, so a reload, **Back** from an object, a
+bookmark or a pasted link all show the same filtered list:
+
+    /devices?status=active,planned&role=leaf&tag=core&q=sw-01
+
+- **One parameter per facet**, named after it: `status`, `role`, `site`,
+  `type`, … The Tags facet is `tag`. Values are ids and slugs, not display
+  names.
+- **Several values** are comma-separated and match any of them. A value that
+  contains a comma is written with a backslash before it (`a\,b`).
+- **Ranges** read `min..max`, either side optional: `util=80..`.
+- **The search box** is `q`, written once typing pauses. **The advanced
+  filter** is `expr`.
+- **Nothing selected** means no parameter. A value the list does not have (a
+  deleted tag, a typo) is ignored rather than emptying the list.
+
+Changing a filter replaces the current history entry instead of adding one, so
+**Back** leaves the list instead of undoing filters one by one.
+
+Dashboard and cross-object links (*Devices by status*, a rack's port
+utilisation, a certificate-health tile) use the same parameters, so the filter
+they open with shows in the rail and can be cleared there. A
+[saved view](saved-views.md) writes its filters into the address when applied.
+
+### Tags
+
+- **In a list,** click a tag chip to filter the list by that tag; click it
+  again to clear it. Active tags get a ring, and several tags match any of
+  them.
+- **All objects with a tag:** beside a ticked tag in the Tags facet, the arrow
+  opens the tag's **Tagged objects** tab, across every object type.
+- **On an object's page,** a tag links to its list filtered by that tag, for
+  example a device's `core` tag opens `/devices?tag=core`.
+
 ## Searching a table
 
 A list page searches with the box in its header. A table on a detail tab - a

@@ -14,11 +14,12 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { RirDeleteDialog } from "@/components/rir-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/rirs/")({ component: RirsPage })
 
 function RirsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RIR | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("rir", "add")

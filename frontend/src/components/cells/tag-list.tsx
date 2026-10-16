@@ -1,4 +1,5 @@
 import { type ColumnDef } from "@tanstack/react-table"
+import { Link } from "@tanstack/react-router"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader } from "@/components/data-table"
 import { cn, cssColor } from "@/lib/utils"
@@ -15,6 +16,9 @@ interface TagListProps {
    * (false) wraps onto multiple lines - appropriate for page headers and
    * detail panes where vertical space is available. */
   inline?: boolean
+  /** Detail-page mode: each chip links to this list filtered by the tag
+   * (`/devices?tag=core`). */
+  listTo?: string
 }
 
 // A clickable strip of tag chips. Each chip uses the tag's own color
@@ -28,6 +32,7 @@ export function TagList({
   onToggle,
   className,
   inline,
+  listTo,
 }: TagListProps) {
   if (tags.length === 0) {
     return <span className="text-muted-foreground">-</span>
@@ -43,6 +48,26 @@ export function TagList({
       {tags.map((t) => {
         const active = activeSlugs?.has(t.slug)
         const clickable = !!onToggle
+        const style = t.color
+          ? { backgroundColor: cssColor(t.color), color: t.text_color || "#fff" }
+          : undefined
+        if (listTo && !onToggle)
+          return (
+            <Badge
+              key={t.id}
+              variant="secondary"
+              asChild
+              className={cn(
+                "cursor-pointer hover:brightness-110",
+                inline && "shrink-0 whitespace-nowrap"
+              )}
+              style={style}
+            >
+              <Link to={listTo} search={{ tag: t.slug } as never}>
+                {t.name}
+              </Link>
+            </Badge>
+          )
         return (
           <Badge
             key={t.id}
@@ -66,11 +91,7 @@ export function TagList({
                 "ring-1 ring-foreground/30 brightness-110 saturate-150 ring-inset",
               inline && "shrink-0 whitespace-nowrap"
             )}
-            style={
-              t.color
-                ? { backgroundColor: cssColor(t.color), color: t.text_color || "#fff" }
-                : undefined
-            }
+            style={style}
           >
             {t.name}
           </Badge>
@@ -126,6 +147,7 @@ export function tagsColumn<T>(opts: TagsColumnOpts<T>): ColumnDef<T, unknown> {
         label: opts.header ?? "Tags",
         get: (r: T) =>
           opts.getTags(r).map((t) => ({
+            id: t.id,
             slug: t.slug,
             name: t.name,
             color: t.color || undefined,

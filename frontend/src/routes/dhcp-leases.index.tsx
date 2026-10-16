@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -10,13 +10,14 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { dash } from "@/components/kv-card"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dhcp-leases/")({
   component: DhcpLeasesPage,
 })
 
 function DhcpLeasesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const query = useQuery({
     queryKey: ["dhcp-leases", "all", q],
     queryFn: () =>

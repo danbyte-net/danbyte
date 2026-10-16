@@ -195,7 +195,11 @@ function Body({ r }: { r: StaticRoute }) {
             </span>
           }
           description={r.description}
-          tags={r.tags.length ? <TagList tags={r.tags} /> : undefined}
+          tags={
+            r.tags.length ? (
+              <TagList tags={r.tags} listTo="/static-routes" />
+            ) : undefined
+          }
         />
       }
       tabs={[

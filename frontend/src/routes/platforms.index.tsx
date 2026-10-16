@@ -8,17 +8,18 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPlatformColumns } from "@/components/columns/platform-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/platforms/")({
   component: PlatformsPage,
 })
 
 function PlatformsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Platform | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("platform", "add")
@@ -59,7 +60,7 @@ function PlatformsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

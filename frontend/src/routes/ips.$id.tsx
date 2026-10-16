@@ -507,7 +507,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
               )}
             </>
           }
-          tags={ip.tags.length > 0 && <TagList tags={ip.tags} />}
+          tags={ip.tags.length > 0 && <TagList tags={ip.tags} listTo="/ips" />}
           description={ip.description}
         >
           {ip.reservation_note && (
