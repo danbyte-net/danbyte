@@ -4,6 +4,7 @@ Thanks for helping. Bug reports, feature ideas, docs fixes and pull requests
 are all welcome.
 
 Security problems go through [SECURITY.md](SECURITY.md), never a public issue.
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Issues
 

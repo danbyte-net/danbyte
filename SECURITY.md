@@ -7,7 +7,9 @@ may see which site. Security reports are welcome and taken seriously.
 
 Please report privately through GitHub:
 **[Report a vulnerability](https://github.com/danbyte-net/danbyte/security/advisories/new)**
-(Security tab → Report a vulnerability).
+(Security tab → Report a vulnerability). Without a GitHub account, email
+[support@danbyte.net](mailto:support@danbyte.net) with "Security" in the
+subject.
 
 Do not open a public issue, pull request or discussion for a vulnerability
 until a fix is released.
