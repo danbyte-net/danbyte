@@ -36,7 +36,8 @@ from api.models import (
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from django.db.models import Count, F, Q
+from django.db.models import BooleanField, Count, F, Q
+from django.db.models.expressions import RawSQL
 from django.db.models.functions import Coalesce
 
 from django.utils import timezone
@@ -80,22 +81,119 @@ from .vc_stack import stack_members, stack_owner, stack_state
 
 # Cap the per-IP grid on a prefix page so a huge prefix can't return 100k rows.
 GRID_CAP = 1000
+# Prefix ids one bulk-status call takes - the same bound as the SLA status
+# endpoint's, so a list page batches both alike.
+MAX_STATUS_PREFIXES = 5000
+
+
+# The address with any stored mask dropped (a legacy row may carry one; the
+# model reads it back bare), so containment matches what Python would say.
+_HOST_INET = "host(api_ipaddress.ip_address)::inet"
 
 
 def _child_ip_ids(prefix, tenant) -> list:
-    """IDs of existing IPs in the prefix's tenant + VRF contained by its CIDR."""
+    """IDs of existing IPs in the prefix's tenant + VRF contained by its CIDR.
+
+    The containment test runs in Postgres: reading every IP of the tenant into
+    Python to test it cost ~0.8 s per prefix on a 41,000-address tenant (#430).
+    """
     net = prefix.network
     if net is None:
         return []
-    out = []
-    for ip in IPAddress.objects.filter(
-        tenant=tenant, vrf_id=prefix.vrf_id
-    ).only("id", "ip_address"):
+    return list(
+        IPAddress.objects.filter(tenant=tenant, vrf_id=prefix.vrf_id)
+        .annotate(_inside=RawSQL(
+            f"{_HOST_INET} <<= %s::inet", (str(net),), output_field=BooleanField(),
+        ))
+        .filter(_inside=True)
+        .values_list("id", flat=True)
+    )
+
+
+def _prefix_rollups(request, tenant, prefixes) -> dict:
+    """``{prefix id: roll-up}`` for many prefixes at once (#430).
+
+    Three queries whatever the number of prefixes: the caller's viewable IPs
+    in the prefixes' VRFs and address span, their monitored check states, and
+    nothing per prefix. Each prefix's children are found by a sorted pass per
+    (VRF, family), as :func:`api.serializers.prefix_descendant_counts` does
+    for prefixes. ``monitored_ips`` counts the children with a check, as the
+    device and VM roll-ups and the prefix page do; excluded addresses and the
+    caller's IP view scope apply as they do there."""
+    import bisect
+
+    from .exclusion import monitored
+
+    nets = {}
+    for p in prefixes:
+        net = p.network
+        if net is not None:
+            nets[p.id] = (p.vrf_id, net)
+    if not nets:
+        return {}
+    vrf_ids = {v for v, _ in nets.values() if v is not None}
+    vrf_q = Q(vrf_id__in=vrf_ids)
+    if any(v is None for v, _ in nets.values()):
+        vrf_q |= Q(vrf_id__isnull=True)
+    # Only the addresses that can sit in a requested prefix: the span from the
+    # lowest to the highest address the prefixes cover, per family.
+    span_sql, span_params = [], []
+    for version in (4, 6):
+        fam = [n for _, n in nets.values() if n.version == version]
+        if fam:
+            span_sql.append(f"{_HOST_INET} BETWEEN %s::inet AND %s::inet")
+            span_params += [
+                str(min(n.network_address for n in fam)),
+                str(max(n.broadcast_address for n in fam)),
+            ]
+    candidates = _viewable_ips(
+        request, tenant,
+        IPAddress.objects.filter(vrf_q).annotate(_in_span=RawSQL(
+            " OR ".join(span_sql), span_params, output_field=BooleanField(),
+        )).filter(_in_span=True),
+    )
+    # Every candidate, sorted per (VRF, family); a prefix's children are one
+    # contiguous run of it.
+    addrs: dict = {}
+    for ip_id, raw, vrf_id in candidates.order_by().values_list("id", "ip_address", "vrf_id"):
         try:
-            if _ip.ip_address(ip.ip_address) in net:
-                out.append(ip.id)
+            a = _ip.ip_address(raw)
         except (ValueError, TypeError):
             continue
+        addrs.setdefault((vrf_id, a.version), []).append((int(a), ip_id))
+    for run in addrs.values():
+        run.sort()
+    starts = {k: [a for a, _ in run] for k, run in addrs.items()}
+    # Their monitored states, in the order one prefix's query returned them.
+    states_by_ip: dict = {}
+    for seq, row in enumerate(monitored(_scope_ip_keyed(
+        request, tenant,
+        CheckState.objects.filter(target_ip__in=candidates.values("id")),
+    ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since")):
+        states_by_ip.setdefault(row["target_ip_id"], []).append((seq, row))
+    out: dict = {}
+    for prefix_id, (vrf_id, net) in nets.items():
+        key = (vrf_id, net.version)
+        if key not in addrs:
+            continue
+        lo = bisect.bisect_left(starts[key], int(net.network_address))
+        hi = bisect.bisect_right(starts[key], int(net.broadcast_address))
+        children = addrs[key][lo:hi]
+        rows = sorted(
+            (s for _, ip_id in children for s in states_by_ip.get(ip_id, ())),
+            key=lambda s: s[0],
+        )
+        if not rows:
+            continue
+        rows = [r for _, r in rows]
+        statuses = [r["status"] for r in rows]
+        out[str(prefix_id)] = {
+            "status": worst_status(statuses),
+            "counts": status_counts(statuses),
+            "monitored_ips": len({r["target_ip_id"] for r in rows}),
+            **_external_detail([r["last_detail"] for r in rows]),
+            **_flap_rollup(r["flapping_since"] for r in rows),
+        }
     return out
 
 
@@ -2290,7 +2388,7 @@ def _add_figures(tenant, states, rows, win) -> None:
             name="prefixes",
             type=OpenApiTypes.STR,
             location=OpenApiParameter.QUERY,
-            description="Comma-separated prefix ids to roll up (max 500).",
+            description="Comma-separated prefix ids to roll up (max 5000).",
         ),
         OpenApiParameter(
             name="devices",
@@ -2446,8 +2544,8 @@ def bulk_status_view(request):
     if tenant is None:
         return Response({"statuses": {}})
     # Prefix, VM and device roll-ups leave excluded addresses out: they are
-    # not monitored. The IP branch says "excluded" instead.
-    from .exclusion import monitored
+    # not monitored (_prefix_rollups, _rollup_by_owner). The IP branch says
+    # "excluded" instead.
 
     def _ids(name: str):
         if request.method == "POST":
@@ -2504,38 +2602,20 @@ def bulk_status_view(request):
     prefix_param = _ids("prefixes")
     if prefix_param:
         ids = [x for x in prefix_param.split(",") if x]
-        # _child_ip_ids walks every tenant IP in Python per prefix - bound the
-        # request so a member can't submit thousands of ids as a CPU DoS. The
-        # UI sends at most one page of prefixes (~100).
-        if len(ids) > 500:
+        # A bound on the request body, not on the work: the roll-up is
+        # set-based (#430). The list page sends its ids in batches of this.
+        if len(ids) > MAX_STATUS_PREFIXES:
             return Response(
-                {"detail": "Too many prefixes - request at most 500 per call."},
+                {"detail": "Too many prefixes - request at most "
+                           f"{MAX_STATUS_PREFIXES} per call."},
                 status=400,
             )
         # Site-aware: only prefixes the caller may view roll up.
         prefixes = rbac.restrict_queryset(
-            Prefix.objects.filter(tenant=tenant, id__in=ids).select_related("vrf"),
+            Prefix.objects.filter(tenant=tenant, id__in=ids),
             request.user, tenant, "prefix", "view",
-        )
-        out = {}
-        for prefix in prefixes:
-            child_ids = _viewable_child_ip_ids(request, prefix, tenant)
-            if not child_ids:
-                continue
-            rows = list(monitored(_scope_ip_keyed(
-                request, tenant,
-                CheckState.objects.filter(target_ip_id__in=child_ids),
-            ), tenant.id).values("status", "last_detail", "flapping_since"))
-            statuses = [r["status"] for r in rows]
-            if not statuses:
-                continue
-            out[str(prefix.id)] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len(set(child_ids)),
-                **_external_detail([r["last_detail"] for r in rows]),
-                **_flap_rollup(r["flapping_since"] for r in rows),
-            }
+        ).only("id", "cidr", "vrf")
+        out = _prefix_rollups(request, tenant, prefixes)
         return Response({"statuses": out})
 
     vm_param = _ids("vms")

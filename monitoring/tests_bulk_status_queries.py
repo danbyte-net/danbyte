@@ -29,7 +29,7 @@ from core.models import Organization, Tenant
 from .models import CheckState, CheckTemplate
 
 
-class BulkStatusQueryTests(APITestCase):
+class _BulkStatusBase(APITestCase):
     def setUp(self):
         org = Organization.objects.create(name="Acme", slug="acme")
         self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
@@ -96,6 +96,8 @@ class BulkStatusQueryTests(APITestCase):
         self.assertEqual(r.status_code, 200, r.content)
         return len(ctx.captured_queries), r.json()["statuses"]
 
+
+class BulkStatusQueryTests(_BulkStatusBase):
     def test_device_rollup_cost_is_flat(self):
         small, _ = self._post("devices", self.devices[:2])
         big, out = self._post("devices", self.devices + [self.bare])
@@ -135,3 +137,128 @@ class BulkStatusQueryTests(APITestCase):
         self.assertEqual(set(out), expected)
         _, vms = self._post("vms", self.vms)
         self.assertEqual(set(vms), {str(v.id) for v in self.vms if v.site_id == self.site_a.id})
+
+
+class PrefixBulkStatusTests(_BulkStatusBase):
+    """The prefix roll-up (#430): the list page posts every prefix id, and the
+    roll-up used to read every IP of the tenant into Python per prefix, behind
+    a 500-id cap that blanked the column on a bigger tenant."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import VRF
+
+        self.p1 = Prefix.objects.create(tenant=self.tenant, cidr="10.7.1.0/24")
+        self.p2 = Prefix.objects.create(tenant=self.tenant, cidr="10.7.2.0/24")
+        self.p9 = Prefix.objects.create(tenant=self.tenant, cidr="10.7.9.0/24")
+        self.empty = Prefix.objects.create(tenant=self.tenant, cidr="10.8.0.0/24")
+        self.v6 = Prefix.objects.create(tenant=self.tenant, cidr="2001:db8::/64")
+        # The same space in a VRF holds other addresses.
+        self.vrf = VRF.objects.create(tenant=self.tenant, name="red")
+        self.vrf_p1 = Prefix.objects.create(
+            tenant=self.tenant, cidr="10.7.1.0/24", vrf=self.vrf
+        )
+        vrf_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.7.1.1", vrf=self.vrf, site=self.site_a,
+            prefix=self.vrf_p1,
+        )
+        self._state(vrf_ip, self.ping, "down")
+        v6_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="2001:db8::5", site=self.site_a, prefix=self.v6,
+        )
+        self._state(v6_ip, self.ping, "up")
+        # Many more prefixes to grow the request with.
+        self.more = [
+            Prefix.objects.create(tenant=self.tenant, cidr=f"10.7.{i}.0/28")
+            for i in range(10, 40)
+        ]
+
+    def _all(self):
+        return [self.prefix, self.p1, self.p2, self.p9, self.empty, self.v6,
+                self.vrf_p1, *self.more]
+
+    def test_prefix_rollup_cost_is_flat(self):
+        small, _ = self._post("prefixes", [self.prefix, self.p1])
+        big, out = self._post("prefixes", self._all())
+        self.assertEqual(small, big, "more prefixes must not cost more queries")
+        whole = out[str(self.prefix.id)]
+        self.assertEqual(whole["status"], "down")
+        self.assertEqual(whole["counts"], {"up": 36, "down": 12})
+        # Only the addresses with a check count: 10.7.9.1 has none.
+        self.assertEqual(whole["monitored_ips"], 36)
+        self.assertEqual(out[str(self.p1.id)]["counts"], {"up": 24})
+        self.assertEqual(out[str(self.p1.id)]["monitored_ips"], 12)
+        self.assertEqual(out[str(self.p2.id)]["status"], "down")
+        self.assertEqual(out[str(self.v6.id)]["counts"], {"up": 1})
+        for bare in (self.p9, self.empty, *self.more):
+            self.assertNotIn(str(bare.id), out)
+
+    def test_vrf_keeps_its_own_addresses(self):
+        _, out = self._post("prefixes", [self.p1, self.vrf_p1])
+        self.assertEqual(out[str(self.vrf_p1.id)]["counts"], {"down": 1})
+        self.assertEqual(out[str(self.vrf_p1.id)]["monitored_ips"], 1)
+        self.assertEqual(out[str(self.p1.id)]["counts"], {"up": 24})
+
+    def test_matches_the_prefix_page(self):
+        _, out = self._post("prefixes", self._all())
+        for p in self._all():
+            page = self.client.get(f"/api/monitoring/prefixes/{p.id}/checks/").json()
+            row = out.get(str(p.id))
+            # The worst status and the monitored addresses agree: the list
+            # counts what the page counts as monitored, not every child.
+            self.assertEqual(row["status"] if row else None, page["rollup"]["status"], p.cidr)
+            if row:
+                self.assertEqual(row["monitored_ips"], page["rollup"]["monitored_ips"], p.cidr)
+
+    def test_excluded_address_is_left_out(self):
+        ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.7.2.1", vrf=None)
+        IPAddress.objects.filter(pk=ip.pk).update(monitoring_excluded=True)
+        _, out = self._post("prefixes", [self.p2])
+        self.assertEqual(out[str(self.p2.id)]["counts"], {"down": 11})
+
+    def test_address_stored_with_a_mask_still_counts(self):
+        # A row from before the host-only field reads back bare; containment
+        # must agree with it.
+        from .views import _child_ip_ids
+
+        ip = IPAddress.objects.get(tenant=self.tenant, ip_address="10.7.1.1", vrf=None)
+        with connection.cursor() as c:
+            c.execute(
+                "UPDATE api_ipaddress SET ip_address = '10.7.1.1/16' WHERE id = %s", [ip.pk]
+            )
+        _, out = self._post("prefixes", [self.p1])
+        self.assertEqual(out[str(self.p1.id)]["monitored_ips"], 12)
+        self.assertIn(ip.pk, _child_ip_ids(self.p1, self.tenant))
+
+    def test_site_scoped_member_rolls_up_only_their_addresses(self):
+        user = User.objects.create_user("member-p", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        prefixes = ObjectPermission.objects.create(
+            name="prefixes", object_types=["prefix"], actions=["view"],
+        )
+        ips = ObjectPermission.objects.create(
+            name="site-a-ips", object_types=["ipaddress"], actions=["view"],
+        )
+        for perm in (prefixes, ips):
+            perm.users.add(user)
+            perm.tenants.add(self.tenant)
+        ips.sites.add(self.site_a)
+        self._login(user)
+        small, _ = self._post("prefixes", [self.prefix])
+        big, out = self._post("prefixes", self._all())
+        self.assertEqual(small, big)
+        whole = out[str(self.prefix.id)]
+        self.assertEqual(whole["counts"], {"up": 18, "down": 6})
+        self.assertEqual(whole["monitored_ips"], 18)  # 10.7.9.1 has no check
+
+    def test_a_hidden_prefix_rolls_up_nothing(self):
+        user = User.objects.create_user("member-q", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="ips", object_types=["ipaddress"], actions=["view"],
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self._login(user)
+        _, out = self._post("prefixes", self._all())
+        self.assertEqual(out, {})

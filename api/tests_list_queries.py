@@ -418,6 +418,7 @@ class VirtualMachineListTests(_Base):
             Cluster,
             ClusterType,
             Region,
+            Status,
             VirtualMachineGroup,
         )
 
@@ -427,8 +428,14 @@ class VirtualMachineListTests(_Base):
         ctype = ClusterType.objects.create(
             tenant=self.tenant, name="Cloud Director", slug="cd"
         )
+        # The nested cluster renders its status (#427): every cluster on the
+        # page carries one, and a second cluster proves it is not cached.
+        up = Status.objects.create(tenant=self.tenant, name="Up", slug="up")
         cluster = Cluster.objects.create(
-            tenant=self.tenant, name="VDC", type=ctype
+            tenant=self.tenant, name="VDC", type=ctype, status=up
+        )
+        other = Cluster.objects.create(
+            tenant=self.tenant, name="VDC-2", type=ctype, status=up
         )
         groups = [
             VirtualMachineGroup.objects.create(
@@ -439,7 +446,8 @@ class VirtualMachineListTests(_Base):
         ]
         for i in range(20):
             VirtualMachine.objects.create(
-                tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
+                tenant=self.tenant, name=f"vm-{i:02d}",
+                cluster=cluster if i < 15 else other,
                 group=groups[i % 5], site=site if i % 2 else None,
             )
 
@@ -453,6 +461,9 @@ class VirtualMachineListTests(_Base):
         self.assertEqual(rows["vm-07"]["group"]["name"], "vapp-2")
         self.assertEqual(rows["vm-07"]["site"]["region"]["name"], "Nordics")
         self.assertIsNone(rows["vm-08"]["site"])
+        self.assertEqual(rows["vm-03"]["cluster"]["status"]["name"], "Up")
+        self.assertEqual(rows["vm-17"]["cluster"]["name"], "VDC-2")
+        self.assertEqual(rows["vm-17"]["cluster"]["status"]["name"], "Up")
 
 
 class DeviceListTests(_Base):
@@ -769,3 +780,72 @@ class MacListTests(_Base):
         self.assertEqual(few, many, "the Location column must not cost a query per row (#344)")
         self.assertEqual(len(body["results"]), 30)
         self.assertTrue(all(r["location"]["device"]["name"] == "sw1" for r in body["results"]))
+
+
+class DeviceRackListTests(_Base):
+    """The elevations wall reads the devices of every rack it draws in one
+    request: ``?rack=`` takes comma-separated ids (#431)."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Rack
+
+        self.hq = Site.objects.create(tenant=self.tenant, name="HQ")
+        self.branch = Site.objects.create(tenant=self.tenant, name="Branch")
+        self.racks = []
+        for i in range(6):
+            site = self.hq if i % 2 == 0 else self.branch
+            r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
+            self.racks.append(r)
+            for k in range(3):
+                Device.objects.create(
+                    tenant=self.tenant, name=f"d-{i}-{k}", site=site, rack=r, position=k + 1
+                )
+        Device.objects.create(tenant=self.tenant, name="loose", site=self.hq)
+        org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=org, name="Other", slug="other")
+        far = Site.objects.create(tenant=other, name="Far")
+        self.foreign = Rack.objects.create(tenant=other, site=far, name="theirs")
+        Device.objects.create(tenant=other, name="their-dev", site=far, rack=self.foreign)
+
+    def _url(self, racks):
+        return "/api/devices/?rack=" + ",".join(str(r.id) for r in racks)
+
+    def test_one_request_for_many_racks_costs_what_one_rack_costs(self):
+        one, body_one = self._queries(self._url(self.racks[:1]))
+        many, body = self._queries(self._url(self.racks))
+        self.assertEqual(one, many, "more racks must not cost more queries")
+        self.assertEqual({r["name"] for r in body_one["results"]}, {"d-0-0", "d-0-1", "d-0-2"})
+        self.assertEqual(len(body["results"]), 18)
+        self.assertEqual(
+            {r["rack"]["id"] for r in body["results"]}, {str(r.id) for r in self.racks}
+        )
+
+    def test_another_tenants_rack_lists_nothing(self):
+        _, body = self._queries(self._url([self.racks[0], self.foreign]))
+        names = {r["name"] for r in body["results"]}
+        self.assertEqual(names, {"d-0-0", "d-0-1", "d-0-2"})
+
+    def test_a_bad_id_is_a_400(self):
+        r = self.client.get("/api/devices/?rack=nope")
+        self.assertEqual(r.status_code, 400)
+
+    def test_a_site_scoped_reader_sees_only_their_site(self):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        user = User.objects.create_user("scoped", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        view = ObjectPermission.objects.create(
+            name="see-hq", object_types=["device", "rack"], actions=["view"]
+        )
+        view.users.add(user)
+        view.tenants.add(self.tenant)
+        view.sites.set([self.hq])
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        _, body = self._queries(self._url(self.racks))
+        self.assertEqual(
+            {r["rack"]["name"] for r in body["results"]}, {"r0", "r2", "r4"}
+        )

@@ -471,3 +471,27 @@ describe("the ports badge", () => {
     ).not.toHaveLength(0)
   })
 })
+
+describe("a wall-fed elevation", () => {
+  it("draws the devices its caller cached without asking again (#431)", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0 } },
+    })
+    qc.setQueryData(["rack-devices", RACK.id], page([SRV, BOX, FAN]))
+    render(
+      <QueryClientProvider client={qc}>
+        <RackElevation
+          rack={RACK}
+          face="front"
+          mode="names"
+          showHeader={false}
+          prefetched
+        />
+      </QueryClientProvider>
+    )
+    expect(await found('a[href="/devices/d1"]')).not.toBeNull()
+    expect(apiMock.mock.calls.map(([p]) => p)).not.toContain(
+      "/api/devices/?rack=r2"
+    )
+  })
+})

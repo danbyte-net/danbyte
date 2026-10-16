@@ -486,7 +486,9 @@ floor, not a guarantee.
 
 Racks can carry a **location** (building / floor / room within their
 site) - the Locations page's **Rack elevations** button then shows exactly
-the racks in that room, and `/api/racks/?location=` filters likewise. A
+the racks in that room, and `/api/racks/?location=` filters likewise. The
+wall reads the devices of all its racks in one request:
+`/api/devices/?rack=` takes one rack id or several, comma-separated. A
 location can also be drawn as a [floor plan](../features/floor-plans.md),
 with tiles linked back to its racks.
 

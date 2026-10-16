@@ -7,7 +7,6 @@ import { useMemo, useState } from "react"
 import {
   api,
   type BulkStatusEntry,
-  type BulkStatusResponse,
   type Paginated,
   type Prefix,
 } from "@/lib/api"
@@ -27,6 +26,7 @@ import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
+import { fetchPrefixStatuses } from "@/components/monitoring/bulk-status"
 import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/prefixes/")({
@@ -79,11 +79,8 @@ function PrefixesPage() {
     queryKey: ["prefix-mon-status", prefixIds],
     // POST - a page of UUIDs makes a URL longer than proxy request-line
     // limits (gunicorn 400s at ~110 ids), which blanked the whole column.
-    queryFn: () =>
-      api<BulkStatusResponse>("/api/monitoring/status/", {
-        method: "POST",
-        body: JSON.stringify({ prefixes: prefixIds }),
-      }),
+    // Batched to the server's bound (#430).
+    queryFn: () => fetchPrefixStatuses(prefixIds),
     enabled: prefixIds.length > 0,
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON

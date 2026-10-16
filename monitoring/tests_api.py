@@ -289,9 +289,16 @@ class BulkStatusPostTests(MonitoringApiTests):
         self.assertEqual(r.status_code, 200, r.content)
 
     def test_post_still_bounded(self):
+        # The roll-up is set-based, so the bound is the SLA endpoint's 5,000
+        # rather than the old 500 (#430).
         import uuid
 
-        ids = [str(uuid.uuid4()) for _ in range(501)]
+        ids = [str(uuid.uuid4()) for _ in range(600)]
+        r = self.client.post(
+            "/api/monitoring/status/", {"prefixes": ids}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        ids = [str(uuid.uuid4()) for _ in range(5001)]
         r = self.client.post(
             "/api/monitoring/status/", {"prefixes": ids}, format="json"
         )

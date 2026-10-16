@@ -4236,7 +4236,7 @@ class DeviceViewSet(
             self.queryset = self.palette_queryset
         qs = super().get_queryset()
         if self.request:
-            from .topology_views import _uuid_param
+            from .topology_views import _uuid_list_param, _uuid_param
 
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -4255,13 +4255,18 @@ class DeviceViewSet(
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)
             for key, field in (("site", "site_id"), ("device_type", "device_type_id"),
-                               ("status", "status"), ("rack", "rack_id"),
+                               ("status", "status"),
                                ("role", "role_id"), ("platform", "platform_id"),
                                ("location", "location_id"),
                                ("manufacturer", "device_type__manufacturer_id")):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
+            # ?rack=<id>, or comma-separated ids: the elevations wall reads
+            # every rack's devices in one request, not one per rack (#431).
+            racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
+            if racks:
+                qs = qs.filter(rack_id__in=racks)
             for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
                 v = _uuid_param(self.request.query_params, key)
                 if v:
@@ -6144,7 +6149,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             .select_related("cluster", "device", "site", "site__region", "primary_ip",
                             # Serialised inline; a 2,000-row list would
                             # otherwise fire one query per VM for it.
-                            "group", "platform", "platform__eol_mapping")
+                            "group", "platform", "platform__eol_mapping",
+                            # The nested cluster renders its status (#427).
+                            "cluster__status")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
             .prefetch_related(TAGS, "disks")

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type { AvailabilityFrame, SlaStatusResponse } from "@/lib/api"
+import { batches } from "@/lib/batches"
+import { STATUS_BATCH } from "@/components/monitoring/bulk-status"
 import {
   Select,
   SelectContent,
@@ -59,11 +61,21 @@ export function useSlaStatus(
   }, [picked])
   const q = useQuery({
     queryKey: ["sla-status", kind, ids, picked],
-    queryFn: () =>
-      api<SlaStatusResponse>("/api/monitoring/sla-status/", {
-        method: "POST",
-        body: JSON.stringify({ kind, ids, frame: picked }),
-      }),
+    // Batched to the server's bound (#430): a list over it got a 400 and
+    // an empty column.
+    queryFn: async () => {
+      const answers = await Promise.all(
+        batches(ids, STATUS_BATCH).map((part) =>
+          api<SlaStatusResponse>("/api/monitoring/sla-status/", {
+            method: "POST",
+            body: JSON.stringify({ kind, ids: part, frame: picked }),
+          })
+        )
+      )
+      const results: SlaStatusResponse["results"] = {}
+      for (const a of answers) Object.assign(results, a.results)
+      return { frame: answers[0].frame, results }
+    },
     enabled: ids.length > 0,
     staleTime: 60_000,
   })

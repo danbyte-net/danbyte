@@ -588,6 +588,11 @@ showing the row's worst-status badge with a tooltip breakdown (a device rolls
 up across its assigned IPs), so you can scan health across many subnets or
 devices at a glance.
 
+The column is filled by `POST /api/monitoring/status/` with the row ids
+(`prefixes`, `devices`, `vms` or `ips`). One call takes up to 5,000 prefix
+ids; the Prefixes list sends longer lists in batches, as it does for the
+SLA columns' `POST /api/monitoring/sla-status/`.
+
 ### Uptime / SLA {#uptime-sla}
 
 The IP Monitoring tab includes an **Uptime (SLA)** card with a window selector
