@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { SortHeader } from "@/components/data-table"
-import { TagList } from "@/components/cells/tag-list"
+import { tagsColumn } from "@/components/cells/tag-list"
 import { LearnedAtCell } from "@/components/learned-macs-cell"
 import type { MacEntry, Tag } from "@/lib/api"
 
@@ -206,16 +206,9 @@ export function buildMacColumns<T extends MacEntry>({
         },
       },
     }),
-    tags: () => ({
-      id: "tags",
-      header: "Tags",
-      cell: ({ row }) => {
-        const tags = unionTags(row.original)
-        if (tags.length === 0)
-          return <span className="text-muted-foreground">-</span>
-        return <TagList tags={tags} inline />
-      },
-    }),
+    // The shared tags column carries the tags facet, so `?tag=<slug>` and
+    // the chips filter this list like every other.
+    tags: () => tagsColumn<T>({ getTags: unionTags }),
     description: () => ({
       id: "description",
       header: "Description",
