@@ -10845,7 +10845,8 @@ export interface FloorPlanDrawingLayer {
   on: boolean
   frozen: boolean
   entity_count: number
-  kinds: { geometry: number; hatch: number; dimension: number; text: number }
+  /** Entity counts per kind; kinds with no entities are left out. */
+  kinds: { geometry?: number; hatch?: number; dimension?: number; text?: number }
 }
 
 export interface FloorPlanDrawingPlacement {

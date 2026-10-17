@@ -182,7 +182,8 @@ export function drawingToCanvas(
 /** A layer that holds only hatches, dimensions or text - annotation, not
  * the building. */
 export function isAnnotationLayer(l: FloorPlanDrawingLayer): boolean {
-  return l.kinds.geometry === 0
+  // The server leaves zero counts out of `kinds`.
+  return !l.kinds.geometry
 }
 
 export type LayerPreset = "all" | "architecture"

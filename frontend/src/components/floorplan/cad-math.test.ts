@@ -132,14 +132,15 @@ describe("placement", () => {
 
 const layer = (
   name: string,
-  kinds: Partial<FloorPlanDrawingLayer["kinds"]>
+  kinds: FloorPlanDrawingLayer["kinds"]
 ): FloorPlanDrawingLayer => ({
   name,
   color: "#ffffff",
   on: true,
   frozen: false,
   entity_count: 1,
-  kinds: { geometry: 0, hatch: 0, dimension: 0, text: 0, ...kinds },
+  // The server's shape: kinds with no entities are left out.
+  kinds,
 })
 
 describe("layers", () => {
