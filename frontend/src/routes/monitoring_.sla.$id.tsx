@@ -331,7 +331,7 @@ function Body({ a }: { a: SlaAgreement }) {
                       <FileDown className="h-3.5 w-3.5" /> Metrics
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="w-max">
                     {(["csv", "json"] as const).map((f) => (
                       <DropdownMenuItem key={f} asChild>
                         <a href={`${base}/metrics/?file=${f}`} download>

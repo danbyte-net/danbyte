@@ -61,7 +61,7 @@ export function SlaList() {
                 <FileDown className="h-3.5 w-3.5" /> Overview
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-max">
               {(
                 [
                   ["current", "This period"],
