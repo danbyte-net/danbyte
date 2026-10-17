@@ -1,21 +1,22 @@
 {
   "leaves": {
     "agents": "0002_mask_call_arguments",
-    "api": "0199_ip_tenant_addr_idx",
+    "api": "0208_circuittermination_vm_interface",
     "assistant": "0001_initial",
-    "audit": "0011_alter_changelogentry_via",
-    "auth_api": "0027_userprofile_totp_last_used_step",
+    "audit": "0013_backfill_site_scope_0_18",
+    "auth_api": "0031_administrator_money_verbs",
     "backups": "0002_move_docker_local_target",
-    "compliance": "0002_compliancerule_remediation",
-    "core": "0059_upgrade_db_defaults",
+    "compliance": "0004_compliancerule_coverage",
+    "core": "0061_tenantsettings_coverage_warning_days",
     "customization": "0007_repair_blank_json_fields",
-    "integrations": "0045_upgrade_db_defaults",
-    "monitoring": "0110_restore_opening_transitions",
-    "planning": "0008_task_due_time_task_start_time",
+    "integrations": "0046_integrationsettings_oxidized_enabled",
+    "monitoring": "0114_sla_templates",
+    "oxidized": "0006_node_memory_stays_incomplete",
+    "planning": "0009_task_overdue_dismissal",
     "plugins": "0001_initial",
     "routing": "0014_upgrade_db_defaults",
     "scripting": "0001_initial",
     "zabbix": "0017_host_status"
   },
-  "release": "0.17.2"
+  "release": "0.18.0"
 }
