@@ -155,6 +155,7 @@ const ROWS: Row[] = [
   ["floor-tile-types", "Floor tile types", "DCIM", "/api/floor-tile-types/"],
   ["embedded-devices", "Devices (embedded)", "DCIM", "/api/devices/", sub],
   ["embedded-device-types", "Device types (embedded)", "DCIM", "/api/device-types/", sub],
+  ["embedded-support-contracts", "Support contracts (embedded)", "DCIM", "/api/support-contracts/", sub],
   ["embedded-cables", "Cables (embedded)", "DCIM", "/api/cables/", sub],
   ["rack-type-racks", "Rack type · Racks", "DCIM", "/api/racks/", sub],
   ["device-interfaces", "Device · Interfaces", "DCIM", "/api/interfaces/", sub],

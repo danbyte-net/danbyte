@@ -21,6 +21,10 @@ import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialo
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { EmbeddedDeviceTypeTable } from "@/components/embedded-device-type-table"
+import {
+  EmbeddedSupportContractTable,
+  useManufacturerContracts,
+} from "@/components/embedded-support-contract-table"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
 
@@ -48,10 +52,17 @@ function ManufacturerDetail() {
 
 function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "device-types" | "module-types" | "journal" | "history"
+    | "overview"
+    | "device-types"
+    | "module-types"
+    | "contracts"
+    | "journal"
+    | "history"
   >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
+  const canSeeContracts = canDo("supportcontract", "view")
+  const contracts = useManufacturerContracts(m.id, canSeeContracts)
   const [deleting, setDeleting] = useState<Manufacturer | null>(null)
   const goBack = useCallback(() => nav({ to: "/manufacturers" }), [nav])
 
@@ -95,6 +106,15 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
           label: "Module types",
           count: m.module_type_count,
         },
+        ...(canSeeContracts
+          ? [
+              {
+                value: "contracts",
+                label: "Contracts",
+                count: contracts.data?.count,
+              },
+            ]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -113,6 +133,11 @@ function Body({ manufacturer: m }: { manufacturer: Manufacturer }) {
       <DetailTab value="module-types">
         <EmbeddedModuleTypeTable manufacturerId={m.id} />
       </DetailTab>
+      {canSeeContracts && (
+        <DetailTab value="contracts">
+          <EmbeddedSupportContractTable manufacturerId={m.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.manufacturer" objectId={m.id} />
       </DetailTab>

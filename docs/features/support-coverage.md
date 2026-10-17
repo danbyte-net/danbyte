@@ -77,6 +77,8 @@ under **Settings → Tenant policy → Support coverage** (1-730 days).
   best first. Contracts you may not view are counted, not named.
 - **Devices list** - a *Coverage* column with a facet. `/devices?coverage=expired`
   opens the list filtered.
+- **Manufacturer page** - a *Contracts* tab lists the contracts with that
+  manufacturer.
 - **Dashboard** - the *Support coverage* widget: devices per status, narrowed
   by site and manufacturer, and the contracts that end soonest. A count opens
   the devices list filtered to it.
