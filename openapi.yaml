@@ -104467,6 +104467,9 @@ components:
         device_count:
           type: integer
           readOnly: true
+        vm_count:
+          type: integer
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -104488,6 +104491,7 @@ components:
       - numid
       - tags
       - updated_at
+      - vm_count
     PlatformGroup:
       type: object
       description: |-

@@ -12,6 +12,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
+import { EmbeddedVmTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { LifecycleBadge } from "@/components/cells/lifecycle-cell"
@@ -44,7 +45,7 @@ function PlatformDetail() {
 
 function Body({ platform: p }: { platform: Platform }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "journal" | "history"
+    "overview" | "devices" | "vms" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Platform | null>(null)
@@ -61,6 +62,10 @@ function Body({ platform: p }: { platform: Platform }) {
         ]
       : []),
     { label: "Devices", value: <span className="num">{p.device_count}</span> },
+    {
+      label: "Virtual machines",
+      value: <span className="num">{p.vm_count}</span>,
+    },
   ]
 
   return (
@@ -116,6 +121,7 @@ function Body({ platform: p }: { platform: Platform }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: p.device_count },
+        { value: "vms", label: "Virtual machines", count: p.vm_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -131,6 +137,12 @@ function Body({ platform: p }: { platform: Platform }) {
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable filter={{ platform: p.id }} />
+      </DetailTab>
+      <DetailTab value="vms">
+        <EmbeddedVmTable
+          filter={{ platform: p.id }}
+          emptyText="No virtual machines run this platform."
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.platform" objectId={p.id} />

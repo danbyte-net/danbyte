@@ -7189,6 +7189,9 @@ class PlatformViewSet(DeviceRoleViewSet):
             from compliance.eol import apply_status_filter
 
             qs = apply_status_filter(qs, self.request, "eol_mapping__")
+        if getattr(self, "action", None) in ("list", "retrieve"):
+            # One query for the list's VM counts, not one per platform.
+            qs = qs.annotate(vm_count=Count("virtual_machines", distinct=True))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):

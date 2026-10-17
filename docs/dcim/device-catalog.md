@@ -830,9 +830,12 @@ Roles also accept [custom fields](../features/tags-and-custom-fields.md) (target
 
 ## Platforms
 
-A **platform** is the operating system / NOS a device runs - IOS-XE, JunOS,
-PAN-OS, Cumulus. Platforms are handy for filtering and for configuration
-rendering.
+A **platform** is the operating system / NOS a device or virtual machine
+runs - IOS-XE, JunOS, PAN-OS, Cumulus. Platforms are handy for filtering and
+for configuration rendering.
+
+A platform's page has a **Devices** tab and a **Virtual machines** tab, each
+listing what runs it; the API gives both counts (`device_count`, `vm_count`).
 
 ### Platform groups and the effective platform
 

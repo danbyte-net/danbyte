@@ -1861,6 +1861,8 @@ export interface Platform extends LifecycleInfo {
   /** End-of-life data (#8); null while the feature is off. */
   eol?: EolInfo | null
   device_count: number
+  /** Virtual machines running this platform. */
+  vm_count: number
   created_at: string
   updated_at: string
 }

@@ -7023,6 +7023,13 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def get_device_count(self, obj) -> int:
         return obj.devices.count()
 
+    vm_count = serializers.SerializerMethodField()
+
+    def get_vm_count(self, obj) -> int:
+        # The viewset annotates it; a bare instance (create/update) counts.
+        n = getattr(obj, "vm_count", None)
+        return n if n is not None else obj.virtual_machines.count()
+
     lifecycle_state = serializers.ReadOnlyField()
     eol = serializers.SerializerMethodField()
 
@@ -7036,8 +7043,8 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "eol", "device_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "device_count", "lifecycle_state", "eol",
+                  "eol", "device_count", "vm_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "device_count", "vm_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 
 
