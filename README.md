@@ -161,6 +161,12 @@ release settles. Feedback and issues are welcome.
 > Dev builds are made to let others see new features, and help testing / finding bugs. 
 > 
 
+## Contributing
+
+Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md)
+for the setup, the branch to target and what a review checks. Report security
+problems privately as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 Danbyte is licensed under the **Apache License, Version 2.0** - see

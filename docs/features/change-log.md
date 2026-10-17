@@ -19,6 +19,13 @@ you see the object's name with its raw UUID kept beside it, muted, so nothing is
 lost. Names that can't be resolved (the object was later deleted) fall back to
 the UUID.
 
+A related object you can't view - a device at another site that a shared
+address was bound to - shows as **hidden**: no name and no UUID, in the
+diff, the snapshots and the API. In the API its value is `null`, with
+`old_hidden` / `new_hidden` set on the diff and the snapshot keys listed in
+`hidden_related`. For a user with limited access, a deleted related object
+also shows as hidden, since its scope can no longer be checked.
+
 !!! note "Change log vs. journal"
     The change log is the *automatic* record of what changed. A
     [journal](journals.md) is where people write *their own* notes about an
@@ -54,7 +61,8 @@ The change log covers the things people edit:
 - **Organization** - tenants and tags.
 
 Bulk edits (changing many rows at once) are recorded too - one entry per affected
-object, each with its own diff.
+object, each with its own diff. A relation changed in bulk (a status, a VRF, a
+peer group) shows by name, as a single edit does.
 
 A saved topology view's layout can run to megabytes, so its entries summarise
 it - the top-level parts that changed and the size before and after - rather

@@ -263,7 +263,78 @@ describe("mergeDeleteAnswers", () => {
       skipped: [{ id: "d", name: "d", reason: "In use: 1 circuit." }],
       impact: [{ label: "cables", count: 3 }],
       released: [],
+      notes: [],
       dry_run: true,
     })
+  })
+
+  it("keeps every batch's notes", () => {
+    const note = (id: string) => ({
+      id,
+      name: id,
+      label: "Cabled",
+      detail: "pdu",
+    })
+    const merged = mergeDeleteAnswers([
+      answer({ notes: [note("a")] }),
+      answer({}),
+      answer({ notes: [note("c")] }),
+    ])
+    expect(merged.notes).toEqual([note("a"), note("c")])
+  })
+})
+
+// Power panels and feeds (#313): rows that go but are worth naming, and a
+// choice the delete can take - a panel's feeds along with it.
+describe("SafeBulkDeleteBar notes and option", () => {
+  beforeEach(() => {
+    apiMock.mockReset()
+    toastMock.success.mockReset()
+    toastMock.error.mockReset()
+  })
+
+  const option = { key: "with_feeds", label: "Delete their feeds too" }
+  const bodies = () =>
+    apiMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)))
+
+  it("names the noted rows under their label", async () => {
+    apiMock.mockResolvedValueOnce(
+      answer({
+        notes: [
+          { id: "a", name: "Feed A", label: "Cabled", detail: "pdu-1 PSU1" },
+        ],
+      })
+    )
+    renderBar()
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    expect(await screen.findByText("Cabled")).toBeTruthy()
+    expect(screen.getByText("Feed A")).toBeTruthy()
+    expect(screen.getByText("pdu-1 PSU1")).toBeTruthy()
+  })
+
+  it("offers the option only once a row is kept", async () => {
+    apiMock.mockResolvedValueOnce(answer({}))
+    renderBar({ option })
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    await screen.findByRole("button", { name: "Delete 1" })
+    expect(screen.queryByText("Delete their feeds too")).toBeNull()
+  })
+
+  it("asks again with the option ticked and deletes with it", async () => {
+    const kept = { id: "b", name: "MDB-1", reason: "In use: 2 power feeds." }
+    apiMock
+      .mockResolvedValueOnce(answer({ skipped: [kept] }))
+      .mockResolvedValueOnce(answer({ deleted: 2, deleted_ids: ["a", "b"] }))
+      .mockResolvedValueOnce(answer({ deleted: 2, dry_run: false }))
+    const onCleared = renderBar({ option })
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    fireEvent.click(await screen.findByRole("checkbox", { name: option.label }))
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 2" }))
+    await vi.waitFor(() => expect(onCleared).toHaveBeenCalled())
+    expect(bodies()).toEqual([
+      { ids: ["a", "b"], dry_run: true },
+      { ids: ["a", "b"], dry_run: true, with_feeds: true },
+      { ids: ["a", "b"], with_feeds: true },
+    ])
   })
 })

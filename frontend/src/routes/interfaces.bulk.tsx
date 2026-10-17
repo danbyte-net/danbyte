@@ -9,9 +9,9 @@ import { EditPageShell } from "@/components/edit-page-shell"
 import {
   Field,
   FormCheckbox,
-  FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { DevicePicker } from "@/components/device-picker"
@@ -164,7 +164,7 @@ function BulkInterfacesPage() {
             placeholder="1500"
           />
         </div>
-        <FormSelect
+        <FormCombobox
           label="VLAN"
           value={vlanId}
           onChange={setVlanId}
@@ -173,6 +173,8 @@ function BulkInterfacesPage() {
             value: v.id,
             label: `${v.vlan_id} · ${v.name}`,
           }))}
+          searchPlaceholder="Search VLANs…"
+          emptyText="No VLANs."
         />
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
         <Field label="Tags">

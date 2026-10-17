@@ -16,7 +16,7 @@ import { numidColumn } from "@/components/cells/numid"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -24,14 +24,15 @@ import { IpRangeDeleteDialog } from "@/components/ip-range-delete-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/ip-ranges/")({ component: IpRangesPage })
 
 function IpRangesPage() {
-  const [q, setQ] = useState("")
-  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set())
-  const [vrfFilter, setVrfFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [statusFilterRaw, setStatusFilter] = useUrlSet("status")
+  const [vrfFilterRaw, setVrfFilter] = useUrlSet("vrf")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<IPRange | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("iprange", "add")
@@ -47,22 +48,6 @@ function IpRangesPage() {
   })
 
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((r) => {
-      if (
-        statusFilter.size > 0 &&
-        !statusFilter.has(r.status?.id ?? "__none__")
-      )
-        return false
-      if (vrfFilter.size > 0) {
-        const key = r.vrf?.id ?? "__global__"
-        if (!vrfFilter.has(key)) return false
-      }
-      if (tagFilter.size > 0 && !r.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      return true
-    })
-  }, [allRows, statusFilter, vrfFilter, tagFilter])
 
   const facets = useMemo(() => {
     const status: Record<
@@ -72,7 +57,13 @@ function IpRangesPage() {
     const vrfs: Record<string, { name: string; count: number }> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     for (const r of allRows) {
       const sk = r.status?.id ?? "__none__"
@@ -90,6 +81,7 @@ function IpRangesPage() {
       for (const t of r.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -121,9 +113,30 @@ function IpRangesPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const statusFilter = useKnown(statusFilterRaw, facets.status)
+  const vrfFilter = useKnown(vrfFilterRaw, facets.vrfs)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((r) => {
+      if (
+        statusFilter.size > 0 &&
+        !statusFilter.has(r.status?.id ?? "__none__")
+      )
+        return false
+      if (vrfFilter.size > 0) {
+        const key = r.vrf?.id ?? "__global__"
+        if (!vrfFilter.has(key)) return false
+      }
+      if (tagFilter.size > 0 && !r.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      return true
+    })
+  }, [allRows, statusFilter, vrfFilter, tagFilter])
 
   const handleDelete = useCallback((r: IPRange) => setDeleting(r), [])
   const columns = useMemo<ColumnDef<IPRange>[]>(
@@ -134,7 +147,7 @@ function IpRangesPage() {
         canDelete,
         humanIds,
         tagFilter,
-        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+        onToggleTag: (v) => setTagFilter((s) => toggled(s, v)),
       }),
     [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
@@ -149,19 +162,19 @@ function IpRangesPage() {
             label="Status"
             options={facets.status}
             selected={statusFilter}
-            onToggle={(v) => toggleInSet(statusFilter, v, setStatusFilter)}
+            onToggle={(v) => setStatusFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="VRF"
             options={facets.vrfs}
             selected={vrfFilter}
-            onToggle={(v) => toggleInSet(vrfFilter, v, setVrfFilter)}
+            onToggle={(v) => setVrfFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Tags"
             options={facets.tags}
             selected={tagFilter}
-            onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

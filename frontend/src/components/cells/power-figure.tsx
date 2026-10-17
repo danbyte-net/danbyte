@@ -3,6 +3,7 @@ import { dash } from "@/components/cells/dash"
 import {
   formatWatts,
   hasPowerData,
+  powerSupplyNote,
   rackPowerDemand,
   rackPowerRatio,
 } from "@/lib/rack-capacity"
@@ -12,12 +13,13 @@ import { cn } from "@/lib/utils"
 /**
  * A rack's power as one figure, the same everywhere it shows: **demand /
  * supply** ("1.2 kW / 3.6 kW"). Demand is the allocated draw where recorded,
- * else the nameplate sum, marked *nameplate*; supply is the rack's primary
- * feeds, else its PDUs' inlet rating, marked *PDU rating*, and a rack drawing
- * power with neither says *No feed*. Demand above supply turns the figure red.
+ * else the nameplate sum, marked *nameplate*; supply is the rack's power
+ * budget when set, marked *budget*, else its primary feeds, else its PDUs'
+ * inlet rating, marked *PDU rating*, and a rack drawing power with none of
+ * them says *No feed*. Demand above supply turns the figure red.
  *
- * `bar` puts the capacity bar in front, coloured by the shared 80 / 95 %
- * scale - for table cells and popovers. Nothing to say renders a dash.
+ * `bar` puts the capacity bar in front, coloured by the tenant's capacity
+ * levels - for table cells and popovers. Nothing to say renders a dash.
  */
 export function PowerFigure({
   power,
@@ -39,7 +41,7 @@ export function PowerFigure({
   const over = ratio != null && ratio > 1
   const note = [
     demand.nameplate && "nameplate",
-    power.supply === "pdu_rating" && "PDU rating",
+    powerSupplyNote(power),
     supply <= 0 && "No feed",
   ]
     .filter(Boolean)

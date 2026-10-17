@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DeployRunStatus } from "@/components/deploy-run-status"
 import { DeployRetryButton } from "@/components/deploy-retry-button"
@@ -118,12 +118,14 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
           <>
             <div className="flex items-end gap-2">
               <div className="w-72">
-                <FormSelect
+                <FormCombobox
                   label="Target"
                   value={targetId}
                   onChange={setTargetId}
                   options={options}
                   placeholder="Pick a target"
+                  searchPlaceholder="Search targets…"
+                  emptyText="No targets."
                 />
               </div>
               <Button

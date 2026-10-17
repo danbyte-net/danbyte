@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox"
+import { NoFieldControl } from "@/components/ui/field-control"
 import { InfoTip } from "@/components/ui/info-tip"
 import { cn } from "@/lib/utils"
 
@@ -34,12 +35,15 @@ export function FormCheckbox({
         className
       )}
     >
-      <Checkbox
-        checked={checked}
-        onCheckedChange={(v) => onChange(!!v)}
-        disabled={disabled}
-        className="mt-0.5"
-      />
+      {/* Named by this <label>; never by a Field it happens to sit in. */}
+      <NoFieldControl>
+        <Checkbox
+          checked={checked}
+          onCheckedChange={(v) => onChange(!!v)}
+          disabled={disabled}
+          className="mt-0.5"
+        />
+      </NoFieldControl>
       <span className="flex flex-col">
         <span className="inline-flex items-center gap-1">
           {label}

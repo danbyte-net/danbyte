@@ -190,6 +190,23 @@ describe("DrawingExportMenu", () => {
     ).toContain("A3 landscape")
   })
 
+  it("leaves the SVG out when asked, and posts more with the PDF", async () => {
+    answer(ok)
+    menu({ svg: false, pdfExtra: () => ({ legend: { items: [] } }) })
+    open()
+    await screen.findByRole("menuitem", { name: "PNG" })
+    expect(screen.queryByRole("menuitem", { name: "SVG" })).toBeNull()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "PDF…" }))
+    await screen.findByRole("dialog")
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+    await waitFor(() => expect(clicks).toHaveLength(1))
+    expect(posted[0].body).toEqual({
+      legend: { items: [] },
+      svg: SVG,
+      paper: { size: "a4", orientation: "portrait" },
+    })
+  })
+
   it("prints on the paper last chosen, in a tab opened by the click", async () => {
     localStorage.setItem(
       "cabinet:export",

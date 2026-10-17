@@ -1,8 +1,9 @@
 """Where archives live: a small registry of storage backends (#27).
 
 ``local`` writes into a directory; ``s3`` talks to any S3-compatible bucket
-through ``boto3`` when it is installed. Plugins may register more kinds the
-same way the secret store does.
+through ``boto3`` when it is installed; ``sftp`` uses any SSH server
+(``backups/sftp.py``). Plugins may register more kinds the same way the
+secret store does.
 """
 from __future__ import annotations
 
@@ -226,5 +227,34 @@ register_storage(
         {"name": "access_key", "label": "Access key", "type": "password", "secret": True},
         {"name": "secret_key", "label": "Secret key", "type": "password", "secret": True},
         {"name": "verify_tls", "label": "Verify TLS certificate", "type": "checkbox", "default": True},
+    ),
+)
+
+
+def _sftp(cfg, cred):
+    from .sftp import factory
+
+    return factory(cfg, cred)
+
+
+register_storage(
+    "sftp", "SCP / SFTP server", _sftp,
+    fields=(
+        {"name": "host", "label": "Host", "type": "text", "placeholder": "backup.example.com",
+         "info": "Follows the outbound connection rules. A private address must be allowed "
+                 "under Settings → Security → Outbound connections."},
+        {"name": "port", "label": "Port", "type": "number", "placeholder": "22"},
+        {"name": "username", "label": "Username", "type": "text"},
+        {"name": "path", "label": "Remote directory", "type": "text", "placeholder": "/srv/danbyte-backups",
+         "info": "Created when missing. A relative path starts in the user's home directory."},
+        {"name": "host_key_fingerprint", "label": "Host key fingerprint", "type": "text",
+         "placeholder": "SHA256:…", "mono": True,
+         "info": "Leave blank and run Test to read it from the server, or paste the output of "
+                 "ssh-keygen -lf for the server's Ed25519 key. A different key is refused."},
+        {"name": "password", "label": "Password", "type": "password", "secret": True},
+        {"name": "private_key", "label": "Private key", "type": "textarea", "secret": True,
+         "placeholder": "-----BEGIN OPENSSH PRIVATE KEY-----",
+         "info": "Password or private key; either is enough."},
+        {"name": "passphrase", "label": "Key passphrase", "type": "password", "secret": True},
     ),
 )

@@ -17,9 +17,16 @@ A power panel is a distribution board within a site.
 
 1. Open **Power → Power panels** in the sidebar and click **Add power panel**.
 2. Pick the **site** the panel lives in.
-3. Give it a **name** (must be unique within that site).
-4. Optionally add **comments**, tags, and any custom fields.
-5. Save.
+3. Optionally pick a **location** in that site - the building, floor or room
+   the panel is in. Only the site's locations are offered; changing the site
+   clears it.
+4. Give it a **name** (must be unique within that site).
+5. Optionally add **comments**, tags, and any custom fields.
+6. Save.
+
+The **Power panels** list has a **Location** column to sort and filter by. In
+the API a panel carries `location` (id and name) and takes `location_id`;
+`GET /api/power-panels/?location=<id>` lists a location's panels.
 
 ## Add a power feed
 
@@ -52,9 +59,10 @@ that object's detail page, the same way every other object in Danbyte works.
 
 A **power panel** page has:
 
-- **Overview** - its site, how many feeds draw from it, comments, and when it
-  was created and last changed.
-- **Feeds** - every feed on the panel, the same row the feeds list draws.
+- **Overview** - its site and location, how many feeds draw from it,
+  comments, and when it was created and last changed.
+- **Feeds** - every feed on the panel, the same row the feeds list draws;
+  tick feeds to edit or delete several at once.
 - **Journal** - your notes on this panel.
 - **Change log** - who changed which field, and when.
 
@@ -88,6 +96,46 @@ A **power feed** page has:
     If a panel still has feeds attached, Danbyte blocks the delete. Remove or
     reassign those feeds first.
 
+## Editing and deleting several at once
+
+Tick rows in **Power panels** or **Power feeds** - or on a panel's **Feeds**
+tab, or a rack's **Power feeds** tab - and a bar with **Edit** and **Delete**
+comes up.
+
+**Edit** sets the same value on every selected row; fields left on *Keep*
+are untouched, and tags are added or removed rather than replaced.
+
+| List | Bulk-editable fields |
+|---|---|
+| Power feeds | status, type, supply, phase, voltage, amperage, max utilization, power panel, rack, tags |
+| Power panels | site, location, tags |
+
+Each value is checked as the edit form checks it. One bad value, or a move
+that would give a panel two feeds of one name (or a site two panels of one
+name), refuses the whole edit and nothing is written. A panel's location must
+be in its site: a location outside a selected panel's site is refused, and
+moving panels that have a location to another site needs the location set
+or cleared in the same edit. Every changed row gets
+its own entry in the change log.
+
+**Delete** first shows what will happen: the rows that go, what goes with
+them, and the rows Danbyte keeps. Feeds cabled to a device are named with the
+power port at the other end, under **Cable removed** when the feed is the
+last port on its end of the cable - the cable goes too, with its other
+end - or **Cable kept** when other legs keep that end. A panel
+that still has feeds is kept, and **Delete their feeds too** deletes the
+panel together with its feeds - only when you may delete every one of those
+feeds. More than 1000 rows go 1000 at a time, under one confirmation (see
+[Large selections](table-preferences.md#large-selections)).
+
+The calls are `POST /api/power-feeds/bulk-update/` and
+`/api/power-panels/bulk-update/` (`{"ids": [...], "fields": {...}}`, tags as
+`add_tag_ids` / `remove_tag_ids`), and `bulk-delete/` on both
+(`{"ids": [...], "dry_run": true}` for the preview, `"with_feeds": true` on
+panels). They need the *change* and *delete* permission on the type, and
+reach only the rows your permissions and sites reach. See
+[Bulk calls](../reference/api.md#bulk-calls).
+
 ## Device power: ports & outlets
 
 Panels and feeds cover power *upstream of the rack*. At the device, two
@@ -110,12 +158,17 @@ A rack's power supply is its primary feeds. Where a rack has none, the
 **maximum draw** of its PDUs' inlets stands in, marked as a PDU rating: a
 PDU's inlets count as redundant feeds, and two or more PDUs as A and B sides
 of which the smaller one is the supply - see
-[Racks](../dcim/racks.md) for how a rack rolls power up.
+[Racks](../dcim/racks.md) for how a rack rolls power up. A rack's **Power
+budget (W)** replaces both when set: demand is then measured against what the
+rack may draw, marked *budget*, and the site's Capacity tab counts the racks
+on a budget.
 
 To see where power runs short, colour a floor plan's racks by **Power**
 ([Color by](floor-plans.md#color-by)): each rack's demand over its supply on
-the shared scale - green up to 80 %, amber above 80 %, red above 95 % - and
-grey with *No data* where a rack has no supply figure to measure against. The
+the shared scale - green up to the tenant's warning level, amber above it,
+red above its critical level (80 % and 95 % unless changed under **Settings →
+Tenant policy → Rack capacity**) - and grey with *No data* where a rack has
+no supply figure to measure against. The
 rack table under the plan sorts by the same share, and a site's
 [Capacity](../models/site.md#the-capacity-tab) tab adds the figures up per
 floor plan.

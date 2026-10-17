@@ -30,6 +30,7 @@ import { VmSnmpCard } from "@/components/vm-snmp-card"
 import { VmTopologyCard } from "@/components/vm-topology-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
+import { VmConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
@@ -146,7 +147,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
               )}
             </>
           }
-          tags={vm.tags.length > 0 && <TagList tags={vm.tags} />}
+          tags={
+            vm.tags.length > 0 && (
+              <TagList tags={vm.tags} listTo="/virtual-machines" />
+            )
+          }
           description={vm.description}
         />
       }
@@ -195,7 +200,10 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
       </DetailTab>
       <DetailTab value="config">
-        <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />
+        <div className="space-y-6">
+          <VmConfigBackups vmId={vm.id} />
+          <ConfigContextPanel endpoint="virtual-machines" id={vm.id} />
+        </div>
       </DetailTab>
       <DetailTab value="services">
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />
@@ -348,7 +356,20 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
     // The hypervisor's own grouping - a vApp, a pool, a folder. Only shown
     // when there is one; most estates do not group their VMs at all.
     ...(vm.group
-      ? [{ label: "Group", value: vm.group.name }]
+      ? [
+          {
+            label: "Group",
+            value: (
+              <Link
+                to="/vm-groups/$id"
+                params={{ id: vm.group.id }}
+                className="link"
+              >
+                {vm.group.name}
+              </Link>
+            ),
+          },
+        ]
       : []),
     {
       label: "Host device",

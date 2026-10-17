@@ -16,12 +16,12 @@ import { buildCustomFieldColumns } from "@/components/columns/custom-field-colum
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { CustomFieldDeleteDialog } from "@/components/custom-field-delete-dialog"
 import { useMe } from "@/lib/use-me"
 import { asArray } from "@/lib/utils"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/custom-fields/")({
   component: CustomFieldsPage,
@@ -32,9 +32,9 @@ function CustomFieldsPage() {
   const canAdd = canDo("customfield", "add")
   const canEdit = canDo("customfield", "change")
   const canDelete = canDo("customfield", "delete")
-  const [q, setQ] = useState("")
-  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
-  const [modelFilter, setModelFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [typeFilterRaw, setTypeFilter] = useUrlSet("type")
+  const [modelFilterRaw, setModelFilter] = useUrlSet("model")
   const [deleting, setDeleting] = useState<CustomField | null>(null)
 
   const query = useQuery({
@@ -45,18 +45,6 @@ function CustomFieldsPage() {
       ),
   })
   const allRows = query.data?.results ?? []
-
-  const rows = useMemo(() => {
-    return allRows.filter((f) => {
-      if (typeFilter.size > 0 && !typeFilter.has(f.type)) return false
-      if (
-        modelFilter.size > 0 &&
-        !asArray(f.applies_to).some((m) => modelFilter.has(m))
-      )
-        return false
-      return true
-    })
-  }, [allRows, typeFilter, modelFilter])
 
   const meta = useCustomizationMeta()
   const modelList = meta.data?.models ?? CUSTOMIZABLE_MODELS
@@ -84,6 +72,20 @@ function CustomFieldsPage() {
         })),
     }
   }, [allRows, modelList])
+  // A value no row carries (a stale link) is ignored.
+  const typeFilter = useKnown(typeFilterRaw, facets.type)
+  const modelFilter = useKnown(modelFilterRaw, facets.model)
+  const rows = useMemo(() => {
+    return allRows.filter((f) => {
+      if (typeFilter.size > 0 && !typeFilter.has(f.type)) return false
+      if (
+        modelFilter.size > 0 &&
+        !asArray(f.applies_to).some((m) => modelFilter.has(m))
+      )
+        return false
+      return true
+    })
+  }, [allRows, typeFilter, modelFilter])
 
   const handleDelete = useCallback((f: CustomField) => setDeleting(f), [])
   const columns = useMemo<ColumnDef<CustomField>[]>(
@@ -97,13 +99,13 @@ function CustomFieldsPage() {
         label="Type"
         options={facets.type}
         selected={typeFilter}
-        onToggle={(v) => toggleInSet(typeFilter, v, setTypeFilter)}
+        onToggle={(v) => setTypeFilter((s) => toggled(s, v))}
       />
       <FacetGroup
         label="Applies to"
         options={facets.model}
         selected={modelFilter}
-        onToggle={(v) => toggleInSet(modelFilter, v, setModelFilter)}
+        onToggle={(v) => setModelFilter((s) => toggled(s, v))}
       />
     </FilterRail>
   )

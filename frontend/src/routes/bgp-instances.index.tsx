@@ -15,6 +15,7 @@ function Page() {
   const spec = useMemo<RoutingListSpec<BGPInstance>>(
     () => ({
       title: "BGP instances",
+      noun: ["BGP instance", "BGP instances"],
       objectType: "bgpinstance",
       endpoint: "/api/routing/bgp-instances/",
       queryKey: "bgp-instances",

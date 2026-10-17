@@ -833,9 +833,10 @@ class PerVlanContextTests(SimpleTestCase):
         )
         rows, meta = read_macs(agent)
         self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), SW07_ROWS)
-        self.assertEqual(meta["vlans"], {"read": [10, 20], "skipped": [], "failed": [1]})
-        self.assertFalse(meta["complete"])
-        self.assertEqual(meta["error"], "per-VLAN contexts failed: VLAN 1 (timeout)")
+        # Other contexts answered: VLAN 1 has no table of its own here (#402).
+        self.assertEqual(meta["vlans"], {"read": [10, 20], "skipped": [1], "failed": []})
+        self.assertTrue(meta["complete"])
+        self.assertEqual(meta["error"], "")
 
     def test_each_context_maps_through_its_own_port_table(self):
         rows, _ = read_macs(sw07())
@@ -949,11 +950,265 @@ class PerVlanContextTests(SimpleTestCase):
         params = {"mac_vlan_contexts": "always", "mac_vlan_hint": [10, 20, 30, 40, 50]}
         with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
             _, meta = read_macs(agent, params=params)
-        self.assertEqual(meta["vlans"], {"read": [30], "skipped": [], "failed": [10, 20, 40, 50]})
         self.assertIn("public@50", agent.communities())
         self.assertNotIn("in a row", meta["error"])
-        self.assertIn("VLAN 10 (timeout)", meta["error"])
+        # The profile's hint names VLANs the switch carries, so a silent one
+        # is that VLAN's own failure, not a VLAN with no table (#408).
+        self.assertEqual(meta["vlans"], {"read": [30], "skipped": [], "failed": [10, 20, 40, 50]})
         self.assertFalse(meta["complete"])
+        self.assertIn("per-VLAN contexts failed: VLAN 10 (timeout)", meta["error"])
+
+    def test_a_context_that_errs_after_another_answered_still_fails(self):
+        # genErr, or a table that stops mid-walk, is not a VLAN without a table.
+        agent = vtp32(VTP32_ENTITY, svi=False)
+        agent.trees["vlan-10"] = agent.trees["vlan-32"]
+        agent.fail_on(BASE_PORT, kind="genErr", context="vlan-10")
+        agent.trees["vlan-20"] = agent.trees["vlan-32"]
+        agent.fail_on(D_FDB_PORT, context="vlan-20")
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"], {"read": [1, 32], "skipped": [30], "failed": [10, 20]})
+        self.assertFalse(meta["complete"])
+        self.assertIn("VLAN 10", meta["error"])
+        self.assertIn("VLAN 20 (timeout)", meta["error"])
+
+
+# sw-vtp-32: a Cisco access switch in a VTP domain (#402). Its only SVI is in
+# VLAN 32 and no access port is in VLAN 1: the default context (VLAN 1) has a
+# bridge-port table for the trunk but no dot1dTpFdbTable. The domain's VLANs
+# 10, 20 and 30 have no port on this switch, so the agent keeps no context for
+# them and stays silent on public@10 - as it does on any unknown community.
+VM_VLAN = "1.3.6.1.4.1.9.9.68.1.2.2.1.2"
+VTP32_PORTS = gi_ports(4, mac_prefix="70 1F 53 32 00") + [
+    (10201, "Te1/1/1", "TenGigabitEthernet1/1/1", "ethernetCsmacd(6)", "70 1F 53 32 00 41"),
+]
+VTP32_SVI = (32, "Vl32", "Vlan32", "propVirtual(53)", "70 1F 53 32 00 00")
+VTP32_DEFAULT = (
+    system("sw-vtp-32"),
+    base_ports({25: 10201}),
+    ".1.3.6.1.2.1.17.4.1.0 = Counter32: 0\n.1.3.6.1.2.1.17.4.2.0 = INTEGER: 300",
+)
+VTP32_ENTITY = "\n".join(
+    line
+    for n, vid in enumerate((1, 10, 20, 30, 32, 1002, 1003, 1004, 1005), start=1)
+    for line in (
+        f'.{ENT_LOGICAL}.2.{n} = STRING: "vlan{vid}"',
+        f".{ENT_LOGICAL}.3.{n} = OID: .1.3.6.1.2.1.17",
+        f'.{ENT_LOGICAL}.8.{n} = STRING: "vlan-{vid}"',
+    )
+)
+VTP32_STATES = "\n".join(
+    f".{VTP_STATE}.1.{vid} = INTEGER: operational(1)"
+    for vid in (1, 10, 20, 30, 32, 1002, 1003, 1004, 1005)
+)
+VTP32_ACCESS = f".{VM_VLAN}.10101 = INTEGER: 32\n.{VM_VLAN}.10102 = INTEGER: 32"
+VTP32_VLAN32 = walk(
+    base_ports({1: 10101, 2: 10102, 25: 10201}),
+    bridge_fdb((PC, 1, LEARNED), (PRINTER, 2, LEARNED), (CORE, 25, LEARNED)),
+)
+VTP32_ROWS = {(PC, "10101", 32), (PRINTER, "10102", 32), (CORE, "10201", 32)}
+
+
+def vtp32(*extra: str, svi: bool = True, vlan1: bool = True) -> FakeAgent:
+    """``vlan1``: whether public@1 answers (with an empty forwarding table)."""
+    ports = [*VTP32_PORTS, VTP32_SVI] if svi else VTP32_PORTS
+    contexts = {32: VTP32_VLAN32}
+    if vlan1:
+        contexts[1] = walk(base_ports({25: 10201}))
+    return FakeAgent(walk(*VTP32_DEFAULT, iftable(*ports), *extra), contexts)
+
+
+def first_context(agent: FakeAgent) -> str:
+    """The first per-VLAN context asked: ``public@vid`` or ``vlan-<vid>``."""
+    return next(
+        r.get("context_name") or r.get("community") for r in agent.requests
+        if r["op"] == "bulk"
+        and (r.get("context_name") or r.get("community") not in (None, "public"))
+    )
+
+
+class VtpDomainContextTests(SimpleTestCase):
+    """Per-VLAN reads on an agent that lists VLANs it keeps no table for (#402)."""
+
+    def test_silent_vlans_do_not_end_the_read_once_a_context_answered(self):
+        # No hint of the local VLANs: ascending order reads 1, then 10, 20 and 30
+        # all time out. VLAN 1 answered, so they are those VLANs' own failures.
+        agent = vtp32(VTP32_ENTITY, svi=False)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent)
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), VTP32_ROWS)
+        self.assertEqual(meta["vlans"], {"read": [1, 32], "skipped": [10, 20, 30], "failed": []})
+        self.assertTrue(meta["complete"])
+        self.assertEqual(meta["source"], "bridge-vlan")
+        self.assertNotIn("in a row", meta["error"])
+        self.assertIn("public@32", agent.communities())
+
+    def test_the_svi_vlan_is_read_first(self):
+        # Only VLAN 32 answers: without it going first, three silent VLANs in a
+        # row would end the read before it.
+        agent = vtp32(VTP32_ENTITY, vlan1=False)
+        rows, meta = read_macs(agent)
+        self.assertEqual(first_context(agent), "public@32")
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), VTP32_ROWS)
+        self.assertEqual(meta["vlans"], {"read": [32], "skipped": [1, 10, 20, 30], "failed": []})
+        self.assertEqual(meta["vlan_map"], "context")
+
+    def test_access_vlans_from_vtp_and_vmvlan_go_first(self):
+        # No SVI and no ENTITY-MIB: the VLAN list is vtpVlanState, the order
+        # comes from CISCO-VLAN-MEMBERSHIP-MIB.
+        agent = vtp32(VTP32_STATES, VTP32_ACCESS, svi=False, vlan1=False)
+        rows, meta = read_macs(agent)
+        self.assertEqual(first_context(agent), "public@32")
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), VTP32_ROWS)
+        self.assertEqual(meta["vlans"]["read"], [32])
+        self.assertNotIn("public@1002", agent.communities())
+
+    def test_v3_reads_the_vlan_context_first(self):
+        agent = vtp32(VTP32_STATES, VTP32_ACCESS, svi=False, vlan1=False)
+        rows, meta = read_macs(agent, version="v3")
+        self.assertEqual(first_context(agent), "vlan-32")
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), VTP32_ROWS)
+        self.assertEqual(meta["vlans"], {"read": [32], "skipped": [1, 10, 20, 30], "failed": []})
+        self.assertEqual(agent.communities(), set())
+
+    def test_profile_hint_orders_the_reads(self):
+        agent = vtp32(VTP32_ENTITY, svi=False, vlan1=False)
+        rows, meta = read_macs(agent, params={"mac_vlan_hint": [32]})
+        self.assertEqual(first_context(agent), "public@32")
+        self.assertEqual(meta["vlans"]["read"], [32])
+
+    def test_a_silent_context_is_asked_once_after_one_answered(self):
+        agent = vtp32(VTP32_ENTITY, vlan1=False)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            read_macs(agent)
+        asked = [r.get("community") for r in agent.requests if r["op"] == "bulk"]
+        self.assertEqual([asked.count(f"public@{v}") for v in (1, 10, 20, 30)], [1, 1, 1, 1])
+
+    def test_nothing_answering_still_stops_after_three(self):
+        # VLAN 32 listed first but silent: the agent takes no community@vlan.
+        agent = FakeAgent(walk(*VTP32_DEFAULT, iftable(*VTP32_PORTS, VTP32_SVI), VTP32_ENTITY))
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"], {"read": [], "skipped": [20, 30], "failed": [1, 10, 32]})
+        self.assertIn("failed contexts in a row", meta["error"])
+        self.assertNotIn("public@30", agent.communities())
+
+    def test_cap_keeps_the_local_vlans(self):
+        _, meta = read_macs(vtp32(VTP32_ENTITY), params={"mac_max_vlans": 2})
+        self.assertEqual(meta["vlans"]["read"], [1, 32])
+        self.assertEqual(meta["vlans"]["skipped"], [10, 20, 30])
+
+    def test_vmvlan_is_walked_only_when_contexts_are_read(self):
+        for agent, options in (
+            (bridge_only(), {}),
+            (vtp32(VTP32_ENTITY), {"mode": "quick"}),
+            (vtp32(VTP32_ENTITY), {"params": {"mac_vlan_contexts": "off"}}),
+        ):
+            read_macs(agent, **options)
+            self.assertEqual(agent.walked(VM_VLAN), [])
+        agent = vtp32(VTP32_ENTITY)
+        read_macs(agent)
+        self.assertEqual(len(agent.walked(VM_VLAN)), 1)
+
+
+# sw-acc-50: a Cisco access switch in a VTP domain with access ports in VLANs
+# 32, 40 and 50 (vmVlan) and none in the domain's VLAN 10 (#408).
+ACC50_ENTITY = "\n".join(
+    line
+    for n, vid in enumerate((1, 10, 32, 40, 50), start=1)
+    for line in (
+        f'.{ENT_LOGICAL}.2.{n} = STRING: "vlan{vid}"',
+        f".{ENT_LOGICAL}.3.{n} = OID: .1.3.6.1.2.1.17",
+        f'.{ENT_LOGICAL}.8.{n} = STRING: "vlan-{vid}"',
+    )
+)
+ACC50_ACCESS = "\n".join(
+    f".{VM_VLAN}.{index} = INTEGER: {vid}"
+    for index, vid in ((10101, 32), (10102, 40), (10103, 50))
+)
+ACC50_ROWS = {(PC, "10101", 32), (PRINTER, "10102", 40), (AP, "10103", 50)}
+
+
+def acc50(*, vlan50: bool = True) -> FakeAgent:
+    contexts = {
+        1: walk(base_ports({25: 10201})),
+        32: walk(base_ports({1: 10101, 25: 10201}), bridge_fdb((PC, 1, LEARNED))),
+        40: walk(base_ports({2: 10102, 25: 10201}), bridge_fdb((PRINTER, 2, LEARNED))),
+    }
+    if vlan50:
+        contexts[50] = walk(base_ports({3: 10103, 25: 10201}), bridge_fdb((AP, 3, LEARNED)))
+    return FakeAgent(
+        walk(*VTP32_DEFAULT, iftable(*VTP32_PORTS), ACC50_ENTITY, ACC50_ACCESS), contexts
+    )
+
+
+def asked(agent: FakeAgent, community: str) -> int:
+    return sum(1 for r in agent.requests if r["op"] == "bulk" and r["community"] == community)
+
+
+class KnownVlanContextTests(SimpleTestCase):
+    """A VLAN the switch is known to carry is never taken for one with no
+    table: it is retried, and a silent one fails the read (#408)."""
+
+    def test_one_lost_packet_on_a_known_vlan_is_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent)
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"], {"read": [1, 32, 40, 50], "skipped": [10], "failed": []})
+        self.assertTrue(meta["complete"])
+        self.assertEqual(meta["error"], "")
+        self.assertEqual(asked(agent, "public@50"), 3)  # lost, retried, then the FDB walk
+
+    def test_a_known_vlan_that_stays_silent_fails_the_read(self):
+        agent = acc50(vlan50=False)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"], {"read": [1, 32, 40], "skipped": [10], "failed": [50]})
+        self.assertFalse(meta["complete"])
+        self.assertEqual(meta["error"], "per-VLAN contexts failed: VLAN 50 (timeout)")
+        self.assertEqual(asked(agent, "public@50"), 2)
+        self.assertNotIn(50, {row["vlan"] for row in rows})
+
+    def test_a_vlan_with_no_port_here_is_still_asked_once_and_skipped(self):
+        # The #402 case is unchanged next to it.
+        agent = acc50()
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"]["skipped"], [10])
+        self.assertTrue(meta["complete"])
+        self.assertEqual(asked(agent, "public@10"), 1)
+
+    def test_v3_known_vlan_context_is_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            rows, meta = read_macs(agent, version="v3")
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"]["failed"], [])
+        self.assertIn(50, meta["vlans"]["read"])
+        self.assertTrue(meta["complete"])
+
+    def test_known_vlans_answering_in_parallel_are_still_retried(self):
+        agent = acc50()
+        agent.fail_on(BASE_PORT, context="vlan-50", times=1)
+        rows, meta = read_macs(agent)  # default concurrency
+        self.assertEqual(rows_by(rows, "mac", "if_index", "vlan"), ACC50_ROWS)
+        self.assertEqual(meta["vlans"]["read"], [1, 32, 40, 50])
+        self.assertTrue(meta["complete"])
+
+    def test_a_silent_vlan_one_is_retried_and_left_to_the_default_context(self):
+        # VLAN 1 has an SVI here, but the default context already stands for it.
+        agent = FakeAgent(
+            walk(system("sw-acc-07"), SW07_IFACES, *SW07_VLAN1, SW07_ENTITY),
+            {v: SW07_CONTEXTS[v] for v in (10, 20)},
+        )
+        with patch.object(sf, "MAC_CONTEXT_CONCURRENCY", 1):
+            _, meta = read_macs(agent)
+        self.assertEqual(meta["vlans"]["skipped"], [1])
+        self.assertTrue(meta["complete"])
+        self.assertEqual(asked(agent, "public@1"), 2)
 
 
 # ─── Budgets, caps and incomplete walks ─────────────────────────────────────
@@ -1224,6 +1479,11 @@ class PureParserTests(SimpleTestCase):
             ([1, 10, 20], []),
         )
         self.assertEqual(sf.plan_context_vlans(range(1, 6), 3), ([1, 2, 3], [4, 5]))
+        # VLANs the switch carries go first, and are the ones kept under the cap.
+        self.assertEqual(
+            sf.plan_context_vlans([1, 10, 20, 32, 1002], 3, prefer={32, "20", 1003}),
+            ([20, 32, 1], [10]),
+        )
 
     def test_mac_options(self):
         opts = sf._mac_options(

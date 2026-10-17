@@ -128,7 +128,9 @@ function Body({ circuit: c }: { circuit: Circuit }) {
               <StatusBadge status={c.status} />
             </>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/circuits" />
+          }
           description={c.description}
         />
       }
@@ -335,7 +337,27 @@ function TerminationCard({
         dash
       ),
     },
-    {
+    t.vm_interface
+      ? {
+          // Handed straight to a VM's NIC (#432): nothing to cable.
+          label: "VM interface",
+          value: (
+            <span>
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: t.vm_interface.vm.id }}
+                search={{ tab: "components" }}
+                className="link"
+              >
+                {t.vm_interface.vm.name}
+              </Link>{" "}
+              <span className="text-[11px] text-muted-foreground">
+                {t.vm_interface.name}
+              </span>
+            </span>
+          ),
+        }
+      : {
       // The switch port the provider handoff is cabled to (#118). A circuit
       // end is joined to a port by a cable, so this row is where the cable
       // is made when there is none and where it is reached when there is.

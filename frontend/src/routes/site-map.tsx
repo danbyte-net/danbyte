@@ -100,10 +100,17 @@ import { SiteMapDisplayMenu } from "@/components/site-map/display-menu"
 import type { SiteMapLayers } from "@/components/site-map/display-menu"
 import { useLineDisplay } from "@/components/site-map/line-display"
 import { lineKey } from "@/components/site-map/line-style"
+import {
+  lineInterfaceIds,
+  lineUtilization,
+} from "@/components/site-map/line-utilization"
+import type { LineUtil } from "@/components/site-map/line-utilization"
+import { useLiveRates } from "@/components/site-map/use-live-rates"
 import { CableSummary, LinkFacts } from "@/components/site-map/link-facts"
 import {
   showSpeedLabels,
   speedLabelLines,
+  utilLabelLines,
 } from "@/components/site-map/speed-labels"
 import {
   useMapCables,
@@ -588,16 +595,48 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       ]),
     [layers.links, layers.cables, shownConnections, drawnCables]
   )
+  // Utilization: live traffic on the drawn lines, read only
+  // while the colouring is on, and refreshed each minute.
+  const utilOn = colorBy === "utilization"
+  const utilLines = useMemo(
+    () => [
+      ...(layers.links ? shownConnections : []),
+      ...(layers.cables ? drawnCables : []),
+    ],
+    [layers.links, layers.cables, shownConnections, drawnCables]
+  )
+  const liveIds = useMemo(
+    () => (utilOn ? lineInterfaceIds(utilLines) : []),
+    [utilOn, utilLines]
+  )
+  const live = useLiveRates(liveIds, utilOn)
+  const util = useMemo(() => {
+    const m = new Map<string, LineUtil>()
+    if (!utilOn) return m
+    const rates = live.data?.interfaces ?? {}
+    for (const l of utilLines) m.set(l.id, lineUtilization(l, rates))
+    return m
+  }, [utilOn, utilLines, live.data])
+  // Speed labels, or under Utilization each line's direction chips.
   const labelLines = useMemo(
     () =>
-      speedLabels
-        ? speedLabelLines({
+      utilOn
+        ? utilLabelLines({
             connections: layers.links ? shownConnections : [],
             cables: layers.cables ? drawnCables : [],
+            util,
             highlight: highlightCableIds,
           })
-        : [],
+        : speedLabels
+          ? speedLabelLines({
+              connections: layers.links ? shownConnections : [],
+              cables: layers.cables ? drawnCables : [],
+              highlight: highlightCableIds,
+            })
+          : [],
     [
+      utilOn,
+      util,
       speedLabels,
       layers.links,
       layers.cables,
@@ -964,12 +1003,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const built = buildConnectionsLayer(
       shownConnections,
       (id) => setSelected({ kind: "connection", id }),
-      colorBy
+      colorBy,
+      util
     )
     built.group.addTo(map)
     connRef.current = built.group
     midpointsRef.current = built.midpoints
-  }, [shownConnections, layers.links, colorBy])
+  }, [shownConnections, layers.links, colorBy, util])
 
   // Route channels (view + edit); rebuilt on selection so the selected one
   // reads heavier, exactly like tray selection on the floor plan.
@@ -998,6 +1038,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     const layer = buildDrawnCablesLayer(drawnCables, {
       highlightIds: highlightCableIds,
       colorBy,
+      util,
       onSelect: (id) => {
         setHighlightCableIds((prev) =>
           prev.size === 1 && prev.has(id) ? new Set() : new Set([id])
@@ -1011,7 +1052,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     })
     layer.addTo(map)
     drawnCablesRef.current = layer
-  }, [drawnCables, highlightCableIds, layers.cables, colorBy])
+  }, [drawnCables, highlightCableIds, layers.cables, colorBy, util])
 
   // Speed labels on the lines in view, re-picked as the view settles.
   useEffect(() => {
@@ -1656,7 +1697,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
 
           {/* Above the Leaflet scale control. */}
           <div className="absolute bottom-9 left-3 z-[900]">
-            <SiteMapLegend colorBy={colorBy} lines={drawnLineKey} />
+            <SiteMapLegend
+              colorBy={colorBy}
+              lines={drawnLineKey}
+              asOf={live.data?.as_of}
+            />
           </div>
 
           {/* The sidebar carries the count while it is open. Top right is

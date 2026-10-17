@@ -1,5 +1,8 @@
-import { type ReactNode } from "react"
+import { useId, useMemo } from "react"
+import type { ReactNode } from "react"
 
+import { FieldControlContext } from "@/components/ui/field-control"
+import type { FieldControl } from "@/components/ui/field-control"
 import { Label } from "@/components/ui/label"
 import { InfoTip } from "@/components/ui/info-tip"
 import { PendingFieldMark } from "@/lib/pending-fields"
@@ -40,6 +43,19 @@ export function Field({
   // drop below the control instead, where they have the full width.
   const hintBelow = (hint?.length ?? 0) > 40
 
+  // The label names its control (#428): `htmlFor` gives click-to-focus, and
+  // the control reads the same id (plus hint/error descriptions) from context
+  // so no form has to wire it by hand.
+  const id = useId()
+  const labelId = `${id}-label`
+  const hintId = hint ? `${id}-hint` : undefined
+  const errorId = error ? `${id}-error` : undefined
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined
+  const control = useMemo<FieldControl>(
+    () => ({ id, labelId, describedBy, invalid: !!error }),
+    [id, labelId, describedBy, error]
+  )
+
   return (
     // content-start: when a grid stretches this cell to match a taller
     // neighbour (e.g. a checkbox stack), pack label+input at the top instead
@@ -58,31 +74,54 @@ export function Field({
           fit on one line in a narrow column, the hint - not the label - drops
           onto the next line (flex-wrap), still above the control. */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-        <Label className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
-          {label}
-          {required && (
-            // Not `text-destructive`: an untouched required field isn't an
-            // error, and colouring it red on load reads as one.
-            <span aria-hidden className="ml-0.5 font-semibold text-primary">
-              *
-            </span>
-          )}
+        {/* The (i) and planned-change marks sit beside the <label>, not in
+            it: inside, their buttons would be read out as part of the
+            field's name. */}
+        <span className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
+          <Label
+            id={labelId}
+            htmlFor={id}
+            className="gap-1 text-xs whitespace-nowrap"
+          >
+            {label}
+            {required && (
+              // Not `text-destructive`: an untouched required field isn't an
+              // error, and colouring it red on load reads as one.
+              <span aria-hidden className="ml-0.5 font-semibold text-primary">
+                *
+              </span>
+            )}
+          </Label>
           {info && <InfoTip>{info}</InfoTip>}
           {/* "A change to this value is already planned" - renders
               nothing unless a PendingFieldsProvider says so. */}
           <PendingFieldMark label={label} />
-        </Label>
+        </span>
         {hint && !hintBelow && (
-          <span className="ml-auto min-w-0 text-[10px] text-muted-foreground">
+          <span
+            id={hintId}
+            className="ml-auto min-w-0 text-[10px] text-muted-foreground"
+          >
             {hint}
           </span>
         )}
       </div>
-      {children}
+      <FieldControlContext.Provider value={control}>
+        {children}
+      </FieldControlContext.Provider>
       {hint && hintBelow && (
-        <p className="text-[10px] leading-snug text-muted-foreground">{hint}</p>
+        <p
+          id={hintId}
+          className="text-[10px] leading-snug text-muted-foreground"
+        >
+          {hint}
+        </p>
       )}
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
+      {error && (
+        <p id={errorId} className="text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   )
 }

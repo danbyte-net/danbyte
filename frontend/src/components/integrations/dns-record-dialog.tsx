@@ -14,6 +14,7 @@ import {
   FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import {
   Dialog,
@@ -134,7 +135,7 @@ export function DnsRecordDialog({
           className="grid gap-3"
         >
           {!zoneId && !isEdit && (
-            <FormSelect
+            <FormCombobox
               label="Zone"
               value={zone}
               onChange={(v) => setZone(v ?? "")}
@@ -143,6 +144,8 @@ export function DnsRecordDialog({
                 label: z.name,
               }))}
               error={fieldErrors.zone}
+              searchPlaceholder="Search zones…"
+              emptyText="No zones."
             />
           )}
           <FormText

@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default"]
+           "view_credits", "set_default", "view_config", "view_cost"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -61,11 +61,20 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "ipsecprofile": ["reveal"],
     # A routing keychain holds the BGP / OSPF / IS-IS key.
     "routingkeychain": ["reveal"],
-    "device": ["connect"],
+    # An FHRP group's authentication key (#383).
+    "fhrpgroup": ["reveal"],
+    # Read the device's running configuration from Oxidized (#35). A config
+    # holds communities, hashes and keys, so device.view never implies it.
+    "device": ["connect", "view_config"],
+    # The same for a virtual router modelled as a VM (#384).
+    "virtualmachine": ["view_config"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.
     "slaagreement": ["view_credits"],
+    # A support contract's cost is commercial data; seeing it is its own
+    # grant, as an agreement's credits are.
+    "supportcontract": ["view_cost"],
     # Choose the view a bare /topology opens for the whole tenant. Tenant
     # admins may without it; its row limits say which views may be chosen.
     "topologyview": ["set_default"],
@@ -160,6 +169,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
     ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
     ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
+    ("oxidized.OxidizedConnection", "Oxidized connections", "Integrations"),
+    ("oxidized.OxidizedNodeLink", "Oxidized node links", "Integrations"),
     ("api.Service", "Services", "IPAM"),
     ("api.ServiceTemplate", "Service templates", "IPAM"),
     # ─── DCIM ───────────────────────────────────────────────────────
@@ -170,6 +181,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
+    # Support & warranty coverage (#421).
+    ("api.SupportContract", "Support contracts", "DCIM"),
+    ("api.SupportCoverage", "Support coverage", "DCIM"),
     ("api.Rack", "Racks", "DCIM"),
     ("api.RackRole", "Rack roles", "DCIM"),
     ("api.RackType", "Rack types", "DCIM"),
@@ -198,6 +212,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.VirtualChassis", "Virtual chassis", "DCIM"),
     ("api.FloorPlan", "Floor plans", "DCIM"),
     ("api.FloorPlanTile", "Floor-plan tiles", "DCIM"),
+    ("api.FloorPlanDrawing", "Floor-plan drawings", "DCIM"),
     ("api.FloorPlanTray", "Floor-plan cable trays", "DCIM"),
     ("api.FloorPlanRaisedFloorArea", "Floor-plan raised floors", "DCIM"),
     ("api.FloorPlanWall", "Floor-plan walls", "DCIM"),
@@ -261,6 +276,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Covers the agreement's check groups, members and exclusions too.
     ("monitoring.SlaAgreement", "SLA agreements", "Monitoring"),
     ("monitoring.HolidayCalendar", "Holiday calendars", "Monitoring"),
+    ("monitoring.SlaIncidentCause", "SLA incident causes", "Monitoring"),
+    ("monitoring.SlaTemplate", "SLA templates", "Monitoring"),
     ("monitoring.MonitoringPolicy", "Monitoring policies", "Monitoring"),
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),

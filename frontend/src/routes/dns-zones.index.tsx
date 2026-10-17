@@ -16,6 +16,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { DnsZoneDialog } from "@/components/integrations/dns-zone-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dns-zones/")({
   component: DnsZonesPage,
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/dns-zones/")({
 function DnsZonesPage() {
   const qc = useQueryClient()
   const { canDo } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const canManage = canDo("dnszone", "add")
   const canDelete = canDo("dnszone", "delete")

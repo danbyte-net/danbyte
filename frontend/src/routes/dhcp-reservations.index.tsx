@@ -22,6 +22,7 @@ import { RowActions } from "@/components/row-actions"
 import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
 import { dash } from "@/components/kv-card"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dhcp-reservations/")({
   validateSearch: (s: Record<string, unknown>) => ({
@@ -42,7 +43,7 @@ function DhcpReservationsPage() {
   const canChange = canDo("dhcpreservation", "change")
   const canDelete = canDo("dhcpreservation", "delete")
   const qc = useQueryClient()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<DhcpReservation | null>(null)
 

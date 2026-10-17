@@ -3,7 +3,11 @@ import { useMemo } from "react"
 import type { ReferenceModelMeta } from "@/lib/custom-fields"
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
-import { ObjectPicker, type ObjectPickerSpec } from "@/components/object-picker"
+import { ObjectPicker } from "@/components/object-picker"
+import type {
+  ObjectPickerProps,
+  ObjectPickerSpec,
+} from "@/components/object-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { RackPicker } from "@/components/rack-picker"
 import { VlanPicker } from "@/components/vlan-picker"
@@ -15,6 +19,14 @@ export interface CfObjectPickerProps {
   value: string | null
   onChange: (v: string | null) => void
   customFieldId?: string
+  disabled?: boolean
+  placeholder?: string
+  /** Bulk mode, as on ObjectPicker: tick several and hand them over together
+   *  (`value`/`onChange` are left alone). */
+  onPickMany?: ObjectPickerProps["onPickMany"]
+  pickLimit?: number
+  /** Ids hidden from the list and the advanced search - already linked. */
+  excludeIds?: string[]
 }
 
 type AnyRow = { id: string } & Record<string, unknown>
@@ -33,8 +45,25 @@ export function CfObjectPicker({
   value,
   onChange,
   customFieldId,
+  disabled,
+  placeholder,
+  onPickMany,
+  pickLimit,
+  excludeIds,
 }: CfObjectPickerProps) {
-  const common = { label, hint, value, onChange, noneLabel: "-", customFieldId }
+  const common = {
+    label,
+    hint,
+    value,
+    onChange,
+    noneLabel: "-",
+    customFieldId,
+    disabled,
+    placeholder,
+    onPickMany,
+    pickLimit,
+    excludeIds,
+  }
   switch (refMeta.value) {
     case "device":
       return <DevicePicker {...common} />

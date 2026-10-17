@@ -375,7 +375,11 @@ To avoid flapping on a single blip, status changes require a streak:
   doesn't wait out the rise count.
 - **Stale** - a check that's been down for a long time (a configurable number of
   consecutive failures, or a number of days) is escalated to *stale* to mark a
-  chronic outage versus a fresh one.
+  chronic outage versus a fresh one. A stale check stays stale until it rises to
+  *up* (or shows *degraded*); further failures don't move it back to *down*,
+  and raising the limits applies to the next outage, not to one already stale.
+  With both limits at 0, staleness is off: a failing stale check goes back to
+  *down* once it reaches the fall count.
 - **Skipped** - IPs whose status is on your skip list (for example *reserved*)
   are never dialled; their checks are marked *skipped* and no result is recorded.
   An address [excluded from monitoring](#excluding-an-address) is *skipped* too,
@@ -583,6 +587,11 @@ The Prefixes list and the Devices list each carry a **Monitoring** column
 showing the row's worst-status badge with a tooltip breakdown (a device rolls
 up across its assigned IPs), so you can scan health across many subnets or
 devices at a glance.
+
+The column is filled by `POST /api/monitoring/status/` with the row ids
+(`prefixes`, `devices`, `vms` or `ips`). One call takes up to 5,000 prefix
+ids; the Prefixes list sends longer lists in batches, as it does for the
+SLA columns' `POST /api/monitoring/sla-status/`.
 
 ### Uptime / SLA {#uptime-sla}
 
@@ -893,6 +902,7 @@ re-poll is needed.
 | **Uplink above** | 4 | A port that learns more distinct MACs than this counts as an [uplink](snmp-discovery.md#uplinks). 0 turns the count rule off. (`mac_uplink_threshold`, 0-4096) |
 | **LLDP switch neighbours mark uplinks** | On | A port whose LLDP neighbour is a switch - not a phone - counts as an uplink. (`mac_uplink_lldp`) |
 | **Forget MACs unseen for** | 30 days | Learned MACs and ARP entries nobody has seen for this long are dropped by the daily prune. (`mac_retention_days`, 1-365) |
+| **Poll devices every** | Off | [Scheduled SNMP polls](snmp-discovery.md#scheduled-polling) from the core: Off, 15 minutes, 30 minutes or 1 hour. Devices and VMs an Outpost polls are left to it. (`snmp_poll_interval_minutes`, 0/15/30/60) |
 
 "Uplink above" replaces the fixed limit of four MACs that switch-link
 suggestions used before 0.17, with the same default.
@@ -1058,7 +1068,11 @@ grouping), and all of them respect acknowledgement and silences:
 
 - **Grouping** (on by default) - when one event opens many alerts at once (a switch
   dies, taking 50 IPs down), they're coalesced into a single digest per channel
-  instead of a storm of messages.
+  instead of a storm of messages. PagerDuty still gets one event per alert,
+  each sent on its own: an event refused for rate limiting, a server error or
+  no answer is sent again, up to three attempts within 30 seconds and never
+  before the receiver's `Retry-After`. Events already accepted are not sent
+  twice; one still refused at the end is logged.
 - **Renotify** - re-sends a reminder for an alert that's still firing, unacked, and
   un-silenced after a configurable interval. Acknowledging or silencing stops the
   reminders.
@@ -1240,6 +1254,12 @@ it in the page; **Send this one** (or **Send all**) mails it to an address you
 choose, subject prefixed with `[Preview]`, through the same SMTP config, so
 you can check it in a real mail client before it goes out for real.
 
+The page fetches the rendered mail and shows it in a sandboxed frame with
+scripts off, so the preview works behind any reverse proxy, including ones
+that send `X-Frame-Options: DENY` or `frame-ancestors 'none'` on every
+response. Opened directly, `/api/deployment/email/templates/<key>/` keeps its
+own locked-down headers.
+
 Every email shares one layout: a document, not a marketing card. White,
 black ink, hairlines, bold for emphasis, and colour only where something
 needs acting on - a red critical count, a red *Down*; a warning is bold, an
@@ -1346,7 +1366,9 @@ one by hand with:
 
 The digest also carries a compact **Certificates** strip - expired, expiring
 (critical / warning), and recently-changed counts - so the overall certificate
-picture rides along with the status summary.
+picture rides along with the status summary. When support contracts end within
+the [coverage warning window](support-coverage.md#notifications), or ended in
+the last 30 days, a **Support contracts** section lists them.
 
 ## Certificate digest
 

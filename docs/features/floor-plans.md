@@ -79,6 +79,205 @@ The grid also carries a **real-world scale**: a **cell size** in millimetres
 (default 3000). Existing plans keep working untouched; the scale powers the
 3D view, route-length estimation, and the scale bar on printed drawings.
 
+## CAD drawings
+
+A plan can carry a **CAD drawing** as its background instead of an image: a
+**DXF** file, or a **DWG** when the server has a converter. The drawing is
+shown at **true scale**: its units and the grid's cell size line up, so a
+600 mm floor tile in the drawing is one 600 mm cell.
+
+### In the editor
+
+- **Upload**: **Background → Drawing → Upload drawing…** in the plan header
+  (**More → Background…** on a narrow screen). The file picker takes `.dxf`,
+  and `.dwg` only when the server has a converter; without one the popover
+  says so. A plan has one background: a drawing replaces the image, and an
+  image replaces the drawing, each after a confirm.
+- **Status**: while the worker has the file, the popover shows the loading
+  state; a failed drawing shows why, with **Reprocess**. **Remove** deletes
+  the drawing and its files.
+- **Drawing** in the toolbar opens the drawing's panel over the plan:
+  - **Layers**: tick a layer to show it; each shows its colour and shape
+    count, and **Off** or **Frozen** when the file had it so. **All** shows
+    every layer; **Architecture only** hides the layers that hold only
+    hatches, dimensions or text. **Hide text** hides every text.
+  - **Placement**: opacity, rotation (0°, 90°, 180°, 270°) and the offset in
+    mm, with arrows that move it one cell.
+  - **Scale**: the file's units, **Drawn in** (**From file**, mm, cm, m, in,
+    ft), where the scale comes from (**From file**, **Set by hand**,
+    **Calibrated** or **Assumed mm**), one unit in mm and the drawing's size.
+    When that size is no plausible floor plan, a warning says so and offers
+    the unit that fixes it - see [Units and calibration](#units-and-calibration).
+    **Reset calibration** goes back to the units.
+  - **Fit grid to drawing**; when the drawing needs more than 512 cells a
+    side, it offers the cell size that fits.
+  - **Calibrate**: click two points on the drawing, type the distance between
+    them in mm, **Save**. A drag still pans while you pick.
+- Changes save as you make them, like the background image's opacity; the
+  plan's **Save** is for tiles. Without change permission on the plan you see
+  the drawing and can show or hide layers and text for yourself; that is not
+  saved.
+- **Large drawings**: past 60,000 shapes the plan shows the drawing as one
+  picture, with a **Layers flattened** chip. Hiding layers or text then asks
+  the server for a render without them (the chip reads **Rendering…** until
+  it lands). That render keeps the whole drawing's frame, so it sits exactly
+  where the full drawing does even when the hidden layers held its edges.
+- **Colours and the theme**: the drawing's default colour - ACI 7 (white on a
+  CAD screen, black on paper) and near-black or near-white lines and text -
+  is drawn in the app's text colour, so it reads in the light and the dark
+  theme alike. Every other colour is the drawing's own, unless it is too
+  faint on the floor (yellow on the light theme, dark blue on the dark one):
+  then only its lightness moves until it reads, keeping its hue. The PDF
+  prints the light theme's colours.
+- The drawing is in the plan's **PNG** and **PDF** exports (see
+  [Export](#export)), and in the [3D room](#the-3d-room-view) as the floor,
+  with the same layers hidden.
+
+### Formats and limits
+
+- **DXF** (ASCII or binary, any version ezdxf reads) is read natively.
+- **DWG** goes through a converter on the worker host - see
+  [`DANBYTE_CAD_CONVERTER`](../reference/settings.md#cad-drawings-danbyte_cad_converter).
+  The release bundle and the
+  [Docker image](../getting-started/docker.md#dwg-drawings) both ship
+  LibreDWG's `dwg2dxf`, so DWG works out of the box wherever bubblewrap
+  can run it in a sandbox (see [Processing](#processing)); a
+  source checkout builds it with `make cad-tools`
+  ([Installation](../getting-started/installation.md#dwg-converter)).
+  LibreDWG is GPLv3 and runs as a separate program, never linked; its
+  licence and source come with it.
+  Without a converter, a DWG upload is refused with the way round it: save the drawing
+  as DXF in the CAD program (AutoCAD and BricsCAD: **Save As → DXF**;
+  LibreCAD: **File → Save As → Drawing Exchange**) and upload that.
+- Uploads are capped at **50 MB**. The file's name and its first bytes must
+  agree (a `.dxf` that is really a DWG is refused).
+- Only **model space** is drawn; paper-space layouts are ignored.
+- Never drawn: raster `IMAGE`s, PDF/DWF/DGN underlays, OLE objects, wipeouts
+  and external references (xrefs) - anything that points at another file.
+  Infinite construction lines (`XLINE`, `RAY`) are skipped too. The drawing
+  record counts what was left out.
+- The rendered drawing is capped at **20 MB** and **250,000 elements**. Over
+  that, it is simplified step by step - hatches go first, then dimensions,
+  then text, then the shortest lines - and the drawing record lists the steps
+  taken. If even that is over, processing fails and says so.
+
+### Processing
+
+An upload is stored and queued; a background job (the RQ workers) converts a
+DWG, reads the DXF, renders it and stores the result. The drawing's status
+goes **queued → ready**, or **failed** with the reason (not a readable DXF, no
+converter or no sandbox for it, too large, took too long). **Reprocess** runs it again, for
+example after a converter is installed. Uploading a new file replaces the old
+one and its files; the position, rotation and opacity stay, the calibration,
+picked units and layer choices go with the old file.
+
+Reading happens only in the worker, in separate processes with memory, CPU
+time and output-size limits. The DWG converter is a C parser, so it also runs
+in a bubblewrap sandbox: no network, no Danbyte directory, `.env` or media,
+and nothing writable but its own output directory. A converter bug a hostile
+file exploits is contained there; see
+[`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox).
+A host where the sandbox cannot run refuses DWG and says why, unless the
+operator turns the sandbox off. The DXF reader (ezdxf) is pure Python and
+is not sandboxed: a bad file makes it fail, not run code. The rendered SVG
+passes the server's SVG sanitiser before it is stored; it holds paths,
+groups and text only - no scripts, images, links or fonts.
+
+### Units and calibration
+
+The drawing's units come from the file (`$INSUNITS`: millimetres, inches,
+metres…). A **unitless** file is drawn as if in millimetres until it is
+calibrated: pick two points on the drawing and type the real distance between
+them, like the [cabinet photo calibration](../dcim/device-catalog.md#photo-ports).
+The points must stand at least 1% of the drawing apart.
+
+Files often carry the wrong units: an architect's plan drawn in metres but
+saved with a millimetre header lands as a speck in the plan's corner. **Drawn
+in** says what the drawing is really in - mm, cm, m, in or ft - without
+picking points; **From file** trusts the file again.
+
+The scale in effect is, first to last: a calibration, the units picked under
+**Drawn in**, the file's units, millimetres. Picking units drops any
+calibration, since the newer choice wins; a calibration made afterwards wins
+over the picked units, and resetting it falls back to them. A new file drops
+both; a [clone](#cloning-a-plan) keeps both.
+
+When the scale comes from the file, or is assumed, and the drawing's longest
+side comes out under 2 m or over 5 km, the Scale panel warns - **Drawn 15 cm
+across**, with what the file says - and offers one click to the metric unit
+that would make it 2 m to 5 km across, the one nearest a 50 m building when
+several would. The bounds span a single room to a large campus; the usual
+mistake, mm against m, is a factor of 1000 and lands far outside them. Once
+the units are picked or the drawing is calibrated, the warning stays away.
+
+### Layers
+
+Every layer with something on it is listed with its colour, whether the file
+had it **on** or **frozen**, and how many shapes it holds. All layers are
+rendered; the ones the file had off or frozen start hidden. Which layers are
+hidden, and whether text is hidden, is saved with the plan.
+
+### Placement
+
+Offset (in mm from the plan's top-left corner), rotation (0, 90, 180, 270)
+and opacity, as for a background image. **Fit grid to drawing** moves the
+drawing to the plan's corner and sets the grid to the cells that cover it,
+optionally at a new cell size; when that would take more than 512 cells a side
+it says which cell size would fit.
+
+### API
+
+All under the plan, with the plan's permissions: reading needs **view** on the
+floor plan, changing needs **change**.
+
+| Call | What it does |
+|---|---|
+| `GET /api/floor-plans/drawing-support/` | `{dxf, dwg, converter, message, max_upload_bytes}` - whether DWG is taken and, if not, why. |
+| `GET /api/floor-plans/{id}/drawing/` | The drawing; 404 when the plan has none. The plan itself carries a `drawing` summary (`id`, `status`, `source_kind`, `source_name`, `rendered_url`, `updated_at`) or `null`. |
+| `POST /api/floor-plans/{id}/drawing/` | Multipart `file`. Replaces any drawing; 202 with `status: "queued"`. 400 with a `file` error for a missing, oversized or unrecognised file; a DWG without a converter adds `code: "converter_missing"`. |
+| `PATCH /api/floor-plans/{id}/drawing/` | Placement: any of `x_mm`, `y_mm` (±10,000,000), `rotation` (0/90/180/270), `opacity` (0-100), `hidden_layers` (names of this drawing's layers), `hide_text`. |
+| `DELETE /api/floor-plans/{id}/drawing/` | Removes the drawing and its files. 204. |
+| `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202; 200 with the drawing unchanged while a run is already queued. |
+| `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
+| `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
+| `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
+| `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The same request while one is queued returns that one. At most 3 renders of a drawing queue at once; past that, 429 until one finishes. The last 12 are kept. |
+
+The drawing record:
+
+- `status` (`queued`, `ready`, `failed`) and `error`.
+- `source_kind`, `source_name`, `source_bytes`, `source_url` (the uploaded file).
+- `rendered_url`, `rendered_bytes`, `rendered_elements`, `simplified` (the
+  steps taken to fit the caps), `skipped` (`external`, `infinite` counts).
+- `units`, `units_mm_per_unit` (from the file, `null` when unitless),
+  `units_override` (the picked units, `null` when none), `calibration`,
+  `mm_per_unit` (the scale in effect) and `scale_source` (`calibration`,
+  `override`, `units` or `assumed`).
+- `extents` (`min_x`, `min_y`, `max_x`, `max_y`) and `size` (`width`,
+  `height`) in drawing units, `size_mm`.
+- `layers`: `name`, `color`, `on`, `frozen`, `entity_count`, `kinds` (counts
+  of `geometry`, `hatch`, `dimension`, `text`).
+- `placement`: `x_mm`, `y_mm`, `rotation`, `opacity`, `hidden_layers`,
+  `hide_text`.
+- `bounds_mm` (the placed, rotated box on the plan), `transform_mm` and `fit`
+  (`grid_width`, `grid_height`, `fits`, `min_cell_mm` at the plan's cell size).
+
+The rendered SVG (fetch it from `rendered_url`; it is served as a download, so
+use it inline, not as a link):
+
+- `viewBox="0 0 W H"` in **drawing units**, y pointing down: a drawing point
+  `(x, y)` is at `(x - min_x, max_y - y)`.
+- One `<g data-layer="NAME">` per layer, in the file's layer order. Inside it,
+  the layer's lines and curves, then `<g data-kind="hatch">`,
+  `<g data-kind="dimension">` and `<g data-kind="text">` as present. Hiding a
+  layer or all text is `display: none` on those groups.
+- Strokes carry the CAD colour and line weight in drawing units; hatches are
+  filled paths (pattern hatches as a 25% tint). Text is `<text>` with a
+  `matrix()` transform and `font-size`, and no font: it takes the page's.
+- `transform_mm` places it on the plan in millimetres: the rotated box's
+  top-left at (`x_mm`, `y_mm`), rotated about its centre. For grid cells,
+  put `scale(1 / cell_mm)` in front.
+
 ## The 3D room view
 
 The **2D / 3D** toggle in the plan header (or `?viz=3d` in the URL) turns the
@@ -87,7 +286,7 @@ positions - sized from the rack's rail width, outer dimensions and U height -
 with their racked devices drawn at true U positions when you move close.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
-uploaded blueprint textures it.
+uploaded blueprint or CAD drawing textures it.
 
 - **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
   **Keyboard**: the arrow keys or WASD glide the camera level with the floor
@@ -320,10 +519,10 @@ The header names the plan, with the floor switcher and the **Edited** badge,
 and holds the **2D / 3D** and **Layout / Structure / Cables** tabs. The bar
 under it has *Find on plan…*, **Fit to view** and **Grid** on the left, and
 **Racks** (while the plan is [coloured by its racks](#color-by)),
-**Objects**, **Display**, **Background**, **PNG**, plan settings and **Save**
-on the right. When that bar is too narrow for all of them (a small window),
-Grid, Background, PNG and plan settings move into **More**, so nothing is
-ever cut off.
+**Objects**, **Display**, **Background**, **Export**, plan settings, **Undo**,
+**Redo** and **Save** on the right. When that bar is too narrow for all of
+them (a small window), Grid, Background and plan settings move into **More**
+and Export shrinks to its icon, so nothing is ever cut off.
 
 | Action | How |
 |---|---|
@@ -335,6 +534,8 @@ ever cut off.
 | Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
 | Nudge | Arrow keys move the selected tile one cell |
+| Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
+| Save | **Save**, or ++ctrl+s++ |
 | Pan / zoom | Drag empty grid / mouse wheel |
 
 **Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
@@ -344,6 +545,13 @@ are the exception: they may cover anything, and anything may sit on them.
 Edits are local until you press **Save** - one transactional bulk call writes
 all creates, moves, and deletes together, and the change log records each
 tile individually.
+
+**Undo** steps back through the tile edits since the plan was opened or last
+saved - placing, moving, resizing, turning, retyping, relabelling and
+deleting tiles, up to 100 steps - and **Redo** steps forward again. A whole
+drag is one step, and so is a bulk action on a selection. Undoing every step
+leaves nothing to save. Saving starts a fresh history. Trays, walls, raised
+floors and the drawing save as you make them and are not part of it.
 
 While there are unsaved edits an **Edited** badge sits in the header, and
 leaving the plan asks first - **Discard unsaved changes?**, with *Keep editing*
@@ -376,8 +584,9 @@ plan's racks with their port figures are
 `GET /api/racks/?floor_plan=<id>&include=ports`, asked for once rather than
 on every poll.
 
-- **Rack tiles** carry a space-utilization bar (green ≤80% · amber 80–95% ·
-  red >95%) and a percentage. The racks list's **Used** and **Power** bars
+- **Rack tiles** carry a space-utilization bar (green, amber and red at the
+  tenant's capacity levels, 80 % and 95 % unless changed - see
+  [Racks](../dcim/racks.md)) and a percentage. The racks list's **Used** and **Power** bars
   and the tile popover's bar use the same scale. Coloured by a rack measure
   ([Color by](#color-by)), the bar and the figure show that measure instead.
 - **Monitoring rollup** - a rack tile's border turns red the moment any
@@ -406,7 +615,8 @@ what they are - in 2D and in the 3D room alike:
 | **Status** | Its status's colour. |
 
 - The four measures fill a rack's tile with its level on the racks' one
-  scale - green up to 80 %, amber above 80 %, red above 95 % - and grey where
+  scale - green up to the tenant's warning level, amber above it, red above
+  its critical level (80 % and 95 % unless changed) - and grey where
   there is nothing to measure: no supply, no ports counted. The figure is
   always written on the tile, `86%` or *No data*, on a one-cell rack too, so
   the reading never rests on colour alone; the bar along the tile's foot
@@ -474,12 +684,24 @@ inside a hall plan.
 
 ### Working many tiles at once
 
-**Ctrl/⌘-click** tiles to build a selection, or **Shift-drag** on empty grid
-to sweep one (plain drag still pans). A bulk bar appears with the count,
-**Facing** buttons that set the orientation of every selected tile in one
-click - placing a hundred racks no longer means a hundred rotate clicks -
-and **Delete**. The changes join the normal draft: nothing persists until
-**Save**, and Esc or a plain click clears the selection.
+**Shift-click** or **Ctrl/⌘-click** tiles to build a selection (a tile
+already selected joins it), or **Shift-drag** on empty grid to sweep one
+(plain drag still pans). Then:
+
+- **Drag** any selected tile to move the whole selection, cell by cell. It
+  stops where it would leave the grid or land on a tile outside the
+  selection, and catches up when the pointer is somewhere it fits.
+- **Arrow keys** move the selection one cell; ++delete++ removes it.
+- A bulk bar shows the count, **Facing** buttons that set the orientation of
+  every selected tile in one click - placing a hundred racks no longer means
+  a hundred rotate clicks - **Turn the selection** (a quarter turn
+  clockwise as one piece, about its middle, each tile's facing turning with
+  it; refused when the turned piece would not fit), **Set type…** and
+  **Delete**.
+
+The changes join the normal draft: nothing persists until **Save**, each
+action is one [undo](#the-editor) step, and Esc or a plain click clears the
+selection.
 
 ## Raised floors (Structure mode)
 
@@ -702,7 +924,10 @@ cable runs, just the trays, or both.
 ## Finding things
 
 - **Find on plan…** (Layout mode, the bar under the header): type a tile's
-  label, linked object, or type name and jump straight to it - the canvas pans and zooms to the hit.
+  label, the rack, device, cabinet or panel it links, or its type or role,
+  and pick a hit - the canvas pans and zooms to it. Every word must match, in
+  any order (`r12 core`), and hits by name come before hits by type; ++enter++
+  jumps to the first. Hidden tiles are not offered.
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -758,11 +983,14 @@ cable runs, just the trays, or both.
 The **Clone** action on the floor plans list copies a plan with everything
 drawn on it - tiles (with their rack / device / panel links), cable trays
 (geometry only; the cables routed through the originals stay where they are),
-raised-floor areas and walls - into the same location as `<name> copy`, and
+raised-floor areas and walls, and its [CAD drawing](#cad-drawings) with its
+placement, units and calibration - into the same location as `<name> copy`, and
 opens it. Handy for a second identical floor, or a what-if layout you can throw
 away. Needs the floor-plan add permission.
 
 ## Export
+
+**Export** in the bar under the header has **PNG**, **PDF…** and **Print**.
 
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
@@ -770,13 +998,41 @@ so the export doubles as the builder's pull sheet. The [Color by](#color-by)
 legend is part of the picture too, so a coloured plan explains itself on
 paper.
 
+**PDF…** asks for the paper - **A4**, **A3**, **Letter** or **Tabloid**,
+portrait or landscape (A3 landscape until you choose) - and makes one sheet
+on the server:
+
+- the whole plan **fitted to the page** - tiles, zones, raised floors, walls
+  and trays as the plan shows them, unsaved edits and hidden tiles included
+  as on screen, in the light theme;
+- the [CAD drawing](#cad-drawings) under it **in vector**, at its placement
+  and opacity, with the layers and text the plan hides left out. A drawing
+  over 60,000 shapes on paper is refused - hide some of its layers first. If
+  its text is too long to typeset, the text is left out and the sheet says
+  so;
+- a footer with a **scale bar** worked out from the plan's cell size (with
+  the ratio, `1:200`), the **Color by legend**, the drawing's source file,
+  and a **title block**: the plan, its location, site and tenant, the date,
+  the Danbyte version and the page.
+
+**Print** makes the same PDF on the paper last chosen (the menu shows it) and
+opens it in the browser's viewer to print. The PDF obeys the same limits as
+the [topology PDF](topology.md): one at a time per user, a few at a time on
+the server, and 30 seconds of rendering. Anyone who can view the plan can
+export it: `POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
+paper and the legend (`?print=1` for a five-minute print link).
+
 ## Tenancy, permissions, audit
 
 Plans, tiles, and tile types are tenant-scoped like everything else; links are
 validated against the active tenant. RBAC object types: **Floor plans**
 (`floorplan`, the plan and its tiles) and **Floor tile types**
 (`floortiletype`, the palette). All three models are audited - every tile
-create/move/delete lands in the [change log](change-log.md).
+create/move/delete lands in the [change log](change-log.md). A plan's CAD
+drawing is audited too (**Floor-plan drawings**), but its endpoints and files
+follow the plan's own permission; its files are served only to someone who
+may view the plan, in its tenant, are deleted with it, and are part of a
+media backup.
 
 ## Popover fields
 
@@ -818,6 +1074,9 @@ global one, so the two can't drift apart as you change the default.
 
 ## Roadmap
 
-Planned next: multi-select and undo/redo, cable traces drawn **on** the plan
-with "show on map", wall-plate ("drop") tiles with port assignments, in-plan
-search, and PDF export.
+Planned next: cable traces drawn **on** the plan with "show on map", and
+wall-plate ("drop") tiles with port assignments.
+
+!!! note "New in 0.18"
+    PDF export with the CAD drawing in vector, undo and redo in the editor,
+    moving and turning a multi-selection, and Shift-click to select.

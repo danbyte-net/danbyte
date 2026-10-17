@@ -17,6 +17,7 @@ from django.core.cache import cache
 from django.http import Http404
 from rest_framework.exceptions import ParseError
 from rest_framework.negotiation import BaseContentNegotiation
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -243,6 +244,10 @@ class MCPView(APIView):
     authentication_classes = [ApiTokenAuthentication]
     permission_classes = [IsAuthenticated]
     renderer_classes = [JSONRenderer]
+    # JSON-RPC takes a batch (a top-level array) and answers any other
+    # non-object body with a protocol error, so it keeps the plain parser
+    # rather than the API's object-only default (#373).
+    parser_classes = [JSONParser]
     content_negotiation_class = AlwaysJSON
 
     def _tenant_or_404(self, request):

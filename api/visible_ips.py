@@ -98,6 +98,51 @@ def assigned_ips(obj, context, fk, tenant_id) -> list:
     )
 
 
+def visible_children(data, context, slug, tenant_path) -> list:
+    """The rows of a nested child list (a circuit's, tunnel's or L2VPN's
+    terminations) that the caller may view as ``slug`` (#426).
+
+    The parent can be tenant-wide while each child belongs to a site, so a
+    viewer limited to Site A must not read Site B's end through the parent.
+    The visible ids are worked out once per request and type, then the
+    already-loaded rows are cut in Python, so a prefetched page stays one
+    query. No request or tenant lists nothing.
+    """
+    rows = list(data.all()) if hasattr(data, "all") else list(data)
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    if request is None or not getattr(user, "is_authenticated", False):
+        return []
+    from auth_api import rbac
+
+    from .views import _get_active_tenant
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return []
+    holder = getattr(request, "_request", request)
+    memo = holder.__dict__.setdefault("_danbyte_visible_children", {})
+    key = (slug, tenant.id)
+    if key not in memo:
+        rule = rbac.row_filter(user, tenant, slug, "view")
+        if rule is True or rule is None:
+            memo[key] = rule
+        else:
+            from auth_api.object_types import model_for
+
+            memo[key] = frozenset(
+                model_for(slug)._default_manager
+                .filter(**{tenant_path: tenant}).filter(rule)
+                .values_list("pk", flat=True)
+            )
+    allowed = memo[key]
+    if allowed is True:
+        return rows
+    if allowed is None:
+        return []
+    return [row for row in rows if row.pk in allowed]
+
+
 def outside_ip(obj, context, tenant_id):
     """A tunnel end's outside address when the caller may view it."""
     if obj.outside_ip_id is None:

@@ -18,6 +18,7 @@ PORT_FIELDS = ("total", "connected", "reserved", "free", "marked")
 # Where a rack's power supply figure comes from (``rack_power``'s ``supply``).
 SUPPLY_FEED = "feed"
 SUPPLY_PDU_RATING = "pdu_rating"
+SUPPLY_BUDGET = "budget"
 
 
 def racked_devices_prefetch():
@@ -113,6 +114,10 @@ def rack_power(rack) -> dict:
     side: either side must carry the whole rack alone (#329). ``supply`` is
     None when neither is known (``available_w`` 0).
 
+    A rack's power budget (``max_power_w``) overrides both: demand is then
+    measured against the budget, ``supply`` ``"budget"``, and ``supplied_w``
+    keeps what the feeds or PDUs would give (0 when neither is known).
+
     Demand = the racked devices' power-port draws - allocated where
     recorded, with the nameplate (maximum) sum alongside."""
     available = 0.0
@@ -148,12 +153,16 @@ def rack_power(rack) -> dict:
         supply, available_w = SUPPLY_PDU_RATING, round(_smaller_side(ratings))
     else:
         supply, available_w = None, 0
-    return {
+    out = {
         "available_w": available_w,
         "allocated_w": allocated,
         "maximum_w": maximum,
         "supply": supply,
     }
+    budget = getattr(rack, "max_power_w", None)
+    if budget:
+        out.update(available_w=budget, supply=SUPPLY_BUDGET, supplied_w=available_w)
+    return out
 
 
 def rack_ports(devices, *, count_virtual: bool) -> dict:
@@ -256,13 +265,16 @@ def rack_figures(rack, split: dict) -> dict:
 
 def sum_figures(figures) -> dict:
     """``rack_figures`` added up: ``racks`` and ``devices`` counts, units and
-    their share in use, power with ``pdu_rating`` / ``no_supply`` - how many
-    of the racks have only their PDUs' rating, or no supply figure at all -
-    and the two port rows."""
+    their share in use, power with ``pdu_rating`` / ``no_supply`` /
+    ``budget`` - how many of the racks have only their PDUs' rating, no
+    supply figure at all, or a power budget - and the two port rows."""
     figures = list(figures)
     u_height = sum(f["u_height"] for f in figures)
     u_used = sum(f["u_used"] for f in figures)
-    power = {"available_w": 0, "allocated_w": 0, "maximum_w": 0, "pdu_rating": 0, "no_supply": 0}
+    power = {
+        "available_w": 0, "allocated_w": 0, "maximum_w": 0,
+        "pdu_rating": 0, "no_supply": 0, "budget": 0,
+    }
     ports = dict.fromkeys(PORT_FIELDS, 0)
     panel = dict.fromkeys(PORT_FIELDS, 0)
     for f in figures:
@@ -270,6 +282,8 @@ def sum_figures(figures) -> dict:
             power[k] += f["power"][k]
         if f["power"]["supply"] == SUPPLY_PDU_RATING:
             power["pdu_rating"] += 1
+        elif f["power"]["supply"] == SUPPLY_BUDGET:
+            power["budget"] += 1
         elif f["power"]["supply"] is None:
             power["no_supply"] += 1
         for k in PORT_FIELDS:

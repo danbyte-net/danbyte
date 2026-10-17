@@ -86,7 +86,11 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
         <DetailHero
           title={r.name}
           mono
-          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          tags={
+            r.tags.length > 0 && (
+              <TagList tags={r.tags} listTo="/route-targets" />
+            )
+          }
           description={r.description}
         />
       }

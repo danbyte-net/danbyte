@@ -1045,6 +1045,15 @@ class MonitoringSettings(TimestampedModel):
         help_text="Learned MACs and ARP entries unseen for longer than this "
         "are forgotten.",
     )
+    #: Scheduled SNMP polling from the core (#284 P4b): how often each
+    #: local-engine device is polled by ``dispatch_snmp_polls``. 0 = off, the
+    #: default on fresh installs and upgrades alike.
+    SNMP_POLL_INTERVALS = (0, 15, 30, 60)
+    snmp_poll_interval_minutes = models.PositiveSmallIntegerField(
+        default=0, db_default=0,
+        choices=[(0, "Off"), (15, "15 minutes"), (30, "30 minutes"), (60, "1 hour")],
+        help_text="Poll every device the core polls this often. 0 = off.",
+    )
 
     # ─── flapping monitor (M22) ──────────────────────────────────────────
     # IPs with one of these statuses are excluded from the "flapping a lot"
@@ -3906,6 +3915,12 @@ class SlaAgreement(TimestampedModel):
     effective_from = models.DateField(null=True, blank=True)
     #: The revision now in force; bumped when a RULE_FIELDS value changes.
     revision = models.PositiveIntegerField(default=1)
+    #: The tier it was made from; syncing copies the template's rules in as a
+    #: new revision (monitoring.sla_template).
+    template = models.ForeignKey(
+        "monitoring.SlaTemplate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="agreements",
+    )
 
     # ── Alerts and reports ──
     #: Where the agreement's alerts go: at risk, breached, coverage low, a
@@ -4158,3 +4173,178 @@ class SlaPeriodResult(models.Model):
                 fields=["agreement", "period_key"], name="uniq_sla_period_result"
             ),
         ]
+
+
+# ─── SLA incident follow-up (0.18) ─────────────────────────────────────────
+# An incident is a run of down time in a stored period (SlaPeriodResult.
+# incidents); follow-up is what people add to it afterwards. None of it
+# changes a figure: a disputed incident still counts until an exclusion says
+# otherwise. docs/features/sla.md#incident-follow-up.
+
+
+class SlaIncidentCause(TimestampedModel):
+    """One entry of a tenant's cause catalog. Starts empty; the docs suggest
+    entries, nothing is seeded."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="sla_causes")
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default="")
+    color = models.CharField(max_length=7, blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="uniq_sla_cause_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class SlaIncidentFollowUp(TimestampedModel):
+    """Cause, ticket, note and dispute for one incident, keyed by the unit it
+    happened to and when it started."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, related_name="incident_follow_ups"
+    )
+    #: The incident's unit key and start, as stored in the period's incidents.
+    unit = models.CharField(max_length=200)
+    started_at = models.DateTimeField()
+    cause = models.ForeignKey(
+        SlaIncidentCause, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="follow_ups",
+    )
+    ticket_url = models.URLField(max_length=500, blank=True, default="")
+    note = models.TextField(blank=True, default="")
+    disputed = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["agreement", "-started_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "unit", "started_at"], name="uniq_sla_incident_follow_up"
+            ),
+        ]
+
+
+# ─── SLA scheduled reports (0.18) ──────────────────────────────────────────
+
+
+class SlaReportSchedule(TimestampedModel):
+    """A report emailed weekly or monthly: one agreement's, or - with no
+    agreement - the overview of every agreement. Sent by the SLA timer
+    (monitoring.sla_schedule); a failed send is tried again on the next run."""
+
+    FREQUENCIES = [("weekly", "Weekly"), ("monthly", "Monthly")]
+    PERIODS = [("current", "This period"), ("previous", "Last period")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    #: Null: the overview report across the tenant's agreements.
+    agreement = models.ForeignKey(
+        SlaAgreement, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="report_schedules",
+    )
+    frequency = models.CharField(max_length=8, choices=FREQUENCIES, default="monthly")
+    #: Weekly: 0 = Monday. Monthly: the day of the month, 1-28.
+    weekday = models.PositiveSmallIntegerField(
+        default=0, validators=[MaxValueValidator(6)])
+    day_of_month = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(28)])
+    #: Local hour (the agreement's timezone; the tenant's for the overview).
+    hour = models.PositiveSmallIntegerField(default=7, validators=[MaxValueValidator(23)])
+    #: Which period the report is for.
+    period = models.CharField(max_length=8, choices=PERIODS, default="previous")
+    recipients = models.JSONField(default=list, blank=True)
+    report_format = models.CharField(
+        max_length=4, default="pdf",
+        choices=[("pdf", "PDF"), ("csv", "CSV"), ("both", "PDF and CSV")],
+    )
+    enabled = models.BooleanField(default=True)
+    #: The last successful send; the next one is due at the first slot after it.
+    report_sent_at = models.DateTimeField(null=True, blank=True)
+    #: The last failure, cleared by a successful send.
+    last_error = models.TextField(blank=True, default="", editable=False)
+    last_attempt_at = models.DateTimeField(null=True, blank=True, editable=False)
+    failures = models.PositiveIntegerField(default=0, editable=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["agreement", "frequency", "created_at"]
+
+
+# ─── SLA templates (0.18) ──────────────────────────────────────────────────
+
+
+class SlaTemplate(TimestampedModel):
+    """A tier such as Gold, Silver or Bronze: the target, hours, counting
+    rules, objectives and credit tiers an agreement can be created from and
+    re-synced with. Syncing writes a new revision on the agreement, so closed
+    and frozen periods keep the rules they ran under. None are seeded."""
+
+    #: Agreement fields a template holds - the rules, less "counts from".
+    FIELDS = (
+        "target_pct", "warning_pct", "period", "timezone", "service_hours",
+        "holiday_calendar_id", "count_degraded_as", "count_stale_as",
+        "count_unknown_as", "exclude_maintenance", "min_outage_seconds",
+        "aggregation", "objectives", "objectives_in_state",
+        "credit_tiers", "period_fee", "currency",
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="sla_templates")
+    name = models.CharField(max_length=150)
+    description = models.TextField(blank=True, default="")
+    target_pct = models.DecimalField(max_digits=6, decimal_places=3)
+    warning_pct = models.DecimalField(max_digits=6, decimal_places=3, null=True, blank=True)
+    period = models.CharField(max_length=12, choices=SlaPeriod.choices, default=SlaPeriod.MONTH)
+    timezone = models.CharField(max_length=64, blank=True, default="")
+    service_hours = models.JSONField(default=dict, blank=True)
+    holiday_calendar = models.ForeignKey(
+        HolidayCalendar, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="sla_templates",
+    )
+    count_degraded_as = models.CharField(
+        max_length=10, default="up", choices=[("up", "Up"), ("down", "Down")]
+    )
+    count_stale_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    count_unknown_as = models.CharField(
+        max_length=10, default="unmeasured",
+        choices=[("unmeasured", "Not measured"), ("down", "Down")],
+    )
+    exclude_maintenance = models.BooleanField(default=True)
+    min_outage_seconds = models.PositiveIntegerField(default=0)
+    aggregation = models.CharField(
+        max_length=10, choices=SlaAgreement.AGGREGATION_CHOICES, default="mean")
+    objectives = models.JSONField(default=list, blank=True)
+    objectives_in_state = models.BooleanField(default=False)
+    credit_tiers = models.JSONField(default=list, blank=True)
+    period_fee = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"], name="uniq_sla_template_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def values(self) -> dict:
+        """``{agreement field: value}`` as the template sets them."""
+        return {f: getattr(self, f) for f in self.FIELDS}

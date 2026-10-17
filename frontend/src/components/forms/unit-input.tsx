@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { NoFieldControl } from "@/components/ui/field-control"
 import { Field } from "./field"
 
 export interface Unit {
@@ -83,18 +84,24 @@ export function UnitInput({
           placeholder={placeholder ?? "-"}
           className="min-w-0 flex-1"
         />
-        <Select value={unit} onValueChange={setUnit}>
-          <SelectTrigger className="h-9 w-20 shrink-0 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {units.map((u) => (
-              <SelectItem key={u.label} value={u.label}>
-                {u.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* The label names the number; the unit box is its own control. */}
+        <NoFieldControl>
+          <Select value={unit} onValueChange={setUnit}>
+            <SelectTrigger
+              aria-label={`${label} unit`}
+              className="h-9 w-20 shrink-0 text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {units.map((u) => (
+                <SelectItem key={u.label} value={u.label}>
+                  {u.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </NoFieldControl>
       </div>
     </Field>
   )

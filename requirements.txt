@@ -22,6 +22,7 @@ nh3>=0.2                  # HTML sanitizer for rendered label templates (XSS-saf
 weasyprint>=63            # HTML+CSS -> PDF for exact-size label printing (needs
                           # Pango/cairo/gdk-pixbuf system libs - see Dockerfile)
 segno>=1.6                # pure-Python QR generator for server-side label PDFs
+ezdxf>=1.4,<2             # DXF reading + model-space render for floor-plan CAD drawings (MIT)
 requests>=2.32
 pywinrm>=0.5          # agentless Windows DHCP/DNS sync over WinRM (NTLM/Kerberos)
 openpyxl>=3.1
@@ -37,6 +38,7 @@ dnspython>=2             # RFC2136/TSIG dynamic DNS for ACME DNS-01 auto-publish
 icmplib>=3.0              # async, unprivileged ICMP for the ping checker
 httpx>=0.27               # async HTTP checker
 asyncssh>=2.18            # async SSH checker
+bcrypt>=4.1               # asyncssh: passphrase-protected OpenSSH-format private keys (SFTP backups)
 pysnmp>=7.1               # async SNMP checker (v2c/v3)
 pyvmomi>=8.0              # vSphere SOAP (vim25) - the only API that exposes
                           # ESXi host hardware; imported lazily, so a

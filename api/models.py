@@ -1,4 +1,5 @@
 import ipaddress
+import os
 import re
 import uuid
 
@@ -128,6 +129,75 @@ def is_enumerable(net, cap: int = ENUMERABLE_HOST_CAP) -> bool:
     """Whether ``net`` (an ``ipaddress`` network) is small enough to enumerate
     host-by-host. ``None`` → False."""
     return net is not None and net.num_addresses <= cap
+
+
+# Assignable host addresses of a network - one rule for utilisation, next
+# available, discovery and the subnet details card, so they can't disagree
+# (#382). It is exactly what ``net.hosts()`` yields:
+#
+# * IPv4 /30 and shorter: the network and broadcast addresses are not hosts.
+# * IPv4 /31 (RFC 3021, point-to-point) and /32: every address is a host.
+# * IPv6 /126 and shorter: IPv6 has no broadcast; only the Subnet-Router
+#   anycast address (the all-zero host, RFC 4291 2.6.1) is not a host, so a
+#   /126 has three hosts, ::1 to ::3.
+# * IPv6 /127 (RFC 6164, point-to-point) and /128: every address is a host.
+
+
+def non_host_addresses(net) -> set:
+    """The addresses of ``net`` that are not assignable hosts (see above)."""
+    if net is None:
+        return set()
+    if net.version == 4:
+        if net.prefixlen <= 30:
+            return {net.network_address, net.broadcast_address}
+        return set()
+    if net.prefixlen <= 126:
+        return {net.network_address}
+    return set()
+
+
+def usable_host_count(net) -> int:
+    """How many addresses ``net.hosts()`` yields, without walking them."""
+    if net is None:
+        return 0
+    return net.num_addresses - len(non_host_addresses(net))
+
+
+def usable_host_bounds(net):
+    """``(first, last)`` assignable host of ``net``, or ``None``."""
+    if net is None or usable_host_count(net) == 0:
+        return None
+    skip = non_host_addresses(net)
+    first = net.network_address
+    last = net.broadcast_address
+    if first in skip:
+        first += 1
+    if last in skip:
+        last -= 1
+    return first, last
+
+
+def normalise_ip_term(term: str) -> str:
+    """A search term that is an IP address, in the stored (compressed,
+    lower-case) form; any other term unchanged. ``2001:0db8::1`` and the
+    fully expanded form both find ``2001:db8::1`` (#382)."""
+    raw = (term or "").strip()
+    try:
+        return ipaddress.ip_address(raw).compressed
+    except ValueError:
+        return term
+
+
+def merge_spans(spans) -> list[tuple[int, int]]:
+    """Sorted, non-overlapping ``(start, end)`` integer spans: overlapping
+    or adjacent spans are joined, so an address is never counted twice."""
+    out: list[list[int]] = []
+    for s, e in sorted(spans):
+        if out and s <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], e)
+        else:
+            out.append([s, e])
+    return [(s, e) for s, e in out]
 
 
 # ─── VRF (Virtual Routing and Forwarding) ─────────────────────────────────
@@ -1612,9 +1682,18 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
     cabling depends on). The diff reports extras so a human can decide.
     Returns ``{"dims": [...], "accessories": [...], "updated": [...]}``.
     """
+    from . import rack_units
+
+    # Locked before the diff reads the units its devices are checked against.
+    rack_units.lock_rack(rack)
     diff = diff_rack_from_type(rack)
     changed_dims: list[str] = []
     if dims and diff.get("dims"):
+        rt = rack.rack_type
+        if {"u_height", "starting_unit"} & set(diff["dims"]):
+            # Never shrink a rack out from under its devices (#376).
+            field = "u_height" if "u_height" in diff["dims"] else "starting_unit"
+            rack_units.check_units(rack, rt.starting_unit, rt.u_height, field=field)
         for f in diff["dims"]:
             setattr(rack, f, getattr(rack.rack_type, f))
             changed_dims.append(f)
@@ -1679,12 +1758,22 @@ def _module_interface_names(module) -> list[str]:
     """The concrete interface names a module contributes to its host device -
     ``{module}`` → the bay's position, then ``{position}`` → the device's
     stack member. Used by both install and uninstall so they always agree."""
+    return list(_module_template_names(module).values())
+
+
+def _render_module_template(name: str, bay_position: str, vc_position) -> str:
+    return render_component_name(render_module_name(name, bay_position), vc_position)
+
+
+def _module_template_names(module) -> dict:
+    """Template → the interface name it renders to on the module's device,
+    in template order."""
     bay = module.module_bay
     pos = module.device.vc_position
-    return [
-        render_component_name(render_module_name(t.name, bay.position), pos)
+    return {
+        t: _render_module_template(t.name, bay.position, pos)
         for t in module.module_type.interface_templates.all()
-    ]
+    }
 
 
 class ModuleInstallConflict(Exception):
@@ -1721,22 +1810,23 @@ def install_module(module) -> int:
     clash = module_install_conflicts(module)
     if clash:
         raise ModuleInstallConflict(clash)
-    names = _module_interface_names(module)
-    types = {  # rendered name → template, for type/enabled/mgmt flags
-        n: t
-        for n, t in zip(names, module.module_type.interface_templates.all())
-    }
     have = set(module.interfaces.values_list("name", flat=True))
     made = [
-        Interface(device=module.device, module=module, name=n, type=t.type,
-                  virtual=t.type in VIRTUAL_INTERFACE_TYPES,
-                  enabled=t.enabled, mgmt_only=t.mgmt_only,
-                  description=t.description)
-        for n, t in types.items()
+        _module_interface(module, t, n)
+        for t, n in _module_template_names(module).items()
         if n not in have
     ]
     Interface.objects.bulk_create(made)
     return len(made)
+
+
+def _module_interface(module, t, name) -> "Interface":
+    # bulk_create skips Interface.save(): the virtual-type rule by hand.
+    return Interface(device=module.device, module=module, module_template=t,
+                     name=name, type=t.type,
+                     virtual=t.type in VIRTUAL_INTERFACE_TYPES,
+                     enabled=t.enabled, mgmt_only=t.mgmt_only,
+                     description=t.description)
 
 
 def uninstall_module(module) -> int:
@@ -1748,13 +1838,210 @@ def uninstall_module(module) -> int:
     return per_model.get(Interface._meta.label, 0)
 
 
+class ModuleRemovalUnconfirmed(Exception):
+    """Re-stamping a module would delete interfaces that carry a cable or an
+    IP address (#366). ``names`` lists them with what they carry."""
+
+    def __init__(self, names):
+        self.names = names
+        super().__init__(
+            "This removes " + ", ".join(names) + ": cable ends on "
+            + ("it" if len(names) == 1 else "them")
+            + " are dropped and IP addresses unassigned. "
+            "Send confirm_remove to go ahead."
+        )
+
+
+def _module_template_correspondence(old_tmpls, new_tmpls, same_type) -> dict:
+    """Old template pk → the new template that continues it (#366).
+
+    The same type maps every template to itself. A different type pairs
+    templates with the same name pattern first (``Te1/{module}/1`` in both),
+    then the rest by position in template order, where the media type
+    matches. A template left unpaired has no successor."""
+    if same_type:
+        return {t.pk: t for t in old_tmpls}
+    by_name = {t.name: t for t in new_tmpls}
+    corr = {}
+    for t in old_tmpls:
+        nt = by_name.pop(t.name, None)
+        if nt is not None:
+            corr[t.pk] = nt
+    rest_old = [t for t in old_tmpls if t.pk not in corr]
+    rest_new = [t for t in new_tmpls if t.name in by_name]
+    for t, nt in zip(rest_old, rest_new, strict=False):
+        if t.type == nt.type:
+            corr[t.pk] = nt
+    return corr
+
+
 @transaction.atomic
-def reinstall_module(module) -> int:
-    """Re-stamp a module after its type, bay or device changed: remove what
-    it created, then install the current type. Atomic - a name clash raises
-    :class:`ModuleInstallConflict` and leaves the old interfaces in place."""
-    uninstall_module(module)
-    return install_module(module)
+def reinstall_module(module, before=None, *, confirm_remove=False) -> dict:
+    """Re-stamp a module after its type, bay or device changed (#366).
+
+    ``before`` holds the module's previous ``module_type_id``,
+    ``module_bay_id`` and ``device_id``. On the same device, each owned
+    interface is traced to the old template it was stamped from (the
+    recorded ``module_template``, else its rendered name); where that
+    template continues in the new type (see
+    :func:`_module_template_correspondence`) the interface is kept - same
+    row, so cables, IPs, VLANs, LAG, MACs, tags and custom fields stay -
+    and renamed to the new rendering unless an operator had renamed it.
+    Interfaces whose template has no successor are deleted; the new type's
+    other templates are created. An owned interface that traces to no old
+    template is left as it is. A move to another device re-creates all.
+
+    Atomic. A name clash raises :class:`ModuleInstallConflict`; deleting an
+    interface with a cable or IP raises :class:`ModuleRemovalUnconfirmed`
+    unless ``confirm_remove``. Returns ``{"kept", "renamed", "created",
+    "removed"}`` (names; renamed as ``{"from", "to"}``)."""
+    if before is None:
+        before = {
+            "module_type_id": module.module_type_id,
+            "module_bay_id": module.module_bay_id,
+            "device_id": module.device_id,
+        }
+    owned = list(module.interfaces.all())
+    new_names = _module_template_names(module)
+    pairs = []  # (interface, old template, new template, old rendered name)
+    traced: set = set()
+    if before["device_id"] == module.device_id:
+        old_bay = ModuleBay.objects.filter(pk=before["module_bay_id"]).first()
+        old_pos = (old_bay or module.module_bay).position
+        vc = module.device.vc_position
+        old_tmpls = list(
+            ModuleInterfaceTemplate.objects.filter(
+                module_type_id=before["module_type_id"]
+            )
+        )
+        old_names = {
+            t.pk: _render_module_template(t.name, old_pos, vc) for t in old_tmpls
+        }
+        iface_of = {}
+        for i in owned:
+            if i.module_template_id in old_names:
+                iface_of.setdefault(i.module_template_id, i)
+        # No usable link (installed before it was recorded, or the template
+        # was replaced): the rendered name identifies it.
+        by_name = {
+            i.name: i for i in owned
+            if i.module_template_id not in old_names
+        }
+        for t in old_tmpls:
+            if t.pk not in iface_of and old_names[t.pk] in by_name:
+                iface_of[t.pk] = by_name.pop(old_names[t.pk])
+        traced = {i.pk for i in iface_of.values()}
+        corr = _module_template_correspondence(
+            old_tmpls, list(new_names),
+            before["module_type_id"] == module.module_type_id,
+        )
+        for t in old_tmpls:
+            i, nt = iface_of.get(t.pk), corr.get(t.pk)
+            if i is not None and nt is not None:
+                pairs.append((i, t, nt, old_names[t.pk]))
+        moved_device = False
+    else:
+        moved_device = True
+
+    paired = {i.pk for i, *_ in pairs}
+    removed = [
+        i for i in owned
+        if i.pk not in paired and (moved_device or i.pk in traced)
+    ]
+    untouched = [
+        i for i in owned
+        if not moved_device and i.pk not in paired and i.pk not in traced
+    ]
+    successors = {nt.pk for *_, nt, _ in pairs}
+    created = [(t, n) for t, n in new_names.items() if t.pk not in successors]
+    # An interface keeps an operator's own name; one still carrying its
+    # template's rendering follows the template.
+    plan = [
+        (i, t, nt, new_names[nt] if i.name == old_name else i.name)
+        for i, t, nt, old_name in pairs
+    ]
+
+    final = [target for *_, target in plan]
+    final += [i.name for i in untouched] + [n for _, n in created]
+    clash = {n for n in final if final.count(n) > 1}
+    clash.update(
+        module.device.interfaces.filter(name__in=final)
+        .exclude(module=module).values_list("name", flat=True)
+    )
+    if clash:
+        raise ModuleInstallConflict(clash)
+
+    if removed and not confirm_remove:
+        ids = [i.pk for i in removed]
+        cabled = set(
+            CableTermination.objects.filter(interface_id__in=ids)
+            .values_list("interface_id", flat=True)
+        )
+        with_ip = set(
+            IPAddress.objects.filter(assigned_interface_id__in=ids)
+            .values_list("assigned_interface_id", flat=True)
+        )
+        busy = []
+        for i in removed:
+            what = [w for w, s in (("cable", cabled), ("IP", with_ip)) if i.pk in s]
+            if what:
+                busy.append(f"{i.name} ({', '.join(what)})")
+        if busy:
+            raise ModuleRemovalUnconfirmed(sorted(busy))
+
+    report = {
+        "kept": sorted(p[0].name for p in plan if p[3] == p[0].name),
+        "renamed": sorted(
+            ({"from": p[0].name, "to": p[3]} for p in plan if p[3] != p[0].name),
+            key=lambda r: r["from"],
+        ),
+        "created": sorted(n for _, n in created),
+        "removed": sorted(i.name for i in removed),
+    }
+    if removed:
+        Interface.objects.filter(pk__in=[i.pk for i in removed]).delete()
+    _apply_module_renames(plan)
+    Interface.objects.bulk_create(
+        [_module_interface(module, t, n) for t, n in created]
+    )
+    return report
+
+
+def _apply_module_renames(plan) -> None:
+    """Rename and re-link kept module interfaces with a per-row ``save()``,
+    so the change log, search index and other save signals see each one.
+    (device, name) is unique, so a rename waits until no other pending
+    rename still holds its target; a cycle parks one row on a temporary
+    name first."""
+    pending = {}
+    for i, t, nt, target in plan:
+        updates = {"module_template": nt}
+        if target != i.name:
+            updates["name"] = target
+        if nt.type != t.type:
+            updates["type"] = nt.type
+            updates["virtual"] = nt.type in VIRTUAL_INTERFACE_TYPES
+        pending[i.pk] = (i, updates)
+    while pending:
+        # Recomputed each pass: a saved rename frees the name it left.
+        held = {i.name for i, _ in pending.values()}
+        ready = [
+            pk for pk, (i, u) in pending.items()
+            if u.get("name", i.name) == i.name or u["name"] not in held
+        ]
+        if not ready:
+            pk = next(iter(pending))
+            i = pending[pk][0]
+            i.name = f"__mv_{i.pk}"
+            Interface.objects.filter(pk=i.pk).update(name=i.name)
+            continue
+        for pk in ready:
+            i, updates = pending.pop(pk)
+            for k, v in updates.items():
+                setattr(i, k, v)
+            # Only these columns: deleting the removed interfaces may have
+            # nulled this row's lag/parent/bridge in the database.
+            i.save(update_fields=[*updates, "updated_at"])
 
 
 def _seat_default_modules(device, pos) -> int:
@@ -1884,6 +2171,12 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     serial_number = models.CharField(max_length=255, blank=True)
     asset_tag = models.CharField(max_length=128, blank=True)
+    # Hardware warranty of this unit, for coverage without a support contract
+    # (#421). The last covered day; blank = no warranty on record.
+    warranty_end = models.DateField(
+        null=True, blank=True,
+        help_text="Last day of the hardware warranty.",
+    )
     description = models.TextField(blank=True)
     primary_ip = models.ForeignKey(
         "IPAddress",
@@ -2552,19 +2845,20 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         n = self.network
         if n is None:
             return None
-        # IPv6 % is only meaningful for small (enumerable) prefixes - a /64 is
-        # forever ~0%, which is noise, so leave it blank (UI shows nothing).
-        if n.version == 6 and not is_enumerable(n):
-            return None
+        # Allocating from ranges: the ranges are the managed space, whatever
+        # the network's size - a /64 with a four-address range reports it
+        # (#382), the same figures as the allocation block.
         if self.allocate_from_ranges:
             summary = self.allocation_summary()
             if not summary or summary["size"] == 0:
                 return None
             return min(100, int(round(100 * summary["used"] / summary["size"])))
-        if n.num_addresses <= 2:
-            capacity = n.num_addresses
-        else:
-            capacity = n.num_addresses - 2
+        # IPv6 % is only meaningful for small (enumerable) prefixes - a /64 is
+        # forever ~0%, which is noise, so leave it blank (UI shows nothing).
+        if n.version == 6 and not is_enumerable(n):
+            return None
+        # The same host count next available walks (#382).
+        capacity = usable_host_count(n)
         if capacity == 0:
             return None
         if used is None:
@@ -2587,20 +2881,31 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def allocation_spans(self) -> list[tuple[int, int]]:
         """``[(start, end)]`` as ints for every well-formed allocation range
-        of this prefix's family. Empty when the option is off."""
+        of this prefix's family. Empty when the option is off.
+
+        Ranges are clipped to the prefix and merged where they overlap
+        (#379): new ranges can't do either, but rows saved before that check
+        must not make next available offer an address twice, or one the
+        prefix can't hold."""
         if not self.allocate_from_ranges:
             return []
         net = self.network
+        lo = int(net.network_address) if net is not None else None
+        hi = int(net.broadcast_address) if net is not None else None
         out: list[tuple[int, int]] = []
         for rng in self.allocation_ranges():
             s, e = rng._start_ip, rng._end_ip
             if s is None or e is None or s.version != e.version or int(e) < int(s):
                 continue
-            if net is not None and s.version != net.version:
-                continue
-            out.append((int(s), int(e)))
-        out.sort()
-        return out
+            start, end = int(s), int(e)
+            if net is not None:
+                if s.version != net.version:
+                    continue
+                start, end = max(start, lo), min(end, hi)
+                if end < start:
+                    continue
+            out.append((start, end))
+        return merge_spans(out)
 
     def in_allocation(self, address: str) -> bool:
         """Whether ``address`` falls inside one of the allocation ranges."""
@@ -3139,11 +3444,19 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The installed module that created this interface (#333). Null for the
     # device's own interfaces. Removing the module - directly, through its
     # bay, or by changing its type - removes exactly these.
+    # Set only by install/reinstall: not editable through forms or imports,
+    # and never carried into a clone (#367).
     module = models.ForeignKey(
         "Module", on_delete=models.CASCADE, null=True, blank=True,
-        related_name="interfaces",
+        related_name="interfaces", editable=False,
         help_text="Installed module that created this interface; null for "
                   "the device's own interfaces.",
+    )
+    # The module interface template this interface was stamped from, so a
+    # bay move or type change can follow it even after a rename (#366).
+    module_template = models.ForeignKey(
+        "ModuleInterfaceTemplate", on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="+", editable=False,
     )
     name = models.CharField(max_length=64)
     # The real-world name when it differs from the (template-matching) name -
@@ -5014,6 +5327,14 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
         blank=True, default="",
     )
+    # A power budget: what the rack may draw (a cooling or contract limit),
+    # whatever its feeds could deliver. When set, rack capacity measures
+    # demand against it (api.capacity.rack_power).
+    max_power_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Power budget in watts. When set, demand is measured "
+        "against it instead of the feeds.",
+    )
     u_height = models.PositiveSmallIntegerField(
         default=42, help_text="Height in rack units (U)."
     )
@@ -5845,6 +6166,73 @@ class IPRange(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         return int(e) - int(s) + 1
 
+    def placement_errors(self, tenant_id=None) -> dict:
+        """``{field: message}`` when the span is not inside its prefix, or
+        overlaps another range in the same tenant and VRF (#379). Empty
+        when it is fine, or when the addresses don't parse (the field
+        validation reports those).
+
+        DHCP exclusion ranges are carved out of a pool on purpose, so they
+        are never checked against, and never checked themselves."""
+        s, e = self._start_ip, self._end_ip
+        if s is None or e is None or s.version != e.version or int(e) < int(s):
+            return {}
+        if self.prefix_id:
+            net = self.prefix.network
+            if net is not None and (
+                s.version != net.version or s not in net or e not in net
+            ):
+                return {"start_address": (
+                    f"{self.start_address}–{self.end_address} is not inside "
+                    f"the prefix {self.prefix.cidr}."
+                )}
+        if not self._state.adding and self.dhcp_exclusions.exists():
+            return {}
+        tenant_id = tenant_id or self.tenant_id
+        if tenant_id is None:
+            return {}
+        vrf_id = self.prefix.vrf_id if self.prefix_id else self.vrf_id
+        others = IPRange.objects.filter(
+            tenant_id=tenant_id, dhcp_exclusions__isnull=True,
+        )
+        others = (
+            others.filter(vrf_id=vrf_id) if vrf_id else others.filter(vrf__isnull=True)
+        )
+        if not self._state.adding:
+            others = others.exclude(pk=self.pk)
+        for other in others.only("start_address", "end_address"):
+            os_, oe = other._start_ip, other._end_ip
+            if os_ is None or oe is None or os_.version != s.version:
+                continue
+            if int(s) <= int(oe) and int(e) >= int(os_):
+                return {"start_address": (
+                    f"{self.start_address}–{self.end_address} overlaps the range "
+                    f"{other.start_address}–{other.end_address} in this VRF."
+                )}
+        return {}
+
+    def clean(self):
+        # Model-level too: the CSV bulk importer runs full_clean, not the
+        # serializer. A row whose span and prefix are unchanged keeps saving,
+        # so a range stored before the check can still be edited.
+        super().clean()
+        if not self._state.adding:
+            was = (
+                IPRange.objects.filter(pk=self.pk)
+                .values("start_address", "end_address", "prefix_id", "vrf_id")
+                .first()
+            )
+            if was == {
+                "start_address": self.start_address, "end_address": self.end_address,
+                "prefix_id": self.prefix_id, "vrf_id": self.vrf_id,
+            }:
+                return
+        errors = self.placement_errors()
+        if errors:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(errors)
+
 
 # ─── RIRs + Aggregates (top of the IP-space hierarchy) ───────────────────────
 class RIR(NumIdMixin, TimestampedModel):
@@ -5905,6 +6293,51 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def __str__(self) -> str:
         return self.prefix
 
+    @staticmethod
+    def normalise_prefix(value) -> str:
+        """The canonical form an aggregate is stored in (#381): host bits
+        cleared, IPv6 compressed and lower case. ``2001:DB8::/32`` becomes
+        ``2001:db8::/32``, ``10.1.2.3/8`` becomes ``10.0.0.0/8``. Raises
+        ``ValueError`` for anything that isn't a network."""
+        return str(ipaddress.ip_network(str(value or "").strip(), strict=False))
+
+    def duplicate_of(self, tenant_id=None):
+        """Another aggregate of the tenant covering the same network, in
+        whatever form it was stored, or ``None``."""
+        net = self.network
+        tenant_id = tenant_id or self.tenant_id
+        if net is None or tenant_id is None:
+            return None
+        others = Aggregate.objects.filter(tenant_id=tenant_id).only("prefix")
+        if self.pk:
+            others = others.exclude(pk=self.pk)
+        for other in others:
+            if other.network == net:
+                return other
+        return None
+
+    def clean(self):
+        # Model-level so the CSV importer, which runs full_clean rather than
+        # the serializer, stores the same canonical form.
+        # A stored prefix that isn't being changed is left as it is: a
+        # pre-normalisation duplicate (see check_aggregates) stays editable.
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        if not self._state.adding and (
+            Aggregate.objects.filter(pk=self.pk, prefix=self.prefix).exists()
+        ):
+            return
+        try:
+            self.prefix = self.normalise_prefix(self.prefix)
+        except ValueError:
+            raise ValidationError({"prefix": "Enter a valid CIDR prefix."}) from None
+        other = self.duplicate_of()
+        if other is not None:
+            raise ValidationError(
+                {"prefix": f"{self.prefix} already exists as the aggregate {other.prefix}."}
+            )
+
     @property
     def network(self):
         try:
@@ -5926,7 +6359,11 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def utilisation_with(self, covered):
         """Utilisation with the covered address count supplied (the list page
-        sums it in SQL, once per page); ``None`` walks the prefixes here."""
+        sums it in SQL, once per page); ``None`` walks the prefixes here.
+
+        Covered space is the union of the prefixes inside the aggregate, in
+        every VRF: the same /25 in two VRFs, or a /25 inside a /24, covers
+        its addresses once (#381)."""
         net = self.network
         if net is None or net.version == 6:
             return None
@@ -5935,7 +6372,7 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             return None
         if covered is not None:
             return min(100, int(round(100 * int(covered) / total)))
-        covered = 0
+        inside = []
         for p in (
             Prefix.objects.filter(tenant_id=self.tenant_id).only("cidr")
         ):
@@ -5944,9 +6381,10 @@ class Aggregate(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 continue
             try:
                 if pn.subnet_of(net):
-                    covered += pn.num_addresses
+                    inside.append(pn)
             except (TypeError, ValueError):
                 continue
+        covered = sum(n.num_addresses for n in ipaddress.collapse_addresses(inside))
         return min(100, int(round(100 * covered / total)))
 
 
@@ -6019,10 +6457,107 @@ class VLANGroup(NumIdMixin, TimestampedModel):
         return self.name
 
 
+class SecretBackedPSK(models.Model):
+    """A pre-shared key that lives in the deployment's secret store, never in
+    the row (#68, #168). The model holds only a reference; ``store_psk`` /
+    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
+    is an audited action on the viewset. A key is a credential, and
+    credentials do not sit in a documentation database in plaintext - the
+    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
+    (the folder the key is filed under in the store).
+    """
+
+    psk_secret_prefix = ""
+
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
+
+    class Meta:
+        abstract = True
+
+    @property
+    def psk_set(self) -> bool:
+        return bool(self.psk_secret_path)
+
+    def store_psk(self, value: str) -> None:
+        """Write the PSK into the active store under ``<prefix>/<id>``,
+        stamping which provider took it. Fail-closed: raises
+        :class:`SecretStoreDisabled` when no store is configured, because the
+        alternative is a key sitting in the database in the clear."""
+        from core.models import DeploymentSettings
+        from monitoring.secret_store import require_secret_store
+
+        store = require_secret_store()
+        # Always re-derived: a path on the row, however it got there, never
+        # decides where the key is written (#315).
+        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
+        self.psk_secret_provider = (
+            DeploymentSettings.load().secrets_provider or ""
+        ).strip()
+        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+
+    def resolve_psk(self) -> str:
+        """Read the PSK back at use-time. Only the reveal action calls this -
+        never list or detail serialization."""
+        from monitoring.secret_store import SecretStoreError, require_secret_store
+
+        if not self.psk_secret_path:
+            raise SecretStoreError("No PSK is set.")
+        store = require_secret_store()
+        value = store.get(self.tenant_id, self.psk_secret_path)
+        if value is None:
+            raise SecretStoreError(
+                f"No secret found at '{self.psk_secret_path}' in the "
+                "configured store."
+            )
+        return value.get("psk", "")
+
+    def clear_psk(self) -> None:
+        """Forget the PSK, removing it from the store as well as the reference.
+
+        Best-effort on the store side: if it is unreachable the reference still
+        goes, because leaving a row pointing at a key nobody can read is worse
+        than an orphaned entry an operator can prune."""
+        path = self.psk_secret_path
+        self.psk_secret_path = ""
+        self.psk_secret_provider = ""
+        if not path:
+            return
+        from monitoring.secret_store import SecretStoreError, active_secret_store
+
+        try:
+            store = active_secret_store()
+            if store is not None:
+                store.delete(self.tenant_id, path)
+        except SecretStoreError:
+            pass
+
+
 # ─── FHRP groups (VRRP / HSRP / GLBP / CARP) ─────────────────────────────────
-class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class FHRPGroup(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A First-Hop Redundancy Protocol group - VRRP/HSRP/GLBP/CARP - that shares
-    a virtual IP across the interfaces assigned to it."""
+    a virtual IP across the interfaces assigned to it. Its authentication key
+    lives in the secret store (#383), like an SSID's PSK; the API calls it
+    ``auth_key``."""
+
+    psk_secret_prefix = "fhrp-groups"
+
+    # Redeclared with a database default: the columns are new on an existing
+    # table, and the previous release's code inserts rows without them.
+    psk_secret_provider = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        help_text="Which secret store holds the PSK, stamped at write-time.",
+    )
+    psk_secret_path = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
+    )
 
     PROTOCOL_CHOICES = [
         ("vrrp2", "VRRPv2"),
@@ -6052,7 +6587,6 @@ class FHRPGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     auth_type = models.CharField(
         max_length=16, choices=AUTH_CHOICES, blank=True, default=""
     )
-    auth_key = models.CharField(max_length=255, blank=True, default="")
     virtual_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -6453,8 +6987,9 @@ class Circuit(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 class CircuitTermination(TimestampedModel):
     """One end (A or Z) of a circuit. Lands on **either** one of your sites or
     a provider network (exactly one), and carries the per-side physical
-    details - speeds, cross-connect ID, patch-panel info. Tenant scope is
-    inherited via circuit."""
+    details - speeds, cross-connect ID, patch-panel info. On your side it is
+    cabled to a device port or bound to a VM interface (#432), at most one of
+    the two. Tenant scope is inherited via circuit."""
 
     SIDE_CHOICES = [("A", "A"), ("Z", "Z")]
 
@@ -6469,6 +7004,16 @@ class CircuitTermination(TimestampedModel):
     )
     provider_network = models.ForeignKey(
         ProviderNetwork, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="circuit_terminations",
+    )
+    # The VM interface the handoff lands on (#432) - a cloud router such as
+    # a CHR or pfSense whose virtual NIC takes the provider's link. A VM
+    # interface is never cabled, so this stands where the cable to a device
+    # port would: an end has one or the other, never both (the termination
+    # and cable serializers refuse the mix). SET_NULL: deleting the VM must
+    # not take the circuit's end with it.
+    vm_interface = models.ForeignKey(
+        VMInterface, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="circuit_terminations",
     )
     port_speed_kbps = models.PositiveIntegerField(
@@ -6495,6 +7040,13 @@ class CircuitTermination(TimestampedModel):
                 fields=["circuit", "term_side"],
                 name="uniq_circuittermination_circuit_side",
             ),
+            # One circuit end per VM interface, as a device port takes one
+            # cable.
+            models.UniqueConstraint(
+                fields=["vm_interface"],
+                condition=models.Q(vm_interface__isnull=False),
+                name="uniq_circuittermination_vm_interface",
+            ),
             models.CheckConstraint(
                 name="circuittermination_exactly_one_endpoint",
                 check=(
@@ -6512,6 +7064,92 @@ class CircuitTermination(TimestampedModel):
         return f"{self.circuit.cid}/{self.term_side}: {self.endpoint}"
 
 
+# ─── Support & warranty coverage (#421) ──────────────────────────────────────
+# A vendor support contract covers devices; each device's coverage status is
+# derived at read time from the best of its contracts and its own hardware
+# warranty (api.support_coverage). Nothing ships pre-filled.
+
+
+class SupportContract(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A support or maintenance contract with a manufacturer (or through a
+    reseller) that covers a set of devices until its end date.
+
+    Tenant-wide: a contract often spans sites. Its coverage rows
+    (:class:`SupportCoverage`) belong to each device's site."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="support_contracts"
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.PROTECT, related_name="support_contracts"
+    )
+    contract_number = models.CharField(max_length=128)
+    # Free text: service levels are vendor vocabulary (8x5xNBD, 24x7x4, SNT,
+    # P1 …) that drives no logic, so a catalog would only add a step.
+    service_level = models.CharField(max_length=64, blank=True, default="", db_default="")
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(
+        null=True, blank=True,
+        help_text="Last covered day. Blank = open-ended.",
+    )
+    reseller = models.CharField(max_length=128, blank=True, default="", db_default="")
+    cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default="", db_default="")
+    portal_url = models.URLField(max_length=500, blank=True, default="", db_default="")
+    renewal_notes = models.TextField(blank=True, default="", db_default="")
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Where "entering the warning window" and "expired" are announced.
+    notify_channels = models.ManyToManyField(
+        "monitoring.NotificationChannel", blank=True, related_name="support_contracts"
+    )
+    #: The last state announced to the channels ("" · expiring · expired), so
+    #: each change is sent once. Bookkeeping, never written by the API.
+    notified_state = models.CharField(max_length=8, blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["end_date", "contract_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "manufacturer", "contract_number"],
+                name="uniq_supportcontract_tenant_mfr_number",
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "end_date"])]
+
+    def __str__(self) -> str:
+        return self.contract_number
+
+
+class SupportCoverage(TimestampedModel):
+    """One device covered by one support contract."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="support_coverage"
+    )
+    contract = models.ForeignKey(
+        SupportContract, on_delete=models.CASCADE, related_name="coverage"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="support_coverage"
+    )
+
+    class Meta:
+        ordering = ["contract", "device"]
+        verbose_name_plural = "support coverage"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contract", "device"], name="uniq_supportcoverage_contract_device"
+            )
+        ]
+
+    def __str__(self) -> str:
+        # The device alone: this is the change log's title for the row, and a
+        # site user who may see the coverage may not see the contract.
+        return f"Coverage of {self.device}"
+
+
 # ─── Power ───────────────────────────────────────────────────────────────────
 class PowerPanel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """An electrical distribution panel within a site - the source that power
@@ -6523,6 +7161,11 @@ class PowerPanel(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
     )
     site = models.ForeignKey(
         Site, on_delete=models.PROTECT, related_name="power_panels"
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="power_panels",
+        help_text="Where in the site the panel is (building / floor / room).",
     )
     name = models.CharField(max_length=128)
     comments = models.TextField(blank=True, default="")
@@ -6612,88 +7255,6 @@ class WirelessLANGroup(NumIdMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
-
-
-class SecretBackedPSK(models.Model):
-    """A pre-shared key that lives in the deployment's secret store, never in
-    the row (#68, #168). The model holds only a reference; ``store_psk`` /
-    ``resolve_psk`` / ``clear_psk`` move the value in and out, and the reveal
-    is an audited action on the viewset. A key is a credential, and
-    credentials do not sit in a documentation database in plaintext - the
-    same arrangement DeviceCredential uses. Subclasses set ``psk_secret_prefix``
-    (the folder the key is filed under in the store).
-    """
-
-    psk_secret_prefix = ""
-
-    psk_secret_provider = models.CharField(
-        max_length=8, blank=True, default="",
-        help_text="Which secret store holds the PSK, stamped at write-time.",
-    )
-    psk_secret_path = models.CharField(
-        max_length=255, blank=True, default="",
-        help_text="Reference to the PSK inside that store. Empty: no PSK set.",
-    )
-
-    class Meta:
-        abstract = True
-
-    @property
-    def psk_set(self) -> bool:
-        return bool(self.psk_secret_path)
-
-    def store_psk(self, value: str) -> None:
-        """Write the PSK into the active store under ``<prefix>/<id>``,
-        stamping which provider took it. Fail-closed: raises
-        :class:`SecretStoreDisabled` when no store is configured, because the
-        alternative is a key sitting in the database in the clear."""
-        from core.models import DeploymentSettings
-        from monitoring.secret_store import require_secret_store
-
-        store = require_secret_store()
-        # Always re-derived: a path on the row, however it got there, never
-        # decides where the key is written (#315).
-        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
-        self.psk_secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
-
-    def resolve_psk(self) -> str:
-        """Read the PSK back at use-time. Only the reveal action calls this -
-        never list or detail serialization."""
-        from monitoring.secret_store import SecretStoreError, require_secret_store
-
-        if not self.psk_secret_path:
-            raise SecretStoreError("No PSK is set.")
-        store = require_secret_store()
-        value = store.get(self.tenant_id, self.psk_secret_path)
-        if value is None:
-            raise SecretStoreError(
-                f"No secret found at '{self.psk_secret_path}' in the "
-                "configured store."
-            )
-        return value.get("psk", "")
-
-    def clear_psk(self) -> None:
-        """Forget the PSK, removing it from the store as well as the reference.
-
-        Best-effort on the store side: if it is unreachable the reference still
-        goes, because leaving a row pointing at a key nobody can read is worse
-        than an orphaned entry an operator can prune."""
-        path = self.psk_secret_path
-        self.psk_secret_path = ""
-        self.psk_secret_provider = ""
-        if not path:
-            return
-        from monitoring.secret_store import SecretStoreError, active_secret_store
-
-        try:
-            store = active_secret_store()
-            if store is not None:
-                store.delete(self.tenant_id, path)
-        except SecretStoreError:
-            pass
 
 
 class WirelessLAN(SecretBackedPSK, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -7538,6 +8099,101 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+
+def _cad_upload_to(instance, filename: str) -> str:
+    """Every file of a plan's drawing lives in ``floor-plans/cad/<plan id>/``,
+    under a random name: the media view finds the plan from the folder, and a
+    new upload never reuses a cached URL."""
+    ext = os.path.splitext(filename)[1].lower()[:8]
+    return f"floor-plans/cad/{instance.floor_plan_id}/{uuid.uuid4().hex}{ext}"
+
+
+class FloorPlanDrawing(TimestampedModel):
+    """A CAD drawing (DXF, or DWG through a converter) as a floor plan's
+    background. One per plan. The upload is processed by an RQ job
+    (``api/cad_render.py``) into a sanitised, layered SVG plus the drawing's
+    units, extents and layers; ``placement`` holds how the plan shows it."""
+
+    SOURCE_KINDS = [("dxf", "DXF"), ("dwg", "DWG")]
+    STATUS_CHOICES = [("queued", "Queued"), ("ready", "Ready"), ("failed", "Failed")]
+    SCALE_SOURCES = [
+        ("units", "Drawing units"), ("calibration", "Calibration"),
+        ("override", "Units override"), ("assumed", "Assumed"),
+    ]
+    # The units an operator may say the drawing is in, when the file's
+    # $INSUNITS is wrong or missing: cad_engine's names and their scale.
+    UNITS_OVERRIDES = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "in": 25.4, "ft": 304.8}
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_drawings"
+    )
+    floor_plan = models.OneToOneField(
+        FloorPlan, on_delete=models.CASCADE, related_name="drawing"
+    )
+    source = models.FileField(upload_to=_cad_upload_to, max_length=255)
+    source_name = models.CharField(max_length=255, blank=True, default="")
+    source_kind = models.CharField(max_length=8, choices=SOURCE_KINDS)
+    source_bytes = models.PositiveBigIntegerField(default=0)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="queued")
+    error = models.TextField(blank=True, default="")
+    # $INSUNITS as read ("mm", "in", ... or "unitless") and the scale it gives.
+    units = models.CharField(max_length=16, blank=True, default="")
+    units_mm_per_unit = models.FloatField(null=True, blank=True)
+    # The units the operator says the drawing is in ("" = trust the file);
+    # wins over the file's units, loses to a calibration.
+    units_override = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        choices=[(k, k) for k in UNITS_OVERRIDES],
+    )
+    # Two points in drawing units and the real distance between them; wins
+    # over the units when set. {"a": [x, y], "b": [x, y], "distance_mm": n}.
+    calibration = models.JSONField(null=True, blank=True)
+    # {"min_x", "min_y", "max_x", "max_y"} in drawing units.
+    extents = models.JSONField(null=True, blank=True)
+    # [{"name", "color", "on", "frozen", "entity_count", "kinds"}]
+    layers = models.JSONField(default=list, blank=True)
+    rendered = models.FileField(upload_to=_cad_upload_to, max_length=255, blank=True)
+    rendered_bytes = models.PositiveIntegerField(default=0)
+    rendered_elements = models.PositiveIntegerField(default=0)
+    # The simplification steps the render needed to fit the caps, in order.
+    simplified = models.JSONField(default=list, blank=True)
+    # What was left out: {"external": n, "infinite": n}.
+    skipped = models.JSONField(default=dict, blank=True)
+    # {"x_mm", "y_mm", "rotation", "opacity", "hidden_layers", "hide_text"}
+    placement = models.JSONField(default=dict, blank=True)
+    # Server renders with a set of layers left out, by key (the large-drawing
+    # path): {key: {"status", "file", "bytes", "elements", "error", ...}}.
+    variants = models.JSONField(default=dict, blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["floor_plan"]
+
+    def __str__(self) -> str:
+        return f"{self.floor_plan} drawing"
+
+    @property
+    def mm_per_unit(self) -> float:
+        """The scale in effect: calibration, else the units override, else
+        the file's units, else 1 (the drawing is assumed to be in
+        millimetres until told otherwise)."""
+        cal = self.calibration if isinstance(self.calibration, dict) else None
+        if cal and cal.get("mm_per_unit"):
+            return float(cal["mm_per_unit"])
+        if self.units_override in self.UNITS_OVERRIDES:
+            return self.UNITS_OVERRIDES[self.units_override]
+        return float(self.units_mm_per_unit or 1.0)
+
+    @property
+    def scale_source(self) -> str:
+        cal = self.calibration if isinstance(self.calibration, dict) else None
+        if cal and cal.get("mm_per_unit"):
+            return "calibration"
+        if self.units_override in self.UNITS_OVERRIDES:
+            return "override"
+        return "units" if self.units_mm_per_unit else "assumed"
 
 
 class FloorPlanTile(TimestampedModel):

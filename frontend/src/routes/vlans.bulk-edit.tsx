@@ -16,20 +16,11 @@ import type {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { ColorBadge } from "@/components/cells/color-badge"
+import { Combobox } from "@/components/ui/combobox"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
-import { VrfCell } from "@/components/cells/vrf-cell"
 import { FieldEditor, useFieldEditorOptions } from "@/components/forms"
 import type { BulkFieldSpec } from "@/components/forms"
 import { EditPageShell } from "@/components/edit-page-shell"
-import { StatusBadge } from "@/components/status-badge"
 import { apiErrorToast } from "@/lib/api-toast"
 
 export const Route = createFileRoute("/vlans/bulk-edit")({
@@ -160,92 +151,91 @@ function BulkEditVlansPage() {
         className="grid gap-4"
       >
         <Field label="Status">
-          <Select value={statusId} onValueChange={setStatusId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No status</SelectItem>
-              {statuses.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  <StatusBadge status={s} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={statusId}
+            onChange={(v) => setStatusId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No status" },
+              ...(statuses.data?.results ?? []).map((s) => ({
+                value: s.id,
+                label: s.name,
+                color: s.color,
+                badge: true,
+              })),
+            ]}
+            searchPlaceholder="Search statuses…"
+            emptyText="No matches."
+          />
         </Field>
         <Field label="Site">
-          <Select value={siteId} onValueChange={setSiteId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No site</SelectItem>
-              {sites.data?.results.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={siteId}
+            onChange={(v) => setSiteId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No site" },
+              ...(sites.data?.results ?? []).map((s) => ({
+                value: s.id,
+                label: s.name,
+              })),
+            ]}
+            searchPlaceholder="Search sites…"
+            emptyText="No matches."
+          />
         </Field>
         <Field label="Group">
-          <Select value={groupId} onValueChange={setGroupId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No group</SelectItem>
-              {groups.data?.results.map((g) => (
-                <SelectItem
-                  key={g.id}
-                  value={g.id}
-                  aside={
-                    <span className="num text-xs text-muted-foreground">
-                      {g.min_vid}–{g.max_vid}
-                    </span>
-                  }
-                >
-                  {g.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={groupId}
+            onChange={(v) => setGroupId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No group" },
+              ...(groups.data?.results ?? []).map((g) => ({
+                value: g.id,
+                label: g.name,
+                hint: `${g.min_vid}–${g.max_vid}`,
+              })),
+            ]}
+            searchPlaceholder="Search groups…"
+            emptyText="No matches."
+          />
         </Field>
         <Field label="Zone">
-          <Select value={zoneId} onValueChange={setZoneId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No zone</SelectItem>
-              {zones.data?.results.map((z) => (
-                <SelectItem key={z.id} value={z.id}>
-                  <ColorBadge name={z.name} color={z.color || undefined} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={zoneId}
+            onChange={(v) => setZoneId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No zone" },
+              ...(zones.data?.results ?? []).map((z) => ({
+                value: z.id,
+                label: z.name,
+                color: z.color,
+                badge: true,
+              })),
+            ]}
+            searchPlaceholder="Search zones…"
+            emptyText="No matches."
+          />
         </Field>
         <Field label="VRF">
-          <Select value={vrfId} onValueChange={setVrfId}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={KEEP}>(keep)</SelectItem>
-              <SelectItem value={NONE}>No VRF</SelectItem>
-              {vrfs.data?.results.map((v) => (
-                <SelectItem key={v.id} value={v.id}>
-                  <VrfCell vrf={v} linked={false} />
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            value={vrfId}
+            onChange={(v) => setVrfId(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: NONE, label: "No VRF" },
+              ...(vrfs.data?.results ?? []).map((v) => ({
+                value: v.id,
+                label: v.name,
+                color: v.color,
+                badge: true,
+              })),
+            ]}
+            searchPlaceholder="Search VRFs…"
+            emptyText="No matches."
+          />
         </Field>
         <FieldEditor
           spec={DESCRIPTION[0]}

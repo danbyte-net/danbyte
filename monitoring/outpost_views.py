@@ -437,29 +437,35 @@ SWEEP_INTERVAL_SECONDS = 600  # how often an Outpost re-runs subnet discovery
 
 
 def build_snmp_work(engine) -> list[dict]:
-    """The SNMP devices this engine should poll, each with its resolved (now
-    site/location-scoped) credentials. No claiming - SNMP discovery is periodic
-    and idempotent (last write wins), so a re-poll is harmless."""
-    from .engines import devices_for_engine
-    from .snmp_poll import _device_target, snmp_params
-    from .snmp_resolve import resolve_device_profile
+    """The SNMP targets - devices and VMs - this engine should poll, each with
+    its resolved (site/location-scoped) credentials. No claiming - SNMP
+    discovery is periodic and idempotent (last write wins), so a re-poll is
+    harmless.
+
+    Every item travels in the ``devices`` list keyed by ``device_id``, a VM's
+    included: an agent fetches whatever address it is given and echoes that id
+    back, so one that predates VM targets polls them unchanged. ``kind`` says
+    which the id is; an agent may echo it, and one that does not is resolved
+    by the id alone (``outpost_snmp_results_view``)."""
+    from .engines import targets_for_engine
 
     work = []
-    for device in devices_for_engine(engine):
-        profile, _source = resolve_device_profile(device, engine.tenant)
+    for target in targets_for_engine(engine):
+        profile, _source = target.resolve_profile(engine.tenant)
         if profile is None:
             continue
-        target = _device_target(device)
-        if not target:
+        address = target.address()
+        if not address:
             continue
         work.append({
-            "device_id": str(device.id),
-            "target": target,
+            "device_id": str(target.id),
+            "kind": target.kind,
+            "target": address,
             "version": profile.version,
             # The profile's params plus, in per-VLAN "always" mode, the VLAN
             # hint (#284). An agent that predates MAC tracking ignores keys it
             # doesn't know.
-            "params": snmp_params(profile, device),
+            "params": target.params(profile),
             "secret_params": profile.secret_params or {},
             "timeout_ms": profile.timeout_ms,
         })
@@ -472,7 +478,7 @@ def build_snmp_work(engine) -> list[dict]:
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="The SNMP devices to poll and the re-poll interval.",
+        description="The SNMP targets (devices and VMs) to poll and the re-poll interval.",
     ),
 )
 @api_view(["GET"])
@@ -503,6 +509,9 @@ def outpost_snmp_work_view(request):
                     name="OutpostSnmpResultItem",
                     fields={
                         "device_id": serializers.CharField(),
+                        "kind": serializers.ChoiceField(
+                            choices=["device", "vm"], required=False
+                        ),
                     },
                 ),
                 required=False,
@@ -519,19 +528,20 @@ def outpost_snmp_work_view(request):
 @permission_classes([IsAuthenticated])
 def outpost_snmp_results_view(request):
     """Ingest SNMP results the Outpost fetched → the same persistence as a local
-    poll (``persist_snmp_result``).
+    poll (``persist_snmp_result``), for devices and VMs alike.
 
-    Only for the devices this engine polls (``devices_for_engine``) - the set
+    Only for the targets this engine polls (``targets_for_engine``) - the set
     its work list hands out. Results carry learned MACs and ARP now (#284),
-    so an agent's token must not be able to write sightings for a device in
+    so an agent's token must not be able to write sightings for a target in
     another site of its tenant, or one the core or another Outpost polls.
-    Only the posted devices are checked, so the cost follows the results
-    (#293)."""
+    Only the posted targets are checked, so the cost follows the results
+    (#293). A row's ``kind``, when the agent echoes it, must match the target
+    the id names; without it the id alone decides."""
     import uuid
 
-    from .engines import devices_for_engine
+    from .engines import targets_for_engine
     from .snmp_poll import persist_snmp_result
-    from .snmp_resolve import resolve_device_profile
+    from .snmp_target import KINDS
 
     eng = request.auth
     if not isinstance(request.data, dict):
@@ -545,16 +555,25 @@ def outpost_snmp_results_view(request):
             ids.add(uuid.UUID(str(r.get("device_id"))))
         except (AttributeError, ValueError):
             continue
-    devices = {str(d.id): d for d in devices_for_engine(eng, ids)} if ids else {}
+    targets: dict = {}
+    for t in targets_for_engine(eng, ids) if ids else []:
+        targets.setdefault(str(t.id), {})[t.kind] = t
     ingested = 0
     for r in rows:
         if not isinstance(r, dict):
             continue
-        device = devices.get(str(r.get("device_id", "")))
-        if device is None:  # unknown, another tenant, or not this engine's
+        by_kind = targets.get(str(r.get("device_id", "")))
+        if not by_kind:  # unknown, another tenant, or not this engine's
             continue
-        profile, _ = resolve_device_profile(device, eng.tenant)
-        persist_snmp_result(eng.tenant, profile, r, device=device)
+        kind = r.get("kind")
+        if kind is None:
+            target = next(iter(by_kind.values())) if len(by_kind) == 1 else None
+        else:
+            target = by_kind.get(kind) if kind in KINDS else None
+        if target is None:
+            continue
+        profile, _ = target.resolve_profile(eng.tenant)
+        persist_snmp_result(eng.tenant, profile, r, **target.store())
         ingested += 1
     return Response({"ingested": ingested})
 

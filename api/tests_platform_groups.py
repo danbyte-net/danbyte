@@ -11,7 +11,15 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from api.models import Device, DeviceType, Platform, PlatformGroup
+from api.models import (
+    Cluster,
+    ClusterType,
+    Device,
+    DeviceType,
+    Platform,
+    PlatformGroup,
+    VirtualMachine,
+)
 from core.models import Organization, Tenant
 
 
@@ -168,4 +176,32 @@ class EffectivePlatformTests(BaseCase):
         self.assertEqual(
             data["effective_platform"],
             {"id": str(self.specific.id), "name": self.specific.name},
+        )
+
+
+class PlatformVirtualMachineTests(BaseCase):
+    """A platform's page lists the VMs running it, beside its devices."""
+
+    def setUp(self):
+        super().setUp()
+        self.eos = Platform.objects.create(tenant=self.tenant, name="EOS", slug="eos")
+        other = Platform.objects.create(tenant=self.tenant, name="IOS", slug="ios")
+        ct = ClusterType.objects.create(tenant=self.tenant, name="c", slug="c")
+        cl = Cluster.objects.create(tenant=self.tenant, name="C1", type=ct)
+        for name, p in (("veos-1", self.eos), ("veos-2", self.eos), ("csr", other)):
+            VirtualMachine.objects.create(tenant=self.tenant, name=name, cluster=cl, platform=p)
+
+    def test_vm_count_on_detail_and_list(self):
+        res = self.client_api.get(f"/api/platforms/{self.eos.id}/")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.data["vm_count"], 2)
+        self.assertEqual(res.data["device_count"], 0)
+        listed = self.client_api.get("/api/platforms/").data["results"]
+        self.assertEqual({p["name"]: p["vm_count"] for p in listed}, {"EOS": 2, "IOS": 1})
+
+    def test_vm_list_filters_by_platform(self):
+        res = self.client_api.get(f"/api/virtual-machines/?platform={self.eos.id}")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(
+            sorted(v["name"] for v in res.data["results"]), ["veos-1", "veos-2"]
         )

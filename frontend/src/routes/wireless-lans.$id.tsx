@@ -104,7 +104,7 @@ function Body({ wlan: w }: { wlan: WirelessLAN }) {
               </Link>
             ) : undefined
           }
-          tags={w.tags.length > 0 && <TagList tags={w.tags} />}
+          tags={w.tags.length > 0 && <TagList tags={w.tags} listTo="/wireless-lans" />}
           description={w.description}
         />
       }

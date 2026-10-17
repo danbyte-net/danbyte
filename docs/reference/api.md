@@ -116,12 +116,23 @@ hard-code a list that can go stale:
   the list** - 403 without view permission on it, 404 for a path that is not
   a list or a list that is not enabled.
 
+## Malformed input
+
+A JSON body must be an object. A string, list, number or `null` answers
+`400` with `{"non_field_errors": ["Expected a JSON object."]}` before the
+call does anything. A query parameter that should be a number, id or flag
+and is not either answers `400` naming the parameter (`{"limit": ["A whole
+number is required."]}`) or falls back to its default; never a server
+error. A query parameter carrying a NUL byte (`%00`) answers `400` on every
+path.
+
 ## Bulk calls
 
 Every `bulk-delete/` and `bulk-update/` takes a JSON object whose `ids` is a
 non-empty list of object ids (some lists take at most 1000 per call). An id
-that is not one, or a body that is not an object, answers `400` with
-`{"ids": "«nope» is not an id."}` and touches nothing. Ids outside the active
+that is not one answers `400` with `{"ids": "«nope» is not an id."}` and
+touches nothing; a body that is not an object answers as in
+[Malformed input](#malformed-input). Ids outside the active
 tenant or the caller's permissions are left out, as in a list.
 
 More ids than a call takes answer `400` (`{"ids": "At most 1000 ids per
@@ -141,6 +152,24 @@ row is checked as its own `PATCH` would be, and the error names the row
 (`{"lag_protocol": ["eth0: Only an interface of type LAG has bundle
 settings."]}`). Text is trimmed and booleans read as a `PATCH` reads them.
 One bad value refuses the whole call: nothing is written.
+
+A list that declares its bulk-edit fields (the routing lists) also answers
+`GET <list>/bulk-edit-fields/` with `{"fields": [...], "tags": true}`: the
+keys its `bulk-update/` accepts, each described as `/api/editable-fields/`
+describes a field (an object field carries the `endpoint` to pick it from).
+Its `bulk-update/` answers `409` when the values would make two rows the
+same (a static route's path), and its `bulk-delete/` keeps a row that other
+records still reference, with the reason in `skipped` - see
+[Routing](../features/routing.md#editing-and-deleting-several-at-once).
+
+The lists that preview a delete (circuits, wireless, virtual chassis, power
+panels and feeds) answer `bulk-delete/` with `{deleted, deleted_ids,
+skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
+count}], notes: [{id, name, label, detail}], dry_run}`. `skipped` are the
+rows kept because something still uses them; `impact` counts everything else
+the delete removes, including a cable left with no port on one end; `notes`
+name rows that go but
+are worth a look first, such as a power feed still cabled to a device.
 
 ## Generating the schema offline
 

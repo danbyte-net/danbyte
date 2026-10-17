@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SimpleTable } from "@/components/ui/simple-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
-import { Field, FormCheckbox, FormSelect } from "@/components/forms"
+import { Field, FormCheckbox, FormCombobox } from "@/components/forms"
 import { RowActions } from "@/components/row-actions"
 import { timeAgo } from "@/components/cells/time-ago"
 import { SettingsCard } from "@/components/settings/settings-card"
@@ -194,7 +194,7 @@ export function ApiTokensSection() {
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
-          <FormSelect
+          <FormCombobox
             label="Tenant"
             value={tenantId}
             onChange={setTenantId}
@@ -203,6 +203,8 @@ export function ApiTokensSection() {
               label: t.name,
             }))}
             placeholder="Pick a tenant"
+            searchPlaceholder="Search tenants…"
+            emptyText="No tenants."
           />
           <Button
             onClick={() => create.mutate()}

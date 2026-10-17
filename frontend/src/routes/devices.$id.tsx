@@ -103,6 +103,11 @@ import { DeviceDeployPanel } from "@/components/device-deploy-panel"
 import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import { DeviceHardwareHealth } from "@/components/device-hardware-health"
+import { useDateFormat } from "@/lib/datetime"
+import {
+  CoverageSummary,
+  DeviceCoverageCard,
+} from "@/components/device-coverage-card"
 import {
   FaceplateLegend,
   FaceplateView,
@@ -119,7 +124,10 @@ import {
   useDeviceAntennas,
 } from "@/components/device-antennas-pane"
 import { DeviceModulesPane } from "@/components/device-modules-pane"
-import { DevicePortsPane } from "@/components/device-ports-pane"
+import {
+  DeviceFrontPortsPane,
+  DeviceRearPortsPane,
+} from "@/components/device-ports-pane"
 import {
   AddActionsContext,
   BarSlotContext,
@@ -159,6 +167,7 @@ import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
@@ -204,6 +213,8 @@ const DEVICE_COMPONENT_SUBS = [
   "interfaces",
   "console",
   "power",
+  "front-ports",
+  "rear-ports",
   "hardware",
 ] as const
 type DeviceComponentSub = (typeof DEVICE_COMPONENT_SUBS)[number]
@@ -357,7 +368,9 @@ function Body({ device: d }: { device: Device }) {
               )}
             </>
           }
-          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          tags={
+            d.tags.length > 0 && <TagList tags={d.tags} listTo="/devices" />
+          }
           description={d.description}
         />
       }
@@ -376,7 +389,9 @@ function Body({ device: d }: { device: Device }) {
             (d.interface_count || 0) +
               (d.hardware_count || 0) +
               (d.console_count || 0) +
-              (d.power_count || 0) || undefined,
+              (d.power_count || 0) +
+              (d.front_port_count || 0) +
+              (d.rear_port_count || 0) || undefined,
         },
         { value: "images", label: "Images", count: d.image_count || undefined },
         // Only when the type has a rack-face photo to place markers on.
@@ -474,6 +489,7 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="config">
         <div className="space-y-6">
+          <DeviceConfigBackups deviceId={d.id} />
           <ConfigContextPanel endpoint="devices" id={d.id} />
           <DeviceInventoryPanel deviceId={d.id} />
           <DeviceConfigRender deviceId={d.id} bound={d.config_template} />
@@ -644,6 +660,16 @@ function DeviceComponents({
                 count: d.power_count || undefined,
               },
               {
+                value: "front-ports",
+                label: "Front ports",
+                count: d.front_port_count || undefined,
+              },
+              {
+                value: "rear-ports",
+                label: "Rear ports",
+                count: d.rear_port_count || undefined,
+              },
+              {
                 value: "hardware",
                 label: "Hardware",
                 count: d.hardware_count || undefined,
@@ -686,7 +712,9 @@ function DeviceComponents({
           </div>
         </div>
         <BarSlotContext.Provider value={barSlot}>
-          <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          {/* A flex column, so a single-table pane (Interfaces, Front
+              ports, Rear ports) can fill it and keep its header in view. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4 lg:p-6">
             {sub === "interfaces" && (
               <DeviceInterfacesPane
                 deviceId={d.id}
@@ -700,13 +728,18 @@ function DeviceComponents({
             )}
             {sub === "console" && <DeviceConsolePane deviceId={d.id} />}
             {sub === "power" && <DevicePowerPane deviceId={d.id} />}
+            {sub === "front-ports" && (
+              <DeviceFrontPortsPane deviceId={d.id} initialCabled={cabled} />
+            )}
+            {sub === "rear-ports" && (
+              <DeviceRearPortsPane deviceId={d.id} initialCabled={cabled} />
+            )}
             {sub === "hardware" && (
               <div className="space-y-8">
                 <DeviceBaysPane deviceId={d.id} />
                 <DeviceModulesPane deviceId={d.id} />
                 <DeviceAntennasPane deviceId={d.id} />
                 <DeviceInventoryPane deviceId={d.id} />
-                <DevicePortsPane deviceId={d.id} initialCabled={cabled} />
               </div>
             )}
           </div>
@@ -732,7 +765,12 @@ function DeviceOverview({
       search: (prev) => ({
         ...prev,
         tab: "components",
-        sub: kind === "interfaces" ? "interfaces" : "hardware",
+        sub:
+          kind === "interfaces"
+            ? "interfaces"
+            : kind === "front_ports"
+              ? "front-ports"
+              : "rear-ports",
         ...(state ? { cabled: state } : { cabled: undefined }),
       }),
     })
@@ -746,6 +784,7 @@ function DeviceOverview({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  const { formatDate } = useDateFormat()
 
   // How many VMs run on this device (a hypervisor host). One cheap count -
   // page_size=1 and read the total.
@@ -874,6 +913,13 @@ function DeviceOverview({
           } satisfies KvRow,
         ]
       : []),
+    // Support & warranty coverage (#421), next to the vendor lifecycle.
+    {
+      label: "Support coverage",
+      value: (
+        <CoverageSummary status={d.coverage?.status} end={d.coverage?.end} />
+      ),
+    },
     {
       label: "Serial number",
       value: mono(d.serial_number),
@@ -883,6 +929,14 @@ function DeviceOverview({
       label: "Asset tag",
       value: mono(d.asset_tag),
       copy: d.asset_tag || undefined,
+    },
+    {
+      label: "Warranty end",
+      value: d.warranty_end ? (
+        <span className="num">{formatDate(d.warranty_end)}</span>
+      ) : (
+        dash
+      ),
     },
     { label: "Height", value: <span className="num">{d.u_height} U</span> },
     ...(visibility.airflow
@@ -1086,6 +1140,7 @@ function DeviceOverview({
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
+      <DeviceCoverageCard deviceId={d.id} />
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues
         model="device"
@@ -1592,7 +1647,7 @@ function DeviceInterfacesPane({
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       {barSlot &&
         (canAdd || canSync || virtualChassis) &&
         createPortal(
@@ -1701,7 +1756,10 @@ function DeviceInterfacesPane({
           total={q.data?.count}
           columns={columns}
           rowStyle={(r) => portTint(r)}
-          embedded
+          tableId="device-interfaces"
+          stickyHeader
+          searchable
+          searchPlaceholder="Search interfaces…"
           onSelectedRowsChange={setSelIfaces}
         />
       )}

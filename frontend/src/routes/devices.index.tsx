@@ -16,7 +16,8 @@ import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useEolSettings } from "@/components/cells/eol-cell"
+import { useUrlTableFilters } from "@/components/table-filters"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
@@ -25,11 +26,13 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceBulkBar } from "@/components/device-bulk-bar"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/devices/")({
-  // Facet seeds from cross-object / dashboard deep-links, e.g. the "Devices by
-  // status / type / site / manufacturer" dashboard cards. Keys are optional so a
-  // plain `Link to="/devices"` never has to pass search.
+  // Typed deep-link params, e.g. the "Devices by status / type / site /
+  // manufacturer" dashboard cards. They are the live facet params (the rail
+  // reads every filter from the URL), declared here so links type-check. Keys
+  // are optional so a plain `Link to="/devices"` never has to pass search.
   validateSearch: (
     search: Record<string, unknown>
   ): {
@@ -37,18 +40,22 @@ export const Route = createFileRoute("/devices/")({
     status?: string
     site?: string
     manufacturer?: string
+    coverage?: string
   } => {
     const out: {
       type?: string
       status?: string
       site?: string
       manufacturer?: string
+      coverage?: string
     } = {}
     if (typeof search.type === "string") out.type = search.type
     if (typeof search.status === "string") out.status = search.status
     if (typeof search.site === "string") out.site = search.site
     if (typeof search.manufacturer === "string")
       out.manufacturer = search.manufacturer
+    // Support coverage status (#421), from the Support coverage widget.
+    if (typeof search.coverage === "string") out.coverage = search.coverage
     return out
   },
   component: DevicesPage,
@@ -62,7 +69,7 @@ export const Route = createFileRoute("/devices/")({
 const EMPTY_MON: Record<string, BulkStatusEntry> = {}
 
 function DevicesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [selected, setSelected] = useState<Device[]>([])
 
@@ -120,11 +127,13 @@ function DevicesPage() {
       ),
     [portUtilQuery.data]
   )
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo<ColumnDef<Device>[]>(
     () =>
       buildDeviceColumns<Device>({
         selection: true,
         humanIds,
+        eol: eolOn,
         violations: true,
         drift: driftMap,
         planned: plannedMap,
@@ -145,25 +154,12 @@ function DevicesPage() {
       canDelete,
       monitoring,
       humanIds,
+      eolOn,
       portUtil,
       sla.entries,
       sla.frame,
     ]
   )
-  const {
-    type: typeFilter,
-    status: statusFilter,
-    site: siteFilter,
-    manufacturer: manufacturerFilter,
-  } = Route.useSearch()
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (typeFilter) seed.type = [typeFilter]
-    if (statusFilter) seed.status = [statusFilter]
-    if (siteFilter) seed.site = [siteFilter]
-    if (manufacturerFilter) seed.manufacturer = [manufacturerFilter]
-    return Object.keys(seed).length ? seed : undefined
-  }, [typeFilter, statusFilter, siteFilter, manufacturerFilter])
   const {
     rail,
     filteredRows,
@@ -171,7 +167,7 @@ function DevicesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows, initialEnums)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell
@@ -199,6 +195,7 @@ function DevicesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

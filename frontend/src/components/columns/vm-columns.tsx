@@ -10,6 +10,7 @@ import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
+import { eolColumn } from "@/components/cells/eol-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -44,6 +45,7 @@ export type VmColumnId =
   | "numid"
   | "name"
   | "cluster"
+  | "group"
   | "status"
   | "monitoring"
   | "sla"
@@ -56,6 +58,7 @@ export type VmColumnId =
   | "site"
   | "role"
   | "platform"
+  | "eol"
   | "synced_from"
   | "tags"
   | "updated"
@@ -64,6 +67,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "numid",
   "name",
   "cluster",
+  "group",
   "status",
   "monitoring",
   "sla",
@@ -76,6 +80,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "site",
   "role",
   "platform",
+  "eol",
   "synced_from",
   "tags",
   "updated",
@@ -99,6 +104,9 @@ export interface VmColumnOpts<T extends VirtualMachine = VirtualMachine> {
   monitoring?: Record<string, BulkStatusEntry>
   /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
   sla?: SlaColumnOpts
+  /** End-of-life column from the platform's mapping (#8) - pass
+   * `useEolSettings().enabled`; the column only exists while it is on. */
+  eol?: boolean
 }
 
 export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
@@ -112,6 +120,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
   }
   // The "#" column only exists where the deployment enables human ids.
   if (!opts.humanIds) omit.add("numid")
+  if (!opts.eol) omit.add("eol")
   const keep = (id: VmColumnId) =>
     !omit.has(id) && (!opts.include || opts.include.includes(id))
 
@@ -155,6 +164,35 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
           kind: "enum",
           label: "Cluster",
           get: (r: T) => r.cluster.name,
+        },
+      },
+    }),
+    // The hypervisor's grouping - a vApp, pool or folder - or a hand-made
+    // one. Most estates leave it empty, so it reads as a dash there.
+    group: () => ({
+      id: "group",
+      header: ({ column }) => <SortHeader column={column} label="Group" />,
+      accessorFn: (r) => r.group?.name ?? "",
+      cell: ({ row }) =>
+        row.original.group ? (
+          <Link
+            to="/vm-groups/$id"
+            params={{ id: row.original.group.id }}
+            className="link text-xs"
+          >
+            {row.original.group.name}
+          </Link>
+        ) : (
+          dash
+        ),
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Group",
+          get: (r: T) => r.group?.name ?? "__none__",
+          formatValue: (v) => ({
+            label: v === "__none__" ? "No group" : String(v),
+          }),
         },
       },
     }),
@@ -340,6 +378,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     }),
     platform: () =>
       platformColumn<T>({ get: (r) => r.platform, className: "text-xs" }),
+    eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

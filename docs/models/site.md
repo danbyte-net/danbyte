@@ -13,7 +13,7 @@ A physical location - DC, office, POP, edge.
 | `id` | UUID | `uuid4()` | |
 | `tenant` | FK → `Tenant` | required | |
 | `name` | char(255) | required | |
-| `location` | char(255) | `""` | Free-form postal address (city, street, …). Labelled **Address** in the UI (to avoid clashing with the `Location` object). The API also exposes it read+write as `address`, an alias of this field - either name works; `location` is kept for backward compatibility. |
+| `location` | char(255) | `""` | Free-form postal address (city, street, …). Labelled **Address** in the UI (to avoid clashing with the `Location` object), where the site page's Overview has a copy button for it. The API also exposes it read+write as `address`, an alias of this field - either name works; `location` is kept for backward compatibility. |
 | `time_zone` | char(63) | `""` | IANA name (e.g. `Europe/Copenhagen`); validated against the zoneinfo set. The detail page shows the current local time so you can read the offset between sites. |
 | `description` | text | `""` | |
 | `gateway_policy` | choice | `first` | `first` · `last` · `none` |
@@ -67,9 +67,10 @@ the site has racks and you may view racks; it sits after **Cabinets**.
   **Power** (demand over supply, as the rack page reads it) and **Ports** /
   **Panel ports** (in use over counted). A plan with no racks says so.
 - **Space · Power · Ports · Panel ports** above the cards picks what the
-  thumbnails are coloured by, on the racks' one scale: green up to 80 %,
-  amber above 80 %, red above 95 %, grey where there is nothing to measure
-  (no supply, no ports). The choice stays in the URL (`?measure=power`).
+  thumbnails are coloured by, on the racks' one scale: green up to the
+  tenant's warning level, amber above it, red above its critical level (80 %
+  and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where there
+  is nothing to measure (no supply, no ports). The choice stays in the URL (`?measure=power`).
 - **Not on a floor plan**: the site's racks that no floor plan places, by
   name, with the same figures.
 - The ports open **DCIM → Connections → Port utilization** filtered to the

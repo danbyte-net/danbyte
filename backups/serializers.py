@@ -50,7 +50,30 @@ class BackupTargetSerializer(serializers.ModelSerializer):
         creds = attrs.get("credentials")
         if creds is not None and not isinstance(creds, dict):
             raise serializers.ValidationError({"credentials": "Expected an object."})
+        if kind == "sftp":
+            self._validate_sftp(attrs, config, creds)
         return attrs
+
+    def _validate_sftp(self, attrs, config, creds):
+        from .sftp import check_credentials, clean_config
+        from .storage import StorageError
+
+        if not isinstance(config, dict):
+            raise serializers.ValidationError({"config": "Expected an object."})
+        try:
+            cleaned = clean_config(config)
+        except StorageError as exc:
+            raise serializers.ValidationError({"config": str(exc)}) from exc
+        if "config" in attrs:
+            attrs["config"] = cleaned
+        merged = dict(getattr(self.instance, "credentials", None) or {})
+        for k, v in (creds or {}).items():
+            if v not in ("", None):
+                merged[k] = v
+        try:
+            check_credentials(merged)
+        except StorageError as exc:
+            raise serializers.ValidationError({"credentials": str(exc)}) from exc
 
     def save(self, **kwargs):
         creds = self.validated_data.get("credentials")

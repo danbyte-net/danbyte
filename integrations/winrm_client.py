@@ -12,15 +12,18 @@ Two hard rules:
   literal (the only escape inside is doubling ``'``).
 * **The SSRF allowlist applies.** Internal hosts must be allow-listed under
   Settings → Deployment (or ``DANBYTE_SSRF_ALLOWLIST``), exactly like the
-  NetBox importer's targets; :func:`connect` checks before any socket opens.
+  NetBox importer's targets; :func:`run_ps` checks before any socket opens
+  and pins every request to the address it checked.
 """
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 from requests.exceptions import TooManyRedirects
+from requests.utils import should_bypass_proxies
 
-from core.ssrf import SSRFError, assert_public_host
+from core.ssrf import SSRFError, mount_pinned_adapter, pinned_url, resolve_public_ip
 
 
 class WinRMError(RuntimeError):
@@ -32,8 +35,9 @@ def ps_str(value: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _session(conn):
-    """Build a ``winrm.Session`` for a WindowsServerConnection (no I/O yet)."""
+def _session(conn, ip: str):
+    """Build a ``winrm.Session`` for a WindowsServerConnection (no I/O yet),
+    every request of which goes to ``ip``, the address the SSRF check passed."""
     import winrm
 
     scheme = "https" if conn.use_tls else "http"
@@ -46,19 +50,34 @@ def _session(conn):
         server_cert_validation="validate" if conn.verify_ssl else "ignore",
         operation_timeout_sec=60,
         read_timeout_sec=70,
+        # The URL carries the pinned address; the Kerberos service principal
+        # is still the server's name.
+        kerberos_hostname_override=conn.host,
     )
-    # pywinrm sends through a plain requests.Session, which follows redirects:
-    # a host that passes the SSRF check could answer 307 and have the SOAP
-    # request (and the error body that comes back) land on an internal
-    # address. Refuse every redirect before the next hop is sent (#321).
+    # pywinrm sends through a plain requests.Session, which resolves the name
+    # again on connect and follows redirects. Every message (the encryption
+    # handshake included) passes through _send_message_request, so that is
+    # where it is pinned to the checked address, with the Host header and TLS
+    # verification kept on the name, and where redirects are refused before
+    # the next hop is sent: a host that passes the check could otherwise
+    # answer 307 and land the SOAP request on an internal address (#321).
     transport = session.protocol.transport
     send = transport._send_message_request
 
-    def _send_without_redirects(http, prepared_request):
+    def _send_pinned(http, prepared_request):
         http.max_redirects = 0
+        url = prepared_request.url
+        if urlparse(url).hostname != ip:
+            pinned, host_header = pinned_url(url, ip)
+            if http.trust_env and should_bypass_proxies(url, no_proxy=None):
+                # NO_PROXY names hosts: an exempted host stays direct.
+                http.proxies = {**http.proxies, "no_proxy": ip}
+            prepared_request.url = pinned
+            prepared_request.headers["Host"] = host_header
+            mount_pinned_adapter(http, pinned, conn.host)
         return send(http, prepared_request)
 
-    transport._send_message_request = _send_without_redirects
+    transport._send_message_request = _send_pinned
     return session
 
 
@@ -70,13 +89,13 @@ def run_ps(conn, script: str) -> str:
     actionable.
     """
     try:
-        assert_public_host(conn.host, conn.port)
+        ip = resolve_public_ip(conn.host, conn.port)
     except SSRFError as exc:
         # Surface the allowlist guidance through the normal error channel so
         # test-connection and sync logs tell the operator exactly what to do.
         raise WinRMError(str(exc)) from exc
     try:
-        result = _session(conn).run_ps(script)
+        result = _session(conn, ip).run_ps(script)
     except TooManyRedirects as exc:
         raise WinRMError(
             f"WinRM at {conn.host}:{conn.port} answered with a redirect. Danbyte does "

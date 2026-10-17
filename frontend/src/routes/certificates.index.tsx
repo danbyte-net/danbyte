@@ -12,10 +12,11 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
 import { buildCertificateColumns } from "@/components/columns/certificate-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { UploadCertificateDialog } from "@/components/monitoring/upload-certificate-dialog"
 import { ImportCertificatesDialog } from "@/components/monitoring/import-certificates-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/certificates/")({
   component: CertificatesPage,
@@ -33,8 +34,7 @@ export const Route = createFileRoute("/certificates/")({
 })
 
 function CertificatesPage() {
-  const { expiry, self_signed } = Route.useSearch()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [uploadOpen, setUploadOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const { canDo } = useMe()
@@ -61,20 +61,9 @@ function CertificatesPage() {
     () => buildCertificateColumns<Certificate>(),
     []
   )
-  // Seed the expiry / trust facets from the URL so a cert-health tile lands on
-  // the pre-filtered list. Facet ids: "expiry" (expired|critical|warning|
-  // healthy) and "self_signed" (self|ca) - see certificate-columns.tsx.
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (
-      expiry &&
-      ["expired", "critical", "warning", "healthy"].includes(expiry)
-    )
-      seed.expiry = [expiry]
-    if (self_signed && ["self", "ca"].includes(self_signed))
-      seed.self_signed = [self_signed]
-    return seed
-  }, [expiry, self_signed])
+  // `?expiry=` / `?self_signed=` (a cert-health tile's link) are the facet
+  // params themselves. Facet ids: "expiry" (expired|critical|warning|healthy)
+  // and "self_signed" (self|ca) - see certificate-columns.tsx.
   const {
     rail,
     filteredRows,
@@ -82,7 +71,7 @@ function CertificatesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows, initialEnums)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

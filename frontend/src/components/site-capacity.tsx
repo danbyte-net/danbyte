@@ -32,9 +32,11 @@ import type {
 import {
   CAPACITY_HEX,
   CAPACITY_NONE_HEX,
+  capacityBandLabel,
   capacityColor,
   capacityLevel,
   capacityRatio,
+  useCapacityThresholds,
 } from "@/lib/rack-capacity"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { cn } from "@/lib/utils"
@@ -132,12 +134,14 @@ export function SiteCapacityTab({ siteId }: { siteId: string }) {
   )
 }
 
-/** The thumbnails' colours, in a line: the 80 / 95 % levels and No data. */
+/** The thumbnails' colours, in a line: the tenant's capacity levels and No
+ * data. */
 function LevelKey() {
+  const t = useCapacityThresholds()
   const keys = [
-    { color: CAPACITY_HEX.good, label: "≤ 80%" },
-    { color: CAPACITY_HEX.warn, label: "80–95%" },
-    { color: CAPACITY_HEX.critical, label: "> 95%" },
+    { color: CAPACITY_HEX.good, label: capacityBandLabel("good", t) },
+    { color: CAPACITY_HEX.warn, label: capacityBandLabel("warn", t) },
+    { color: CAPACITY_HEX.critical, label: capacityBandLabel("critical", t) },
     { color: CAPACITY_NONE_HEX, label: "No data" },
   ]
   return (
@@ -329,6 +333,7 @@ function Totals({
   const supplyNote =
     p.available_w > 0
       ? [
+          (p.budget ?? 0) > 0 && `Budget: ${p.budget}`,
           p.pdu_rating > 0 && `PDU rating: ${p.pdu_rating}`,
           p.no_supply > 0 && `No supply: ${p.no_supply}`,
         ]

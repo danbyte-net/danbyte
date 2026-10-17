@@ -11,13 +11,7 @@ import { useTableFilters } from "@/components/table-filters"
 import { actionsColumn } from "@/components/columns/actions-column"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 import { FilteredTable } from "./filtered-table"
 
 type Named = { id: string; name: string }
@@ -116,19 +110,20 @@ export function DenySubnetsPanel() {
           onChange={(e) => setCidr(e.target.value)}
           placeholder="10.0.9.0/24"
         />
-        <Select value={vrf} onValueChange={setVrf}>
-          <SelectTrigger size="sm" className="w-36 shrink-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={INHERIT}>Global VRF</SelectItem>
-            {(vrfs.data?.results ?? []).map((v) => (
-              <SelectItem key={v.id} value={v.id}>
-                {v.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Combobox
+          value={vrf}
+          onChange={(v) => setVrf(v ?? INHERIT)}
+          options={[
+            { value: INHERIT, label: "Global VRF" },
+            ...(vrfs.data?.results ?? []).map((v) => ({
+              value: v.id,
+              label: v.name,
+            })),
+          ]}
+          searchPlaceholder="Search VRFs…"
+          emptyText="No VRFs."
+          className="h-8 w-36 shrink-0"
+        />
         <Button type="submit" size="sm" disabled={create.isPending}>
           <ShieldOff data-icon="inline-start" />
           Add prefix deny

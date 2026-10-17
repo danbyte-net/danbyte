@@ -15,6 +15,7 @@ import { RowActions } from "@/components/row-actions"
 import { AutomationTargetDeleteDialog } from "@/components/automation-target-delete-dialog"
 import { AutomationExplainer } from "@/components/automation-explainer"
 import { AutomationTargetTestButton } from "@/components/automation-target-test-button"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/automation-targets/")({
   component: AutomationTargetsPage,
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/automation-targets/")({
 function AutomationTargetsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("automationtarget", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<AutomationTarget | null>(null)
 
   const query = useQuery({

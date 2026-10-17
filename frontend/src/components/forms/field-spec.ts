@@ -75,6 +75,9 @@ export type BulkFieldSpec =
       kind: "object"
       /** Reference-registry slug ("site", "rack"), used to look up refMeta. */
       object_model: string
+      /** The related list endpoint. In a bulk edit the field is picked from
+       *  its `?picker=1` rows, with Keep and Clear above them. */
+      endpoint?: string
       hint?: string
     }
 

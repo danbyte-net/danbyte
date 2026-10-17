@@ -13,6 +13,7 @@ Signature handling is XSW-safe: we verify the whole document and then read
 from __future__ import annotations
 
 import base64
+import logging
 import secrets as pysecrets
 import time
 import zlib
@@ -21,6 +22,10 @@ from urllib.parse import urlencode
 
 import requests
 from lxml import etree
+
+from core.ssrf import warn_if_private
+
+log = logging.getLogger("danbyte.sso")
 
 NS = {
     "samlp": "urn:oasis:names:tc:SAML:2.0:protocol",
@@ -209,7 +214,8 @@ def fetch_idp_metadata(url: str, *, use_cache: bool = True) -> dict:
 
     Reached directly with TLS verification - the metadata URL is operator-set
     (same trust tier as the OIDC issuer / LDAP / Vault address), not
-    attacker-controlled, so it does not go through the tenant SSRF guard."""
+    attacker-controlled, so it does not go through the tenant SSRF guard. One
+    that resolves to a private or loopback address is logged as a warning."""
     url = (url or "").strip()
     if not url:
         raise SamlError("No IdP metadata URL configured.")
@@ -217,6 +223,7 @@ def fetch_idp_metadata(url: str, *, use_cache: bool = True) -> dict:
     hit = _metadata_cache.get(url)
     if use_cache and hit and hit[0] > now:
         return hit[1]
+    warn_if_private(url, "SAML IdP metadata URL", log)
     try:
         r = requests.get(url, timeout=HTTP_TIMEOUT)
         r.raise_for_status()

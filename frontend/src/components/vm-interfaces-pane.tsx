@@ -2,6 +2,8 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { IpListCell } from "@/components/cells/ip-list"
+import { CircuitEndCell } from "@/components/cells/circuit-end-cell"
+import { Loading } from "@/components/loading"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, Plus, Trash2 } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -117,6 +119,8 @@ export function VMInterfacesPane({
     roots.forEach(walk)
     return out
   }, [q.data])
+  // The Circuit column shows only on a VM that terminates one (#432).
+  const hasCircuit = rows.some((r) => r.circuit_termination)
 
   // Interfaces the hypervisor doesn't report. Raised as drift rather than
   // deleted - a NIC you added is yours, and might be one you're about to
@@ -314,6 +318,17 @@ export function VMInterfacesPane({
         header: "IPs",
         cell: ({ row }) => <IpListCell ips={row.original.ip_addresses} />,
       },
+      ...(hasCircuit
+        ? [
+            {
+              id: "circuit",
+              header: "Circuit",
+              cell: ({ row }) => (
+                <CircuitEndCell end={row.original.circuit_termination} />
+              ),
+            } satisfies ColumnDef<VMInterface>,
+          ]
+        : []),
       {
         id: "actions",
         header: "",
@@ -378,11 +393,19 @@ export function VMInterfacesPane({
     ],
     // notOnHypervisor matters: without it the columns are built once with an
     // empty drift set and the badge never appears on a direct page load.
-    [canEdit, canDelete, canAddIp, vmId, vmName, notOnHypervisor, fieldDrift]
+    [
+      canEdit,
+      canDelete,
+      canAddIp,
+      vmId,
+      vmName,
+      notOnHypervisor,
+      fieldDrift,
+      hasCircuit,
+    ]
   )
 
-  if (q.isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
 
   return (
@@ -413,6 +436,8 @@ export function VMInterfacesPane({
           data={rows}
           columns={columns}
           embedded
+          searchable
+          searchPlaceholder="Search interfaces…"
           onSelectedRowsChange={setSelected}
         />
       )}
@@ -610,7 +635,7 @@ function VMInterfaceForm({
         error={fieldErrors.name}
       />
       <div className="grid grid-cols-2 gap-3">
-        <FormSelect
+        <FormCombobox
           label="Parent interface"
           value={parentId}
           onChange={setParentId}
@@ -619,6 +644,8 @@ function VMInterfaceForm({
             .filter((row) => row.id !== iface?.id)
             .map((row) => ({ value: row.id, label: row.name }))}
           error={fieldErrors.parent_id}
+          searchPlaceholder="Search interfaces…"
+          emptyText="No interfaces."
         />
         <FormSelect
           label="Type"
@@ -685,7 +712,7 @@ function VMInterfaceForm({
           ]}
           error={fieldErrors.mode}
         />
-        <FormSelect
+        <FormCombobox
           label={mode === "tagged" ? "Untagged / native VLAN" : "Untagged VLAN"}
           value={vlanId}
           onChange={setVlanId}
@@ -695,6 +722,8 @@ function VMInterfaceForm({
             label: `${v.vlan_id} · ${v.name}`,
           }))}
           error={fieldErrors.vlan_id}
+          searchPlaceholder="Search VLANs…"
+          emptyText="No VLANs."
         />
       </div>
       {mode === "tagged" && (

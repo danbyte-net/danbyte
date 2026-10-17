@@ -37,6 +37,7 @@ import {
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { useDeploymentSettings } from "@/components/settings/use-deployment-settings"
+import { EolSettingsCard } from "@/components/settings/eol-settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
 
@@ -82,6 +83,7 @@ function AdminPage() {
         <HumanIdsCard />
         <FaceplatesCard />
         <MacVendorsCard />
+        <EolSettingsCard />
       </SettingsGrid>
     </div>
   )

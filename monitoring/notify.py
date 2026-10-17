@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import time
 from datetime import timedelta
 
 from django.conf import settings
@@ -33,6 +34,33 @@ log = logging.getLogger("monitoring.notify")
 class DeliveryError(RuntimeError):
     """A receiver answered with a non-2xx status."""
 
+    def __init__(self, message: str, status: int | None = None,
+                 retry_after: int | None = None):
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _retry_after(headers) -> int | None:
+    """Seconds a ``Retry-After`` header asks for, from either delta-seconds
+    or an HTTP date; None when absent or unreadable."""
+    from email.utils import parsedate_to_datetime
+
+    from django.utils import timezone
+
+    raw = str((headers or {}).get("Retry-After") or "").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return int(raw)
+    try:
+        when = parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when is None or when.tzinfo is None:
+        return None
+    return max(0, int((when - timezone.now()).total_seconds()))
+
 
 def _post(url: str, **kwargs):
     """``safe_post`` that treats a non-2xx answer as a failure (#358). A
@@ -40,7 +68,11 @@ def _post(url: str, **kwargs):
     Slack, Teams or Discord webhook URL is itself the credential."""
     resp = safe_post(url, **kwargs)
     if not 200 <= resp.status_code < 300:
-        raise DeliveryError(f"The receiver answered HTTP {resp.status_code}.")
+        raise DeliveryError(
+            f"The receiver answered HTTP {resp.status_code}.",
+            status=resp.status_code,
+            retry_after=_retry_after(getattr(resp, "headers", None)),
+        )
     return resp
 
 
@@ -1210,14 +1242,75 @@ def _group_summary(alerts: list, event: str) -> str:
     return f"[{verb}] {worst.upper()}: {len(alerts)} alerts - {head}{more}"
 
 
+# A grouped PagerDuty burst sends one event per alert. Events the receiver
+# refused for a transient reason are sent again in place, at most this many
+# attempts in all, waiting at most GROUP_RETRY_BUDGET seconds overall (#369).
+GROUP_SEND_ATTEMPTS = 3
+GROUP_RETRY_BUDGET = 30
+_GROUP_BACKOFF = (2, 5)
+
+
+def _wait(seconds: int) -> None:
+    time.sleep(seconds)
+
+
+def _retryable(exc: Exception) -> bool:
+    """A refusal worth sending again: rate limiting, a timeout status, a
+    server error, or no answer at all. Any other 4xx means the event itself
+    was rejected and would be rejected again."""
+    if isinstance(exc, DeliveryError):
+        return exc.status in (408, 429) or (exc.status or 0) >= 500
+    return True
+
+
+def _send_each_with_retry(channel, alerts: list, event: str) -> None:
+    """One PagerDuty event per alert. Every alert is attempted; a refused one
+    does not stop the rest, and only the refused ones are sent again, so an
+    accepted event is never sent twice. A ``Retry-After`` is honoured: when it
+    asks for longer than the remaining budget the events are not sent early.
+    Raises ``DeliveryError`` naming how many events never got through."""
+    pending = list(alerts)
+    waited = 0
+    attempt = 0
+    while True:
+        attempt += 1
+        failed: list[tuple] = []
+        for a in pending:
+            try:
+                _dispatch_to_channel(channel, a, event, a.target_ip.ip_address)
+            except Exception as exc:  # noqa: BLE001 - collected, the rest still go
+                failed.append((a, exc))
+        if not failed:
+            return
+        retry = [(a, exc) for a, exc in failed if _retryable(exc)]
+        wait = max(
+            (exc.retry_after for _, exc in retry
+             if isinstance(exc, DeliveryError) and exc.retry_after is not None),
+            default=_GROUP_BACKOFF[min(attempt, len(_GROUP_BACKOFF)) - 1],
+        )
+        if not retry or attempt >= GROUP_SEND_ATTEMPTS or waited + wait > GROUP_RETRY_BUDGET:
+            break
+        log.warning(
+            "channel %s (%s): %s of %s events refused, sending again in %ss",
+            channel.name, channel.kind, len(retry), len(alerts), wait,
+        )
+        _wait(wait)
+        waited += wait
+        pending = [a for a, _ in retry]
+    reasons = sorted({str(exc) for _, exc in failed})
+    raise DeliveryError(
+        f"{len(failed)} of {len(alerts)} events were not delivered "
+        f"after {attempt} attempt(s): {' '.join(reasons)}"
+    )
+
+
 def _dispatch_group_to_channel(channel, alerts: list, event: str, dep) -> None:
     """Send one summary message for a batch of alerts. PagerDuty has its own
-    dedup, so it still gets one event per alert."""
+    dedup, so it still gets one event per alert, each attempted on its own."""
     import requests
 
     if channel.kind == "pagerduty":
-        for a in alerts:
-            _dispatch_to_channel(channel, a, event, a.target_ip.ip_address)
+        _send_each_with_retry(channel, alerts, event)
         return
 
     cfg = channel.config or {}

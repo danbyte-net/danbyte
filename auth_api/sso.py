@@ -9,6 +9,8 @@ groups via :class:`SsoGroupMapping`. Only *mapped* IdP groups grant anything.
 
 The IdP is operator-configured (same trust tier as LDAP / the Vault address), so
 HTTP to it is direct with TLS verification - not through the tenant SSRF guard.
+An IdP URL that resolves to a private or loopback address is still allowed (an
+internal IdP is normal) but logged as a warning on discovery.
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import time
 from urllib.parse import urlencode
 
 import requests
+
+from core.ssrf import warn_if_private
 
 log = logging.getLogger("danbyte.sso")
 
@@ -38,6 +42,7 @@ def discover(issuer: str) -> dict:
     hit = _discovery_cache.get(issuer)
     if hit and hit[0] > now:
         return hit[1]
+    warn_if_private(issuer, "OIDC issuer", log)
     try:
         r = requests.get(
             f"{issuer}/.well-known/openid-configuration", timeout=HTTP_TIMEOUT
@@ -47,6 +52,11 @@ def discover(issuer: str) -> dict:
     if r.status_code != 200:
         raise SsoError(f"OIDC discovery failed ({r.status_code}).")
     doc = r.json()
+    # The endpoints the login then calls come from the document, not the
+    # admin; checked here so the warning comes once per discovery, not per login.
+    for key in ("token_endpoint", "jwks_uri", "userinfo_endpoint"):
+        if isinstance(doc.get(key), str):
+            warn_if_private(doc[key], f"OIDC {key}", log)
     _discovery_cache[issuer] = (now + _DISCOVERY_TTL, doc)
     return doc
 

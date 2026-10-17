@@ -189,6 +189,7 @@ def me_json(request):
 
     from api.views import _get_active_tenant
     from core.effective_settings import (
+        capacity_thresholds,
         effective_separation,
         effective_sharing,
         effective_ui,
@@ -294,6 +295,9 @@ def me_json(request):
         # Resolved date/time display settings (user override → tenant default
         # → deployment default) - the SPA's single read point for formatting.
         "datetime": datetime_prefs(user, tenant),
+        # Rack capacity levels (tenant setting): percentages above which
+        # space, power and port fill turn amber and red.
+        "capacity_thresholds": capacity_thresholds(tenant),
         "active_tenant": (
             {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug}
             if tenant is not None else None
@@ -341,6 +345,15 @@ def me_prefs(request):
                     {"error": f"'{tz}' is not a valid IANA timezone."}, status=400
                 )
             body["timezone"] = canonical
+        # The sidebar layout is a structured value - store only its cleaned
+        # form (#285). None resets it to the tenant default.
+        if body.get("sidebar") is not None:
+            from .sidebar_prefs import clean_layout
+
+            try:
+                body["sidebar"] = clean_layout(body["sidebar"])
+            except ValueError as e:
+                return JsonResponse({"error": str(e)}, status=400)
         for k, v in body.items():
             user_prefs.set_user(request.user, k, v)
 

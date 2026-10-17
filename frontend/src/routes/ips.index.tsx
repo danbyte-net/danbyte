@@ -5,6 +5,7 @@ import { useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
+import { decodeList, useListSearch, useUrlSearch } from "@/lib/url-filters"
 import type { IPAddress, Paginated } from "@/lib/api"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -17,7 +18,7 @@ import {
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { IpBulkBar } from "@/components/ip-bulk-bar"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 
 export const Route = createFileRoute("/ips/")({
   component: IpsPage,
@@ -38,8 +39,18 @@ export const Route = createFileRoute("/ips/")({
 function IpsPage() {
   const { canDo } = useMe()
   const canAdd = canDo("ipaddress", "add")
-  const { status, role, scope } = Route.useSearch()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
+  // The Status / Role / Scope facets live in the URL. One value is sent to
+  // the server too (the address space can be very large); several are
+  // refined client-side over what arrived.
+  const search = useListSearch()
+  const single = (key: string) => {
+    const v = decodeList(search[key])
+    return v.length === 1 ? v[0] : undefined
+  }
+  const status = single("status")
+  const role = single("role")
+  const scope = single("scope")
   const [selectedRows, setSelectedRows] = useState<IPAddress[]>([])
 
   // Filter server-side (the address space can be very large): the
@@ -69,15 +80,6 @@ function IpsPage() {
       }),
     [sla.entries, sla.frame]
   )
-  // Seed the status / role / scope facets from the URL so the active filter is
-  // visible in the rail (the server already applied it - see the query above).
-  const initialEnums = useMemo(() => {
-    const seed: Record<string, string[]> = {}
-    if (status) seed.status = [status]
-    if (role) seed.role = [role]
-    if (scope) seed.scope = [scope]
-    return seed
-  }, [status, role, scope])
   const {
     rail,
     filteredRows,
@@ -85,7 +87,7 @@ function IpsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows, initialEnums)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <>
@@ -117,6 +119,7 @@ function IpsPage() {
           placeholder: "Filter by address or DNS name…",
         }}
         query={query}
+        page={query.data}
       >
         {allRows.length === 0 ? (
           <EmptyState title="No IP addresses.">

@@ -8,11 +8,12 @@ import { api, type Paginated, type VLAN } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { VlanDeleteDialog } from "@/components/vlan-delete-dialog"
 import { VlanBulkBar } from "@/components/vlan-bulk-bar"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/vlans/")({ component: VlansPage })
 
@@ -21,7 +22,7 @@ function VlansPage() {
   const canAdd = canDo("vlan", "add")
   const canEdit = canDo("vlan", "change")
   const canDelete = canDo("vlan", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VLAN | null>(null)
   const [selectedRows, setSelectedRows] = useState<VLAN[]>([])
 
@@ -63,7 +64,7 @@ function VlansPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell
@@ -92,6 +93,7 @@ function VlansPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

@@ -17,7 +17,7 @@ export function portsRatio(
  * counts them - over the ports counted: `38 / 48`. A rack's **Ports** and
  * **Panel ports** read this way on the racks list, the rack page, the floor
  * plan and a site's Capacity tab. `bar` leads with the capacity bar on the
- * racks' 80 / 95 % scale. With no port counted it is a dash.
+ * racks' capacity levels. With no port counted it is a dash.
  */
 export function PortsFigure({
   row,

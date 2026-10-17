@@ -11,6 +11,7 @@ from django.test import TestCase
 from requests.adapters import HTTPAdapter
 
 from core.models import Organization, Tenant
+from core.ssrf import _PinnedSNIAdapter
 
 from . import vcloud_client, virt_client
 from .models import VirtualizationSource
@@ -195,4 +196,154 @@ class WinRMRedirectTests(TestCase):
         with _resolves_to(PUBLIC_IP), wire.patch(), self.assertRaises(WinRMError) as caught:
             run_ps(self._conn(), "Get-Date")
         self.assertIn("redirect", str(caught.exception).lower())
-        self.assertEqual(wire.urls, ["http://dc.example.net:5985/wsman"])
+        self.assertEqual(wire.urls, [f"http://{PUBLIC_IP}:5985/wsman"])
+
+    def test_request_is_pinned_and_keeps_the_host_name(self):
+        from .winrm_client import WinRMError, run_ps
+
+        wire = _Wire((500, {}, None))
+        with _resolves_to(PUBLIC_IP), wire.patch(), self.assertRaises(WinRMError):
+            run_ps(self._conn(), "Get-Date")
+        _, req, _ = wire.sent[0]
+        self.assertEqual(req.url, f"http://{PUBLIC_IP}:5985/wsman")
+        self.assertEqual(req.headers["Host"], "dc.example.net:5985")
+        self.assertTrue(req.headers["Authorization"].startswith("Basic "))
+
+    def test_tls_is_verified_against_the_host_name(self):
+        from .winrm_client import WinRMError, run_ps
+
+        wire = _Wire((500, {}, None))
+        conn = self._conn()
+        conn.use_tls, conn.port = True, 5986
+        with _resolves_to(PUBLIC_IP), wire.patch(), self.assertRaises(WinRMError):
+            run_ps(conn, "Get-Date")
+        adapter, req, kw = wire.sent[0]
+        self.assertEqual(req.url, f"https://{PUBLIC_IP}:5986/wsman")
+        self.assertIsInstance(adapter, _PinnedSNIAdapter)
+        self.assertEqual(adapter._sni, "dc.example.net")
+        self.assertTrue(kw["verify"])
+
+    def test_kerberos_keeps_the_service_principal_on_the_name(self):
+        from .winrm_client import _session
+
+        conn = self._conn()
+        conn.auth_mode = "kerberos"
+        try:
+            session = _session(conn, PUBLIC_IP)
+        except Exception as exc:  # noqa: BLE001 - pykerberos is optional
+            self.skipTest(f"kerberos transport unavailable: {exc}")
+        self.assertEqual(
+            session.protocol.transport.kerberos_hostname_override, "dc.example.net"
+        )
+
+    def test_a_rebinding_name_cannot_move_the_connection(self):
+        """The name answers public for the check and private afterwards; the
+        socket still only ever opens to the checked address."""
+        from .winrm_client import WinRMError, run_ps
+
+        connects, answers = _rebinding("dc.example.net", ["10.0.0.5"])
+        with mock.patch("socket.getaddrinfo", side_effect=answers), \
+                mock.patch("urllib3.util.connection.create_connection",
+                           side_effect=connects), \
+                self.assertRaises(WinRMError):
+            run_ps(self._conn(), "Get-Date")
+        self.assertTrue(connects.seen)
+        self.assertEqual(set(connects.seen), {PUBLIC_IP})
+
+    def test_blocked_host_never_reaches_the_wire(self):
+        from .winrm_client import WinRMError, run_ps
+
+        wire = _Wire()
+        with _resolves_to("10.0.0.5"), wire.patch(), self.assertRaises(WinRMError):
+            run_ps(self._conn(), "Get-Date")
+        self.assertEqual(wire.sent, [])
+
+
+def _rebinding(name, later):
+    """``(create_connection, getaddrinfo)`` stand-ins for a DNS-rebinding
+    name: ``name`` answers PUBLIC_IP once, then the ``later`` addresses; an IP
+    literal answers itself. The connect stand-in resolves what it is asked to
+    reach the way the real one does, records the address and refuses."""
+    real = socket.getaddrinfo
+    calls = {"n": 0}
+
+    def getaddrinfo(host, port, *args, **kw):
+        if host == name:
+            calls["n"] += 1
+            ips = [PUBLIC_IP] if calls["n"] == 1 else later
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port)) for ip in ips]
+        return real(host, port, *args, **kw)
+
+    def create_connection(address, *args, **kw):
+        host, port = address[0], address[1]
+        for info in getaddrinfo(host, port):
+            create_connection.seen.append(info[4][0])
+        raise ConnectionRefusedError("refused in test")
+
+    create_connection.seen = []
+    return create_connection, getaddrinfo
+
+
+class VSphereSoapPinningTests(TestCase):
+    """The SOAP client connects to the checked address, verifies TLS against
+    the name and names it in the Host header (#321)."""
+
+    def _source(self, **kw):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            host="vc.example.net", port=443, verify_ssl=True,
+            credentials={"username": "u", "password": "p"}, **kw,
+        )
+
+    def test_connect_is_pinned_with_tls_on_the_name(self):
+        import ssl
+
+        from .vsphere_soap import VSphereSoap
+
+        with _resolves_to(PUBLIC_IP), mock.patch("pyVim.connect.SmartConnect") as smart:
+            VSphereSoap(self._source()).connect()
+        kw = smart.call_args.kwargs
+        self.assertEqual(kw["host"], PUBLIC_IP)
+        self.assertEqual(kw["customHeaders"], {"Host": "vc.example.net"})
+        ctx = kw["sslContext"]
+        self.assertEqual(ctx.sni_hostname, "vc.example.net")
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertNotIn("disableSslCertValidation", kw)
+
+    def test_verify_off_still_pins(self):
+        import ssl
+
+        from .vsphere_soap import VSphereSoap
+
+        src = self._source()
+        src.verify_ssl, src.port = False, 8443
+        with _resolves_to(PUBLIC_IP), mock.patch("pyVim.connect.SmartConnect") as smart:
+            VSphereSoap(src).connect()
+        kw = smart.call_args.kwargs
+        self.assertEqual((kw["host"], kw["port"]), (PUBLIC_IP, 8443))
+        self.assertEqual(kw["customHeaders"], {"Host": "vc.example.net:8443"})
+        self.assertEqual(kw["sslContext"].verify_mode, ssl.CERT_NONE)
+
+    def test_a_rebinding_name_cannot_move_the_connection(self):
+        """Through pyVmomi's own HTTP client: only the checked address is
+        ever dialled."""
+        from .vsphere_soap import VSphereSoap
+
+        connects, answers = _rebinding("vc.example.net", ["127.0.0.1"])
+        with mock.patch("socket.getaddrinfo", side_effect=answers), \
+                mock.patch("socket.create_connection", side_effect=connects), \
+                self.assertRaises(VirtAPIError):
+            VSphereSoap(self._source()).connect()
+        self.assertTrue(connects.seen)
+        self.assertEqual(set(connects.seen), {PUBLIC_IP})
+
+    def test_blocked_host_never_connects(self):
+        from .vsphere_soap import VSphereSoap
+
+        with _resolves_to("169.254.169.254"), \
+                mock.patch("pyVim.connect.SmartConnect") as smart, \
+                self.assertRaises(VirtAPIError):
+            VSphereSoap(self._source()).connect()
+        smart.assert_not_called()

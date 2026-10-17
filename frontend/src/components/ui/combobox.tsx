@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Command,
   CommandEmpty,
@@ -32,6 +33,9 @@ export interface ComboboxOption {
    * statuses) instead of plain text - a status/role looks the same here as
    * everywhere else. Never rendered as a dot. */
   color?: string | null
+  /** Render as a ColorBadge pill even when `color` is empty - a catalog
+   * row with no color set still reads as its neutral pill (statuses). */
+  badge?: boolean
   /** Not selectable (still listed, dimmed) - e.g. an occupied rack unit. */
   disabled?: boolean
   /** Muted right-aligned annotation - e.g. the device occupying a unit. */
@@ -49,6 +53,8 @@ export interface ComboboxProps {
   noneLabel?: string
   disabled?: boolean
   className?: string
+  /** Name for a trigger with no Field label - a filter rail's picker. */
+  "aria-label"?: string
 }
 
 // Searchable single-select (shadcn Combobox pattern: Button + Popover +
@@ -64,9 +70,15 @@ export function Combobox({
   noneLabel,
   disabled,
   className,
+  "aria-label": ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false)
   const selected = options.find((o) => o.value === value)
+  // Inside a Field the trigger takes the label's id and name (#428).
+  const fieldProps = useFieldControlProps(
+    { "aria-label": ariaLabel },
+    { withOwnText: true }
+  )
 
   // Partition into sub-categories, preserving first-appearance order.
   // Ungrouped options (no `group`) collect under a heading-less section.
@@ -87,7 +99,9 @@ export function Combobox({
   }, [options])
 
   function pick(v: string | null) {
-    onChange(v)
+    // Re-picking the current row is a no-op, as in a native select: a
+    // dependent reset (site → location) must not fire on it.
+    if (v !== value) onChange(v)
     setOpen(false)
   }
 
@@ -95,6 +109,7 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
+          {...fieldProps}
           type="button"
           variant="outline"
           role="combobox"
@@ -108,8 +123,11 @@ export function Combobox({
         >
           {/* min-w-0: a flex child's min-width defaults to its content, so
               truncate alone never engages and a long label spills out. */}
-          {selected?.color ? (
-            <ColorBadge name={selected.label} color={selected.color} />
+          {selected && (selected.color || selected.badge) ? (
+            <ColorBadge
+              name={selected.label}
+              color={selected.color || undefined}
+            />
           ) : selected ? (
             // The field is narrow, so a long value still truncates here -
             // hovering (or focusing) shows it in full.
@@ -176,8 +194,8 @@ export function Combobox({
                         value === o.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {o.color ? (
-                      <ColorBadge name={o.label} color={o.color} />
+                    {o.color || o.badge ? (
+                      <ColorBadge name={o.label} color={o.color || undefined} />
                     ) : (
                       <span className="whitespace-normal">{o.label}</span>
                     )}

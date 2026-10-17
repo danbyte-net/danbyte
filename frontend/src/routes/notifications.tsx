@@ -30,7 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect } from "@/components/forms"
+import { FormCheckbox, FormSelect, FormCombobox } from "@/components/forms"
 import { usePageTitle } from "@/lib/page-title"
 
 export const Route = createFileRoute("/notifications")({
@@ -492,7 +492,7 @@ function AddSubscriptionDialog({
               prefix's Monitoring tab.
             </div>
           ) : (
-            <FormSelect
+            <FormCombobox
               label="Channel"
               value={channel}
               onChange={setChannel}
@@ -501,6 +501,8 @@ function AddSubscriptionDialog({
                 value: c.id,
                 label: c.name,
               }))}
+              searchPlaceholder="Search channels…"
+              emptyText="No channels."
             />
           )}
           <FormSelect
@@ -513,7 +515,7 @@ function AddSubscriptionDialog({
             ]}
           />
           {kind === "group" ? (
-            <FormSelect
+            <FormCombobox
               label="Group"
               value={group}
               onChange={setGroup}
@@ -522,9 +524,11 @@ function AddSubscriptionDialog({
                 value: String(g.id),
                 label: g.name,
               }))}
+              searchPlaceholder="Search groups…"
+              emptyText="No groups."
             />
           ) : (
-            <FormSelect
+            <FormCombobox
               label="User"
               value={user}
               onChange={setUser}
@@ -533,6 +537,8 @@ function AddSubscriptionDialog({
                 value: String(u.id),
                 label: u.email ? `${u.username} · ${u.email}` : u.username,
               }))}
+              searchPlaceholder="Search users…"
+              emptyText="No users."
             />
           )}
           <FormCheckbox

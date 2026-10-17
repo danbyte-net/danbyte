@@ -10,15 +10,23 @@ Idempotent; safe to call anywhere.
 
 "*" does not reach users, groups or permissions (``ACCESS_TYPES``), so the
 Administrator grant names them; Operator and Read-only do not manage access.
+
+A "*" grant carries only the verbs it lists. The Administrator grant lists the
+money verbs (``MONEY_VERBS``): an administrator can grant them to themselves,
+so withholding them protects nothing. Migration 0031 adds them on upgrade.
+It does not list reveal, view_config or the other capability verbs.
 """
 from __future__ import annotations
 
 from .object_types import ACCESS_TYPES
 
+# Contract cost and SLA service credits. Migration 0031 keeps a frozen copy.
+MONEY_VERBS: tuple[str, ...] = ("view_credits", "view_cost")
+
 # (group, description, actions, object types)
 BUILTINS = [
     ("Administrator", "Full access to everything.",
-     ["view", "add", "change", "delete"], ["*", *ACCESS_TYPES]),
+     ["view", "add", "change", "delete", *MONEY_VERBS], ["*", *ACCESS_TYPES]),
     ("Operator",
      "Create and edit, but not delete. No access to users, groups or permissions.",
      ["view", "add", "change"], ["*"]),
@@ -56,11 +64,20 @@ def ensure_builtin_groups() -> None:
             )]
         for perm in perms:
             # A grant seeded before 0.17 gains the access types it is meant
-            # to name (Administrator only). Additive: nothing is taken away,
-            # and an existing grant's other types are left as edited.
+            # to name, and one seeded before 0.18 the money verbs it is meant
+            # to list (Administrator only). Additive: nothing is taken away,
+            # and an existing grant's other types and verbs are left as edited.
             have = list(perm.object_types or [])
             missing = [t for t in types if t in ACCESS_TYPES and t not in have]
+            have_acts = list(perm.actions or [])
+            missing_acts = [a for a in actions if a in MONEY_VERBS and a not in have_acts]
+            fields = []
             if missing:
                 perm.object_types = have + missing
-                perm.save(update_fields=["object_types", "updated_at"])
+                fields.append("object_types")
+            if missing_acts:
+                perm.actions = have_acts + missing_acts
+                fields.append("actions")
+            if fields:
+                perm.save(update_fields=[*fields, "updated_at"])
             perm.groups.add(group)

@@ -33,6 +33,7 @@ import {
   FormCheckbox,
   FormSelect,
   FormText,
+  FormCombobox,
 } from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
@@ -40,6 +41,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { TimeCell } from "@/components/cells/time-ago"
 import { VirtChangesDialog } from "@/components/integrations/virt-changes-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtualization-sources/")({
   component: VirtualizationSourcesPage,
@@ -51,7 +53,7 @@ function VirtualizationSourcesPage() {
   const canEdit = canDo("virtualizationsource", "change")
   const canDelete = canDo("virtualizationsource", "delete")
   const qc = useQueryClient()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<VirtualizationSource | null>(null)
   const [reviewing, setReviewing] = useState<VirtualizationSource | null>(null)
@@ -381,7 +383,8 @@ const KIND_SPEC = {
     hosts: true,
     apiVersion: false,
     nat: false,
-    groups: false,
+    // What the hypervisor groups VMs by, for the VM-group switch.
+    groups: "pools",
     templates: false,
   },
   vcenter: {
@@ -402,7 +405,7 @@ const KIND_SPEC = {
     hosts: true,
     apiVersion: false,
     nat: false,
-    groups: false,
+    groups: "folders",
     templates: false,
   },
   vcloud: {
@@ -428,7 +431,7 @@ const KIND_SPEC = {
     // Cloud Director negotiates its API version, so there is one to pin.
     apiVersion: true,
     nat: true,
-    groups: true,
+    groups: "vApps",
     templates: true,
   },
 } as const
@@ -736,14 +739,12 @@ export function SourceDialog({
                 onChange={setSyncMtu}
               />
             )}
-            {spec.groups && (
-              <FormCheckbox
-                label="Sync vApps as VM groups"
-                hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
-                checked={syncGroups}
-                onChange={setSyncGroups}
-              />
-            )}
+            <FormCheckbox
+              label={`Sync ${spec.groups} as VM groups`}
+              hint="Mirror the hypervisor's own grouping. A VM you grouped by hand keeps your grouping."
+              checked={syncGroups}
+              onChange={setSyncGroups}
+            />
             {spec.nat && (
               <FormCheckbox
                 label="Record external addresses as NAT rules"
@@ -813,7 +814,7 @@ export function SourceDialog({
             )}
           </div>
           <div className="col-span-2 grid grid-cols-2 gap-3 border-t pt-3">
-            <FormSelect
+            <FormCombobox
               label="Address VRF"
               hint="Routing context for the addresses this source discovers. An address is only recorded when a prefix in that VRF contains it."
               value={vrfId || null}
@@ -823,6 +824,8 @@ export function SourceDialog({
                 value: v.id,
                 label: v.name,
               }))}
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
             />
             <FormSelect
               label="If nothing there contains it"

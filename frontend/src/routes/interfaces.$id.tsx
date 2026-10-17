@@ -249,7 +249,9 @@ function Body({ iface: i }: { iface: Interface }) {
               ))}
             </>
           }
-          tags={i.tags.length > 0 && <TagList tags={i.tags} />}
+          tags={
+            i.tags.length > 0 && <TagList tags={i.tags} listTo="/interfaces" />
+          }
         />
       }
       tabs={[

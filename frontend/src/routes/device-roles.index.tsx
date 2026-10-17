@@ -7,18 +7,19 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type DeviceRole, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { buildDeviceRoleColumns } from "@/components/columns/device-role-columns"
 import { DeviceRoleDeleteDialog } from "@/components/device-role-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/device-roles/")({
   component: DeviceRolesPage,
 })
 
 function DeviceRolesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<DeviceRole | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("devicerole", "add")
@@ -57,7 +58,7 @@ function DeviceRolesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

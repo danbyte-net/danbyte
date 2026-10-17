@@ -12,11 +12,12 @@ import { buildVrfColumns } from "@/components/columns/vrf-columns"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { VrfDeleteDialog } from "@/components/vrf-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/vrfs/")({ component: VrfsPage })
 
@@ -25,10 +26,10 @@ function VrfsPage() {
   const canAdd = canDo("vrf", "add")
   const canEdit = canDo("vrf", "change")
   const canDelete = canDo("vrf", "delete")
-  const [q, setQ] = useState("")
-  const [rtFilter, setRtFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
-  const [usageFilter, setUsageFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [rtFilterRaw, setRtFilter] = useUrlSet("rt")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
+  const [usageFilterRaw, setUsageFilter] = useUrlSet("usage")
   const [deleting, setDeleting] = useState<VRF | null>(null)
 
   const query = useQuery({
@@ -40,29 +41,18 @@ function VrfsPage() {
   })
 
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((v) => {
-      if (rtFilter.size > 0) {
-        const rtIds = new Set(
-          [...v.import_targets, ...v.export_targets].map((t) => t.id)
-        )
-        if (![...rtFilter].some((id) => rtIds.has(id))) return false
-      }
-      if (tagFilter.size > 0 && !v.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      if (usageFilter.size > 0) {
-        const key = v.prefix_count > 0 ? "in-use" : "empty"
-        if (!usageFilter.has(key)) return false
-      }
-      return true
-    })
-  }, [allRows, rtFilter, tagFilter, usageFilter])
 
   const facets = useMemo(() => {
     const rts: Record<string, { name: string; count: number }> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     const usage: Record<string, number> = {}
     for (const v of allRows) {
@@ -73,6 +63,7 @@ function VrfsPage() {
       for (const t of v.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -99,6 +90,7 @@ function VrfsPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
       usage: (["in-use", "empty"] as const)
         .filter((k) => usage[k])
@@ -109,6 +101,27 @@ function VrfsPage() {
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const usageFilter = useKnown(usageFilterRaw, facets.usage)
+  const rtFilter = useKnown(rtFilterRaw, facets.rts)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((v) => {
+      if (rtFilter.size > 0) {
+        const rtIds = new Set(
+          [...v.import_targets, ...v.export_targets].map((t) => t.id)
+        )
+        if (![...rtFilter].some((id) => rtIds.has(id))) return false
+      }
+      if (tagFilter.size > 0 && !v.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      if (usageFilter.size > 0) {
+        const key = v.prefix_count > 0 ? "in-use" : "empty"
+        if (!usageFilter.has(key)) return false
+      }
+      return true
+    })
+  }, [allRows, rtFilter, tagFilter, usageFilter])
 
   const handleDelete = useCallback((v: VRF) => setDeleting(v), [])
 
@@ -118,6 +131,10 @@ function VrfsPage() {
         selection: true,
         humanIds,
         violations: true,
+        tagFilter: {
+          activeSlugs: tagFilter,
+          onToggle: (v) => setTagFilter((s) => toggled(s, v)),
+        },
         actions: {
           editTo: "/vrfs/$id/edit",
           editParams: (v) => ({ id: v.id }),
@@ -126,7 +143,7 @@ function VrfsPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, tagFilter, setTagFilter]
   )
 
   return (
@@ -139,19 +156,19 @@ function VrfsPage() {
             label="Usage"
             options={facets.usage}
             selected={usageFilter}
-            onToggle={(v) => toggleInSet(usageFilter, v, setUsageFilter)}
+            onToggle={(v) => setUsageFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Route targets"
             options={facets.rts}
             selected={rtFilter}
-            onToggle={(v) => toggleInSet(rtFilter, v, setRtFilter)}
+            onToggle={(v) => setRtFilter((s) => toggled(s, v))}
           />
           <FacetGroup
             label="Tags"
             options={facets.tags}
             selected={tagFilter}
-            onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+            onToggle={(v) => setTagFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

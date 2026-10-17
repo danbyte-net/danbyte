@@ -237,7 +237,7 @@ export function MaintenanceEventForm({
           </FormSection>
 
           <FormSection title="Provider" card>
-            <FormSelect
+            <FormCombobox
               label="Provider"
               value={provider}
               onChange={setProvider}
@@ -247,6 +247,8 @@ export function MaintenanceEventForm({
                 label: p.name,
               }))}
               error={fieldErrors.provider}
+              searchPlaceholder="Search providers…"
+              emptyText="No providers."
             />
             <FormText
               label="Provider reference"

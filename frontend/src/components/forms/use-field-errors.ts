@@ -45,8 +45,11 @@ export function useFieldErrors() {
           const el = document.querySelector<HTMLElement>("[data-field-error]")
           if (!el) return
           el.scrollIntoView({ behavior: "smooth", block: "center" })
-          el.querySelector<HTMLElement>(
-            "input, textarea, button, select"
+          // The control Field marked invalid first: a plain "first button"
+          // would land on the (i) inside the label.
+          ;(
+            el.querySelector<HTMLElement>('[aria-invalid="true"]') ??
+            el.querySelector<HTMLElement>("input, textarea, button, select")
           )?.focus({
             preventScroll: true,
           })

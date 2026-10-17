@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/danbyte-net/danbyte/security/advisories/new
+    about: Report privately - please don't open a public issue for a vulnerability.
+  - name: Documentation
+    url: https://github.com/danbyte-net/danbyte/tree/main/docs
+    about: Installation, upgrades and how each feature works.

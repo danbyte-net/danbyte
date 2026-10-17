@@ -8,7 +8,9 @@ import type { StatusMini } from "@/lib/api"
 import {
   CAPACITY_HEX,
   CAPACITY_NONE_HEX,
+  capacityBandLabel,
   capacityLevel,
+  useCapacityThresholds,
 } from "@/lib/rack-capacity"
 import type { CapacityLevel } from "@/lib/rack-capacity"
 import { naturalCompare } from "@/lib/natural-sort"
@@ -24,12 +26,7 @@ const BASIS: Record<CapacityMetric, string> = {
   panel_ports: "in use",
 }
 
-const LEVELS: { level: CapacityLevel | "none"; label: string }[] = [
-  { level: "good", label: "≤ 80%" },
-  { level: "warn", label: "80–95%" },
-  { level: "critical", label: "> 95%" },
-  { level: "none", label: "No data" },
-]
+const LEVELS: (CapacityLevel | "none")[] = ["good", "warn", "critical", "none"]
 
 /** The pill for a rack with no status: the grey its tile is filled with. */
 const NO_STATUS: StatusMini = {
@@ -52,6 +49,54 @@ export function levelCounts(
   return out
 }
 
+/** The legend as data, for the PDF's sheet (api/floor_plan_pdf.py): its
+ * heading and one swatch per row, as the on-screen legend reads. Null
+ * under Type, which has no legend. */
+export interface LegendEntries {
+  title: string
+  items: { label: string; color: string }[]
+}
+
+export function colorByLegendEntries(
+  colorBy: ColorBy,
+  figures: readonly (RackFigures | null)[],
+  alarm = false
+): LegendEntries | null {
+  if (colorBy === "type") return null
+  const outline = alarm
+    ? [{ label: "Outline: monitoring", color: CAPACITY_HEX.critical }]
+    : []
+  if (isCapacityMetric(colorBy)) {
+    const counts = levelCounts(figures, colorBy)
+    return {
+      title: `${COLOR_BY_LABEL[colorBy]} · ${BASIS[colorBy]}`,
+      items: [
+        ...LEVELS.map((level) => ({
+          label: `${level === "none" ? "No data" : capacityBandLabel(level)} (${counts[level]})`,
+          color: level === "none" ? CAPACITY_NONE_HEX : CAPACITY_HEX[level],
+        })),
+        ...outline,
+      ],
+    }
+  }
+  const seen = new Map<string, string>()
+  let missing = false
+  for (const f of figures) {
+    const row = colorBy === "role" ? f?.role : f?.status
+    if (row) seen.set(row.name, row.color)
+    else missing = true
+  }
+  const items = [...seen]
+    .sort(([a], [b]) => naturalCompare(a, b))
+    .map(([label, color]) => ({ label, color }))
+  if (missing)
+    items.push({
+      label: colorBy === "role" ? "No role" : "No status",
+      color: CAPACITY_NONE_HEX,
+    })
+  return { title: COLOR_BY_LABEL[colorBy], items: [...items, ...outline] }
+}
+
 /** A tile's fill as a legend swatch: the colour at the tile's strength,
  * outlined in it. */
 function FillSwatch({ color }: { color: string }) {
@@ -65,7 +110,8 @@ function FillSwatch({ color }: { color: string }) {
 }
 
 /**
- * The key to the plan's Color by (#247): the 80 / 95 % levels with how many
+ * The key to the plan's Color by (#247): the tenant's capacity levels
+ * (80 / 95 % unless changed) with how many
  * racks sit in each, or the roles and statuses as their pills - with what
  * the outline means while a rack is alarming. Drawn inside the export area
  * with no Hide button, so the PNG carries it.
@@ -81,6 +127,7 @@ export function ColorByLegend({
   /** Some rack's outline is a monitoring alarm. */
   alarm?: boolean
 }) {
+  const thresholds = useCapacityThresholds()
   if (colorBy === "type") return null
   const outline = alarm && (
     <LegendRow
@@ -107,7 +154,7 @@ export function ColorByLegend({
           · {BASIS[colorBy]}
         </p>
         <div className="space-y-0.5">
-          {LEVELS.map(({ level, label }) => (
+          {LEVELS.map((level) => (
             <LegendRow
               key={level}
               swatch={
@@ -122,7 +169,9 @@ export function ColorByLegend({
                   data-level={level}
                   className="flex w-28 items-baseline justify-between gap-2 whitespace-nowrap"
                 >
-                  {label}
+                  {level === "none"
+                    ? "No data"
+                    : capacityBandLabel(level, thresholds)}
                   <span className="num text-muted-foreground">
                     {counts[level]}
                   </span>

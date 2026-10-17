@@ -325,7 +325,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
             </>
           }
           subtitle={<MastersChain prefix={p} />}
-          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          tags={
+            p.tags.length > 0 && <TagList tags={p.tags} listTo="/prefixes" />
+          }
           description={p.description}
         />
       }
@@ -424,6 +426,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           params={`prefix=${p.id}`}
           queryKey={["dns-records", "prefix", p.id]}
           empty="No DNS records point into this prefix."
+          searchable
         />
       </DetailTab>
 

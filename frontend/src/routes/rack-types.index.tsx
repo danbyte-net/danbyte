@@ -24,13 +24,14 @@ import { TableActions } from "@/components/table-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/rack-types/")({
   component: RackTypesPage,
 })
 
 function RackTypesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RackType | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("racktype", "add")

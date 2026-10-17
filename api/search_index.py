@@ -161,6 +161,11 @@ SPECS: dict[str, IndexSpec] = {
     "circuit": IndexSpec("api.Circuit", "/circuits/{id}", weight=8, site=None, title="cid",
                          subtitle="provider.name", facets=("status", "provider", "type")),
     "provider": IndexSpec("api.Provider", "/providers/{id}", weight=6, site=None),
+    "supportcontract": IndexSpec("api.SupportContract", "/support-contracts/{id}", weight=6,
+                                 site=None, title="contract_number",
+                                 subtitle="manufacturer.name",
+                                 body=("service_level", "reseller", "renewal_notes"),
+                                 facets=("manufacturer",)),
     "providernetwork": IndexSpec("api.ProviderNetwork", "/provider-networks/{id}", weight=5, site=None,
                                  subtitle="provider.name", facets=("provider",)),
     "circuittype": IndexSpec("api.CircuitType", "/circuit-types/{id}", weight=4, site=None),
@@ -197,6 +202,8 @@ SPECS: dict[str, IndexSpec] = {
                          facets=("type", "group")),
     "clustertype": IndexSpec("api.ClusterType", "/cluster-types/{id}", weight=4, site=None),
     "clustergroup": IndexSpec("api.ClusterGroup", "/cluster-groups/{id}", weight=4, site=None),
+    "virtualmachinegroup": IndexSpec("api.VirtualMachineGroup", "/vm-groups/{id}", weight=5,
+                                     site="cluster.site", subtitle="cluster.name"),
     "virtualswitch": IndexSpec("api.VirtualSwitch", "/virtual-switches/{id}", weight=5, site=None),
     "contact": IndexSpec("api.Contact", "/contacts/{id}", weight=6, site=None, subtitle="title",
                          body=("title", "email", "phone")),
@@ -301,7 +308,10 @@ def _custom_values(obj) -> str:
     return " ".join(bits)
 
 
-def _body(obj, spec: IndexSpec) -> str:
+def _body(obj, spec: IndexSpec, skip=frozenset()) -> str:
+    """The searchable text of ``obj``. ``skip`` leaves out some of the
+    spec's related paths - search re-checks a hit without the names of
+    related rows its reader may not view (#413)."""
     bits: list[str] = []
     for attr in _BODY_CANDIDATES:
         if _has_field(obj, attr):
@@ -309,6 +319,8 @@ def _body(obj, spec: IndexSpec) -> str:
             if v not in (None, ""):
                 bits.append(str(v))
     for path in spec.body:
+        if path in skip:
+            continue
         v = _path(obj, path)
         if v not in (None, ""):
             bits.append(str(v))
@@ -323,6 +335,23 @@ def _body(obj, spec: IndexSpec) -> str:
     bits.append(_custom_values(obj))
     text = " ".join(b for b in bits if b)
     return text[:_BODY_MAX]
+
+
+def related_body_paths(model, spec: IndexSpec) -> list[tuple[str, str, str]]:
+    """``(path, fk attname, related model)`` for each of the spec's body
+    paths that names a related row - the first hop is a foreign key."""
+    out = []
+    for path in spec.body:
+        head, dot, _rest = path.partition(".")
+        if not dot:
+            continue
+        try:
+            f = model._meta.get_field(head)
+        except Exception:  # noqa: BLE001 - not a field of this model
+            continue
+        if f.is_relation and f.concrete and (f.many_to_one or f.one_to_one):
+            out.append((path, f.attname, f.related_model))
+    return out
 
 
 def _facets(obj, spec: IndexSpec) -> dict:

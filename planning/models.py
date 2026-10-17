@@ -259,6 +259,46 @@ class TaskLink(TimestampedModel):
         return f"{self.task_id} → {self.object_type}:{self.object_id}"
 
 
+def task_due_key(task) -> str:
+    """The task's due moment as a stable string - ``2026-10-12`` or
+    ``2026-10-12T14:30:00``. An overdue dismissal stores this, so moving the
+    due date (or time) re-arms the warning."""
+    if task.due_date is None:
+        return ""
+    if task.due_time is None:
+        return task.due_date.isoformat()
+    return f"{task.due_date.isoformat()}T{task.due_time.isoformat()}"
+
+
+class TaskOverdueDismissal(models.Model):
+    """One user hid the overdue warning for one task at one due moment.
+
+    Personal UI state, not inventory: not audited. Tenant comes from the task,
+    and the row goes with the task or the user. ``due_key`` is server-computed
+    (:func:`task_due_key`); a dismissal whose key no longer matches the task's
+    due moment is ignored, so a rescheduled task warns again."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+"
+    )
+    task = models.ForeignKey(
+        Task, on_delete=models.CASCADE, related_name="overdue_dismissals"
+    )
+    due_key = models.CharField(max_length=32)
+    dismissed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "task"], name="uniq_overdue_dismissal_per_user_task"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} hid {self.task_id} @ {self.due_key}"
+
+
 class PlannedChangeState(models.TextChoices):
     PLANNED = "planned", "Planned"
     APPLIED = "applied", "Applied"

@@ -29,6 +29,7 @@ const OBJECT_TYPES = [
   { value: "vlan", label: "VLAN" },
   { value: "vrf", label: "VRF" },
   { value: "site", label: "Site" },
+  { value: "virtualmachine", label: "Virtual machine" },
 ]
 const CHECKS: { value: ComplianceCheck; label: string }[] = [
   { value: "required", label: "Field must be set" },
@@ -36,6 +37,22 @@ const CHECKS: { value: ComplianceCheck; label: string }[] = [
   { value: "regex", label: "Field must match a pattern" },
   { value: "required_tag", label: "Must carry a tag" },
   { value: "required_cf", label: "Custom field must be set" },
+  { value: "eol_status", label: "End-of-life status" },
+  { value: "coverage", label: "Support coverage" },
+]
+// An end-of-life check reads the object's platform mapping (#8), so it only
+// applies to the types that carry a platform.
+const EOL_TYPES = new Set(["device", "virtualmachine"])
+const EOL_FAIL_ON: SelectOption[] = [
+  { value: "eol", label: "End of life" },
+  { value: "ending", label: "Support ending or ended" },
+  { value: "unknown", label: "No end-of-life data" },
+]
+// A support coverage check (#421) reads a device's contracts and warranty.
+const COVERAGE_TYPES = new Set(["device"])
+const COVERAGE_FAIL_ON: SelectOption[] = [
+  { value: "expired", label: "Expired or not covered" },
+  { value: "expiring", label: "Expiring, expired or not covered" },
 ]
 
 // Compliance severity is a fixed scale rather than a catalog row, but it is
@@ -83,6 +100,10 @@ export function ComplianceRuleForm({
   const [pattern, setPattern] = useState(rule?.pattern ?? "")
   const [tag, setTag] = useState(rule?.tag ?? "")
   const [cfKey, setCfKey] = useState(rule?.cf_key ?? "")
+  const [eolFailOn, setEolFailOn] = useState<string>(rule?.eol_fail_on || "eol")
+  const [coverageFailOn, setCoverageFailOn] = useState<string>(
+    rule?.coverage_fail_on || "expired"
+  )
 
   const save = useMutation({
     mutationFn: () => {
@@ -98,6 +119,8 @@ export function ComplianceRuleForm({
         pattern,
         tag,
         cf_key: cfKey,
+        eol_fail_on: check === "eol_status" ? eolFailOn : "",
+        coverage_fail_on: check === "coverage" ? coverageFailOn : "",
       }
       return isEdit
         ? api(`/api/compliance-rules/${rule!.id}/`, {
@@ -180,7 +203,11 @@ export function ComplianceRuleForm({
                 required
                 value={check}
                 onChange={(v) => setCheck((v as ComplianceCheck) ?? "required")}
-                options={CHECKS}
+                options={CHECKS.filter(
+                  (c) =>
+                    (c.value !== "eol_status" || EOL_TYPES.has(objectType)) &&
+                    (c.value !== "coverage" || COVERAGE_TYPES.has(objectType))
+                )}
               />
             </div>
 
@@ -216,6 +243,36 @@ export function ComplianceRuleForm({
                 placeholder="monitored"
                 hint="Object must carry this tag"
               />
+            )}
+            {check === "eol_status" && (
+              <FormSelect
+                label="Fails on"
+                required
+                value={eolFailOn}
+                onChange={(v) => setEolFailOn(v ?? "eol")}
+                options={EOL_FAIL_ON}
+                hint="The platform's end-of-life status"
+              />
+            )}
+            {check === "coverage" && (
+              <>
+                <FormSelect
+                  label="Fails on"
+                  required
+                  value={coverageFailOn}
+                  onChange={(v) => setCoverageFailOn(v ?? "expired")}
+                  options={COVERAGE_FAIL_ON}
+                  hint="The device's support and warranty coverage"
+                />
+                <FormText
+                  label="Only with tag"
+                  mono
+                  value={tag}
+                  onChange={setTag}
+                  placeholder="production"
+                  hint="Tag slug; blank = every device"
+                />
+              </>
             )}
             {check === "required_cf" && (
               <FormText

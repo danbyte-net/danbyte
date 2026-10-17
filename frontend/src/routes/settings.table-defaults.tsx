@@ -9,6 +9,8 @@ import { putTableDefault, deleteTableDefault } from "@/lib/use-table-preference"
 import { api, type ColumnPref, type ColumnPrefSummary } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { useUserPrefs } from "@/lib/use-user-prefs"
+import { parseLayout } from "@/lib/sidebar-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -114,7 +116,73 @@ function TableDefaultsPage() {
           ))
         )}
       </SettingsCard>
+
+      <SidebarDefaultCard />
     </div>
+  )
+}
+
+// The tenant's starting sidebar (#285): what members with no layout of their
+// own get. Published from your own layout, the way a table default is.
+function SidebarDefaultCard() {
+  const qc = useQueryClient()
+  const { values } = useUserPrefs()
+  const mine = parseLayout(values.sidebar)
+  const current = useQuery({
+    queryKey: ["sidebar-default"],
+    queryFn: () => api<{ data: unknown }>("/api/prefs/sidebar/default/"),
+    staleTime: 60_000,
+  })
+  const published = parseLayout(current.data?.data) !== null
+  const done = (msg: string) => {
+    toast.success(msg)
+    qc.invalidateQueries({ queryKey: ["sidebar-default"] })
+    qc.invalidateQueries({ queryKey: ["user-prefs"] })
+  }
+  const publish = useMutation({
+    mutationFn: () =>
+      api("/api/prefs/sidebar/default/", {
+        method: "PUT",
+        body: JSON.stringify(mine),
+      }),
+    onSuccess: () => done("Published sidebar default"),
+    onError: (e) => apiErrorToast(e),
+  })
+  const clear = useMutation({
+    mutationFn: () => api("/api/prefs/sidebar/default/", { method: "DELETE" }),
+    onSuccess: () => done("Cleared sidebar default"),
+    onError: (e) => apiErrorToast(e),
+  })
+  const busy = publish.isPending || clear.isPending
+  return (
+    <SettingsCard
+      title="Sidebar default"
+      description="Publish your sidebar layout as the starting point for everyone without their own."
+    >
+      <div className="flex items-center gap-1 text-sm">
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {published ? "Published" : "None - the menu as shipped"}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={busy || !mine}
+          onClick={() => publish.mutate()}
+        >
+          {publish.isPending ? "Publishing…" : "Publish"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs text-destructive"
+          disabled={busy || !published}
+          onClick={() => clear.mutate()}
+        >
+          {clear.isPending ? "Clearing…" : "Clear"}
+        </Button>
+      </div>
+    </SettingsCard>
   )
 }
 

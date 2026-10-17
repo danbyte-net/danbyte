@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { api, type Paginated, type Tenant, type TenantGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Combobox } from "@/components/ui/combobox"
 import { Label } from "@/components/ui/label"
 import {
   AlertDialog,
@@ -154,23 +155,17 @@ function BulkEditDialog({
         <div className="grid gap-4">
           <div className="grid gap-1.5">
             <Label className="text-xs">Tenant group</Label>
-            <Select
+            <Combobox
               value={group || KEEP}
-              onValueChange={(v) => setGroup(v === KEEP ? "" : v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={KEEP}>Leave unchanged</SelectItem>
-                <SelectItem value="__none__">No group (clear)</SelectItem>
-                {groups.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(v) => setGroup(!v || v === KEEP ? "" : v)}
+              options={[
+                { value: KEEP, label: "Leave unchanged" },
+                { value: "__none__", label: "No group (clear)" },
+                ...groups.map((g) => ({ value: g.id, label: g.name })),
+              ]}
+              searchPlaceholder="Search groups…"
+              emptyText="No matches."
+            />
           </div>
           <div className="grid gap-1.5">
             <Label className="text-xs">Status</Label>

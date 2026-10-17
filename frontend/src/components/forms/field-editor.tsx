@@ -6,6 +6,7 @@ import type { DcimChoices, Paginated, StorageUnit, TagOption } from "@/lib/api"
 import { useCustomizationMeta } from "@/lib/custom-fields"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { CfObjectPicker } from "@/components/cf-object-picker"
+import type { ComboboxOption } from "@/components/ui/combobox"
 import { IconPicker } from "@/components/icon-picker"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -21,7 +22,6 @@ import { SuggestInput } from "@/components/ui/suggest-input"
 import { Field } from "./field"
 import { FormCombobox } from "./combobox"
 import { FormSelect } from "./select"
-import type { SelectOption } from "./select"
 import type { BulkFieldSpec } from "./field-spec"
 
 // The one per-kind field editor. It renders a single BulkFieldSpec, in either
@@ -43,9 +43,9 @@ const yesNo = (v: unknown) => (v ? "yes" : "no")
 export interface FieldEditorOptions {
   /** `/api/dcim/choices/` lists, for `kind: "choice"`. */
   dcimChoices: DcimChoices
-  vlans: SelectOption[]
-  vrfs: SelectOption[]
-  statuses: SelectOption[]
+  vlans: ComboboxOption[]
+  vrfs: ComboboxOption[]
+  statuses: ComboboxOption[]
   /** Tag picker options - fetched only when `opts.tags` is set. */
   tags: TagOption[]
 }
@@ -86,7 +86,7 @@ export function useFieldEditorOptions(
   const statusOptions = useQuery({
     queryKey: ["statuses", statusModel],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      api<Paginated<{ id: string; name: string; color?: string | null }>>(
         `/api/statuses/?available_to=${statusModel}&picker=1`
       ),
     enabled: !!statusModel,
@@ -103,9 +103,12 @@ export function useFieldEditorOptions(
       value: v.id,
       label: v.name,
     })),
+    // A status reads as its pill everywhere, the dropdown included.
     statuses: (statusOptions.data?.results ?? []).map((s) => ({
       value: s.id,
       label: s.name,
+      color: s.color,
+      badge: true,
     })),
     tags: tagOptions.data?.results ?? [],
   }
@@ -143,17 +146,13 @@ export function FieldEditor({
   const off = !active || !!disabled
   const unset = () => onClear?.()
 
-  // Shared select plumbing. Note FormSelect maps its own "__none__"/"__keep__"
-  // item values back to null before calling onChange, so the `v === null` arm
-  // is the one that actually fires for both sentinels.
+  // Shared select plumbing. FormSelect maps its own "__none__" item back to
+  // null before calling onChange, so in keep mode only KEEP unsets: null is
+  // the Clear row, which sends null (#314 - clearing used to unset instead).
   const keepRow = keep ? [{ value: KEEP, label: "Keep current" }] : []
   const selectValue = active ? ((value as string | null) ?? NONE) : KEEP
   const onSelect = (v: string | null) =>
-    keep
-      ? v === KEEP || v === null
-        ? unset()
-        : onChange(v === NONE ? null : v)
-      : onChange(v === NONE || v === null ? null : v)
+    keep && v === KEEP ? unset() : onChange(v === NONE || v === null ? null : v)
 
   if (f.kind === "bool") {
     return (
@@ -206,8 +205,7 @@ export function FieldEditor({
       />
     )
   }
-  if (f.kind === "options" || f.kind === "status") {
-    const opts = f.kind === "options" ? f.options : options.statuses
+  if (f.kind === "options") {
     return (
       <FormSelect
         label={f.label}
@@ -215,13 +213,26 @@ export function FieldEditor({
         disabled={disabled}
         value={selectValue}
         onChange={onSelect}
+        options={[...keepRow, ...f.options]}
+      />
+    )
+  }
+  if (f.kind === "status") {
+    // Searchable, and a status reads as its pill everywhere (#276).
+    return (
+      <FormCombobox
+        label={f.label}
+        hint={f.hint}
+        disabled={disabled}
+        value={selectValue}
+        onChange={onSelect}
         options={[
           ...keepRow,
-          ...(f.kind === "status"
-            ? [{ value: NONE, label: "Clear status" }]
-            : []),
-          ...opts,
+          { value: NONE, label: "Clear status" },
+          ...options.statuses,
         ]}
+        searchPlaceholder="Search statuses…"
+        emptyText="No statuses."
       />
     )
   }
@@ -295,7 +306,7 @@ export function FieldEditor({
   if (f.kind === "vlan" || f.kind === "vrf") {
     const opts = f.kind === "vlan" ? options.vlans : options.vrfs
     return (
-      <FormSelect
+      <FormCombobox
         label={f.label}
         disabled={disabled}
         value={selectValue}
@@ -305,6 +316,8 @@ export function FieldEditor({
           { value: NONE, label: `Clear ${f.label.toLowerCase()}` },
           ...opts,
         ]}
+        searchPlaceholder={`Search ${f.label.toLowerCase()}…`}
+        emptyText="No matches."
       />
     )
   }
@@ -331,6 +344,18 @@ export function FieldEditor({
           </div>
         </div>
       </Field>
+    )
+  }
+  if (f.kind === "object" && keep && f.endpoint) {
+    return (
+      <EndpointObjectEditor
+        spec={f}
+        endpoint={f.endpoint}
+        disabled={disabled}
+        value={selectValue}
+        keepRow={keepRow}
+        onSelect={onSelect}
+      />
     )
   }
   if (f.kind === "object") {
@@ -383,12 +408,62 @@ export function FieldEditor({
 }
 
 /**
+ * An object picked from its list's `?picker=1` rows, for a bulk edit: Keep
+ * and Clear above the options, searchable. The routing catalogs (peer
+ * groups, policies, keychains, BFD profiles) are not reference-registry
+ * models, so the endpoint is the way to list them.
+ */
+function EndpointObjectEditor({
+  spec,
+  endpoint,
+  disabled,
+  value,
+  keepRow,
+  onSelect,
+}: {
+  spec: Extract<BulkFieldSpec, { kind: "object" }>
+  endpoint: string
+  disabled?: boolean
+  value: string
+  keepRow: { value: string; label: string }[]
+  onSelect: (v: string | null) => void
+}) {
+  const rows = useQuery({
+    queryKey: ["bulk-object-options", endpoint],
+    queryFn: () =>
+      api<Paginated<{ id: string; name?: string; display?: string }>>(
+        `${endpoint}?picker=1&page_size=500`
+      ),
+    staleTime: 60_000,
+  })
+  return (
+    <FormCombobox
+      label={spec.label}
+      hint={spec.hint}
+      disabled={disabled}
+      value={value}
+      onChange={onSelect}
+      options={[
+        ...keepRow,
+        { value: NONE, label: `Clear ${spec.label.toLowerCase()}` },
+        ...(rows.data?.results ?? []).map((r) => ({
+          value: r.id,
+          label: r.name || r.display || r.id,
+        })),
+      ]}
+      searchPlaceholder={`Search ${spec.label.toLowerCase()}…`}
+      emptyText={rows.isPending ? "Loading…" : "No matches."}
+    />
+  )
+}
+
+/**
  * A reference-registry object, rendered with the same picker custom fields use.
  * Split out so the customization-meta query only runs for specs that need it.
  *
- * No KEEP sentinel here: the picker's own "-" row clears to null, and nothing
- * declares `kind: "object"` in a bulk-edit dialog today, so keep mode is a
- * pass-through - an untouched picker stays out of `values` either way.
+ * No KEEP sentinel here: the picker's own "-" row clears to null. A bulk
+ * edit whose spec carries an endpoint uses EndpointObjectEditor instead; one
+ * without stays a pass-through - an untouched picker stays out of `values`.
  */
 function ObjectFieldEditor({
   spec,

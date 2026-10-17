@@ -96,6 +96,18 @@ it *runs*: **VM → platform → cluster → site → tenant default**. Bind a p
 at whichever level fits (a per-VM binding can also carry a `target` override to
 poll a management address instead of the primary IP).
 
+A VM polls from the same [engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target)
+a device would at its place: its **site**, else its **cluster's site**, then
+the tenant default. A VM has no engine binding or location of its own. The SNMP
+tab says *Polls from Outpost …* or *Polls from the core*, and Poll now on an
+Outpost's VM queues there like a device's.
+
+Every device is an SNMP target; a VM becomes one once something says it runs
+an agent: a profile bound to the VM, its platform or its cluster, or a first
+**Poll now**. Only those VMs go on an Outpost's work list and on the
+[schedule](#scheduled-polling), so a tenant-default profile does not set every
+hypervisor guest polling.
+
 ## Poll a device {#poll-a-device}
 
 Open a device → its **SNMP** tab → the **Observed** card → **Poll now**.
@@ -114,9 +126,10 @@ engine](../monitoring/outposts.md#how-an-engine-is-chosen-for-a-target) - device
 → location → site → tenant default - and the card says which: *Polls from
 Outpost …* or *Polls from the core*. On an Outpost the request is queued there
 and the button answers *Queued on Outpost …*; the facts land when the agent's
-next pass reports. Everything else - an unbound device, one bound to a Zabbix
-engine or a disabled Outpost, and every VM - polls from the core. **Poll
-sensors** and **Explore OIDs** always run from the core.
+next pass reports. Everything else - an unbound device, or one bound to a
+Zabbix engine or a disabled Outpost - polls from the core. A
+[VM](#virtual-machines) follows the same rule by its site. **Poll sensors** and
+**Explore OIDs** always run from the core.
 
 Poll now also reads the device's [MAC table](#mac-tables), but quickly: it
 has to answer before the web server gives up on the request, so it stops
@@ -174,7 +187,37 @@ rules. An Outpost that polls every member adds nothing a second time.
 ## Scheduled polling & utilisation {#scheduled-polling}
 
 The on-demand button is a snapshot. To build a **utilisation series** for the
-per-interface sparklines, run the poller on a schedule:
+per-interface sparklines, and to keep the learned MACs and the site map's
+[Utilization](site-map.md#utilization) current, poll on a schedule.
+
+**Poll devices every** (Settings → Monitoring → [MAC tracking](monitoring.md#mac-tracking))
+does it from the core: Off (the default on fresh installs and upgrades), 15
+minutes, 30 minutes or 1 hour, per tenant. Every five minutes the scheduler
+(`danbyte-snmp-poll`, `manage.py dispatch_snmp_polls`) queues a background
+poll for each device, and each [SNMP-target VM](#virtual-machines), that is
+due:
+
+- one poll per stack, on its owner;
+- devices and VMs an [Outpost](../monitoring/outposts.md) polls are left to
+  it; one bound to a driver engine such as Zabbix polls from the core, as Poll
+  now does;
+- a device is due once its last poll is older than the interval; one never
+  polled is due at once;
+- each tick queues only its share of the tenant's devices (devices × 5 min
+  / interval, oldest poll first), so switching it on spreads the first round
+  across the whole interval instead of polling everything at once;
+- a device is claimed until shortly before it is next due, so a slow poll is
+  never queued twice and a device without a profile or address is retried
+  once per interval, not every tick;
+- a running **Refresh MACs** holds the device; the scheduled poll waits for
+  the next interval.
+
+The polls run on the RQ workers. The Jobs page lists the beat as **Scheduled
+SNMP polls**. Bare metal installs and upgrades enable the timer like the
+others; a container install runs it from `run_scheduler`.
+
+`poll_snmp` still polls every device and SNMP-target VM the core polls at
+once, for cron or a manual run:
 
 ```bash
 python manage.py poll_snmp
@@ -421,6 +464,37 @@ The per-device card is for one box. To see drift across the whole fleet, open
   (**in sync** / **N drifted** / **unreachable**), a one-line summary of what
   drifted (name, interfaces), the profile used, and when it was last polled.
   Filter by status; click a device to open its drift inbox and accept items.
+  Hover **N drifted** to see what differs; it is read when the card opens.
+
+#### Bulk actions {#bulk-snmp-actions}
+
+On the **SNMP** tab, tick devices to get a bar with **Poll**, **Refresh MACs**
+and **Sync from SNMP**; **All devices** in the header runs the same three on
+every listed device (the status filter applies). Each runs in the background
+and one toast follows the progress, then says how many devices succeeded and
+why the rest did not (unreachable, already being read, not permitted, queued on
+an Outpost).
+
+- **Poll** is Poll now (the quick MAC read); **Refresh MACs** reads the whole
+  MAC table, as on the device. A stack is polled once, through its owner.
+- **Devices an Outpost polls** are not polled from the core: each Outpost is
+  asked for a pass, once, as Poll now does.
+- **Sync from SNMP** is the device's Sync, applied to each device from its last
+  poll; it never polls. It always asks first and lists the devices, since it
+  writes interfaces, VLANs and IPs. Device names are left alone. A device with
+  no reachable poll is skipped. The change log names you, with one request id
+  for the whole run.
+- **Permissions:** `device.change`, checked per device within your site scope
+  when you click and again when each job runs. Devices you may not change are
+  counted, not named.
+- **Limits:** 5,000 devices per run. Poll and Refresh MACs queue one job per
+  device; Sync queues one job per 25 devices. Needs the RQ workers running.
+
+API: `POST /api/monitoring/snmp-drift/bulk-poll/`, `bulk-mac-refresh/` and
+`bulk-sync/` with `{"devices": [id, ...]}` answer `202` with a `run_id`
+(`run_id: null` and `200` when nothing was left to queue, such as all on
+Outposts); `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/` returns its
+progress to the user who started it.
 
 Both tabs answer the same question - *does reality match intent?* - from the two
 sources Danbyte has (your runner, and SNMP).
@@ -455,7 +529,8 @@ switch, a firewall, a virtual router - with the switch's own table asked
 first, then the others in device-name order; the first answer per MAC wins.
 **ARP sources** (Settings → Monitoring → Switch-link suggestions) narrows that
 to the devices you name, in name order, exactly as before: on L2-only
-networks list the gateways and firewalls that actually route. If two sources
+networks list the gateways and firewalls that actually route. The picker takes
+several devices at once; they apply on **Save**. If two sources
 disagree about a MAC, the first answer in device-name order wins,
 deterministically, rather than flapping between polls.
 
@@ -506,6 +581,26 @@ API the option is the profile's `params.mac_vlan_contexts`
 (`auto`/`always`/`off`), with `mac_max_vlans` (1-1024, default 128) and
 `mac_budget_s` (5-600 seconds, default 120) next to it.
 
+A per-VLAN table is opened as `community@vid` on SNMPv1/v2c and as the
+context `vlan-<vid>` on SNMPv3, so a VLAN with no IP address on the switch -
+VLAN 1 included - is read like any other. A switch in a VTP domain lists every
+VLAN of the domain but has no table for a VLAN with no port on it, and stays
+silent there. So the VLANs the switch is known to carry go first - its SVIs,
+its ports' access VLANs (PVID, or Cisco's `vmVlan`) and the profile's VLAN
+hint - and the reserved VLANs 1002-1005 are never read. Three VLANs in a row
+that don't answer before any has answered end the per-VLAN read (the agent
+doesn't take `community@vid`, or the SNMPv3 group lacks
+`context vlan- match prefix`), and the read is partial. Once one has
+answered, a silent VLAN the switch isn't known to carry has no table on this
+switch: it is asked once and recorded as skipped, and the read can still
+complete. A VLAN the switch is known to carry is retried like any other
+request; if it stays silent it is failed and the read is partial, so one lost
+packet never drops a real VLAN. VLAN 1 is the exception: the default context
+already stands for it. A VLAN that answers and then errs, or stops
+mid-table, is failed. A VLAN carried only on trunks has no SVI or access port
+to show it; in `always` mode the VLANs Danbyte has on the device's
+interfaces, tagged ones included, count as known too.
+
 Only **learned** entries are kept. Dropped: the switch's own and invalid
 entries, multicast and broadcast addresses, all-zero MACs, and any MAC that
 is one of the polled device's own interface addresses - so a port never
@@ -532,9 +627,9 @@ as gone. A read that **stopped early** - the time budget ran out, the
 100,000-row cap was hit, a walk failed, per-VLAN tables could not be opened -
 is **partial**: it adds and refreshes what it saw and closes nothing, so a
 slow switch never reads as "every MAC left". VLANs left out of a read - over
-`mac_max_vlans`, or a per-VLAN table that failed - don't make it partial, so a
-big switch still closes what moved elsewhere; the MACs in those VLANs are
-simply neither closed nor refreshed by that read. A poll that never reached
+`mac_max_vlans`, or with no table on the switch - don't make it partial, so a
+big switch still closes what moved elsewhere. The MACs in those VLANs, and in
+a per-VLAN table that failed, are neither closed nor refreshed by that read. A poll that never reached
 the device writes nothing at all.
 
 The device's SNMP state carries `fdb_polled_at` - the last complete read - and
@@ -903,7 +998,7 @@ disk-status column is what you point the sensor at.
   needs view on the interface; the network-wide learned list needs view on
   MAC addresses and lists only devices you may view.
 - **Poll now and Refresh MACs** - **`device.change`**. Refresh MACs checks it
-  again when the job runs.
+  again when the job runs, as do the [bulk actions](#bulk-snmp-actions).
 - **Accept drift** (reconcile observed → intended) - requires **`device.change`**.
   This is the one source-of-truth write in the whole feature, so it's gated like
   editing the device itself, not merely tenant membership.

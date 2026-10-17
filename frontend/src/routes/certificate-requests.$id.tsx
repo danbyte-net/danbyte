@@ -11,7 +11,7 @@ import type {
   Issuer,
   Paginated,
 } from "@/lib/api"
-import { FormSelect } from "@/components/forms"
+import { FormSelect, FormCombobox } from "@/components/forms"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -391,7 +391,7 @@ function AcmeTab({
             </p>
           ) : (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <FormSelect
+              <FormCombobox
                 label="Issuer"
                 value={issuerId}
                 onChange={setIssuerId}
@@ -402,6 +402,8 @@ function AcmeTab({
                     ? i.name
                     : `${i.name} (no account)`,
                 }))}
+                searchPlaceholder="Search issuers…"
+                emptyText="No issuers."
               />
               <FormSelect
                 label="Challenge"

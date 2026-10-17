@@ -72,6 +72,11 @@ without `engine_id`, or with `""`, is refused with a 400 rather than read as
 *Inherit*. The SNMP profile and VRF binding endpoints follow the same rule for
 `profile_id` and `vrf_id`.
 
+An SNMP poll resolves the same way for the polled object: a **device** by its
+own binding, its location (and parents), then its site - its own, else its
+location's; a **virtual machine** by its site, else its cluster's site. Both
+then fall to the tenant default and Local.
+
 A driver-backed engine - a [Zabbix](zabbix.md) one - answers only **its own
 check kind**. A device bound to Zabbix keeps its ICMP ping, and Danbyte's own
 workers still run it. Binding a target somewhere else changes who answers what
@@ -346,7 +351,7 @@ device is picked up on the next poll with no re-enrollment.
   to a site or location, so a site's Outpost polls its devices with site-scoped
   credentials (resolver: device → role → type → location → site → tenant default).
 - **SNMP discovery over the Outpost (shipped)** - the agent pulls
-  `GET /api/outpost/snmp-work` (its devices + scoped creds), runs the *same*
+  `GET /api/outpost/snmp-work` (its devices and VMs + scoped creds), runs the *same*
   `danbyte_checks.snmp_facts.fetch_snmp` the core runs, and posts back to
   `POST /api/outpost/snmp` → persisted through `persist_snmp_result`, the same
   path as a local poll. Runs on a slower cadence (default 900 s) than checks.
@@ -368,11 +373,16 @@ device is picked up on the next poll with no re-enrollment.
   *Queued on Outpost …* - the agent runs its SNMP cycle on the next poll and
   the results land through the normal ingest. The Outpost's work list carries
   every device that resolves to it by those same levels, a device placed in a
-  room of a bound site included. Central polling would report outpost-only
-  networks as SNMP unavailable, so the scheduled `poll_snmp` command skips an
-  Outpost's devices. Only an Outpost runs SNMP for the core: a device bound to
-  a driver engine such as Zabbix, and every virtual machine, polls from the
-  core.
+  room of a bound site included, and every [SNMP-target
+  VM](../features/snmp-discovery.md#virtual-machines) whose site, or cluster's
+  site, resolves to it. A VM rides in the same `devices` list under
+  `device_id`, with `"kind": "vm"` beside it (`"device"` on a device); an
+  agent echoes the id back and may echo the kind, so agents that predate VM
+  targets poll them unchanged. Central polling would report outpost-only
+  networks as SNMP unavailable, so the scheduled polls (`dispatch_snmp_polls`)
+  and the `poll_snmp` command skip an Outpost's devices and VMs. Only an
+  Outpost runs SNMP for the core: a target bound to a driver engine such as
+  Zabbix polls from the core.
 - **SSH host-key pinning (shipped)** - pin `ssh_host_key` on the engine and
   Danbyte verifies the server on every SSH connection.
 - **Single-binary packaging (shipped)** - the agent repo's release CI builds a

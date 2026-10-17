@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 
 import { api } from "@/lib/api"
 import type { Cable, Paginated } from "@/lib/api"
@@ -9,7 +9,8 @@ import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
+import { useUrlSearch } from "@/lib/url-filters"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/fiber-cables")({
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/fiber-cables")({
 })
 
 function FiberCablesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const { humanIds } = useMe()
 
   const query = useQuery({
@@ -46,7 +47,7 @@ function FiberCablesPage() {
     filteredRows,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

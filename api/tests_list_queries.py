@@ -280,6 +280,77 @@ class IpListTests(_Base):
         )
 
 
+class IpListDeepPageTests(_Base):
+    """The DHCP flags are computed for the page's rows only, after paging:
+    Postgres evaluates the select list for every row OFFSET skips, so a flag
+    in the paged query made page N cost N pages of EXISTS (#372)."""
+
+    DHCP_TABLES = ("integrations_dhcpreservation", "integrations_dhcplease",
+                   "integrations_dhcpscope", "integrations_dhcpexclusion")
+
+    def setUp(self):
+        from integrations.models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
+
+        super().setUp()
+        p = Prefix.objects.create(tenant=self.tenant, cidr="10.78.0.0/24")
+        self.ips = {
+            h: IPAddress.objects.create(tenant=self.tenant, ip_address=f"10.78.0.{h}", prefix=p)
+            for h in range(1, 31)
+        }
+        scope = DhcpScope.objects.create(
+            tenant=self.tenant, scope_id="10.78.0.0", name="Lab", prefix=p,
+            start_range="10.78.0.20", end_range="10.78.0.30",
+        )
+        DhcpExclusion.objects.create(
+            scope=scope, start_address="10.78.0.22", end_address="10.78.0.23"
+        )
+        DhcpReservation.objects.create(scope=scope, ip="10.78.0.25", ip_address=self.ips[25])
+        DhcpLease.objects.create(scope=scope, ip="10.78.0.27", ip_address=self.ips[27])
+
+    def _page(self, n):
+        url = f"/api/ips/?page_size=5&page={n}"
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return ctx.captured_queries, r.json()
+
+    def test_paged_query_carries_no_dhcp_subquery(self):
+        queries, _ = self._page(5)
+        paged = [q["sql"] for q in queries if "OFFSET" in q["sql"]
+                 and 'FROM "api_ipaddress"' in q["sql"]]
+        self.assertTrue(paged)
+        for sql in paged:
+            for table in self.DHCP_TABLES:
+                self.assertNotIn(table, sql)
+        # The flags come from one query keyed on the page's ids.
+        dhcp = [q["sql"] for q in queries if "integrations_dhcpreservation" in q["sql"]]
+        self.assertEqual(len(dhcp), 1)
+        self.assertIn(" IN (", dhcp[0])
+        self.assertNotIn("OFFSET", dhcp[0])
+
+    def test_deep_page_costs_what_the_first_costs(self):
+        first, _ = self._page(1)
+        deep, _ = self._page(6)
+        self.assertEqual(len(first), len(deep))
+
+    def test_states_on_a_deep_page(self):
+        state = {}
+        for n in range(1, 7):
+            _, body = self._page(n)
+            state.update({row["ip_address"]: row["dhcp"] for row in body["results"]})
+        self.assertEqual(len(state), 30)
+        self.assertIsNone(state["10.78.0.5"])
+        self.assertEqual(state["10.78.0.21"], "scope")
+        self.assertEqual(state["10.78.0.22"], "exclusion")
+        self.assertEqual(state["10.78.0.25"], "leased")
+        self.assertEqual(state["10.78.0.27"], "leased")
+
+    def test_detail_keeps_the_flag(self):
+        r = self.client.get(f"/api/ips/{self.ips[25].id}/")
+        self.assertEqual(r.json()["dhcp"], "leased")
+
+
 class IpListOrderIndexTests(_Base):
     """The list's default order within a tenant is served by an index, so a
     page reads its rows in order instead of sorting the whole tenant (#339)."""
@@ -347,6 +418,7 @@ class VirtualMachineListTests(_Base):
             Cluster,
             ClusterType,
             Region,
+            Status,
             VirtualMachineGroup,
         )
 
@@ -356,8 +428,14 @@ class VirtualMachineListTests(_Base):
         ctype = ClusterType.objects.create(
             tenant=self.tenant, name="Cloud Director", slug="cd"
         )
+        # The nested cluster renders its status (#427): every cluster on the
+        # page carries one, and a second cluster proves it is not cached.
+        up = Status.objects.create(tenant=self.tenant, name="Up", slug="up")
         cluster = Cluster.objects.create(
-            tenant=self.tenant, name="VDC", type=ctype
+            tenant=self.tenant, name="VDC", type=ctype, status=up
+        )
+        other = Cluster.objects.create(
+            tenant=self.tenant, name="VDC-2", type=ctype, status=up
         )
         groups = [
             VirtualMachineGroup.objects.create(
@@ -368,7 +446,8 @@ class VirtualMachineListTests(_Base):
         ]
         for i in range(20):
             VirtualMachine.objects.create(
-                tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
+                tenant=self.tenant, name=f"vm-{i:02d}",
+                cluster=cluster if i < 15 else other,
                 group=groups[i % 5], site=site if i % 2 else None,
             )
 
@@ -382,6 +461,9 @@ class VirtualMachineListTests(_Base):
         self.assertEqual(rows["vm-07"]["group"]["name"], "vapp-2")
         self.assertEqual(rows["vm-07"]["site"]["region"]["name"], "Nordics")
         self.assertIsNone(rows["vm-08"]["site"])
+        self.assertEqual(rows["vm-03"]["cluster"]["status"]["name"], "Up")
+        self.assertEqual(rows["vm-17"]["cluster"]["name"], "VDC-2")
+        self.assertEqual(rows["vm-17"]["cluster"]["status"]["name"], "Up")
 
 
 class DeviceListTests(_Base):
@@ -652,3 +734,118 @@ class MacListTests(_Base):
             self.assertEqual(row["vendor"], vendor_of_object(obj), row["mac_address"])
         names = {(r["vendor"] or {}).get("name") for r in body["results"]}
         self.assertEqual(names, {"SanDisk", "Lab", "Hand-built", None})
+
+    def _learned(self, n, start=0, sw=None):
+        """MAC objects ``start``..``n-1``, each learned on its own port of a
+        switch in a site and location."""
+        from django.utils import timezone
+
+        from monitoring.models import MacSighting
+
+        from .models import Interface, Location, MACAddress
+
+        if sw is None:
+            site = Site.objects.create(tenant=self.tenant, name="HQ")
+            room = Location.objects.create(tenant=self.tenant, site=site, name="R1", slug="r1")
+            sw = Device.objects.create(tenant=self.tenant, name="sw1", site=site, location=room)
+        now = timezone.now()
+        for i in range(start, n):
+            mac = f"0c:00:00:00:01:{i:02x}"
+            port = Interface.objects.create(device=sw, name=f"Gi1/0/{i + 1}")
+            MACAddress.objects.create(tenant=self.tenant, mac_address=mac)
+            MacSighting.objects.create(
+                tenant=self.tenant, polled_device=sw, device=sw, interface=port,
+                port_key=f"gi1/0/{i + 1}", port_name=port.name, mac=mac,
+                first_seen=now, last_seen=now,
+            )
+        return sw
+
+    def test_location_is_resolved_once_per_page(self):
+        sw = self._learned(30)
+        small, _ = self._queries("/api/mac-addresses/?page_size=5")
+        big, body = self._queries("/api/mac-addresses/?page_size=30")
+        self.assertEqual(small, big, "a bigger page must not cost more queries (#344)")
+        for row in body["results"]:
+            loc = row["location"]
+            n = int(row["mac_address"].rsplit(":", 1)[1], 16) + 1
+            self.assertEqual(loc["device"]["id"], str(sw.id))
+            self.assertEqual(loc["port_name"], f"Gi1/0/{n}")
+            self.assertEqual((loc["site"]["name"], loc["location"]["name"]), ("HQ", "R1"))
+
+    def test_the_recorded_mac_list_costs_the_same_for_more_macs(self):
+        sw = self._learned(5)
+        few, _ = self._queries("/api/macs/")
+        self._learned(30, start=5, sw=sw)
+        many, body = self._queries("/api/macs/")
+        self.assertEqual(few, many, "the Location column must not cost a query per row (#344)")
+        self.assertEqual(len(body["results"]), 30)
+        self.assertTrue(all(r["location"]["device"]["name"] == "sw1" for r in body["results"]))
+
+
+class DeviceRackListTests(_Base):
+    """The elevations wall reads the devices of every rack it draws in one
+    request: ``?rack=`` takes comma-separated ids (#431)."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Rack
+
+        self.hq = Site.objects.create(tenant=self.tenant, name="HQ")
+        self.branch = Site.objects.create(tenant=self.tenant, name="Branch")
+        self.racks = []
+        for i in range(6):
+            site = self.hq if i % 2 == 0 else self.branch
+            r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
+            self.racks.append(r)
+            for k in range(3):
+                Device.objects.create(
+                    tenant=self.tenant, name=f"d-{i}-{k}", site=site, rack=r, position=k + 1
+                )
+        Device.objects.create(tenant=self.tenant, name="loose", site=self.hq)
+        org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=org, name="Other", slug="other")
+        far = Site.objects.create(tenant=other, name="Far")
+        self.foreign = Rack.objects.create(tenant=other, site=far, name="theirs")
+        Device.objects.create(tenant=other, name="their-dev", site=far, rack=self.foreign)
+
+    def _url(self, racks):
+        return "/api/devices/?rack=" + ",".join(str(r.id) for r in racks)
+
+    def test_one_request_for_many_racks_costs_what_one_rack_costs(self):
+        one, body_one = self._queries(self._url(self.racks[:1]))
+        many, body = self._queries(self._url(self.racks))
+        self.assertEqual(one, many, "more racks must not cost more queries")
+        self.assertEqual({r["name"] for r in body_one["results"]}, {"d-0-0", "d-0-1", "d-0-2"})
+        self.assertEqual(len(body["results"]), 18)
+        self.assertEqual(
+            {r["rack"]["id"] for r in body["results"]}, {str(r.id) for r in self.racks}
+        )
+
+    def test_another_tenants_rack_lists_nothing(self):
+        _, body = self._queries(self._url([self.racks[0], self.foreign]))
+        names = {r["name"] for r in body["results"]}
+        self.assertEqual(names, {"d-0-0", "d-0-1", "d-0-2"})
+
+    def test_a_bad_id_is_a_400(self):
+        r = self.client.get("/api/devices/?rack=nope")
+        self.assertEqual(r.status_code, 400)
+
+    def test_a_site_scoped_reader_sees_only_their_site(self):
+        from auth_api.models import ObjectPermission, UserProfile
+
+        user = User.objects.create_user("scoped", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        view = ObjectPermission.objects.create(
+            name="see-hq", object_types=["device", "rack"], actions=["view"]
+        )
+        view.users.add(user)
+        view.tenants.add(self.tenant)
+        view.sites.set([self.hq])
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+        _, body = self._queries(self._url(self.racks))
+        self.assertEqual(
+            {r["rack"]["name"] for r in body["results"]}, {"r0", "r2", "r4"}
+        )

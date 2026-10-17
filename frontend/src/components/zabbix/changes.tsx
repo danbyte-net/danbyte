@@ -314,6 +314,8 @@ export function ZabbixChanges({
           total={changes.data?.count}
           columns={columns}
           flexColumn="detail"
+          searchable
+          searchPlaceholder="Search changes…"
         />
       )}
 

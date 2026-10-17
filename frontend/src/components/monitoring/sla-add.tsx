@@ -23,7 +23,7 @@ import {
 } from "@/lib/bulk-batches"
 import type { BatchProgress } from "@/lib/bulk-batches"
 import { useMe } from "@/lib/use-me"
-import { FormCombobox, FormSelect, FormText } from "@/components/forms"
+import { FormCombobox, FormText } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { PendingLabel } from "@/components/pending-label"
 import { Button } from "@/components/ui/button"
@@ -181,11 +181,13 @@ export function AddToSlaDialog({
             emptyText="No agreements yet."
           />
           {agreement && (
-            <FormSelect
+            <FormCombobox
               label="Group"
               value={pickedGroup}
               onChange={setGroup}
               options={groupRows.map((g) => ({ value: g.id, label: g.name }))}
+              searchPlaceholder="Search groups…"
+              emptyText="No groups."
             />
           )}
           {agreement && groups.isSuccess && groupRows.length === 0 && (

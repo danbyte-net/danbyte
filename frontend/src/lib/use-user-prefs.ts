@@ -8,6 +8,8 @@ export interface UserPrefsResponse {
   user_set: string[]
 }
 
+const EMPTY_KEYS: string[] = []
+
 // User display preferences, backed by /api/me/prefs/ (auth_api.user_prefs).
 export function useUserPrefs() {
   const qc = useQueryClient()
@@ -31,6 +33,9 @@ export function useUserPrefs() {
   })
   return {
     values: q.data?.values ?? {},
+    /** Keys the user has set themselves (the rest come from the tenant
+     * default or the built-in one). */
+    userSet: q.data?.user_set ?? EMPTY_KEYS,
     isLoading: q.isLoading,
     saving: m.isPending,
     setPref: (key: string, value: unknown) => m.mutate({ [key]: value }),

@@ -142,9 +142,11 @@ def discover_prefix(prefix, settings, now=None) -> dict:
 
 
 def _host_total(net) -> int:
-    """Number of host addresses net.hosts() will yield (excludes net/broadcast
-    for prefixes shorter than /31)."""
-    return net.num_addresses if net.prefixlen >= 31 else max(net.num_addresses - 2, 0)
+    """Number of host addresses net.hosts() will yield - the shared host
+    rule, so an IPv6 /126 sweeps its last address too (#382)."""
+    from api.models import usable_host_count
+
+    return usable_host_count(net)
 
 
 # ─── Live progress (Redis-backed, ephemeral) ─────────────────────────────────

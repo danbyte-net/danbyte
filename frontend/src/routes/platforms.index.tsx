@@ -7,17 +7,19 @@ import { api, type Paginated, type Platform } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPlatformColumns } from "@/components/columns/platform-columns"
-import { useTableFilters } from "@/components/table-filters"
+import { useEolSettings } from "@/components/cells/eol-cell"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { PlatformDeleteDialog } from "@/components/platform-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/platforms/")({
   component: PlatformsPage,
 })
 
 function PlatformsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Platform | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("platform", "add")
@@ -34,11 +36,13 @@ function PlatformsPage() {
   const rows = query.data?.results ?? []
 
   const handleDelete = useCallback((p: Platform) => setDeleting(p), [])
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo(
     () =>
       buildPlatformColumns<Platform>({
         selection: true,
         humanIds,
+        eol: eolOn,
         actions: {
           editTo: "/platforms/$id/edit",
           editParams: (p) => ({ id: p.id }),
@@ -47,7 +51,7 @@ function PlatformsPage() {
           canDelete: () => canDelete,
         },
       }),
-    [handleDelete, canEdit, canDelete, humanIds]
+    [handleDelete, canEdit, canDelete, humanIds, eolOn]
   )
   const {
     rail,
@@ -56,7 +60,7 @@ function PlatformsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -97,4 +101,3 @@ function PlatformsPage() {
     </ListPageShell>
   )
 }
-

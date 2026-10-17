@@ -10,7 +10,7 @@ import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { openOnboardingWizard } from "@/components/onboarding-wizard"
 import { Checkbox } from "@/components/ui/checkbox"
-import { FormCombobox, FormSelect } from "@/components/forms"
+import { FormCombobox, FormSelect, FormText } from "@/components/forms"
 import {
   SettingsCard,
   SettingsHeader,
@@ -261,6 +261,86 @@ function TenantGeneralPage() {
             placeholder="Server default"
             searchPlaceholder="Search timezones…"
             options={timezoneOptions}
+          />
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Rack capacity"
+        description="Where space, power and port fill turns amber and red."
+        layout="plain"
+        onSave={() =>
+          save.mutate(
+            {
+              capacity_warn_pct: Number(form.capacity_warn_pct),
+              capacity_critical_pct: Number(form.capacity_critical_pct),
+            },
+            // The levels reach every rack surface through /api/me/.
+            { onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }) }
+          )
+        }
+        dirty={
+          !!server &&
+          (Number(form.capacity_warn_pct) !== server.capacity_warn_pct ||
+            Number(form.capacity_critical_pct) !== server.capacity_critical_pct)
+        }
+        saving={save.isPending}
+        saveLabel="Save rack capacity"
+      >
+        <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
+          <FormText
+            label="Warning level"
+            hint="%"
+            info="Racks, the rack page, floor plans and the site Capacity tab colour a figure amber above this share."
+            type="number"
+            min={1}
+            max={99}
+            value={String(form.capacity_warn_pct)}
+            onChange={(v) => set("capacity_warn_pct", v === "" ? 0 : Number(v))}
+          />
+          <FormText
+            label="Critical level"
+            hint="%"
+            info="Red above this share. Must be above the warning level."
+            type="number"
+            min={2}
+            max={100}
+            value={String(form.capacity_critical_pct)}
+            onChange={(v) =>
+              set("capacity_critical_pct", v === "" ? 0 : Number(v))
+            }
+          />
+        </div>
+      </SettingsCard>
+
+      <SettingsCard
+        title="Support coverage"
+        description="When a device's support or warranty reads as Expiring."
+        layout="plain"
+        onSave={() =>
+          save.mutate({
+            coverage_warning_days: Number(form.coverage_warning_days),
+          })
+        }
+        dirty={
+          !!server &&
+          Number(form.coverage_warning_days) !== server.coverage_warning_days
+        }
+        saving={save.isPending}
+        saveLabel="Save support coverage"
+      >
+        <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
+          <FormText
+            label="Warning window"
+            hint="days"
+            info="Coverage that ends within this many days reads as Expiring, and its contracts are announced to their channels."
+            type="number"
+            min={1}
+            max={730}
+            value={String(form.coverage_warning_days ?? "")}
+            onChange={(v) =>
+              set("coverage_warning_days", v === "" ? 0 : Number(v))
+            }
           />
         </div>
       </SettingsCard>

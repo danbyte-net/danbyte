@@ -1442,18 +1442,38 @@ class _Importer:
 
     def imp_fhrp_groups(self):
         for nb in self.each("fhrp_groups", "ipam/fhrp-groups"):
-            self.upsert(
+            obj = self.upsert(
                 "fhrp_groups", m.FHRPGroup, nb,
                 {"tenant": self.tenant, "protocol": _val(nb.get("protocol")),
                  "group_id": nb["group_id"]},
                 {
                     "name": nb.get("name") or "",
                     "auth_type": _val(nb.get("auth_type")) or "",
-                    "auth_key": nb.get("auth_key") or "",
                     "description": nb.get("description", ""),
                 },
                 cf=True, tags=True,
             )
+            key = nb.get("auth_key") or ""
+            if obj is not None and key and (
+                not obj.psk_set or self.opts.get("update_existing")
+            ):
+                self._store_fhrp_key(obj, key)
+
+    def _store_fhrp_key(self, obj, key: str) -> None:
+        """The key goes to the secret store, never the row (#383). With no
+        store enabled the group is imported without it and the report says
+        so."""
+        from monitoring.secret_store import SecretStoreError
+
+        try:
+            obj.store_psk(key)
+        except SecretStoreError:
+            self.notes.append(
+                f"FHRP group {obj}: authentication key not imported - no secret "
+                "store is enabled."
+            )
+            return
+        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
 
     def imp_fhrp_group_assignments(self):
         for nb in self.each("fhrp_group_assignments", "ipam/fhrp-group-assignments"):

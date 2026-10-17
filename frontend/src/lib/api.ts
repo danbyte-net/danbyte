@@ -362,6 +362,9 @@ export interface Me {
   }
   /** Resolved date/time display settings (user → tenant → deployment). */
   datetime?: DateTimeSettings
+  /** The tenant's rack capacity levels, in percent: above `warn` a rack is
+   * filling up, above `critical` it is full. */
+  capacity_thresholds?: { warn: number; critical: number }
 }
 
 // ─── Session login + MFA (POST /api/auth/...) ───────────────────────────────
@@ -431,6 +434,8 @@ export type RBACAction =
   | "trust"
   | "view_credits"
   | "set_default"
+  | "view_config"
+  | "view_cost"
 
 export interface RBACUser {
   id: number
@@ -1585,12 +1590,18 @@ export interface Device {
     release_date?: string | null
     end_of_support?: string | null
     lifecycle_state?: LifecycleState
+    /** End-of-life data (#8); null while the feature is off. */
+    eol?: EolInfo | null
   } | null
   /** Read-only: the device's own platform, else its type's default. */
   effective_platform: { id: string; name: string } | null
   status: StatusMini | null
   serial_number: string
   asset_tag: string
+  /** Last day of the unit's hardware warranty (#421). */
+  warranty_end?: string | null
+  /** Support & warranty coverage (#421), derived server-side. */
+  coverage?: DeviceCoverageBrief
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -1625,6 +1636,9 @@ export interface Device {
   hardware_count: number
   console_count: number
   power_count: number
+  /** Detail payload only; 0 on the list. */
+  front_port_count?: number
+  rear_port_count?: number
   service_count: number
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
@@ -1680,6 +1694,8 @@ export interface DeviceWritePayload {
   status_id?: string | null
   serial_number?: string
   asset_tag?: string
+  /** Last day of the hardware warranty (#421). */
+  warranty_end?: string | null
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1842,9 +1858,73 @@ export interface Platform extends LifecycleInfo {
   config_template: { id: string; name: string } | null
   description: string
   tags: Tag[]
+  /** End-of-life data (#8); null while the feature is off. */
+  eol?: EolInfo | null
   device_count: number
+  /** Virtual machines running this platform. */
+  vm_count: number
   created_at: string
   updated_at: string
+}
+
+/** End-of-life status of a platform, from its endoflife.date mapping (#8). */
+export type EolStatus = "supported" | "ending" | "eol" | "unknown"
+export interface EolInfo {
+  status: EolStatus
+  source?: string
+  product?: string
+  cycle?: string
+  release_date?: string | null
+  support_until?: string | null
+  eol_date?: string | null
+  lts?: boolean
+  latest_version?: string
+  synced_at?: string | null
+  /** The product or cycle has left the catalog; the facts are the last known. */
+  missing?: boolean
+}
+export interface EolSettings {
+  enabled: boolean
+  warning_days: number
+  /** The fields below come back for deployment admins only. */
+  can_manage?: boolean
+  sources?: string[]
+  source_urls?: Record<string, string>
+  available_sources?: {
+    key: string
+    label: string
+    default_url: string
+    homepage: string
+  }[]
+  last_refresh_at?: string | null
+  last_refresh_status?: "" | "queued" | "running" | "ok" | "failed"
+  last_refresh_error?: string
+  last_refresh_via?: "" | "online" | "import"
+  products?: number
+  mappings?: number
+}
+export interface EolProductRow {
+  source: string
+  name: string
+  label: string
+  category: string
+}
+export interface EolRelease {
+  name: string
+  label: string
+  release_date: string | null
+  support_until: string | null
+  eol_date: string | null
+  eol: boolean | null
+  lts: boolean
+  latest: string
+}
+export interface EolSuggestion {
+  source: string
+  name: string
+  label: string
+  score: number
+  cycle: string
 }
 
 export interface PlatformWritePayload {
@@ -1981,7 +2061,7 @@ export interface RackTypeWritePayload {
 /** Where a rack's power supply figure comes from: its primary feeds, or -
  * with none - the rated draw of its PDUs' inlets (both strips of an A/B
  * pair). Null: no supply figure (`available_w` 0). */
-export type RackPowerSupply = "feed" | "pdu_rating" | null
+export type RackPowerSupply = "feed" | "pdu_rating" | "budget" | null
 
 /** A rack's power roll-up (api.capacity.rack_power). */
 export interface RackPower {
@@ -1991,6 +2071,9 @@ export interface RackPower {
   maximum_w: number
   /** Always sent; optional so older fixtures still type. */
   supply?: RackPowerSupply
+  /** With `supply: "budget"`: what the feeds or PDUs would give (0 when
+   * neither is known). `available_w` is then the budget. */
+  supplied_w?: number
 }
 
 export interface Rack {
@@ -2012,6 +2095,8 @@ export interface Rack {
   width: RackWidth
   max_weight: string | null
   max_weight_unit: string
+  /** Power budget in watts; null = measure against the feeds. */
+  max_power_w?: number | null
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
@@ -2046,6 +2131,7 @@ export interface RackWritePayload {
   location_id?: string | null
   max_weight?: string | null
   max_weight_unit?: string
+  max_power_w?: number | null
   site_id: string
   role_id?: string | null
   rack_type_id?: string | null
@@ -2085,6 +2171,27 @@ export interface RackSyncResponse {
     }
   }
   result?: { dims: string[]; accessories: string[]; updated: string[] }
+}
+
+/** POST /api/racks/{id}/move/ - `?dry_run=1` reports and writes nothing. */
+export interface RackMoveResult {
+  rack: { id: string; name: string }
+  from_site: { id: string; name: string }
+  to_site: { id: string; name: string }
+  to_location: { id: string; name: string } | null
+  devices: {
+    id: string
+    name: string
+    position: number | null
+    face: string
+    mount: string
+    /** False for a child device that goes along in a parent's bay. */
+    racked: boolean
+  }[]
+  cleared: { floor_plan_tiles: number }
+  blockers: { code: string; message: string }[]
+  can_move: boolean
+  moved: boolean
 }
 
 /** Picker shape (?picker=1) - RackMiniSerializer, includes unit geometry. */
@@ -4022,6 +4129,8 @@ export interface MacEntry {
     device: { id: string; name: string } | null
   }[]
   objects: MacObject[]
+  /** Where the network learned it - the MAC page's Location (#344). */
+  location: MacListLocation | null
 }
 
 /** MAC detail - richer than the list row (interface enabled, IP status). */
@@ -4077,6 +4186,7 @@ export interface MacDetail {
  * Same shape as the detail-page object, plus timestamps. */
 export interface MACAddress extends MacObjectDetail {
   vendor: MacVendor | null
+  location: MacListLocation | null
   created_at: string
   updated_at: string
 }
@@ -4312,7 +4422,9 @@ export interface FHRPGroup {
   group_id: number
   auth_type: "" | "plaintext" | "md5"
   auth_type_display: string
-  auth_key: string
+  /** Whether an authentication key is stored (#383). The key itself is
+   * never serialised - fetch it from `POST /api/fhrp-groups/{id}/reveal-psk/`. */
+  auth_key_set: boolean
   virtual_ip: { id: string; ip_address: string } | null
   /** Anycast gateway: send IPv6 router advertisements, and how often. */
   nd_ra: boolean
@@ -4331,7 +4443,8 @@ export interface FHRPGroupWritePayload {
   protocol: FHRPProtocol
   group_id: number
   auth_type?: "" | "plaintext" | "md5"
-  auth_key?: string
+  /** Write-only: blank keeps the stored key, null clears it. */
+  auth_key?: string | null
   virtual_ip_id?: string | null
   description?: string
   tag_ids?: number[]
@@ -4623,6 +4736,8 @@ export interface SiteCapacityTotals {
     allocated_w: number
     maximum_w: number
     pdu_rating: number
+    /** Racks whose supply figure is their power budget. */
+    budget?: number
     no_supply: number
   }
   ports: PortCountRow
@@ -4849,12 +4964,23 @@ export interface VirtualMachineGroup {
   kind: "vapp" | "pool" | "folder" | "other"
   kind_display: string
   cluster: { id: string; name: string; status: StatusMini | null }
+  /** The cluster's site - a group has none of its own. */
+  site: { id: string; name: string } | null
   description: string
   vm_count: number
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface VirtualMachineGroupWritePayload {
+  name: string
+  cluster_id: string
+  kind?: VirtualMachineGroup["kind"]
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
 }
 
 export interface VirtualMachine {
@@ -4872,7 +4998,13 @@ export interface VirtualMachine {
     color: string
     icon: string
   } | null
-  platform: { id: string; name: string; slug: string } | null
+  platform: {
+    id: string
+    name: string
+    slug: string
+    /** End-of-life data (#8); null while the feature is off. */
+    eol?: EolInfo | null
+  } | null
   status: StatusMini | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
@@ -4970,6 +5102,8 @@ export interface VirtualSwitch {
 export interface VirtualMachineWritePayload {
   name: string
   cluster_id: string
+  /** A VM group on the same cluster, or null for none. */
+  group_id?: string | null
   device_id?: string | null
   site_id?: string | null
   role_id?: string | null
@@ -5010,6 +5144,13 @@ export interface VMInterface {
   vrf: { id: string; name: string } | null
   description: string
   ip_addresses: { id: string; ip_address: string }[]
+  /** The circuit end landing on this NIC (#432), when the caller may view
+   * it. */
+  circuit_termination?: {
+    id: string
+    side: CircuitTermSide
+    circuit: { id: string; cid: string }
+  } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -6565,6 +6706,9 @@ export interface MonitoringSettings {
   mac_uplink_lldp: boolean
   /** "Forget MACs unseen for" N days (1-365). */
   mac_retention_days: number
+  /** "Poll devices every": scheduled SNMP polls from the core, in minutes;
+   * 0 = off. One of 0, 15, 30, 60. */
+  snmp_poll_interval_minutes: number
   global_enabled: boolean
   default_interval_seconds: number
   stale_after_scans: number
@@ -7788,6 +7932,8 @@ export type ComplianceCheck =
   | "regex"
   | "required_tag"
   | "required_cf"
+  | "eol_status"
+  | "coverage"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 export interface ComplianceRule {
   id: string
@@ -7805,6 +7951,10 @@ export interface ComplianceRule {
   pattern: string
   tag: string
   cf_key: string
+  /** eol_status checks: eol | ending | unknown. */
+  eol_fail_on?: "" | "eol" | "ending" | "unknown"
+  /** coverage checks (#421): expired | expiring. */
+  coverage_fail_on?: "" | "expired" | "expiring"
   created_at: string
   updated_at: string
 }
@@ -7861,6 +8011,8 @@ export interface DeviceComplianceViolation {
   pattern: string
   tag: string
   cf_key: string
+  eol_fail_on?: string
+  coverage_fail_on?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance
@@ -7941,6 +8093,10 @@ export interface FieldChange {
   new: unknown
   old_label?: string
   new_label?: string
+  /** The related row is one the caller may not view: the value is null and
+   * no label is given. */
+  old_hidden?: boolean
+  new_hidden?: boolean
 }
 export interface ChangeLogEntry {
   id: string
@@ -7967,6 +8123,9 @@ export interface ChangeLogEntry {
    * (changes + snapshots) - detail endpoint only. Lets the UI show the
    * related object's name wherever its UUID appears. */
   related_labels?: Record<string, string>
+  /** Snapshot keys whose related row the caller may not view; their values
+   * are null - detail endpoint only. */
+  hidden_related?: { pre_change: string[]; post_change: string[] }
 }
 
 export type SmtpSecurity = "none" | "starttls" | "ssl"
@@ -8222,6 +8381,18 @@ export interface MacLocationRef {
   device: { id: string; name: string }
   interface: { id: string; name: string } | null
   port_name: string
+}
+
+/** A MAC list row's Location (#344): where, in which site and location, and
+ * when it was seen there. */
+export interface MacListLocation extends MacLocationRef {
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  vlan: number | null
+  since: string
+  last_seen: string
+  /** Last seen more than a day ago. */
+  stale: boolean
 }
 
 export interface MacSightingRef {
@@ -8592,6 +8763,12 @@ export interface TenantSettings {
   time_style: TimeStyle
   /** Raw stored value - blank inherits the server's TIME_ZONE. */
   display_timezone: string
+  /** Rack capacity levels in percent: above warn a rack is filling up,
+   * above critical it is full. warn < critical. */
+  capacity_warn_pct: number
+  capacity_critical_pct: number
+  /** Support coverage ending within this many days reads as Expiring (#421). */
+  coverage_warning_days: number
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
@@ -9019,6 +9196,9 @@ export interface PlanningTask {
   board_name: string
   status: string
   status_name: string
+  status_color: string
+  /** The status row's meaning - "completed"/"cancelled" are closed. */
+  status_group: PlanningSemanticGroup
   title: string
   description: string
   priority: PlanningPriority
@@ -9041,6 +9221,21 @@ export interface PlanningTask {
   planned_changes: PlanningPlannedChange[]
   created_at: string
   updated_at: string
+}
+
+/** A linked task past its due moment that is the caller's work - the overdue
+ * warning on an object's page. The server decides "mine" and drops dismissed
+ * ones. */
+export interface PlanningOverdueTask {
+  id: string
+  board: string
+  board_name: string
+  title: string
+  status_name: string
+  status_color: string
+  priority: PlanningPriority
+  due_date: string
+  due_time: string | null
 }
 
 // ─── Circuits ──────────────────────────────────────────────────────────
@@ -9172,6 +9367,13 @@ export interface CircuitTermination {
   cable?: CableMini | null
   site: SiteOption | null
   provider_network: ProviderNetworkOption | null
+  /** The VM interface this end lands on instead of a cabled device port
+   * (#432); never both. */
+  vm_interface?: {
+    id: string
+    name: string
+    vm: { id: string; name: string }
+  } | null
   port_speed_kbps: number | null
   upstream_speed_kbps: number | null
   xconnect_id: string
@@ -9186,6 +9388,7 @@ export interface CircuitTerminationWritePayload {
   term_side: CircuitTermSide
   site_id?: string | null
   provider_network_id?: string | null
+  vm_interface_id?: string | null
   port_speed_kbps?: number | null
   upstream_speed_kbps?: number | null
   xconnect_id?: string
@@ -9210,6 +9413,109 @@ export interface Circuit {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+// ─── Support & warranty coverage (#421) ────────────────────────────────
+
+/** A device's coverage: covered · expiring · expired · none (not covered). */
+export type CoverageStatus = "covered" | "expiring" | "expired" | "none"
+/** A contract's own state against the tenant's warning window. */
+export type ContractState = "active" | "expiring" | "expired"
+
+/** `coverage` on every device row. `end` null = open-ended or none. */
+export interface DeviceCoverageBrief {
+  status: CoverageStatus
+  end: string | null
+  contracts: number
+}
+
+export interface SupportContract {
+  id: string
+  numid: number | null
+  manufacturer: { id: string; name: string }
+  contract_number: string
+  service_level: string
+  start_date: string | null
+  /** Last covered day; null = open-ended. */
+  end_date: string | null
+  state: ContractState
+  reseller: string
+  /** Money: absent for a caller without `view_cost`. */
+  cost?: number | null
+  currency?: string
+  portal_url: string
+  renewal_notes: string
+  description: string
+  notify_channels: { id: string; name: string }[]
+  device_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  permissions?: { change: boolean; delete: boolean }
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportContractWritePayload {
+  manufacturer_id: string
+  contract_number: string
+  service_level?: string
+  start_date?: string | null
+  end_date?: string | null
+  reseller?: string
+  cost?: number | null
+  currency?: string
+  portal_url?: string
+  renewal_notes?: string
+  description?: string
+  notify_channel_ids?: string[]
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** POST /api/support-coverage/bulk-add/ result. */
+export interface CoverageBulkAddResult {
+  created: number
+  existing: number
+  matched: number
+  unmatched: string[]
+  ambiguous: string[]
+}
+
+export interface DeviceCoverageContract {
+  id: string
+  contract_number: string
+  manufacturer: { id: string; name: string }
+  service_level: string
+  start_date: string | null
+  end_date: string | null
+  state: ContractState
+}
+
+/** GET /api/devices/<id>/coverage/ */
+export interface DeviceCoverage {
+  status: CoverageStatus
+  end: string | null
+  warranty_end: string | null
+  warning_days: number
+  contracts: DeviceCoverageContract[]
+  /** Contracts covering the device that the caller may not view. */
+  hidden_contracts: number
+  flags: { code: "contract_after_eol" | "eol_under_contract"; label: string }[]
+}
+
+/** GET /api/devices/coverage-summary/?site=&manufacturer= */
+export interface SupportCoverageSummary {
+  warning_days: number
+  total: number
+  counts: Record<CoverageStatus, number>
+  ending: {
+    id: string
+    contract_number: string
+    manufacturer: { id: string; name: string }
+    end_date: string
+    state: ContractState
+    device_count: number
+  }[]
 }
 
 export interface CircuitWritePayload {
@@ -9237,6 +9543,7 @@ export interface PowerPanel {
   numid: number | null
   name: string
   site: SiteOption | null
+  location: { id: string; name: string } | null
   comments: string
   feed_count: number
   tags: Tag[]
@@ -9248,6 +9555,7 @@ export interface PowerPanel {
 export interface PowerPanelWritePayload {
   name: string
   site_id: string
+  location_id?: string | null
   comments?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -9955,6 +10263,48 @@ export interface SnmpDriftRow {
   polled_at: string | null
 }
 
+/** A bulk action on the SNMP drift page (#419). */
+export type SnmpBulkAction = "poll" | "macs" | "sync"
+
+/** `POST /api/monitoring/snmp-drift/bulk-{poll,mac-refresh,sync}/`. */
+export interface SnmpBulkStart {
+  /** Null when nothing was left to queue here. */
+  run_id: string | null
+  action: SnmpBulkAction
+  requested: number
+  queued: number
+  /** Named devices the caller may not change. */
+  skipped: number
+  /** Outposts asked for a pass instead of a core poll. */
+  outposts: { name: string; devices: number; stale: boolean }[]
+}
+
+export type SnmpBulkOutcome =
+  | "ok"
+  | "unreachable"
+  | "failed"
+  | "denied"
+  | "busy"
+  | "outpost"
+
+/** `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/`. */
+export interface SnmpBulkRun {
+  run_id: string
+  found: boolean
+  done: boolean
+  action?: SnmpBulkAction
+  total?: number
+  processed?: number
+  counts?: Record<SnmpBulkOutcome, number>
+  sync?: {
+    interfaces_created: number
+    interfaces_updated: number
+    ips_assigned: number
+    ips_skipped: number
+    vlans_assigned: number
+  }
+}
+
 // One drift-transition event (/api/config-snapshots/?device=).
 export interface DeviceConfigSnapshot {
   id: string
@@ -10469,10 +10819,110 @@ export interface FloorPlan {
   state: Record<string, unknown>
   description: string
   tile_count: number
+  /** The plan's CAD drawing, when it has one (docs: floor-plans "CAD
+   * drawings"). The full record is GET …/drawing/. */
+  drawing: FloorPlanDrawingSummary | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanDrawingStatus = "queued" | "ready" | "failed"
+
+export interface FloorPlanDrawingSummary {
+  id: string
+  status: FloorPlanDrawingStatus
+  source_kind: "dxf" | "dwg"
+  source_name: string
+  /** Same-origin /media/… URL of the sanitised SVG; null until ready. */
+  rendered_url: string | null
+  updated_at: string | null
+}
+
+export interface FloorPlanDrawingLayer {
+  name: string
+  /** "#rrggbb" */
+  color: string
+  on: boolean
+  frozen: boolean
+  entity_count: number
+  /** Entity counts per kind; kinds with no entities are left out. */
+  kinds: { geometry?: number; hatch?: number; dimension?: number; text?: number }
+}
+
+export interface FloorPlanDrawingPlacement {
+  x_mm: number
+  y_mm: number
+  rotation: 0 | 90 | 180 | 270
+  /** 0-100 */
+  opacity: number
+  hidden_layers: string[]
+  hide_text: boolean
+}
+
+/** GET /api/floor-plans/<id>/drawing/ */
+export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
+  error: string
+  source_bytes: number
+  source_url: string | null
+  rendered_bytes: number
+  rendered_elements: number
+  simplified: string[]
+  skipped: { external?: number; infinite?: number }
+  units: string
+  units_mm_per_unit: number | null
+  /** The units an editor says the drawing is in; null trusts the file.
+   * POST/DELETE …/drawing/units/. */
+  units_override: "mm" | "cm" | "m" | "in" | "ft" | null
+  calibration: {
+    a: [number, number]
+    b: [number, number]
+    distance_mm: number
+    mm_per_unit: number
+  } | null
+  /** The scale in effect. */
+  mm_per_unit: number
+  scale_source: "units" | "calibration" | "override" | "assumed"
+  extents: { min_x: number; min_y: number; max_x: number; max_y: number } | null
+  size: { width: number; height: number }
+  size_mm: { width: number; height: number }
+  layers: FloorPlanDrawingLayer[]
+  placement: Partial<FloorPlanDrawingPlacement>
+  bounds_mm: { x: number; y: number; width: number; height: number }
+  transform_mm: string
+  fit: {
+    grid_width: number
+    grid_height: number
+    fits: boolean
+    min_cell_mm: number
+  } | null
+  processed_at: string | null
+  created_at: string | null
+}
+
+/** GET /api/floor-plans/drawing-support/ */
+export interface FloorPlanDrawingSupport {
+  dxf: boolean
+  dwg: boolean
+  converter: string | null
+  /** Why DWG is refused; empty when it is taken. */
+  message: string
+  max_upload_bytes: number
+}
+
+/** POST/GET /api/floor-plans/<id>/drawing/render/ - a server render with
+ * layers left out, for drawings too large to toggle in the browser. */
+export interface FloorPlanDrawingRender {
+  key: string
+  status: "queued" | "ready" | "failed"
+  error: string
+  url: string | null
+  bytes: number
+  elements: number
+  simplified: string[]
+  hidden_layers: string[]
+  hide_text: boolean
 }
 
 /** A compact cable, as attached to a tray. */
@@ -11021,10 +11471,22 @@ export type BackupRunStatus = "queued" | "running" | "success" | "failed"
 export interface StorageKindField {
   name: string
   label: string
-  type: "text" | "password" | "checkbox"
+  type: "text" | "password" | "checkbox" | "number" | "textarea"
   placeholder?: string
   secret?: boolean
   default?: boolean
+  /** Shown in the (i) popover beside the label. */
+  info?: string
+  mono?: boolean
+}
+
+/** POST /api/backups/targets/{id}/test/ - an SFTP target with no trusted
+ * host key answers with the key to confirm instead of testing. */
+export interface BackupTargetTestResult {
+  ok: boolean
+  detail: string
+  confirm_host_key?: boolean
+  host_key?: { fingerprint: string; algorithm: string }
 }
 
 export interface StorageKind {
@@ -11494,6 +11956,9 @@ export interface SlaAgreement {
   /** Emailed each period's report when it freezes. */
   report_recipients: string[]
   report_format: "pdf" | "csv" | "both"
+  /** The template it was made from. */
+  template: string | null
+  template_detail: { id: string; name: string; differs: string[] } | null
   status: "draft" | "active" | "archived"
   effective_from: string | null
   revision: number
@@ -11645,6 +12110,101 @@ export interface SlaIncident {
   end: string
   seconds: number
   members: string[]
+  /** Cause, ticket, note and dispute; null until someone adds them. */
+  follow_up?: SlaIncidentFollowUp | null
+}
+
+/** An entry of the tenant's incident cause catalog. */
+export interface SlaIncidentCause {
+  id: string
+  name: string
+  description: string
+  color: string
+  incident_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaIncidentFollowUp {
+  id: string
+  cause: string | null
+  cause_detail: { id: string; name: string; color: string } | null
+  ticket_url: string
+  note: string
+  /** Shown on the incident; the figure still counts it. */
+  disputed: boolean
+  updated_at: string | null
+  updated_by: string | null
+}
+
+/** Down time per cause; `cause` null is the incidents with none. */
+export interface SlaCauseRow {
+  cause: string | null
+  name: string
+  color: string
+  down_s: number
+  incidents: number
+  disputed_s: number
+}
+
+export interface SlaReportSchedule {
+  id: string
+  /** Null: the overview report of every agreement. */
+  agreement: string | null
+  agreement_name: string | null
+  frequency: "weekly" | "monthly"
+  /** 0 = Monday. */
+  weekday: number
+  day_of_month: number
+  hour: number
+  period: "current" | "previous"
+  recipients: string[]
+  report_format: "pdf" | "csv" | "both"
+  enabled: boolean
+  report_sent_at: string | null
+  last_error: string
+  last_attempt_at: string | null
+  failures: number
+  next_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** A tier such as Gold: the rules an agreement is made from and synced with. */
+export interface SlaTemplate {
+  id: string
+  name: string
+  description: string
+  target_pct: string
+  warning_pct: string | null
+  period: SlaPeriod
+  timezone: string
+  service_hours: Record<string, [string, string][]>
+  holiday_calendar: string | null
+  holiday_calendar_detail: { id: string; name: string } | null
+  count_degraded_as: "up" | "down"
+  count_stale_as: "unmeasured" | "down"
+  count_unknown_as: "unmeasured" | "down"
+  exclude_maintenance: boolean
+  min_outage_seconds: number
+  aggregation: "mean" | "worst" | "all"
+  objectives: SlaObjective[]
+  objectives_in_state: boolean
+  credit_tiers?: SlaCreditTier[]
+  period_fee?: string | null
+  currency?: string
+  agreement_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SlaTemplateAgreement {
+  id: string
+  name: string
+  status: "draft" | "active" | "archived"
+  revision: number
+  /** Fields where the agreement no longer matches the template. */
+  differs: string[]
 }
 
 export interface SlaFiguresResponse {
@@ -11661,6 +12221,7 @@ export interface SlaFiguresResponse {
   limited?: { hidden_members: number } | null
   members?: SlaMemberFigure[]
   incidents?: SlaIncident[]
+  by_cause?: SlaCauseRow[]
   days?: { date: string; availability: number | null; down_s: number }[]
 }
 
@@ -11809,6 +12370,7 @@ export interface SlaAnalysis {
   heatmap: { dow: number; hour: number; down_s: number }[]
   durations: { label: string; count: number }[]
   incidents: SlaIncident[]
+  by_cause: SlaCauseRow[]
   latency: {
     kind: string
     /** The p95 alert line, in ms. */
@@ -11831,4 +12393,104 @@ export interface SlaAnalysis {
     kinds: string[]
     redundancy: { name: string; count: number }[]
   }
+}
+
+// ─── Oxidized config backups (#35) ──────────────────────────────────────────
+
+export interface OxidizedConnection {
+  id: string
+  name: string
+  url: string
+  username: string
+  password_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  match_by: "address_name" | "address" | "name"
+  /** Automatic node sync (#385). */
+  auto_sync: boolean
+  sync_interval_minutes: 5 | 10 | 15 | 30 | 60
+  last_checked_at: string | null
+  last_error: string
+  node_count: number | null
+  /** The last successful node sync. */
+  last_sync_at: string | null
+  last_sync_attempt_at: string | null
+  /** Null while automatic sync is off. */
+  next_sync_at: string | null
+  link_count: number
+  sync: {
+    nodes: number | null
+    linked: number | null
+    pinned: number | null
+    /** Matched links waiting for confirmation (#399). */
+    proposed: number | null
+    unmatched_count: number | null
+    /** Links kept despite a namesake (#400). */
+    warning_count: number | null
+    missing_pinned: number | null
+    error: string | null
+  }
+}
+
+export interface OxidizedNodeLink {
+  id: string
+  connection: string
+  connection_name: string
+  /** Exactly one of device / virtual_machine is set (#384). */
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  full_name: string
+  node_name: string
+  node_group: string
+  node_ip: string
+  node_model: string
+  matched_by: "address" | "name" | "manual"
+  /** A sync's match that serves no config until confirmed (#399). */
+  proposed: boolean
+  last_seen_at: string | null
+  created_at: string
+}
+
+export interface OxidizedUnmatchedNode {
+  full_name: string
+  name: string
+  ip: string
+  model: string
+  reason: string
+}
+
+export interface OxidizedDeviceLink {
+  id: string
+  connection: string
+  connection_name: string
+  full_name: string
+  node_ip: string
+  node_model: string
+  matched_by: string
+  last_seen_at: string | null
+}
+
+export interface OxidizedConfig {
+  link: OxidizedDeviceLink
+  config: string
+  bytes: number
+  lines: number
+  cached: boolean
+}
+
+export interface OxidizedVersion {
+  oid: string
+  date: string | null
+  author: string
+  email: string
+  message: string
+}
+
+export interface OxidizedDiff {
+  from: string
+  to: string
+  diff: string
+  too_large: boolean
+  added: number
+  removed: number
 }

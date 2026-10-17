@@ -70,8 +70,17 @@ class _SafeWriter:
         return self._w.writerow(csv_row(row))
 
 
+def _followed(agreement, incidents):
+    """The incidents with their follow-up, and down time per cause."""
+    from .sla_followup import attach, by_cause
+
+    incidents = attach(agreement, incidents)
+    return incidents, by_cause(incidents)
+
+
 def report_csv(agreement, result, view=None) -> str:
     f, members, incidents, _days, limited = _parts(result, view)
+    incidents, causes = _followed(agreement, incidents)
     out = io.StringIO()
     w = _SafeWriter(out)
     w.writerow(["agreement", agreement.name, "for", agreement.for_label])
@@ -97,9 +106,18 @@ def report_csv(agreement, result, view=None) -> str:
                     m.get("redundancy_group", ""), m.get("availability"), m.get("coverage"),
                     m.get("down_s"), m.get("incidents"), m.get("worst_item") or ""])
     w.writerow([])
-    w.writerow(["incident_start", "incident_end", "seconds", "unit", "members_down"])
+    w.writerow(["incident_start", "incident_end", "seconds", "unit", "members_down",
+                "cause", "ticket", "disputed"])
     for i in incidents:
-        w.writerow([i["start"], i["end"], i["seconds"], i["label"], "; ".join(i["members"])])
+        fu = i["follow_up"] or {}
+        w.writerow([i["start"], i["end"], i["seconds"], i["label"], "; ".join(i["members"]),
+                    (fu.get("cause_detail") or {}).get("name", ""), fu.get("ticket_url", ""),
+                    "yes" if fu.get("disputed") else ""])
+    if incidents:
+        w.writerow([])
+        w.writerow(["cause", "down_s", "incidents", "disputed_s"])
+        for c in causes:
+            w.writerow([c["name"], c["down_s"], c["incidents"], c["disputed_s"]])
     return out.getvalue()
 
 
@@ -139,6 +157,7 @@ def _tone(av, target) -> str:
 
 def report_html(agreement, result, view=None) -> str:
     f, members, incidents, days, limited = _parts(result, view)
+    incidents, causes = _followed(agreement, incidents)
     target = f.get("target") or float(agreement.target_pct)
     customer = agreement.for_label
     state = f.get("state", "no_data")
@@ -211,8 +230,15 @@ def report_html(agreement, result, view=None) -> str:
     )
     incident_rows = "".join(
         f"<tr><td>{_when(i['start'])}</td><td class='n'>{_span(i['seconds'])}</td>"
-        f"<td>{escape(i['label'])}</td><td>{escape(', '.join(i['members']))}</td></tr>"
+        f"<td>{escape(i['label'])}</td><td>{escape(', '.join(i['members']))}</td>"
+        f"<td>{_cause_cell(i['follow_up'])}</td></tr>"
         for i in incidents[:200]
+    )
+    cause_rows = "".join(
+        f"<tr><td>{escape(c['name'])}</td><td class='n'>{_span(c['down_s'])}</td>"
+        f"<td class='n'>{c['incidents']}</td>"
+        f"<td class='n'>{_span(c['disputed_s']) if c['disputed_s'] else '-'}</td></tr>"
+        for c in causes
     )
     body = (
         head + kv + note_html
@@ -225,12 +251,30 @@ def report_html(agreement, result, view=None) -> str:
           f"<th class='n'>Availability</th><th class='n'>Coverage</th><th class='n'>Down</th>"
           f"<th>Worst check</th></tr></thead>"
           f"{member_rows or '<tr><td colspan=7 class=muted>No members.</td></tr>'}</table>"
+        + (f"<h2>Down time by cause</h2><table><thead><tr><th>Cause</th>"
+           f"<th class='n'>Down</th><th class='n'>Incidents</th><th class='n'>Disputed</th>"
+           f"</tr></thead>{cause_rows}</table>" if cause_rows else "")
         + f"<h2>Incidents</h2><table><thead><tr><th>Started</th><th class='n'>Lasted</th><th>Unit</th>"
-          f"<th>Down at the start</th></tr></thead>"
-          f"{incident_rows or '<tr><td colspan=4 class=muted>None.</td></tr>'}</table>"
+          f"<th>Down at the start</th><th>Cause</th></tr></thead>"
+          f"{incident_rows or '<tr><td colspan=5 class=muted>None.</td></tr>'}</table>"
     )
     return (f"<!doctype html><html><head><meta charset='utf-8'><style>{_CSS}</style>"
             f"</head><body>{body}</body></html>")
+
+
+def _cause_cell(fu) -> str:
+    """Cause, ticket and dispute for the PDF's incident table. The note stays
+    in Danbyte: it is written for the team, not the customer."""
+    if not fu:
+        return ""
+    parts = []
+    if fu.get("cause_detail"):
+        parts.append(escape(fu["cause_detail"]["name"]))
+    if fu.get("ticket_url"):
+        parts.append(escape(fu["ticket_url"]))
+    if fu.get("disputed"):
+        parts.append("<b>Disputed</b>")
+    return "<br>".join(parts)
 
 
 def report_pdf(agreement, result, view=None) -> bytes:

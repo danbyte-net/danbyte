@@ -9,7 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormFooter, FormSelect, FormText } from "@/components/forms"
+import {
+  FormFooter,
+  FormSelect,
+  FormText,
+  FormCombobox,
+} from "@/components/forms"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   CheckFields,
@@ -152,7 +157,7 @@ export function AddCheckDialog({
           className="grid gap-4"
         >
           {mode === "existing" ? (
-            <FormSelect
+            <FormCombobox
               label="Check template"
               value={templateId}
               onChange={setTemplateId}
@@ -161,6 +166,8 @@ export function AddCheckDialog({
                 value: t.id,
                 label: `${t.name} · ${t.kind}`,
               }))}
+              searchPlaceholder="Search templates…"
+              emptyText="No templates."
             />
           ) : (
             <>

@@ -24,6 +24,7 @@ import { Markdown } from "@/components/markdown"
 import { QueryError } from "@/components/query-error"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { TimeCell } from "@/components/cells/time-ago"
+import { useEolSettings } from "@/components/cells/eol-cell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
@@ -46,6 +47,7 @@ const AFFECTED_LIST_API: Record<string, string> = {
   vlan: "/api/vlans/",
   vrf: "/api/vrfs/",
   site: "/api/sites/",
+  virtualmachine: "/api/virtual-machines/",
 }
 
 function RuleDetailPage() {
@@ -237,9 +239,10 @@ function AffectedObjects({
 }) {
   // The genuine per-type table (prefix/IP/device/…) when we have a factory for
   // this object type; otherwise a generic object + type fallback.
+  const { enabled: eolOn } = useEolSettings()
   const realColumns = useMemo(
-    () => affectedColumnsFor(objectType),
-    [objectType]
+    () => affectedColumnsFor(objectType, eolOn),
+    [objectType, eolOn]
   )
 
   const fallbackColumns = useMemo<ColumnDef<ComplianceViolation>[]>(
@@ -326,6 +329,8 @@ function AffectedObjects({
           autoColumns={{ api: AFFECTED_LIST_API[objectType] ?? null }}
           exportName={`affected-${objectType}`}
           exportTitle={ruleName}
+          searchable
+          searchPlaceholder="Search objects…"
         />
       ) : q.data && total > 0 ? (
         <DataTable
@@ -333,6 +338,8 @@ function AffectedObjects({
           columns={fallbackColumns}
           flexColumn="object"
           exportTitle={ruleName}
+          searchable
+          searchPlaceholder="Search objects…"
         />
       ) : null}
     </div>

@@ -79,7 +79,7 @@ function Body({ asn: a }: { asn: ASN }) {
         <DetailHero
           title={`AS${a.asn}`}
           mono
-          tags={a.tags.length > 0 && <TagList tags={a.tags} />}
+          tags={a.tags.length > 0 && <TagList tags={a.tags} listTo="/asns" />}
           description={a.description}
         />
       }

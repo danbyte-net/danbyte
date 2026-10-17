@@ -133,6 +133,7 @@ export function DnsRecordsTable({
   empty = "No DNS records.",
   tableId = "dns-records",
   editable = false,
+  searchable = false,
 }: {
   params?: string
   queryKey?: unknown[]
@@ -143,6 +144,8 @@ export function DnsRecordsTable({
   tableId?: string
   /** Show edit/delete actions on authored (managed) records. */
   editable?: boolean
+  /** A search box above the rows - for a zone's or prefix's long list. */
+  searchable?: boolean
 }) {
   const qc = useQueryClient()
   const { canDo } = useMe()
@@ -286,9 +289,12 @@ export function DnsRecordsTable({
     ) : (
       <DataTable
         data={rows}
+        total={providedRows ? undefined : query.data?.count}
         columns={columns}
         tableId={tableId}
         flexColumn="name"
+        searchable={searchable}
+        searchPlaceholder="Search records…"
       />
     )
   return (

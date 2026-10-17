@@ -16,11 +16,11 @@ import {
   Field,
   FormFooter,
   FormSection,
-  FormSelect,
   FormTags,
   FormText,
   FormTextarea,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -122,7 +122,7 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
             placeholder="65001"
             error={fieldErrors.asn}
           />
-          <FormSelect
+          <FormCombobox
             label="RIR"
             value={rirId}
             onChange={setRirId}
@@ -133,6 +133,8 @@ export function AsnForm({ asn, onSaved, onCancel }: AsnFormProps) {
             noneLabel="No RIR"
             placeholder="No RIR"
             error={fieldErrors.rir_id}
+            searchPlaceholder="Search RIRs…"
+            emptyText="No RIRs."
           />
         </div>
 

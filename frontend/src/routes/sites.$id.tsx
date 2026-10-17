@@ -150,7 +150,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
           title={s.name}
           badges={<ViolationBadge objectId={s.id} prominent />}
           subtitle={s.location}
-          tags={s.tags.length > 0 && <TagList tags={s.tags} />}
+          tags={s.tags.length > 0 && <TagList tags={s.tags} listTo="/sites" />}
           description={s.description}
         >
           {s.vrfs.length > 0 && (
@@ -462,6 +462,8 @@ function SiteLocationsTable({ siteId }: { siteId: string }) {
       tableId="site-locations-embedded"
       flexColumn="name"
       embedded
+      searchable
+      searchPlaceholder="Search locations…"
     />
   )
 }
@@ -536,6 +538,8 @@ function SitePrefixesTable({
           columns={columns}
           flexColumn="description"
           tableId="prefix-embedded"
+          searchable
+          searchPlaceholder="Search prefixes…"
         />
       )}
       <SiteAssignPrefixDialog
@@ -610,6 +614,8 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
             total={placed.data?.count}
             columns={columns}
             flexColumn="primary_ip"
+            searchable
+            searchPlaceholder="Search virtual machines…"
           />
         )}
       </section>
@@ -627,6 +633,8 @@ function SiteVmsTable({ siteId }: { siteId: string }) {
             data={hostedRows}
             columns={columns}
             flexColumn="primary_ip"
+            searchable
+            searchPlaceholder="Search virtual machines…"
           />
         </section>
       )}
@@ -655,7 +663,16 @@ function SiteVlansTable({ siteId }: { siteId: string }) {
     return (
       <p className="text-sm text-muted-foreground">No VLANs at this site.</p>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="description" />
+  return (
+    <DataTable
+      data={rows}
+      total={q.data?.count}
+      columns={columns}
+      flexColumn="description"
+      searchable
+      searchPlaceholder="Search VLANs…"
+    />
+  )
 }
 
 /** The site's IANA zone plus its current local time - so an operator can read
@@ -701,7 +718,11 @@ function SiteOverview({
           } satisfies KvRow,
         ]
       : []),
-    { label: "Address", value: s.location || dash },
+    {
+      label: "Address",
+      value: s.location || dash,
+      copy: s.location || undefined,
+    },
     {
       label: "Time zone",
       value: s.time_zone ? <SiteLocalTime tz={s.time_zone} /> : dash,

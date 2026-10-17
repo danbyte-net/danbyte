@@ -19,7 +19,12 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FormSelect, FormCheckbox } from "@/components/forms"
+import {
+  Field,
+  FormSelect,
+  FormCheckbox,
+  FormCombobox,
+} from "@/components/forms"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
 import { SettingsCard } from "@/components/settings/settings-card"
@@ -630,12 +635,14 @@ function GroupMappings({
           <Field label="Display name (optional)">
             <Input value={cn} onChange={(e) => setCn(e.target.value)} />
           </Field>
-          <FormSelect
+          <FormCombobox
             label="Danbyte group"
             value={groupId}
             onChange={setGroupId}
             options={groupOptions}
             placeholder="Pick a group"
+            searchPlaceholder="Search groups…"
+            emptyText="No groups."
           />
         </div>
         {!tenantMode && (

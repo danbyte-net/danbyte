@@ -39,7 +39,8 @@ blocks cycles - and NetBox contact-group trees import losslessly.
    **link** (such as a profile or ticket queue), and put it in a **group**.
    Phone numbers render as `tel:` links wherever they show, so a click
    places the call through your desk's softphone or Teams; e-mail addresses
-   are `mailto:` links the same way.
+   are `mailto:` links the same way. The contact page has a copy button for
+   the address, line breaks included.
 4. Optionally set **working hours** - see below.
 5. Save.
 

@@ -95,6 +95,7 @@ export function RackElevation({
   picker,
   ports,
   show = "all",
+  prefetched = false,
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -120,6 +121,10 @@ export function RackElevation({
   ports?: RackPortState
   /** Only the gear mounted on one face; the rest is hatched space. */
   show?: RackShow
+  /** The caller already put this rack's devices in the query cache (the
+   * elevations wall, #431): don't refetch them per rack, only after a change
+   * here invalidates them. */
+  prefetched?: boolean
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -160,6 +165,7 @@ export function RackElevation({
   const q = useQuery({
     queryKey: ["rack-devices", rack.id],
     queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rack.id}`),
+    ...(prefetched ? { staleTime: Infinity } : {}),
   })
 
   // Units ordered as they appear visually, top → bottom.

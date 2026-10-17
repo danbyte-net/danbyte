@@ -29,6 +29,10 @@ draws a ``<symbol>`` once for each ``<use>`` of it and a ``<clipPath>``
 once for each element it clips, so what one holds counts as many times as
 it is referenced (path data too, against the byte cap). Reused by any
 feature that needs to render a client-drawn SVG on the server.
+
+``profile="cad"`` is a second, separate allowlist for the floor-plan CAD
+drawings the server renders from DXF files (see the CAD profile section
+below); the default profile is unchanged by it.
 """
 
 from __future__ import annotations
@@ -235,6 +239,28 @@ _CLIP_CHILDREN = frozenset(
 # Unwrapped: the element goes, its children stay.
 _UNWRAP = frozenset({"a", "switch"})
 
+# ─── The CAD profile ────────────────────────────────────────────────────────
+# A floor plan's CAD drawing (``api/cad_render.py``) is rendered on the server
+# from an uploaded DXF and shown inline in the browser. It needs higher caps,
+# and its layer groups carry ``data-layer`` / ``data-kind`` so the canvas can
+# show and hide them. It needs nothing that references anything: no images,
+# no <use>, no clip paths, no <style>.
+
+CAD_MAX_SVG_BYTES = 20 * 1024 * 1024
+CAD_MAX_ELEMENTS = 250_000
+CAD_MAX_TEXT_CHARS = 2_000_000
+
+_LAYER_NAME = re.compile(r"^[^\x00-\x1f\x7f]{1,255}$")
+_CAD_ELEMENTS = frozenset(
+    {"svg", "g", "path", "line", "polyline", "polygon", "rect", "circle", "ellipse",
+     "text", "tspan", "title", "desc"}
+)
+_CAD_G = {
+    "data-layer": _match(_LAYER_NAME),
+    "data-kind": _keyword("hatch", "dimension", "text"),
+}
+PROFILES = ("default", "cad")
+
 
 # ─── Images and styles ──────────────────────────────────────────────────────
 
@@ -350,14 +376,20 @@ def _local(tag) -> str | None:
 
 
 class _Builder:
-    def __init__(self, allow_fonts: bool):
+    def __init__(self, allow_fonts: bool, profile: str = "default"):
         self.allow_fonts = allow_fonts
+        self.cad = profile == "cad"
+        self.elements = (
+            {k: v for k, v in ELEMENTS.items() if k in _CAD_ELEMENTS} if self.cad else ELEMENTS
+        )
         self.symbols: dict[str, etree._Element] = {}
         self.clips: set[str] = set()
         self.clipped: list[etree._Element] = []
 
     def attrs(self, name: str, src: etree._Element, dst: etree._Element, in_clip=False) -> None:
-        allowed = ELEMENTS[name]
+        allowed = self.elements[name]
+        if self.cad and name == "g":
+            allowed = {**allowed, **_CAD_G}
         for key, value in src.attrib.items():
             if key.startswith("{"):
                 ns, _, local = key[1:].partition("}")
@@ -398,7 +430,7 @@ class _Builder:
                 prev = parent[-1] if len(parent) else None
                 self._tail(child, parent, prev)
                 continue
-            if name is None or name not in ELEMENTS or (in_clip and name not in _CLIP_CHILDREN):
+            if name is None or name not in self.elements or (in_clip and name not in _CLIP_CHILDREN):
                 self._tail(child, parent, prev)
                 continue
             node = etree.SubElement(parent, f"{{{SVG_NS}}}{name}")
@@ -543,13 +575,28 @@ def sanitize_svg(
     max_elements: int = MAX_ELEMENTS,
     max_text: int = MAX_TEXT_CHARS,
     allow_fonts: bool = False,
+    profile: str = "default",
 ) -> bytes:
     """The SVG rebuilt from the allowlist, as UTF-8 bytes.
+
+    ``profile="cad"`` is for a floor plan's CAD drawing: the CAD caps (unless
+    the caller passes its own), ``data-layer`` and ``data-kind`` on ``<g>``,
+    and only shapes, groups and text - nothing that references anything.
 
     Raises :class:`SvgTooLarge` over a cap and :class:`SvgRejected` for
     markup that isn't a plain SVG drawing (a DOCTYPE, entities, a root that
     isn't ``<svg>``, a malformed or oversized embedded image).
     """
+    if profile not in PROFILES:
+        raise ValueError(f"unknown SVG profile {profile!r}")
+    if profile == "cad":
+        allow_fonts = False
+        if max_bytes == MAX_SVG_BYTES:
+            max_bytes = CAD_MAX_SVG_BYTES
+        if max_elements == MAX_ELEMENTS:
+            max_elements = CAD_MAX_ELEMENTS
+        if max_text == MAX_TEXT_CHARS:
+            max_text = CAD_MAX_TEXT_CHARS
     data = svg.encode("utf-8") if isinstance(svg, str) else bytes(svg)
     if len(data) > max_bytes:
         raise SvgTooLarge(f"The drawing is over {max_bytes // (1024 * 1024)} MB.")
@@ -581,7 +628,7 @@ def sanitize_svg(
     if _text_chars(root) > max_text:
         raise SvgTooLarge(f"The drawing has over {max_text:,} characters of text.")
 
-    b = _Builder(allow_fonts)
+    b = _Builder(allow_fonts, profile)
     out = etree.Element(f"{{{SVG_NS}}}svg", nsmap={None: SVG_NS})
     b.attrs("svg", root, out)
     b.copy(root, out)

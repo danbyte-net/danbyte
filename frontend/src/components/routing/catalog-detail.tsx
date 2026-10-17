@@ -164,7 +164,11 @@ function Body<T extends CatalogRow, TRule>({
           mono
           subtitle={spec.subtitle?.(row)}
           description={row.description}
-          tags={row.tags.length ? <TagList tags={row.tags} /> : undefined}
+          tags={
+            row.tags.length ? (
+              <TagList tags={row.tags} listTo={spec.backTo as string} />
+            ) : undefined
+          }
         />
       }
       tabs={[
@@ -225,6 +229,8 @@ function Body<T extends CatalogRow, TRule>({
               columns={spec.rules.columns()}
               flexColumn="description"
               tableId={spec.rules.tableId}
+              searchable
+              searchPlaceholder="Search rules…"
             />
           )}
         </DetailTab>

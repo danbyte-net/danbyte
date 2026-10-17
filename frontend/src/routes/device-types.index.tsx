@@ -10,12 +10,16 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { ImportBundleDialog } from "@/components/device-bundle"
 import { buildDeviceTypeColumns } from "@/components/columns/device-type-columns"
-import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
+import {
+  useUrlTableFilters,
+  wireFacetColumns,
+} from "@/components/table-filters"
 import { DeviceTypeBulkBar } from "@/components/device-type-bulk-bar"
 import { DeviceTypeDeleteDialog } from "@/components/device-type-delete-dialog"
 import { DeviceTypeImportDialog } from "@/components/device-type-import-dialog"
 import { DeviceTypeReimportImagesDialog } from "@/components/device-type-reimport-images-dialog"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/device-types/")({
   component: DeviceTypesPage,
@@ -26,7 +30,7 @@ function DeviceTypesPage() {
   const canAdd = canDo("devicetype", "add")
   const canEdit = canDo("devicetype", "change")
   const canDelete = canDo("devicetype", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<DeviceType | null>(null)
   const [selectedRows, setSelectedRows] = useState<DeviceType[]>([])
   const [importing, setImporting] = useState(false)
@@ -59,7 +63,7 @@ function DeviceTypesPage() {
     snapshot,
     restore,
     activeCount,
-  } = useTableFilters(facetColumns, allRows)
+  } = useUrlTableFilters(facetColumns, allRows)
   const tagSelection = selectedValues("tags")
 
   const handleDelete = useCallback((d: DeviceType) => setDeleting(d), [])

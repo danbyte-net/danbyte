@@ -14,14 +14,16 @@ import type {
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmColumns } from "@/components/columns/vm-columns"
+import { useEolSettings } from "@/components/cells/eol-cell"
 import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
@@ -41,7 +43,7 @@ function VirtualMachinesPage() {
   const canAdd = canDo("virtualmachine", "add")
   const canEdit = canDo("virtualmachine", "change")
   const canDelete = canDo("virtualmachine", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const { device } = Route.useSearch()
 
@@ -76,11 +78,13 @@ function VirtualMachinesPage() {
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
   const sla = useSlaStatus("vm", vmIds)
 
+  const { enabled: eolOn } = useEolSettings()
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
         selection: true,
         humanIds,
+        eol: eolOn,
         monitoring,
         sla: { entries: sla.entries, frame: sla.frame },
         actions: {
@@ -96,6 +100,7 @@ function VirtualMachinesPage() {
       canEdit,
       canDelete,
       humanIds,
+      eolOn,
       monitoring,
       sla.entries,
       sla.frame,
@@ -110,7 +115,7 @@ function VirtualMachinesPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell
@@ -138,6 +143,7 @@ function VirtualMachinesPage() {
         </>
       }
       query={query}
+      page={query.data}
     >
       <DataTable
         data={filteredRows}

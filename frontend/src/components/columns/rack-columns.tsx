@@ -95,7 +95,7 @@ export interface RackColumnOpts<T extends Rack = Rack> {
 }
 
 /** Rack occupancy: the capacity bar plus the raw "used/height" U counts, on
- * the racks' shared 80 / 95 % scale (`lib/rack-capacity.ts`). Rack's own cell
+ * the racks' shared capacity levels (`lib/rack-capacity.ts`). Rack's own cell
  * - the IPAM `UtilCell` prints a percentage on the prefix scale instead. */
 function RackUtilCell({ rack }: { rack: Rack }) {
   return (

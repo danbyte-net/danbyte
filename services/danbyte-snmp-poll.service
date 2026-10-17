@@ -1,0 +1,14 @@
+[Unit]
+Description=Danbyte scheduled SNMP polls (opt-in per tenant)
+After=network.target
+Wants=danbyte-infra.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/danbyte
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/danbyte/.venv/bin/python manage.py dispatch_snmp_polls
+
+# Triggered every 5 minutes by danbyte-snmp-poll.timer. Enqueues the due polls;
+# the RQ workers run them.
+# Logs: journalctl --user -fu danbyte-snmp-poll

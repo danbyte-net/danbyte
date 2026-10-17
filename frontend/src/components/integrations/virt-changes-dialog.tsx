@@ -310,6 +310,8 @@ export function VirtChangesPanel({ source }: { source: VirtualizationSource }) {
           columns={columns}
           tableId="virt-changes"
           flexColumn="detail"
+          searchable
+          searchPlaceholder="Search changes…"
         />
       )}
       <AlertDialog

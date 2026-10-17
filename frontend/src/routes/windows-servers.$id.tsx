@@ -445,6 +445,8 @@ function Overview({
             columns={scopeColumns}
             tableId="dhcp-scopes"
             flexColumn="name"
+            searchable
+            searchPlaceholder="Search scopes…"
           />
         )}
       </div>
@@ -621,6 +623,8 @@ function Reservations({
           columns={columns}
           tableId="dhcp-reservations"
           flexColumn="name"
+          searchable
+          searchPlaceholder="Search reservations…"
         />
       )}
       {creating && (
@@ -775,6 +779,8 @@ function Leases({
       columns={columns}
       tableId="dhcp-leases"
       flexColumn="hostname"
+      searchable
+      searchPlaceholder="Search leases…"
     />
   )
 }

@@ -112,7 +112,10 @@ mapping as OIDC. There are two ways to point Danbyte at the IdP:
   from it on save - and re-reads them hourly, so the login keeps working when the
   IdP rotates its signing certificate. The fetch goes **directly to the IdP**
   (same trust tier as the OIDC issuer / LDAP / Vault address); for a cloud IdP it
-  needs internet, for an on-prem IdP it only needs the LAN.
+  needs internet, for an on-prem IdP it only needs the LAN. A metadata URL or
+  OIDC issuer on a private or loopback address is allowed and logged as a
+  warning; add the address to the outbound allowlist to silence it (see
+  [Outbound requests](../reference/settings.md#outbound-requests-ssrf-guard)).
 - **Manual**: supply the IdP's **entity ID**, **SSO URL**, and **signing
   certificate** (PEM or base64) by hand. Use this on fully offline installs, or
   any time you'd rather not fetch. The X.509 field accepts several concatenated

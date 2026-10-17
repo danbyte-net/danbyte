@@ -124,10 +124,22 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
     ),
     ScheduledTask(
+        unit="danbyte-oxidized-sync",
+        commands=("oxidized_sync",),
+        every=MINUTE,
+        label="Enqueue due automatic Oxidized node syncs",
+    ),
+    ScheduledTask(
         unit="danbyte-discover",
         commands=("discover_subnets",),
         every=5 * MINUTE,
         label="Discover live addresses in monitored prefixes",
+    ),
+    ScheduledTask(
+        unit="danbyte-snmp-poll",
+        commands=("dispatch_snmp_polls",),
+        every=5 * MINUTE,
+        label="Enqueue scheduled SNMP polls that are due",
     ),
     ScheduledTask(
         unit="danbyte-utilization",
@@ -189,6 +201,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         commands=("document_linkcheck",),
         at=("05:15",),
         label="Check document links still resolve",
+    ),
+    ScheduledTask(
+        unit="danbyte-eol-refresh",
+        commands=("eol_refresh",),
+        at=("05:35",),
+        label="Refresh end-of-life data (when turned on)",
     ),
     ScheduledTask(
         unit="danbyte-certificate-expiry",

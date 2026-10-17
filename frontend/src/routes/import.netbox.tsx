@@ -536,6 +536,8 @@ function RunPanel({
               data={failures}
               flexColumn="failure"
               enableExport={false}
+              searchable
+              searchPlaceholder="Search failures…"
             />
           </div>
         </div>

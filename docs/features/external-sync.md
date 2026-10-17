@@ -9,10 +9,10 @@ Each connector has its own page:
 
 - **[Windows DHCP & DNS](windows-sync.md)** - scopes, reservations, leases,
   zones and records, over WinRM.
-- **[Proxmox VE](virt-proxmox.md)** - clusters, VMs, disks, bridges and
-  networks, over the Proxmox API.
-- **[VMware vCenter](virt-vcenter.md)** - clusters, VMs, disks, switches and
-  port-groups, over the vSphere REST API.
+- **[Proxmox VE](virt-proxmox.md)** - clusters, VMs, resource pools, disks,
+  bridges and networks, over the Proxmox API.
+- **[VMware vCenter](virt-vcenter.md)** - clusters, VMs, VM folders, disks,
+  switches and port-groups, over the vSphere REST API.
 - **[VMware Cloud Director](virt-vcloud.md)** - organizations, VDCs, vApps,
   VMs and their addresses, over the Cloud Director API.
 
@@ -28,7 +28,8 @@ one without touching the others' sources. (Upgrading from the single combined sw
 it was on, so nothing changes.) A toggle governs the **sync machinery
 only**: while it's
 off, the connection pages, drift views and scheduled syncs are hidden and
-idle. DNS zones/records and DHCP scopes/reservations are first-class IPAM
+idle. Opening one of those pages by link or bookmark says the integration is
+off, with a link to Settings → Integrations for tenant admins. DNS zones/records and DHCP scopes/reservations are first-class IPAM
 features and stay fully usable regardless - author a **local** zone (no
 server) or a local scope, and the sync never touches them.
 
@@ -99,6 +100,24 @@ logo only where its owner has said yes in writing.
   off by default. It fills what the hypervisor reports, plus the site when
   [placement](#where-synced-hosts-and-vms-land) resolves one; the device type
   stays yours, because nothing on the wire says what it is.
+
+## VM groups: pools, folders and vApps
+
+Each hypervisor groups its VMs its own way, and every virtualization source
+mirrors that grouping into one model, the [VM group](vm-groups.md), behind
+one per-source switch, **Sync … as VM groups** (on by default):
+
+| Source | Grouping | Group kind | Name |
+| --- | --- | --- | --- |
+| Proxmox VE | Resource pool | *Resource pool* | the pool id |
+| VMware vCenter | VM folder | *Folder* | the folder path, e.g. *Prod / Linux* |
+| Cloud Director | vApp | *vApp* | the vApp name |
+
+A group sits below the cluster its VMs run on. The sync fills a VM's group
+when it is blank, and follows the hypervisor - into another group, or out of
+one - only for a VM it created itself, in Automatic mode. A VM you grouped by
+hand keeps your grouping, and a group you made yourself is never cleared by a
+sync.
 
 ## Where synced hosts and VMs land
 
@@ -197,6 +216,8 @@ Every virtualization source keeps the full log of its **last run** on its
 detail page (**Sync log** tab): each VM created or adopted, interface,
 switch, network, VLAN, link, placement, prune, and every warning - followed
 by the run summary. **Copy log** puts the whole thing on the clipboard.
+The search box above it finds a VM, address or warning in a long run; the
+**Virtual machines** and **Hosts** tabs have one too.
 
 When reporting a sync problem, paste that log into the issue - it says
 exactly what the sync saw and did, and needs no shell or container access to

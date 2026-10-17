@@ -383,6 +383,20 @@
       "keywords": ["timezone", "date format", "clock"]
     },
     {
+      "key": "tenant.rack-capacity",
+      "label": "Rack capacity",
+      "description": "Where rack space, power and port fill turns amber and red",
+      "page": "tenant-policy",
+      "keywords": [
+        "capacity",
+        "threshold",
+        "rack",
+        "power",
+        "warning",
+        "critical"
+      ]
+    },
+    {
       "key": "tenant.onboarding",
       "label": "First-time setup",
       "description": "Re-open the guided setup wizard",
@@ -420,9 +434,12 @@
     {
       "key": "monitoring.mac-tracking",
       "label": "MAC tracking",
-      "description": "MACs shown per port, uplinks and how long learned MACs are kept",
+      "description": "MACs shown per port, uplinks, retention and scheduled polling",
       "page": "monitoring",
       "keywords": [
+        "poll",
+        "scheduled poll",
+        "snmp poll",
         "mac table",
         "learned mac",
         "fdb",
@@ -466,6 +483,13 @@
       "description": "Publish or lock a table's column layout",
       "page": "table-layouts",
       "keywords": ["columns", "layout", "publish", "lock", "table"]
+    },
+    {
+      "key": "data.sidebar-default",
+      "label": "Sidebar default",
+      "description": "Publish your sidebar layout as the tenant's starting point",
+      "page": "table-layouts",
+      "keywords": ["sidebar", "menu", "navigation", "hide", "publish"]
     },
     {
       "key": "data.components",
@@ -658,6 +682,20 @@
       "description": "How deep the prefix map draws, per family",
       "page": "preferences",
       "keywords": ["space map", "subnet", "depth", "ipv4", "ipv6"]
+    },
+    {
+      "key": "prefs.sidebar",
+      "label": "Sidebar",
+      "description": "Hide and reorder menu sections and pages",
+      "page": "preferences",
+      "keywords": [
+        "sidebar",
+        "menu",
+        "hide",
+        "reorder",
+        "sections",
+        "navigation"
+      ]
     },
     {
       "key": "prefs.table-layouts",

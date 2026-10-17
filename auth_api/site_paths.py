@@ -5,7 +5,8 @@ by filtering ``<path>__in=<site ids>`` (for the *view* action, rows whose site
 is NULL are also visible - shared context - but never writable; see
 ``rbac._perm_q``). Types absent from this map have no site and therefore IGNORE
 site scope (the grant applies tenant-wide for them) - e.g. VRFs, tags, catalog
-objects.
+objects. A registered type that links to a site-bound row must be in SITE_PATHS
+or in SITE_PATH_EXEMPT with its reason (auth_api.tests_site_paths_registry).
 
 Keep keys as the RBAC object-type slugs (model ``_meta.model_name``).
 """
@@ -17,7 +18,11 @@ SITE_PATHS: dict[str, str] = {
     "prefix": "site",
     "vlan": "site",           # nullable: site VLAN = local, NULL = shared/global
 
-    "ipaddress": "site",      # added in B (auto-assigned from the prefix)
+    # An address's own site, else its prefix's: the site is only copied onto
+    # the address when the prefix auto-assigns it, and an address inside
+    # another site's prefix is that site's, not shared (#413). An explicit
+    # site on the address wins (first set alternative, see site_in_q).
+    "ipaddress": "site|prefix__site",
     "rack": "site",
     "cabinet": "site",
     "cluster": "site",
@@ -47,9 +52,12 @@ SITE_PATHS: dict[str, str] = {
     "sshhostkey": "device__site",
     "devicecredential": "device__site",
     "vminterface": "vm__site",
-    "circuittermination": "site",
+    # Its own site, else the VM it lands on (#432) - an end at a provider
+    # network bound to a VM interface belongs to that VM's site.
+    "circuittermination": "site|vm_interface__vm__site",
     "floorplan": "location__site",
     "floorplantile": "floor_plan__location__site",
+    "floorplandrawing": "floor_plan__location__site",
     "floorplantray": "floor_plan__location__site",
     "floorplanraisedfloorarea": "floor_plan__location__site",
     "floorplanwall": "floor_plan__location__site",
@@ -73,6 +81,92 @@ SITE_PATHS: dict[str, str] = {
     "vtep": "device__site",
     "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
+    # An Oxidized node link follows the device or VM it backs (#386).
+    "oxidizednodelink": "device__site|virtual_machine__site",
+    # Rows that belong to a site through their device, VM, prefix, address or
+    # cluster (#414). tests_site_paths_registry fails when a registered type
+    # with such a link is neither here nor in SITE_PATH_EXEMPT.
+    "service": (
+        "device__site|virtual_machine__site|ip_address__site|ip_address__prefix__site"
+    ),
+    "natrule": "device__site",
+    "vlangroup": "site|cluster__site",
+    "iprange": "prefix__site",
+    "virtualchassis": "master__site",
+    "fhrpgroupassignment": "interface__device__site|vm_interface__vm__site",
+    "l2vpntermination": "interface__device__site|vm_interface__vm__site|vlan__site",
+    "tunneltermination": "interface__device__site|vm_interface__vm__site",
+    "sitemarker": "device__site",
+    "virtualdisk": "vm__site",
+    "virtualswitch": "cluster__site",
+    "redistribution": (
+        "bgp_af__instance__device__site|bgp_af__instance__virtual_machine__site"
+        "|ospf_instance__device__site|ospf_instance__virtual_machine__site"
+        "|isis_instance__device__site|isis_instance__virtual_machine__site"
+        "|eigrp_instance__device__site|eigrp_instance__virtual_machine__site"
+    ),
+    "deviceconfigsnapshot": "device__site",
+    "deviceconfigstate": "device__site",
+    "redfishendpoint": "device__site",
+    "portutilizationrule": "device__site",
+    "zabbixhostlink": "device__site",
+    "zabbixchange": "device__site",
+    "dhcpscope": "prefix__site",
+    "dhcpreservation": "scope__prefix__site",
+    "dhcplease": "scope__prefix__site",
+    "dnsrecord": "ip_address__site|ip_address__prefix__site",
+    "dnsdrift": "ip_address__site|ip_address__prefix__site",
+    "virtchange": "vm__site",
+    "certificatebinding": "target_ip__site|target_ip__prefix__site",
+    # A covered device's row follows the device (#421); the contract itself
+    # is tenant-wide.
+    "supportcoverage": "device__site",
+}
+
+# Site-bound types the one-click site roles do NOT grant (auth_api.api.
+# assemble_site_role). Site scope still narrows them for any grant that names
+# them; the roles just leave them to an explicit grant. Integration records
+# synced from an outside system, and device configuration history - that
+# holds secrets, and device view never implies it (``view_config``).
+SITE_ROLE_EXCLUDED: frozenset[str] = frozenset({
+    "site",            # its own view-only grant (#415); never change/delete
+    "sitesettings",    # the site-admin surface (core.site_settings)
+    "deviceconfigsnapshot",
+    "deviceconfigstate",
+    "redfishendpoint",
+    "portutilizationrule",
+    "zabbixhostlink",
+    "zabbixchange",
+    "dhcpscope",
+    "dhcpreservation",
+    "dhcplease",
+    "dnsrecord",
+    "dnsdrift",
+    "virtchange",
+    "certificatebinding",
+})
+
+# Registered types that reference a site, device, VM, prefix, address or other
+# site-bound row but are NOT site-scoped through SITE_PATHS, each with the
+# reason. tests_site_paths_registry requires every such type to be in one map
+# or the other, so a new model can't silently ignore site scope.
+SITE_PATH_EXEMPT: dict[str, str] = {
+    # Scoped by their viewset (monitoring _TargetScopedConfigurationMixin):
+    # polymorphic targets with no single ORM path.
+    "checkassignment": "scoped by its viewset through its target",
+    "monitoringpolicy": "scoped by its viewset through its target",
+    "alertrule": "scoped by its viewset through its target",
+    "silence": "scoped by its viewset through its target",
+    # Tenant-wide objects whose link is a filter or a member, not an owner.
+    "notificationchannel": "tenant-wide; match_* fields are alert filters",
+    "fhrpgroup": "tenant-wide; spans the interfaces of several devices",
+    "wirelesslan": "tenant-wide; its VLAN is a reference",
+    "prefixlistrule": "child of a tenant-wide prefix list; prefix is a reference",
+    "virtnetwork": "tenant-wide integration record; its VLAN is a reference",
+    # Integration configuration naming a site as a target, managed tenant-wide.
+    "virtplacementrule": "integration config; the site is where it places VMs",
+    "zabbixadoptionrule": "integration config; the site is where it adopts hosts",
+    "zabbixconnection": "integration config; adopt_site is a default",
 }
 
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global
@@ -108,24 +202,87 @@ CATALOG_SITE_PATHS: dict[str, str] = {
 }
 
 
+def site_role_types() -> list[str]:
+    """The site-bound types a site role manages at its sites: SITE_PATHS less
+    SITE_ROLE_EXCLUDED. Also the set ``rbac.editable_sites`` reads, so a
+    grant on an integration record never makes its holder a site editor."""
+    return sorted(set(SITE_PATHS) - SITE_ROLE_EXCLUDED)
+
+
+# Registered types a site role's types point at that are NOT catalogs, each
+# with the reason. Everything else a role type references - and is neither
+# site-bound (SITE_PATHS) nor a tenant-wide object with site links
+# (SITE_PATH_EXEMPT) - is a catalog the role reads (#425).
+# tests_site_paths_registry fails when a reference is in neither list.
+SITE_ROLE_REFERENCE_EXCLUDED: dict[str, str] = {
+    "tenant": "the row's own tenant, set by the server",
+    "user": "accounts are administration",
+    "cable": "inventory that spans sites, not a catalog",
+    "circuit": "inventory that spans sites, not a catalog",
+    "providernetwork": "circuit inventory, read with the circuits",
+    "l2vpn": "inventory that spans sites, not a catalog",
+    "tunnel": "inventory that spans sites, not a catalog",
+    "exporttemplate": "automation templates are administration",
+    "oxidizedconnection": "integration configuration",
+}
+
+
+def site_role_catalog_types() -> list[str]:
+    """The catalog types the site roles read (#425): every registered type a
+    site role type points at by foreign key or many-to-many - device types,
+    roles, platforms, statuses, tags, VRFs, … - plus the custom-field
+    definitions when a role type carries custom fields. Derived from the
+    models, so a new catalog reference on a site type is read with it."""
+    from core.models import CustomFieldsMixin
+
+    from .object_types import _registry
+
+    registry = _registry()
+    skip = set(SITE_PATHS) | set(SITE_PATH_EXEMPT) | set(SITE_ROLE_REFERENCE_EXCLUDED)
+    out: set[str] = set()
+    for slug in site_role_types():
+        model = registry[slug]["model"]
+        if issubclass(model, CustomFieldsMixin):
+            out |= {"customfield", "customfieldgroup"}
+        for f in model._meta.get_fields():
+            if f.auto_created or not f.is_relation or f.related_model is None:
+                continue
+            if not (f.many_to_one or f.one_to_one or f.many_to_many):
+                continue
+            target = f.related_model._meta.model_name
+            if target in registry and target not in skip:
+                out.add(target)
+    return sorted(out)
+
+
 # A path may list alternatives with "|": a routing row belongs to a device OR
-# a virtual machine, so its site is the device's or the VM's (#217). The
-# helpers below are the only way a path becomes a query - use them rather
-# than formatting ``f"{path}__in"`` yourself, or an alternative is lost.
+# a virtual machine, so its site is the device's or the VM's (#217). The row's
+# site is the FIRST alternative that is set: an address's own site wins over
+# its prefix's (#413), as in audit.site_capture. The helpers below are the
+# only way a path becomes a query - use them rather than formatting
+# ``f"{path}__in"`` yourself, or an alternative is lost.
 
 
 def alternatives(path: str) -> list[str]:
     return path.split("|")
 
 
-def site_in_q(path: str, site_ids):
-    """Rows whose site, by any alternative, is one of ``site_ids``."""
+def _first_set(path: str, lookup: str, value):
+    """Rows whose first set alternative matches ``<alt>__<lookup>=value``."""
     from django.db.models import Q
 
     q = Q()
+    earlier_null = Q()
     for p in alternatives(path):
-        q |= Q(**{f"{p}__in": site_ids})
+        q |= earlier_null & Q(**{f"{p}__{lookup}": value})
+        earlier_null &= Q(**{f"{p}__isnull": True})
     return q
+
+
+def site_in_q(path: str, site_ids):
+    """Rows whose site - the first alternative that is set - is one of
+    ``site_ids``."""
+    return _first_set(path, "in", site_ids)
 
 
 def site_null_q(path: str):
@@ -139,13 +296,9 @@ def site_null_q(path: str):
 
 
 def site_tenant_q(path: str, tenant):
-    """Rows whose site, by any alternative, belongs to ``tenant``."""
-    from django.db.models import Q
-
-    q = Q()
-    for p in alternatives(path):
-        q |= Q(**{f"{p}__tenant": tenant})
-    return q
+    """Rows whose site - the first alternative that is set - belongs to
+    ``tenant``."""
+    return _first_set(path, "tenant", tenant)
 
 
 def site_path_for(slug: str, tenant) -> str | None:

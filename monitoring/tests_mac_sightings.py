@@ -246,6 +246,44 @@ class RecordTests(_Base):
         self.assertEqual(state.fdb_polled_at, t2)
         self.assertEqual(state.mac_ports["gi1/0/7"]["count"], 1)
 
+    def test_a_port_less_vtp_vlan_leaves_the_read_complete(self):
+        """#402 end to end: the collector against a Cisco-style switch whose
+        VTP VLANs 10, 20 and 30 have no context, then the write side."""
+        from monitoring import tests_mac_collector as mc
+
+        sw = Device.objects.create(tenant=self.tenant, name="sw-vtp-32", site=self.site_a)
+        for name in ("Gi1/0/1", "Gi1/0/2", "Te1/1/1"):
+            Interface.objects.create(device=sw, name=name)
+
+        def read(*vlan32_entries):
+            agent = mc.vtp32(mc.VTP32_ENTITY)
+            agent.trees["vlan-32"] = agent._index(mc.walk(
+                mc.base_ports({1: 10101, 2: 10102, 25: 10201}),
+                mc.bridge_fdb(*vlan32_entries),
+            ))
+            ifaces = mc.interfaces_of(agent)
+            fdb, fdb_meta = mc.read_macs(agent, interfaces=ifaces)
+            return result(ifaces, fdb, fdb_meta=fdb_meta)
+
+        t0, t1, t2 = self.t0, self.t0 + timedelta(minutes=15), self.t0 + timedelta(minutes=30)
+        # Before: a MAC in VLAN 10, when VLAN 10 still had a port here.
+        self.poll(sw, result(mc.interfaces_of(mc.vtp32(mc.VTP32_ENTITY)),
+                             [fdb_row(SERVER, 10102, vlan=10)]), t0)
+        res = read((mc.PC, 1, mc.LEARNED), (mc.PRINTER, 2, mc.LEARNED))
+        self.assertTrue(res["fdb_meta"]["complete"])
+        self.assertEqual(res["fdb_meta"]["vlans"]["skipped"], [10, 20, 30])
+        self.poll(sw, res, t1)
+        self.assertEqual(set(self.present(sw).values_list("mac", "vlan_vid")),
+                         {(SERVER, 10), (mc.PC, 32), (mc.PRINTER, 32)})
+
+        self.poll(sw, read((mc.PC, 1, mc.LEARNED)), t2)
+        rows = {r.mac: r for r in MacSighting.objects.filter(polled_device=sw)}
+        self.assertEqual(rows[mc.PRINTER].gone_at, t2)  # left VLAN 32: closed
+        self.assertEqual((rows[mc.PC].gone_at, rows[mc.PC].last_seen), (None, t2))
+        # VLAN 10 was not read: neither closed nor refreshed.
+        self.assertEqual((rows[SERVER].gone_at, rows[SERVER].last_seen), (None, t0))
+        self.assertEqual(DeviceSnmp.objects.get(device=sw).fdb_polled_at, t2)
+
     def test_arp_meta_decides_whether_arp_rows_close(self):
         gw_ifaces = [iface_row(1, "Vlan10")]
         arp = [{"ip": "10.10.3.44", "mac": PC, "if_index": "1", "type": "dynamic"},
@@ -918,6 +956,82 @@ class MacDetailAndSearchTests(_Base):
         self.assertFalse([h for h in body["hits"] if h["type"] == "interface"])
 
 
+class MacListLocationTests(_Base):
+    """The MAC lists carry each MAC's Location (#344): the same answer the MAC
+    page gives, with the switch's site and location and when it was seen."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import Location, MACAddress
+
+        self.room = Location.objects.create(
+            site=self.site_a, name="Room 1", slug="room-1", tenant=self.tenant
+        )
+        Device.objects.filter(pk=self.acc.pk).update(location=self.room)
+        self.poll_network()
+        self.pc = MACAddress.objects.create(tenant=self.tenant, mac_address=PC)
+        self.server = MACAddress.objects.create(tenant=self.tenant, mac_address=SERVER)
+        self.unseen = MACAddress.objects.create(tenant=self.tenant, mac_address="0c:00:00:00:00:99")
+
+    def rows(self):
+        r = self.client.get("/api/macs/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return {row["mac"]: row for row in r.json()["results"]}
+
+    def test_the_recorded_list_names_where_each_mac_was_learned(self):
+        loc = self.rows()[PC]["location"]
+        self.assertEqual(loc["kind"], "access")
+        self.assertEqual(loc["site"], {"id": str(self.site_a.id), "name": "A"})
+        self.assertEqual(loc["location"], {"id": str(self.room.id), "name": "Room 1"})
+        self.assertEqual(loc["device"], {"id": str(self.acc.id), "name": "sw-acc-03"})
+        self.assertEqual(loc["interface"], {"id": str(self.gi5.id), "name": "Gi1/0/5"})
+        self.assertEqual((loc["port_name"], loc["vlan"], loc["stale"]), ("Gi1/0/5", 10, False))
+        self.assertTrue(loc["since"] and loc["last_seen"])
+
+    def test_the_list_and_the_mac_page_agree(self):
+        rows = self.rows()
+        for mac in (PC, SERVER, *DESK[:1]):
+            detail = self.client.get(f"/api/macs/{mac}/").json()["location"]
+            if mac not in rows:
+                continue
+            cell = rows[mac]["location"]
+            for key in ("kind", "device", "interface", "port_name", "vlan"):
+                self.assertEqual(cell[key], detail[key], (mac, key))
+        self.assertEqual(rows[SERVER]["location"]["kind"], "access")
+        self.assertEqual(rows[SERVER]["location"]["device"]["name"], "sw-core-01")
+        self.assertIsNone(rows[SERVER]["location"]["location"])
+
+    def test_a_mac_never_learned_or_gone_has_no_location(self):
+        self.assertIsNone(self.rows()["0c:00:00:00:00:99"]["location"])
+        MacSighting.objects.filter(mac=PC).update(gone_at=timezone.now())
+        self.assertIsNone(self.rows()[PC]["location"])
+
+    def test_another_tenants_sighting_is_not_used(self):
+        org = Organization.objects.create(name="Other", slug="other")
+        other = Tenant.objects.create(org=org, name="Other", slug="other")
+        dev = Device.objects.create(tenant=other, name="theirs")
+        now = timezone.now()
+        MacSighting.objects.create(
+            tenant=other, polled_device=dev, device=dev, port_key="gi1", port_name="Gi1",
+            mac="0c:00:00:00:00:99", first_seen=now, last_seen=now,
+        )
+        self.assertIsNone(self.rows()["0c:00:00:00:00:99"]["location"])
+
+    def test_the_mac_object_api_carries_it_too(self):
+        body = self.client.get("/api/mac-addresses/").json()
+        by_mac = {r["mac_address"]: r["location"] for r in body["results"]}
+        self.assertEqual(by_mac[PC]["interface"]["name"], "Gi1/0/5")
+        self.assertEqual(by_mac[PC]["location"]["name"], "Room 1")
+        self.assertIsNone(by_mac["0c:00:00:00:00:99"])
+        one = self.client.get(f"/api/mac-addresses/{self.pc.id}/").json()
+        self.assertEqual(one["location"], by_mac[PC])
+        # Read-only: a write naming it changes nothing and is not refused.
+        r = self.client.patch(f"/api/mac-addresses/{self.pc.id}/",
+                              {"description": "desk", "location": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["location"]["device"]["name"], "sw-acc-03")
+
+
 class RbacTests(_Base):
     """Every read filters by tenant first, then the caller's row scope."""
 
@@ -950,6 +1064,28 @@ class RbacTests(_Base):
         self.assertEqual(body["location"]["device"]["name"], "sw-acc-03")
         self.assertEqual(body["location"]["kind"], "behind_uplink")
         self.assertEqual({s["device"]["name"] for s in body["seen"]}, {"sw-acc-03"})
+
+    def test_the_list_location_never_names_a_switch_the_viewer_cant_see(self):
+        from api.models import MACAddress
+
+        MACAddress.objects.create(tenant=self.tenant, mac_address=SERVER)
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        loc = rows[SERVER]["location"]
+        self.assertEqual((loc["device"]["name"], loc["kind"]), ("sw-acc-03", "behind_uplink"))
+        self.assertEqual(loc["site"]["name"], "A")
+        body = self.client.get("/api/mac-addresses/").json()
+        (row,) = [r for r in body["results"] if r["mac_address"] == SERVER]
+        self.assertEqual(row["location"]["device"]["name"], "sw-acc-03")
+        # Seen only on a switch out of scope: no Location at all.
+        self.poll(self.core, result(
+            CORE_IFACES, [*core_fdb(), fdb_row("c0:ff:ee:00:00:02", 2)], neighbors=CORE_NEIGHBORS
+        ), self.t0 + timedelta(minutes=1))
+        MACAddress.objects.create(tenant=self.tenant, mac_address="c0:ff:ee:00:00:02")
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        self.assertIsNone(rows["c0:ff:ee:00:00:02"]["location"])
+        self.login(self.admin)
+        rows = {r["mac"]: r for r in self.client.get("/api/macs/").json()["results"]}
+        self.assertEqual(rows["c0:ff:ee:00:00:02"]["location"]["device"]["name"], "sw-core-01")
 
     def test_an_arp_ip_shows_only_through_a_viewable_row(self):
         pc = self.client.get(f"/api/macs/{PC}/").json()

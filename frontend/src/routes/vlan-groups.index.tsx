@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Paginated, type VLANGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { siteColumn } from "@/components/cells/site-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { numidColumn } from "@/components/cells/numid"
@@ -15,6 +15,7 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { VlanGroupDeleteDialog } from "@/components/vlan-group-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/vlan-groups/")({
   component: VlanGroupsPage,
@@ -25,7 +26,7 @@ function VlanGroupsPage() {
   const canAdd = canDo("vlangroup", "add")
   const canEdit = canDo("vlangroup", "change")
   const canDelete = canDo("vlangroup", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VLANGroup | null>(null)
 
   const query = useQuery({
@@ -50,7 +51,7 @@ function VlanGroupsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

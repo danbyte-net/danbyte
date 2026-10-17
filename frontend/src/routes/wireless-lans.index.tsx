@@ -8,11 +8,12 @@ import { api, type WirelessLAN, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import { WirelessLANDeleteDialog } from "@/components/wireless-lan-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/wireless-lans/")({
   component: WirelessLANsPage,
@@ -22,7 +23,7 @@ function WirelessLANsPage() {
   const { humanIds } = useMe()
   const { canDo } = useMe()
   const canAdd = canDo("wirelesslan", "add")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<WirelessLAN | null>(null)
   const [selectedRows, setSelectedRows] = useState<WirelessLAN[]>([])
   const canDelete = canDo("wirelesslan", "delete")
@@ -59,7 +60,7 @@ function WirelessLANsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

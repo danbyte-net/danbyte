@@ -13,7 +13,6 @@ import {
   FormCombobox,
   FormFooter,
   FormSection,
-  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
@@ -168,7 +167,7 @@ export function VlanGroupForm({
             emptyText="No sites."
             error={fieldErrors.site_id}
           />
-          <FormSelect
+          <FormCombobox
             label="Cluster"
             value={clusterId}
             onChange={setClusterId}
@@ -179,6 +178,8 @@ export function VlanGroupForm({
             noneLabel="No cluster"
             placeholder="No cluster"
             error={fieldErrors.cluster_id}
+            searchPlaceholder="Search clusters…"
+            emptyText="No clusters."
           />
         </div>
       </FormSection>

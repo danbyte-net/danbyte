@@ -33,7 +33,6 @@ import {
   FormCombobox,
   FormFooter,
   FormSection,
-  FormSelect,
   FormStatusSelect,
   FormText,
   FormTextarea,
@@ -279,8 +278,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   }, [rangesOnly, rangeId, ranges])
 
   const statuses = useQuery({
-    queryKey: ["statuses-picker"],
-    queryFn: () => api<Paginated<StatusOption>>("/api/statuses/"),
+    queryKey: ["statuses", "ipaddress"],
+    queryFn: () =>
+      api<Paginated<StatusOption>>("/api/statuses/?available_to=ipaddress"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
@@ -568,7 +568,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   error={fieldErrors.prefix_id}
                 />
                 {ranges.length > 0 && (
-                  <FormSelect
+                  <FormCombobox
                     label="Range"
                     hint={
                       rangesOnly
@@ -586,6 +586,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                         ? `${r.start_address} – ${r.end_address} · ${r.description}`
                         : `${r.start_address} – ${r.end_address}`,
                     }))}
+                    searchPlaceholder="Search ranges…"
+                    emptyText="No ranges."
                   />
                 )}
               </>
@@ -704,7 +706,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 placeholder="No device"
                 error={fieldErrors.assigned_device_id}
               />
-              <FormSelect
+              <FormCombobox
                 label="Interface"
                 value={interfaceId}
                 onChange={setInterfaceId}
@@ -716,6 +718,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   label: i.name,
                 }))}
                 error={fieldErrors.assigned_interface_id}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
 
@@ -738,7 +742,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 emptyText="No virtual machines."
                 error={fieldErrors.assigned_vm_id}
               />
-              <FormSelect
+              <FormCombobox
                 label="VM interface"
                 value={vmInterfaceId}
                 onChange={setVmInterfaceId}
@@ -750,6 +754,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   label: i.name,
                 }))}
                 error={fieldErrors.assigned_vm_interface_id}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
               />
             </div>
 
@@ -765,7 +771,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                 placeholder="No switch"
                 error={fieldErrors.switch_id}
               />
-              <FormSelect
+              <FormCombobox
                 label="Switch port"
                 value={switchInterfaceId}
                 onChange={setSwitchInterfaceId}
@@ -777,6 +783,8 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
                   label: i.name,
                 }))}
                 error={fieldErrors.switch_interface_id}
+                searchPlaceholder="Search ports…"
+                emptyText="No ports."
               />
             </div>
 

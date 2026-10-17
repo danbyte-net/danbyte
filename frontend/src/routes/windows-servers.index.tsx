@@ -27,6 +27,7 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { TimeCell } from "@/components/cells/time-ago"
 import { WindowsConnectionDialog } from "@/components/integrations/windows-connection-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/windows-servers/")({
   component: WindowsServersPage,
@@ -72,7 +73,7 @@ function WindowsServersPage() {
   const canEdit = canDo("windowsserverconnection", "change")
   const canDelete = canDo("windowsserverconnection", "delete")
   const qc = useQueryClient()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<WindowsConnection | null>(null)
   const [deleting, setDeleting] = useState<WindowsConnection | null>(null)

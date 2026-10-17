@@ -1,6 +1,11 @@
 import { nodeText, usePageTitle } from "@/lib/page-title"
 import { type ReactNode } from "react"
-import { Link, type LinkProps } from "@tanstack/react-router"
+import {
+  Link,
+  useNavigate,
+  useSearch,
+  type LinkProps,
+} from "@tanstack/react-router"
 import { ChevronLeft, ChevronRight, Pin } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -11,6 +16,12 @@ import { DetailActions } from "@/components/detail-actions"
 import { useRegisterPresence } from "@/lib/presence-context"
 import { PlanFromObject } from "@/components/planning/plan-from-object"
 import { PlannedChangeBadge } from "@/components/planning/planned-change-badge"
+import {
+  ObjectOverdueWarning,
+  ObjectTasksPanel,
+  useCanViewTasks,
+  useObjectTasks,
+} from "@/components/planning/object-tasks"
 import { objectForPath } from "@/lib/object-routes"
 import { useRouterState } from "@tanstack/react-router"
 import { useDefaultTabPref } from "@/lib/use-url-tab"
@@ -73,6 +84,64 @@ function PlannedForRoute() {
   )
 }
 
+/** The tab value DetailShell adds on object pages. */
+export const TASKS_TAB = "tasks"
+
+/** Insert the Tasks tab before Journal / Change log, which always stay
+ * last, or at the end on a page that has neither. */
+export function withTasksTab(
+  tabs: DetailTabItem[],
+  count: number | undefined
+): DetailTabItem[] {
+  if (tabs.some((t) => t.value === TASKS_TAB)) return tabs
+  const item: DetailTabItem = { value: TASKS_TAB, label: "Tasks", count }
+  const at = tabs.findIndex(
+    (t) => t.value === "journal" || t.value === "history"
+  )
+  return at === -1
+    ? [...tabs, item]
+    : [...tabs.slice(0, at), item, ...tabs.slice(at)]
+}
+
+/** Route-derived planning for an object page: the Tasks tab (open-task count
+ * on the tab) and the assignee-only overdue warning. Owns `?tab=tasks` itself,
+ * so a page's own tab allow-list never has to learn about it - any other tab
+ * click goes to the page's handler, which rewrites `?tab=` as usual. */
+function useObjectPlanning(
+  tabs: DetailTabItem[],
+  tab: string,
+  onTabChange: (v: string) => void
+) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const search = useSearch({ strict: false })
+  const navigate = useNavigate()
+  const target = objectForPath(pathname)
+  const canView = useCanViewTasks()
+  const open = useObjectTasks(target?.objectType ?? "", target?.id ?? "", {
+    open: true,
+    enabled: canView && !!target,
+  })
+  if (!canView || !target) {
+    return { target: null, tabs, tab, onTabChange }
+  }
+  const count = open.data?.count
+  return {
+    target,
+    tabs: withTasksTab(tabs, count ? count : undefined),
+    tab: search.tab === TASKS_TAB ? TASKS_TAB : tab,
+    onTabChange: (v: string) => {
+      if (v !== TASKS_TAB) return onTabChange(v)
+      void navigate({
+        to: ".",
+        search: (prev: Record<string, unknown>) => ({
+          ...prev,
+          tab: TASKS_TAB,
+        }),
+      })
+    },
+  }
+}
+
 export function DetailShell({
   backTo,
   backParams,
@@ -114,6 +183,7 @@ export function DetailShell({
   children: ReactNode
 }) {
   usePageTitle(nodeText(title))
+  const planning = useObjectPlanning(tabs, tab, onTabChange)
   // Safe when presence is omitted - the hook no-ops on an undefined id.
   useRegisterPresence(presence?.type ?? "", presence?.id, "viewing")
 
@@ -152,26 +222,45 @@ export function DetailShell({
 
       {hero}
 
+      {planning.target && (
+        <ObjectOverdueWarning
+          objectType={planning.target.objectType}
+          objectId={planning.target.id}
+        />
+      )}
+
       {/* gap-0 kills the Tabs primitive's default gap-2 - it added an 8px dead
           zone between the tab strip and every pane (glaring on bare panes that
           draw their own sub-bar flush under the strip). */}
       <Tabs
-        value={tab}
-        onValueChange={onTabChange}
+        value={planning.tab}
+        onValueChange={planning.onTabChange}
         className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
       >
         {/* The tabs wrap rather than scroll, so a narrow window still shows
             Journal and Change log instead of hiding them past the edge. */}
         <div className="flex min-h-10 min-w-0 shrink-0 items-center gap-2 border-b border-border px-4 py-1 lg:px-6">
           <SegmentedTabs
-            value={tab}
-            onValueChange={onTabChange}
-            items={tabs}
+            value={planning.tab}
+            onValueChange={planning.onTabChange}
+            items={planning.tabs}
             wrap
           />
-          <DefaultTabPin current={tab} />
+          {/* Tasks is the shell's tab, outside a page's own allow-list, so
+              it can't be a page's pinned default. */}
+          {planning.tab !== TASKS_TAB && (
+            <DefaultTabPin current={planning.tab} />
+          )}
         </div>
         {children}
+        {planning.target && (
+          <DetailTab value={TASKS_TAB}>
+            <ObjectTasksPanel
+              objectType={planning.target.objectType}
+              objectId={planning.target.id}
+            />
+          </DetailTab>
+        )}
       </Tabs>
     </div>
   )

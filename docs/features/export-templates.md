@@ -117,6 +117,15 @@ prefix; a router config needs the pieces. These filters take a string
     `none`; a lookup names one field of that row (`name__startswith`), never
     a path into another table (`site__name`).
 
+    A template renders for whoever runs it - the preview for the editor, a
+    download for the person downloading - and shows them what the API
+    shows them. A field the API leaves out reads as empty and cannot be
+    filtered or ordered on: a contract's cost without *view cost*, an SLA's
+    credits and fee without *view credits*, an address's device, interface,
+    prefix or VM the user can't see. A coverage row whose contract the user
+    can't see is left out, and an SLA's stored period figures and rule
+    snapshots are not reachable.
+
     Output is always served as a download of an inert type:
     `text/plain`, CSV, JSON, XML or YAML. A template declaring `text/html`
     downloads as plain text.
@@ -252,6 +261,10 @@ A render never contains a key. Where a template needs one it prints
 every match of `<keychain:([^<>\s]+)>` with the key from
 `POST /api/routing/keychains/<id>/reveal-psk/` (an audited read behind the
 `reveal` permission) or from its own store.
+
+An FHRP group's authentication key follows the same contract by group id:
+`<fhrp-key:ID>` (a `by_interface` row's `fhrp[].key_placeholder`), resolved
+from `POST /api/fhrp-groups/<ID>/reveal-psk/`.
 
 ## Permissions and audit
 

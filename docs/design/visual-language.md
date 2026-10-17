@@ -98,10 +98,21 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Checkbox with a label | `FormCheckbox` from `@/components/forms` | `<label><input type="checkbox">` |
 | Bare checkbox (table cell, list row) | `Checkbox` from `@/components/ui/checkbox` | `<input type="checkbox">` |
 | Dropdown of fixed options | `FormSelect`, or `Select` for an unlabelled one | `<select>` |
-| Long / searchable option list | `FormCombobox` / `Combobox` | `<select>` with many `<option>`s |
+| Long / searchable option list, and any field whose options are rows of another table (site, location, VRF, role, tenant, interface) | `FormCombobox` / `Combobox`; `FormStatusSelect` for a status | `FormSelect` or `<select>` fed with query rows |
 | Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset (`onPickMany` when a list collects several at once) | a bespoke fetch + list |
+
+**Labels name their control.** `Field` (and every `Form*` built on it) gives
+its `<label>` an id and hands it to the control through context: `Input`,
+`Textarea`, `SelectTrigger`, `Combobox`, `MultiCombobox`, `Checkbox`,
+`Switch`, `DatePicker`, `TimePicker`, `IdMultiSelect` and `TagMultiSelect`
+take the id, `aria-labelledby`, `aria-describedby` for the hint and error,
+and `aria-invalid` on an error. A child of `<Field>` built from these needs no
+wiring. A second control in the same field (a unit box beside a number) goes
+in `NoFieldControl` with its own `aria-label`; popover, dialog, sheet and menu
+content already cut the link. An unlabelled control outside a `Field` (a
+filter rail) takes an `aria-label`.
 
 Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
@@ -155,7 +166,7 @@ parts, so a control reads the same on each:
 | A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). A legend that is part of an exported picture - the floor plan's Color by key, inside its PNG area - is `hideable={false}`: always open, no Hide button to land in the export. The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
 | A legend's rows | From `components/map-legend.tsx`: `LegendRow` (swatch, then label), `LegendLine` (a line keys a line), `LegendTones` (a colour mode's keys as short lines, wrapping), and `LegendPills` / `LegendStatuses` for roles and statuses as their `ColorBadge` / `StatusBadge` pills - never a coloured dot beside a name. `LegendItems` draws a list of `LegendItem`s in that order |
 | Speeds | `lib/speed.ts`: `parseSpeedMbps` (a bare number is kbps, as on the server), `parseSpeedKbps` (a speed typed into a `*_kbps` form field: whole kbps, null when blank, undefined when it is not a speed), `fmtKbps` / `fmtMbps` (short `10G`, `100/20M`; long `10 Gbps`) and the one tier scale, `SPEED_TIERS`, that the faceplates, the 3D room and the topology's and the site map's *Speed* colouring share |
-| How full a rack is | `lib/rack-capacity.ts`: above 80 % amber, above 95 % red, in the status colours - never the accent - and `formatWatts`. `CapacityBar` (`components/cells/capacity-bar.tsx`) is its thin bar; `PowerFigure` (`components/cells/power-figure.tsx`) reads a rack's power as *demand / supply* and `PortsFigure` (`components/cells/ports-figure.tsx`) its ports as *in use / counted*. On a map the level goes on a rack's fill and monitoring keeps its outline (`components/floorplan/tile-paint.ts`). IPAM prefixes keep their own scale (`UtilCell`) |
+| How full a rack is | `lib/rack-capacity.ts`: above the tenant's warning level amber, above its critical level red (80 / 95 % by default, `useCapacityThresholds`), in the status colours - never the accent - and `formatWatts`. `CapacityBar` (`components/cells/capacity-bar.tsx`) is its thin bar; `PowerFigure` (`components/cells/power-figure.tsx`) reads a rack's power as *demand / supply* and `PortsFigure` (`components/cells/ports-figure.tsx`) its ports as *in use / counted*. On a map the level goes on a rack's fill and monitoring keeps its outline (`components/floorplan/tile-paint.ts`). IPAM prefixes keep their own scale (`UtilCell`) |
 
 Anything that copies to the clipboard goes through `copyWithToast()`
 (`lib/clipboard.ts`), so a copy that fails always says *Couldn't copy*.
@@ -231,10 +242,25 @@ can't drift page to page (source of truth:
 - Tables are paged by `DataTable` alone. When the API pages server-side, hand it
   `serverPagination={{ page, pageCount, totalRows, onPageChange }}` so that one
   pager drives the server - don't add a second Prev/Next row.
+- A list page that fetches its rows in one capped request hands the shell the
+  server's answer, `page={query.data}`. When `count` exceeds the rows that
+  arrived, the count chip reads *N of M* in the `warning` badge, an amber notice
+  over the table says the list is cut off, `FilterRail` says its counts are
+  partial, and `DataTable`'s Download names the rows it holds - one context,
+  no per-page wiring beyond the prop.
 - An **embedded** table on a detail page fetches one capped page (`page_size=500`)
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600
   prefixes showing exactly 500 and looking complete.
+- An embedded table that can run past a screenful (devices, interfaces, IPs,
+  VMs, prefixes, VLANs, logs, change history) turns on `DataTable`'s
+  `searchable` with a `searchPlaceholder` naming what it searches ("Search
+  devices…"); the `Embedded*Table` helpers have it on, `searchable={false}`
+  for a list that stays short. It filters loaded rows only - with `total` set,
+  a capped list says the search covers the first page; a `serverPagination`
+  table needs a server search instead. Columns are matched by their text: a
+  cell-only column reads its `meta.export` value or the row field named like
+  its id.
 - A list that is a view *of* another list (e.g. `/racks/elevations`) gets the
   shell's `backTo` / `backLabel` breadcrumb rather than its own nav.
 - A table that points at its rows' objects somewhere else on the page (a

@@ -23,13 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Combobox } from "@/components/ui/combobox"
 
 // The credentials endpoint never returns the secret - only enough to pick one.
 interface SshCredentialRow {
@@ -336,19 +330,17 @@ export function DeviceTerminalDialog({
                     use <span className="font-medium">My login</span> above.
                   </p>
                 ) : (
-                  <Select value={credentialId} onValueChange={setCredentialId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a credential" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {sshCreds.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                          {c.username ? ` (${c.username})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Combobox
+                    value={credentialId || null}
+                    onChange={(v) => setCredentialId(v ?? "")}
+                    options={sshCreds.map((c) => ({
+                      value: c.id,
+                      label: c.username ? `${c.name} (${c.username})` : c.name,
+                    }))}
+                    placeholder="Choose a credential"
+                    searchPlaceholder="Search credentials…"
+                    emptyText="No credentials."
+                  />
                 )}
               </div>
             ) : (

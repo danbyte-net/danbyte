@@ -14,12 +14,12 @@ import { LocalityBadge } from "@/components/locality-badge"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
   type FacetOption,
 } from "@/components/filter-rail"
 import { ZoneDeleteDialog } from "@/components/zone-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/zones/")({ component: ZonesPage })
 
@@ -30,8 +30,8 @@ function ZonesPage() {
   const canAdd = canDo("zone", "add")
   const canEdit = canDo("zone", "change")
   const canDelete = canDo("zone", "delete")
-  const [q, setQ] = useState("")
-  const [scopeFilter, setScopeFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [scopeFilterRaw, setScopeFilter] = useUrlSet("scope")
   const [deleting, setDeleting] = useState<Zone | null>(null)
 
   const query = useQuery({
@@ -43,14 +43,6 @@ function ZonesPage() {
   })
   const allRows = query.data?.results ?? []
 
-  const rows = useMemo(
-    () =>
-      allRows.filter(
-        (z) => scopeFilter.size === 0 || scopeFilter.has(scopeOf(z))
-      ),
-    [allRows, scopeFilter]
-  )
-
   const facets = useMemo(() => {
     const c: Record<string, number> = {}
     for (const z of allRows) c[scopeOf(z)] = (c[scopeOf(z)] ?? 0) + 1
@@ -59,6 +51,15 @@ function ZonesPage() {
       { value: "local", label: "Local", count: c["local"] ?? 0 },
     ].filter((o) => o.count) as FacetOption[]
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const scopeFilter = useKnown(scopeFilterRaw, facets)
+  const rows = useMemo(
+    () =>
+      allRows.filter(
+        (z) => scopeFilter.size === 0 || scopeFilter.has(scopeOf(z))
+      ),
+    [allRows, scopeFilter]
+  )
 
   const handleDelete = useCallback((z: Zone) => setDeleting(z), [])
   const columns = useMemo<ColumnDef<Zone>[]>(
@@ -76,7 +77,7 @@ function ZonesPage() {
             label="Scope"
             options={facets}
             selected={scopeFilter}
-            onToggle={(v) => toggleInSet(scopeFilter, v, setScopeFilter)}
+            onToggle={(v) => setScopeFilter((s) => toggled(s, v))}
           />
         </FilterRail>
       }

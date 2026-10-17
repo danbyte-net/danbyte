@@ -116,7 +116,7 @@ class S3BackendTests(SimpleTestCase):
         self.assertIn("boto3", str(ctx.exception))
 
     def test_registry(self):
-        self.assertEqual([k["kind"] for k in storage_kinds()], ["local", "s3"])
+        self.assertEqual([k["kind"] for k in storage_kinds()], ["local", "s3", "sftp"])
         self.assertIsInstance(backend_for("local", {"path": self.tmp.name}, {}), LocalBackend)
         with self.assertRaises(StorageError):
             backend_for("ftp", {}, {})

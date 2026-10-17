@@ -143,6 +143,18 @@ class QueryTests(_Base):
         self.assertNotIn("10.10.0.20", titles)
         self.assertNotIn("10.150.20.0/24", titles)
 
+    def test_ipv6_address_in_any_spelling(self):
+        """(#382) The index holds the compressed form; any spelling finds it."""
+        from .models import IPAddress
+
+        st = status_for(self.tenant)
+        p6 = Prefix.objects.create(tenant=self.tenant, cidr="2001:db8::/64", status=st)
+        IPAddress.objects.create(tenant=self.tenant, ip_address="2001:db8::1", prefix=p6, status=st)
+        for q in ("2001:db8::1", "2001:0db8::1", "2001:DB8::1",
+                  "2001:0db8:0000:0000:0000:0000:0000:0001"):
+            titles = [h["title"] for h in self._hits(q)["hits"]]
+            self.assertEqual(titles[0], "2001:db8::1", q)
+
     def test_ip_query_lists_containing_prefixes(self):
         d = self._hits("10.0.0.5")
         top = [(h["type"], h["title"]) for h in d["hits"][:2]]

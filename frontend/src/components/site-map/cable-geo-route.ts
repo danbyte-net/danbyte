@@ -7,9 +7,16 @@ import {
   projectToMeters,
   unprojectFromMeters,
 } from "@/components/site-map/geo"
-import { bezierPoints, lineTip } from "@/components/site-map/connections-layer"
+import {
+  bezierPoints,
+  escapeTip,
+  lineTip,
+  utilTip,
+  visibleStrokes,
+} from "@/components/site-map/connections-layer"
 import { lineColor } from "@/components/site-map/line-style"
 import type { LineColorBy } from "@/components/site-map/line-style"
+import type { LineUtil } from "@/components/site-map/line-utilization"
 
 // Every cable draws on the map - whether or not it's on a route. A cable on
 // a route follows that geometry (Dijkstra through the route graph, run in a
@@ -38,7 +45,8 @@ export function routeCableGeo(
 }
 
 /** A cable to draw: its path plus identity/styling and whether it's routed.
- * `status` and `capacity` feed the Status and Speed colourings. */
+ * `status` and `capacity` feed the Status and Speed colourings, `links` and
+ * `ends` (its A and Z device names) the Utilization one. */
 export interface DrawnCable {
   id: string
   label: string
@@ -47,6 +55,8 @@ export interface DrawnCable {
   routed: boolean
   status?: SiteMapCable["status"]
   capacity?: SiteMapCable["capacity"]
+  links?: SiteMapCable["links"]
+  ends?: [string, string]
 }
 
 /** Compute every cable's map polyline from the /site-map/cables payload.
@@ -81,7 +91,12 @@ export function buildDrawnCables(
       .map((id) => routeWaypoints.get(id))
       .filter((p): p is Pt[] => !!p)
 
-    const look = { status: c.status, capacity: c.capacity }
+    const look = {
+      status: c.status,
+      capacity: c.capacity,
+      links: c.links,
+      ends: [c.a.device_name, c.z.device_name] as [string, string],
+    }
     if (polys.length) {
       out.push({
         id: c.id,
@@ -147,6 +162,8 @@ export function buildDrawnCablesLayer(
     onSelect?: (cableId: string) => void
     /** Color by (the site map's Display popover); Type by default. */
     colorBy?: LineColorBy
+    /** Under Utilization: each cable's live traffic, by id. */
+    util?: ReadonlyMap<string, LineUtil>
   }
 ): L.LayerGroup {
   const group = L.layerGroup()
@@ -154,17 +171,31 @@ export function buildDrawnCablesLayer(
   cables.forEach((c) => {
     const highlighted = opts.highlightIds.has(c.id)
     const dimmed = anyHi && !highlighted
-    const line = L.polyline(c.path, {
-      color: lineColor({ ...c, kind: "cable" }, opts.colorBy ?? "type"),
-      weight: highlighted ? 4 : 2,
-      opacity: dimmed ? 0.12 : highlighted ? 1 : c.routed ? 0.85 : 0.6,
-      dashArray: c.routed ? undefined : "5 4",
-      lineCap: "round",
-      lineJoin: "round",
-      interactive: false,
-    })
+    const colorBy = opts.colorBy ?? "type"
+    const util =
+      colorBy === "utilization"
+        ? (opts.util?.get(c.id) ?? { az: null, za: null, at: null })
+        : null
+    const opacity = dimmed ? 0.12 : highlighted ? 1 : c.routed ? 0.85 : 0.6
+    const strokes = visibleStrokes(
+      c.path,
+      lineColor({ ...c, kind: "cable" }, colorBy),
+      util,
+      {
+        weight: highlighted ? 4 : 2,
+        opacity,
+        dashArray: c.routed ? undefined : "5 4",
+        lineCap: "round",
+        lineJoin: "round",
+        interactive: false,
+      }
+    )
+    if (util && dimmed) strokes.layers.forEach((l) => l.setStyle({ opacity }))
     const hit = L.polyline(c.path, { color: "#000", weight: 12, opacity: 0 })
-    hit.bindTooltip(lineTip(c.label || "cable", "", c.capacity?.label), {
+    const tip = lineTip(c.label || "cable", "", c.capacity?.label)
+    const [aName, zName] = c.ends ?? ["A", "Z"]
+    const utilText = util ? escapeTip(utilTip(aName, zName, util)) : ""
+    hit.bindTooltip(util ? `${escapeTip(tip)}<br>${utilText}` : tip, {
       sticky: true,
       direction: "top",
     })
@@ -172,7 +203,7 @@ export function buildDrawnCablesLayer(
       L.DomEvent.stopPropagation(e)
       opts.onSelect?.(c.id)
     })
-    group.addLayer(line)
+    strokes.layers.forEach((l) => group.addLayer(l))
     group.addLayer(hit)
   })
   return group

@@ -36,7 +36,8 @@ from api.models import (
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from django.db.models import Count, F, Q
+from django.db.models import BooleanField, Count, F, Q
+from django.db.models.expressions import RawSQL
 from django.db.models.functions import Coalesce
 
 from django.utils import timezone
@@ -68,7 +69,7 @@ from danbyte_checks.snmp_facts import (
     fetch_system_facts_sync,
 )
 from .snmp_resolve import resolve_device_profile
-from .snmp_poll import poll_device, poll_vm
+from .snmp_poll import poll_target
 from .snmp_util import compute_device_utilization
 from .snmp_drift import (
     _skip_not_present,
@@ -80,22 +81,119 @@ from .vc_stack import stack_members, stack_owner, stack_state
 
 # Cap the per-IP grid on a prefix page so a huge prefix can't return 100k rows.
 GRID_CAP = 1000
+# Prefix ids one bulk-status call takes - the same bound as the SLA status
+# endpoint's, so a list page batches both alike.
+MAX_STATUS_PREFIXES = 5000
+
+
+# The address with any stored mask dropped (a legacy row may carry one; the
+# model reads it back bare), so containment matches what Python would say.
+_HOST_INET = "host(api_ipaddress.ip_address)::inet"
 
 
 def _child_ip_ids(prefix, tenant) -> list:
-    """IDs of existing IPs in the prefix's tenant + VRF contained by its CIDR."""
+    """IDs of existing IPs in the prefix's tenant + VRF contained by its CIDR.
+
+    The containment test runs in Postgres: reading every IP of the tenant into
+    Python to test it cost ~0.8 s per prefix on a 41,000-address tenant (#430).
+    """
     net = prefix.network
     if net is None:
         return []
-    out = []
-    for ip in IPAddress.objects.filter(
-        tenant=tenant, vrf_id=prefix.vrf_id
-    ).only("id", "ip_address"):
+    return list(
+        IPAddress.objects.filter(tenant=tenant, vrf_id=prefix.vrf_id)
+        .annotate(_inside=RawSQL(
+            f"{_HOST_INET} <<= %s::inet", (str(net),), output_field=BooleanField(),
+        ))
+        .filter(_inside=True)
+        .values_list("id", flat=True)
+    )
+
+
+def _prefix_rollups(request, tenant, prefixes) -> dict:
+    """``{prefix id: roll-up}`` for many prefixes at once (#430).
+
+    Three queries whatever the number of prefixes: the caller's viewable IPs
+    in the prefixes' VRFs and address span, their monitored check states, and
+    nothing per prefix. Each prefix's children are found by a sorted pass per
+    (VRF, family), as :func:`api.serializers.prefix_descendant_counts` does
+    for prefixes. ``monitored_ips`` counts the children with a check, as the
+    device and VM roll-ups and the prefix page do; excluded addresses and the
+    caller's IP view scope apply as they do there."""
+    import bisect
+
+    from .exclusion import monitored
+
+    nets = {}
+    for p in prefixes:
+        net = p.network
+        if net is not None:
+            nets[p.id] = (p.vrf_id, net)
+    if not nets:
+        return {}
+    vrf_ids = {v for v, _ in nets.values() if v is not None}
+    vrf_q = Q(vrf_id__in=vrf_ids)
+    if any(v is None for v, _ in nets.values()):
+        vrf_q |= Q(vrf_id__isnull=True)
+    # Only the addresses that can sit in a requested prefix: the span from the
+    # lowest to the highest address the prefixes cover, per family.
+    span_sql, span_params = [], []
+    for version in (4, 6):
+        fam = [n for _, n in nets.values() if n.version == version]
+        if fam:
+            span_sql.append(f"{_HOST_INET} BETWEEN %s::inet AND %s::inet")
+            span_params += [
+                str(min(n.network_address for n in fam)),
+                str(max(n.broadcast_address for n in fam)),
+            ]
+    candidates = _viewable_ips(
+        request, tenant,
+        IPAddress.objects.filter(vrf_q).annotate(_in_span=RawSQL(
+            " OR ".join(span_sql), span_params, output_field=BooleanField(),
+        )).filter(_in_span=True),
+    )
+    # Every candidate, sorted per (VRF, family); a prefix's children are one
+    # contiguous run of it.
+    addrs: dict = {}
+    for ip_id, raw, vrf_id in candidates.order_by().values_list("id", "ip_address", "vrf_id"):
         try:
-            if _ip.ip_address(ip.ip_address) in net:
-                out.append(ip.id)
+            a = _ip.ip_address(raw)
         except (ValueError, TypeError):
             continue
+        addrs.setdefault((vrf_id, a.version), []).append((int(a), ip_id))
+    for run in addrs.values():
+        run.sort()
+    starts = {k: [a for a, _ in run] for k, run in addrs.items()}
+    # Their monitored states, in the order one prefix's query returned them.
+    states_by_ip: dict = {}
+    for seq, row in enumerate(monitored(_scope_ip_keyed(
+        request, tenant,
+        CheckState.objects.filter(target_ip__in=candidates.values("id")),
+    ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since")):
+        states_by_ip.setdefault(row["target_ip_id"], []).append((seq, row))
+    out: dict = {}
+    for prefix_id, (vrf_id, net) in nets.items():
+        key = (vrf_id, net.version)
+        if key not in addrs:
+            continue
+        lo = bisect.bisect_left(starts[key], int(net.network_address))
+        hi = bisect.bisect_right(starts[key], int(net.broadcast_address))
+        children = addrs[key][lo:hi]
+        rows = sorted(
+            (s for _, ip_id in children for s in states_by_ip.get(ip_id, ())),
+            key=lambda s: s[0],
+        )
+        if not rows:
+            continue
+        rows = [r for _, r in rows]
+        statuses = [r["status"] for r in rows]
+        out[str(prefix_id)] = {
+            "status": worst_status(statuses),
+            "counts": status_counts(statuses),
+            "monitored_ips": len({r["target_ip_id"] for r in rows}),
+            **_external_detail([r["last_detail"] for r in rows]),
+            **_flap_rollup(r["flapping_since"] for r in rows),
+        }
     return out
 
 
@@ -2290,7 +2388,7 @@ def _add_figures(tenant, states, rows, win) -> None:
             name="prefixes",
             type=OpenApiTypes.STR,
             location=OpenApiParameter.QUERY,
-            description="Comma-separated prefix ids to roll up (max 500).",
+            description="Comma-separated prefix ids to roll up (max 5000).",
         ),
         OpenApiParameter(
             name="devices",
@@ -2309,6 +2407,39 @@ def _flap_rollup(flapping_since_values) -> dict:
     the pill renders only where there is something to say."""
     n = sum(1 for v in flapping_since_values if v is not None)
     return {"flapping": n} if n else {}
+
+
+def _rollup_by_owner(request, tenant, ips_by_owner: dict) -> dict:
+    """``{owner_id: roll-up}`` across each owner's IPs (a device's, a VM's),
+    from one CheckState query for every IP at once - a query per owner cost a
+    5,000-device list ~5,000 queries (#416). Owners with no monitored check
+    are left out. Excluded addresses and the caller's IP view scope apply as
+    for a single target."""
+    from .exclusion import monitored
+
+    every_ip = [ip_id for ip_ids in ips_by_owner.values() for ip_id in ip_ids]
+    if not every_ip:
+        return {}
+    states_by_ip: dict = {}
+    for row in monitored(_scope_ip_keyed(
+        request, tenant,
+        CheckState.objects.filter(target_ip_id__in=every_ip),
+    ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"):
+        states_by_ip.setdefault(row["target_ip_id"], []).append(row)
+    out: dict = {}
+    for owner_id, ip_ids in ips_by_owner.items():
+        states = [s for ip_id in ip_ids for s in states_by_ip.get(ip_id, ())]
+        if not states:
+            continue
+        statuses = [s["status"] for s in states]
+        out[owner_id] = {
+            "status": worst_status(statuses),
+            "counts": status_counts(statuses),
+            "monitored_ips": len({s["target_ip_id"] for s in states}),
+            **_external_detail([s["last_detail"] for s in states]),
+            **_flap_rollup(s["flapping_since"] for s in states),
+        }
+    return out
 
 
 def _external_detail(rows) -> dict:
@@ -2413,8 +2544,8 @@ def bulk_status_view(request):
     if tenant is None:
         return Response({"statuses": {}})
     # Prefix, VM and device roll-ups leave excluded addresses out: they are
-    # not monitored. The IP branch says "excluded" instead.
-    from .exclusion import monitored
+    # not monitored (_prefix_rollups, _rollup_by_owner). The IP branch says
+    # "excluded" instead.
 
     def _ids(name: str):
         if request.method == "POST":
@@ -2471,38 +2602,20 @@ def bulk_status_view(request):
     prefix_param = _ids("prefixes")
     if prefix_param:
         ids = [x for x in prefix_param.split(",") if x]
-        # _child_ip_ids walks every tenant IP in Python per prefix - bound the
-        # request so a member can't submit thousands of ids as a CPU DoS. The
-        # UI sends at most one page of prefixes (~100).
-        if len(ids) > 500:
+        # A bound on the request body, not on the work: the roll-up is
+        # set-based (#430). The list page sends its ids in batches of this.
+        if len(ids) > MAX_STATUS_PREFIXES:
             return Response(
-                {"detail": "Too many prefixes - request at most 500 per call."},
+                {"detail": "Too many prefixes - request at most "
+                           f"{MAX_STATUS_PREFIXES} per call."},
                 status=400,
             )
         # Site-aware: only prefixes the caller may view roll up.
         prefixes = rbac.restrict_queryset(
-            Prefix.objects.filter(tenant=tenant, id__in=ids).select_related("vrf"),
+            Prefix.objects.filter(tenant=tenant, id__in=ids),
             request.user, tenant, "prefix", "view",
-        )
-        out = {}
-        for prefix in prefixes:
-            child_ids = _viewable_child_ip_ids(request, prefix, tenant)
-            if not child_ids:
-                continue
-            rows = list(monitored(_scope_ip_keyed(
-                request, tenant,
-                CheckState.objects.filter(target_ip_id__in=child_ids),
-            ), tenant.id).values("status", "last_detail", "flapping_since"))
-            statuses = [r["status"] for r in rows]
-            if not statuses:
-                continue
-            out[str(prefix.id)] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len(set(child_ids)),
-                **_external_detail([r["last_detail"] for r in rows]),
-                **_flap_rollup(r["flapping_since"] for r in rows),
-            }
+        ).only("id", "cidr", "vrf")
+        out = _prefix_rollups(request, tenant, prefixes)
         return Response({"statuses": out})
 
     vm_param = _ids("vms")
@@ -2524,21 +2637,7 @@ def bulk_status_view(request):
         ips_by_vm: dict = {}
         for vm_id, ip_id in ip_rows:
             ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
-        for vm_id, ip_ids in ips_by_vm.items():
-            states = list(monitored(_scope_ip_keyed(
-                request, tenant,
-                CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
-            statuses = [s["status"] for s in states]
-            if not statuses:
-                continue
-            out[vm_id] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len({s["target_ip_id"] for s in states}),
-                **_external_detail([s["last_detail"] for s in states]),
-                **_flap_rollup(s["flapping_since"] for s in states),
-            }
+        out.update(_rollup_by_owner(request, tenant, ips_by_vm))
         return Response({"statuses": out})
 
     device_param = _ids("devices")
@@ -2561,22 +2660,7 @@ def bulk_status_view(request):
         ips_by_device: dict = {}
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
-        for dev_id, ip_ids in ips_by_device.items():
-            states = list(monitored(_scope_ip_keyed(
-                request,
-                tenant,
-                CheckState.objects.filter(target_ip_id__in=ip_ids),
-            ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"))
-            statuses = [s["status"] for s in states]
-            if not statuses:
-                continue
-            out[dev_id] = {
-                "status": worst_status(statuses),
-                "counts": status_counts(statuses),
-                "monitored_ips": len({s["target_ip_id"] for s in states}),
-                **_external_detail([s["last_detail"] for s in states]),
-                **_flap_rollup(s["flapping_since"] for s in states),
-            }
+        out.update(_rollup_by_owner(request, tenant, ips_by_device))
         return Response({"statuses": out})
 
     return Response({"statuses": {}})
@@ -2628,8 +2712,7 @@ def device_snmp_view(request, device_id):
     if state is not None and state.device_id and state.device_id != device.id:
         data["polled_via"] = {"id": str(state.device_id), "name": state.device.name}
     # Where Poll now runs: the Outpost's name, or null for the core (#325).
-    outpost = _snmp_outpost(device)
-    data["poll_outpost"] = outpost.name if outpost else None
+    data["poll_outpost"] = _poll_outpost_name(device)
     return Response(data)
 
 
@@ -2657,47 +2740,46 @@ def device_snmp_poll_view(request, device_id):
     return _snmp_poll(request, device, tenant)
 
 
-def _snmp_outpost(device):
-    """The Outpost that runs ``device``'s SNMP poll, or ``None`` for the core.
+def _snmp_outpost(target):
+    """The Outpost that runs ``target``'s SNMP poll - a device or a VM - or
+    ``None`` for the core.
 
     Only an Outpost runs an SNMP poll on the core's behalf. A driver engine
-    (Zabbix) answers its own check kind and nothing else, so a device bound to
-    one polls from the core like a local device (#325)."""
-    from .engines import engine_for_device
+    (Zabbix) answers its own check kind and nothing else, so a target bound to
+    one polls from the core like a local one (#325)."""
+    from .engines import engine_for_target
 
-    engine = engine_for_device(device)
+    engine = engine_for_target(target)
     if engine.kind != MonitoringEngine.REMOTE or not engine.enabled:
         return None
     return engine
 
 
-def _queue_on_outpost(device, tenant, profile=None):
-    """``None`` when ``device`` polls from the core; otherwise the 202 (or a
-    400 setup error) for a device whose site or location an Outpost polls.
+def _queue_on_outpost(target, tenant, profile=None):
+    """``None`` when ``target`` (a device or a VM) polls from the core;
+    otherwise the 202 (or a 400 setup error) for one an Outpost polls.
 
     The agent pulls work, so "now" means its next poll: stamp the request and
     answer 202. The same profile/target validation applies, so the caller
     gets an actionable error instead of a queue that never delivers. Shared
     by Poll now and Refresh MACs."""
-    engine = _snmp_outpost(device)
+    from .snmp_target import SnmpTarget
+
+    target = SnmpTarget.of(target)
+    engine = _snmp_outpost(target)
     if engine is None:
         return None
-    from .snmp_poll import _device_target
-    from .snmp_resolve import resolve_device_profile
-
     if profile is None:
-        profile, _src = resolve_device_profile(device, tenant)
+        profile, _src = target.resolve_profile(tenant)
     if profile is None:
-        return Response(
-            {"detail": "No SNMP profile resolves for this device - assign "
-             "one on the device, its role, its type, or set a tenant "
-             "default."},
-            status=400,
-        )
-    if not _device_target(device):
-        return Response(
-            {"detail": "Device has no primary IP or name to poll."},
-            status=400,
+        return Response({"detail": target.no_profile_detail()}, status=400)
+    if not target.address():
+        return Response({"detail": target.no_target_detail()}, status=400)
+    if target.is_vm:
+        # A VM is on an Outpost's work list once it has an observed row
+        # (``snmp_target.candidates``): the first Poll now opts it in.
+        DeviceSnmp.objects.get_or_create(
+            **target.store(), defaults={"tenant": tenant, "profile": profile}
         )
     engine.snmp_requested_at = timezone.now()
     engine.save(update_fields=["snmp_requested_at"])
@@ -2714,10 +2796,21 @@ def _queue_on_outpost(device, tenant, profile=None):
     )
 
 
-def _snmp_poll(request, device, tenant):
-    """The poll itself, on an already-authenticated request. The stack view
-    calls this too: re-dispatching the device view with the raw request made
-    the CSRF check read a body the first pass had consumed (#175)."""
+def _poll_outpost_name(target):
+    """Where Poll now runs, for the SNMP card: the Outpost's name, or null for
+    the core (#325)."""
+    outpost = _snmp_outpost(target)
+    return outpost.name if outpost else None
+
+
+def _snmp_poll(request, target, tenant):
+    """Poll now for a device or a VM, on an already-authenticated request. The
+    stack view calls this too: re-dispatching the device view with the raw
+    request made the CSRF check read a body the first pass had consumed
+    (#175)."""
+    from .snmp_target import SnmpTarget
+
+    target = SnmpTarget.of(target)
     profile = None
     profile_id = request.data.get("profile_id")
     if profile_id:
@@ -2725,26 +2818,20 @@ def _snmp_poll(request, device, tenant):
         if profile is None:
             return Response({"detail": "SNMP profile not found."}, status=400)
 
-    # A device whose site/location is bound to an Outpost polls from THERE -
-    # central polling would report outpost-only networks unreachable (#128).
-    queued = _queue_on_outpost(device, tenant, profile)
+    # A target whose engine is an Outpost polls from THERE - central polling
+    # would report outpost-only networks unreachable (#128, #325).
+    queued = _queue_on_outpost(target, tenant, profile)
     if queued is not None:
         return queued
 
-    # profile=None → poll_device resolves it (device → role → type → default).
+    # profile=None → the poll resolves it along the kind's hierarchy.
     # Poll now is synchronous, so its MAC-table read is the quick one (#284):
     # a short budget and no per-VLAN contexts. Refresh MACs reads it all.
-    state, reason = poll_device(device, tenant, profile, mac_mode="quick")
+    state, reason = poll_target(target, tenant, profile, mac_mode="quick")
     if reason == "no_profile":
-        return Response(
-            {"detail": "No SNMP profile resolves for this device - assign one on "
-             "the device, its role, its type, or set a tenant default."},
-            status=400,
-        )
+        return Response({"detail": target.no_profile_detail()}, status=400)
     if reason == "no_target":
-        return Response(
-            {"detail": "Device has no primary IP or name to poll."}, status=400
-        )
+        return Response({"detail": target.no_target_detail()}, status=400)
     return Response({**DeviceSnmpSerializer(state).data, "poll_outpost": None})
 
 
@@ -2795,44 +2882,29 @@ def vm_snmp_view(request, vm_id):
         .first()
     )
     if state is None:
-        return Response({
+        data = {
             "vm": str(vm.id), "device": None, "profile": None,
             "profile_name": None, "data": {}, "interfaces": [], "neighbors": [],
             "arp": [], "sensors": [], "reachable": None, "error": "",
             "polled_at": None, "fdb_polled_at": None, "fdb_meta": {},
-        })
-    return Response(DeviceSnmpSerializer(state).data)
+        }
+    else:
+        data = DeviceSnmpSerializer(state).data
+    data["poll_outpost"] = _poll_outpost_name(vm)
+    return Response(data)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def vm_snmp_poll_view(request, vm_id):
     """On-demand SNMP poll of a VM. Body: ``{profile_id?}`` (falls back to the
-    VM → platform → cluster → site → tenant-default resolution)."""
+    VM → platform → cluster → site → tenant-default resolution). Routed like a
+    device's: a VM whose engine is an Outpost queues there (#325)."""
     resolved, err = _resolve_vm(request, vm_id, "change")
     if err is not None:
         return err
     vm, tenant = resolved
-
-    profile = None
-    profile_id = request.data.get("profile_id")
-    if profile_id:
-        profile = SnmpProfile.objects.filter(pk=profile_id, tenant=tenant).first()
-        if profile is None:
-            return Response({"detail": "SNMP profile not found."}, status=400)
-
-    state, reason = poll_vm(vm, tenant, profile)
-    if reason == "no_profile":
-        return Response(
-            {"detail": "No SNMP profile resolves for this VM - assign one on the "
-             "VM, its platform/cluster, or set a tenant default."},
-            status=400,
-        )
-    if reason == "no_target":
-        return Response(
-            {"detail": "VM has no primary IP to poll."}, status=400
-        )
-    return Response(DeviceSnmpSerializer(state).data)
+    return _snmp_poll(request, vm, tenant)
 
 
 @api_view(["GET"])

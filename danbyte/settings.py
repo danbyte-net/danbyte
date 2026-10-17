@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "auth_api.apps.AuthApiConfig",
     "integrations.apps.IntegrationsConfig",
     "zabbix.apps.ZabbixConfig",
+    "oxidized.apps.OxidizedConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",
@@ -101,9 +102,25 @@ PLUGINS_CONFIG: dict = {}
 # Where a script's SDK client points at this install. Loopback by default;
 # set it when the backend is not reachable on 127.0.0.1:8000 from a worker.
 DANBYTE_INTERNAL_URL = os.getenv("DANBYTE_INTERNAL_URL", "http://127.0.0.1:8000")
-# Sandboxed scripts run confined by Landlock (#316): "landlock" refuses a run
-# the host cannot confine; "none" runs them unconfined, and their logs say so.
-SCRIPT_SANDBOX = os.getenv("DANBYTE_SCRIPT_SANDBOX", "landlock")
+# The backend has to answer to that URL's host (in Docker, the `backend`
+# service name), so a set DANBYTE_INTERNAL_URL adds its host, and only that, to
+# ALLOWED_HOSTS. PUBLIC_ALLOWED_HOSTS stays the operator's list: WebSocket
+# origins and the public host name are taken from it, not from the internal one.
+PUBLIC_ALLOWED_HOSTS = list(ALLOWED_HOSTS)
+INTERNAL_HOST = ""
+if os.getenv("DANBYTE_INTERNAL_URL", "").strip():
+    from urllib.parse import urlsplit as _urlsplit
+
+    INTERNAL_HOST = (_urlsplit(DANBYTE_INTERNAL_URL.strip()).hostname or "").lower()
+    if ":" in INTERNAL_HOST:  # an IPv6 literal is listed in brackets
+        INTERNAL_HOST = f"[{INTERNAL_HOST}]"
+    if INTERNAL_HOST and INTERNAL_HOST not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(INTERNAL_HOST)
+# Sandboxed scripts (#316): "auto" adds bubblewrap namespaces around Landlock
+# where bwrap works and falls back to Landlock alone; "bwrap" refuses a run it
+# cannot wrap; "landlock" is Landlock alone; "none" runs them unconfined, and
+# their logs say so. All but "none" refuse a run the host cannot Landlock.
+SCRIPT_SANDBOX = os.getenv("DANBYTE_SCRIPT_SANDBOX", "auto")
 
 PLUGIN_UPLOAD_DIR = Path(os.getenv("DANBYTE_PLUGIN_DIR", BASE_DIR / "plugins_local"))
 if PLUGIN_UPLOAD_DIR.is_dir() and str(PLUGIN_UPLOAD_DIR) not in sys.path:
@@ -156,6 +173,8 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # A NUL byte in a query parameter is a 400 before any view runs (#373).
+    "core.middleware.RejectNulQueryMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "auth_api.rbac.RequestCacheMiddleware",
@@ -287,6 +306,13 @@ REST_FRAMEWORK = {
     # client-side, so a small page silently hides rows. ?limit= still overrides.
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
     "PAGE_SIZE": 10000,
+    # JSON bodies must be objects: a string or list reached views reading
+    # request.data.get(...) and crashed (#373). See api/parsers.py.
+    "DEFAULT_PARSER_CLASSES": [
+        "api.parsers.ObjectJSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
@@ -685,3 +711,36 @@ MONITORING_UTIL_ALERT_CLEAR = int(os.getenv("MONITORING_UTIL_ALERT_CLEAR", "80")
 # web UI can pick a plugin + args but can't execute arbitrary system commands.
 MONITORING_EXEC_ENABLED = os.getenv("MONITORING_EXEC_ENABLED", "False") == "True"
 MONITORING_PLUGIN_DIR = os.getenv("MONITORING_PLUGIN_DIR", "")
+
+# Floor-plan CAD drawings: DXF is read natively; DWG needs a converter binary
+# on the worker host. Absolute path to LibreDWG's `dwg2dxf` or the ODA File
+# Converter (`ODAFileConverter`). Only those two programs are run, without a
+# shell, in a temp dir with a scrubbed environment and a timeout - see
+# api/cad_render.py. Set by the operator, never from the UI.
+# Unset or empty: the static dwg2dxf the release bundle (or `make cad-tools`)
+# puts in vendor/cad, when it is there and executable; otherwise DWG uploads
+# are refused. `off` refuses them even with the bundled one present.
+CAD_CONVERTER_BUNDLED = BASE_DIR / "vendor" / "cad" / "bin" / "dwg2dxf"
+
+
+def resolve_cad_converter(value: str | None, bundled: Path) -> str:
+    """DANBYTE_CAD_CONVERTER: an explicit setting wins, then ``bundled``
+    when it is an executable file, else empty (DWG refused)."""
+    value = (value or "").strip()
+    if value.lower() == "off":
+        return ""
+    if value:
+        return value
+    if bundled.is_file() and os.access(bundled, os.X_OK):
+        return str(bundled)
+    return ""
+
+
+DANBYTE_CAD_CONVERTER = resolve_cad_converter(
+    os.getenv("DANBYTE_CAD_CONVERTER"), CAD_CONVERTER_BUNDLED
+)
+# The converter parses untrusted files, so it runs in a bubblewrap sandbox
+# (#424): no network, no Danbyte directory, only its own temp dirs. A host
+# where bwrap cannot build one refuses DWG. `off` runs the converter without
+# it (limits only) - an explicit, documented risk, never the default.
+CAD_SANDBOX = os.getenv("DANBYTE_CAD_SANDBOX", "bwrap")

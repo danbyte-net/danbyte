@@ -16,6 +16,9 @@ Rules:
 * ``unknown`` (internal/config error) never flips a known status to ``down`` -
   it leaves the counters and the current status untouched, so a transient
   misconfiguration doesn't read as an outage.
+* ``stale`` is left only by rising to ``up`` (or showing ``degraded``); a
+  further failure keeps it stale - while staleness is on. With both stale
+  limits at 0, a failing stale check goes ``down`` after ``fall`` failures.
 """
 from __future__ import annotations
 
@@ -71,8 +74,15 @@ def apply_outcome(
     # consecutive scans, or (if already down) been down long enough. The
     # by-days check only applies while already down, so ``since`` is the
     # down-start time and a long prior uptime can't falsely flip it stale.
+    # While staleness is on, stale only ends by rising: a failure after a
+    # success too short to rise, or one counted against the fast lane's scaled
+    # limit (or a limit raised since), must not drop it back to down. With
+    # both limits off nothing is stale, so a failing stale check falls to
+    # down like any other (#410).
     if new == "down":
-        if stale_after_scans and state.consecutive_fail >= stale_after_scans:
+        if old == "stale" and (stale_after_scans or stale_after_days):
+            new = "stale"
+        elif stale_after_scans and state.consecutive_fail >= stale_after_scans:
             new = "stale"
         elif (
             stale_after_days

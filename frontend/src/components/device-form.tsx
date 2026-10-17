@@ -29,6 +29,7 @@ import {
   FormFooter,
   FormColumn,
   FormColumns,
+  FormDate,
   FormSection,
   FormStatusSelect,
   FormSelect,
@@ -156,6 +157,7 @@ export function DeviceForm({
   )
   const [serial, setSerial] = useState(device?.serial_number ?? "")
   const [assetTag, setAssetTag] = useState(device?.asset_tag ?? "")
+  const [warrantyEnd, setWarrantyEnd] = useState(device?.warranty_end ?? "")
   const [description, setDescription] = useState(seed?.description ?? "")
   const [rackId, setRackId] = useState<string | null>(
     device?.rack?.id ?? initial?.rackId ?? null
@@ -260,6 +262,7 @@ export function DeviceForm({
     setStatusId(device.status?.id ?? null)
     setSerial(device.serial_number)
     setAssetTag(device.asset_tag)
+    setWarrantyEnd(device.warranty_end ?? "")
     setDescription(device.description)
     setRackId(device.rack?.id ?? null)
     setPosition(device.position != null ? String(device.position) : "")
@@ -442,6 +445,8 @@ export function DeviceForm({
   const rackWidth: "full" | "half" =
     selectedType?.rack_width === "half" ? "half" : "full"
   const deviceHeight = Math.max(1, selectedType?.u_height ?? 1)
+  // No type is drawn, and refused, as full depth (#375).
+  const fullDepth = selectedType?.is_full_depth ?? true
 
   // Half-width devices need a side; default to left. Full-width carries none.
   useEffect(() => {
@@ -480,7 +485,7 @@ export function DeviceForm({
     const first = selectedRack.starting_unit
     const last = selectedRack.starting_unit + selectedRack.u_height - 1
     const occupants = rackDevices.data?.results ?? []
-    const mounted = { face, width: rackWidth, side }
+    const mounted = { face, width: rackWidth, side, fullDepth }
     const blockerAt = (p: number) => {
       for (let u = p; u < p + deviceHeight; u++) {
         const b = unitBlocker(occupants, mounted, u, device?.id)
@@ -521,6 +526,7 @@ export function DeviceForm({
     face,
     side,
     rackWidth,
+    fullDepth,
     deviceHeight,
     position,
   ])
@@ -539,6 +545,7 @@ export function DeviceForm({
         status_id: statusId,
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
+        warranty_end: warrantyEnd || null,
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -600,6 +607,7 @@ export function DeviceForm({
         setName("")
         setSerial("")
         setAssetTag("")
+        setWarrantyEnd("")
         return
       }
       onSaved(saved)
@@ -645,7 +653,7 @@ export function DeviceForm({
                 error={fieldErrors.status_id}
               />
             </div>
-            <FormSelect
+            <FormCombobox
               label="Site"
               required
               hint={siteLocked ? "locked to your site" : undefined}
@@ -658,6 +666,8 @@ export function DeviceForm({
                 label: s.name,
               }))}
               error={fieldErrors.site_id}
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
             />
             <div className="grid gap-3 @md:grid-cols-2">
               <FormCombobox
@@ -802,6 +812,12 @@ export function DeviceForm({
                 onChange={setAssetTag}
                 mono
                 error={fieldErrors.asset_tag}
+              />
+              <FormDate
+                label="Warranty end"
+                value={warrantyEnd}
+                onChange={setWarrantyEnd}
+                error={fieldErrors.warranty_end}
               />
             </div>
             {visibility.airflow && (
@@ -1061,7 +1077,12 @@ export function DeviceForm({
                     name={name}
                     position={position}
                     face={face}
-                    mount={{ width: rackWidth, side, height: deviceHeight }}
+                    mount={{
+                      width: rackWidth,
+                      side,
+                      fullDepth,
+                      height: deviceHeight,
+                    }}
                     onPlace={(p, f) => {
                       setPosition(String(p))
                       setFace(f)

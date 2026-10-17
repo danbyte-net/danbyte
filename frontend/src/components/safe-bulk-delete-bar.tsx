@@ -27,6 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { FormCheckbox } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { PendingLabel } from "@/components/pending-label"
 
@@ -39,7 +40,25 @@ export interface SafeBulkDeleteResult {
   impact: { label: string; count: number }[]
   /** What the rows let go of but keep, such as a stack's member devices. */
   released?: { label: string; count: number }[]
+  /** Rows that go but are worth naming first, grouped by `label` - a power
+   * feed still cabled to a device. */
+  notes?: SafeBulkDeleteNote[]
   dry_run: boolean
+}
+
+export interface SafeBulkDeleteNote {
+  id: string
+  name: string
+  label: string
+  detail: string
+}
+
+/** A choice the delete can take, sent as `{[key]: true}` with the dry run
+ * and the delete - a power panel's "delete its feeds too". Offered once the
+ * preview keeps a row. */
+export interface SafeBulkDeleteOption {
+  key: string
+  label: string
 }
 
 export interface SafeBulkDeleteBarProps<T extends { id: string }> {
@@ -55,6 +74,7 @@ export interface SafeBulkDeleteBarProps<T extends { id: string }> {
   actions?: React.ReactNode
   /** Offer Delete (default true). */
   canDelete?: boolean
+  option?: SafeBulkDeleteOption
 }
 
 const plural = (n: number, [one, many]: [string, string]) =>
@@ -71,8 +91,18 @@ export function mergeDeleteAnswers(
     skipped: answers.flatMap((a) => a.skipped),
     impact: sumCounts(answers.map((a) => a.impact)),
     released: sumCounts(answers.map((a) => a.released ?? [])),
+    notes: answers.flatMap((a) => a.notes ?? []),
     dry_run: answers.every((a) => a.dry_run),
   }
+}
+
+/** Notes under their label, labels in the order they first come. */
+export function groupNotes(
+  notes: SafeBulkDeleteNote[]
+): [string, SafeBulkDeleteNote[]][] {
+  const out = new Map<string, SafeBulkDeleteNote[]>()
+  for (const n of notes) out.set(n.label, [...(out.get(n.label) ?? []), n])
+  return [...out]
 }
 
 /**
@@ -92,6 +122,7 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
   onCleared,
   actions,
   canDelete = true,
+  option,
 }: SafeBulkDeleteBarProps<T>) {
   const [open, setOpen] = useState(false)
   if (selected.length === 0) return null
@@ -131,6 +162,7 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
           endpoint={endpoint}
           noun={noun}
           invalidate={invalidate}
+          option={option}
           onClose={() => setOpen(false)}
           onDone={onCleared}
         />
@@ -144,6 +176,7 @@ function SafeBulkDeleteDialog({
   endpoint,
   noun,
   invalidate,
+  option,
   onClose,
   onDone,
 }: {
@@ -151,24 +184,33 @@ function SafeBulkDeleteDialog({
   endpoint: string
   noun: [string, string]
   invalidate: string[][]
+  option?: SafeBulkDeleteOption
   onClose: () => void
   onDone: () => void
 }) {
   const qc = useQueryClient()
   const url = `${endpoint}bulk-delete/`
   const [progress, setProgress] = useState<BatchProgress | null>(null)
-  const send = (part: string[], dryRun: boolean) =>
+  // The option is offered once a preview keeps a row, and stays offered.
+  const [offered, setOffered] = useState(false)
+  const [optionOn, setOptionOn] = useState(false)
+  const send = (part: string[], dryRun: boolean, on: boolean) =>
     api<SafeBulkDeleteResult>(url, {
       method: "POST",
-      body: JSON.stringify(
-        dryRun ? { ids: part, dry_run: true } : { ids: part }
-      ),
+      body: JSON.stringify({
+        ids: part,
+        ...(dryRun ? { dry_run: true } : {}),
+        ...(option && on ? { [option.key]: true } : {}),
+      }),
     })
   const preview = useMutation({
-    mutationFn: async () =>
+    mutationFn: async (on: boolean) =>
       mergeDeleteAnswers(
-        await askInBatches(ids, IDS_PER_CALL, (part) => send(part, true))
+        await askInBatches(ids, IDS_PER_CALL, (part) => send(part, true, on))
       ),
+    onSuccess: (res) => {
+      if (res.skipped.length > 0) setOffered(true)
+    },
     onError: (err) => {
       apiErrorToast(err)
       onClose()
@@ -180,7 +222,7 @@ function SafeBulkDeleteDialog({
         await runBatches(
           ids,
           IDS_PER_CALL,
-          (part) => send(part, false),
+          (part) => send(part, false, optionOn),
           setProgress
         )
       ),
@@ -213,8 +255,8 @@ function SafeBulkDeleteDialog({
   })
   const { mutate: ask } = preview
   useEffect(() => {
-    ask()
-  }, [ask])
+    ask(optionOn)
+  }, [ask, optionOn])
 
   const p = preview.data
   const free = p?.deleted ?? 0
@@ -275,7 +317,28 @@ function SafeBulkDeleteDialog({
                 </ul>
               </div>
             )}
+            {groupNotes(p.notes ?? []).map(([label, notes]) => (
+              <div key={label}>
+                <p className="mb-1 text-muted-foreground">{label}</p>
+                <ul className="max-h-40 overflow-y-auto rounded-md bg-muted/40 px-3 py-2 text-foreground">
+                  {notes.map((n) => (
+                    <li key={n.id}>
+                      <span className="font-medium">{n.name}</span>{" "}
+                      <span className="text-muted-foreground">{n.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
+        )}
+        {option && (offered || optionOn) && (
+          <FormCheckbox
+            label={option.label}
+            checked={optionOn}
+            onChange={setOptionOn}
+            disabled={preview.isPending || run.isPending}
+          />
         )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={run.isPending}>Cancel</AlertDialogCancel>

@@ -23,15 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import {
-  Field,
-  FieldEditor,
-  FormCheckbox,
-  useFieldEditorOptions,
-} from "@/components/forms"
+import { Field, FormCheckbox } from "@/components/forms"
 import type { BulkFieldSpec } from "@/components/forms"
 import { Input } from "@/components/ui/input"
-import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import { BulkEditDialog } from "@/components/bulk-edit-dialog"
 import { PendingLabel } from "@/components/pending-label"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
@@ -66,6 +61,7 @@ import { invalidatePortCounts } from "@/lib/port-utilization"
 // controls. Re-exported here because the component panes import the type
 // alongside <ComponentBulkBar/>.
 export type { BulkFieldSpec, DcimChoiceListKey } from "@/components/forms"
+export { bulkFields } from "@/components/bulk-edit-dialog"
 
 // Writes to these move port counts, so every count-showing query goes stale
 // with them - whatever keys the caller passes in.
@@ -116,6 +112,7 @@ export function ComponentBulkBar({
   const [renameOpen, setRenameOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const qc = useQueryClient()
   if (selected.length === 0) return null
   const ids = selected.map((r) => r.id)
 
@@ -181,11 +178,12 @@ export function ComponentBulkBar({
       {editOpen && (
         <BulkEditDialog
           endpoint={endpoint}
-          kindLabel={kindLabel}
+          noun={[kindLabel, `${kindLabel}s`]}
           ids={ids}
           fields={fields}
           tags={tags}
           invalidate={invalidate}
+          afterWrite={() => refresh(qc, endpoint, [])}
           onClose={() => setEditOpen(false)}
           onDone={() => {
             setEditOpen(false)
@@ -338,169 +336,6 @@ function BulkDeleteDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
-}
-
-/** The fields a bulk edit sends: what was set, with a choice that stands for
- * several fields (`expand`) replaced by those fields. */
-export function bulkFields(
-  values: Record<string, unknown>,
-  fields: BulkFieldSpec[]
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(values)) {
-    const spec = fields.find((f) => f.key === key)
-    if (spec?.kind === "options" && spec.expand && value != null)
-      Object.assign(out, spec.expand(String(value)))
-    else out[key] = value
-  }
-  return out
-}
-
-function BulkEditDialog({
-  endpoint,
-  kindLabel,
-  ids,
-  fields,
-  tags,
-  invalidate,
-  onClose,
-  onDone,
-}: {
-  endpoint: string
-  kindLabel: string
-  ids: string[]
-  fields: BulkFieldSpec[]
-  tags: boolean
-  invalidate: unknown[][]
-  onClose: () => void
-  onDone: () => void
-}) {
-  const qc = useQueryClient()
-  // Which fields the user chose to SET, and their values. Untouched = KEEP.
-  const [values, setValues] = useState<Record<string, unknown>>({})
-  const [addTags, setAddTags] = useState<number[]>([])
-  const [removeTags, setRemoveTags] = useState<number[]>([])
-  const [progress, setProgress] = useState<BatchProgress | null>(null)
-  const options = useFieldEditorOptions(fields, { tags })
-
-  const save = useMutation({
-    mutationFn: async () => {
-      const out = bulkFields(values, fields)
-      if (addTags.length) out.add_tag_ids = addTags
-      if (removeTags.length) out.remove_tag_ids = removeTags
-      const answers = await runBatches(
-        ids,
-        IDS_PER_CALL,
-        (part) =>
-          api<{ updated: number }>(`${endpoint}bulk-update/`, {
-            method: "POST",
-            body: JSON.stringify({ ids: part, fields: out }),
-          }),
-        setProgress
-      )
-      return sumOf(answers, (r) => r.updated)
-    },
-    onSuccess: (updated) => {
-      toast.success(`Updated ${updated} ${kindLabel}s`)
-      onDone()
-    },
-    onError: (e) => {
-      if (!(e instanceof BatchFailure)) {
-        apiErrorToast(e)
-        return
-      }
-      // Some batches went through: say how many. The dialog stays open with
-      // its fields - applying the same edit again is harmless.
-      const went: { updated: number }[] = e.results
-      batchStoppedToast(
-        `Updated ${sumOf(went, (r) => r.updated)} of ${ids.length} ${kindLabel}s.`,
-        e
-      )
-    },
-    onSettled: () => refresh(qc, endpoint, invalidate),
-  })
-
-  const dirty =
-    Object.keys(values).length > 0 ||
-    addTags.length > 0 ||
-    removeTags.length > 0
-
-  const set = (key: string, v: unknown) =>
-    setValues((prev) => ({ ...prev, [key]: v }))
-  const unset = (key: string) =>
-    setValues((prev) => {
-      const next = { ...prev }
-      delete next[key]
-      return next
-    })
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && !save.isPending && onClose()}>
-      <DialogContent
-        size="lg"
-        className="max-h-[85vh] overflow-auto"
-      >
-        <DialogHeader>
-          <DialogTitle>
-            Edit {ids.length} {kindLabel}
-            {ids.length === 1 ? "" : "s"}
-          </DialogTitle>
-        </DialogHeader>
-        <p className="text-[12px] text-muted-foreground">
-          Fields left on <span className="font-medium">Keep</span> are
-          untouched. Everything else is applied to every selected row.
-        </p>
-        <div className="grid gap-3">
-          {fields.map((f) => (
-            <FieldEditor
-              key={f.key}
-              spec={f}
-              mode="keep"
-              value={values[f.key]}
-              onChange={(v) => set(f.key, v)}
-              onClear={() => unset(f.key)}
-              options={options}
-            />
-          ))}
-          {tags && (
-            <>
-              <Field label="Add tags">
-                <TagMultiSelect
-                  options={options.tags}
-                  value={addTags}
-                  onChange={setAddTags}
-                />
-              </Field>
-              <Field label="Remove tags">
-                <TagMultiSelect
-                  options={options.tags}
-                  value={removeTags}
-                  onChange={setRemoveTags}
-                />
-              </Field>
-            </>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={save.isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => save.mutate()}
-            disabled={!dirty || save.isPending}
-          >
-            <PendingLabel
-              label={`Apply to ${ids.length}`}
-              verb="Applying…"
-              pending={save.isPending}
-              progress={progress}
-              batches={batchCount(ids.length, IDS_PER_CALL)}
-            />
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 

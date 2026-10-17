@@ -13,10 +13,10 @@ import {
   ArrowRight,
   ArrowUp,
   ChevronRight,
-  Download,
   Ellipsis,
   Grid3x3,
   Image as ImageIcon,
+  Layers,
   Maximize,
   PanelBottom,
   PanelRight,
@@ -126,6 +126,7 @@ import { CableAdd } from "@/components/cable-add"
 import { DynamicIcon } from "@/components/dynamic-icon"
 import { FloorPlanForm } from "@/components/floor-plan-form"
 import {
+  CELL,
   FloorCanvas,
   cableRoutePoints,
   findCollision,
@@ -146,7 +147,20 @@ import {
   useTilePopover,
 } from "@/components/floorplan/tile-popover"
 import { ObjectsSidebar } from "@/components/floorplan/objects-sidebar"
-import { ColorByLegend } from "@/components/floorplan/color-by-legend"
+import {
+  ColorByLegend,
+  colorByLegendEntries,
+} from "@/components/floorplan/color-by-legend"
+import { planSvg } from "@/components/floorplan/plan-svg"
+import { usePlanDraft } from "@/components/floorplan/edit-history"
+import {
+  moveSelection,
+  rotateSelection,
+  searchTiles,
+} from "@/components/floorplan/selection"
+import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { HistoryButtons } from "@/components/topology/history-buttons"
+import { useDocumentKeys } from "@/components/topology/view-document"
 import { ColorBySelect } from "@/components/floorplan/color-by-select"
 import { RackTablePanel } from "@/components/floorplan/rack-table-panel"
 import { readColorBy } from "@/components/floorplan/tile-paint"
@@ -167,6 +181,21 @@ import {
 import { HiddenChip } from "@/components/hidden-chip"
 import { hiddenCount, useHideKeys } from "@/components/hidden-objects"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import {
+  CadLayer,
+  useCadFloorImage,
+  useCadSource,
+} from "@/components/floorplan/cad-layer"
+import { CadPanel } from "@/components/floorplan/cad-panel"
+import {
+  CalibrateBar,
+  CalibrateMarks,
+  useCadCalibration,
+} from "@/components/floorplan/cad-calibrate"
+import { DrawingUpload } from "@/components/floorplan/cad-upload"
+import { useCadDrawing } from "@/components/floorplan/use-cad-drawing"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { SectionLabel } from "@/components/map-panel"
 import { RackElevation } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Slider } from "@/components/ui/slider"
@@ -254,6 +283,11 @@ const isTemp = (id: string) => id.startsWith("new-")
 /** Same page? Compared loosely so a trailing slash can't read as a move. */
 const samePath = (a: string, b: string) =>
   a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
+
+/** The same tiles, as last saved: a refetch that brings nothing new. */
+const sameTiles = (a: FloorPlanTile[], b: FloorPlanTile[]) =>
+  a.length === b.length &&
+  a.every((t, i) => t.id === b[i].id && t.updated_at === b[i].updated_at)
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -371,9 +405,11 @@ function FloorPlanPage() {
   const [show3dHint, setShow3dHint] = useState(true)
 
   // ── Local editing state ────────────────────────────────────────────────
-  const [tiles, setTiles] = useState<EditTile[]>([])
-  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set())
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
+  // The tiles as edited, which changed and which went: the draft Save
+  // writes, with its undo history (edit-history.ts).
+  const draft = usePlanDraft<EditTile>()
+  const { tiles, dirtyIds, deletedIds, setTiles, setDirtyIds, setDeletedIds } =
+    draft
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [armed, setArmed] = useState<PaletteEntry | null>(null)
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
@@ -389,6 +425,10 @@ function FloorPlanPage() {
   const [showGrid, setShowGrid] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [backgroundOpen, setBackgroundOpen] = useState(false)
+  // The CAD drawing's panel over the canvas, and an image picked while the
+  // plan has a drawing (which it replaces, after a confirm).
+  const [drawingOpen, setDrawingOpen] = useState(false)
+  const [pendingImage, setPendingImage] = useState<File | null>(null)
   // Deep view: the rack/device contents + end-to-end trace side sheet.
   const [deepTile, setDeepTile] = useState<FloorPlanTile | null>(null)
   // A cabinet tile's panel over the canvas: its plate and devices.
@@ -526,9 +566,8 @@ function FloorPlanPage() {
   // Switching floors re-uses this mounted component - reset every bit of
   // editor state so one floor's unsaved edits can never bleed into another.
   useEffect(() => {
-    setTiles([])
-    setDirtyIds(new Set())
-    setDeletedIds(new Set())
+    draft.load([])
+    setMultiSel(new Set())
     setSelectedId(null)
     setArmed(null)
     setDeepTile(null)
@@ -551,14 +590,19 @@ function FloorPlanPage() {
     setColorByLocal(null)
     setShowRacksLocal(null)
     setRackFocus3d(null)
+    setDrawingOpen(false)
+    setPendingImage(null)
   }, [id])
 
   // Hydrate local tiles from the server whenever fresh data lands and we
   // have no unsaved edits (so a background refetch never clobbers work).
+  // The same tiles again (a refetch on focus) keep the undo history.
   useEffect(() => {
     if (tilesQuery.data && !isDirtyRef.current) {
-      setTiles(tilesQuery.data.results)
+      const fresh = tilesQuery.data.results
+      if (!sameTiles(draft.tiles, fresh)) draft.load(fresh)
     }
+    // Only fresh data hydrates; the draft is read, not watched.
   }, [tilesQuery.data])
 
   // Closing the tab, reloading, or leaving for another origin would drop
@@ -651,6 +695,37 @@ function FloorPlanPage() {
     },
     [tiles, changeTile]
   )
+
+  // The multi-selection as one piece (selection.ts): moved by whole cells,
+  // or turned a quarter about its middle - all of it or none of it, inside
+  // the grid and never onto a tile outside it. One undo step either way.
+  const applyPatches = useCallback(
+    (patches: Map<string, Partial<FloorPlanTile>>) => {
+      for (const [tid, patch] of patches) changeTile(tid, patch)
+    },
+    [changeTile]
+  )
+  const moveSelectionBy = useCallback(
+    (dx: number, dy: number): boolean => {
+      const plan = planQuery.data
+      if (!plan || (!dx && !dy)) return false
+      const patches = moveSelection(tiles, multiSel, dx, dy, plan)
+      if (!patches) return false
+      applyPatches(patches)
+      return true
+    },
+    [planQuery.data, tiles, multiSel, applyPatches]
+  )
+  const rotateSelectionTurn = useCallback(() => {
+    const plan = planQuery.data
+    if (!plan) return
+    const patches = rotateSelection(tiles, multiSel, plan)
+    if (!patches) {
+      toast.error("No room to turn the selection - a neighbour is in the way.")
+      return
+    }
+    applyPatches(patches)
+  }, [planQuery.data, tiles, multiSel, applyPatches])
 
   const plan = planQuery.data
 
@@ -759,6 +834,23 @@ function FloorPlanPage() {
     colorBy,
     wantPorts: popoverShowsPorts(popoverCfg.data),
   })
+  // The plan's CAD drawing: placement saved as it changes (an editor) or
+  // kept on screen (a viewer's layer choices), drawn under the grid.
+  const cad = useCadDrawing(plan, canEdit)
+  const cadSource = useCadSource(id, cad.drawing, cad.placement)
+  const cadPxPerMm = CELL / (plan?.cell_mm || 600)
+  const calibration = useCadCalibration(
+    id,
+    cad.drawing,
+    cad.placement,
+    cadPxPerMm
+  )
+  const cadFloorUrl = useCadFloorImage(
+    cad.drawing,
+    cadSource,
+    cad.placement,
+    view3d && cad.drawing?.status === "ready"
+  )
   const showRacks =
     showRacksLocal ?? (plan?.state.show_racks as boolean | undefined) ?? true
   const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
@@ -1215,7 +1307,24 @@ function FloorPlanPage() {
       }
       // In the 3D view the camera rig owns arrows (and a 2D tile selection
       // is invisible) - don't nudge/delete a tile nobody can see.
-      if (!canEdit || !selectedId || view3d) return
+      if (!canEdit || view3d) return
+      // A selection of several: Delete removes them all, arrows move them
+      // as one.
+      if (multiSel.size > 1 && mode === "layout") {
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault()
+          for (const tid of multiSel) deleteTile(tid)
+          setMultiSel(new Set())
+        } else if (e.key.startsWith("Arrow")) {
+          e.preventDefault()
+          moveSelectionBy(
+            e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0,
+            e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0
+          )
+        }
+        return
+      }
+      if (!selectedId) return
       const tile = tiles.find((t) => t.id === selectedId)
       if (!tile || !plan) return
       if (e.key === "Delete" || e.key === "Backspace") {
@@ -1250,7 +1359,34 @@ function FloorPlanPage() {
     areaArmed,
     doorArmed,
     multiSel,
+    moveSelectionBy,
   ])
+
+  // Ctrl/⌘+Z undoes a tile edit, Shift+Ctrl/⌘+Z or Ctrl+Y redoes it, and
+  // Ctrl/⌘+S saves - the topology map's keys.
+  const stepHistory = (dir: "undo" | "redo") => {
+    if (dir === "undo" ? draft.undo() : draft.redo()) popover.close()
+  }
+  useDocumentKeys({
+    enabled: canEdit,
+    onSave: () => {
+      if (isDirty && !save.isPending) save.mutate()
+      return true
+    },
+    onUndo: () => stepHistory("undo"),
+    onRedo: () => stepHistory("redo"),
+  })
+  // A step that removed a selected tile (undoing its placement) drops it
+  // from the selection.
+  useEffect(() => {
+    const ids = new Set(tiles.map((t) => t.id))
+    setMultiSel((prev) =>
+      [...prev].every((tid) => ids.has(tid))
+        ? prev
+        : new Set([...prev].filter((tid) => ids.has(tid)))
+    )
+    if (ids.size) setSelectedId((cur) => (cur && !ids.has(cur) ? null : cur))
+  }, [tiles])
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
   const save = useMutation({
@@ -1287,9 +1423,9 @@ function FloorPlanPage() {
       })
     },
     onSuccess: (fresh) => {
-      setTiles(fresh)
-      setDirtyIds(new Set())
-      setDeletedIds(new Set())
+      // New tiles have their real ids now: the history starts again.
+      draft.load(fresh)
+      setMultiSel(new Set())
       setSelectedId(null)
       qc.invalidateQueries({ queryKey: ["floor-plan-tiles", id] })
       qc.invalidateQueries({ queryKey: ["floor-plan", id] })
@@ -1452,6 +1588,7 @@ function FloorPlanPage() {
   // screen, a dialog from More on a narrow one.
   const backgroundControls = (
     <>
+      <SectionLabel>Image</SectionLabel>
       <input
         ref={fileInput}
         type="file"
@@ -1459,7 +1596,9 @@ function FloorPlanPage() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0]
-          if (f) uploadBackground.mutate(f)
+          // One background per plan: an image replaces the drawing.
+          if (f && plan.drawing) setPendingImage(f)
+          else if (f) uploadBackground.mutate(f)
           e.target.value = ""
         }}
       />
@@ -1510,6 +1649,8 @@ function FloorPlanPage() {
           />
         </label>
       )}
+      <SectionLabel className="mt-1">Drawing</SectionLabel>
+      <DrawingUpload cad={cad} hasImage={!!plan.background_image} />
     </>
   )
 
@@ -1619,7 +1760,7 @@ function FloorPlanPage() {
       <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
         {mode === "layout" && (
           <TileSearch
-            tiles={tiles}
+            tiles={shownTiles}
             value={search}
             onChange={setSearch}
             onPick={(tile) => {
@@ -1648,6 +1789,14 @@ function FloorPlanPage() {
               onClick={() => setViewPref("show_racks", !showRacks)}
             >
               <PanelBottom /> Racks
+            </BarToggle>
+          )}
+          {plan.drawing && !view3d && (
+            <BarToggle
+              pressed={drawingOpen}
+              onClick={() => setDrawingOpen((o) => !o)}
+            >
+              <Layers /> Drawing
             </BarToggle>
           )}
           <BarToggle
@@ -1865,9 +2014,38 @@ function FloorPlanPage() {
               </PopoverContent>
             </Popover>
           )}
-          <BarButton className={WIDE_ONLY} onClick={exportPng}>
-            <Download /> PNG
-          </BarButton>
+          <DrawingExportMenu
+            name={plan.name}
+            build={async () => ({
+              svg: planSvg({
+                plan,
+                tiles: shownTiles,
+                walls,
+                trays,
+                areas,
+                colorBy,
+                figures: capacity.figures,
+                liveState: liveState.data ?? null,
+                showZoneLabels,
+                showTrays,
+              }),
+              missing: 0,
+            })}
+            pdfUrl={`/api/floor-plans/${plan.id}/export/pdf/`}
+            paperKey="floorplan:export"
+            defaultPaper={{ size: "a3", orientation: "landscape" }}
+            snapshot={view3d ? undefined : exportPng}
+            svg={false}
+            pdfExtra={() => ({
+              legend: capacity.hasRacks
+                ? colorByLegendEntries(
+                    colorBy,
+                    capacity.legend.figures,
+                    capacity.legend.alarm
+                  )
+                : null,
+            })}
+          />
           {canEdit && (
             <BarIconButton
               label="Plan settings"
@@ -1892,15 +2070,12 @@ function FloorPlanPage() {
               >
                 Grid
               </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
+              {canEdit && <DropdownMenuSeparator />}
               {canEdit && (
                 <DropdownMenuItem onSelect={() => setBackgroundOpen(true)}>
                   <ImageIcon /> Background…
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onSelect={exportPng}>
-                <Download /> PNG
-              </DropdownMenuItem>
               {canEdit && (
                 <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
                   <Settings2 /> Plan settings…
@@ -1908,6 +2083,14 @@ function FloorPlanPage() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {canEdit && (
+            <HistoryButtons
+              canUndo={draft.canUndo}
+              canRedo={draft.canRedo}
+              onUndo={() => stepHistory("undo")}
+              onRedo={() => stepHistory("redo")}
+            />
+          )}
           {canEdit && (
             <BarButton
               variant="default"
@@ -2101,6 +2284,30 @@ function FloorPlanPage() {
                   racks={capacity.rackById}
                   pointTileIds={capacity.highlightTileIds}
                   focusRack={rackFocus3d}
+                  drawingFloor={
+                    cadFloorUrl && cad.drawing
+                      ? {
+                          url: cadFloorUrl,
+                          sizeMm: cad.drawing.size_mm,
+                          centreMm: {
+                            x:
+                              cad.placement.x_mm +
+                              (cad.placement.rotation % 180
+                                ? cad.drawing.size_mm.height
+                                : cad.drawing.size_mm.width) /
+                                2,
+                            y:
+                              cad.placement.y_mm +
+                              (cad.placement.rotation % 180
+                                ? cad.drawing.size_mm.width
+                                : cad.drawing.size_mm.height) /
+                                2,
+                          },
+                          rotation: cad.placement.rotation,
+                          opacity: cad.placement.opacity / 100,
+                        }
+                      : null
+                  }
                 />
               </Suspense>
               {colorLegend}
@@ -2148,7 +2355,13 @@ function FloorPlanPage() {
                 multiSelectedIds={multiSel}
                 onToggleSelect={(tid) => {
                   setMultiSel((prev) => {
-                    const next = new Set(prev)
+                    // The tile selected by a plain click is the first of
+                    // the selection a Shift- or Ctrl/⌘-click grows.
+                    const next = new Set(
+                      prev.size === 0 && selectedId && selectedId !== tid
+                        ? [selectedId]
+                        : prev
+                    )
                     if (next.has(tid)) next.delete(tid)
                     else next.add(tid)
                     // Exactly one tile selected → open the full inspector
@@ -2175,6 +2388,9 @@ function FloorPlanPage() {
                 }}
                 onHoverTile={popover.onHover}
                 onChangeTile={changeTileGuarded}
+                onMoveSelection={moveSelectionBy}
+                onGestureStart={draft.beginGesture}
+                onGestureEnd={draft.endGesture}
                 onCreateRect={mode === "structure" ? createAreaAt : createAt}
                 raisedFloors={areas}
                 selectedAreaId={selectedAreaId}
@@ -2224,7 +2440,54 @@ function FloorPlanPage() {
                     setViewPref("show_cable_links", true)
                 }}
                 apiRef={canvasApi}
+                underlay={
+                  cad.drawing?.status === "ready" && (
+                    <CadLayer
+                      drawing={cad.drawing}
+                      source={cadSource}
+                      placement={cad.placement}
+                      pxPerMm={cadPxPerMm}
+                      theme={theme}
+                    />
+                  )
+                }
+                worldOverlay={
+                  calibration.active &&
+                  cad.drawing && (
+                    <CalibrateMarks
+                      drawing={cad.drawing}
+                      placement={cad.placement}
+                      pxPerMm={cadPxPerMm}
+                      points={calibration.points}
+                    />
+                  )
+                }
+                onPickPoint={calibration.active ? calibration.pick : undefined}
               />
+              {cad.drawing?.status === "ready" &&
+                (cadSource.mode === "image" || cadSource.error) && (
+                  <div className="pointer-events-none absolute top-3 left-3 z-10">
+                    <Badge
+                      variant={cadSource.error ? "destructive" : "secondary"}
+                    >
+                      {cadSource.error
+                        ? cadSource.error
+                        : cadSource.loading
+                          ? "Rendering…"
+                          : "Layers flattened"}
+                    </Badge>
+                  </div>
+                )}
+              {calibration.active && <CalibrateBar cal={calibration} />}
+              {drawingOpen && plan.drawing && (
+                <CadPanel
+                  cad={cad}
+                  plan={plan}
+                  canEdit={canEdit}
+                  onCalibrate={calibration.start}
+                  onClose={() => setDrawingOpen(false)}
+                />
+              )}
               {canEdit && mode === "layout" && multiSel.size > 0 && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
                   <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-popover px-2 py-1.5 text-popover-foreground shadow-lg">
@@ -2262,6 +2525,18 @@ function FloorPlanPage() {
                         </Button>
                       </BarTip>
                     ))}
+                    <BarTip tip="Turn the selection">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        aria-label="Turn the selection"
+                        disabled={multiSel.size < 2}
+                        onClick={rotateSelectionTurn}
+                      >
+                        <RotateCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </BarTip>
                     <span className="h-4 w-px bg-border" />
                     <Select
                       value=""
@@ -2580,6 +2855,26 @@ function FloorPlanPage() {
         onTraceCables={traceCablesOnMap}
       />
 
+      <ConfirmDialog
+        open={!!pendingImage}
+        onOpenChange={(o) => !o && setPendingImage(null)}
+        title="Replace the drawing?"
+        description="A plan has one background. The image replaces the drawing and its layers."
+        confirmLabel="Replace"
+        pendingLabel="Uploading…"
+        pending={uploadBackground.isPending || cad.remove.isPending}
+        onConfirm={() => {
+          if (!pendingImage) return
+          uploadBackground.mutate(pendingImage, {
+            onSuccess: () =>
+              cad.remove.mutate(undefined, {
+                onSettled: () => setPendingImage(null),
+              }),
+            onError: () => setPendingImage(null),
+          })
+        }}
+      />
+
       <Dialog open={backgroundOpen} onOpenChange={setBackgroundOpen}>
         <DialogContent className="max-w-xs">
           <DialogHeader>
@@ -2806,7 +3101,7 @@ function TileInspector({
 
       {/* Re-type a placed tile: any tile type (zones stay zones), or a device
         role standing in as a type. Links and geometry are untouched. */}
-      <FormSelect
+      <FormCombobox
         label="Type"
         value={
           tile.tile_type
@@ -2848,6 +3143,8 @@ function TileInspector({
                 label: `${r.name} (role)`,
               }))),
         ]}
+        searchPlaceholder="Search types…"
+        emptyText="No types."
       />
       {/* Facing is the TILE's own property - build-in-advance tiles need it
           set before any rack is linked, so only zones (no front) skip it. */}
@@ -3413,23 +3710,7 @@ function TileSearch({
   onPick: (tile: FloorPlanTile) => void
 }) {
   const [open, setOpen] = useState(false)
-  const q = value.trim().toLowerCase()
-  const matches = q
-    ? tiles
-        .filter((t) => {
-          const hay = [
-            t.label,
-            t.linked?.name,
-            t.tile_type?.name,
-            t.role_type?.name,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase()
-          return hay.includes(q)
-        })
-        .slice(0, 8)
-    : []
+  const matches = searchTiles(tiles, value).map((h) => h.tile)
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -3444,6 +3725,14 @@ function TileSearch({
             onChange={(e) => {
               onChange(e.target.value)
               setOpen(true)
+            }}
+            onKeyDown={(e) => {
+              // Enter jumps to the best hit, as the Objects list's search does.
+              if (e.key === "Enter" && matches[0]) {
+                e.preventDefault()
+                onPick(matches[0])
+                setOpen(false)
+              }
             }}
             className="h-7 text-xs md:text-xs"
           />

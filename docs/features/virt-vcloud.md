@@ -81,8 +81,8 @@ The hypervisor owns membership only until you say otherwise. A VM you move
 into a group of your own keeps your grouping; the sync fills a blank one and
 follows the hypervisor for machines it created itself, in Automatic mode.
 
-Groups are their own object with their own permissions, and deleting one
-leaves its VMs alone.
+Groups are their own object, listed under **Virtualization → VM groups**;
+see [VM groups](vm-groups.md) for what you can edit on a synced one.
 
 ## External addresses and NAT (opt-in)
 
@@ -157,9 +157,32 @@ Rules:
 
 ## Large estates
 
-Every VM costs one detail request, because the addressing only arrives that
-way. That is fine for hundreds of machines and slow for thousands; if a sync
-runs long, raise the poll interval rather than the timeout.
+A VM's network cards are not in the VM list: Cloud Director's query service
+has no record type for them (API 36.0-38.1), and the `vm` record carries only
+the primary NIC's network and address. So the sync reads them from the
+**vApp** instead - one request per vApp returns every VM in it with its
+network connections. An estate of 5,000 VMs in 400 vApps costs 400 detail
+reads, not 5,000. The VM list itself is paged, 128 records at a time.
+
+A VM falls back to its own detail read when:
+
+- its query record names no vApp (`container`),
+- its vApp does not list it, or
+- the vApp cannot be read - for example, the account lacks the right. After
+  three unreadable vApps in a row with none read, the pass stops trying and
+  reads every remaining VM on its own.
+
+The sync log says which path ran and how many reads each took (`Cloud
+Director NICs: per-vApp path - …`). If a sync still runs long, raise the poll
+interval rather than the timeout.
+
+## Several organizations
+
+One source is one organization. A system administrator login that sees every
+org is **not supported yet**: it needs the provider session endpoint and the
+`adminVM` query, whose records name the org differently, and none of that has
+been verified against a real appliance. Add one source per org in the
+meantime; each org still becomes its own cluster group.
 
 ## See also
 

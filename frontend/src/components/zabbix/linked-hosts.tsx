@@ -178,6 +178,8 @@ export function ZabbixLinkedHosts({
           total={links.data?.count}
           columns={columns}
           flexColumn="host"
+          searchable
+          searchPlaceholder="Search hosts…"
         />
       )}
 

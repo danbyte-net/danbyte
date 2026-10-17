@@ -1,15 +1,17 @@
 import * as React from "react"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
+import { useFieldControlProps } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 
 function Switch({
   className,
   size = "default",
-  ...props
+  ...rest
 }: React.ComponentProps<typeof SwitchPrimitive.Root> & {
   size?: "sm" | "default"
 }) {
+  const props = useFieldControlProps(rest)
   return (
     <SwitchPrimitive.Root
       data-slot="switch"

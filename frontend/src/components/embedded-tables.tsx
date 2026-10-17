@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
+import { useMe } from "@/lib/use-me"
 import type {
   Cabinet,
   Cable,
@@ -18,10 +19,12 @@ import type {
   BGPSession,
   StaticRoute,
   Tunnel,
+  VirtualMachine,
+  VirtualMachineGroup,
   VTEP,
   WirelessLAN,
 } from "@/lib/api"
-import { DataTable } from "@/components/data-table"
+import { DataTable, selectionColumn } from "@/components/data-table"
 import { buildCabinetColumns } from "@/components/columns/cabinet-columns"
 import type { CabinetColumnId } from "@/components/columns/cabinet-columns"
 import { buildCableColumns } from "@/components/columns/cable-columns"
@@ -51,11 +54,15 @@ import type {
   VTEPColumnId,
 } from "@/components/columns/routing-columns"
 import { buildTunnelColumns } from "@/components/columns/tunnel-columns"
+import { buildVmColumns } from "@/components/columns/vm-columns"
+import { buildVmGroupColumns } from "@/components/columns/vm-group-columns"
 import type { TunnelColumnId } from "@/components/columns/tunnel-columns"
 import { buildWirelessLANColumns } from "@/components/columns/wireless-lan-columns"
 import type { WirelessLANColumnId } from "@/components/columns/wireless-lan-columns"
 import { Loading } from "@/components/loading"
+import { PowerFeedBulkBar } from "@/components/power-bulk-bars"
 import { QueryError } from "@/components/query-error"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useSlaStatus } from "@/components/monitoring/sla-status"
 
 function useEmbed<T>(
@@ -79,12 +86,18 @@ function Frame<T>({
   columns,
   flexColumn,
   tableId,
+  selection,
+  search,
 }: {
   q: ReturnType<typeof useEmbed<T>>
   emptyText: string
   columns: ColumnDef<T>[]
   flexColumn: string
   tableId: string
+  /** Row selection, for a table with a bulk bar. */
+  selection?: { rows: T[]; onChange: (rows: T[]) => void }
+  /** The search box's placeholder; omit for no search box. */
+  search?: string
 }) {
   if (q.isError) return <QueryError error={q.error} />
   if (q.isLoading) return <Loading />
@@ -98,6 +111,10 @@ function Frame<T>({
       columns={columns}
       flexColumn={flexColumn}
       tableId={tableId}
+      selectedRows={selection?.rows}
+      onSelectedRowsChange={selection?.onChange}
+      searchable={!!search}
+      searchPlaceholder={search}
     />
   )
 }
@@ -106,9 +123,12 @@ function Frame<T>({
 export function EmbeddedIpTable({
   filter,
   emptyText = "No IP addresses.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<IPAddress>("embedded-ips", "/api/ips/", filter)
   const columns = useMemo<ColumnDef<IPAddress>[]>(
@@ -126,6 +146,7 @@ export function EmbeddedIpTable({
       columns={columns}
       flexColumn="dns"
       tableId="ip-embedded"
+      search={searchable ? "Search IP addresses…" : undefined}
     />
   )
 }
@@ -134,10 +155,13 @@ export function EmbeddedIpTable({
 export function EmbeddedRackTable({
   filter,
   emptyText = "No racks.",
+  searchable = true,
   include = ["name", "site", "width", "used"],
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
   /** The columns, in the rack factory's terms - a site's tab leaves out Site. */
   include?: RackColumnId[]
 }) {
@@ -158,6 +182,7 @@ export function EmbeddedRackTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-racks"
+      search={searchable ? "Search racks…" : undefined}
     />
   )
 }
@@ -169,10 +194,13 @@ export function EmbeddedCabinetTable({
   filter,
   omit = [],
   emptyText = "No cabinets.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omit?: CabinetColumnId[]
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Cabinet>("embedded-cabinets", "/api/cabinets/", filter)
   const omitKey = omit.join(",")
@@ -200,6 +228,7 @@ export function EmbeddedCabinetTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-cabinets"
+      search={searchable ? "Search cabinets…" : undefined}
     />
   )
 }
@@ -211,10 +240,13 @@ export function EmbeddedCircuitTable({
   filter,
   omitProvider = false,
   emptyText = "No circuits.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omitProvider?: boolean
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Circuit>("embedded-circuits", "/api/circuits/", filter)
   // A provider page is where a carrier is held to its promise: each
@@ -247,27 +279,38 @@ export function EmbeddedCircuitTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-circuits"
+      search={searchable ? "Search circuits…" : undefined}
     />
   )
 }
 
 /** Power feeds scoped by panel / rack / status. Reuses the one power-feed
- * column factory - the same row the /power-feeds list draws. `omitPanel` drops
- * the redundant Panel column on a panel's own detail page. */
+ * column factory - the same row the /power-feeds list draws. `omitPanel` and
+ * `omitRack` drop the column that repeats the page's own object. The rows
+ * can be selected for the list's bulk edit and delete. */
 export function EmbeddedPowerFeedTable({
   filter,
   omitPanel = false,
+  omitRack = false,
   emptyText = "No power feeds.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omitPanel?: boolean
+  omitRack?: boolean
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<PowerFeed>(
     "embedded-power-feeds",
     "/api/power-feeds/",
     filter
   )
+  const { canDo } = useMe()
+  const canEdit = canDo("powerfeed", "change")
+  const canDelete = canDo("powerfeed", "delete")
+  const [selected, setSelected] = useState<PowerFeed[]>([])
   const columns = useMemo<ColumnDef<PowerFeed>[]>(() => {
     const include: PowerFeedColumnId[] = [
       "name",
@@ -281,17 +324,30 @@ export function EmbeddedPowerFeedTable({
       "max",
     ]
     return buildPowerFeedColumns({
-      include: omitPanel ? include.filter((id) => id !== "panel") : include,
+      include: include.filter(
+        (id) => !(omitPanel && id === "panel") && !(omitRack && id === "rack")
+      ),
+      selection: canEdit || canDelete,
     })
-  }, [omitPanel])
+  }, [omitPanel, omitRack, canEdit, canDelete])
   return (
-    <Frame
-      q={q}
-      emptyText={emptyText}
-      columns={columns}
-      flexColumn="name"
-      tableId="embedded-power-feeds"
-    />
+    <>
+      <Frame
+        q={q}
+        emptyText={emptyText}
+        columns={columns}
+        flexColumn="name"
+        tableId="embedded-power-feeds"
+        search={searchable ? "Search power feeds…" : undefined}
+        selection={{ rows: selected, onChange: setSelected }}
+      />
+      <PowerFeedBulkBar
+        selected={selected}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+      />
+    </>
   )
 }
 
@@ -304,11 +360,14 @@ export function EmbeddedTunnelTable({
   omitGroup = false,
   omitProfile = false,
   emptyText = "No tunnels.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omitGroup?: boolean
   omitProfile?: boolean
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Tunnel>("embedded-tunnels", "/api/tunnels/", filter)
   const columns = useMemo<ColumnDef<Tunnel>[]>(() => {
@@ -333,6 +392,7 @@ export function EmbeddedTunnelTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-tunnels"
+      search={searchable ? "Search tunnels…" : undefined}
     />
   )
 }
@@ -344,10 +404,13 @@ export function EmbeddedWirelessLANTable({
   filter,
   omitGroup = false,
   emptyText = "No wireless LANs.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omitGroup?: boolean
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<WirelessLAN>(
     "embedded-wireless-lans",
@@ -374,6 +437,7 @@ export function EmbeddedWirelessLANTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-wireless-lans"
+      search={searchable ? "Search wireless LANs…" : undefined}
     />
   )
 }
@@ -383,9 +447,12 @@ export function EmbeddedWirelessLANTable({
 export function EmbeddedCableTable({
   filter,
   emptyText = "No cables.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Cable>("embedded-cables", "/api/cables/", filter)
   const columns = useMemo<ColumnDef<Cable>[]>(
@@ -402,6 +469,7 @@ export function EmbeddedCableTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-cables"
+      search={searchable ? "Search cables…" : undefined}
     />
   )
 }
@@ -410,9 +478,12 @@ export function EmbeddedCableTable({
 export function EmbeddedClusterTable({
   filter,
   emptyText = "No clusters.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Cluster>("embedded-clusters", "/api/clusters/", filter)
   const columns = useMemo<ColumnDef<Cluster>[]>(
@@ -432,6 +503,90 @@ export function EmbeddedClusterTable({
       columns={columns}
       flexColumn="name"
       tableId="embedded-clusters"
+      search={searchable ? "Search clusters…" : undefined}
+    />
+  )
+}
+
+/** VMs scoped by any filter the VM list accepts - the Virtual machines tab
+ * on a VM group's page. */
+export function EmbeddedVmTable({
+  filter,
+  emptyText = "No virtual machines.",
+  searchable = true,
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
+}) {
+  const { humanIds } = useMe()
+  const q = useEmbed<VirtualMachine>(
+    "embedded-vms",
+    "/api/virtual-machines/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<VirtualMachine>[]>(
+    () =>
+      buildVmColumns({
+        humanIds,
+        include: [
+          "numid",
+          "name",
+          "status",
+          "power",
+          "vcpus",
+          "memory",
+          "primary_ip",
+          "platform",
+        ],
+      }),
+    [humanIds]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="primary_ip"
+      tableId="embedded-vms"
+      search={searchable ? "Search virtual machines…" : undefined}
+    />
+  )
+}
+
+/** VM groups scoped by cluster - the Groups tab on a cluster's page. */
+export function EmbeddedVmGroupTable({
+  filter,
+  emptyText = "No VM groups.",
+  searchable = true,
+}: {
+  filter: Record<string, string>
+  emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
+}) {
+  const q = useEmbed<VirtualMachineGroup>(
+    "embedded-vm-groups",
+    "/api/vm-groups/",
+    filter
+  )
+  const columns = useMemo<ColumnDef<VirtualMachineGroup>[]>(
+    () =>
+      buildVmGroupColumns({
+        include: ["name", "kind", "vms", "description"],
+        zeroCounts: "number",
+      }),
+    []
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="description"
+      tableId="embedded-vm-groups"
+      search={searchable ? "Search VM groups…" : undefined}
     />
   )
 }
@@ -442,9 +597,12 @@ export function EmbeddedClusterTable({
 export function EmbeddedContactGroupTable({
   filter,
   emptyText = "No child groups.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<ContactGroup>(
     "embedded-contact-groups",
@@ -466,6 +624,7 @@ export function EmbeddedContactGroupTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-contact-groups"
+      search={searchable ? "Search groups…" : undefined}
     />
   )
 }
@@ -476,10 +635,13 @@ export function EmbeddedContactTable({
   filter,
   omitGroup = false,
   emptyText = "No contacts.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omitGroup?: boolean
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<Contact>("embedded-contacts", "/api/contacts/", filter)
   const columns = useMemo<ColumnDef<Contact>[]>(() => {
@@ -503,7 +665,74 @@ export function EmbeddedContactTable({
       columns={columns}
       flexColumn="title"
       tableId="embedded-contacts"
+      search={searchable ? "Search contacts…" : undefined}
     />
+  )
+}
+
+/** Frame plus tick boxes and the routing selection bar (#314): bulk edit
+ * and the safe bulk delete, offered when the caller may do either. */
+function BulkFrame<T extends { id: string }>({
+  q,
+  emptyText,
+  columns,
+  flexColumn,
+  tableId,
+  objectType,
+  endpoint,
+  noun,
+  invalidate,
+  search,
+}: {
+  q: ReturnType<typeof useEmbed<T>>
+  emptyText: string
+  columns: ColumnDef<T>[]
+  flexColumn: string
+  tableId: string
+  objectType: string
+  endpoint: string
+  noun: [string, string]
+  invalidate: string[][]
+  /** The search box's placeholder; omit for no search box. */
+  search?: string
+}) {
+  const { canDo } = useMe()
+  const canEdit = canDo(objectType, "change")
+  const canDelete = canDo(objectType, "delete")
+  const selectable = canEdit || canDelete
+  const [selected, setSelected] = useState<T[]>([])
+  const cols = useMemo(
+    () => (selectable ? [selectionColumn<T>(), ...columns] : columns),
+    [columns, selectable]
+  )
+  if (q.isError) return <QueryError error={q.error} />
+  if (q.isLoading) return <Loading />
+  const rows = q.data?.results ?? []
+  if (rows.length === 0)
+    return <p className="text-sm text-muted-foreground">{emptyText}</p>
+  return (
+    <>
+      <DataTable
+        data={rows}
+        total={q.data?.count}
+        columns={cols}
+        flexColumn={flexColumn}
+        tableId={tableId}
+        onSelectedRowsChange={selectable ? setSelected : undefined}
+        selectedRows={selectable ? selected : undefined}
+        searchable={!!search}
+        searchPlaceholder={search}
+      />
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint={endpoint}
+        noun={noun}
+        invalidate={invalidate}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+      />
+    </>
   )
 }
 
@@ -514,10 +743,13 @@ export function EmbeddedBGPSessionTable({
   filter,
   omit = [],
   emptyText = "No BGP sessions.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omit?: BGPSessionColumnId[]
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<BGPSession>(
     "embedded-bgp-sessions",
@@ -545,12 +777,17 @@ export function EmbeddedBGPSessionTable({
     [omit]
   )
   return (
-    <Frame
+    <BulkFrame
       q={q}
       emptyText={emptyText}
       columns={columns}
       flexColumn="description"
       tableId="embedded-bgp-sessions"
+      search={searchable ? "Search sessions…" : undefined}
+      objectType="bgpsession"
+      endpoint="/api/routing/bgp-sessions/"
+      noun={["BGP session", "BGP sessions"]}
+      invalidate={[["embedded-bgp-sessions"], ["bgp-sessions"]]}
     />
   )
 }
@@ -560,10 +797,13 @@ export function EmbeddedL2VPNTable({
   filter,
   omit = [],
   emptyText = "No L2VPNs.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omit?: L2VPNColumnId[]
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<L2VPN>("embedded-l2vpns", "/api/l2vpns/", filter)
   const columns = useMemo<ColumnDef<L2VPN>[]>(
@@ -590,6 +830,7 @@ export function EmbeddedL2VPNTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-l2vpns"
+      search={searchable ? "Search L2VPNs…" : undefined}
     />
   )
 }
@@ -599,10 +840,13 @@ export function EmbeddedVTEPTable({
   filter,
   omit = [],
   emptyText = "No VTEPs.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omit?: VTEPColumnId[]
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<VTEP>("embedded-vteps", "/api/routing/vteps/", filter)
   const columns = useMemo<ColumnDef<VTEP>[]>(
@@ -628,6 +872,7 @@ export function EmbeddedVTEPTable({
       columns={columns}
       flexColumn="description"
       tableId="embedded-vteps"
+      search={searchable ? "Search VTEPs…" : undefined}
     />
   )
 }
@@ -638,10 +883,13 @@ export function EmbeddedStaticRouteTable({
   filter,
   omit = [],
   emptyText = "No static routes.",
+  searchable = true,
 }: {
   filter: Record<string, string>
   omit?: StaticRouteColumnId[]
   emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
 }) {
   const q = useEmbed<StaticRoute>(
     "embedded-static-routes",
@@ -666,12 +914,17 @@ export function EmbeddedStaticRouteTable({
     [omit]
   )
   return (
-    <Frame
+    <BulkFrame
       q={q}
       emptyText={emptyText}
       columns={columns}
       flexColumn="description"
       tableId="embedded-static-routes"
+      search={searchable ? "Search routes…" : undefined}
+      objectType="staticroute"
+      endpoint="/api/routing/static-routes/"
+      noun={["static route", "static routes"]}
+      invalidate={[["embedded-static-routes"], ["static-routes"]]}
     />
   )
 }

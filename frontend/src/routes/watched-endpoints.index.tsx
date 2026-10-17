@@ -11,7 +11,7 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { FormCheckbox, FormText } from "@/components/forms"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/watched-endpoints/")({
   component: WatchedEndpointsPage,
@@ -72,7 +73,7 @@ function WatchedEndpointsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<WatchedEndpoint | null>(null)
   const [selected, setSelected] = useState<WatchedEndpoint[]>([])
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
 
   const query = useQuery({
     queryKey: ["watched-endpoints"],
@@ -285,7 +286,7 @@ function WatchedEndpointsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

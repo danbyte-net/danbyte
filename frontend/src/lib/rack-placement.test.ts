@@ -12,8 +12,10 @@ import type { RackMount, RackOccupant } from "./rack-placement"
 
 // The device form's rack elevation draws the device being placed red where
 // DeviceSerializer.validate would refuse it, and says why in its words. The
-// rules are the server's: faces collide only when they match or one is
-// blank, and half-width devices share a unit from opposite halves.
+// rules are the server's: faces collide when they match, when one is
+// blank, or when either device is full depth (#375); half-width devices
+// share a unit from opposite halves. The fixtures are shallow unless a test
+// says otherwise.
 
 const RACK = { u_height: 42, starting_unit: 1, desc_units: false }
 
@@ -29,10 +31,16 @@ const dev = (
   rack_width: "full",
   rack_side: "",
   u_height: 1,
+  device_type: { is_full_depth: false },
   ...patch,
 })
 
-const FULL: RackMount = { face: "front", width: "full", side: "" }
+const FULL: RackMount = {
+  face: "front",
+  width: "full",
+  side: "",
+  fullDepth: false,
+}
 
 describe("units", () => {
   it("spans the rack from its starting unit", () => {
@@ -70,14 +78,25 @@ describe("unitBlocker", () => {
     )
   })
 
-  it("ignores a full-depth device on the other face, as the server does", () => {
-    // The elevation draws it hatched there; the serializer lets it pass.
-    expect(unitBlocker([sw], { ...FULL, face: "rear" }, 11)).toBeUndefined()
+  it("blocks the other face of a full-depth device, as the server does", () => {
+    const deep = dev("srv-1", 10, { device_type: { is_full_depth: true } })
+    expect(unitBlocker([deep], { ...FULL, face: "rear" }, 10)?.name).toBe(
+      "srv-1"
+    )
+    // A device with no type counts as full depth.
+    const bare = dev("bare", 12, { device_type: null })
+    expect(unitBlocker([bare], { ...FULL, face: "rear" }, 12)?.name).toBe(
+      "bare"
+    )
+    // A full-depth device being placed is blocked by a shallow one behind.
+    expect(
+      unitBlocker([sw], { ...FULL, face: "rear", fullDepth: true }, 10)?.name
+    ).toBe("sw-1")
   })
 
   it("lets half-width devices share a unit from opposite halves", () => {
     const left = dev("tor-a", 5, { rack_width: "half", rack_side: "left" })
-    const half: RackMount = { face: "front", width: "half", side: "right" }
+    const half: RackMount = { ...FULL, width: "half", side: "right" }
     expect(unitBlocker([left], half, 5)).toBeUndefined()
     expect(unitBlocker([left], { ...half, side: "left" }, 5)?.name).toBe(
       "tor-a"
@@ -110,6 +129,33 @@ describe("rackClash", () => {
         height: 3,
       })
     ).toEqual({ message: "Overlaps a-srv at U11.", units: [10, 11] })
+  })
+
+  it("says which of the two is full depth across faces", () => {
+    const deep = dev("srv-a", 10, { device_type: { is_full_depth: true } })
+    expect(
+      rackClash(RACK, [deep], {
+        ...FULL,
+        face: "rear",
+        position: 10,
+        height: 1,
+      })
+    ).toEqual({
+      message: "Overlaps srv-a at U10, which is full depth.",
+      units: [10],
+    })
+    expect(
+      rackClash(RACK, [dev("panel", 10)], {
+        ...FULL,
+        face: "rear",
+        fullDepth: true,
+        position: 10,
+        height: 1,
+      })
+    ).toEqual({
+      message: "Overlaps panel at U10 on the front; this device is full depth.",
+      units: [10],
+    })
   })
 
   it("refuses a device that runs past the rack, in the server's words", () => {

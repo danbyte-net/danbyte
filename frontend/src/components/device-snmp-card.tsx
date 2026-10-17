@@ -339,18 +339,7 @@ export function DeviceSnmpCard({ deviceId }: { deviceId: string }) {
             .
           </p>
         )}
-        {state && state.poll_outpost !== undefined && (
-          <p className="text-[13px] text-muted-foreground">
-            {state.poll_outpost ? (
-              <>
-                Polls from Outpost{" "}
-                <span className="font-mono">{state.poll_outpost}</span>
-              </>
-            ) : (
-              "Polls from the core"
-            )}
-          </p>
-        )}
+        <SnmpPollSource state={state} />
         {factRows.length === 0 ? (
           <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
             {state?.error ? state.error : "Not polled yet."}
@@ -560,6 +549,28 @@ export function MacLink({ mac }: { mac: string }) {
     <Link to="/macs/$mac" params={{ mac }} className="link font-mono">
       {mac}
     </Link>
+  )
+}
+
+/** Where Poll now runs for a device or a VM: the Outpost its engine resolves
+ * to, or the core (#325). Renders nothing until the observation says. */
+export function SnmpPollSource({
+  state,
+}: {
+  state: Pick<DeviceSnmp, "poll_outpost"> | undefined
+}) {
+  if (!state || state.poll_outpost === undefined) return null
+  return (
+    <p className="text-[13px] text-muted-foreground">
+      {state.poll_outpost ? (
+        <>
+          Polls from Outpost{" "}
+          <span className="font-mono">{state.poll_outpost}</span>
+        </>
+      ) : (
+        "Polls from the core"
+      )}
+    </p>
   )
 }
 

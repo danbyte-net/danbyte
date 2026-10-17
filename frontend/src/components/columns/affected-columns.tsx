@@ -14,6 +14,7 @@ import {
   type IPAddress,
   type Prefix,
   type Site,
+  type VirtualMachine,
   type VLAN,
   type VRF,
 } from "@/lib/api"
@@ -23,6 +24,7 @@ import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { buildSiteColumns } from "@/components/columns/site-columns"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
 import { buildVrfColumns } from "@/components/columns/vrf-columns"
+import { buildVmColumns } from "@/components/columns/vm-columns"
 
 export function prefixColumns(): ColumnDef<Prefix>[] {
   return buildPrefixColumns({
@@ -56,12 +58,14 @@ export function ipColumns(): ColumnDef<IPAddress>[] {
   })
 }
 
-export function deviceColumns(): ColumnDef<Device>[] {
+export function deviceColumns(eol = false): ColumnDef<Device>[] {
   return buildDeviceColumns({
+    eol,
     include: [
       "name",
       "status",
       "role",
+      "eol",
       "site",
       "serial",
       "description",
@@ -101,6 +105,22 @@ export function siteColumns(): ColumnDef<Site>[] {
   })
 }
 
+export function vmColumns(eol = false): ColumnDef<VirtualMachine>[] {
+  return buildVmColumns({
+    eol,
+    include: [
+      "name",
+      "cluster",
+      "status",
+      "platform",
+      "eol",
+      "site",
+      "tags",
+      "updated",
+    ],
+  })
+}
+
 // The serialized objects arrive loosely typed (Record<string, unknown>), so the
 // dispatcher hands back columns typed to match - the per-type factories above
 // are the real, typed source.
@@ -109,20 +129,26 @@ const loose = <T,>(c: ColumnDef<T>[]) => c as unknown as LooseColumns
 
 // object_type slug → its real column set. Returns null for types without a
 // dedicated table (the detail page falls back to the generic object list).
-export function affectedColumnsFor(objectType: string): LooseColumns | null {
+export function affectedColumnsFor(
+  objectType: string,
+  /** End-of-life data is on (#8): devices and VMs show its column. */
+  eol = false
+): LooseColumns | null {
   switch (objectType) {
     case "prefix":
       return loose(prefixColumns())
     case "ipaddress":
       return loose(ipColumns())
     case "device":
-      return loose(deviceColumns())
+      return loose(deviceColumns(eol))
     case "vlan":
       return loose(vlanColumns())
     case "vrf":
       return loose(vrfColumns())
     case "site":
       return loose(siteColumns())
+    case "virtualmachine":
+      return loose(vmColumns(eol))
     default:
       return null
   }

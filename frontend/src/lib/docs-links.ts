@@ -55,6 +55,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/device-roles": "dcim/device-catalog/",
   "/platforms": "dcim/device-catalog/",
   "/platform-groups": "dcim/device-catalog/",
+  "/support-contracts": "features/support-coverage/",
   "/racks": "dcim/racks/",
   "/rack-types": "dcim/racks/",
   "/rack-roles": "dcim/racks/",
@@ -77,6 +78,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cluster-types": "features/clusters/",
   "/cluster-groups": "features/clusters/",
   "/virtual-machines": "features/virtual-machines/",
+  "/vm-groups": "features/vm-groups/",
   "/virtual-switches": "features/virtual-switches/",
   "/virtual-topology": "features/virtual-switches/#network-topology",
   "/circuits": "features/circuits/",
@@ -133,6 +135,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/dns-names": "features/windows-sync/",
   "/virtualization-sources": "features/external-sync/",
   "/zabbix": "monitoring/zabbix/",
+  "/oxidized": "features/oxidized/",
   // The pages the settings merges left standing. Without these they fall
   // through to "/settings" and the book button opens the access page, which
   // is the right doc for almost none of them.

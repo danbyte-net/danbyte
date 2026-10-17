@@ -323,3 +323,84 @@ class GroupedEvaluationTests(TestCase):
         self.assertEqual(len(scans), 1)
         self.assertEqual([r["violations"] for r in res["rules"]], [1, 1, 1])
         self.assertEqual(len(res["violations"]), 3)
+
+
+class EvaluateScopeTests(APITestCase):
+    """Evaluate and a rule's violations name only objects the caller can view;
+    the per-rule counts stay whole, as a rule's affected-object rows do."""
+
+    def setUp(self):
+        from api.models import Site
+        from integrations.models import DeviceConfigState
+
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.mine = _make_device(self.tenant, "mine")
+        self.other = _make_device(self.tenant, "theirs")
+        self.other.site = Site.objects.create(tenant=self.tenant, name="LON")
+        self.other.save()
+        for d in (self.mine, self.other):
+            DeviceConfigState.objects.create(tenant=self.tenant, device=d, status="drift")
+        self.rule = ComplianceRule.objects.create(
+            tenant=self.tenant, name="devices need serial", object_type="device",
+            check_type="required", field="serial_number",
+        )
+        self.user = User.objects.create_user("u", password="x")
+        UserProfile.objects.create(user=self.user).tenants.add(self.tenant)
+        rules = ObjectPermission.objects.create(
+            name="rules", object_types=["compliancerule"], actions=["view"]
+        )
+        rules.users.add(self.user)
+        rules.tenants.add(self.tenant)
+        devices = ObjectPermission.objects.create(
+            name="ams", object_types=["device"], actions=["view"]
+        )
+        devices.users.add(self.user)
+        devices.tenants.add(self.tenant)
+        devices.sites.add(self.mine.site)
+        self.login(self.user)
+
+    def login(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def test_evaluate_names_only_viewable_objects(self):
+        r = self.client.get("/api/compliance/evaluate/")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual({v["object_id"] for v in body["violations"]}, {str(self.mine.id)})
+        self.assertEqual(len(body["violations"]), 2)  # the rule and drift
+        self.assertNotIn("theirs", r.content.decode())
+        self.assertNotIn(str(self.other.id), r.content.decode())
+        counts = {row["id"]: row["violations"] for row in body["rules"]}
+        self.assertEqual(counts, {str(self.rule.id): 2, "config-drift": 2})
+        self.assertEqual(body["total_violations"], 4)
+
+    def test_object_filter_cannot_reach_another_sites_object(self):
+        r = self.client.get(f"/api/compliance/evaluate/?object={self.other.id}")
+        self.assertEqual(r.json()["violations"], [])
+
+    def test_rule_violations_name_only_viewable_objects(self):
+        r = self.client.get(f"/api/compliance-rules/{self.rule.id}/violations/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(
+            [v["object_id"] for v in r.json()["violations"]], [str(self.mine.id)]
+        )
+        self.assertNotIn("theirs", r.content.decode())
+        self.assertEqual(r.json()["total"], 2)
+
+    def test_no_device_view_names_no_devices(self):
+        ObjectPermission.objects.filter(name="ams").delete()
+        body = self.client.get("/api/compliance/evaluate/").json()
+        self.assertEqual(body["violations"], [])
+
+    def test_superuser_sees_every_object(self):
+        self.login(User.objects.create_superuser("root", "r@x.io", "pw"))
+        body = self.client.get("/api/compliance/evaluate/").json()
+        self.assertEqual(
+            {v["object_id"] for v in body["violations"]},
+            {str(self.mine.id), str(self.other.id)},
+        )
+        self.assertEqual(len(body["violations"]), 4)

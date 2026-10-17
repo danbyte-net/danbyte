@@ -28,6 +28,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from auth_api import rbac
+from core.tags import TAGS, tags_of
 
 from .models import Device, Interface, IPAddress, MACAddress, VirtualMachine, VMInterface
 from .natural import natural
@@ -205,7 +206,32 @@ def _vm_iface_ref(vi) -> dict:
     }
 
 
-def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
+# The columns a list row reads: the full interface and device rows cost far
+# more to load than the id and name it shows (#393).
+_MAC_ROW = (
+    "id", "numid", "mac_address", "description", "vendor_override",
+    "assigned_interface", "assigned_interface__name",
+    "assigned_interface__device", "assigned_interface__device__name",
+)
+
+
+def _tags_json(m: MACAddress, seen: dict | None) -> list:
+    """The row's tags as the API shows them, from the :data:`~core.tags.TAGS`
+    prefetch. ``seen`` serializes each distinct tag once for a whole list."""
+    if seen is None:
+        return TagSerializer(tags_of(m), many=True).data
+    out = []
+    for t in tags_of(m):
+        data = seen.get(t.pk)
+        if data is None:
+            data = seen[t.pk] = TagSerializer(t).data
+        out.append(data)
+    return out
+
+
+def _mac_object(
+    m: MACAddress, *, with_custom_fields: bool = False, seen_tags: dict | None = None
+) -> dict:
     """Serialize a MAC object for the aggregation views (list / detail)."""
     obj = {
         "id": str(m.id),
@@ -216,7 +242,7 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
         "assigned_interface": (
             _iface_ref(m.assigned_interface) if m.assigned_interface_id else None
         ),
-        "tags": TagSerializer(m.tags.all(), many=True).data,
+        "tags": _tags_json(m, seen_tags),
     }
     if with_custom_fields:
         obj["custom_fields"] = m.custom_fields or {}
@@ -230,8 +256,10 @@ def _mac_object(m: MACAddress, *, with_custom_fields: bool = False) -> dict:
     request=None,
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
-        description="Aggregated MAC rows: {count, results:[{mac, interfaces[], "
-        "vm_interfaces[], ips[], objects[]}]}.",
+        description="Aggregated MAC rows: {count, results:[{mac, vendor, interfaces[], "
+        "vm_interfaces[], ips[], objects[], location}]}. location is where the "
+        "network learned the MAC (site, location, device, port, since, last_seen), "
+        "or null.",
     ),
 )
 @api_view(["GET"])
@@ -309,18 +337,28 @@ def mac_list_view(request):
     objects = _visible(
         MACAddress.objects.filter(tenant=tenant)
         .select_related("assigned_interface__device")
-        .prefetch_related("tags"),
+        .only(*_MAC_ROW)
+        .prefetch_related(TAGS),
         user, tenant, "macaddress",
     )
+    seen_tags: dict = {}
     for m in objects:
-        bucket(m.mac_address)["objects"].append(_mac_object(m))
+        bucket(m.mac_address)["objects"].append(_mac_object(m, seen_tags=seen_tags))
+
+    from monitoring.mac_location import location_cells
+    from monitoring.mac_tables import canon_mac
 
     vendors = vendors_for(entries.keys(), tenant)
+    # Where each MAC was learned - the MAC page's Location, for every row in
+    # one batch (#344).
+    canon = {key: canon_mac(key) for key in entries}
+    located = location_cells(tenant, set(canon.values()) - {None}, user)
     for key, entry in entries.items():
         override = next((o["vendor_override"] for o in entry["objects"] if o["vendor_override"]), "")
         entry["vendor"] = (
             {"name": override, "source": "override"} if override else vendors.get(hexkey(key))
         )
+        entry["location"] = located.get(canon[key])
     results = sorted(entries.values(), key=lambda e: _norm(e["mac"]))
     return Response({"count": len(results), "results": results})
 
@@ -379,7 +417,7 @@ def mac_detail_view(request, mac):
     objects = _visible(
         _match_mac(MACAddress.objects.filter(tenant=tenant), "mac_address", key, canon)
         .select_related("assigned_interface__device")
-        .prefetch_related("tags")
+        .prefetch_related(TAGS)
         .order_by(
             natural("assigned_interface__device__name"), natural("assigned_interface__name")
         ),

@@ -3,6 +3,12 @@ import L from "leaflet"
 import type { SiteMapConnection } from "@/lib/api"
 import { KIND_COLOR, lineColor } from "@/components/site-map/line-style"
 import type { LineColorBy } from "@/components/site-map/line-style"
+import {
+  directionLabel,
+  halfLook,
+  splitAtMidpoint,
+} from "@/components/site-map/line-utilization"
+import type { LineUtil } from "@/components/site-map/line-utilization"
 
 export { KIND_COLOR }
 
@@ -81,12 +87,82 @@ export function lineTip(name: string, kind: string, speed?: string): string {
   return [name, kind, speed].filter(Boolean).join(" · ")
 }
 
+/** Text made safe for a Leaflet tooltip, which takes HTML. */
+export function escapeTip(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ]!
+  )
+}
+
+/** The Utilization hover line: each direction, named by its ends. */
+export function utilTip(a: string, z: string, u: LineUtil | undefined): string {
+  return [
+    `${a} → ${z} ${directionLabel(u?.az ?? null)}`,
+    `${z} → ${a} ${directionLabel(u?.za ?? null)}`,
+  ].join(" · ")
+}
+
+/**
+ * The visible stroke of a line: one polyline, or - under Utilization - two
+ * halves, the half at A in its A → Z band and the half at Z in its Z → A
+ * band. `emphasis` lifts it on hover.
+ */
+export function visibleStrokes(
+  pts: [number, number][],
+  color: string,
+  util: LineUtil | null,
+  base: L.PolylineOptions
+): { layers: L.Polyline[]; emphasis: (on: boolean) => void } {
+  if (!util) {
+    const line = L.polyline(pts, { ...base, color })
+    const weight = base.weight ?? 2
+    const opacity = base.opacity ?? 0.8
+    return {
+      layers: [line],
+      emphasis: (on) =>
+        line.setStyle(
+          on ? { weight: weight + 1.5, opacity: 1 } : { weight, opacity }
+        ),
+    }
+  }
+  const [first, second] = splitAtMidpoint(pts)
+  const halves = [
+    { path: first, look: halfLook(util.az) },
+    { path: second, look: halfLook(util.za) },
+  ].map(({ path, look }) => ({
+    line: L.polyline(path, {
+      ...base,
+      color: look.color,
+      weight: look.weight,
+      opacity: 0.9,
+      lineCap: "butt",
+    }),
+    weight: look.weight,
+  }))
+  return {
+    layers: halves.map((h) => h.line),
+    emphasis: (on) =>
+      halves.forEach((h) =>
+        h.line.setStyle({
+          weight: on ? h.weight + 1.5 : h.weight,
+          opacity: on ? 1 : 0.9,
+        })
+      ),
+  }
+}
+
 export function buildConnectionsLayer(
   edges: SiteMapConnection[],
   onSelect: (id: string) => void,
   /** Color by (the site map's Display popover); the MiniMap leaves it at
    * Type, the kinds' own colours. */
-  colorBy: LineColorBy = "type"
+  colorBy: LineColorBy = "type",
+  /** Under Utilization: each line's live traffic, by id. */
+  util?: ReadonlyMap<string, LineUtil>
 ): ConnectionsLayer {
   const group = L.layerGroup()
   const midpoints = new Map<string, Pt>()
@@ -97,8 +173,11 @@ export function buildConnectionsLayer(
     const e = byId.get(id)!
     midpoints.set(e.id, pts[Math.floor(pts.length / 2)])
     const color = lineColor(e, colorBy)
-    const visible = L.polyline(pts, {
-      color,
+    const lineUtil =
+      colorBy === "utilization"
+        ? (util?.get(e.id) ?? { az: null, za: null, at: null })
+        : null
+    const visible = visibleStrokes(pts, color, lineUtil, {
       weight: 2,
       opacity: 0.8,
       interactive: false,
@@ -111,17 +190,20 @@ export function buildConnectionsLayer(
     })
     // Same hover identity the drawn cables carry - every line names
     // itself before you commit to a click.
-    hit.bindTooltip(lineTip(e.name, e.kind, e.capacity?.label), {
-      sticky: true,
-      direction: "top",
-    })
-    hit.on("mouseover", () => visible.setStyle({ weight: 3.5, opacity: 1 }))
-    hit.on("mouseout", () => visible.setStyle({ weight: 2, opacity: 0.8 }))
+    const tip = lineTip(e.name, e.kind, e.capacity?.label)
+    hit.bindTooltip(
+      lineUtil
+        ? `${escapeTip(tip)}<br>${escapeTip(utilTip(e.site_a.name, e.site_z.name, lineUtil))}`
+        : tip,
+      { sticky: true, direction: "top" }
+    )
+    hit.on("mouseover", () => visible.emphasis(true))
+    hit.on("mouseout", () => visible.emphasis(false))
     hit.on("click", (ev: L.LeafletMouseEvent) => {
       L.DomEvent.stopPropagation(ev)
       onSelect(e.id)
     })
-    group.addLayer(visible)
+    visible.layers.forEach((l) => group.addLayer(l))
     group.addLayer(hit)
   }
   return { group, midpoints }

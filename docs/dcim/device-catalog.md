@@ -45,7 +45,10 @@ Fields:
   where two units mount side-by-side in one U (see
   [half-width devices](racks.md#half-width-devices))
 - **Full depth** - occupies both rack faces (default). Shallow gear unticks
-  this and frees the opposite face in [rack elevations](racks.md#rack-elevations)
+  this and frees the opposite face in [rack elevations](racks.md#rack-elevations).
+  A change to the height, width or full depth that would put a racked device
+  of the type over another or past the top of its rack is refused, naming the
+  devices.
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
   an override)
 - **Size (mm)** - the body's width, height and depth, in tenths of a
@@ -242,9 +245,8 @@ at `import-runs/<id>/`.
 **Airgapped deployments** (update checks disabled) get a clean refusal
 instead of a hanging timeout - no outbound request is attempted. Recovery
 there is the offline route: restore the media folder from a backup, or
-re-upload images per type; [bundles](#bundles) stay the offline carrier for
-*definitions*, but they deliberately reference images rather than embed
-them, so they can't restore the files themselves.
+re-upload images per type, or import [bundles](#bundles) exported with
+*Include photos*, which carry the files themselves.
 
 ### Jumping to the devices
 
@@ -266,6 +268,7 @@ downloads everything that makes the model work:
 
 - every component template (interfaces, console, power, panel ports, bays)
 - the faceplate layout and the photo-port markers
+- the front and rear photos, when you tick **Include photos**
 - inventory-item templates (the disk bays a chassis ships with)
 - the [custom SNMP sensors](../features/snmp-discovery.md#sensors) bound to it
 
@@ -287,8 +290,8 @@ Three rules make a bundle safe to accept from anyone:
 - **The same rules as the form.** The type's fields - sizes between 1 and
   5000 mm, a DIN rail on the body, a body size for DIN-rail types, choices,
   the faceplate - and every component template and sensor are checked as the
-  API checks them, and on a replace the type's devices on DIN rails must still
-  fit. A file that breaks one is refused whole with the field at fault, and
+  API checks them, and on a replace the type's devices on DIN rails and in
+  racks must still fit. A file that breaks one is refused whole with the field at fault, and
   nothing of it is saved. The preview checks the type's own fields already.
 
 Ids never travel - manufacturers, an outlet's inlet, a front port's rear port all
@@ -298,8 +301,38 @@ they line up at any resolution of the same photo; if the bundle was built agains
 an image you don't have, the import says so - upload it on the device type and
 the markers land correctly.
 
-API: `GET /api/device-types/{id}/library-export/` and
-`POST /api/device-types/import-bundle/?dry_run=1&replace=1`.
+#### Photos in a bundle {#bundle-photos}
+
+A type with photos asks on **Export bundle** whether to include them; the box
+is ticked. The photos travel inside the file as base64, so the far side gets
+the same pictures the markers and the [calibration](#photo-ports) were
+placed on. Without them a bundle is a small text file you can read and diff.
+
+- **Caps.** 3 MB per photo and 6 MB per bundle, decoded. A stored photo is at
+  most 2000 px on its long edge, so most fit; one that doesn't is left out of
+  the export with a warning and travels as a reference.
+- **Checked by content.** On import each photo must be a JPEG, PNG, GIF or
+  WebP when its bytes are read, and match the type the bundle states. A photo
+  that fails, or a bundle over a cap, is refused whole with the photo named.
+  The preview checks the photos too.
+- **Stored as an upload.** Imported photos go through the same path as an
+  upload on the device type: downscaled to 2000 px, metadata stripped,
+  animation kept. The bundle's photo ports and calibration come along
+  unchanged.
+- **Replace.** With *Update the device type if it already exists*, a bundle
+  that carries a photo replaces that photo; one that doesn't leaves the
+  stored photos alone. A replaced photo without photo ports in the bundle
+  loses its old calibration, as on an upload.
+
+The format stays version 1. In the file, `images.front` and `images.rear` are
+`true` or `false` when the photo is only referenced, or
+`{"mime", "filename", "data"}` when it is carried. Bundles from earlier versions import as before,
+and an earlier version reads a photo bundle as one that references its photos.
+
+API: `GET /api/device-types/{id}/library-export/?include_photos=1` and
+`POST /api/device-types/import-bundle/?dry_run=1&replace=1`. The API leaves
+photos out unless asked, so existing scripts get the same file. The import
+report lists the photos a bundle carries in `images`.
 
 ## Component templates
 
@@ -715,13 +748,21 @@ interface, and decides what goes when the module does:
   its own ports or another module's. Rename or remove the clashing interface
   first; nothing is adopted.
 - **Remove** deletes the module's own interfaces and nothing else, with the
-  usual interface delete rules: cable ends on them are dropped and IP
-  addresses stay, unassigned.
+  usual interface delete rules: a cable left with no port on that end is
+  removed (see [Cabling](cabling.md)) and IP addresses stay, unassigned.
 - **Deleting a module bay** removes its module the same way, as does deleting
   the device.
-- **Changing an installed module's type** (or moving it to another bay)
-  removes its interfaces and installs the new set in one step; a name clash
-  refuses the change and leaves the module as it was.
+- **Moving a module to another bay, or changing its type**, keeps the
+  interfaces that still correspond and renames them in place, so cables, IP
+  addresses, VLANs, LAG membership, MACs, tags, custom fields, descriptions
+  and the journal stay with them. Only ports the new type lacks are removed
+  and only its new ports are created. See [Re-stamping a
+  module](#re-stamping-a-module).
+- **Moving a module to another device** removes its interfaces and creates
+  them again on the new device.
+- **Copies are your own**: a bulk-cloned interface (a sub-interface made from
+  a module port, say) has no module and survives removing the module.
+  Imports cannot set or clear an interface's module either.
 - A **default module** whose interface names clash with the device's is not
   seated.
 
@@ -732,6 +773,32 @@ it, the device type does not define it (as a template or a faceplate or photo
 marker), and it was created no earlier than the module. Anything else stays
 the device's own - it survives removing the module, and you delete it by hand
 if it was the module's.
+
+### Re-stamping a module
+
+Each module interface remembers the template it was stamped from. On a bay
+move or type change (`PATCH /api/modules/<id>/` with `module_bay_id` or
+`module_type_id`), every interface is matched to its successor:
+
+- **Same type, new bay**: each template continues as itself. The interface
+  is renamed to the template's new rendering (`Te1/1/1` → `Te1/2/1`).
+- **Different type**: templates with the same name pattern pair first
+  (`Te1/{module}/1` in both types), then the rest pair by position in
+  template order where the media type matches. A paired interface takes
+  the new type's media type.
+- An interface you renamed keeps your name. One whose template can no
+  longer be traced (renamed before 0.18, or its template deleted) is left
+  as it is.
+
+Removing an interface that carries a **cable or an IP address** needs
+`"confirm_remove": true` in the request. Without it the change is refused
+with a `confirm_remove` error naming those interfaces, and nothing changes.
+With it, the usual interface delete rules apply. A name clash with an
+interface the module does not own refuses the change. Either way the
+module stays as it was.
+
+The response carries what happened under `interfaces`:
+`kept`, `renamed` (`{"from", "to"}`), `created` and `removed`.
 
 A **default module** only decides what's *pre-seated* - it never locks a bay.
 Sync-from-type fills empty matching bays with the default but **never
@@ -763,9 +830,12 @@ Roles also accept [custom fields](../features/tags-and-custom-fields.md) (target
 
 ## Platforms
 
-A **platform** is the operating system / NOS a device runs - IOS-XE, JunOS,
-PAN-OS, Cumulus. Platforms are handy for filtering and for configuration
-rendering.
+A **platform** is the operating system / NOS a device or virtual machine
+runs - IOS-XE, JunOS, PAN-OS, Cumulus. Platforms are handy for filtering and
+for configuration rendering.
+
+A platform's page has a **Devices** tab and a **Virtual machines** tab, each
+listing what runs it; the API gives both counts (`device_count`, `vm_count`).
 
 ### Platform groups and the effective platform
 

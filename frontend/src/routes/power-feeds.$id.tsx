@@ -104,7 +104,9 @@ function Body({ feed: f }: { feed: PowerFeed }) {
               )}
             </>
           }
-          tags={f.tags.length > 0 && <TagList tags={f.tags} />}
+          tags={
+            f.tags.length > 0 && <TagList tags={f.tags} listTo="/power-feeds" />
+          }
         />
       }
       tabs={[
@@ -123,6 +125,7 @@ function Body({ feed: f }: { feed: PowerFeed }) {
         <EmbeddedCableTable
           filter={{ power_feed: f.id }}
           emptyText="Nothing is cabled to this feed yet."
+          searchable={false}
         />
       </DetailTab>
       <DetailTab value="journal">

@@ -56,6 +56,87 @@ counts the detail page computes for one object only.
     use the advanced filter expression (for example `location.name = "Hall A"`,
     `site.region = "Nordics"` or `custom_fields.owner = "noc"`).
 
+## Filter rail
+
+The filter rail beside a list has one group per facet - status, role,
+manufacturer, tags - each counting the rows in every value.
+
+- **Long facets.** A facet with more than 10 values gets a search box and
+  shows its 8 most common values; **Show all** lists the rest. A ticked value
+  always stays in sight.
+- **Hiding a facet.** Hover a facet's name and click the eye to hide it on
+  that list - **Advanced** included. Hidden facets are listed under **Hidden
+  filters** at the foot of the rail; click one to bring it back. A hidden
+  facet with a selection keeps showing, so no filter applies out of sight.
+
+Hidden facets are saved per list for you, like a column layout (stored as the
+`facets-<list>` layout, e.g. `facets-devices`), and do not affect anyone else.
+
+## Filters and links
+
+A list's filters live in its address, so a reload, **Back** from an object, a
+bookmark or a pasted link all show the same filtered list:
+
+    /devices?status=active,planned&role=leaf&tag=core&q=sw-01
+
+- **One parameter per facet**, named after it: `status`, `role`, `site`,
+  `type`, … The Tags facet is `tag`. Values are ids and slugs, not display
+  names.
+- **Several values** are comma-separated and match any of them. A value that
+  contains a comma is written with a backslash before it (`a\,b`).
+- **Ranges** read `min..max`, either side optional: `util=80..`.
+- **The search box** is `q`, written once typing pauses. **The advanced
+  filter** is `expr`.
+- **Nothing selected** means no parameter. A value the list does not have (a
+  deleted tag, a typo) is ignored rather than emptying the list.
+
+Changing a filter replaces the current history entry instead of adding one, so
+**Back** leaves the list instead of undoing filters one by one.
+
+Dashboard and cross-object links (*Devices by status*, a rack's port
+utilisation, a certificate-health tile) use the same parameters, so the filter
+they open with shows in the rail and can be cleared there. A
+[saved view](saved-views.md) writes its filters into the address when applied.
+
+### Tags
+
+- **In a list,** click a tag chip to filter the list by that tag; click it
+  again to clear it. Active tags get a ring, and several tags match any of
+  them.
+- **All objects with a tag:** beside a ticked tag in the Tags facet, the arrow
+  opens the tag's **Tagged objects** tab, across every object type.
+- **On an object's page,** a tag links to its list filtered by that tag, for
+  example a device's `core` tag opens `/devices?tag=core`.
+
+## Searching a table
+
+A list page searches with the box in its header. A table on a detail tab - a
+rack's devices, a device's interfaces, a site's prefixes, a virtualization
+source's VMs, an object's change log - has its own search box above the rows
+when it can run long. It matches the words a row shows in its shown columns,
+ignoring case: names, addresses, statuses, related objects by name. Hidden
+columns are not searched.
+
+The box filters the rows the tab has loaded. A tab that loads only the first
+part of a long list says so under the table - *Searching the first 500 of
+1,234* - and the full list page searches the rest.
+
+## Very long lists
+
+A list page loads its rows in one request: up to 10,000, and 1,000 for IP
+addresses. When the tenant holds more, the page says so:
+
+- the count beside the title reads *1,000 of 40,960*, in amber;
+- a notice over the table reads *Showing the first 1,000 of 40,960 - search to
+  narrow the list*;
+- the filter rail notes that its counts cover the loaded rows only;
+- **Download** names the rows it holds - *First 1,000 of 40,960 rows* - in its
+  menu and on the HTML and print page.
+
+The header search runs on the server, so it reaches every row; the filter rail
+and the advanced filter refine the rows that arrived. This applies to IP
+addresses, interfaces, cables, devices, prefixes, VLANs and virtual machines.
+
 ## Sorting
 
 Click a column header to sort by it; click it again to reverse. Text sorts in

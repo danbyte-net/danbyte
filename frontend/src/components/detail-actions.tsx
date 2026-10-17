@@ -10,6 +10,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   devices: "device",
   sites: "site",
   "virtual-machines": "virtualmachine",
+  "vm-groups": "virtualmachinegroup",
   vlans: "vlan",
   vrfs: "vrf",
   "route-targets": "routetarget",

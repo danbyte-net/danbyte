@@ -762,3 +762,36 @@ class NetBox44ShapeTests(ImporterBase):
             client.list_url("dcim/devices"),
             "https://nb.example.com/api/dcim/devices/?limit=250",
         )
+
+
+class FHRPKeyImportTests(ImporterBase):
+    """A NetBox FHRP group's key goes to the secret store, never the row
+    (#383); with no store the group still imports, without the key."""
+
+    DATA = {"ipam/fhrp-groups": [{
+        "id": 1, "protocol": {"value": "hsrp"}, "group_id": 7,
+        "auth_type": {"value": "md5"}, "auth_key": "nb-secret-key",
+    }]}
+
+    def _store(self, provider):
+        from core.models import DeploymentSettings
+
+        ds = DeploymentSettings.load()
+        ds.secrets_provider = provider
+        ds.save(update_fields=["secrets_provider"])
+
+    def test_key_lands_in_the_store(self):
+        self._store("local")
+        run_import(self.tenant, self.DATA)
+        g = m.FHRPGroup.objects.get(group_id=7)
+        self.assertEqual(g.auth_type, "md5")
+        self.assertEqual(g.resolve_psk(), "nb-secret-key")
+        self.assertNotIn("nb-secret-key", str(g.__dict__))
+
+    def test_without_a_store_the_group_imports_without_its_key(self):
+        self._store("")
+        imp = run_import(self.tenant, self.DATA)
+        g = m.FHRPGroup.objects.get(group_id=7)
+        self.assertFalse(g.psk_set)
+        self.assertTrue(any("authentication key not imported" in n
+                            for n in imp.report()["notes"]))

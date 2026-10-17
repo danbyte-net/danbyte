@@ -7,6 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.params import int_param
 from auth_api.permissions import can_manage_admin
 from integrations.toggles import integration_enabled
 
@@ -89,8 +90,8 @@ def agent_calls(request):
         qs = qs.filter(tool=request.query_params["tool"])
     if request.query_params.get("errors") == "1":
         qs = qs.exclude(error="")
-    limit = min(int(request.query_params.get("limit") or 100), 500)
-    offset = max(int(request.query_params.get("offset") or 0), 0)
+    limit = int_param(request, "limit", 100, min_value=1, max_value=500)
+    offset = int_param(request, "offset", 0, min_value=0)
     rows = AgentCallSerializer(qs[offset:offset + limit], many=True).data
     return Response({"results": rows, "count": qs.count(), "offset": offset})
 

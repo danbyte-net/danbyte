@@ -14,6 +14,7 @@ function Page() {
   const spec = useMemo<RoutingListSpec<VTEP>>(
     () => ({
       title: "VTEPs",
+      noun: ["VTEP", "VTEPs"],
       objectType: "vtep",
       endpoint: "/api/routing/vteps/",
       queryKey: "vteps",

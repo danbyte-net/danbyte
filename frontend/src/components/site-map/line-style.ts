@@ -17,17 +17,19 @@ export const KIND_COLOR: Record<string, string> = {
 
 /** Type: each kind's own colour, as the map has always drawn them. Status:
  * the line's status colour. Speed: the speed tier of its capacity, on the
- * scale the topology and the faceplates use. */
-export type LineColorBy = "type" | "status" | "speed"
+ * scale the topology and the faceplates use. Utilization: live traffic,
+ * one direction per half (`line-utilization.ts`). */
+export type LineColorBy = "type" | "status" | "speed" | "utilization"
 
 export const LINE_COLOR_BY: readonly { value: LineColorBy; label: string }[] = [
   { value: "type", label: "Type" },
   { value: "status", label: "Status" },
   { value: "speed", label: "Speed" },
+  { value: "utilization", label: "Utilization" },
 ]
 
 export function isLineColorBy(v: unknown): v is LineColorBy {
-  return v === "type" || v === "status" || v === "speed"
+  return v === "type" || v === "status" || v === "speed" || v === "utilization"
 }
 
 /** The zinc a line wears when the mode has nothing to say about it: no
@@ -53,6 +55,9 @@ export function lineTier(line: LineLook): SpeedTier | null {
 export function lineColor(line: LineLook, by: LineColorBy): string {
   if (by === "status") return cssColor(line.status?.color) ?? NO_VALUE_HEX
   if (by === "speed") return lineTier(line)?.hex ?? NO_VALUE_HEX
+  // Utilization paints each half on its own (`halfLook`); a whole line has
+  // no single colour.
+  if (by === "utilization") return NO_VALUE_HEX
   const own = cssColor(line.color)
   if (own) return own
   return line.kind in KIND_COLOR ? KIND_COLOR[line.kind] : NO_VALUE_HEX

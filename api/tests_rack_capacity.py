@@ -416,7 +416,7 @@ class SiteCapacityTests(_Base):
         self.assertEqual(hall_a["totals"], {
             "racks": 2, "devices": 6, "u_height": 84, "u_used": 4, "u_pct": 5,
             "power": {"available_w": 7360, "allocated_w": 800, "maximum_w": 1600,
-                      "pdu_rating": 2, "no_supply": 0},
+                      "pdu_rating": 2, "no_supply": 0, "budget": 0},
             "ports": _row(0), "panel_ports": _row(0),
         })
         self.assertEqual([r["name"] for r in body["unplaced"]["racks"]], ["R4"])

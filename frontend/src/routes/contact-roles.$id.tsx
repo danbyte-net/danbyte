@@ -185,5 +185,15 @@ function RoleAssignmentsTable({ roleId }: { roleId: string }) {
         object's Contacts tab, then pick this role there.
       </EmptyState>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="type" embedded />
+  return (
+    <DataTable
+      data={rows}
+      total={q.data?.count}
+      columns={columns}
+      flexColumn="type"
+      embedded
+      searchable
+      searchPlaceholder="Search assignments…"
+    />
+  )
 }

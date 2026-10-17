@@ -228,7 +228,7 @@ export function DeviceTypeForm({
               placeholder="Catalyst 9300"
               error={fieldErrors.name}
             />
-            <FormSelect
+            <FormCombobox
               label="Manufacturer"
               value={manufacturerId}
               onChange={setManufacturerId}
@@ -238,6 +238,8 @@ export function DeviceTypeForm({
                 label: m.name,
               }))}
               error={fieldErrors.manufacturer_id}
+              searchPlaceholder="Search manufacturers…"
+              emptyText="No manufacturers."
             />
             <div className="grid gap-3 @md:grid-cols-2">
               <FormText

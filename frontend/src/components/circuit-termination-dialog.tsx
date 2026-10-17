@@ -2,14 +2,15 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type CircuitTermination,
-  type CircuitTermSide,
-  type CircuitTerminationWritePayload,
-  type Paginated,
-  type ProviderNetwork,
-  type SiteOption,
+import { api } from "@/lib/api"
+import type {
+  CircuitTermination,
+  CircuitTermSide,
+  CircuitTerminationWritePayload,
+  Paginated,
+  ProviderNetwork,
+  SiteOption,
+  VMInterface,
 } from "@/lib/api"
 import {
   Dialog,
@@ -26,20 +27,58 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import { VMPicker } from "@/components/vm-picker"
 import { cn } from "@/lib/utils"
 import { useSaveObject } from "@/lib/save-object"
 
 type EndpointKind = "site" | "provider_network"
+/** What the end lands on at your side: a device port (by cable, from the
+ * termination card) or a VM interface (#432). */
+type LandingKind = "device" | "vm"
 
 const SIDE_OPTIONS: { value: CircuitTermSide; label: string }[] = [
   { value: "A", label: "A side" },
   { value: "Z", label: "Z side" },
 ]
 
+/** Two-way segmented choice, as the termination dialogs draw it. */
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T
+  options: readonly (readonly [T, string])[]
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="flex h-9 items-center gap-1 rounded-md border border-border p-0.5">
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={value === v}
+          onClick={() => onChange(v)}
+          className={cn(
+            "inline-flex h-full flex-1 items-center justify-center rounded-[5px] px-2 text-xs font-medium whitespace-nowrap transition-colors",
+            value === v
+              ? "bg-muted text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /**
  * Create or edit one circuit termination. The endpoint is exactly one of a
  * site or a provider network; the side is fixed when editing or when the
- * caller presets it (the per-side "Add termination" buttons).
+ * caller presets it (the per-side "Add termination" buttons). The end lands
+ * on a device port by cable, or on a VM interface picked here (#432) - an
+ * end on a VM interface with no site picked takes the VM's site.
  */
 export function CircuitTerminationDialog({
   circuitId,
@@ -68,6 +107,9 @@ export function CircuitTerminationDialog({
   const [providerNetworkId, setProviderNetworkId] = useState<string | null>(
     null
   )
+  const [landing, setLanding] = useState<LandingKind>("device")
+  const [vmId, setVmId] = useState<string | null>(null)
+  const [vmInterfaceId, setVmInterfaceId] = useState<string | null>(null)
   const [portSpeed, setPortSpeed] = useState("")
   const [upstreamSpeed, setUpstreamSpeed] = useState("")
   const [xconnectId, setXconnectId] = useState("")
@@ -81,6 +123,9 @@ export function CircuitTerminationDialog({
     setKind(termination?.provider_network ? "provider_network" : "site")
     setSiteId(termination?.site?.id ?? null)
     setProviderNetworkId(termination?.provider_network?.id ?? null)
+    setLanding(termination?.vm_interface ? "vm" : "device")
+    setVmId(termination?.vm_interface?.vm.id ?? null)
+    setVmInterfaceId(termination?.vm_interface?.id ?? null)
     setPortSpeed(
       termination?.port_speed_kbps != null
         ? String(termination.port_speed_kbps)
@@ -109,8 +154,20 @@ export function CircuitTerminationDialog({
     enabled: open && kind === "provider_network",
     staleTime: 10 * 60_000,
   })
+  const vmInterfaces = useQuery({
+    queryKey: ["vm-interfaces-picker", vmId],
+    queryFn: () =>
+      api<Paginated<VMInterface>>(
+        `/api/vm-interfaces/?vm=${vmId}&page_size=500`
+      ),
+    enabled: open && landing === "vm" && !!vmId,
+  })
 
-  const canSubmit = kind === "site" ? !!siteId : !!providerNetworkId
+  const onVm = landing === "vm"
+  // An end on a VM interface may leave the site to the VM's own.
+  const canSubmit =
+    (onVm ? !!vmInterfaceId : true) &&
+    (kind === "site" ? !!siteId || onVm : !!providerNetworkId)
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -120,6 +177,7 @@ export function CircuitTerminationDialog({
         site_id: kind === "site" ? siteId : null,
         provider_network_id:
           kind === "provider_network" ? providerNetworkId : null,
+        vm_interface_id: onVm ? vmInterfaceId : null,
         port_speed_kbps: portSpeed.trim() === "" ? null : Number(portSpeed),
         upstream_speed_kbps:
           upstreamSpeed.trim() === "" ? null : Number(upstreamSpeed),
@@ -155,6 +213,13 @@ export function CircuitTerminationDialog({
     setProviderNetworkId(null)
   }
 
+  function switchLanding(next: LandingKind) {
+    if (next === landing) return
+    setLanding(next)
+    setVmId(null)
+    setVmInterfaceId(null)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
@@ -163,8 +228,8 @@ export function CircuitTerminationDialog({
             {isEdit ? `Edit ${side} side termination` : "Add termination"}
           </DialogTitle>
           <DialogDescription>
-            Terminate this circuit on a site or on a provider network - exactly
-            one of the two.
+            Terminate this circuit on a site or a provider network, landing on a
+            device port or a VM interface.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -191,28 +256,14 @@ export function CircuitTerminationDialog({
               />
             )}
             <Field label="Endpoint type">
-              <div className="flex h-9 items-center gap-1 rounded-md border border-border p-0.5">
-                {(
-                  [
-                    ["site", "Site"],
-                    ["provider_network", "Provider network"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => switchKind(value)}
-                    className={cn(
-                      "inline-flex h-full flex-1 items-center justify-center rounded-[5px] px-2 text-xs font-medium transition-colors",
-                      kind === value
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                value={kind}
+                onChange={switchKind}
+                options={[
+                  ["site", "Site"],
+                  ["provider_network", "Provider network"],
+                ]}
+              />
             </Field>
           </div>
 
@@ -221,7 +272,7 @@ export function CircuitTerminationDialog({
               label="Site"
               value={siteId}
               onChange={setSiteId}
-              placeholder="Pick site"
+              placeholder={onVm ? "VM's site" : "Pick site"}
               searchPlaceholder="Search sites…"
               emptyText="No sites."
               options={(sites.data?.results ?? []).map((s) => ({
@@ -244,6 +295,40 @@ export function CircuitTerminationDialog({
               }))}
               error={fieldErrors.provider_network_id}
             />
+          )}
+
+          <Field label="Lands on" error={fieldErrors.vm_interface_id}>
+            <Segmented
+              value={landing}
+              onChange={switchLanding}
+              options={[
+                ["device", "Device port"],
+                ["vm", "VM interface"],
+              ]}
+            />
+          </Field>
+          {onVm && (
+            <div className="grid grid-cols-2 gap-3">
+              <VMPicker
+                value={vmId}
+                onChange={(v) => {
+                  setVmId(v)
+                  setVmInterfaceId(null)
+                }}
+              />
+              <FormCombobox
+                label="VM interface"
+                value={vmInterfaceId}
+                onChange={setVmInterfaceId}
+                placeholder={vmId ? "Pick interface" : "Pick VM first"}
+                options={(vmInterfaces.data?.results ?? []).map((i) => ({
+                  value: i.id,
+                  label: i.name,
+                }))}
+                searchPlaceholder="Search interfaces…"
+                emptyText="No interfaces."
+              />
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">

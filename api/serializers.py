@@ -17,9 +17,10 @@ from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.utils import extend_schema_field, inline_serializer
 from rest_framework import serializers
 
+from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag, Tenant, TenantGroup
 from core.tags import tags_of
 from customization.models import (
@@ -40,7 +41,7 @@ from .models import (
     ImageAttachment,
     Document, DocumentCategory,
     FiberSettings,
-    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -100,6 +101,33 @@ def detail_only(default=None):
         return wrapper
 
     return decorate
+
+
+def _changes(instance, attrs, *fields, norm=None) -> bool:
+    """Whether a write changes any of ``fields`` (#389). A create sets them
+    all; an update counts a field only when it is sent with a value that
+    differs from the stored one, so an edit form sending a record back
+    unchanged does not re-judge a rule the record predates. ``norm`` maps
+    both sides to a comparable form (an address spelling, a set)."""
+    if instance is None:
+        return True
+    for f in fields:
+        if f not in attrs:
+            continue
+        new, old = attrs[f], getattr(instance, f, None)
+        if norm is not None:
+            new, old = norm(new), norm(old)
+        if new != old:
+            return True
+    return False
+
+
+def _ip_norm(value):
+    """An address in one spelling, for ``_changes``; anything unparsable as is."""
+    try:
+        return ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return value
 
 
 class NumIdModelSerializer(serializers.ModelSerializer):
@@ -847,7 +875,11 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
         group = attrs.get("group", getattr(self.instance, "group", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         vid = attrs.get("vlan_id", getattr(self.instance, "vlan_id", None))
-        if group is not None and vid is not None:
+        # The range is checked when the VID or the group changes: a VLAN left
+        # outside a range narrowed before that was refused still takes other
+        # edits, from its form too (#380, #389).
+        placed = _changes(self.instance, attrs, "vlan_id", "group")
+        if group is not None and vid is not None and placed:
             if not (group.min_vid <= vid <= group.max_vid):
                 raise serializers.ValidationError(
                     {"vlan_id": f"VID must be within the group's range "
@@ -1445,6 +1477,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         attrs = super().validate(attrs)
         import ipaddress
 
+        if self.instance is not None and "cidr" in attrs:
+            self._refuse_stranding(attrs["cidr"])
+
         request = self.context.get("request")
         if request is None:
             return attrs
@@ -1486,6 +1521,54 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                                  "(this VRF rejects overlapping prefixes)."}
                     )
         return attrs
+
+    def _refuse_stranding(self, cidr):
+        """A new CIDR must still hold every address and range on the prefix
+        (#380): narrowing or moving it would leave them attached to a
+        network they are no longer in. The error names what is outside."""
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except (ValueError, TypeError):
+            return
+        old = self.instance.network
+        if old is not None and old == net:
+            return
+
+        def outside(addr) -> bool:
+            try:
+                a = ipaddress.ip_address(addr)
+            except (ValueError, TypeError):
+                return False
+            return a.version != net.version or a not in net
+
+        ips = sorted(
+            (
+                a for a in self.instance.ip_addresses.values_list("ip_address", flat=True)
+                if outside(a)
+            ),
+            key=lambda a: (ipaddress.ip_address(a).version, int(ipaddress.ip_address(a))),
+        )
+        ranges = [
+            f"{s}–{e}"
+            for s, e in self.instance.ip_ranges.order_by("start_address")
+            .values_list("start_address", "end_address")
+            if outside(s) or outside(e)
+        ]
+        if not ips and not ranges:
+            return
+        parts = []
+        if ips:
+            shown = ", ".join(ips[:5]) + (f" and {len(ips) - 5} more" if len(ips) > 5 else "")
+            parts.append(f"{len(ips)} address{'es' if len(ips) != 1 else ''} ({shown})")
+        if ranges:
+            shown = ", ".join(ranges[:5]) + (
+                f" and {len(ranges) - 5} more" if len(ranges) > 5 else ""
+            )
+            parts.append(f"{len(ranges)} range{'s' if len(ranges) != 1 else ''} ({shown})")
+        raise serializers.ValidationError({
+            "cidr": f"{net} would leave {' and '.join(parts)} outside the prefix. "
+                    "Move or delete them first."
+        })
 
     def get_vlan_vrf_mismatch(self, obj) -> bool:
         return bool(obj.vlan_id and obj.vlan.vrf_id and obj.vlan.vrf_id != obj.vrf_id)
@@ -1567,8 +1650,77 @@ class PrefixMiniSerializer(NumIdModelSerializer):
         fields = ["id", "cidr", "vrf", "site", "vlan", "gateway"]
 
 
-class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class _HiddenRelatedListSerializer(serializers.ListSerializer):
+    """Answers a page's related-row visibility in one query per type before
+    the rows render (see ``HiddenRelatedFieldsMixin``)."""
+
+    def to_representation(self, data):
+        from django.db.models.manager import BaseManager
+
+        rows = data.all() if isinstance(data, BaseManager) else data
+        rows = list(rows)
+        self.child.prime_related(rows)
+        return super().to_representation(rows)
+
+
+class HiddenRelatedFieldsMixin(PermissionHiddenFieldsMixin):
+    """A row that names related rows the caller may not view shows those
+    fields as ``null`` - in the API and in the spreadsheet export (#413).
+    Set ``Meta.list_serializer_class = _HiddenRelatedListSerializer`` so a
+    list answers its page in one query per related type.
+
+    ``hidden_related`` lists ``(field, object-type slug, fk attname)``. The
+    check is the related type's own view scope (``rbac.ViewableRows``), so a
+    site viewer never learns the device, interface or prefix of another site
+    through an address that is itself visible (a shared one, or one placed at
+    their site inside another site's prefix)."""
+
+    hidden_as_null = True
+    hidden_related: tuple[tuple[str, str, str], ...] = ()
+
+    def _viewable(self):
+        cached = getattr(self, "_viewable_rows", None)
+        if cached is not None:
+            return cached
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or user.is_superuser:
+            self._viewable_rows = False
+            return False
+        from api.views import _get_active_tenant
+        from auth_api.rbac import ViewableRows
+
+        self._viewable_rows = ViewableRows(user, _get_active_tenant(request))
+        return self._viewable_rows
+
+    def prime_related(self, rows) -> None:
+        viewable = self._viewable()
+        if not viewable:
+            return
+        by_slug: dict[str, set] = {}
+        for _field, slug, attname in self.hidden_related:
+            by_slug.setdefault(slug, set()).update(
+                getattr(obj, attname, None) for obj in rows
+            )
+        for slug, pks in by_slug.items():
+            viewable.prime(slug, pks)
+
+    def hidden_fields(self, obj) -> set[str]:
+        out = set(super().hidden_fields(obj))
+        viewable = self._viewable()
+        if not viewable:
+            return out
+        for field, slug, attname in self.hidden_related:
+            if not viewable.may_view(slug, getattr(obj, attname, None)):
+                out.add(field)
+        return out
+
+
+class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "ipaddress"
+    # The rows an address names: each only when the caller may view it (#413).
+    # The table lives in core.hidden_fields, which templates read too.
+    hidden_related = hidden_related_spec("api.ipaddress")
     # Not columns (see api.list_fields): the role flags the address cell
     # already draws as a badge, and a tab count computed for a single
     # address only - it reads 0 on a list.
@@ -1712,7 +1864,14 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
 
         ip_str = attrs.get("ip_address", getattr(self.instance, "ip_address", None))
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
-        if ip_str and prefix is not None:
+        # Judged when the address or its prefix changes: an address stranded
+        # outside its prefix before the checks still saves from its form
+        # (#389).
+        placed = _changes(self.instance, attrs, "ip_address", norm=_ip_norm) or _changes(
+            self.instance, attrs, "prefix")
+        if ip_str and prefix is not None and (
+            placed or _changes(self.instance, attrs, "mask_length")
+        ):
             try:
                 addr = _ipa.ip_address(ip_str)
             except ValueError:
@@ -1724,7 +1883,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                 raise serializers.ValidationError(
                     {"prefix": f"Prefix {prefix.cidr} is not a valid network."}
                 )
-            if addr.version != net.version or addr not in net:
+            if placed and (addr.version != net.version or addr not in net):
                 raise serializers.ValidationError(
                     {"ip_address": f"{ip_str} is not inside the prefix {prefix.cidr}."}
                 )
@@ -1734,10 +1893,10 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
                     {"mask_length": f"An IPv{addr.version} address takes at most /{addr.max_prefixlen}."}
                 )
             # A prefix that allocates only from its ranges refuses an address
-            # outside every range - but only when the address or prefix is
-            # what's being set; renaming a legacy IP still saves.
+            # outside every range - but only when the address or prefix
+            # changes; renaming a legacy IP still saves.
             if (
-                ("ip_address" in attrs or "prefix" in attrs)
+                placed
                 and prefix.allocate_from_ranges
                 and not prefix.in_allocation(ip_str)
             ):
@@ -1905,6 +2064,7 @@ class IPAddressSerializer(ObjectPermsSerializerMixin, CustomFieldsSerializerMixi
             # Set through their monitoring endpoints, which do the rest.
             "monitoring_excluded", "availability_since",
         ]
+        list_serializer_class = _HiddenRelatedListSerializer
 
 
 # ─── IP picker serializers ─────────────────────────────────────────────
@@ -2205,6 +2365,15 @@ def _img_url(serializer, f):
         return None
 
 
+def _eol_payload(platform, context) -> dict | None:
+    """A platform's end-of-life block (#8), or None while the feature is off.
+    The setting is read once per request; lists join ``eol_mapping`` so the
+    rows cost no extra query."""
+    from compliance.eol import config_for, payload
+
+    return payload(platform, config_for((context or {}).get("request")))
+
+
 # User-entered vendor lifecycle window + the derived state - shared by
 # DeviceType (hardware) and Platform (OS). `lifecycle_state` is a model
 # property, so ReadOnlyField picks it up on any LifecycleMixin serializer.
@@ -2489,8 +2658,18 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         if rail_at is not None and height is not None and rail_at > height:
             raise serializers.ValidationError(
                 {"din_rail_mm": f"Below the body ({din.mm(height)} mm tall)."})
-        if self.instance is not None and ("width_mm" in attrs or "din_profiles" in attrs):
-            din.check_type_change(self.instance, get("width_mm"), profiles)
+        inst = self.instance
+        if inst is not None and (
+            _changes(inst, attrs, "width_mm")
+            or _changes(inst, attrs, "din_profiles", norm=lambda v: set(v or []))
+        ):
+            din.check_type_change(inst, get("width_mm"), profiles)
+        if inst is not None and _changes(inst, attrs, "u_height", "is_full_depth", "rack_width"):
+            # Its racked devices keep the rack rules (#390).
+            from . import rack_units
+
+            rack_units.check_type_change(
+                inst, get("u_height"), get("is_full_depth"), get("rack_width"))
         return attrs
 
     class Meta:
@@ -2723,12 +2902,17 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     hardware_count = serializers.SerializerMethodField()
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
+    front_port_count = serializers.SerializerMethodField()
+    rear_port_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
     image_count = serializers.SerializerMethodField()
     certificate_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
+    # Support & warranty coverage (#421): {status, end, contracts}, from the
+    # list queryset's annotations - no query per row.
+    coverage = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -2875,7 +3059,21 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
                 "release_date": p.release_date,
                 "end_of_support": p.end_of_support,
-                "lifecycle_state": p.lifecycle_state}
+                "lifecycle_state": p.lifecycle_state,
+                # End-of-life data (#8): null while the feature is off.
+                "eol": _eol_payload(p, self.context)}
+
+    @extend_schema_field(inline_serializer("DeviceCoverageBrief", {
+        "status": serializers.ChoiceField(choices=["covered", "expiring", "expired", "none"]),
+        "end": serializers.DateField(allow_null=True),
+        "contracts": serializers.IntegerField(),
+    }))
+    def get_coverage(self, obj):
+        from .support_coverage import device_payload
+
+        view = self.context.get("view")
+        fresh = getattr(view, "action", None) in ("create", "update", "partial_update")
+        return device_payload(obj, self.context.get("request"), fresh=fresh)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -2976,9 +3174,40 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {field: "Pick an IP assigned to this device."}
                 )
 
+        inst = self.instance
+
+        def changed(*fields):
+            # A create sets everything; an update counts a field only when it
+            # differs, so a form that sends unchanged values back does not
+            # re-judge a row stored before a rule existed.
+            return inst is None or any(
+                f in attrs and attrs[f] != getattr(inst, f) for f in fields
+            )
+
+        eff_type = attrs.get("device_type", getattr(inst, "device_type", None))
+        # A side counts only on a half-width type; a full-width one drops it.
+        sided = bool(eff_type and eff_type.rack_width == "half")
+        placement_changed = changed(
+            "rack", "position", "face", "device_type", "mount",
+            *(("rack_side",) if sided else ()),
+        )
+        site_changed = changed("rack", "site", "location", "cabinet")
+
         self._validate_cabinet(attrs)
 
         rack = attrs.get("rack", getattr(self.instance, "rack", None))
+        if rack is not None and (placement_changed or site_changed):
+            # Held until the request commits: a rack shrinking or moving
+            # site meanwhile waits for this placement, or this one for it.
+            from . import rack_units
+
+            if placement_changed:
+                # The type first, as a type change takes it (#390): one being
+                # changed meanwhile is waited for and its new size read.
+                rack_units.share_type(eff_type)
+            rack = rack_units.lock_rack(rack)
+        if site_changed:
+            self._validate_site(attrs, rack)
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
@@ -3029,14 +3258,17 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                     {"mount": "Set a mount side before offset/span."}
                 )
 
-        if rack is None or position is None:
+        if rack is None or position is None or not placement_changed:
             return attrs
         if width == "half" and not side:
             raise serializers.ValidationError(
                 {"rack_side": "This device type is half-width - pick which "
                               "half of the U it sits in (left or right)."}
             )
-        height = (dt.u_height if dt else 1) or 1
+        from .rack_units import full_depth
+        from .rack_units import height as unit_height
+
+        height = unit_height(dt)
         top = rack.starting_unit + rack.u_height - 1
         if position < rack.starting_unit or position + height - 1 > top:
             raise serializers.ValidationError(
@@ -3044,26 +3276,53 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                              f"{rack.u_height}U rack."}
             )
         my_units = set(range(position, position + height))
+        my_full = full_depth(dt)
         others = rack.devices.select_related("device_type").exclude(
             pk=getattr(self.instance, "pk", None)
         )
         for d in others:
             if d.position is None:
                 continue
-            # Same face conflicts (or a full-depth device with no face set).
-            if face and d.face and d.face != face:
+            # Same face conflicts, and so does a device with no face set. On
+            # opposite faces two devices share a U only when neither is full
+            # depth (#375).
+            d_full = full_depth(d.device_type)
+            across = bool(face and d.face and d.face != face)
+            if across and not (my_full or d_full):
                 continue
             # Two half-width devices coexist in the same U on opposite sides.
             d_width = (d.device_type.rack_width if d.device_type else "") or "full"
             if (width == "half" and d_width == "half"
                     and side and d.rack_side and d.rack_side != side):
                 continue
-            dh = (d.device_type.u_height if d.device_type else 1) or 1
-            if my_units & set(range(d.position, d.position + dh)):
-                raise serializers.ValidationError(
-                    {"position": f"Overlaps {d.name} at U{d.position}."}
-                )
+            if my_units & set(range(d.position, d.position + unit_height(d.device_type))):
+                if not across:
+                    msg = f"Overlaps {d.name} at U{d.position}."
+                elif d_full:
+                    msg = f"Overlaps {d.name} at U{d.position}, which is full depth."
+                else:
+                    msg = (f"Overlaps {d.name} at U{d.position} on the {d.face}; "
+                           "this device is full depth.")
+                raise serializers.ValidationError({"position": msg})
         return attrs
+
+    def _validate_site(self, attrs, rack) -> None:
+        """A racked device is at its rack's site, and a device's location is
+        in its site (#377). A device with no site takes its rack's."""
+        inst = self.instance
+        site = attrs.get("site", getattr(inst, "site", None))
+        if rack is not None:
+            if site is None:
+                site = attrs["site"] = rack.site
+            elif site.pk != rack.site_id:
+                field = "site_id" if "site" in attrs and "rack" not in attrs else "rack_id"
+                raise serializers.ValidationError(
+                    {field: "Pick a rack in the device's site."})
+        location = attrs.get("location", getattr(inst, "location", None))
+        if location is not None and site is not None and location.site_id != site.pk:
+            field = "site_id" if "site" in attrs and "location" not in attrs else "location_id"
+            raise serializers.ValidationError(
+                {field: "Pick a location within the device's site."})
 
     def validate_image_ports(self, value):
         from .face_ports import validate_image_ports_doc
@@ -3114,7 +3373,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             if "cabinet" in attrs and get("location") is None \
                     and cabinet.location_id is not None:
                 attrs["location"] = cabinet.location
-        moved = any(f in attrs for f in ("cabinet", "din_rail", "din_offset_mm", "device_type"))
+        # Placed again only when a value it depends on changes, so devices
+        # stored overlapping before the rule still save from their form (#389).
+        moved = _changes(inst, attrs, "cabinet", "din_rail", "din_offset_mm", "device_type")
         if rail is not None and moved:
             attrs["din_offset_mm"] = din.place(
                 rail, get("device_type"), offset, exclude=getattr(inst, "pk", None))
@@ -3137,14 +3398,21 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
     @detail_only(0)
     def get_hardware_count(self, obj) -> int:
-        # Everything on the Hardware tab: bays, modules, inventory, antennas,
-        # front/rear.
+        # Everything on the Hardware tab: bays, modules, inventory, antennas.
+        # Front and rear ports have tabs of their own (#345).
         return (
             obj.device_bays.count() + obj.module_bays.count()
             + obj.modules.count() + obj.inventory_items.count()
             + obj.antennas.count()
-            + obj.front_ports.count() + obj.rear_ports.count()
         )
+
+    @detail_only(0)
+    def get_front_port_count(self, obj) -> int:
+        return obj.front_ports.count()
+
+    @detail_only(0)
+    def get_rear_port_count(self, obj) -> int:
+        return obj.rear_ports.count()
 
     @detail_only(0)
     def get_console_count(self, obj) -> int:
@@ -3226,6 +3494,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
+                  "warranty_end", "coverage",
                   "description", "comments", "airflow", "effective_airflow",
                   "port_labels", "topology_card", "topology_photo_size",
                   "latitude", "longitude",
@@ -3236,6 +3505,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "tags", "tag_ids", "custom_fields",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count",
+                  "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "permissions",
                   "created_at", "updated_at"]
@@ -3255,6 +3525,14 @@ def _point_kind(t) -> str:
         if getattr(t, f"{field}_id") is not None:
             return field
     return ""
+
+
+def _kind_label(kind: str, article: bool = False) -> str:
+    """``power_outlet`` → "Power outlet" ("A power outlet" with ``article``)."""
+    words = kind.replace("_", " ")
+    if article:
+        words = ("an " if words[0] in "aeiou" else "a ") + words
+    return words[0].upper() + words[1:]
 
 
 def _point_of(t):
@@ -3677,6 +3955,37 @@ class MACAddressSerializer(
             return cache[obj.pk]
         return vendor_of_object(obj)
 
+    # Where the network learned the MAC - the MAC page's Location (#344).
+    location = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj) -> dict | None:
+        from monitoring.mac_location import location_cells
+        from monitoring.mac_tables import canon_mac
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            # Sightings are cut to the caller's device scope: no caller, no
+            # Location rather than the tenant's whole view.
+            return None
+        # Resolved once for the whole page, like the vendor (#340).
+        cache = getattr(self.root, "_location_cache", None)
+        if cache is None or obj.tenant_id not in cache:
+            inst = self.root.instance
+            objs = list(inst) if isinstance(inst, (list, tuple)) else [obj]
+            by_tenant: dict = {}
+            for o in objs:
+                by_tenant.setdefault(o.tenant_id, set()).add(canon_mac(o.mac_address))
+            by_tenant.setdefault(obj.tenant_id, set()).add(canon_mac(obj.mac_address))
+            tenants = Tenant.objects.in_bulk(list(by_tenant))
+            cache = {
+                tid: location_cells(tenants[tid], macs - {None}, user)
+                for tid, macs in by_tenant.items() if tid in tenants
+            }
+            self.root._location_cache = cache
+        return (cache.get(obj.tenant_id) or {}).get(canon_mac(obj.mac_address))
+
     assigned_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="assigned_interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
@@ -3690,9 +3999,9 @@ class MACAddressSerializer(
         model = MACAddress
         fields = ["id", "numid", "mac_address", "assigned_interface",
                   "assigned_interface_id", "description", "vendor_override",
-                  "vendor", "tags", "tag_ids", "custom_fields", "created_at",
-                  "updated_at"]
-        read_only_fields = ["id", "numid", "vendor", "created_at", "updated_at"]
+                  "vendor", "location", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "vendor", "location", "created_at", "updated_at"]
 
 
 class MACAddressMiniSerializer(serializers.ModelSerializer):
@@ -5019,6 +5328,10 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
 
         if self.instance is None and (not a or not b):
             raise serializers.ValidationError({"a": "Both ends need at least one port."})
+        # An update may replace an end but never empty it (#378).
+        for side, pts in (("a", a), ("b", b)):
+            if pts is not None and not pts:
+                raise serializers.ValidationError({side: "Both ends need at least one port."})
 
         def existing(end):
             if self.instance is None:
@@ -5042,6 +5355,13 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                     obj_tenant_id = obj.device.tenant_id
                 if tenant is not None and obj_tenant_id != tenant.id:
                     raise serializers.ValidationError({side: "Pick a port in the current tenant."})
+                # A circuit end bound to a VM interface (#432) is already
+                # landed; it takes no cable as well.
+                if kind == "circuit_termination" and obj.vm_interface_id is not None:
+                    raise serializers.ValidationError(
+                        {side: f"{obj.circuit.cid} side {obj.term_side} lands on a "
+                               "VM interface and takes no cable."}
+                    )
                 clash = CableTermination.objects.filter(**{kind: obj})
                 if self.instance is not None:
                     clash = clash.exclude(cable=self.instance)
@@ -5061,6 +5381,31 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
                     {side: "One end of a cable is one kind of port - "
                            f"got {', '.join(sorted(kinds))}."}
                 )
+
+        # The two ends plug into each other (#378): checked when an end
+        # changes - its set of ports, in any order - so a stored cable from
+        # before the rule still saves from its form (#389).
+        def points(pts):
+            return {(k, o.pk) for k, o in pts}
+
+        ends_changed = (
+            self.instance is None
+            or (a is not None and points(a) != points(existing("A")))
+            or (b is not None and points(b) != points(existing("B")))
+        )
+        if ends_changed:
+            from .cable_points import compatible_ends
+
+            a_kinds = {k for k, _ in eff_a}
+            b_kinds = {k for k, _ in eff_b}
+            for ak in sorted(a_kinds):
+                for bk in sorted(b_kinds):
+                    if not compatible_ends(ak, bk):
+                        side = "b" if b is not None else "a"
+                        raise serializers.ValidationError({side: (
+                            f"{_kind_label(ak, article=True)} can't be cabled to "
+                            f"{_kind_label(bk, article=True).lower()}."
+                        )})
 
         # ── Fibre strands ──────────────────────────────────────────────────
         eff_type = attrs.get("type", getattr(self.instance, "type", ""))
@@ -5134,11 +5479,17 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
+        # Every rewritten end's old terminations go before any new one is
+        # made: a port moving from one end to the other (a swap) would
+        # otherwise meet its own old row on the unique constraint (#392). A
+        # queryset delete started here is not a port going away, so the
+        # empty-end signal leaves the cable alone (#378).
+        rewritten = [end for end, pts in (("A", a), ("B", b)) if pts is not None]
+        if rewritten:
+            instance.terminations.filter(end__in=rewritten).delete()
         if a is not None:
-            instance.terminations.filter(end="A").delete()
             self._sync(instance, "A", a)
         if b is not None:
-            instance.terminations.filter(end="B").delete()
             self._sync(instance, "B", b)
         if tags is not None:
             instance.tags.set(tags)
@@ -5526,6 +5877,8 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(), write_only=True
     )
+    # A group has no site of its own; it sits wherever its cluster does.
+    site = SiteMiniSerializer(source="cluster.site", read_only=True)
     kind_display = serializers.CharField(
         source="get_kind_display", read_only=True
     )
@@ -5559,14 +5912,23 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
             raise serializers.ValidationError(
                 {"name": f"{cluster.name} already has a group called {name}."}
             )
+        # A group lives below one cluster. Moving it while it has members
+        # would leave those VMs grouped on a cluster they do not run on.
+        if self.instance is not None and cluster.pk != self.instance.cluster_id:
+            stranded = self.instance.virtual_machines.exclude(cluster=cluster)
+            if stranded.exists():
+                raise serializers.ValidationError(
+                    {"cluster_id": "Its VMs run on another cluster. Move or "
+                                   "ungroup them first."}
+                )
         return attrs
 
     class Meta:
         model = VirtualMachineGroup
         fields = ["id", "name", "kind", "kind_display", "cluster", "cluster_id",
-                  "description", "vm_count", "tags", "tag_ids", "custom_fields",
-                  "created_at", "updated_at"]
-        read_only_fields = ["id", "kind_display", "vm_count",
+                  "site", "description", "vm_count", "tags", "tag_ids",
+                  "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "kind_display", "site", "vm_count",
                             "created_at", "updated_at"]
 
 
@@ -5658,7 +6020,10 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
         p = obj.platform
-        return {"id": str(p.id), "name": p.name, "slug": p.slug} if p else None
+        if not p:
+            return None
+        return {"id": str(p.id), "name": p.name, "slug": p.slug,
+                "eol": _eol_payload(p, self.context)}
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -5671,6 +6036,25 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     synced_from_id = serializers.CharField(read_only=True, default=None)
     #: Unresolved differences between Danbyte and the hypervisor.
     drift_count = serializers.IntegerField(read_only=True, default=0)
+
+    def validate(self, attrs):
+        """A VM group sits below one cluster, so a VM can only join a group on
+        the cluster it runs on. Moving the VM to another cluster without
+        naming a group drops the old one rather than refusing the move."""
+        attrs = super().validate(attrs)
+        cluster = attrs.get("cluster", getattr(self.instance, "cluster", None))
+        if "group" in attrs:
+            group = attrs["group"]
+            if group is not None and cluster is not None \
+                    and group.cluster_id != cluster.pk:
+                raise serializers.ValidationError(
+                    {"group_id": f"{group.name} is a group on another cluster."}
+                )
+        elif self.instance is not None and "cluster" in attrs:
+            current = self.instance.group
+            if current is not None and current.cluster_id != cluster.pk:
+                attrs["group"] = None
+        return attrs
 
     class Meta:
         model = VirtualMachine
@@ -5755,6 +6139,23 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         write_only=True, required=False, many=True,
     )
     ip_addresses = serializers.SerializerMethodField()
+    circuit_termination = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_circuit_termination(self, obj):
+        """The circuit end landing on this interface (#432), when the caller
+        may view that end - ``{id, side, circuit: {id, cid}}`` or null."""
+        from .visible_ips import visible_children
+
+        rows = visible_children(
+            obj.circuit_terminations, self.context,
+            "circuittermination", "circuit__tenant",
+        )
+        if not rows:
+            return None
+        t = rows[0]
+        return {"id": str(t.id), "side": t.term_side,
+                "circuit": {"id": str(t.circuit_id), "cid": t.circuit.cid}}
 
     @extend_schema_field(serializers.ListField())
     def get_ip_addresses(self, obj):
@@ -5775,6 +6176,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "parent", "parent_id", "mac_address", "snmp_name",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",
+                  "circuit_termination",
                   "vlan", "vlan_id", "mode", "mode_display",
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids", "custom_fields",
@@ -5893,6 +6295,28 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                             "created_at", "updated_at"]
 
 
+class RackMoveSerializer(serializers.Serializer):
+    """Where ``POST /api/racks/<id>/move/`` takes a rack and its devices
+    (#394): a site of the active tenant, and optionally a location in it."""
+
+    site_id = TenantScopedPrimaryKeyRelatedField(source="site", queryset=Site.objects.all())
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        site, location = attrs["site"], attrs.get("location")
+        rack = self.context.get("rack")
+        if rack is not None and site.pk == rack.site_id:
+            raise serializers.ValidationError({"site_id": "The rack is already at this site."})
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the new site."})
+        return attrs
+
+
 class RackMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Rack
@@ -5953,6 +6377,28 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
             raise serializers.ValidationError(
                 {"location_id": "Pick a location within the rack's site."}
             )
+        inst = self.instance
+        if inst is not None:
+            from . import rack_units
+
+            units = (attrs.get("starting_unit", inst.starting_unit),
+                     attrs.get("u_height", inst.u_height))
+            moved = site is not None and site.pk != inst.site_id
+            if units != (inst.starting_unit, inst.u_height) or moved:
+                # Locked like a placement locks it: a device being placed
+                # meanwhile is committed and seen here, or waits (#376).
+                rack_units.lock_rack(inst)
+            if units != (inst.starting_unit, inst.u_height):
+                field = "u_height" if units[1] != inst.u_height else "starting_unit"
+                rack_units.check_units(inst, *units, field=field)
+            if moved:
+                # Its devices are at its site (#377): they leave before it moves.
+                n = inst.devices.count()
+                if n:
+                    raise serializers.ValidationError({"site_id": (
+                        f"{n} device{'s are' if n != 1 else ' is'} in it, at its site"
+                        " - move them out first."
+                    )})
         return attrs
 
     def create(self, validated_data):
@@ -6099,7 +6545,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "status", "status_id", "location", "location_id",
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
-                  "max_weight", "max_weight_unit",
+                  "max_weight", "max_weight_unit", "max_power_w",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",
@@ -6577,7 +7023,19 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     def get_device_count(self, obj) -> int:
         return obj.devices.count()
 
+    vm_count = serializers.SerializerMethodField()
+
+    def get_vm_count(self, obj) -> int:
+        # The viewset annotates it; a bare instance (create/update) counts.
+        n = getattr(obj, "vm_count", None)
+        return n if n is not None else obj.virtual_machines.count()
+
     lifecycle_state = serializers.ReadOnlyField()
+    eol = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_eol(self, obj):
+        return _eol_payload(obj, self.context)
 
     class Meta:
         model = Platform
@@ -6585,8 +7043,8 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "device_count", "created_at", "updated_at"]
-        read_only_fields = ["id", "device_count", "lifecycle_state",
+                  "eol", "device_count", "vm_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "device_count", "vm_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 
 
@@ -6934,7 +7392,36 @@ class IPRangeSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagg
         prefix = attrs.get("prefix", getattr(self.instance, "prefix", None))
         if prefix is not None:
             attrs["vrf"] = prefix.vrf
+        # Inside its prefix, and clear of every other range in the VRF
+        # (#379). Checked when the span, prefix or VRF changes, so a range
+        # saved before the check still saves from its form (#389).
+        placed = _changes(
+            self.instance, attrs, "start_address", "end_address", norm=_ip_norm
+        ) or _changes(self.instance, attrs, "prefix", "vrf")
+        if start and end and placed:
+            self._check_placement(attrs, start, end, prefix)
         return attrs
+
+    def _check_placement(self, attrs, start, end, prefix):
+        from api.views import _get_active_tenant
+
+        if self.instance is not None:
+            tenant_id = self.instance.tenant_id
+        else:
+            request = self.context.get("request")
+            tenant = _get_active_tenant(request) if request is not None else None
+            tenant_id = getattr(tenant, "id", None)
+        # A detached copy: the instance itself is only written by save().
+        probe = IPRange(
+            start_address=start, end_address=end, prefix=prefix,
+            vrf=attrs.get("vrf", getattr(self.instance, "vrf", None)),
+        )
+        if self.instance is not None:
+            probe.pk = self.instance.pk
+            probe._state.adding = False
+        errors = probe.placement_errors(tenant_id=tenant_id)
+        if errors:
+            raise serializers.ValidationError(errors)
 
     dhcp = serializers.SerializerMethodField()
 
@@ -6997,12 +7484,38 @@ class AggregateSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
     )
 
     def validate_prefix(self, value):
-        import ipaddress as _ip
-
+        # Stored canonical (#381): ``2001:DB8::/32`` and ``2001:db8::/32``
+        # are one block, and ``10.1.2.3/8`` is ``10.0.0.0/8``.
         try:
-            _ip.ip_network(value, strict=False)
+            value = Aggregate.normalise_prefix(value)
         except ValueError:
             raise serializers.ValidationError("Enter a valid CIDR prefix.")
+        same_block = False
+        if self.instance is not None:
+            try:
+                same_block = Aggregate.normalise_prefix(self.instance.prefix) == value
+            except ValueError:
+                same_block = False
+        if same_block and self.instance.prefix == value:
+            return value
+        from api.views import _get_active_tenant
+
+        request = self.context.get("request")
+        tenant_id = getattr(self.instance, "tenant_id", None) or getattr(
+            _get_active_tenant(request) if request is not None else None, "id", None
+        )
+        probe = Aggregate(prefix=value, tenant_id=tenant_id)
+        probe.pk = getattr(self.instance, "pk", None)
+        other = probe.duplicate_of()
+        if other is not None and same_block:
+            # Its own block in another spelling (#389): a row kept beside its
+            # twin by migration 0204 is not a duplicate of itself, and keeps
+            # the spelling it is stored in until the two are merged by hand.
+            return self.instance.prefix
+        if other is not None:
+            raise serializers.ValidationError(
+                f"{value} already exists as the aggregate {other.prefix}."
+            )
         return value
 
     class Meta:
@@ -7108,6 +7621,26 @@ class VLANGroupSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 {"max_vid": "Max VID must be ≥ min VID."}
             )
+        # Narrowing the range must not strand the group's VLANs (#380). Judged
+        # when a bound changes, and only for VLANs inside the old bounds, so a
+        # group from before the rule still saves from its form (#389).
+        inst = self.instance
+        if inst is not None and _changes(inst, attrs, "min_vid", "max_vid"):
+            out = list(
+                inst.vlans.filter(vlan_id__gte=inst.min_vid, vlan_id__lte=inst.max_vid)
+                .exclude(vlan_id__gte=lo, vlan_id__lte=hi)
+                .order_by("vlan_id").values_list("vlan_id", flat=True)
+            )
+            if out:
+                shown = ", ".join(str(v) for v in out[:10]) + (
+                    f" and {len(out) - 10} more" if len(out) > 10 else ""
+                )
+                field = "min_vid" if any(v < lo for v in out) else "max_vid"
+                raise serializers.ValidationError({
+                    field: f"{lo}–{hi} would leave VLAN{'s' if len(out) != 1 else ''} "
+                           f"{shown} outside the group. Move or renumber "
+                           f"{'them' if len(out) != 1 else 'it'} first."
+                })
         return attrs
 
     class Meta:
@@ -7187,6 +7720,16 @@ class FHRPGroupSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
         write_only=True, required=False, many=True,
     )
 
+    # The key lives in the secret store (#383), as an SSID's PSK does: write
+    # only, blank on edit keeps it, null clears it. The viewset's mixin moves
+    # it in and out; ``reveal-psk`` reads it back under audit.
+    auth_key = serializers.CharField(
+        source="psk", write_only=True, required=False, allow_blank=True,
+        allow_null=True, max_length=255, style={"input_type": "password"},
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    auth_key_set = serializers.BooleanField(source="psk_set", read_only=True)
+
     def get_assignment_count(self, obj) -> int:
         return obj.assignments.count()
 
@@ -7195,15 +7738,35 @@ class FHRPGroupSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
             raise serializers.ValidationError("Group ID must be 0–255.")
         return value
 
+    def validate_auth_key(self, value):
+        return require_store_for_key(value, "an authentication key")
+
+    def validate(self, attrs):
+        """No authentication type means no key: turning it off clears the
+        stored key, and a key sent with it is refused."""
+        attrs = super().validate(attrs)
+        auth_type = attrs.get(
+            "auth_type", self.instance.auth_type if self.instance else ""
+        )
+        if not auth_type:
+            if attrs.get("psk"):
+                raise serializers.ValidationError(
+                    {"auth_key": "Choose an authentication type to set a key."}
+                )
+            if self.instance is not None and self.instance.psk_set:
+                attrs["psk"] = None
+        return attrs
+
     class Meta:
         model = FHRPGroup
         fields = ["id", "name", "protocol", "protocol_display",
-                  "group_id", "auth_type", "auth_type_display", "auth_key",
+                  "group_id", "auth_type", "auth_type_display",
+                  "auth_key", "auth_key_set",
                   "virtual_ip", "virtual_ip_id", "nd_ra", "nd_ra_interval",
                   "assignments", "assignment_count",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "auth_key_set", "created_at", "updated_at"]
 
 
 # ─── Contacts ────────────────────────────────────────────────────────────────
@@ -7530,6 +8093,23 @@ class CircuitMiniSerializer(NumIdModelSerializer):
         fields = ["id", "cid"]
 
 
+class ViewableListSerializer(serializers.ListSerializer):
+    """A parent's nested child list cut to the rows the reader may view as
+    ``rbac_slug`` - a tenant-wide circuit, tunnel or L2VPN lists only the
+    ends inside the reader's site scope (#426)."""
+
+    def __init__(self, *args, rbac_slug, tenant_path, **kwargs):
+        self.rbac_slug = rbac_slug
+        self.tenant_path = tenant_path
+        super().__init__(*args, **kwargs)
+
+    def to_representation(self, data):
+        from .visible_ips import visible_children
+
+        rows = visible_children(data, self.context, self.rbac_slug, self.tenant_path)
+        return super().to_representation(rows)
+
+
 class CircuitTerminationSerializer(serializers.ModelSerializer):
     """One end (A/Z) of a circuit - exactly one of site / provider_network."""
 
@@ -7568,16 +8148,54 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    # The VM interface the handoff lands on instead of a cabled device port
+    # (#432). Tenant-scoped, and fenced to the caller's sites under site
+    # separation like any other site-bound pick.
+    vm_interface = serializers.SerializerMethodField()
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_interface", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_vm_interface(self, obj):
+        i = obj.vm_interface
+        if i is None:
+            return None
+        return {"id": str(i.id), "name": i.name,
+                "vm": {"id": str(i.vm_id), "name": i.vm.name}}
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         site = attrs.get("site", getattr(self.instance, "site", None))
         pn = attrs.get(
             "provider_network", getattr(self.instance, "provider_network", None)
         )
+        vmi = attrs.get("vm_interface", getattr(self.instance, "vm_interface", None))
+        vm_site = vmi.vm.site if vmi is not None else None
+        # An end on a VM interface lands at the VM's site unless told
+        # otherwise (#432).
+        if vm_site is not None and not site and not pn:
+            site = attrs["site"] = vm_site
         if bool(site) == bool(pn):
             raise serializers.ValidationError(
                 "A termination lands on exactly one of a site or a provider network."
             )
+        if vmi is not None:
+            if site and vm_site is not None and vm_site.pk != site.pk:
+                raise serializers.ValidationError({
+                    "vm_interface_id": f"{vmi.vm.name} is at {vm_site.name}, "
+                                       f"not {site.name}."
+                })
+            if (
+                attrs.get("vm_interface") is not None
+                and self.instance is not None
+                and self.instance.terminations.exists()
+            ):
+                raise serializers.ValidationError({
+                    "vm_interface_id": "This end is cabled to a device port. "
+                                       "Remove the cable first."
+                })
         return attrs
 
     class Meta:
@@ -7586,6 +8204,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
                   "connected_to",
                   "site", "site_id",
                   "provider_network", "provider_network_id",
+                  "vm_interface", "vm_interface_id",
                   "port_speed_kbps", "upstream_speed_kbps", "xconnect_id",
                   "pp_info", "description", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -7598,7 +8217,10 @@ class CircuitSerializer(StatusSerializerMixin,
 
     provider = ProviderMiniSerializer(read_only=True)
     type = CircuitTypeMiniSerializer(read_only=True)
-    terminations = CircuitTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=CircuitTerminationSerializer(), read_only=True,
+        rbac_slug="circuittermination", tenant_path="circuit__tenant",
+    )
     tags = TagSerializer(many=True, read_only=True)
 
     provider_id = TenantScopedPrimaryKeyRelatedField(
@@ -7641,6 +8263,11 @@ class PowerPanelSerializer(
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True,
     )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
@@ -7650,10 +8277,31 @@ class PowerPanelSerializer(
         v = getattr(obj, "feed_count_annotated", None)
         return v if v is not None else obj.power_feeds.count()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # A panel's location must live in the panel's site - judged when
+        # either changes, so a panel whose location moved since still saves
+        # from its form (#389).
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if (
+            location is not None and site is not None and location.site_id != site.id
+            and _changes(self.instance, attrs, "location", "site")
+        ):
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the panel's site."}
+            )
+        return attrs
+
     class Meta:
         model = PowerPanel
-        fields = ["id", "name", "site", "site_id", "comments", "feed_count",
-                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        fields = ["id", "name", "site", "site_id", "location", "location_id", "comments",
+                  "feed_count", "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "feed_count", "created_at", "updated_at"]
 
 
@@ -7739,19 +8387,24 @@ class SecretPSKSerializerMixin(serializers.Serializer):
     psk_set = serializers.BooleanField(read_only=True)
 
     def validate_psk(self, value):
-        if value in (None, ""):
-            return value
-        from monitoring.secret_store import secret_store_enabled
+        return require_store_for_key(value, "a PSK")
 
-        # Fail closed: no store means no safe home for the key, and Danbyte
-        # will not fall back to plaintext for a credential.
-        if not secret_store_enabled():
-            raise serializers.ValidationError(
-                "No secret store is enabled, so a PSK cannot be stored safely. "
-                "An administrator must enable one under Settings → Security → "
-                "Secret store first."
-            )
+
+def require_store_for_key(value, what: str):
+    """Refuse a key when no secret store is enabled. Fail closed: no store
+    means no safe home for the key, and Danbyte will not fall back to
+    plaintext for a credential. Blank and null pass (keep / clear)."""
+    if value in (None, ""):
         return value
+    from monitoring.secret_store import secret_store_enabled
+
+    if not secret_store_enabled():
+        raise serializers.ValidationError(
+            f"No secret store is enabled, so {what} cannot be stored safely. "
+            "An administrator must enable one under Settings → Security → "
+            "Secret store first."
+        )
+    return value
 
 
 class WirelessLANSerializer(SecretPSKSerializerMixin, StatusSerializerMixin, 
@@ -7945,7 +8598,10 @@ class TunnelSerializer(StatusSerializerMixin,
     cf_model = "tunnel"
     group = TunnelGroupMiniSerializer(read_only=True)
     ipsec_profile = IPSecProfileMiniSerializer(read_only=True)
-    terminations = TunnelTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=TunnelTerminationSerializer(), read_only=True,
+        rbac_slug="tunneltermination", tenant_path="tunnel__tenant",
+    )
     encapsulation_display = serializers.CharField(
         source="get_encapsulation_display", read_only=True
     )
@@ -8523,7 +9179,10 @@ class L2VPNSerializer(StatusSerializerMixin,
         source="export_targets", queryset=RouteTarget.objects.all(),
         write_only=True, required=False, many=True,
     )
-    terminations = L2VPNTerminationSerializer(many=True, read_only=True)
+    terminations = ViewableListSerializer(
+        child=L2VPNTerminationSerializer(), read_only=True,
+        rbac_slug="l2vpntermination", tenant_path="l2vpn__tenant",
+    )
     termination_count = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -8667,6 +9326,7 @@ class FloorPlanSerializer(
     site = serializers.SerializerMethodField()
     background_image = serializers.SerializerMethodField()
     tile_count = serializers.SerializerMethodField()
+    drawing = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -8685,6 +9345,23 @@ class FloorPlanSerializer(
 
     def get_tile_count(self, obj) -> int:
         return obj.tiles.count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_drawing(self, obj):
+        """A summary of the plan's CAD drawing; the full record is
+        ``GET /api/floor-plans/{id}/drawing/``."""
+        try:
+            d = obj.drawing
+        except FloorPlan.drawing.RelatedObjectDoesNotExist:
+            return None
+        return {
+            "id": str(d.id),
+            "status": d.status,
+            "source_kind": d.source_kind,
+            "source_name": d.source_name,
+            "rendered_url": _img_url(self, d.rendered) if d.status == "ready" else None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
 
     def validate_state(self, v):
         if not isinstance(v, dict):
@@ -8714,10 +9391,121 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "background_image",
                   "background_opacity", "state", "description", "tile_count",
+                  "drawing",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "background_image",
-                            "tile_count", "created_at", "updated_at"]
+                            "tile_count", "drawing", "created_at", "updated_at"]
+
+
+class FloorPlanDrawingSerializer(serializers.Serializer):
+    """A plan's CAD drawing as the canvas reads it (read-only; writes go
+    through the plan's ``drawing`` actions). See docs/features/floor-plans.md
+    for the SVG it points at and how ``transform_mm`` places it."""
+
+    def to_representation(self, d):
+        from . import cad_render
+
+        w, h = cad_render.size_units(d)
+        cell = d.floor_plan.cell_mm
+        return {
+            "id": str(d.id),
+            "status": d.status,
+            "error": d.error,
+            "source_kind": d.source_kind,
+            "source_name": d.source_name,
+            "source_bytes": d.source_bytes,
+            "source_url": _img_url(self, d.source),
+            "rendered_url": _img_url(self, d.rendered) if d.status == "ready" else None,
+            "rendered_bytes": d.rendered_bytes,
+            "rendered_elements": d.rendered_elements,
+            "simplified": d.simplified or [],
+            "skipped": d.skipped or {},
+            "units": d.units,
+            "units_mm_per_unit": d.units_mm_per_unit,
+            "units_override": d.units_override or None,
+            "mm_per_unit": d.mm_per_unit,
+            "scale_source": d.scale_source,
+            "calibration": d.calibration,
+            "extents": d.extents,
+            "size": {"width": w, "height": h},
+            "size_mm": {"width": w * d.mm_per_unit, "height": h * d.mm_per_unit},
+            "layers": d.layers or [],
+            "placement": d.placement or {},
+            "bounds_mm": cad_render.placed_box_mm(d),
+            "transform_mm": cad_render.transform_mm(d),
+            "fit": cad_render.fit(d, cell) if d.extents else None,
+            "processed_at": d.processed_at.isoformat() if d.processed_at else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
+
+
+class FloorPlanDrawingPlacementSerializer(serializers.Serializer):
+    """PATCH body for a drawing's placement; every key optional."""
+
+    x_mm = serializers.FloatField(required=False, min_value=-10_000_000, max_value=10_000_000)
+    y_mm = serializers.FloatField(required=False, min_value=-10_000_000, max_value=10_000_000)
+    rotation = serializers.ChoiceField(choices=[0, 90, 180, 270], required=False)
+    opacity = serializers.IntegerField(required=False, min_value=0, max_value=100)
+    hidden_layers = serializers.ListField(
+        child=serializers.CharField(max_length=255, allow_blank=False, trim_whitespace=False),
+        required=False, max_length=10_000,
+    )
+    hide_text = serializers.BooleanField(required=False)
+
+    def validate_hidden_layers(self, value):
+        known = {row.get("name") for row in (self.context.get("layers") or [])}
+        if known:
+            unknown = sorted(set(value) - known)
+            if unknown:
+                raise serializers.ValidationError(
+                    f"Not a layer of this drawing: {', '.join(unknown[:5])}."
+                )
+        return sorted(set(value))
+
+
+class FloorPlanDrawingUnitsSerializer(serializers.Serializer):
+    """The units the drawing is really in, when the file's are wrong; null
+    trusts the file again."""
+
+    units = serializers.ChoiceField(
+        choices=list(FloorPlanDrawing.UNITS_OVERRIDES), allow_null=True
+    )
+
+
+class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):
+    """Two points in the SVG's viewBox units and the real distance between
+    them - the cabinet photo calibration's guides, in two dimensions."""
+
+    a = serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2)
+    b = serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2)
+    distance_mm = serializers.FloatField(min_value=1, max_value=1_000_000)
+
+    def validate(self, attrs):
+        import math
+
+        attrs = super().validate(attrs)
+        ax, ay = attrs["a"]
+        bx, by = attrs["b"]
+        if not all(math.isfinite(v) for v in (ax, ay, bx, by)):
+            raise serializers.ValidationError({"a": "Points must be finite numbers."})
+        span = math.hypot(bx - ax, by - ay)
+        w, h = self.context.get("size") or (0.0, 0.0)
+        diag = math.hypot(w, h)
+        # The guides must stand apart: 1% of the drawing, like the photo
+        # calibration's 2% of its width.
+        if span <= 0 or (diag and span < diag * 0.01):
+            raise serializers.ValidationError(
+                {"b": "The points must stand apart: at least 1% of the drawing."}
+            )
+        mpu = attrs["distance_mm"] / span
+        if not (1e-6 <= mpu <= 1e6):
+            raise serializers.ValidationError(
+                {"distance_mm": "That distance gives an implausible scale for this drawing."}
+            )
+        attrs["mm_per_unit"] = mpu
+        return attrs
 
 
 class FloorPlanTileSerializer(NumIdModelSerializer):

@@ -71,7 +71,11 @@ class BulkValues:
                 ):
                     attrs[key] = value
         for row in rows:
-            serializer = serializer_class(instance=row, context=context, partial=True)
+            # ``data`` as a PATCH body carries it: some ``validate()`` reads
+            # ``initial_data`` for keys the request may hold.
+            serializer = serializer_class(
+                instance=row, data=dict(self.updates), context=context, partial=True
+            )
             try:
                 serializer.validate(dict(attrs))
             except ValidationError as exc:

@@ -3,6 +3,11 @@ import L from "leaflet"
 import type { SiteMapCapacity, SiteMapConnection } from "@/lib/api"
 import type { DrawnCable } from "@/components/site-map/cable-geo-route"
 import { connectionPaths } from "@/components/site-map/connections-layer"
+import {
+  directionLabel,
+  splitAtMidpoint,
+} from "@/components/site-map/line-utilization"
+import type { LineUtil } from "@/components/site-map/line-utilization"
 import { fmtKbps } from "@/lib/speed"
 
 // Speed labels on the site map's lines (#246): each line's capacity - "10G",
@@ -29,12 +34,15 @@ export interface LabelLine {
   a: Pt
   z: Pt
   at: Pt
+  /** A direction chip: the arrow on it points here (Utilization). */
+  toward?: Pt
 }
 
 export interface PlacedLabel {
   id: string
   label: string
   at: Pt
+  toward?: Pt
 }
 
 /** The point halfway along a drawn path. Lengths are measured with a
@@ -150,6 +158,60 @@ export function speedLabelLines({
   return out
 }
 
+/**
+ * Utilization's direction chips: two per line, each in the middle of its
+ * half with an arrow along it - the half at A says what flows A → Z, the
+ * half at Z what flows back. The halves' ends bound the chip's room, so a
+ * line has to be long enough on screen for both.
+ */
+export function utilLabelLines({
+  connections,
+  cables,
+  util,
+  highlight,
+}: {
+  connections: readonly SiteMapConnection[]
+  cables: readonly DrawnCable[]
+  util: ReadonlyMap<string, LineUtil>
+  highlight?: ReadonlySet<string>
+}): LabelLine[] {
+  const out: LabelLine[] = []
+  const add = (id: string, path: Pt[]) => {
+    if (path.length < 2) return
+    const u = util.get(id)
+    const [first, second] = splitAtMidpoint(path)
+    const mid = second[0]
+    out.push({
+      id: `${id}:az`,
+      label: directionLabel(u?.az ?? null),
+      a: first[0],
+      z: mid,
+      at: pathMidpoint(first),
+      toward: mid,
+    })
+    out.push({
+      id: `${id}:za`,
+      label: directionLabel(u?.za ?? null),
+      a: mid,
+      z: second[second.length - 1],
+      at: pathMidpoint(second),
+      toward: mid,
+    })
+  }
+  for (const [id, path] of connectionPaths(connections)) add(id, path)
+  const traced = highlight && highlight.size > 0 ? highlight : null
+  const seen = new Set<string>()
+  for (const c of cables) {
+    if (traced && !traced.has(c.id)) continue
+    // Cables drawn on one line share its chips: the first one speaks.
+    const key = pathKey(c.path)
+    if (c.path.length < 2 || seen.has(key)) continue
+    seen.add(key)
+    add(c.id, c.path)
+  }
+  return out
+}
+
 /** The chip's box on screen, from its text (10px tabular figures). */
 function chipBox(label: string, x: number, y: number) {
   const w = label.length * 6.2 + 10
@@ -203,7 +265,12 @@ export function pickSpeedLabels(
     )
       continue
     boxes.push(box)
-    placed.push({ id: c.line.id, label: c.line.label, at: c.line.at })
+    placed.push({
+      id: c.line.id,
+      label: c.line.label,
+      at: c.line.at,
+      toward: c.line.toward,
+    })
   }
   return placed
 }
@@ -244,17 +311,28 @@ export function showSpeedLabels(
       size: map.getSize(),
       project: (p) => map.latLngToContainerPoint(p),
     })
-    for (const l of picked)
+    for (const l of picked) {
+      // A direction chip's arrow points along its half, toward the far end.
+      let arrow = ""
+      if (l.toward) {
+        const p = map.latLngToContainerPoint(l.at)
+        const q = map.latLngToContainerPoint(l.toward)
+        const deg = Math.round(
+          (Math.atan2(q.y - p.y, q.x - p.x) * 180) / Math.PI
+        )
+        arrow = `<span class="sm-speed-dir" style="transform:rotate(${deg}deg)">→</span>`
+      }
       L.marker(l.at, {
         pane: PANE,
         interactive: false,
         keyboard: false,
         icon: L.divIcon({
           className: "sm-speed-anchor",
-          html: `<span class="sm-speed">${escapeHtml(l.label)}</span>`,
+          html: `<span class="sm-speed">${arrow}${escapeHtml(l.label)}</span>`,
           iconSize: [0, 0],
         }),
       }).addTo(layer)
+    }
   }
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(draw)

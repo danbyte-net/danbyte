@@ -11,6 +11,7 @@ import {
   type BuilderRule,
   type Cmp,
 } from "@/lib/filter-expr"
+import { FacetHeading } from "@/components/filter-rail"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -59,31 +60,25 @@ export function ExpressionFilter({
   value,
   onChange,
   rows,
+  onHide,
 }: {
   /** The committed expression text ("" = off). */
   value: string
   onChange: (next: string) => void
   rows: unknown[]
+  /** Hide this filter on the list (#285); omitted where it can't be. */
+  onHide?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const active = value.trim() !== ""
 
   return (
     <div>
-      <div className="mb-1.5 flex items-center justify-between">
-        <h3 className="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-          Advanced
-        </h3>
-        {active && (
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            className="text-[10px] text-muted-foreground hover:text-foreground"
-          >
-            clear
-          </button>
-        )}
-      </div>
+      <FacetHeading
+        label="Advanced"
+        onHide={onHide}
+        onClear={active ? () => onChange("") : undefined}
+      />
       <Button
         type="button"
         variant="outline"

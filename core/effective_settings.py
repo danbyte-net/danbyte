@@ -178,6 +178,48 @@ def port_count_virtual(tenant) -> bool:
     return bool(_deployment().port_count_virtual)
 
 
+#: The rack capacity levels a tenant without a settings row uses.
+CAPACITY_THRESHOLD_DEFAULTS = {"warn": 80, "critical": 95}
+
+
+def capacity_thresholds(tenant) -> dict:
+    """``{"warn", "critical"}`` - the percentages above which a rack's space,
+    power or port fill reads as filling up, and as full. Tenant only; no
+    row means the defaults. Never creates a row."""
+    if tenant is None:
+        return dict(CAPACITY_THRESHOLD_DEFAULTS)
+    from core.models import TenantSettings
+
+    row = (
+        TenantSettings.objects.filter(tenant=tenant)
+        .values_list("capacity_warn_pct", "capacity_critical_pct")
+        .first()
+    )
+    if row is None:
+        return dict(CAPACITY_THRESHOLD_DEFAULTS)
+    return {"warn": row[0], "critical": row[1]}
+
+
+#: The support-coverage warning window a tenant without a settings row uses.
+COVERAGE_WARNING_DAYS_DEFAULT = 90
+
+
+def coverage_warning_days(tenant) -> int:
+    """Days before coverage ends that it reads as Expiring (#421). Tenant
+    only; no row means the default. Never creates a row."""
+    if tenant is None:
+        return COVERAGE_WARNING_DAYS_DEFAULT
+    from core.models import TenantSettings
+
+    tenant_id = getattr(tenant, "pk", tenant)
+    days = (
+        TenantSettings.objects.filter(tenant_id=tenant_id)
+        .values_list("coverage_warning_days", flat=True)
+        .first()
+    )
+    return COVERAGE_WARNING_DAYS_DEFAULT if days is None else int(days)
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 

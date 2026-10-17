@@ -104,6 +104,12 @@ class EmailPreviewApiTests(APITestCase):
         self.assertIn("<!doctype html>", html)
         self.assertIn("data:image/png;base64,", html)  # the logo, browser-visible
         self.assertNotIn("cid:logo", html)
+        # Opened directly, the page stays locked down (#401).
+        self.assertEqual(
+            r["Content-Security-Policy"],
+            "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+        )
+        self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
         self.assertEqual(self.client.get("/api/deployment/email/templates/nope/").status_code, 404)
         reader = get_user_model().objects.create_user("reader2", "r2@acme.com", "pw")
         self.client.force_login(reader)

@@ -34,10 +34,16 @@ by *change*: **connect** (on devices - open a [Connect launcher or the SSH
 terminal](device-access.md)), **reveal** (on device credentials, wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
 self-service opt-in/out), **view credits** (on SLA agreements - see the
-[service credits](sla.md#service-credits) an agreement owes), **set default**
+[service credits](sla.md#service-credits) an agreement owes), **view cost**
+(on support contracts - see and set [what a contract
+costs](support-coverage.md#cost)),
+**set default**
 (on topology views - choose the [view Topology opens
 with](topology.md#default-view) for the tenant; tenant admins can without it,
-and its row limits say which views), and **grant
+and its row limits say which views), **view config** (on devices and on virtual
+machines, each its own grant - read the
+[configuration backups from Oxidized](oxidized.md#who-can-read-a-config);
+no built-in group holds it, because a config carries secrets), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
@@ -67,9 +73,17 @@ hand. They can't be deleted.
 
 | Group | What members can do |
 |---|---|
-| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types). |
+| **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types) - and see SLA service credits and contract costs (*view credits*, *view cost*). |
 | **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
 | **Read-only** | View every object except users, groups and permissions; change nothing. |
+
+An all-object grant carries only the verbs it lists. The Administrator grant
+lists *view credits* and *view cost*: administrators manage the grants and
+could give themselves both. Operator and Read-only hold neither, and no
+built-in group holds *reveal*, *view config*, *connect* or the other
+capability verbs. Upgrading to 0.18 adds the two verbs to the built-in
+Administrator grant; a copy of it, or one shared with another group, is left
+as it is.
 
 !!! tip "Upgrades don't lock anyone out"
     When permissions were introduced, every existing user was placed into a
@@ -150,9 +164,12 @@ rows*.
    authorisation. Leave empty to cover every tenant
    the person can reach.
 6. (Optional) Limit it to certain **sites**. This narrows the object types that
-   *belong to* a site - devices, prefixes, IPs, VLANs, racks, interfaces, and
-   the like - to those sites only. Object types with no site (VRFs, route
-   targets, tags, catalog entries) are unaffected. Leave empty for all sites.
+   *belong to* a site - devices, prefixes, IPs, VLANs, racks, interfaces,
+   services, NAT rules, and the like - to those sites only. An IP address
+   belongs to its prefix's site when it has none of its own. Object types with
+   no site (VRFs, route targets, tags, catalog entries) are unaffected. Leave
+   empty for all sites. The full list is under
+   [Which rows belong to a site](../access/site-separation.md#which-rows-belong-to-a-site).
 
     **Shared objects** (a prefix or VLAN with no site - e.g. a supernet the
     whole company allocates from) are *readable* under a site-scoped grant:
@@ -187,10 +204,32 @@ assembles the underlying permissions for you (a site-scoped edit grant plus an
 unscoped read grant for the editor; a single site-scoped read grant for the
 viewer). You can fine-tune or delete those permissions afterwards like any other.
 
+Both roles can open the sites they cover. Neither can rename or delete a
+site - that stays with administrators. The roles leave out records synced from
+other systems and device configuration history (config snapshots and state,
+DHCP, DNS, Zabbix, BMC, virtualization changes, certificate bindings); grant
+those on their own when someone needs them.
+
 An editor **reads everything** by default (the "see all, edit only mine" model,
 good for cross-site troubleshooting). Tick **"Can only see their own sites"**
 for a strict silo - the read-all grant is dropped and they see nothing outside
-their sites.
+their sites. The silo editor gets a separate `- site record` grant instead,
+for viewing their own sites, and a `- catalog view` grant for the catalogs
+their objects use.
+
+Both roles **read the catalogs** their site's objects point at - device types
+and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
+roles, rack, cabinet and module types, cluster types, routing policies,
+support contracts (without their cost) and the like - so the pickers in **Add device** and an import by name work. They
+never change those catalogs: that stays with administrators, or with the site
+editor's own local entries under
+[enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).
+
+!!! note "Upgrading to 0.18"
+    Site roles created earlier gain view on their sites, and the services, NAT
+    rules, VLAN groups, IP ranges, virtual chassis and other types that became
+    site-scoped. Site viewers and silo site editors gain view on the catalogs
+    above. A grant edited away from the role's shape is left as it is.
 
 ### Set it up when you create the user
 

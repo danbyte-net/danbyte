@@ -111,3 +111,24 @@ class MaintenanceMiddleware:
                 resp._has_been_logged = True
                 return resp
         return self.get_response(request)
+
+
+class RejectNulQueryMiddleware:
+    """400 for a query string carrying a NUL byte. PostgreSQL text cannot
+    hold one, so a filter that reached the database with it failed as a 500
+    (#373); rejecting it here covers every filter, present and future."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if "%00" in request.META.get("QUERY_STRING", "") and any(
+            "\x00" in key or any("\x00" in v for v in values)
+            for key, values in request.GET.lists()
+        ):
+            from django.http import JsonResponse
+
+            return JsonResponse(
+                {"detail": "Query parameters cannot contain NUL characters."}, status=400
+            )
+        return self.get_response(request)

@@ -12,6 +12,7 @@ import type {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormText } from "@/components/forms/text"
+import { FormCombobox } from "@/components/forms/combobox"
 import { FormSelect } from "@/components/forms/select"
 import { FRAME_LABEL } from "@/components/monitoring/sla-status"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -46,6 +47,7 @@ interface IpStatus {
   name: string
   color: string
   text_color: string
+  available_to: string[]
 }
 
 export function MonitoringSettingsForm() {
@@ -69,6 +71,13 @@ export function MonitoringSettingsForm() {
   useEffect(() => {
     if (settingsQ.data) setDraft(settingsQ.data)
   }, [settingsQ.data])
+  // IP statuses only, plus any already ticked so it can still be unticked.
+  const ipStatuses = (statusesQ.data?.results ?? []).filter(
+    (s) =>
+      s.available_to.includes("ipaddress") ||
+      draft?.skip_ip_statuses.includes(s.id) ||
+      draft?.flap_exclude_ip_statuses.includes(s.id)
+  )
 
   const save = useMutation({
     mutationFn: (body: Partial<MonitoringSettings>) =>
@@ -172,6 +181,7 @@ export function MonitoringSettingsForm() {
           mac_uplink_threshold: Number(draft.mac_uplink_threshold),
           mac_uplink_lldp: draft.mac_uplink_lldp,
           mac_retention_days: Number(draft.mac_retention_days),
+          snmp_poll_interval_minutes: Number(draft.snmp_poll_interval_minutes),
         })
       }}
     >
@@ -245,7 +255,7 @@ export function MonitoringSettingsForm() {
           }
         >
           <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-            {(statusesQ.data?.results ?? []).map((s) => (
+            {ipStatuses.map((s) => (
               <label key={s.id} className="flex items-center gap-2 text-[13px]">
                 <Checkbox
                   checked={draft.skip_ip_statuses.includes(s.id)}
@@ -254,7 +264,7 @@ export function MonitoringSettingsForm() {
                 <span>{s.name}</span>
               </label>
             ))}
-            {statusesQ.data && statusesQ.data.results.length === 0 && (
+            {statusesQ.data && ipStatuses.length === 0 && (
               <span className="text-[13px] text-muted-foreground">
                 No IP statuses defined yet.
               </span>
@@ -311,7 +321,7 @@ export function MonitoringSettingsForm() {
               </span>
             </span>
           </label>
-          <FormSelect
+          <FormCombobox
             label="Default VRF for discovered IPs"
             hint="When neither the interface nor a binding names one"
             value={draft.snmp_default_vrf?.id ?? null}
@@ -328,6 +338,8 @@ export function MonitoringSettingsForm() {
             }
             noneLabel="None"
             options={vrfOptions.map((o) => ({ value: o.id, label: o.name }))}
+            searchPlaceholder="Search VRFs…"
+            emptyText="No VRFs."
           />
           <label className="flex items-start gap-2">
             <Checkbox
@@ -387,6 +399,15 @@ export function MonitoringSettingsForm() {
               min={1}
               value={draft.mac_retention_days}
               onChange={(v) => set("mac_retention_days", v)}
+            />
+            <FormSelect
+              label="Poll devices every"
+              info="Polls every device the core polls, MAC table and interface counters included. Devices an Outpost polls are left to it."
+              value={String(draft.snmp_poll_interval_minutes)}
+              onChange={(v: string | null) =>
+                set("snmp_poll_interval_minutes", Number(v ?? 0))
+              }
+              options={SNMP_POLL_OPTIONS}
             />
           </div>
         </Section>
@@ -614,7 +635,7 @@ export function MonitoringSettingsForm() {
                 tab.)
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-                {(statusesQ.data?.results ?? []).map((s) => (
+                {ipStatuses.map((s) => (
                   <label
                     key={s.id}
                     className="flex items-center gap-2 text-[13px]"
@@ -626,7 +647,7 @@ export function MonitoringSettingsForm() {
                     <span>{s.name}</span>
                   </label>
                 ))}
-                {statusesQ.data && statusesQ.data.results.length === 0 && (
+                {statusesQ.data && ipStatuses.length === 0 && (
                   <span className="text-[13px] text-muted-foreground">
                     No IP statuses defined yet.
                   </span>
@@ -768,25 +789,30 @@ export function MonitoringSettingsForm() {
             </div>
           )}
           <DevicePicker
-            label="Add ARP source"
+            label="Add ARP sources"
             value={null}
             excludeIds={draft.arp_source_devices ?? []}
-            onPickLabel={(id, label) => {
-              // The picker hands the display name over with the id, so the
-              // chip shows the real device immediately - dashed until Save.
+            onPickMany={(items) => {
+              // The picker hands the display names over with the ids, so the
+              // chips show the real devices immediately - dashed until Save.
               // One atomic update (see the remove handler / issue #127).
-              if (!id || (draft.arp_source_devices ?? []).includes(id)) return
-              setDraft(
-                (cur) =>
-                  cur && {
-                    ...cur,
-                    arp_source_devices: [...(cur.arp_source_devices ?? []), id],
-                    arp_source_devices_detail: [
-                      ...(cur.arp_source_devices_detail ?? []),
-                      { id, name: label },
-                    ],
-                  }
-              )
+              setDraft((cur) => {
+                if (!cur) return cur
+                const have = new Set(cur.arp_source_devices ?? [])
+                const fresh = items.filter((o) => !have.has(o.id))
+                if (!fresh.length) return cur
+                return {
+                  ...cur,
+                  arp_source_devices: [
+                    ...(cur.arp_source_devices ?? []),
+                    ...fresh.map((o) => o.id),
+                  ],
+                  arp_source_devices_detail: [
+                    ...(cur.arp_source_devices_detail ?? []),
+                    ...fresh.map((o) => ({ id: o.id, name: o.label })),
+                  ],
+                }
+              })
             }}
             onChange={() => {}}
           />
@@ -844,6 +870,15 @@ function Section({
     </section>
   )
 }
+
+/** "Poll devices every" - the scheduled SNMP poll intervals the server
+ * accepts. */
+export const SNMP_POLL_OPTIONS = [
+  { value: "0", label: "Off" },
+  { value: "15", label: "15 minutes" },
+  { value: "30", label: "30 minutes" },
+  { value: "60", label: "1 hour" },
+]
 
 function NumberField({
   label,

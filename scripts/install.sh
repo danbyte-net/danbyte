@@ -30,6 +30,12 @@
 # this bundle, never from the app directory, and writes into that directory
 # only as the service user: the account owns it, and a link it put there
 # would take root's write somewhere else (#287).
+# bubblewrap is installed by default: the DWG converter runs only inside it
+# (#424), and sandboxed scripts get their own namespaces from it
+# (docs/features/scripts.md). --without-bubblewrap skips it: DWG drawings are
+# then refused and scripts run under Landlock alone. An existing install that
+# gains bubblewrap here keeps its scripts on Landlock unless .env already
+# chose a script sandbox. --with-script-sandbox is still accepted.
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -46,6 +52,7 @@ FORCE=0
 SKIP_BACKUP=0
 HOST_ONLY=0
 ADOPT=0
+SCRIPT_SANDBOX=1
 # Root-only: the copy of this bundle's files the root steps of an upgrade
 # run from, and their summaries.
 HS_BASE=/var/lib/danbyte/installer
@@ -60,6 +67,8 @@ while [ $# -gt 0 ]; do
     --skip-backup) SKIP_BACKUP=1; shift ;;
     --host-only) HOST_ONLY=1; shift ;;
     --adopt) ADOPT=1; shift ;;
+    --with-script-sandbox) SCRIPT_SANDBOX=1; shift ;;
+    --without-bubblewrap) SCRIPT_SANDBOX=0; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -268,6 +277,38 @@ echo "net.ipv4.ping_group_range = $SVC_GID $SVC_GID" \
   > /etc/sysctl.d/99-danbyte-icmp.conf
 sysctl -q -w "net.ipv4.ping_group_range=$SVC_GID $SVC_GID" || true
 
+# bubblewrap for the DWG converter and sandboxed scripts: the workers find
+# /usr/bin/bwrap at run time and use it when it works for the service user.
+# Checked here as that user, so a host whose kernel or AppArmor policy refuses
+# unprivileged user namespaces says so now; the installer changes no such
+# policy itself.
+if [ "$SCRIPT_SANDBOX" -eq 1 ]; then
+  step "Sandbox (bubblewrap)"
+  if ! command -v bwrap >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=900 install -y bubblewrap \
+        || warn "could not install bubblewrap - DWG drawings are refused and sandboxed scripts run under Landlock alone."
+    else
+      warn "apt-get not found - install bubblewrap yourself; until then DWG drawings are refused and sandboxed scripts run under Landlock alone."
+    fi
+    # Scripts on auto would move from Landlock to bubblewrap with it, which
+    # keeps them off the network but for the API. An install upgraded here
+    # keeps what its scripts had, unless .env already chose.
+    if [ "$EXISTING" -eq 1 ] && command -v bwrap >/dev/null 2>&1 \
+        && ! env_get DANBYTE_SCRIPT_SANDBOX >/dev/null 2>&1; then
+      env_backfill DANBYTE_SCRIPT_SANDBOX landlock
+      echo "  scripts stay on Landlock (DANBYTE_SCRIPT_SANDBOX=landlock in .env); set auto for namespaces"
+    fi
+  fi
+  if command -v bwrap >/dev/null 2>&1; then
+    if as_user bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / true >/dev/null 2>&1; then
+      echo "  bubblewrap works for $SERVICE_USER"
+    else
+      warn "bubblewrap is installed but cannot create user namespaces for $SERVICE_USER (kernel or AppArmor policy) - sandboxed scripts run under Landlock alone; see docs/features/scripts.md."
+    fi
+  fi
+fi
+
 # ── Existing install: the bundle's upgrade stage does steps 4-9 ─────────────
 # Then the root steps, as their own unit: this script only follows both, so
 # a dropped session (sudo hands its SIGHUP on) skips nothing.
@@ -429,6 +470,24 @@ as_user chmod o+x "$APP"   # let nginx traverse to staticfiles
 step "Python venv (offline wheelhouse)"
 as_user bash -lc "cd '$APP' && vendor/python/bin/python3 -m venv .venv \
   && .venv/bin/pip install --no-index --find-links vendor/wheels -r requirements.txt >/dev/null"
+
+# ── 5b. DWG converter (bundled) ──────────────────────────────────────────────
+# The bundle's static LibreDWG dwg2dxf came over with vendor/ above, as the
+# service user's, mode 0755; settings use it while DANBYTE_CAD_CONVERTER is
+# unset. Checked as the account that runs it - root runs nothing in $APP.
+step "DWG converter (LibreDWG dwg2dxf)"
+if as_user "$APP/vendor/cad/bin/dwg2dxf" --version >/dev/null 2>&1; then
+  echo "  $APP/vendor/cad/bin/dwg2dxf"
+else
+  warn "the bundled dwg2dxf is missing or does not run - DWG floor-plan drawings are refused until DANBYTE_CAD_CONVERTER names a converter (DXF works)."
+fi
+# The converter runs only inside a bubblewrap sandbox (#424): without one
+# that works for the service user, DWG is refused.
+if ! command -v bwrap >/dev/null 2>&1; then
+  warn "bubblewrap is not installed - DWG floor-plan drawings are refused until it is (apt install bubblewrap, or re-run without --without-bubblewrap). DXF works."
+elif ! as_user bwrap --unshare-user --unshare-pid --unshare-net --ro-bind / / true >/dev/null 2>&1; then
+  warn "bubblewrap cannot create user namespaces for $SERVICE_USER (kernel or AppArmor policy) - DWG floor-plan drawings are refused; see docs/reference/settings.md (DANBYTE_CAD_SANDBOX)."
+fi
 
 # ── 6. Secrets + .env (reuse existing on re-run) ─────────────────────────────
 step "Configuring .env"

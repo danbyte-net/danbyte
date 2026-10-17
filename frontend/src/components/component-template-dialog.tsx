@@ -682,7 +682,7 @@ export function ComponentTemplateDialog({
 
           {kind === "power-outlet" && (
             <div className="grid grid-cols-2 gap-3">
-              <FormSelect
+              <FormCombobox
                 label="Power port (inlet)"
                 value={powerPortTemplateId}
                 onChange={setPowerPortTemplateId}
@@ -693,6 +693,8 @@ export function ComponentTemplateDialog({
                   label: t.name,
                 }))}
                 error={fieldErrors.power_port_template_id}
+                searchPlaceholder="Search power ports…"
+                emptyText="No power ports."
               />
               <FormSelect
                 label="Feed leg"
@@ -736,7 +738,7 @@ export function ComponentTemplateDialog({
 
           {kind === "front-port" && (
             <div className="grid grid-cols-2 gap-3">
-              <FormSelect
+              <FormCombobox
                 label="Rear port template"
                 value={rearPortTemplateId}
                 onChange={setRearPortTemplateId}
@@ -746,6 +748,8 @@ export function ComponentTemplateDialog({
                   label: t.name,
                 }))}
                 error={fieldErrors.rear_port_template_id}
+                searchPlaceholder="Search rear ports…"
+                emptyText="No rear ports."
               />
               <FormText
                 label="Rear port position"

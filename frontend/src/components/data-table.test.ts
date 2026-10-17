@@ -17,6 +17,12 @@ describe("truncationNotice", () => {
     expect(msg).toContain("600")
   })
 
+  it("says a search covers only the rows that arrived", () => {
+    const msg = truncationNotice(600, 500, true)
+    expect(msg).toContain("Searching the first 500 of 600")
+    expect(truncationNotice(500, 500, true)).toBeNull()
+  })
+
   it("says nothing when the count is unknown", () => {
     expect(truncationNotice(undefined, 500)).toBeNull()
     expect(truncationNotice(NaN, 500)).toBeNull()

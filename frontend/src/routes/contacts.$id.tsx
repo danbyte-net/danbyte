@@ -95,6 +95,7 @@ function Body({ contact: c }: { contact: Contact }) {
       ) : (
         dash
       ),
+      copy: c.address || undefined,
     },
     {
       label: "Working hours",
@@ -161,7 +162,9 @@ function Body({ contact: c }: { contact: Contact }) {
               )}
             </>
           }
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/contacts" />
+          }
         />
       }
       tabs={[

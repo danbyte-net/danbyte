@@ -154,13 +154,18 @@ def _cable_ends(cable) -> dict:
     return ends
 
 
-def _context(obj, url: str) -> dict:
+def _context(obj, url: str, env=None) -> dict:
     """Template context: the object under its type name, plus `obj`, `url`,
     common relations (managers materialised to lists), and - for a cable - its
-    A/B ends (`a`/`b` devices + `a_port`/`b_port`)."""
+    A/B ends (`a`/`b` devices + `a_port`/`b_port`). With the render's sandbox
+    ``env``, a list holds the rows the sandbox would hand out and a relation
+    it hides is left out, as if the template had walked it."""
     ctx = {obj._meta.model_name: obj, "obj": obj, "url": url}
+    gate = getattr(env, "_gate", None)
     for attr in _RELATIONS:
         if attr in ctx or not hasattr(obj, attr):
+            continue
+        if gate is not None and gate.hides(obj, attr):
             continue
         try:
             val = getattr(obj, attr)
@@ -168,7 +173,7 @@ def _context(obj, url: str) -> dict:
             continue
         if hasattr(val, "all"):  # a related manager
             try:
-                val = list(val.all())
+                val = list(env._fence(val) if env is not None else val.all())
             except Exception:  # noqa: BLE001
                 continue
         ctx[attr] = val
@@ -384,7 +389,23 @@ def render_label(template, obj, *, base_url: str = "", tenant=None, user=None) -
     url = f"{base_url}{detail_path(obj)}" if base_url else detail_path(obj)
     short_path = short_link_path(obj)
     short_url = f"{base_url}{short_path}" if (base_url and short_path) else short_path
-    ctx = _context(obj, url)
+    # HTML body: autoescape ON so a field value with markup is escaped, not
+    # injected into the label. `date`/`datetime` filters tame raw timestamps.
+    # The same sandbox the export templates use: a secret-bearing field or
+    # PSK accessor is unreachable from any row the template holds, so a
+    # label cannot print what only the reveal verb may disclose (#205), nor
+    # a field the API hides from ``user`` (core.hidden_fields).
+    from jinja2.sandbox import SecurityError
+
+    from .export_templates import _template_environment_class
+
+    html_env = _register_filters(_template_environment_class()(
+        trim_blocks=True, lstrip_blocks=True, autoescape=True,
+        tenant=tenant, user=user,
+    ))
+    if html_env._gate is not None and html_env._gate.hides_row(obj):
+        raise SecurityError("This object names a record you cannot view.")
+    ctx = _context(obj, url, html_env)
     # `short_id` = the per-tenant human number; `short_url` = the compact `/l/…`
     # link that resolves to this object (keeps the QR small).
     # `short_hex` = the first eight characters of the UUID, an id that reads
@@ -394,17 +415,6 @@ def render_label(template, obj, *, base_url: str = "", tenant=None, user=None) -
     ctx["short_id"] = getattr(obj, "numid", None) or ctx["short_hex"]
     ctx["short_url"] = short_url
 
-    # HTML body: autoescape ON so a field value with markup is escaped, not
-    # injected into the label. `date`/`datetime` filters tame raw timestamps.
-    # The same sandbox the export templates use: a secret-bearing field or
-    # PSK accessor is unreachable from any row the template holds, so a
-    # label cannot print what only the reveal verb may disclose (#205).
-    from .export_templates import _template_environment_class
-
-    html_env = _register_filters(_template_environment_class()(
-        trim_blocks=True, lstrip_blocks=True, autoescape=True,
-        tenant=tenant, user=user,
-    ))
     html = html_env.from_string(template.template_html or "").render(**ctx)
     # Strip anything executable - the label prints inline in the app origin.
     html = sanitize_label_html(html)

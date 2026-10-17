@@ -21,7 +21,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmptyState } from "@/components/empty-state"
 import { QueryError } from "@/components/query-error"
 import { ClusterDeleteDialog } from "@/components/cluster-delete-dialog"
-import { ClusterVmGroups } from "@/components/cluster-vm-groups"
+import { EmbeddedVmGroupTable } from "@/components/embedded-tables"
 import { StatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
@@ -56,8 +56,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
   const { canDo } = useMe()
   const canEdit = canDo("cluster", "change")
   const canDelete = canDo("cluster", "delete")
+  const canAddGroup = canDo("virtualmachinegroup", "add")
   const [tab, setTab] = useUrlTab<
-    "overview" | "vms" | "devices" | "journal" | "history"
+    "overview" | "vms" | "groups" | "devices" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const devices = useQuery({
@@ -101,7 +102,9 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
         <DetailHero
           title={c.name}
           badges={<StatusBadge status={c.status} />}
-          tags={c.tags.length > 0 && <TagList tags={c.tags} />}
+          tags={
+            c.tags.length > 0 && <TagList tags={c.tags} listTo="/clusters" />
+          }
           description={c.description}
         />
       }
@@ -123,7 +126,21 @@ function ClusterDetailBody({ cluster: c }: { cluster: Cluster }) {
         <ClusterVmsPane clusterId={c.id} />
       </DetailTab>
       <DetailTab value="groups">
-        <ClusterVmGroups clusterId={c.id} />
+        <div className="grid gap-3">
+          {canAddGroup && (
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline" asChild>
+                <Link to="/vm-groups/new" search={{ cluster: c.id }}>
+                  Add VM group
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedVmGroupTable
+            filter={{ cluster: c.id }}
+            emptyText="No VM groups on this cluster."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="devices">
         <ClusterDevicesPane clusterId={c.id} />
@@ -156,7 +173,7 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(
     () =>
       buildVmColumns({
-        include: ["name", "status", "vcpus", "memory", "primary_ip"],
+        include: ["name", "group", "status", "vcpus", "memory", "primary_ip"],
       }),
     []
   )
@@ -168,7 +185,14 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
       <p className="text-sm text-muted-foreground">No virtual machines yet.</p>
     )
   return (
-    <DataTable data={rows} columns={columns} flexColumn="primary_ip" embedded />
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="primary_ip"
+      embedded
+      searchable
+      searchPlaceholder="Search virtual machines…"
+    />
   )
 }
 
@@ -295,6 +319,8 @@ function ClusterDevicesPane({ clusterId }: { clusterId: string }) {
       tableId="cluster-devices"
       flexColumn="name"
       embedded
+      searchable
+      searchPlaceholder="Search hosts…"
     />
   )
 }

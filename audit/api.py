@@ -270,17 +270,116 @@ def _relation_fields(model_label: str) -> dict:
         return {}
     out = {}
     for f in model._meta.concrete_fields:
-        if f.is_relation and f.many_to_one:
+        if f.is_relation and (f.many_to_one or f.one_to_one):
             out[f.name] = f.related_model
     return out
 
 
-def _label_for(model, pk):
-    """str() of the related row, or None if it can't be resolved (deleted)."""
+def _canonical_changes(model_label: str, changes: dict) -> dict:
+    """``changes`` keyed by field name. Older bulk edits logged a
+    relation under its column (``status_id``); show those as the field
+    (``status``) so the label resolves like a single edit's."""
+    try:
+        model = django_apps.get_model(model_label)
+    except (LookupError, ValueError):
+        return changes
+    attnames = {
+        f.attname: f.name
+        for f in model._meta.concrete_fields
+        if f.is_relation and (f.many_to_one or f.one_to_one)
+    }
+    if not any(k in attnames for k in changes):
+        return changes
+    out = {}
+    for k, v in changes.items():
+        name = attnames.get(k, k)
+        out[name if name not in changes else k] = v
+    return out
+
+
+#: Label-map value for a related row the caller may not view (#413): the
+#: entry shows neither its name nor its id.
+HIDDEN = object()
+
+
+class _RelatedScope:
+    """Which related rows a change-log reader may see named, for one page.
+    A related row is shown (label and id) only when the caller may view it
+    under that type's own row and site scope - the same answer the object's
+    API gives (``rbac.ViewableRows``) - and it belongs to the active tenant.
+    A row that is gone cannot be vouched for, so a scoped caller sees it
+    hidden too. Superusers see everything."""
+
+    def __init__(self, user, tenant):
+        from auth_api import rbac
+
+        self.tenant = tenant
+        self.open = bool(getattr(user, "is_superuser", False))
+        self.viewable = None if self.open else rbac.ViewableRows(user, tenant)
+
+    def visible(self, model, pks) -> set:
+        """The subset of ``pks`` (valid pks of ``model``) the caller may view.
+        One query per call at most; none for an open or ungranted type."""
+        if self.open or not pks:
+            return set(pks)
+        label = model._meta.label_lower
+        if label == "core.tenant":
+            # The active tenant is the caller's own context, not a secret.
+            return {pk for pk in pks if self.tenant is not None and str(pk) == str(self.tenant.pk)}
+        slug = model._meta.model_name
+        self.viewable.prime(slug, pks)
+        return {pk for pk in pks if self.viewable.may_view(slug, pk)}
+
+
+def _resolve_labels(model, ids, scope=None) -> dict:
+    """``{str(pk): label | None | HIDDEN}`` for ``ids`` of ``model``: one
+    visibility query (scoped callers only) and one label query. A value that
+    is not a pk of ``model`` references nothing and resolves to None."""
+    from django.core.exceptions import ValidationError
+
+    pk_field = model._meta.pk
+    parsed: dict = {}
+    for i in ids:
+        try:
+            parsed[i] = pk_field.to_python(i)
+        except (ValidationError, ValueError, TypeError):
+            continue
+    out: dict = dict.fromkeys(ids)
+    if not parsed:
+        return out
+    shown = set(parsed.values())
+    if scope is not None:
+        try:
+            shown = scope.visible(model, shown)
+        except Exception:  # noqa: BLE001 - can't vouch for the rows: hide them
+            shown = set()
+    found: dict = {}
+    if shown:
+        has_tenant = (
+            scope is not None and not scope.open
+            and any(f.name == "tenant" for f in model._meta.concrete_fields)
+        )
+        try:
+            for obj in model.objects.filter(pk__in=shown):
+                if has_tenant and obj.tenant_id not in (None, getattr(scope.tenant, "pk", None)):
+                    continue  # another tenant's row is never named
+                found[obj.pk] = str(obj)[:120]
+        except Exception:  # noqa: BLE001 - stale label: nothing to resolve
+            found = {}
+    for raw, pk in parsed.items():
+        if pk in found:
+            out[raw] = found[pk]
+        elif scope is not None and not scope.open:
+            out[raw] = HIDDEN
+    return out
+
+
+def _label_for(model, pk, scope=None):
+    """The label of one related row: str(), None if it can't be resolved
+    (deleted, for an unrestricted caller), or ``HIDDEN``."""
     if pk in (None, ""):
         return None
-    obj = model.objects.filter(pk=pk).first()
-    return str(obj)[:120] if obj is not None else None
+    return _resolve_labels(model, [str(pk)], scope)[str(pk)]
 
 
 def _valid_pks(model, ids) -> set:
@@ -300,36 +399,54 @@ def _valid_pks(model, ids) -> set:
     return out
 
 
-def _labels_for_rows(rows) -> dict:
-    """``{(model_label, str(pk)): label | None}`` for every FK value in the
-    changes of ``rows`` - one ``pk__in`` query per related model for the whole
-    page, instead of one query per changed relation per row (#190)."""
+def _snapshot_relations(model_label: str) -> dict:
+    """``{key: related_model}`` for the snapshot keys that hold a related
+    pk - the field name, and the column name older rows may carry."""
+    try:
+        model = django_apps.get_model(model_label)
+    except (LookupError, ValueError):
+        return {}
+    out = {}
+    for f in model._meta.concrete_fields:
+        if f.is_relation and (f.many_to_one or f.one_to_one):
+            out[f.name] = f.related_model
+            out[f.attname] = f.related_model
+    return out
+
+
+def _labels_for_rows(rows, scope=None, snapshots=False) -> dict:
+    """``{(model_label, str(pk)): label | None | HIDDEN}`` for every FK value
+    in the changes (and, with ``snapshots``, the pre/post snapshots) of
+    ``rows`` - one ``pk__in`` query per related model for the whole page,
+    instead of one query per changed relation per row (#190). With a
+    ``scope``, a row the caller may not view resolves to ``HIDDEN`` (#413),
+    at one more query per related model."""
     wanted: dict = {}
     for r in rows:
         rels = _relation_fields(r.object_type)
         if not rels:
             continue
-        for field, diff in (r.changes or {}).items():
+        for field, diff in _canonical_changes(r.object_type, r.changes or {}).items():
             model = rels.get(field)
             if model is None or not isinstance(diff, dict):
                 continue
             for pk in (diff.get("old"), diff.get("new")):
                 if pk not in (None, ""):
                     wanted.setdefault(model, set()).add(str(pk))
+        if snapshots:
+            snap_rels = _snapshot_relations(r.object_type)
+            for snap in (r.pre_change, r.post_change):
+                if not isinstance(snap, dict):
+                    continue
+                for key, v in snap.items():
+                    model = snap_rels.get(key)
+                    if model is not None and v not in (None, ""):
+                        wanted.setdefault(model, set()).add(str(v))
     out: dict = {}
     for model, ids in wanted.items():
         label = model._meta.label_lower
-        found: dict = {}
-        valid = _valid_pks(model, ids)
-        try:
-            if valid:
-                for obj in model.objects.filter(pk__in=valid):
-                    found[str(obj.pk)] = str(obj)[:120]
-        except Exception:
-            # Stale label: nothing to resolve.
-            found = {}
-        for i in ids:
-            out[(label, i)] = found.get(i)
+        for i, value in _resolve_labels(model, ids, scope).items():
+            out[(label, i)] = value
     return out
 
 
@@ -349,6 +466,26 @@ class ChangeLogSerializer(serializers.ModelSerializer):
 
     def get_change_count(self, obj) -> int:
         return len(obj.changes or {})
+
+    def to_representation(self, obj):
+        """A field the object's API hides from this caller (a contract's
+        cost without view_cost) is left out of the diff and the snapshots."""
+        from core.hidden_fields import hidden_history_fields, strip_history
+
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        if request is None:
+            return data
+        memo = self.context.setdefault("_hidden_history", {})
+        if "_tenant" not in memo:
+            memo["_tenant"] = _get_active_tenant(request)
+        hidden = hidden_history_fields(request.user, memo["_tenant"], obj.object_type, memo)
+        if hidden:
+            for key in ("changes", "pre_change", "post_change"):
+                if key in data:
+                    data[key] = strip_history(data[key], hidden)
+            data["change_count"] = len(data.get("changes") or {})
+        return data
 
     def get_object_exists(self, obj) -> bool:
         """Whether the entry's target row is still alive - the UI only links
@@ -385,13 +522,26 @@ class ChangeLogSerializer(serializers.ModelSerializer):
                 cache[(label, i)] = i in alive
         return cache.get(key, False)
 
-    def get_changes(self, obj) -> dict:
-        """Enrich FK fields with a resolved label so the UI can show the VLAN /
-        site / role name next to its UUID. Non-relation fields pass through."""
-        raw = obj.changes or {}
-        rels = _relation_fields(obj.object_type)
-        if not rels:
-            return raw
+    #: The detail view also resolves the FK values of its snapshots.
+    _label_snapshots = False
+
+    def _scope(self):
+        """The page's related-row scope (#413), or None without a request."""
+        if "_related_scope" not in self.context:
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            self.context["_related_scope"] = (
+                _RelatedScope(user, _get_active_tenant(request))
+                if user is not None and getattr(user, "is_authenticated", False)
+                else None
+            )
+        return self.context["_related_scope"]
+
+    def _label(self, obj, model, pk):
+        """The label of one related value of ``obj``'s entry: a string, None
+        (no row to name) or ``HIDDEN``. The page's map is built on its first
+        row - one visibility and one label query per related model for every
+        row on the page."""
         labels = self.context.get("_fk_labels")
         if labels is None:
             rows = (
@@ -399,16 +549,26 @@ class ChangeLogSerializer(serializers.ModelSerializer):
                 if self.parent is not None and self.parent.instance is not None
                 else [obj]
             )
-            labels = self.context["_fk_labels"] = _labels_for_rows(rows)
+            labels = self.context["_fk_labels"] = _labels_for_rows(
+                rows, self._scope(), snapshots=self._label_snapshots
+            )
+        if pk in (None, ""):
+            return None
+        key = (model._meta.label_lower, str(pk))
+        if key not in labels:
+            labels[key] = _label_for(model, pk, self._scope())
+        return labels[key]
 
-        def label_for(model, pk):
-            if pk in (None, ""):
-                return None
-            key = (model._meta.label_lower, str(pk))
-            if key not in labels:
-                labels[key] = _label_for(model, pk)
-            return labels[key]
-
+    def get_changes(self, obj) -> dict:
+        """Enrich FK fields with a resolved label so the UI can show the VLAN /
+        site / role name next to its UUID. Non-relation fields pass through.
+        A related row the caller may not view is named neither by label nor
+        by id: its value is null and ``old_hidden`` / ``new_hidden`` is set
+        (#413)."""
+        rels = _relation_fields(obj.object_type)
+        if not rels:
+            return obj.changes or {}
+        raw = _canonical_changes(obj.object_type, obj.changes or {})
         out = {}
         for field, diff in raw.items():
             related = rels.get(field)
@@ -416,12 +576,13 @@ class ChangeLogSerializer(serializers.ModelSerializer):
                 out[field] = diff
                 continue
             enriched = dict(diff)
-            old_label = label_for(related, diff.get("old"))
-            new_label = label_for(related, diff.get("new"))
-            if old_label is not None:
-                enriched["old_label"] = old_label
-            if new_label is not None:
-                enriched["new_label"] = new_label
+            for side in ("old", "new"):
+                label = self._label(obj, related, diff.get(side))
+                if label is HIDDEN:
+                    enriched[side] = None
+                    enriched[f"{side}_hidden"] = True
+                elif label is not None:
+                    enriched[f"{side}_label"] = label
             out[field] = enriched
         return out
 
@@ -431,43 +592,72 @@ class ChangeLogDetailSerializer(ChangeLogSerializer):
     they're whole-row dumps and the list can run hundreds of entries)."""
 
     related_labels = serializers.SerializerMethodField()
+    hidden_related = serializers.SerializerMethodField()
+
+    _label_snapshots = True
 
     class Meta(ChangeLogSerializer.Meta):
         fields = ChangeLogSerializer.Meta.fields + [
-            "pre_change", "post_change", "related_labels",
+            "pre_change", "post_change", "related_labels", "hidden_related",
         ]
+
+    def get_hidden_related(self, obj) -> dict:
+        """``{"pre_change": [keys], "post_change": [keys]}``: the snapshot
+        keys whose related row the caller may not view. Their values are
+        nulled in the snapshots (#413)."""
+        out: dict[str, list[str]] = {"pre_change": [], "post_change": []}
+        rels = _snapshot_relations(obj.object_type)
+        for key in out:
+            snap = getattr(obj, key)
+            if not rels or not isinstance(snap, dict):
+                continue
+            for field, v in snap.items():
+                model = rels.get(field)
+                if model is not None and self._label(obj, model, v) is HIDDEN:
+                    out[key].append(field)
+        return out
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        for key, fields in (data.get("hidden_related") or {}).items():
+            snap = data.get(key)
+            if isinstance(snap, dict):
+                for field in fields:
+                    if field in snap:
+                        snap[field] = None
+        return data
 
     def get_related_labels(self, obj) -> dict:
         """Flat ``{uuid: human label}`` for every resolvable FK value anywhere
         in this entry - the compact diff *and* both full snapshots. A UUID is
         globally unique, so one map lets the UI swap in the site / device /
         interface name wherever that UUID appears, without caring which field
-        or snapshot it came from. Unresolvable ids (deleted rows) are omitted;
-        the UI falls back to the raw UUID for those."""
+        or snapshot it came from. Unresolvable ids (deleted rows) and rows the
+        caller may not view are omitted; the UI falls back to the raw value."""
         rels = _relation_fields(obj.object_type)
         if not rels:
             return {}
+        snap_rels = _snapshot_relations(obj.object_type)
+        values = []
+        for snap in (obj.pre_change or {}, obj.post_change or {}):
+            if isinstance(snap, dict):
+                for field, v in snap.items():
+                    if field in snap_rels and v not in (None, ""):
+                        values.append((snap_rels[field], v))
+        for field, diff in _canonical_changes(obj.object_type, obj.changes or {}).items():
+            model = rels.get(field)
+            if model is not None and isinstance(diff, dict):
+                for side in ("old", "new"):
+                    if diff.get(side) not in (None, ""):
+                        values.append((model, diff[side]))
         labels: dict[str, str] = {}
-        snaps = (obj.pre_change or {}, obj.post_change or {})
-        changes = obj.changes or {}
-        for field, model in rels.items():
-            values = set()
-            for snap in snaps:
-                v = snap.get(field)
-                if v not in (None, ""):
-                    values.add(v)
-            diff = changes.get(field)
-            if isinstance(diff, dict):
-                for key in ("old", "new"):
-                    if diff.get(key) not in (None, ""):
-                        values.add(diff[key])
-            for v in values:
-                key = str(v)
-                if key in labels:
-                    continue
-                label = _label_for(model, v)
-                if label is not None:
-                    labels[key] = label
+        for model, v in values:
+            key = str(v)
+            if key in labels:
+                continue
+            label = self._label(obj, model, v)
+            if label is not None and label is not HIDDEN:
+                labels[key] = label
         return labels
 
 

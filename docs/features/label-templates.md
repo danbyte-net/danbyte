@@ -144,4 +144,5 @@ for your view permission before its label renders, and all queries are
 tenant-scoped. The sandbox is the export templates' one, with the
 [same fence](export-templates.md): a relation hands out only your tenant's
 rows that you may view, and accounts, groups and the tenant show a name at
-most.
+most. A field the API hides from the person printing - a contract's cost
+without *view cost*, SLA credits without *view credits* - renders empty.

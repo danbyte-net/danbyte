@@ -8,6 +8,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useFieldControlProps } from "@/components/ui/field-control"
 import {
   Popover,
   PopoverContent,
@@ -188,13 +189,14 @@ export function DatePicker({
   // calendar as every date Danbyte shows.
   const today = parseIso(todayIso) ?? new Date()
   const selected = parseIso(value)
+  const fieldProps = useFieldControlProps({ id }, { withOwnText: true })
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          {...fieldProps}
           type="button"
-          id={id}
           variant="outline"
           disabled={disabled}
           className={cn(

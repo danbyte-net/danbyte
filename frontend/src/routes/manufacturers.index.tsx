@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Manufacturer, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
@@ -15,13 +15,14 @@ import { LocalityBadge } from "@/components/locality-badge"
 import { ManufacturerDeleteDialog } from "@/components/manufacturer-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe, objCan } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/manufacturers/")({
   component: ManufacturersPage,
 })
 
 function ManufacturersPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Manufacturer | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("manufacturer", "add")
@@ -51,7 +52,7 @@ function ManufacturersPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

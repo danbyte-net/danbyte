@@ -406,9 +406,12 @@ def _pdf_objects(pdf: bytes) -> bytes:
     """The PDF's streams inflated: WeasyPrint packs its dictionaries into
     compressed object streams."""
     out = [pdf]
-    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf, re.S):
+    # Up to "endstream" with the line break kept: a stream whose last byte
+    # is \r would lose it to a `\r?` and fail to inflate. decompressobj
+    # ignores what follows the zlib data.
+    for m in re.finditer(rb"stream\r?\n(.*?)endstream", pdf, re.S):
         try:
-            out.append(zlib.decompress(m.group(1)))
+            out.append(zlib.decompressobj().decompress(m.group(1)))
         except zlib.error:
             pass
     return b"".join(out)

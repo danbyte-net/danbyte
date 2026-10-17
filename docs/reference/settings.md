@@ -53,7 +53,9 @@ REST_FRAMEWORK = {
 
 The SPA loads full result sets and filters client-side, so the page size is
 high by design; it is capped (`max_page_size = 10000`) so `?page_size=` can't
-be used to force an amplified, memory-heavy response.
+be used to force an amplified, memory-heavy response. A list page whose tenant
+holds more rows than one request returns says so rather than looking complete
+(see [Very long lists](../features/table-preferences.md#very-long-lists)).
 
 ## DEBUG (default-closed)
 
@@ -118,20 +120,104 @@ created on the first backup, mode `0700`.
 ## Scripts (`DANBYTE_SCRIPT_SANDBOX`)
 
 `DANBYTE_SCRIPT_SANDBOX` sets how sandboxed [scripts](../features/scripts.md)
-are confined. `landlock`, the default, confines every sandboxed run and
-refuses one the host cannot confine. `none` runs them unconfined, and each
-run log says so; use it only on a host without Landlock, knowing a script
-author can then read what the service account can, including `.env`.
+are confined:
+
+- `auto`, the default: bubblewrap namespaces around Landlock where `bwrap`
+  works, Landlock alone where it does not. The run log says which.
+- `bwrap`: bubblewrap around Landlock, and a run is refused when `bwrap`
+  cannot run.
+- `landlock`: Landlock alone, as in 0.17. Scripts keep the host network,
+  so they can reach devices directly.
+- `none`: unconfined, and each run log says so. Use it only on a host
+  without Landlock, knowing a script author can then read what the service
+  account can, including `.env`.
+
+Every value except `none` refuses a run the host cannot Landlock. An
+unknown value means `auto`. Under bubblewrap a script has no network but
+the API. What each level blocks is in
+[Scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do).
 Trusted scripts are never confined.
 
 `DANBYTE_INTERNAL_URL` is where a script's SDK reaches the API. Default:
-`http://127.0.0.1:8000`.
+`http://127.0.0.1:8000`. When set, its host is added to `ALLOWED_HOSTS` so the
+backend answers to it; WebSocket origins and the site's public name keep to
+the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
+
+## CAD drawings (`DANBYTE_CAD_CONVERTER`)
+
+`DANBYTE_CAD_CONVERTER` is the absolute path of the program that turns a DWG
+into DXF for [floor-plan CAD drawings](../features/floor-plans.md#cad-drawings).
+DXF needs nothing.
+
+Default (unset or empty): `vendor/cad/bin/dwg2dxf` in the app directory, the
+static LibreDWG build the release bundle installs (or `make cad-tools`
+builds), when it is there and executable. Without it, DWG uploads are refused
+with the steps to save the drawing as DXF instead. An explicit path always
+wins; `off` refuses DWG even with the bundled converter present. The value is
+resolved when the services start, so restart them after adding a converter.
+
+Two programs are accepted, by file name:
+
+- `dwg2dxf` from LibreDWG (GPLv3; Debian and Ubuntu do not package it). The
+  release bundle ships it, see
+  [Installation](../getting-started/installation.md#dwg-converter); the Docker
+  image builds the same and sets `DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf`.
+- `ODAFileConverter`, the ODA File Converter (free download from the Open
+  Design Alliance; not redistributable, so never bundled). It runs with
+  `QT_QPA_PLATFORM=offscreen`.
+
+Anything else, a relative path, a missing or non-executable file, or one
+writable by everyone is refused. The converter runs on the worker host only,
+in the sandbox below, without a shell, with a scrubbed environment, a
+5-minute timeout and memory and output-size limits; its DXF may be at most
+256 MB. The setting is read from the environment only, never from the UI, and
+is kept in a configuration backup.
+
+### Converter sandbox (`DANBYTE_CAD_SANDBOX`)
+
+The converter parses files anyone with change rights on a floor plan can
+upload, so it runs in a [bubblewrap](https://github.com/containers/bubblewrap)
+sandbox, the same one [scripts](../features/scripts.md#what-a-sandboxed-script-cannot-do)
+use:
+
+- its own user (`nobody` inside), pid, ipc, uts and network namespaces: no
+  network at all, not even loopback to the database or Redis, and no other
+  process to see or signal;
+- a read-only root that holds only the converter, the uploaded DWG
+  (read-only) and one output directory, the only place it can write. No
+  Danbyte directory, `.env`, media, home directories, `/proc` or `/sys`;
+- no capabilities, `no_new_privs`, and Danbyte's seccomp filter that refuses
+  unix sockets.
+
+The bundled `dwg2dxf` is static, so that is all it sees. A dynamically linked
+converter also sees the system directories (`/usr`, `/lib`, name and font
+configuration) and its own install directory, read-only; a converter whose
+directory contains the Danbyte directory is refused. The ODA File Converter
+additionally gets a `/proc` of its own sandbox and an empty private `/tmp`,
+which Qt needs; Danbyte does not test ODA in the sandbox.
+
+`DANBYTE_CAD_SANDBOX` takes two values:
+
+- `bwrap`, the default: the converter always runs in the sandbox. A host
+  where `bwrap` is missing or cannot create user namespaces (kernel, AppArmor,
+  or a container's seccomp profile) refuses DWG uploads, and the upload form
+  and `GET /api/floor-plans/drawing-support/` say why. DXF is unaffected.
+- `off`: the converter runs without the sandbox, under the limits alone,
+  with the service account's files and network. A hostile DWG that exploits
+  a converter bug then runs with the rights of the worker that holds the
+  database credentials and the secret keys. Set it only if you accept that,
+  for example to run an operator-chosen converter that fails in the sandbox.
+
+Any other value means `bwrap`. The ezdxf reader that renders the DXF is pure
+Python and runs in its own process under the same limits, outside the
+sandbox.
 
 ## Outbound requests (SSRF guard)
 
 User-configured outbound URLs - webhooks, notification channels, automation
 targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
-Cloud Director), Windows server connections, a public assistant provider, and
+Cloud Director), Windows server connections, a public assistant provider, the
+[end-of-life data](../features/end-of-life-data.md) source, and
 **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
@@ -146,9 +232,14 @@ connect. Redirects are never followed: a `3xx` answer is an error, so a host
 that passes the check cannot bounce the request to an internal address. When an
 outbound proxy is set, `NO_PROXY` is matched against the configured hostname,
 not the pinned IP. WinRM and the vCenter SOAP connection (host hardware) are
-checked before they connect but not pinned. Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
+pinned the same way, with TLS verified against the configured hostname.
+Operator-configured *deployment*-wide SMTP/LDAP hosts are trusted and
 not guarded (an operator may legitimately point them at an internal relay); only
-tenant-supplied hosts are checked.
+tenant-supplied hosts are checked. The SSO identity provider (OIDC issuer and
+the endpoints its discovery document names, SAML metadata URL) is set by a
+deployment admin and stays allowed on a private address, but each discovery
+that resolves to one logs a warning on `danbyte.sso`; allow-listed addresses do
+not warn.
 
 If you *need* an internal target (e.g. an on-prem automation runner like the
 [IaC runner](../features/iac-runner.md)), allow-list its address(es):

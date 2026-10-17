@@ -88,7 +88,9 @@ function Body({ provider: p }: { provider: Provider }) {
       hero={
         <DetailHero
           title={p.name}
-          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          tags={
+            p.tags.length > 0 && <TagList tags={p.tags} listTo="/providers" />
+          }
         />
       }
       tabs={[

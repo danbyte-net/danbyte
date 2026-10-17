@@ -27,3 +27,20 @@ class HardwareCountTests(APITestCase):
         r = self.client.get(f"/api/devices/{self.dev.id}/")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["hardware_count"], 3)
+
+    def test_front_and_rear_ports_have_their_own_counts(self):
+        """Front and rear ports are tabs of their own (#345): counted apart
+        from the Hardware tab."""
+        from api.models import FrontPort, RearPort
+
+        InventoryItem.objects.create(device=self.dev, name="psu")
+        rp = RearPort.objects.create(device=self.dev, name="R1", positions=2)
+        RearPort.objects.create(device=self.dev, name="R2", positions=1)
+        FrontPort.objects.create(device=self.dev, name="F1", rear_port=rp, rear_port_position=1)
+        body = self.client.get(f"/api/devices/{self.dev.id}/").json()
+        self.assertEqual(
+            (body["hardware_count"], body["front_port_count"], body["rear_port_count"]),
+            (1, 1, 2),
+        )
+        listed = self.client.get("/api/devices/").json()["results"][0]
+        self.assertEqual((listed["front_port_count"], listed["rear_port_count"]), (0, 0))

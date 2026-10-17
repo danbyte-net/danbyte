@@ -21,7 +21,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FormCheckbox, FormSelect } from "@/components/forms"
+import {
+  Field,
+  FormCheckbox,
+  FormSelect,
+  FormCombobox,
+} from "@/components/forms"
 import { OidExplorer } from "@/components/oid-explorer"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -327,6 +332,8 @@ export function SensorDialog({
       (statuses.data?.results ?? []).map((s) => ({
         value: s.slug,
         label: s.name,
+        color: s.color,
+        badge: true,
       })),
     [statuses.data]
   )
@@ -458,7 +465,7 @@ export function SensorDialog({
                   />
                   <span className="text-muted-foreground">→</span>
                   <div className="flex-1">
-                    <FormSelect
+                    <FormCombobox
                       label=""
                       value={r.slug || null}
                       onChange={(v) =>
@@ -470,6 +477,8 @@ export function SensorDialog({
                       }
                       options={statusOptions}
                       placeholder="status…"
+                      searchPlaceholder="Search statuses…"
+                      emptyText="No statuses."
                     />
                   </div>
                   <Button
@@ -510,7 +519,7 @@ export function SensorDialog({
             onChange={setAutoApply}
           />
 
-          <FormSelect
+          <FormCombobox
             label="Never reported"
             hint="status for parts this sensor covers that the agent doesn't list - the empty bays a chassis template stamped. Only applied after a poll that returned readings."
             value={absentStatus || null}
@@ -518,6 +527,8 @@ export function SensorDialog({
             options={statusOptions}
             noneLabel="Leave alone"
             placeholder="Leave alone"
+            searchPlaceholder="Search statuses…"
+            emptyText="No statuses."
           />
 
           {deviceTypeId && (

@@ -23,6 +23,7 @@ import { Route as TunnelGroupsRouteImport } from './routes/tunnel-groups'
 import { Route as TopologyRouteImport } from './routes/topology'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as TagsRouteImport } from './routes/tags'
+import { Route as SupportContractsRouteImport } from './routes/support-contracts'
 import { Route as StatusesRouteImport } from './routes/statuses'
 import { Route as StaticRoutesRouteImport } from './routes/static-routes'
 import { Route as SitesRouteImport } from './routes/sites'
@@ -107,6 +108,7 @@ import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
 import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
 import { Route as VtepsIndexRouteImport } from './routes/vteps.index'
 import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
+import { Route as VmGroupsIndexRouteImport } from './routes/vm-groups.index'
 import { Route as VlansIndexRouteImport } from './routes/vlans.index'
 import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
 import { Route as VirtualizationSourcesIndexRouteImport } from './routes/virtualization-sources.index'
@@ -120,6 +122,7 @@ import { Route as TunnelGroupsIndexRouteImport } from './routes/tunnel-groups.in
 import { Route as TopologyIndexRouteImport } from './routes/topology.index'
 import { Route as TenantsIndexRouteImport } from './routes/tenants.index'
 import { Route as TagsIndexRouteImport } from './routes/tags.index'
+import { Route as SupportContractsIndexRouteImport } from './routes/support-contracts.index'
 import { Route as StatusesIndexRouteImport } from './routes/statuses.index'
 import { Route as StaticRoutesIndexRouteImport } from './routes/static-routes.index'
 import { Route as SitesIndexRouteImport } from './routes/sites.index'
@@ -146,6 +149,7 @@ import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
 import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
 import { Route as PlanningIndexRouteImport } from './routes/planning.index'
 import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as OxidizedIndexRouteImport } from './routes/oxidized.index'
 import { Route as OspfInstancesIndexRouteImport } from './routes/ospf-instances.index'
 import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
 import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
@@ -219,6 +223,8 @@ import { Route as WindowsServersIdRouteImport } from './routes/windows-servers.$
 import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
 import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
 import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
+import { Route as VmGroupsNewRouteImport } from './routes/vm-groups.new'
+import { Route as VmGroupsIdRouteImport } from './routes/vm-groups.$id'
 import { Route as VlansNewRouteImport } from './routes/vlans.new'
 import { Route as VlansBulkEditRouteImport } from './routes/vlans.bulk-edit'
 import { Route as VlansIdRouteImport } from './routes/vlans.$id'
@@ -240,6 +246,8 @@ import { Route as TenantsNewRouteImport } from './routes/tenants.new'
 import { Route as TenantsIdRouteImport } from './routes/tenants.$id'
 import { Route as TagsNewRouteImport } from './routes/tags.new'
 import { Route as TagsIdRouteImport } from './routes/tags.$id'
+import { Route as SupportContractsNewRouteImport } from './routes/support-contracts.new'
+import { Route as SupportContractsIdRouteImport } from './routes/support-contracts.$id'
 import { Route as StatusesNewRouteImport } from './routes/statuses.new'
 import { Route as StatusesIdRouteImport } from './routes/statuses.$id'
 import { Route as StaticRoutesNewRouteImport } from './routes/static-routes.new'
@@ -429,6 +437,7 @@ import { Route as WirelessLansIdEditRouteImport } from './routes/wireless-lans.$
 import { Route as WirelessLanGroupsIdEditRouteImport } from './routes/wireless-lan-groups.$id_.edit'
 import { Route as WebhooksIdEditRouteImport } from './routes/webhooks.$id_.edit'
 import { Route as VrfsIdEditRouteImport } from './routes/vrfs.$id_.edit'
+import { Route as VmGroupsIdEditRouteImport } from './routes/vm-groups.$id_.edit'
 import { Route as VlansIdEditRouteImport } from './routes/vlans.$id_.edit'
 import { Route as VlanGroupsIdEditRouteImport } from './routes/vlan-groups.$id_.edit'
 import { Route as VirtualMachinesIdEditRouteImport } from './routes/virtual-machines.$id_.edit'
@@ -438,6 +447,7 @@ import { Route as TunnelsIdEditRouteImport } from './routes/tunnels.$id_.edit'
 import { Route as TunnelGroupsIdEditRouteImport } from './routes/tunnel-groups.$id_.edit'
 import { Route as TenantsIdEditRouteImport } from './routes/tenants.$id_.edit'
 import { Route as TagsIdEditRouteImport } from './routes/tags.$id_.edit'
+import { Route as SupportContractsIdEditRouteImport } from './routes/support-contracts.$id_.edit'
 import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
 import { Route as StaticRoutesIdEditRouteImport } from './routes/static-routes.$id_.edit'
 import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
@@ -514,8 +524,11 @@ import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$i
 import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
 import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
+import { Route as MonitoringSlaTemplatesNewRouteImport } from './routes/monitoring_.sla.templates.new'
+import { Route as MonitoringSlaTemplatesIdRouteImport } from './routes/monitoring_.sla.templates.$id'
 import { Route as MonitoringSlaIdEditRouteImport } from './routes/monitoring_.sla.$id_.edit'
 import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
+import { Route as MonitoringSlaTemplatesIdEditRouteImport } from './routes/monitoring_.sla.templates.$id_.edit'
 
 const ZonesRoute = ZonesRouteImport.update({
   id: '/zones',
@@ -585,6 +598,11 @@ const TenantsRoute = TenantsRouteImport.update({
 const TagsRoute = TagsRouteImport.update({
   id: '/tags',
   path: '/tags',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportContractsRoute = SupportContractsRouteImport.update({
+  id: '/support-contracts',
+  path: '/support-contracts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StatusesRoute = StatusesRouteImport.update({
@@ -1007,6 +1025,11 @@ const VrfsIndexRoute = VrfsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => VrfsRoute,
 } as any)
+const VmGroupsIndexRoute = VmGroupsIndexRouteImport.update({
+  id: '/vm-groups/',
+  path: '/vm-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlansIndexRoute = VlansIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -1072,6 +1095,11 @@ const TagsIndexRoute = TagsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => TagsRoute,
+} as any)
+const SupportContractsIndexRoute = SupportContractsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SupportContractsRoute,
 } as any)
 const StatusesIndexRoute = StatusesIndexRouteImport.update({
   id: '/',
@@ -1202,6 +1230,11 @@ const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => PermissionsRoute,
+} as any)
+const OxidizedIndexRoute = OxidizedIndexRouteImport.update({
+  id: '/oxidized/',
+  path: '/oxidized/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const OspfInstancesIndexRoute = OspfInstancesIndexRouteImport.update({
   id: '/ospf-instances/',
@@ -1569,6 +1602,16 @@ const VrfsIdRoute = VrfsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => VrfsRoute,
 } as any)
+const VmGroupsNewRoute = VmGroupsNewRouteImport.update({
+  id: '/vm-groups/new',
+  path: '/vm-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VmGroupsIdRoute = VmGroupsIdRouteImport.update({
+  id: '/vm-groups/$id',
+  path: '/vm-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlansNewRoute = VlansNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -1673,6 +1716,16 @@ const TagsIdRoute = TagsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => TagsRoute,
+} as any)
+const SupportContractsNewRoute = SupportContractsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => SupportContractsRoute,
+} as any)
+const SupportContractsIdRoute = SupportContractsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SupportContractsRoute,
 } as any)
 const StatusesNewRoute = StatusesNewRouteImport.update({
   id: '/new',
@@ -2620,6 +2673,11 @@ const VrfsIdEditRoute = VrfsIdEditRouteImport.update({
   path: '/$id/edit',
   getParentRoute: () => VrfsRoute,
 } as any)
+const VmGroupsIdEditRoute = VmGroupsIdEditRouteImport.update({
+  id: '/vm-groups/$id_/edit',
+  path: '/vm-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlansIdEditRoute = VlansIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
@@ -2664,6 +2722,11 @@ const TagsIdEditRoute = TagsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
   getParentRoute: () => TagsRoute,
+} as any)
+const SupportContractsIdEditRoute = SupportContractsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => SupportContractsRoute,
 } as any)
 const StatusesIdEditRoute = StatusesIdEditRouteImport.update({
   id: '/$id_/edit',
@@ -3046,6 +3109,18 @@ const PlanningBoardIdTasksTaskIdRoute =
     path: '/planning/$boardId/tasks/$taskId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const MonitoringSlaTemplatesNewRoute =
+  MonitoringSlaTemplatesNewRouteImport.update({
+    id: '/monitoring_/sla/templates/new',
+    path: '/monitoring/sla/templates/new',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const MonitoringSlaTemplatesIdRoute =
+  MonitoringSlaTemplatesIdRouteImport.update({
+    id: '/monitoring_/sla/templates/$id',
+    path: '/monitoring/sla/templates/$id',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const MonitoringSlaIdEditRoute = MonitoringSlaIdEditRouteImport.update({
   id: '/monitoring_/sla/$id_/edit',
   path: '/monitoring/sla/$id/edit',
@@ -3056,6 +3131,12 @@ const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
   path: '/l/$tenant/$type/$numid',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MonitoringSlaTemplatesIdEditRoute =
+  MonitoringSlaTemplatesIdEditRouteImport.update({
+    id: '/monitoring_/sla/templates/$id_/edit',
+    path: '/monitoring/sla/templates/$id/edit',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -3133,6 +3214,7 @@ export interface FileRoutesByFullPath {
   '/sites': typeof SitesRouteWithChildren
   '/static-routes': typeof StaticRoutesRouteWithChildren
   '/statuses': typeof StatusesRouteWithChildren
+  '/support-contracts': typeof SupportContractsRouteWithChildren
   '/tags': typeof TagsRouteWithChildren
   '/tenants': typeof TenantsRouteWithChildren
   '/topology': typeof TopologyRouteWithChildren
@@ -3331,6 +3413,8 @@ export interface FileRoutesByFullPath {
   '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
+  '/support-contracts/$id': typeof SupportContractsIdRoute
+  '/support-contracts/new': typeof SupportContractsNewRoute
   '/tags/$id': typeof TagsIdRoute
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
@@ -3352,6 +3436,8 @@ export interface FileRoutesByFullPath {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -3425,6 +3511,7 @@ export interface FileRoutesByFullPath {
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
   '/ospf-instances/': typeof OspfInstancesIndexRoute
+  '/oxidized/': typeof OxidizedIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -3451,6 +3538,7 @@ export interface FileRoutesByFullPath {
   '/sites/': typeof SitesIndexRoute
   '/static-routes/': typeof StaticRoutesIndexRoute
   '/statuses/': typeof StatusesIndexRoute
+  '/support-contracts/': typeof SupportContractsIndexRoute
   '/tags/': typeof TagsIndexRoute
   '/tenants/': typeof TenantsIndexRoute
   '/topology/': typeof TopologyIndexRoute
@@ -3464,6 +3552,7 @@ export interface FileRoutesByFullPath {
   '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
+  '/vm-groups/': typeof VmGroupsIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
   '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
@@ -3548,6 +3637,7 @@ export interface FileRoutesByFullPath {
   '/sites/$id/edit': typeof SitesIdEditRoute
   '/static-routes/$id/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id/edit': typeof StatusesIdEditRoute
+  '/support-contracts/$id/edit': typeof SupportContractsIdEditRoute
   '/tags/$id/edit': typeof TagsIdEditRoute
   '/tenants/$id/edit': typeof TenantsIdEditRoute
   '/tunnel-groups/$id/edit': typeof TunnelGroupsIdEditRoute
@@ -3557,6 +3647,7 @@ export interface FileRoutesByFullPath {
   '/virtual-machines/$id/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id/edit': typeof VrfsIdEditRoute
   '/webhooks/$id/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
@@ -3564,7 +3655,10 @@ export interface FileRoutesByFullPath {
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring/sla/templates/$id/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -3771,6 +3865,8 @@ export interface FileRoutesByTo {
   '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
+  '/support-contracts/$id': typeof SupportContractsIdRoute
+  '/support-contracts/new': typeof SupportContractsNewRoute
   '/tags/$id': typeof TagsIdRoute
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
@@ -3792,6 +3888,8 @@ export interface FileRoutesByTo {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -3865,6 +3963,7 @@ export interface FileRoutesByTo {
   '/nat-rules': typeof NatRulesIndexRoute
   '/ospf-areas': typeof OspfAreasIndexRoute
   '/ospf-instances': typeof OspfInstancesIndexRoute
+  '/oxidized': typeof OxidizedIndexRoute
   '/permissions': typeof PermissionsIndexRoute
   '/planning': typeof PlanningIndexRoute
   '/platform-groups': typeof PlatformGroupsIndexRoute
@@ -3891,6 +3990,7 @@ export interface FileRoutesByTo {
   '/sites': typeof SitesIndexRoute
   '/static-routes': typeof StaticRoutesIndexRoute
   '/statuses': typeof StatusesIndexRoute
+  '/support-contracts': typeof SupportContractsIndexRoute
   '/tags': typeof TagsIndexRoute
   '/tenants': typeof TenantsIndexRoute
   '/topology': typeof TopologyIndexRoute
@@ -3904,6 +4004,7 @@ export interface FileRoutesByTo {
   '/virtualization-sources': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups': typeof VlanGroupsIndexRoute
   '/vlans': typeof VlansIndexRoute
+  '/vm-groups': typeof VmGroupsIndexRoute
   '/vrfs': typeof VrfsIndexRoute
   '/vteps': typeof VtepsIndexRoute
   '/watched-endpoints': typeof WatchedEndpointsIndexRoute
@@ -3988,6 +4089,7 @@ export interface FileRoutesByTo {
   '/sites/$id/edit': typeof SitesIdEditRoute
   '/static-routes/$id/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id/edit': typeof StatusesIdEditRoute
+  '/support-contracts/$id/edit': typeof SupportContractsIdEditRoute
   '/tags/$id/edit': typeof TagsIdEditRoute
   '/tenants/$id/edit': typeof TenantsIdEditRoute
   '/tunnel-groups/$id/edit': typeof TunnelGroupsIdEditRoute
@@ -3997,6 +4099,7 @@ export interface FileRoutesByTo {
   '/virtual-machines/$id/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id/edit': typeof VrfsIdEditRoute
   '/webhooks/$id/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id/edit': typeof WirelessLanGroupsIdEditRoute
@@ -4004,7 +4107,10 @@ export interface FileRoutesByTo {
   '/zones/$id/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring/sla/$id/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring/sla/templates/$id/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -4083,6 +4189,7 @@ export interface FileRoutesById {
   '/sites': typeof SitesRouteWithChildren
   '/static-routes': typeof StaticRoutesRouteWithChildren
   '/statuses': typeof StatusesRouteWithChildren
+  '/support-contracts': typeof SupportContractsRouteWithChildren
   '/tags': typeof TagsRouteWithChildren
   '/tenants': typeof TenantsRouteWithChildren
   '/topology': typeof TopologyRouteWithChildren
@@ -4281,6 +4388,8 @@ export interface FileRoutesById {
   '/static-routes/new': typeof StaticRoutesNewRoute
   '/statuses/$id': typeof StatusesIdRoute
   '/statuses/new': typeof StatusesNewRoute
+  '/support-contracts/$id': typeof SupportContractsIdRoute
+  '/support-contracts/new': typeof SupportContractsNewRoute
   '/tags/$id': typeof TagsIdRoute
   '/tags/new': typeof TagsNewRoute
   '/tenants/$id': typeof TenantsIdRoute
@@ -4302,6 +4411,8 @@ export interface FileRoutesById {
   '/vlans/$id': typeof VlansIdRoute
   '/vlans/bulk-edit': typeof VlansBulkEditRoute
   '/vlans/new': typeof VlansNewRoute
+  '/vm-groups/$id': typeof VmGroupsIdRoute
+  '/vm-groups/new': typeof VmGroupsNewRoute
   '/vrfs/$id': typeof VrfsIdRoute
   '/vrfs/new': typeof VrfsNewRoute
   '/webhooks/new': typeof WebhooksNewRoute
@@ -4375,6 +4486,7 @@ export interface FileRoutesById {
   '/nat-rules/': typeof NatRulesIndexRoute
   '/ospf-areas/': typeof OspfAreasIndexRoute
   '/ospf-instances/': typeof OspfInstancesIndexRoute
+  '/oxidized/': typeof OxidizedIndexRoute
   '/permissions/': typeof PermissionsIndexRoute
   '/planning/': typeof PlanningIndexRoute
   '/platform-groups/': typeof PlatformGroupsIndexRoute
@@ -4401,6 +4513,7 @@ export interface FileRoutesById {
   '/sites/': typeof SitesIndexRoute
   '/static-routes/': typeof StaticRoutesIndexRoute
   '/statuses/': typeof StatusesIndexRoute
+  '/support-contracts/': typeof SupportContractsIndexRoute
   '/tags/': typeof TagsIndexRoute
   '/tenants/': typeof TenantsIndexRoute
   '/topology/': typeof TopologyIndexRoute
@@ -4414,6 +4527,7 @@ export interface FileRoutesById {
   '/virtualization-sources/': typeof VirtualizationSourcesIndexRoute
   '/vlan-groups/': typeof VlanGroupsIndexRoute
   '/vlans/': typeof VlansIndexRoute
+  '/vm-groups/': typeof VmGroupsIndexRoute
   '/vrfs/': typeof VrfsIndexRoute
   '/vteps/': typeof VtepsIndexRoute
   '/watched-endpoints/': typeof WatchedEndpointsIndexRoute
@@ -4498,6 +4612,7 @@ export interface FileRoutesById {
   '/sites/$id_/edit': typeof SitesIdEditRoute
   '/static-routes/$id_/edit': typeof StaticRoutesIdEditRoute
   '/statuses/$id_/edit': typeof StatusesIdEditRoute
+  '/support-contracts/$id_/edit': typeof SupportContractsIdEditRoute
   '/tags/$id_/edit': typeof TagsIdEditRoute
   '/tenants/$id_/edit': typeof TenantsIdEditRoute
   '/tunnel-groups/$id_/edit': typeof TunnelGroupsIdEditRoute
@@ -4507,6 +4622,7 @@ export interface FileRoutesById {
   '/virtual-machines/$id_/edit': typeof VirtualMachinesIdEditRoute
   '/vlan-groups/$id_/edit': typeof VlanGroupsIdEditRoute
   '/vlans/$id_/edit': typeof VlansIdEditRoute
+  '/vm-groups/$id_/edit': typeof VmGroupsIdEditRoute
   '/vrfs/$id_/edit': typeof VrfsIdEditRoute
   '/webhooks/$id_/edit': typeof WebhooksIdEditRoute
   '/wireless-lan-groups/$id_/edit': typeof WirelessLanGroupsIdEditRoute
@@ -4514,7 +4630,10 @@ export interface FileRoutesById {
   '/zones/$id_/edit': typeof ZonesIdEditRoute
   '/l/$tenant/$type/$numid': typeof LTenantTypeNumidRoute
   '/monitoring_/sla/$id_/edit': typeof MonitoringSlaIdEditRoute
+  '/monitoring_/sla/templates/$id': typeof MonitoringSlaTemplatesIdRoute
+  '/monitoring_/sla/templates/new': typeof MonitoringSlaTemplatesNewRoute
   '/planning/$boardId_/tasks/$taskId': typeof PlanningBoardIdTasksTaskIdRoute
+  '/monitoring_/sla/templates/$id_/edit': typeof MonitoringSlaTemplatesIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -4594,6 +4713,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/static-routes'
     | '/statuses'
+    | '/support-contracts'
     | '/tags'
     | '/tenants'
     | '/topology'
@@ -4792,6 +4912,8 @@ export interface FileRouteTypes {
     | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
+    | '/support-contracts/$id'
+    | '/support-contracts/new'
     | '/tags/$id'
     | '/tags/new'
     | '/tenants/$id'
@@ -4813,6 +4935,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -4886,6 +5010,7 @@ export interface FileRouteTypes {
     | '/nat-rules/'
     | '/ospf-areas/'
     | '/ospf-instances/'
+    | '/oxidized/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -4912,6 +5037,7 @@ export interface FileRouteTypes {
     | '/sites/'
     | '/static-routes/'
     | '/statuses/'
+    | '/support-contracts/'
     | '/tags/'
     | '/tenants/'
     | '/topology/'
@@ -4925,6 +5051,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
+    | '/vm-groups/'
     | '/vrfs/'
     | '/vteps/'
     | '/watched-endpoints/'
@@ -5009,6 +5136,7 @@ export interface FileRouteTypes {
     | '/sites/$id/edit'
     | '/static-routes/$id/edit'
     | '/statuses/$id/edit'
+    | '/support-contracts/$id/edit'
     | '/tags/$id/edit'
     | '/tenants/$id/edit'
     | '/tunnel-groups/$id/edit'
@@ -5018,6 +5146,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id/edit'
     | '/vlan-groups/$id/edit'
     | '/vlans/$id/edit'
+    | '/vm-groups/$id/edit'
     | '/vrfs/$id/edit'
     | '/webhooks/$id/edit'
     | '/wireless-lan-groups/$id/edit'
@@ -5025,7 +5154,10 @@ export interface FileRouteTypes {
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring/sla/$id/edit'
+    | '/monitoring/sla/templates/$id'
+    | '/monitoring/sla/templates/new'
     | '/planning/$boardId/tasks/$taskId'
+    | '/monitoring/sla/templates/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -5232,6 +5364,8 @@ export interface FileRouteTypes {
     | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
+    | '/support-contracts/$id'
+    | '/support-contracts/new'
     | '/tags/$id'
     | '/tags/new'
     | '/tenants/$id'
@@ -5253,6 +5387,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -5326,6 +5462,7 @@ export interface FileRouteTypes {
     | '/nat-rules'
     | '/ospf-areas'
     | '/ospf-instances'
+    | '/oxidized'
     | '/permissions'
     | '/planning'
     | '/platform-groups'
@@ -5352,6 +5489,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/static-routes'
     | '/statuses'
+    | '/support-contracts'
     | '/tags'
     | '/tenants'
     | '/topology'
@@ -5365,6 +5503,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources'
     | '/vlan-groups'
     | '/vlans'
+    | '/vm-groups'
     | '/vrfs'
     | '/vteps'
     | '/watched-endpoints'
@@ -5449,6 +5588,7 @@ export interface FileRouteTypes {
     | '/sites/$id/edit'
     | '/static-routes/$id/edit'
     | '/statuses/$id/edit'
+    | '/support-contracts/$id/edit'
     | '/tags/$id/edit'
     | '/tenants/$id/edit'
     | '/tunnel-groups/$id/edit'
@@ -5458,6 +5598,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id/edit'
     | '/vlan-groups/$id/edit'
     | '/vlans/$id/edit'
+    | '/vm-groups/$id/edit'
     | '/vrfs/$id/edit'
     | '/webhooks/$id/edit'
     | '/wireless-lan-groups/$id/edit'
@@ -5465,7 +5606,10 @@ export interface FileRouteTypes {
     | '/zones/$id/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring/sla/$id/edit'
+    | '/monitoring/sla/templates/$id'
+    | '/monitoring/sla/templates/new'
     | '/planning/$boardId/tasks/$taskId'
+    | '/monitoring/sla/templates/$id/edit'
   id:
     | '__root__'
     | '/'
@@ -5543,6 +5687,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/static-routes'
     | '/statuses'
+    | '/support-contracts'
     | '/tags'
     | '/tenants'
     | '/topology'
@@ -5741,6 +5886,8 @@ export interface FileRouteTypes {
     | '/static-routes/new'
     | '/statuses/$id'
     | '/statuses/new'
+    | '/support-contracts/$id'
+    | '/support-contracts/new'
     | '/tags/$id'
     | '/tags/new'
     | '/tenants/$id'
@@ -5762,6 +5909,8 @@ export interface FileRouteTypes {
     | '/vlans/$id'
     | '/vlans/bulk-edit'
     | '/vlans/new'
+    | '/vm-groups/$id'
+    | '/vm-groups/new'
     | '/vrfs/$id'
     | '/vrfs/new'
     | '/webhooks/new'
@@ -5835,6 +5984,7 @@ export interface FileRouteTypes {
     | '/nat-rules/'
     | '/ospf-areas/'
     | '/ospf-instances/'
+    | '/oxidized/'
     | '/permissions/'
     | '/planning/'
     | '/platform-groups/'
@@ -5861,6 +6011,7 @@ export interface FileRouteTypes {
     | '/sites/'
     | '/static-routes/'
     | '/statuses/'
+    | '/support-contracts/'
     | '/tags/'
     | '/tenants/'
     | '/topology/'
@@ -5874,6 +6025,7 @@ export interface FileRouteTypes {
     | '/virtualization-sources/'
     | '/vlan-groups/'
     | '/vlans/'
+    | '/vm-groups/'
     | '/vrfs/'
     | '/vteps/'
     | '/watched-endpoints/'
@@ -5958,6 +6110,7 @@ export interface FileRouteTypes {
     | '/sites/$id_/edit'
     | '/static-routes/$id_/edit'
     | '/statuses/$id_/edit'
+    | '/support-contracts/$id_/edit'
     | '/tags/$id_/edit'
     | '/tenants/$id_/edit'
     | '/tunnel-groups/$id_/edit'
@@ -5967,6 +6120,7 @@ export interface FileRouteTypes {
     | '/virtual-machines/$id_/edit'
     | '/vlan-groups/$id_/edit'
     | '/vlans/$id_/edit'
+    | '/vm-groups/$id_/edit'
     | '/vrfs/$id_/edit'
     | '/webhooks/$id_/edit'
     | '/wireless-lan-groups/$id_/edit'
@@ -5974,7 +6128,10 @@ export interface FileRouteTypes {
     | '/zones/$id_/edit'
     | '/l/$tenant/$type/$numid'
     | '/monitoring_/sla/$id_/edit'
+    | '/monitoring_/sla/templates/$id'
+    | '/monitoring_/sla/templates/new'
     | '/planning/$boardId_/tasks/$taskId'
+    | '/monitoring_/sla/templates/$id_/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -6053,6 +6210,7 @@ export interface RootRouteChildren {
   SitesRoute: typeof SitesRouteWithChildren
   StaticRoutesRoute: typeof StaticRoutesRouteWithChildren
   StatusesRoute: typeof StatusesRouteWithChildren
+  SupportContractsRoute: typeof SupportContractsRouteWithChildren
   TagsRoute: typeof TagsRouteWithChildren
   TenantsRoute: typeof TenantsRouteWithChildren
   TopologyRoute: typeof TopologyRouteWithChildren
@@ -6119,6 +6277,8 @@ export interface RootRouteChildren {
   VirtualMachinesNewRoute: typeof VirtualMachinesNewRoute
   VirtualSwitchesIdRoute: typeof VirtualSwitchesIdRoute
   VirtualizationSourcesIdRoute: typeof VirtualizationSourcesIdRoute
+  VmGroupsIdRoute: typeof VmGroupsIdRoute
+  VmGroupsNewRoute: typeof VmGroupsNewRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
   BgpInstancesIndexRoute: typeof BgpInstancesIndexRoute
   CabinetRolesIndexRoute: typeof CabinetRolesIndexRoute
@@ -6145,6 +6305,7 @@ export interface RootRouteChildren {
   MaintenanceIndexRoute: typeof MaintenanceIndexRoute
   NatRulesIndexRoute: typeof NatRulesIndexRoute
   OspfInstancesIndexRoute: typeof OspfInstancesIndexRoute
+  OxidizedIndexRoute: typeof OxidizedIndexRoute
   PlanningIndexRoute: typeof PlanningIndexRoute
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
@@ -6158,6 +6319,7 @@ export interface RootRouteChildren {
   VirtualSwitchesIndexRoute: typeof VirtualSwitchesIndexRoute
   VirtualTopologyIndexRoute: typeof VirtualTopologyIndexRoute
   VirtualizationSourcesIndexRoute: typeof VirtualizationSourcesIndexRoute
+  VmGroupsIndexRoute: typeof VmGroupsIndexRoute
   VtepsIndexRoute: typeof VtepsIndexRoute
   WatchedEndpointsIndexRoute: typeof WatchedEndpointsIndexRoute
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
@@ -6186,9 +6348,13 @@ export interface RootRouteChildren {
   ServiceTemplatesIdEditRoute: typeof ServiceTemplatesIdEditRoute
   SilencesIdEditRoute: typeof SilencesIdEditRoute
   VirtualMachinesIdEditRoute: typeof VirtualMachinesIdEditRoute
+  VmGroupsIdEditRoute: typeof VmGroupsIdEditRoute
   LTenantTypeNumidRoute: typeof LTenantTypeNumidRoute
   MonitoringSlaIdEditRoute: typeof MonitoringSlaIdEditRoute
+  MonitoringSlaTemplatesIdRoute: typeof MonitoringSlaTemplatesIdRoute
+  MonitoringSlaTemplatesNewRoute: typeof MonitoringSlaTemplatesNewRoute
   PlanningBoardIdTasksTaskIdRoute: typeof PlanningBoardIdTasksTaskIdRoute
+  MonitoringSlaTemplatesIdEditRoute: typeof MonitoringSlaTemplatesIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -6289,6 +6455,13 @@ declare module '@tanstack/react-router' {
       path: '/tags'
       fullPath: '/tags'
       preLoaderRoute: typeof TagsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support-contracts': {
+      id: '/support-contracts'
+      path: '/support-contracts'
+      fullPath: '/support-contracts'
+      preLoaderRoute: typeof SupportContractsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/statuses': {
@@ -6879,6 +7052,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VrfsIndexRouteImport
       parentRoute: typeof VrfsRoute
     }
+    '/vm-groups/': {
+      id: '/vm-groups/'
+      path: '/vm-groups'
+      fullPath: '/vm-groups/'
+      preLoaderRoute: typeof VmGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vlans/': {
       id: '/vlans/'
       path: '/'
@@ -6969,6 +7149,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tags/'
       preLoaderRoute: typeof TagsIndexRouteImport
       parentRoute: typeof TagsRoute
+    }
+    '/support-contracts/': {
+      id: '/support-contracts/'
+      path: '/'
+      fullPath: '/support-contracts/'
+      preLoaderRoute: typeof SupportContractsIndexRouteImport
+      parentRoute: typeof SupportContractsRoute
     }
     '/statuses/': {
       id: '/statuses/'
@@ -7151,6 +7338,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/permissions/'
       preLoaderRoute: typeof PermissionsIndexRouteImport
       parentRoute: typeof PermissionsRoute
+    }
+    '/oxidized/': {
+      id: '/oxidized/'
+      path: '/oxidized'
+      fullPath: '/oxidized/'
+      preLoaderRoute: typeof OxidizedIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/ospf-instances/': {
       id: '/ospf-instances/'
@@ -7663,6 +7857,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VrfsIdRouteImport
       parentRoute: typeof VrfsRoute
     }
+    '/vm-groups/new': {
+      id: '/vm-groups/new'
+      path: '/vm-groups/new'
+      fullPath: '/vm-groups/new'
+      preLoaderRoute: typeof VmGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vm-groups/$id': {
+      id: '/vm-groups/$id'
+      path: '/vm-groups/$id'
+      fullPath: '/vm-groups/$id'
+      preLoaderRoute: typeof VmGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vlans/new': {
       id: '/vlans/new'
       path: '/new'
@@ -7809,6 +8017,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/tags/$id'
       preLoaderRoute: typeof TagsIdRouteImport
       parentRoute: typeof TagsRoute
+    }
+    '/support-contracts/new': {
+      id: '/support-contracts/new'
+      path: '/new'
+      fullPath: '/support-contracts/new'
+      preLoaderRoute: typeof SupportContractsNewRouteImport
+      parentRoute: typeof SupportContractsRoute
+    }
+    '/support-contracts/$id': {
+      id: '/support-contracts/$id'
+      path: '/$id'
+      fullPath: '/support-contracts/$id'
+      preLoaderRoute: typeof SupportContractsIdRouteImport
+      parentRoute: typeof SupportContractsRoute
     }
     '/statuses/new': {
       id: '/statuses/new'
@@ -9133,6 +9355,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VrfsIdEditRouteImport
       parentRoute: typeof VrfsRoute
     }
+    '/vm-groups/$id_/edit': {
+      id: '/vm-groups/$id_/edit'
+      path: '/vm-groups/$id/edit'
+      fullPath: '/vm-groups/$id/edit'
+      preLoaderRoute: typeof VmGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vlans/$id_/edit': {
       id: '/vlans/$id_/edit'
       path: '/$id/edit'
@@ -9195,6 +9424,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tags/$id/edit'
       preLoaderRoute: typeof TagsIdEditRouteImport
       parentRoute: typeof TagsRoute
+    }
+    '/support-contracts/$id_/edit': {
+      id: '/support-contracts/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/support-contracts/$id/edit'
+      preLoaderRoute: typeof SupportContractsIdEditRouteImport
+      parentRoute: typeof SupportContractsRoute
     }
     '/statuses/$id_/edit': {
       id: '/statuses/$id_/edit'
@@ -9728,6 +9964,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/monitoring_/sla/templates/new': {
+      id: '/monitoring_/sla/templates/new'
+      path: '/monitoring/sla/templates/new'
+      fullPath: '/monitoring/sla/templates/new'
+      preLoaderRoute: typeof MonitoringSlaTemplatesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/templates/$id': {
+      id: '/monitoring_/sla/templates/$id'
+      path: '/monitoring/sla/templates/$id'
+      fullPath: '/monitoring/sla/templates/$id'
+      preLoaderRoute: typeof MonitoringSlaTemplatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitoring_/sla/$id_/edit': {
       id: '/monitoring_/sla/$id_/edit'
       path: '/monitoring/sla/$id/edit'
@@ -9740,6 +9990,13 @@ declare module '@tanstack/react-router' {
       path: '/l/$tenant/$type/$numid'
       fullPath: '/l/$tenant/$type/$numid'
       preLoaderRoute: typeof LTenantTypeNumidRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/templates/$id_/edit': {
+      id: '/monitoring_/sla/templates/$id_/edit'
+      path: '/monitoring/sla/templates/$id/edit'
+      fullPath: '/monitoring/sla/templates/$id/edit'
+      preLoaderRoute: typeof MonitoringSlaTemplatesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -10761,6 +11018,23 @@ const StatusesRouteWithChildren = StatusesRoute._addFileChildren(
   StatusesRouteChildren,
 )
 
+interface SupportContractsRouteChildren {
+  SupportContractsIdRoute: typeof SupportContractsIdRoute
+  SupportContractsNewRoute: typeof SupportContractsNewRoute
+  SupportContractsIndexRoute: typeof SupportContractsIndexRoute
+  SupportContractsIdEditRoute: typeof SupportContractsIdEditRoute
+}
+
+const SupportContractsRouteChildren: SupportContractsRouteChildren = {
+  SupportContractsIdRoute: SupportContractsIdRoute,
+  SupportContractsNewRoute: SupportContractsNewRoute,
+  SupportContractsIndexRoute: SupportContractsIndexRoute,
+  SupportContractsIdEditRoute: SupportContractsIdEditRoute,
+}
+
+const SupportContractsRouteWithChildren =
+  SupportContractsRoute._addFileChildren(SupportContractsRouteChildren)
+
 interface TagsRouteChildren {
   TagsIdRoute: typeof TagsIdRoute
   TagsNewRoute: typeof TagsNewRoute
@@ -11070,6 +11344,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitesRoute: SitesRouteWithChildren,
   StaticRoutesRoute: StaticRoutesRouteWithChildren,
   StatusesRoute: StatusesRouteWithChildren,
+  SupportContractsRoute: SupportContractsRouteWithChildren,
   TagsRoute: TagsRouteWithChildren,
   TenantsRoute: TenantsRouteWithChildren,
   TopologyRoute: TopologyRouteWithChildren,
@@ -11136,6 +11411,8 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualMachinesNewRoute: VirtualMachinesNewRoute,
   VirtualSwitchesIdRoute: VirtualSwitchesIdRoute,
   VirtualizationSourcesIdRoute: VirtualizationSourcesIdRoute,
+  VmGroupsIdRoute: VmGroupsIdRoute,
+  VmGroupsNewRoute: VmGroupsNewRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
   BgpInstancesIndexRoute: BgpInstancesIndexRoute,
   CabinetRolesIndexRoute: CabinetRolesIndexRoute,
@@ -11162,6 +11439,7 @@ const rootRouteChildren: RootRouteChildren = {
   MaintenanceIndexRoute: MaintenanceIndexRoute,
   NatRulesIndexRoute: NatRulesIndexRoute,
   OspfInstancesIndexRoute: OspfInstancesIndexRoute,
+  OxidizedIndexRoute: OxidizedIndexRoute,
   PlanningIndexRoute: PlanningIndexRoute,
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
@@ -11175,6 +11453,7 @@ const rootRouteChildren: RootRouteChildren = {
   VirtualSwitchesIndexRoute: VirtualSwitchesIndexRoute,
   VirtualTopologyIndexRoute: VirtualTopologyIndexRoute,
   VirtualizationSourcesIndexRoute: VirtualizationSourcesIndexRoute,
+  VmGroupsIndexRoute: VmGroupsIndexRoute,
   VtepsIndexRoute: VtepsIndexRoute,
   WatchedEndpointsIndexRoute: WatchedEndpointsIndexRoute,
   WindowsServersIndexRoute: WindowsServersIndexRoute,
@@ -11203,9 +11482,13 @@ const rootRouteChildren: RootRouteChildren = {
   ServiceTemplatesIdEditRoute: ServiceTemplatesIdEditRoute,
   SilencesIdEditRoute: SilencesIdEditRoute,
   VirtualMachinesIdEditRoute: VirtualMachinesIdEditRoute,
+  VmGroupsIdEditRoute: VmGroupsIdEditRoute,
   LTenantTypeNumidRoute: LTenantTypeNumidRoute,
   MonitoringSlaIdEditRoute: MonitoringSlaIdEditRoute,
+  MonitoringSlaTemplatesIdRoute: MonitoringSlaTemplatesIdRoute,
+  MonitoringSlaTemplatesNewRoute: MonitoringSlaTemplatesNewRoute,
   PlanningBoardIdTasksTaskIdRoute: PlanningBoardIdTasksTaskIdRoute,
+  MonitoringSlaTemplatesIdEditRoute: MonitoringSlaTemplatesIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -7,7 +7,7 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type Circuit, type Paginated } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { MiniMap } from "@/components/site-map/mini-map"
@@ -19,6 +19,7 @@ import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/circuits/")({ component: CircuitsPage })
 
@@ -27,7 +28,7 @@ function CircuitsPage() {
   const canAdd = canDo("circuit", "add")
   const canEdit = canDo("circuit", "change")
   const canDelete = canDo("circuit", "delete")
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Circuit | null>(null)
   const [selectedRows, setSelectedRows] = useState<Circuit[]>([])
 
@@ -71,7 +72,7 @@ function CircuitsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, rows)
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

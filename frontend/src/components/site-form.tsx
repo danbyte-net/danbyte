@@ -394,7 +394,7 @@ export function SiteForm({
 
             {/* Edit-only: a brand-new site has no prefixes to choose from yet. */}
             {isEdit && (
-              <FormSelect
+              <FormCombobox
                 label="Default prefix"
                 hint="pre-selected when staff here add an address - a hint, not a limit"
                 value={defaultPrefixId}
@@ -404,6 +404,8 @@ export function SiteForm({
                   value: p.id,
                   label: p.cidr,
                 }))}
+                searchPlaceholder="Search prefixes…"
+                emptyText="No prefixes."
               />
             )}
 

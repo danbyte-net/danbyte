@@ -55,6 +55,7 @@ import {
   FormText,
   FormTextarea,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 
 export const Route = createFileRoute("/settings/sso")({
@@ -452,7 +453,7 @@ function ProviderDialog({
               options={PROTOCOL_OPTIONS}
               error={fieldErrors.protocol}
             />
-            <FormSelect
+            <FormCombobox
               label="Tenant"
               value={tenant}
               onChange={setTenant}
@@ -460,6 +461,8 @@ function ProviderDialog({
               noneLabel="Deployment-wide"
               hint="Blank = every tenant may use it"
               error={fieldErrors.tenant}
+              searchPlaceholder="Search tenants…"
+              emptyText="No tenants."
             />
           </div>
 
@@ -641,7 +644,7 @@ function ProviderDialog({
             />
           </div>
 
-          <FormSelect
+          <FormCombobox
             label="Default tenant"
             value={defaultTenant}
             onChange={setDefaultTenant}
@@ -649,9 +652,11 @@ function ProviderDialog({
             noneLabel="None"
             hint="For JIT users with no other tenant"
             error={fieldErrors.default_tenant}
+            searchPlaceholder="Search tenants…"
+            emptyText="No tenants."
           />
 
-          <FormSelect
+          <FormCombobox
             label="Default group"
             value={defaultGroup != null ? String(defaultGroup) : null}
             onChange={(v) => setDefaultGroup(v ? Number(v) : null)}
@@ -659,6 +664,8 @@ function ProviderDialog({
             noneLabel="None"
             hint="Baseline group every user of this provider gets, so new SSO users aren't left with no access"
             error={fieldErrors.default_group}
+            searchPlaceholder="Search groups…"
+            emptyText="No groups."
           />
 
           <FormCheckbox
@@ -800,12 +807,14 @@ function GroupMappings({ provider }: { provider: IdentityProvider }) {
             className="font-mono"
           />
         </Field>
-        <FormSelect
+        <FormCombobox
           label="Danbyte group"
           value={groupId}
           onChange={setGroupId}
           options={groupOptions}
           placeholder="Pick a group"
+          searchPlaceholder="Search groups…"
+          emptyText="No groups."
         />
         {!provider.tenant && (
           <FormCheckbox

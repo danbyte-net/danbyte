@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import {
   CAPACITY_HEX,
+  capacityBandLabel,
+  capacityThresholds,
+  powerSupplyNote,
+  setCapacityThresholds,
   CAPACITY_NONE_HEX,
   capacityColor,
   capacityLevel,
@@ -100,5 +104,50 @@ describe("rack power", () => {
     expect(hasPowerData(undefined)).toBe(false)
     expect(hasPowerData(power(3_600, 0, 0))).toBe(true)
     expect(hasPowerData(power(0, 0, 500))).toBe(true)
+  })
+})
+
+describe("tenant capacity levels", () => {
+  afterEach(() => setCapacityThresholds(null))
+
+  it("defaults to 80 / 95", () => {
+    expect(capacityThresholds()).toEqual({ warn: 0.8, critical: 0.95 })
+    expect(capacityBandLabel("warn")).toBe("80–95%")
+  })
+
+  it("moves every level to the tenant's percentages", () => {
+    setCapacityThresholds({ warn: 60, critical: 85 })
+    expect(capacityLevel(0.6)).toBe("good")
+    expect(capacityLevel(0.61)).toBe("warn")
+    expect(capacityLevel(0.86)).toBe("critical")
+    expect(capacityColor(0.7)).toBe(CAPACITY_HEX.warn)
+    expect(capacityBandLabel("good")).toBe("≤ 60%")
+    expect(capacityBandLabel("warn")).toBe("60–85%")
+    expect(capacityBandLabel("critical")).toBe("> 85%")
+  })
+
+  it("keeps the defaults for levels out of order", () => {
+    setCapacityThresholds({ warn: 90, critical: 90 })
+    expect(capacityThresholds()).toEqual({ warn: 0.8, critical: 0.95 })
+  })
+})
+
+describe("power budget", () => {
+  it("names a budget as the supply", () => {
+    expect(
+      powerSupplyNote({ ...power(5_000, 1_000, 0), supply: "budget" })
+    ).toBe("budget")
+    expect(
+      powerSupplyNote({ ...power(5_000, 1_000, 0), supply: "pdu_rating" })
+    ).toBe("PDU rating")
+    expect(powerSupplyNote({ ...power(5_000, 1_000, 0), supply: "feed" })).toBe(
+      ""
+    )
+  })
+
+  it("measures demand against the budget", () => {
+    expect(
+      rackPowerRatio({ ...power(2_000, 1_500, 0), supply: "budget" })
+    ).toBe(0.75)
   })
 })

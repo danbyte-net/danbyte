@@ -3,6 +3,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { RackSyncTypeButton } from "@/components/rack-sync-type-button"
+import { RackMoveButton } from "@/components/rack-move-dialog"
 import { useQuery } from "@tanstack/react-query"
 import { Minus, Pencil, Plus, Trash2 } from "lucide-react"
 import {
@@ -35,6 +36,7 @@ import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ObjectImages } from "@/components/object-images"
 import { ObjectDocuments } from "@/components/object-documents"
+import { EmbeddedPowerFeedTable } from "@/components/embedded-tables"
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { RackElevation } from "@/components/rack-elevation"
@@ -75,7 +77,7 @@ function RackDetail() {
 
 function RackDetailBody({ rack: r }: { rack: Rack }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "documents" | "journal" | "history"
+    "overview" | "devices" | "power" | "documents" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -94,6 +96,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           <ShowOnFloorPlan rackId={r.id} />
           <PrintLabelButton objectType="rack" ids={[r.id]} />
           <RackSyncTypeButton rack={r} />
+          <RackMoveButton rack={r} />
           {canDo("rack", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/racks/$id/edit" params={{ id: r.id }}>
@@ -120,13 +123,14 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
           subtitle={
             r.facility_id && <span className="font-mono">{r.facility_id}</span>
           }
-          tags={r.tags.length > 0 && <TagList tags={r.tags} />}
+          tags={r.tags.length > 0 && <TagList tags={r.tags} listTo="/racks" />}
           description={r.description}
         />
       }
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "devices", label: "Devices", count: r.device_count },
+        { value: "power", label: "Power feeds" },
         { value: "documents", label: "Documents", count: r.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -144,6 +148,14 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
             <RackDevicesPane rackId={r.id} />
           </div>
         </div>
+      </DetailTab>
+      <DetailTab value="power">
+        <EmbeddedPowerFeedTable
+          filter={{ rack: r.id }}
+          omitRack
+          emptyText="No feeds deliver power to this rack yet."
+          searchable={false}
+        />
       </DetailTab>
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.rack" objectId={r.id} />
@@ -182,6 +194,12 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
         id: "position",
         accessorKey: "position",
         header: ({ column }) => <SortHeader column={column} label="Position" />,
+        // Search reads the position as shown: "U12", or "unracked".
+        meta: {
+          export: {
+            value: (d) => (d.position != null ? `U${d.position}` : "unracked"),
+          },
+        },
         cell: ({ row }) =>
           row.original.position != null ? (
             <span className="num font-mono text-xs">
@@ -219,7 +237,16 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
     return (
       <p className="text-sm text-muted-foreground">No devices in this rack.</p>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
+  return (
+    <DataTable
+      data={rows}
+      columns={columns}
+      flexColumn="name"
+      embedded
+      searchable
+      searchPlaceholder="Search devices…"
+    />
+  )
 }
 
 /** The rack's attributes, grouped into labelled tables - the detail that used

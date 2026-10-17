@@ -11,12 +11,22 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { deviceColumn } from "@/components/cells/device-cell"
-import { DataTable, SortHeader } from "@/components/data-table"
+import {
+  DataTable,
+  SortHeader,
+  selectionColumn,
+} from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { DriftStatusBadge } from "@/components/drift-status-badge"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import {
+  SnmpDriftAllMenu,
+  SnmpDriftBulkBar,
+} from "@/components/snmp-drift-bulk"
+import { SnmpDriftStatusBadge } from "@/components/snmp-drift-hover"
+import { useMe } from "@/lib/use-me"
 import {
   Select,
   SelectContent,
@@ -199,15 +209,13 @@ function snmpDriftSummary(r: SnmpDriftRow): string {
   return parts.join(" · ") || `${r.drift_count}`
 }
 
-function SnmpDriftStatusBadge({ row }: { row: SnmpDriftRow }) {
-  if (row.status === "unreachable")
-    return <Badge variant="secondary">Unreachable</Badge>
-  if (row.status === "in_sync") return <Badge variant="success">In sync</Badge>
-  return <Badge variant="warning">{row.drift_count} drifted</Badge>
-}
-
 function SnmpTab() {
   const [status, setStatus] = useState<string>("all")
+  // Bulk Poll / Refresh MACs / Sync (#419) - for callers who may change
+  // devices; the server re-checks each device.
+  const { canDo } = useMe()
+  const canChange = canDo("device", "change")
+  const [selected, setSelected] = useState<SnmpDriftRow[]>([])
 
   const query = useQuery({
     queryKey: ["snmp-drift", status],
@@ -216,7 +224,12 @@ function SnmpTab() {
       if (status !== "all") p.set("status", status)
       return api<{ count: number; results: SnmpDriftRow[] }>(
         `/api/monitoring/snmp-drift/?${p.toString()}`
-      )
+      ).then((d) => ({
+        ...d,
+        // Keyed by device, so a tick stays on its device when a refetch
+        // re-sorts the list (a bulk poll moves every row it touches).
+        results: d.results.map((r) => ({ ...r, id: r.device })),
+      }))
     },
     refetchInterval: 30_000,
   })
@@ -225,6 +238,7 @@ function SnmpTab() {
   const driftCount = rows.filter((r) => r.status === "drift").length
   const columns = useMemo<ColumnDef<SnmpDriftRow>[]>(
     () => [
+      ...(canChange ? [selectionColumn<SnmpDriftRow>()] : []),
       deviceColumn<SnmpDriftRow>({
         get: (r) => ({ id: r.device, name: r.device_name }),
         className: "font-medium",
@@ -269,7 +283,7 @@ function SnmpTab() {
           ),
       },
     ],
-    []
+    [canChange]
   )
 
   return (
@@ -286,6 +300,7 @@ function SnmpTab() {
             onChange={setStatus}
             statuses={SNMP_STATUSES}
           />
+          {canChange && <SnmpDriftAllMenu rows={rows} />}
         </>
       }
       query={query}
@@ -304,6 +319,14 @@ function SnmpTab() {
           columns={columns}
           flexColumn="drift"
           tableId="snmp-drift"
+          onSelectedRowsChange={setSelected}
+          selectedRows={selected}
+        />
+      )}
+      {canChange && (
+        <SnmpDriftBulkBar
+          selected={selected}
+          onCleared={() => setSelected([])}
         />
       )}
     </ListPageShell>

@@ -1026,7 +1026,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
             "arp_source_devices", "arp_source_devices_detail",
             "spike_factor", "spike_floor_ms", "availability_frame",
             "mac_port_display_limit", "mac_uplink_threshold", "mac_uplink_lldp",
-            "mac_retention_days",
+            "mac_retention_days", "snmp_poll_interval_minutes",
         ]
         read_only_fields = ["updated_at"]
 

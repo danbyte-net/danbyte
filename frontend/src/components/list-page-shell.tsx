@@ -2,13 +2,22 @@ import { usePageTitle } from "@/lib/page-title"
 import { type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import type { LinkProps } from "@tanstack/react-router"
-import { ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { AlertTriangle, ChevronLeft, ChevronRight, Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SavedViews, type SavedViewsProps } from "@/components/saved-views"
+import { FacetVisibilityProvider } from "@/components/filter-rail"
+import { useListFacetPrefs } from "@/lib/use-facet-prefs"
+import {
+  ListCapContext,
+  listCap,
+  listCapCount,
+  listCapNotice,
+} from "@/lib/list-cap"
 
 // ─── The canonical list-page chrome ──────────────────────────────────────
 //
@@ -45,6 +54,7 @@ export function ListPageShell({
   actions,
   savedViews,
   query,
+  page,
   children,
 }: {
   title: string
@@ -75,14 +85,26 @@ export function ListPageShell({
   /** Drives the body's loading/error switch. When loading or errored, the
    * children are not rendered. Omit to always render children. */
   query?: { isLoading: boolean; isError: boolean; error: unknown }
+  /** The server's answer for a list fetched in one capped request
+   * (`query.data`). When it holds more rows than arrived, the count chip
+   * reads "N of M", a notice says the list is cut off, and the facet rail and
+   * the table's Download say they cover the loaded rows (#412). */
+  page?: { count?: number; results?: unknown[] }
   /** The table (and any dialogs/bulk bars) - rendered once data is ready. */
   children: ReactNode
 }) {
   usePageTitle(title)
-  return (
+  // Facets the user hid on this list (#285), for the rail to honour.
+  const facetPrefs = useListFacetPrefs()
+  const cap = listCap(page)
+  // The rail and the table read the cap too (FilterRail, DataTable's
+  // Download), so the whole page sits inside its provider.
+  const shell = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex min-h-0 min-w-0 flex-1">
-        {rail}
+        <FacetVisibilityProvider value={facetPrefs}>
+          {rail}
+        </FacetVisibilityProvider>
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* The controls wrap under the title when they don't fit beside it,
@@ -104,7 +126,11 @@ export function ListPageShell({
             ) : (
               <h1 className="text-base font-semibold">{title}</h1>
             )}
-            {count !== undefined && <Badge variant="secondary">{count}</Badge>}
+            {count !== undefined && (
+              <Badge variant={cap ? "warning" : "secondary"}>
+                {cap ? listCapCount(count, cap) : count}
+              </Badge>
+            )}
             <div className="ml-auto flex grow flex-wrap items-center justify-end gap-2">
               {savedViews && search && (
                 <SavedViews
@@ -132,15 +158,28 @@ export function ListPageShell({
           </header>
           <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
             {query?.isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
+              <Loading />
             ) : query?.isError ? (
               <QueryError error={query.error} />
             ) : (
-              children
+              <>
+                {cap && (
+                  // Same amber as the `warning` badge beside the title.
+                  <p
+                    role="status"
+                    className="num mb-3 flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-800 dark:text-amber-300"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    {listCapNotice(cap)}
+                  </p>
+                )}
+                {children}
+              </>
             )}
           </div>
         </div>
       </div>
     </div>
   )
+  return <ListCapContext.Provider value={cap}>{shell}</ListCapContext.Provider>
 }

@@ -21,6 +21,14 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 Picking a [**rack type**](#rack-types) fills the height, width, outer
 dimensions and weight budget from the cabinet model in one go.
 
+A rack's units can't shrink or shift out from under its devices: lowering
+the **height** or raising the **starting unit** below a mounted device is
+refused, naming the devices in the way (`Devices are installed outside
+U1–U10 (hi at U40). Move or remove them first.`). Side-mounted strips have no
+U position and never block. A rack with devices in it can't change site on
+an ordinary edit; [move it to the other site](#move-a-rack-to-another-site)
+together with its devices instead.
+
 ### Rack roles
 
 A **rack role** classifies a rack's purpose (e.g. *network*, *compute*,
@@ -86,10 +94,64 @@ before touching anything:
   probably cabled hardware, so syncing never deletes one.
 
 Apply needs **change** on the rack, and the accessory half additionally
-needs device-add at its site. Syncing twice does nothing the second time.
+needs device-add at its site. A height or starting unit that would leave a
+mounted device outside the rack is refused, as on the rack form, and nothing
+is applied. Syncing twice does nothing the second time.
 `POST /api/racks/{id}/sync-from-type/` is the same operation
 (`apply`, plus `dims` / `accessories` to narrow it); without `apply` it is
 a dry run that returns the diff.
+
+## Move a rack to another site
+
+**Move to site…** on the rack page moves the rack and every device in it to
+another site in one step - a re-homed cabinet, a site split or merge. Pick the
+site and, optionally, a location in it. The dialog first shows what the move
+takes:
+
+- **Devices going along**: everything racked in it - positioned, half-width
+  and side-mounted alike - plus the devices installed in their device bays.
+  Each keeps its U position, face and rail; its site and location become the
+  rack's. Without a location, the old one is cleared.
+- **Cleared**: a floor-plan tile at the old site that places the rack or one
+  of its devices loses its link. The tile itself stays on the plan.
+- **Blocking the move**: anything still tied to the old site. The move is
+  refused until each is resolved, and every reason is listed:
+    - a cable from one of its devices to anything outside the rack - another
+      device, a power feed, a circuit. Cables between its own devices go along.
+    - a VLAN of another site on one of its interfaces, untagged or tagged.
+      Shared VLANs with no site are fine.
+    - an IP address of another site, or in a prefix of another site, on one
+      of its devices.
+    - a power feed delivered to the rack from another site's panel.
+    - a device whose cluster is at another site.
+    - a device in a bay of a device outside the rack, or a bay child racked
+      in another rack or mounted in a DIN cabinet.
+    - a device in a virtual chassis with members outside the rack.
+    - a rack of the same name at the new site.
+    - with [enhanced site separation](../access/site-separation.md)
+      on: a catalog entry local to another site - a device type, status,
+      tag, VRF, IP role, manufacturer or custom field - on the rack, its
+      devices, their ports and other components such as inventory items,
+      their IP and MAC addresses, their services, NAT rules and port rules,
+      or their static routes, BGP sessions and other routing processes.
+
+Port reservations on the moving ports follow them to the new site. Each moved
+rack, device and tile is written to its change log.
+
+The move needs **change** on the rack and on every device it takes along, at
+both the old and the new site, and **change** on any floor-plan tile it
+clears. Without them the move, and its preview, is refused.
+
+`POST /api/racks/{id}/move/` with `site_id` and an optional `location_id` is
+the same operation; `?dry_run=1` reports and writes nothing. The response
+holds `rack`, `from_site`, `to_site`, `to_location`, the `devices` that go
+along (`id`, `name`, `position`, `face`, `mount`, and `racked`: false for a
+bay child), `cleared.floor_plan_tiles`, the `blockers` (`code`, `message`),
+`can_move` and `moved`. A move with blockers answers 409 with the same body
+and a `detail`. Blocker codes: `cable`, `vlan`, `ip`, `power_feed`,
+`cluster`, `bay`, `virtual_chassis`, `name` and `catalog`. A reason names
+an object only when you may view it, and otherwise says "a device", "another
+site" and so on; a far cable end is never named.
 
 ## Mount a device in a rack
 
@@ -100,7 +162,7 @@ On a device (or in the rack), set:
   rack's real units (top-down, matching the elevation); units that are already
   taken are greyed out and show the blocking device, so you can only pick a
   spot where the device actually fits.
-- **Face** - front or rear (leave blank for full-depth gear that occupies both).
+- **Face** - front or rear. Leave it blank and the device takes both faces.
 - **Side** - only for half-width device types: which half of the U (left/right).
 
 The form draws the rack's front and rear beside these fields: click a free unit
@@ -112,6 +174,36 @@ The device's **height** comes from its [device type](device-catalog.md), so the
 elevation knows how many units to fill. Danbyte checks the device actually fits -
 it won't let you mount a 2U device where only 1U is free, or overlap two devices
 on the same face.
+
+**Full depth takes both faces.** A device whose type is *full depth* (the
+default) fills its units front to back, so nothing mounts on the other face of
+those units, and a full-depth device can't go behind anything either. Two
+shallow devices - patch panels, half-depth switches - share a U front and rear.
+A device with no type counts as full depth, as the elevation draws it.
+
+**A racked device is at its rack's site.** A rack from another site is refused
+(`Pick a rack in the device's site.`), and so is moving a racked device to
+another site without taking it out of the rack. A device with no site takes
+its rack's. Its **location**, when set, is in its site too.
+
+**A device type's change keeps its racked devices in place.** A new height,
+full depth or width that would put one of its devices over another device or
+past the top of its rack is refused, naming the devices (`Racked devices of
+this type would no longer fit: top at U10 in R1 would run past U10. Move them
+first.`). So is giving a type with side-mounted strips a U height. This holds
+on the type form, the API and a [bundle import](device-catalog.md) that
+replaces the type.
+
+These rules hold on every write: the form, the API, the elevation's drag, and
+the [spreadsheet import](../features/import-export.md). A placement, a change
+to the rack's units or site, and a change to a device type's size queue on the
+rack, so two at once can't both pass. Rows stored before a rule existed keep
+reading and editing, from their forms too; the rule applies when the
+placement, site or location itself changes, and a type change is refused only
+for the conflicts it makes.
+`manage.py check_dcim_integrity` lists them - devices over each other,
+outside their rack's units, or at a different site than their rack - and
+changes nothing.
 
 ### Half-width devices
 
@@ -161,7 +253,8 @@ The rack's **Overview** puts the rack's facts on the left - the **Rack** and
 the right, under **Elevation**: paired elevations, **front and rear side by
 side**. Until you zoom by hand the zoom steps down until both faces fit the
 column, so a whole rack reads without scrolling; **−** and **+** take over
-from there. The Devices tab keeps a single toggleable elevation. Three
+from there. The Devices tab keeps a single toggleable elevation beside a
+searchable list of the rack's devices. Three
 **display modes**:
 
 | Mode | Shows |
@@ -327,7 +420,11 @@ inlets, when each inlet feeds its own bank and they add up. Two or more PDUs
 are taken as A and B sides, split as evenly as their ratings allow, and the
 supply is the smaller side, since either
 side must carry the rack alone: an unequal pair of 3.7 kW and 7.4 kW is
-3.7 kW, four equal PDUs two of them. Demand is the racked devices' power-port draws -
+3.7 kW, four equal PDUs two of them. A **Power budget (W)** on the rack
+form (`max_power_w`) overrides both: what the rack may draw - a cooling or
+contract limit - whatever its feeds could deliver. With a budget set, demand
+is measured against it and the figure is marked *budget*; the API keeps what
+the feeds or PDUs would give as `supplied_w`. Demand is the racked devices' power-port draws -
 allocated where you've recorded it, otherwise the nameplate sum (labelled
 *nameplate*). The rack page shows **demand / supply** (`1.2 kW / 3.6 kW`,
 in W below 1 kW) and turns red when over; a rack drawing power with neither
@@ -337,6 +434,10 @@ column, with a bar in front: it is offered in the list's **Columns** menu,
 hidden until you tick it, and sorts by how much of the supply the demand
 takes.
 
+The rack's **Power feeds** tab lists the feeds delivered to it, the same rows
+as the feeds list; tick them to edit or delete several at once (see
+[Power](../features/power.md#editing-and-deleting-several-at-once)).
+
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
 share in use and opening the Port utilization page on the rack. Counting
@@ -344,10 +445,18 @@ ports costs the list a few queries, so it asks for them
 (`?include=ports`) only while one of the two is shown.
 
 A rack's space, power and ports share one scale wherever they are drawn as a
-bar or a colour: green up to 80 % full, amber above 80 %, red above 95 %.
+bar or a colour: green up to the warning level, amber above it, red above the
+critical level. The levels are 80 % and 95 % until a tenant admin changes them
+under **Settings → Tenant policy → Rack capacity** (`capacity_warn_pct`,
+`capacity_critical_pct`; the warning level must sit below the critical one).
 The racks list's **Used**, **Power** and **Ports** bars, the floor plan's
-tiles and its [Color by](../features/floor-plans.md#color-by), the tile
-popover and the site's Capacity tab all use it.
+tiles and its [Color by](../features/floor-plans.md#color-by) legend, the
+tile popover, the 3D room and the site's Capacity tab all use them. A page
+already open picks up changed levels on its next load.
+
+!!! note "Changed in 0.18"
+    The 80 / 95 % levels are a tenant setting, and a rack can carry a power
+    budget that capacity measures against instead of its feeds.
 
 !!! note "Changed in 0.17"
     Power figures of 1 kW and up read in kW (`3.6 kW` where the page showed
@@ -377,7 +486,9 @@ floor, not a guarantee.
 
 Racks can carry a **location** (building / floor / room within their
 site) - the Locations page's **Rack elevations** button then shows exactly
-the racks in that room, and `/api/racks/?location=` filters likewise. A
+the racks in that room, and `/api/racks/?location=` filters likewise. The
+wall reads the devices of all its racks in one request:
+`/api/devices/?rack=` takes one rack id or several, comma-separated. A
 location can also be drawn as a [floor plan](../features/floor-plans.md),
 with tiles linked back to its racks.
 

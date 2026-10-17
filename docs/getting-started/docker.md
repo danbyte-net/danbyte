@@ -66,8 +66,8 @@ matching lines in the compose file to have `bootstrap` do it):
 
 | Service    | Image / stage        | Role                                             |
 | ---------- | -------------------- | ------------------------------------------------ |
-| `postgres` | `postgres:17`        | Database (named volume `postgres_data`)          |
-| `redis`    | `redis:7`            | Queues + channels layer                          |
+| `postgres` | `postgres:17`        | Database (named volume `postgres_data`), from [ECR Public](#base-images) |
+| `redis`    | `redis:7`            | Queues + channels layer, from [ECR Public](#base-images) |
 | `backend`  | app (`runtime`)      | gunicorn WSGI + one-time migrate/bootstrap/static |
 | `ws`       | app (`runtime`)      | daphne ASGI - WebSockets only                    |
 | `workers`  | app (`runtime`)      | `rqworker-pool` (`RQ_WORKERS` processes; ICMP-capable) |
@@ -129,6 +129,73 @@ than running as root or granting `NET_RAW`. Podman honours the sysctl too.
     a privileged LXC or on a VM/bare metal, or use a TCP/HTTP check instead of
     ICMP for those targets.
 
+### Script sandbox
+
+The image includes bubblewrap, which puts each sandboxed
+[script](../features/scripts.md#what-a-sandboxed-script-cannot-do) in its
+own namespaces. Docker's default seccomp profile refuses the user
+namespaces it needs, and on an AppArmor host the `docker-default` profile
+refuses its mounts. So in a stock stack scripts run under Landlock and
+Danbyte's seccomp filter alone, the 0.17 level, and each run log says
+`Sandbox: bubblewrap is not used - No permissions to create a new
+namespace…`.
+
+To add the namespaces, relax both profiles on the `workers` service only
+(the lines are in `docker-compose.prod.yml`, commented out):
+
+```yaml
+  workers:
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+```
+
+That trades the container's own seccomp and AppArmor policy on the worker
+for per-run namespaces; scripts keep Landlock and Danbyte's filter either
+way. A host without AppArmor needs only the seccomp line. Tested with
+Docker 29; Podman is untested.
+
+### Scripts and the API
+
+A script's SDK calls the API at `DANBYTE_INTERNAL_URL`. Nothing listens on
+`127.0.0.1:8000` inside the `workers` container, so the compose file sets it
+to the `backend` service, `http://backend:8000`, for every app service. The
+backend accepts that one extra host name: a set `DANBYTE_INTERNAL_URL` adds
+its host to `ALLOWED_HOSTS`, and only there; WebSocket origins and the
+site's public name still come from your `ALLOWED_HOSTS`. Override it in
+`.env` only if the backend service is named differently.
+
+### DWG drawings
+
+The image includes LibreDWG's `dwg2dxf`, so
+[floor-plan drawings](../features/floor-plans.md#cad-drawings) take DWG as
+well as DXF with nothing to install: `DANBYTE_CAD_CONVERTER` is set to
+`/usr/local/bin/dwg2dxf` in the image. Debian does not package LibreDWG, so
+the `cad-tools` stage of the `Dockerfile` builds it on Alpine with
+`deploy/cad/build-dwg2dxf.sh`, from the GNU release pinned to one version and
+its SHA-256, linked statically; only that binary reaches the runtime image.
+The release bundle carries the same build (target `cad-dist`). The build
+fetches the tarball from `ftp.gnu.org`; a build host without it passes
+another GNU mirror as `--build-arg GNU_MIRROR=…`.
+
+LibreDWG is GPLv3. Danbyte does not link it: the worker runs `dwg2dxf` as a
+separate program for each upload, and the image carries LibreDWG's licence
+and a notice naming its source at `/usr/share/doc/libredwg/`. To leave DWG
+off, set `DANBYTE_CAD_CONVERTER=off` in the services' environment.
+
+The converter only runs in the bubblewrap sandbox (no network, no app
+directory, `.env` or media; see
+[`DANBYTE_CAD_SANDBOX`](../reference/settings.md#converter-sandbox-danbyte_cad_sandbox)),
+and the image's bubblewrap meets the same Docker profiles as the
+[script sandbox](#script-sandbox). In a stock stack a DWG drawing therefore
+fails with `…this server cannot build one: No permissions to create a new
+namespace…`, and the upload form then refuses DWG with the same reason;
+DXF works. To take DWG, relax the profiles on the
+`workers` service as shown there. `DANBYTE_CAD_SANDBOX=off` runs the
+converter without the sandbox instead, which hands a hostile file the
+worker's database credentials and secret keys if it exploits a converter
+bug.
+
 `web` listens on **:80** (`HTTP_PORT`, default 8080) and **:443**
 (`HTTPS_PORT`, default 8443) with a **self-signed** cert baked into the image -
 so browsers that force HTTPS still connect (one-time cert warning). Put a real
@@ -150,6 +217,32 @@ commented list). The essentials:
 | `DANBYTE_TRUSTED_PROXY_DEPTH` | Proxies appending to `X-Forwarded-For`, counting the stack's own nginx: `1` direct (default), `2` with one proxy in front. Finds the client address for the login lockout. |
 | `HTTP_PORT` | Published host port (default `8080`). |
 | `RQ_WORKERS` | Worker pool size. |
+| `DANBYTE_INTERNAL_URL` | Where scripts reach the API (default `http://backend:8000`). See [Scripts and the API](#scripts-and-the-api). |
+| `BASE_IMAGE_REGISTRY` | Where base images come from (default `public.ecr.aws/docker/library`). See [Base images](#base-images). |
+
+## Base images
+
+The base images - Postgres, Redis, and the `node`, `nginx` and `python` images
+the Dockerfile builds on - come from **ECR Public**
+(`public.ecr.aws/docker/library`), Amazon's copy of the Docker official images,
+not from Docker Hub. Docker Hub limits anonymous pulls per address, and a build
+host behind a shared NAT or a CI runner reaches that limit quickly; ECR Public
+serves the same images without it. The Dockerfile has no `# syntax=` line for
+the same reason: that line makes BuildKit pull its parser from Docker Hub.
+
+To pull from another mirror (a Harbor or Artifactory proxy, or Docker Hub
+itself with a login), set `BASE_IMAGE_REGISTRY` in `.env` to the path that
+holds the official images:
+
+```ini
+BASE_IMAGE_REGISTRY=harbor.example.com/dockerhub-proxy/library
+```
+
+The compose files use it for `postgres` and `redis` and pass it to the build,
+so the next `build` pulls `node`, `nginx` and `python` from there too. The
+mirror needs the same tags (`postgres:17`, `redis:7`, `node:22-slim`,
+`nginx:1.27.5-alpine`, `python:3.13-slim`). A plain `docker build` takes it as
+`--build-arg BASE_IMAGE_REGISTRY=…`.
 
 ## TLS
 
@@ -328,7 +421,8 @@ The stack is rootless-friendly and works with `podman-compose`. A few notes:
 ## Prebuilt images (ghcr.io)
 
 Tagging a release (`v*`) publishes the three images to **GitHub Container
-Registry** via `.github/workflows/container.yml`:
+Registry** via `.github/workflows/container.yml`, once the release's test
+suite has passed for that tag:
 
 ```
 ghcr.io/danbyte-net/danbyte-app:<version>       # gunicorn / daphne / workers

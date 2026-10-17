@@ -227,6 +227,8 @@ function Body({ location: l }: { location: Location }) {
                 flexColumn="description"
                 exportName="location-prefixes"
                 exportTitle="Prefix ranges"
+                searchable
+                searchPlaceholder="Search prefixes…"
               />
             </div>
           )}

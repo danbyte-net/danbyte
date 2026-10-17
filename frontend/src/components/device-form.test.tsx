@@ -914,11 +914,10 @@ describe("DeviceForm rack elevation", () => {
     fireEvent.click(await unit("front", 10))
     expect(status()).toBe("Taken by sw-a")
     expect(trigger("Position (U)").textContent).toContain("Pick a unit…")
-    // The rear of U10 is free: different faces never collide.
+    // Both are full depth, so the rear of U10 is taken too (#375).
     fireEvent.click(await unit("rear", 10))
-    await waitFor(() =>
-      expect(trigger("Position (U)").textContent).toContain("U10–U11")
-    )
+    expect(status()).toContain("sw-a")
+    expect(trigger("Position (U)").textContent).toContain("Pick a unit…")
   })
 
   it("draws the outline red where it collides, in the server's words", async () => {

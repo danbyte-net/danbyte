@@ -218,6 +218,40 @@ class GroupedMatchesDeviceGraph(_GroupedFabric):
                 self.assertIn(str(self.l1.id), ids)
                 self.assertNotIn(str(self.l2.id), ids)  # S2's floor
 
+    def test_provably_empty_scope_returns_an_empty_map(self):
+        """An ``__in: []`` constraint makes the device scope provably empty,
+        so Django refuses to compile it to SQL; the grouped map must answer
+        with no groups rather than 500 (#368)."""
+        from auth_api.models import ObjectPermission, UserProfile
+
+        user = User.objects.create_user("nobody", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="none", object_types=["device"], actions=["view"],
+            constraints={"name__in": []},
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self.client.force_login(user)
+        session = self.client.session
+        session["current_tenant_id"] = str(self.tenant.id)
+        session.save()
+        self.assertEqual(self.client.get("/api/topology/").status_code, 200)
+        for group_by in ("site", "location"):
+            for c in ("1", "0"):
+                r = self.client.get(
+                    f"/api/topology/?group_by={group_by}&collapse_panels={c}"
+                )
+                self.assertEqual(r.status_code, 200, (group_by, c))
+                self.assertEqual((r.json()["nodes"], r.json()["edges"]), ([], []))
+        scope = rbac.row_filter(user, self.tenant, "device", "view")
+        for group_by in ("site", "location"):
+            g = tv._grouped_graph(self.tenant, group_by, scope_q=scope)
+            self.assertEqual((g["nodes"], g["edges"]), ([], []))
+        # A provably-empty filter, not only an RBAC scope.
+        g = tv._grouped_graph(self.tenant, "site", device_filter_q=Q(pk__in=[]))
+        self.assertEqual((g["nodes"], g["edges"]), ([], []))
+
     def test_other_tenants_cables_never_count(self):
         from core.models import Tenant
 

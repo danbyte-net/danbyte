@@ -10,6 +10,7 @@ import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Combobox } from "@/components/ui/combobox"
 import {
   Dialog,
   DialogContent,
@@ -601,21 +602,21 @@ function AcmeDialog({
         <div className="grid gap-3">
           <div className="grid gap-1">
             <Label>Issuer</Label>
-            <Select value={issuer} onValueChange={setIssuer}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={LE}>Let's Encrypt</SelectItem>
-                {rows
-                  .filter((i) => !i.directory_url.includes("acme-v02.api.letsencrypt.org"))
-                  .map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={issuer}
+              onChange={(v) => v && setIssuer(v)}
+              options={[
+                { value: LE, label: "Let's Encrypt" },
+                ...rows
+                  .filter(
+                    (i) =>
+                      !i.directory_url.includes("acme-v02.api.letsencrypt.org")
+                  )
+                  .map((i) => ({ value: i.id, label: i.name })),
+              ]}
+              searchPlaceholder="Search issuers…"
+              emptyText="No issuers."
+            />
           </div>
           {isLE && (
             <div className="grid gap-1">

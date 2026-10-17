@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 
@@ -9,13 +9,14 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/virtual-switches/")({
   component: VirtualSwitchesPage,
 })
 
 function VirtualSwitchesPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const query = useQuery({
     queryKey: ["virtual-switches", q],
     queryFn: () =>

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { timeAgoColumn } from "@/components/cells/time-ago"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TenantDeleteDialog } from "@/components/tenant-delete-dialog"
 import { TenantBulkBar } from "@/components/tenant-bulk-bar"
@@ -19,11 +19,12 @@ import { TenantGroupsSection } from "@/components/tenant-groups-section"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/tenants/")({ component: TenantsPage })
 
 function TenantsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Tenant | null>(null)
   const [selected, setSelected] = useState<Tenant[]>([])
   const qc = useQueryClient()
@@ -90,7 +91,7 @@ function TenantsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

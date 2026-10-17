@@ -112,7 +112,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       actions={
         <>
           {/* Everything that makes this model work, as one shareable file. */}
-          <ExportBundleButton deviceTypeId={d.id} name={d.name} />
+          <ExportBundleButton
+            deviceTypeId={d.id}
+            name={d.name}
+            hasPhotos={!!(d.front_image || d.rear_image)}
+          />
           {/* Push this model's templates at the fleet built from it (#103),
               instead of opening each device's own sync. */}
           {canDo("device", "change") && (
@@ -164,7 +168,11 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
               )}
             </>
           }
-          tags={d.tags.length > 0 && <TagList tags={d.tags} />}
+          tags={
+            d.tags.length > 0 && (
+              <TagList tags={d.tags} listTo="/device-types" />
+            )
+          }
           description={d.description}
         />
       }

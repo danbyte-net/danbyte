@@ -25,9 +25,9 @@ from rest_framework.decorators import (
     api_view,
     permission_classes as drf_permission_classes,
 )
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
@@ -39,8 +39,9 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
+from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, scene_geo
+from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -53,6 +54,7 @@ from .port_state import (
 )
 from .models import (
     _TEMPLATE_MARKER_KIND,
+    normalise_ip_term,
     Antenna,
     AntennaTemplate,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
@@ -75,7 +77,8 @@ from .models import (
     Module,
     ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
     NATRule,
-    ModuleInstallConflict, install_module, reinstall_module, uninstall_module,
+    ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
+    reinstall_module, uninstall_module,
     CableTermination, PortReservation,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
@@ -98,6 +101,7 @@ from .serializers import (
     CableRouteSerializer,
     CableSerializer,
     FiberSettingsSerializer,
+    FloorPlanDrawingUnitsSerializer,
     FloorPlanMiniSerializer,
     FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
@@ -186,6 +190,7 @@ from .serializers import (
     CabinetSerializer,
     CabinetTypeMiniSerializer,
     CabinetTypeSerializer,
+    RackMoveSerializer,
     RackSerializer,
     RackRoleSerializer,
     RackRoleMiniSerializer,
@@ -320,11 +325,14 @@ def annotate_dhcp(qs):
     exclusion range carves a hole in the pool - DHCP never hands those out - so
     the serializer checks ``dhcp_excl_n`` before pool membership.
 
-    Each flag is a correlated EXISTS, evaluated for the rows a page returns.
-    The joined COUNT(DISTINCT) form this replaces grouped every listed address
-    across a dozen DHCP tables before paging, which was the dominant cost of
-    the IP list at a few hundred thousand rows (#187). The ``inet`` columns
-    compare directly. Imported lazily: ``integrations`` imports from ``api``."""
+    Each flag is a correlated EXISTS. The joined COUNT(DISTINCT) form this
+    replaces grouped every listed address across a dozen DHCP tables before
+    paging, which was the dominant cost of the IP list at a few hundred
+    thousand rows (#187). Postgres still evaluates the select list for every
+    row an OFFSET skips, so a paged list must not carry these: it attaches
+    them to the page's rows with ``attach_dhcp_flags`` instead (#372). The
+    ``inet`` columns compare directly. Imported lazily: ``integrations``
+    imports from ``api``."""
     from django.db.models import Exists
 
     from integrations.models import DhcpExclusion, DhcpLease, DhcpReservation, DhcpScope
@@ -346,6 +354,27 @@ def annotate_dhcp(qs):
             )
         ),
     )
+
+
+_DHCP_FLAGS = ("dhcp_resv_n", "dhcp_lease_n", "dhcp_pool_n", "dhcp_excl_n")
+
+
+def attach_dhcp_flags(rows):
+    """Set ``annotate_dhcp``'s flags on already-fetched IP rows: one query
+    over the rows' ids, whatever the page's depth (#372)."""
+    rows = list(rows)
+    if not rows:
+        return rows
+    flags = {
+        pk: vals
+        for pk, *vals in annotate_dhcp(
+            IPAddress.objects.filter(pk__in=[r.pk for r in rows]).order_by()
+        ).values_list("pk", *_DHCP_FLAGS)
+    }
+    for row in rows:
+        for name, value in zip(_DHCP_FLAGS, flags.get(row.pk, (False,) * 4), strict=True):
+            setattr(row, name, value)
+    return rows
 
 
 def _apply_lifecycle_filter(qs, value: str):
@@ -686,6 +715,10 @@ class FieldWriteAllowList:
     the metadata endpoint becoming a third list that can silently disagree with
     the two that already exist.
 
+    A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
+    its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
+    plan may change and the fields a bulk edit offers can differ.
+
     ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
     stay authoritative, so the existing component viewsets need no edit. Note
     the consequence: adding ``editable_*`` to a viewset that *does* have a
@@ -728,34 +761,28 @@ def _bulk_status_offered(status_id, model, key="status_id") -> None:
         )
 
 
-class ComponentBulkMixin(FieldWriteAllowList):
-    """``bulk-update`` + ``bulk-delete`` for component viewsets (interfaces,
-    ports, VM interfaces, device-type component templates).
+class BulkUpdateMixin(FieldWriteAllowList):
+    """``bulk-update`` on its own: the field-level bulk write that
+    :class:`ComponentBulkMixin` and the routing lists (#314) share.
 
     POST ``bulk-update`` {ids: [...], fields: {...}} - only keys present in
-    ``fields`` are touched, and only keys the viewset allow-lists are
-    accepted (an unknown key is a 400, never silently dropped). Tenant-scoped
-    FKs re-validate against the active tenant since ``qs.update`` bypasses
-    the serializer's scoped fields. Selection is scoped by ``get_queryset``
-    (tenant + RBAC rows), so foreign ids silently fall out.
-
-    The allow-list itself lives on :class:`FieldWriteAllowList`.
-
-    POST ``bulk-delete`` {ids: [...]} - same scoping; audited.
+    ``fields`` are touched, and only keys :meth:`bulk_update_allow_list`
+    names are accepted (an unknown key is a 400, never silently dropped).
+    Tenant-scoped FKs re-validate against the active tenant since
+    ``qs.update`` bypasses the serializer's scoped fields. Selection is scoped
+    by ``get_queryset`` (tenant + RBAC rows), so foreign ids silently fall out.
     """
 
     bulk_tags = False                    # add_tag_ids / remove_tag_ids
-    # The FK column that scopes name-uniqueness for rename/clone, e.g.
-    # "device_type_id" (templates) or "device_id" (device components). None
-    # skips the pre-check and relies on the DB constraint.
-    bulk_name_scope_field: str | None = None
-    rbac_action_map = {
-        "bulk_update": "change", "bulk_delete": "delete",
-        "bulk_rename": "change", "bulk_clone": "add",
-    }
+    rbac_action_map = {"bulk_update": "change"}
 
     def _bulk_ids(self, request):
         return bulk_ids(request, MAX_IDS)
+
+    def bulk_update_allow_list(self) -> dict:
+        """What ``bulk-update`` accepts, as ``field_write_allow_list()``
+        shapes it. Default: the viewset's whole field-write allow-list."""
+        return self.field_write_allow_list()
 
     def normalize_bulk_updates(self, updates: dict) -> dict:
         """Hook for model-level invariants that ``Model.save()`` would enforce
@@ -774,7 +801,7 @@ class ComponentBulkMixin(FieldWriteAllowList):
         if not isinstance(fields, dict) or not fields:
             raise ValidationError({"fields": "Provide at least one field to update."})
 
-        spec = self.field_write_allow_list()
+        spec = self.bulk_update_allow_list()
         allowed = {*spec["str"], *spec["bool"], *spec["int"], *spec["fk"]}
         tag_keys = {"add_tag_ids", "remove_tag_ids"} if self.bulk_tags else set()
         unknown = set(fields) - allowed - tag_keys
@@ -859,6 +886,35 @@ class ComponentBulkMixin(FieldWriteAllowList):
                 [row.pk for row in _rows], action="change"
             )
         return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
+
+
+def _is_module_ownership(field) -> bool:
+    """A component's link to the installed module that stamped it, or to the
+    module template it came from - set by install only, never copied."""
+    return field.is_relation and field.related_model in (
+        Module, ModuleInterfaceTemplate,
+    )
+
+
+class ComponentBulkMixin(BulkUpdateMixin):
+    """``bulk-update`` + ``bulk-delete`` + ``bulk-rename`` + ``bulk-clone``
+    for component viewsets (interfaces, ports, VM interfaces, device-type
+    component templates).
+
+    ``bulk-update`` comes from :class:`BulkUpdateMixin` and takes the
+    allow-list on :class:`FieldWriteAllowList`.
+
+    POST ``bulk-delete`` {ids: [...]} - same scoping; audited.
+    """
+
+    # The FK column that scopes name-uniqueness for rename/clone, e.g.
+    # "device_type_id" (templates) or "device_id" (device components). None
+    # skips the pre-check and relies on the DB constraint.
+    bulk_name_scope_field: str | None = None
+    rbac_action_map = {
+        "bulk_update": "change", "bulk_delete": "delete",
+        "bulk_rename": "change", "bulk_clone": "add",
+    }
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -1014,11 +1070,14 @@ class ComponentBulkMixin(FieldWriteAllowList):
                              "the clones new names."}
                 )
 
-        # Copy every concrete field except the PK and audit/number columns.
+        # Copy every concrete field except the PK, audit/number columns and
+        # module ownership: a copy is the user's own component, not part of
+        # the installed module, so it survives the module's removal (#367).
         skip = {"created_at", "updated_at", "numid"}
         copy_fields = [
             f.name for f in model._meta.concrete_fields
             if not f.primary_key and f.name not in skip
+            and not _is_module_ownership(f)
         ]
         created = []
         with transaction.atomic():
@@ -1639,10 +1698,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                              "pick a span inside one of them."
                 })
             wanted = inside
-        # Never mint the prefix's network/broadcast as host rows (v4, /30 and up).
-        skip_addrs: set[str] = set()
-        if isinstance(net, ipmod.IPv4Network) and net.prefixlen <= 30:
-            skip_addrs = {str(net.network_address), str(net.broadcast_address)}
+        # Never mint an address that is not a host as a row: the v4 network
+        # and broadcast, the v6 Subnet-Router anycast (the shared host rule).
+        from .models import non_host_addresses
+
+        skip_addrs = {str(a) for a in non_host_addresses(net)}
         # An address is unique per VRF, not per prefix - dedupe against that.
         existing = set(
             IPAddress.objects.filter(
@@ -1791,12 +1851,20 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         IP-assign picker scales to very large address spaces (filter, don't
         ship millions of rows): ``?search=`` (address or DNS), ``?prefix=``,
         ``?vrf=``, ``?site=``, ``?assigned_interface=``, ``?assigned_vm=``,
-        ``?monitoring_excluded=true|false``."""
-        qs = annotate_dhcp(super().get_queryset())
+        ``?monitoring_excluded=true|false``.
+
+        A paged list leaves the DHCP flags off and attaches them to the
+        page's rows after paging, so a deep page does not evaluate them for
+        every row OFFSET skips (#372)."""
+        qs = super().get_queryset()
+        if getattr(self, "action", None) != "list" or self.paginator is None:
+            qs = annotate_dhcp(qs)
         if not self.request:
             return qs
         p = self.request.query_params
-        search = p.get("search", "").strip()
+        # An address typed in any spelling (2001:0db8::1, fully expanded,
+        # upper case) matches the stored compressed form (#382).
+        search = normalise_ip_term(p.get("search", "").strip())
         if search:
             # Closest match first: exact, then prefix, then substring - typing
             # "10.0.0.13" must put .13 above .130-.139 (the assign picker
@@ -1863,6 +1931,12 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             ]
             qs = qs.filter(pk__in=ids)
         return _apply_custom_field_scope(self.request, qs, "ipaddress")
+
+    def paginate_queryset(self, queryset):
+        page = super().paginate_queryset(queryset)
+        if page is not None and getattr(self, "action", None) == "list":
+            attach_dhcp_flags(page)
+        return page
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -2111,7 +2185,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         if not q:
             raise ValidationError({"q": "Type an address."})
         try:
-            rows = nominatim_search(q)
+            rows = nominatim_search(q, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
             return Response(
                 {"detail": f"OpenStreetMap lookup failed: {exc}"},
@@ -2931,10 +3005,16 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         hardware is model knowledge, identical for everyone who owns the box, so
         it should move as a file instead of being redone. Carries no credentials
         (see ``api/device_library.py``).
+
+        ``?include_photos=1`` carries the front and rear photos as base64. Off
+        by default, so a plain export stays the small text file it always was.
         """
         from .device_library import export_bundle
 
-        return Response(export_bundle(self.get_object()))
+        include = str(request.query_params.get("include_photos", "")).lower() in (
+            "1", "true", "yes",
+        )
+        return Response(export_bundle(self.get_object(), include_photos=include))
 
     @action(detail=False, methods=["post"], url_path="import-bundle")
     def import_bundle(self, request):
@@ -3507,6 +3587,8 @@ class DeviceViewSet(
             "device_type", "device_type__platform", "device_type__manufacturer",
             "site", "site__region", "primary_ip",
             "role", "rack", "status", "platform", "location", "cluster",
+            # The platform's end-of-life mapping (#8), for the EoL column.
+            "platform__eol_mapping",
         )
         # The secondary and OOB addresses, the DIN cabinet and rail and the
         # config template (resolved device -> role -> platform) are
@@ -3533,6 +3615,9 @@ class DeviceViewSet(
         .annotate(
             ip_count_annotated=_count_of(IPAddress, "assigned_device"),
             interface_count_annotated=_count_of(Interface, "device"),
+            # Support coverage (#421): the latest covered day and how many
+            # contracts cover the device - two more correlated subqueries.
+            **support_coverage.device_annotations(),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -3612,6 +3697,35 @@ class DeviceViewSet(
         from .config_context import render_config_context
 
         return Response(render_config_context(self.get_object()))
+
+    @extend_schema(
+        summary="The device's support & warranty coverage",
+        responses={200: support_coverage.schema("device")},
+    )
+    @action(detail=True, methods=["get"], url_path="coverage")
+    def coverage(self, request, pk=None):
+        """Status, the contracts covering the device (best first) and the
+        lifecycle flags (#421)."""
+        from .support_coverage_api import device_coverage
+
+        return Response(device_coverage(request, self.get_object()))
+
+    @extend_schema(
+        summary="Devices per support coverage status",
+        parameters=[
+            OpenApiParameter("site", OpenApiTypes.UUID, OpenApiParameter.QUERY),
+            OpenApiParameter("manufacturer", OpenApiTypes.UUID, OpenApiParameter.QUERY),
+        ],
+        responses={200: support_coverage.schema("summary")},
+    )
+    @action(detail=False, methods=["get"], url_path="coverage-summary")
+    def coverage_summary(self, request):
+        """The Support coverage dashboard widget (#421): counts per status
+        over the devices the caller can see - narrowed like the list - and
+        the contracts that end soonest."""
+        from .support_coverage_api import coverage_summary
+
+        return Response(coverage_summary(request, self.get_queryset()))
 
     @action(detail=True, methods=["get"], url_path="port-utilization")
     def port_utilization(self, request, pk=None):
@@ -4122,6 +4236,8 @@ class DeviceViewSet(
             self.queryset = self.palette_queryset
         qs = super().get_queryset()
         if self.request:
+            from .topology_views import _uuid_list_param, _uuid_param
+
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = (qs.filter(name__icontains=s) | qs.filter(serial_number__icontains=s)
@@ -4129,16 +4245,28 @@ class DeviceViewSet(
             # The with_vc picker reads each device's chassis - pull it in one join.
             if self.request.query_params.get("with_vc") == "1":
                 qs = qs.select_related("virtual_chassis")
+            # ?eol=<status> - the platform's end-of-life status (#8).
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
+            # ?coverage=<status> - support & warranty coverage (#421).
+            qs = support_coverage.apply_device_filter(qs, self.request)
+            contract = _uuid_param(self.request.query_params, "support_contract")
+            if contract:
+                qs = qs.filter(support_coverage__contract_id=contract)
             for key, field in (("site", "site_id"), ("device_type", "device_type_id"),
-                               ("status", "status"), ("rack", "rack_id"),
+                               ("status", "status"),
                                ("role", "role_id"), ("platform", "platform_id"),
                                ("location", "location_id"),
                                ("manufacturer", "device_type__manufacturer_id")):
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
-            from .topology_views import _uuid_param
-
+            # ?rack=<id>, or comma-separated ids: the elevations wall reads
+            # every rack's devices in one request, not one per rack (#431).
+            racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
+            if racks:
+                qs = qs.filter(rack_id__in=racks)
             for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
                 v = _uuid_param(self.request.query_params, key)
                 if v:
@@ -4447,10 +4575,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
     serializer_class = InterfaceSerializer
     pagination_class = StandardPagination
     tenant_field = None
+    # Extends the mixin's map: dropping its keys left bulk-clone needing only
+    # ``change`` instead of ``add``.
     rbac_action_map = {
+        **ComponentBulkMixin.rbac_action_map,
         "bulk_create": "add",
-        "bulk_update": "change",
-        "bulk_delete": "delete",
     }
 
     def get_serializer_class(self):
@@ -5677,14 +5806,29 @@ class ModuleViewSet(TenantScopedViewSet):
         ).get(pk=serializer.instance.pk)
         module = serializer.save()
         # A new type, bay or device changes which interfaces the module
-        # contributes: remove what it created, install the new set (#333).
-        # update() runs in a transaction, so a refused install rolls back.
+        # contributes: keep and rename the ones that still correspond,
+        # remove only those the new type lacks, create the rest (#366).
+        # update() runs in a transaction, so a refusal rolls back.
         if (
             module.module_type_id != before["module_type_id"]
             or module.module_bay_id != before["module_bay_id"]
             or module.device_id != before["device_id"]
         ):
-            self._install(reinstall_module, module)
+            confirm = self.request.data.get("confirm_remove") in (True, "true", "1", 1)
+            try:
+                self._interface_report = self._install(
+                    lambda m: reinstall_module(m, before, confirm_remove=confirm),
+                    module,
+                )
+            except ModuleRemovalUnconfirmed as exc:
+                raise ValidationError({"confirm_remove": str(exc)}) from exc
+
+    def update(self, request, *args, **kwargs):
+        self._interface_report = None
+        resp = super().update(request, *args, **kwargs)
+        if resp.status_code == 200 and self._interface_report is not None:
+            resp.data["interfaces"] = self._interface_report
+        return resp
 
     def perform_destroy(self, instance):
         # Interface.module cascades: the module's own interfaces go with it,
@@ -5902,13 +6046,30 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("cluster")
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("cluster", "cluster__status", "cluster__site")
+            .prefetch_related(TAGS)
+        )
         if self.action == "list":
             qs = qs.annotate(vm_count_annotated=Count("virtual_machines"))
         if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(
+                    description__icontains=s
+                ) | qs.filter(cf_text_q(qs.model, s))
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
+            kind = self.request.query_params.get("kind")
+            if kind:
+                qs = qs.filter(kind=kind)
+            # A group has no site of its own; it is where its cluster is.
+            site = self.request.query_params.get("site")
+            if site:
+                qs = qs.filter(cluster__site_id=site)
         return qs
 
     def get_serializer_class(self):
@@ -5988,7 +6149,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             .select_related("cluster", "device", "site", "site__region", "primary_ip",
                             # Serialised inline; a 2,000-row list would
                             # otherwise fire one query per VM for it.
-                            "group")
+                            "group", "platform", "platform__eol_mapping",
+                            # The nested cluster renders its status (#427).
+                            "cluster__status")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
             .prefetch_related(TAGS, "disks")
@@ -6030,6 +6193,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             cluster = self.request.query_params.get("cluster")
             if cluster:
                 qs = qs.filter(cluster_id=cluster)
+            group = self.request.query_params.get("group")
+            if group:
+                qs = qs.filter(group_id=group)
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
@@ -6043,6 +6209,9 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 v = self.request.query_params.get(k)
                 if v:
                     qs = qs.filter(**{f: v})
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
         return qs
 
 
@@ -6076,7 +6245,7 @@ class VMInterfaceViewSet(ComponentBulkMixin, TenantScopedViewSet):
             .get_queryset()
             .select_related("vm__status", "vlan", "vrf")
             .prefetch_related(
-                TAGS, "tagged_vlans",
+                TAGS, "tagged_vlans", "circuit_terminations__circuit",
                 assigned_ips_prefetch(
                     self.request, _get_active_tenant(self.request),
                     fk="assigned_vm_interface",
@@ -6479,7 +6648,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         # them (#188).
         from .models import Document
 
-        if self.action in ("scene", "export_pdf_file"):
+        if self.action in ("scene", "export_pdf_file", "move"):
             # The scene loads its own geometry (api.scene_geo), and a print
             # link only checks the rack is still in view; the figures below
             # would only be thrown away.
@@ -6614,6 +6783,116 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 )
         result = sync_rack_from_type(rack, dims=dims, accessories=accessories)
         return Response({"applied": True, "diff": diff, "result": result})
+
+    @extend_schema(
+        summary="Move a rack to another site together with its devices",
+        request=RackMoveSerializer,
+        parameters=[
+            OpenApiParameter(
+                name="dry_run", type=OpenApiTypes.BOOL, location=OpenApiParameter.QUERY,
+                description="Report what the move would do and write nothing.",
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description=(
+                    "`rack`, `from_site`, `to_site`, `to_location`; `devices` that "
+                    "go along (`id`, `name`, `position`, `face`, `mount`, `racked`); "
+                    "`cleared.floor_plan_tiles`; `blockers` (`code`, `message`); "
+                    "`can_move`; `moved`."
+                ),
+            ),
+            409: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="Something blocks the move: the same body with `detail`.",
+            ),
+        },
+    )
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, pk=None):
+        """Move the rack and every device in it to another site in one
+        transaction, keeping positions and faces (#394). Each device's site
+        and location become the rack's. Anything still tied to the old site
+        blocks the move and is listed (api.rack_move); a floor-plan placement
+        at the old site is cleared. Needs change on the rack and on every
+        device it moves, at both sites."""
+        from . import rack_move, rack_units
+
+        rack = self.get_object()
+        tenant = self._tenant_or_403()
+        ser = RackMoveSerializer(
+            data=request.data, context={**self.get_serializer_context(), "rack": rack}
+        )
+        ser.is_valid(raise_exception=True)
+        site, location = ser.validated_data["site"], ser.validated_data.get("location")
+        dry_run = str(request.query_params.get("dry_run", "")).lower() in ("1", "true", "yes")
+
+        with transaction.atomic():
+            rack_units.lock_rack(rack)
+            plan = rack_move.plan(rack, site, location,
+                                  user=request.user, tenant=tenant)
+            self._authorize_move(plan, tenant)
+            if dry_run:
+                return Response(rack_move.payload(plan, moved=False))
+            if plan.blockers:
+                n = len(plan.blockers)
+                body = rack_move.payload(plan, moved=False)
+                body["detail"] = (
+                    f"The rack can't move: {n} thing{'s' if n != 1 else ''} "
+                    "tie it to its site."
+                )
+                return Response(body, status=drf_status.HTTP_409_CONFLICT)
+            body = rack_move.payload(plan, moved=False)
+            rack_move.apply(plan)
+            self._assert_moved_in_scope(plan, tenant)
+        body["moved"] = True
+        return Response(body)
+
+    def _authorize_move(self, plan, tenant):
+        """Change on every device that goes along and on the cleared floor-
+        plan tiles where they are now, and change on racks and devices at the
+        new site. The rack itself is already a change-scoped lookup."""
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        user = self.request.user
+        if user.is_superuser:
+            return
+        ids = plan.device_ids
+        if ids and rbac.restrict_queryset(
+            Device.objects.filter(pk__in=ids), user, tenant, "device", "change"
+        ).count() != len(ids):
+            raise PermissionDenied("You may not change every device this move takes along.")
+        for slug in ("rack", "device") if ids else ("rack",):
+            scope = rbac.site_scope(user, tenant, slug, "change")
+            if scope is not None and plan.site.pk not in scope:
+                raise PermissionDenied(f"You may not change {slug}s at {plan.site.name}.")
+        tiles = [t.pk for t in plan.tiles]
+        if tiles and (not is_registered("floorplantile") or rbac.restrict_queryset(
+            FloorPlanTile.objects.filter(pk__in=tiles), user, tenant, "floorplantile", "change"
+        ).count() != len(tiles)):
+            raise PermissionDenied(
+                "You may not change the floor plan that places this rack.")
+
+    def _assert_moved_in_scope(self, plan, tenant):
+        """After the writes, in the same transaction: the rack and devices
+        are still ones the caller may change, now at the new site - the same
+        post-save guard an ordinary edit gets, constraints included."""
+        from auth_api import rbac
+
+        user = self.request.user
+        if user.is_superuser:
+            return
+        ids = plan.device_ids
+        rack_ok = rbac.restrict_queryset(
+            Rack.objects.filter(pk=plan.rack.pk), user, tenant, "rack", "change"
+        ).exists()
+        devices_ok = not ids or rbac.restrict_queryset(
+            Device.objects.filter(pk__in=ids), user, tenant, "device", "change"
+        ).count() == len(ids)
+        if not (rack_ok and devices_ok):
+            raise PermissionDenied("The move would leave objects outside your permission scope.")
 
     def _viewable_devices(self, rack):
         """The rack's devices the caller may view (device view, row scope)."""
@@ -6895,7 +7174,7 @@ class PlatformViewSet(DeviceRoleViewSet):
 
     def get_queryset(self):
         qs = TenantScopedViewSet.get_queryset(self).select_related(
-            "manufacturer", "group"
+            "manufacturer", "group", "eol_mapping"
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6907,6 +7186,12 @@ class PlatformViewSet(DeviceRoleViewSet):
             lc = self.request.query_params.get("lifecycle")
             if lc:
                 qs = _apply_lifecycle_filter(qs, lc)
+            from compliance.eol import apply_status_filter
+
+            qs = apply_status_filter(qs, self.request, "eol_mapping__")
+        if getattr(self, "action", None) in ("list", "retrieve"):
+            # One query for the list's VM counts, not one per platform.
+            qs = qs.annotate(vm_count=Count("virtual_machines", distinct=True))
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -7230,7 +7515,14 @@ class AggregateViewSet(TenantScopedViewSet):
 
         # The IPv4 address space covered by prefixes inside the aggregate,
         # summed in SQL once per page - the property walked every prefix in
-        # the tenant per row (#181).
+        # the tenant per row (#181). Covered is the union (#381): the same
+        # network in several VRFs counts once, and a prefix inside another
+        # one adds nothing - only the outermost distinct networks are summed.
+        inside = (
+            "FROM api_prefix {a} WHERE {a}.tenant_id = api_aggregate.tenant_id"
+            " AND family({a}.cidr::inet) = 4"
+            " AND {a}.cidr::inet <<= api_aggregate.prefix::inet"
+        )
         qs = (
             super()
             .get_queryset()
@@ -7238,9 +7530,12 @@ class AggregateViewSet(TenantScopedViewSet):
             .prefetch_related(TAGS)
             .annotate(
                 covered_n=RawSQL(
-                    "(SELECT COALESCE(SUM(power(2, 32 - masklen(p.cidr::inet))), 0)::bigint"
-                    " FROM api_prefix p WHERE p.tenant_id = api_aggregate.tenant_id"
-                    " AND family(p.cidr::inet) = 4 AND p.cidr::inet <<= api_aggregate.prefix::inet)",
+                    "(SELECT COALESCE(SUM(power(2, 32 - masklen(d.net))), 0)::bigint"
+                    " FROM (SELECT DISTINCT network(p.cidr::inet) AS net "
+                    + inside.format(a="p")
+                    + ") d WHERE NOT EXISTS (SELECT 1 "
+                    + inside.format(a="q")
+                    + " AND network(q.cidr::inet) >> d.net))",
                     (), output_field=BigIntegerField(),
                 )
             )
@@ -7355,8 +7650,105 @@ class VLANGroupViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
+class SecretPSKViewSetMixin:
+    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
+    store around create/update/destroy, and reveals it through an audited
+    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
+    what the change log calls the object; ``psk_field`` what the API calls
+    the key (an FHRP group's is ``auth_key``, #383)."""
+
+    psk_object_label = ""
+    psk_field = "psk"
+    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
+
+    def _pop_psk(self, serializer):
+        """Take the PSK out of the validated data before the row is saved -
+        the model has no column for it, only a reference."""
+        return serializer.validated_data.pop("psk", "")
+
+    def _apply_psk(self, obj, value) -> None:
+        """None clears; a value stores; blank leaves the stored key alone."""
+        from monitoring.secret_store import SecretStoreError
+
+        if value == "":
+            return
+        try:
+            if value is None:
+                obj.clear_psk()
+            else:
+                obj.store_psk(value)
+        except SecretStoreError as exc:
+            raise ValidationError({self.psk_field: str(exc)}) from exc
+        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
+
+    def perform_create(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_create(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+
+        value = self._pop_psk(serializer)
+        with transaction.atomic():
+            super().perform_update(serializer)
+            self._apply_psk(serializer.instance, value)
+
+    def perform_destroy(self, instance):
+        # Take the key with the record: a profile nobody documents any more
+        # has no business leaving its key in the store.
+        instance.clear_psk()
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"], url_path="reveal-psk")
+    def reveal_psk(self, request, pk=None):
+        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
+        is audited, and fails closed when no secret store is enabled."""
+        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
+
+        obj = self.get_object()
+        try:
+            psk = obj.resolve_psk()
+        except (SecretStoreDisabled, SecretStoreError) as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+        self._audit_reveal(obj)
+        return Response({"psk": psk})
+
+    def _audit_reveal(self, obj):
+        """Revealing writes no model change, so nothing else would log it -
+        same trail the device-credential reveal leaves."""
+        from audit.context import current_request_id, current_via
+        from audit.models import ChangeAction, ChangeLogEntry
+        from audit.site_capture import entry_site_id
+
+        u = getattr(self.request, "user", None)
+        authed = bool(u and u.is_authenticated)
+        ChangeLogEntry.objects.create(
+            tenant_id=getattr(obj, "tenant_id", None),
+            user=u if authed else None,
+            user_name=(u.get_username() if authed else ""),
+            action=ChangeAction.REVEAL,
+            object_type=obj._meta.label_lower,
+            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
+            object_id=str(obj.pk),
+            object_repr=str(obj),
+            object_site_id=entry_site_id(obj),
+            changes={"revealed": self.psk_field},
+            request_id=current_request_id(),
+            via=current_via() or "system",
+        )
+
+
 # ─── FHRP groups ─────────────────────────────────────────────────────────────
-class FHRPGroupViewSet(TenantScopedViewSet):
+class FHRPGroupViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
+    """FHRP groups. The authentication key (#383) is write-only and lives in
+    the secret store; the mixin moves it and reveals it under audit."""
+
+    psk_object_label = "FHRP group"
+    psk_field = "auth_key"
     queryset = FHRPGroup.objects.all()
     serializer_class = FHRPGroupSerializer
     pagination_class = StandardPagination
@@ -7754,7 +8146,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
     queryset = (
         CircuitTermination.objects
-        .select_related("circuit", "site", "provider_network")
+        .select_related("circuit", "site", "provider_network", "vm_interface__vm")
         .prefetch_related("terminations__cable__status")
         .order_by("term_side")
     )
@@ -7771,7 +8163,7 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
             circuit = self.request.query_params.get("circuit")
             if circuit:
                 qs = qs.filter(circuit_id=circuit)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -7782,6 +8174,21 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"circuit_id": "Pick a circuit in the current tenant."}
             )
+        vmi = serializer.validated_data.get("vm_interface")
+        if vmi is not None and vmi.vm.tenant_id != tenant.id:
+            raise ValidationError(
+                {"vm_interface_id": "Pick a VM interface in the current tenant."}
+            )
+        if vmi is not None:
+            taken = CircuitTermination.objects.filter(vm_interface=vmi)
+            if serializer.instance is not None:
+                taken = taken.exclude(pk=serializer.instance.pk)
+            other = taken.select_related("circuit").first()
+            if other is not None:
+                raise ValidationError({
+                    "vm_interface_id": f"{vmi.name} already terminates "
+                                       f"{other.circuit.cid} side {other.term_side}."
+                })
         side = serializer.validated_data.get("term_side") or (
             serializer.instance.term_side if serializer.instance else ""
         )
@@ -7803,10 +8210,99 @@ class CircuitTerminationViewSet(TenantScopedViewSet):
 
 
 # ─── Power ───────────────────────────────────────────────────────────────────
-class PowerPanelViewSet(TenantScopedViewSet):
+class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Bulk edit sets site, location and tags; bulk delete keeps a panel that
+    still has feeds, unless ``with_feeds`` takes them along too (#313).
+    Filter with ``?site=`` and ``?location=``."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = PowerPanel.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerPanelSerializer
     pagination_class = StandardPagination
+    # A location outside a row's site is refused row by row by the
+    # serializer's validate(), as a PATCH would be.
+    bulk_fk_fields = {"site_id": Site, "location_id": Location}
+    bulk_tags = True
+    # Rename and clone are the component tables' own; a panel has neither.
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "site_id" in updates:
+            names_free_after_move(rows, "site_id", updates["site_id"], "site_id")
+
+    def _with_feeds(self) -> bool:
+        data = getattr(self.request, "data", None)
+        return self.action == "bulk_delete" and isinstance(data, dict) and \
+            bool(data.get("with_feeds"))
+
+    def _deletable_feed_counts(self) -> dict:
+        """``{panel id: feeds of it the caller may delete}`` for the panels
+        of this bulk delete - the feed grant's rows, not the panel's."""
+        if not hasattr(self, "_feed_counts"):
+            from auth_api import rbac
+
+            tenant = _get_active_tenant(self.request)
+            feeds = rbac.restrict_queryset(
+                PowerFeed.objects.filter(
+                    tenant=tenant, power_panel_id__in=bulk_ids(self.request, MAX_IDS)
+                ),
+                self.request.user, tenant, "powerfeed", "delete",
+            )
+            self._feed_counts = dict(
+                feeds.values("power_panel_id").annotate(n=Count("pk"))
+                .values_list("power_panel_id", "n")
+            )
+        return self._feed_counts
+
+    def bulk_blocker(self, obj):
+        n = getattr(obj, "feed_count_annotated", None)
+        if n is None:
+            n = obj.power_feeds.count()
+        if not n:
+            return None
+        feeds = f"{n} power feed{'s' if n != 1 else ''}"
+        if not self._with_feeds():
+            return f"In use: {feeds}."
+        if self._deletable_feed_counts().get(obj.pk, 0) < n:
+            return f"In use: {feeds}, not all of them yours to delete."
+        return None
+
+    def bulk_collector(self):
+        from .power_bulk import FeedsFirstCollector
+
+        return FeedsFirstCollector() if self._with_feeds() else super().bulk_collector()
+
+    def bulk_collect_into(self, collector, rows):
+        if self._with_feeds():
+            feeds = list(PowerFeed.objects.filter(power_panel__in=rows))
+            if feeds:
+                collector.collect(feeds)
+        collector.collect(rows)
+
+    def bulk_notes(self, rows):
+        from .power_bulk import cabled_feed_notes
+
+        if not self._with_feeds():
+            return []
+        return cabled_feed_notes(PowerFeed.objects.filter(power_panel__in=rows))
+
+    def bulk_destroy(self, rows):
+        # The feeds first, each with its own change-log entry, then the panels.
+        if self._with_feeds():
+            feeds = list(PowerFeed.objects.filter(power_panel__in=rows))
+            if feeds:
+                self.delete_together(feeds)
+        self.delete_together(rows)
+
+    def perform_destroy(self, instance):
+        # Only a bulk delete with ``with_feeds`` gets here with feeds left: a
+        # single delete refuses such a panel first (see destroy).
+        if self._with_feeds():
+            PowerFeed.objects.filter(power_panel=instance).delete()
+        super().perform_destroy(instance)
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -7815,7 +8311,7 @@ class PowerPanelViewSet(TenantScopedViewSet):
         return PowerPanelSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("site").prefetch_related(
+        qs = super().get_queryset().select_related("site", "location").prefetch_related(
             TAGS
         ).annotate(feed_count_annotated=Count("power_feeds"))
         if self.request:
@@ -7825,6 +8321,9 @@ class PowerPanelViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            location = self.request.query_params.get("location")
+            if location:
+                qs = qs.filter(location_id=location)
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
@@ -7845,10 +8344,33 @@ class PowerPanelViewSet(TenantScopedViewSet):
         return super().destroy(request, *args, **kwargs)
 
 
-class PowerFeedViewSet(TenantScopedViewSet):
+class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Bulk edit and a bulk delete that names the feeds still cabled (#313)."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = PowerFeed.objects.all().order_by(NATURAL_NAME)
     serializer_class = PowerFeedSerializer
     pagination_class = StandardPagination
+    bulk_str_fields = ("type", "supply", "phase")
+    bulk_int_fields = ("voltage", "amperage", "max_utilization")
+    bulk_fk_fields = {"status_id": Status, "power_panel_id": PowerPanel, "rack_id": Rack}
+    bulk_tags = True
+    # Rename and clone are the component tables' own; a feed has neither.
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "power_panel_id" in updates:
+            names_free_after_move(
+                rows, "power_panel_id", updates["power_panel_id"], "power_panel_id"
+            )
+
+    def bulk_notes(self, rows):
+        from .power_bulk import cabled_feed_notes
+
+        return cabled_feed_notes(PowerFeed.objects.filter(pk__in=[r.pk for r in rows]))
 
     def get_queryset(self):
         qs = (
@@ -7914,96 +8436,6 @@ class WirelessLANGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     def bulk_blocker(self, obj):
         n = obj.wireless_lans.count()
         return f"In use: {n} wireless LAN{'s' if n != 1 else ''}." if n else None
-
-
-class SecretPSKViewSetMixin:
-    """Moves a :class:`api.models.SecretBackedPSK` key in and out of the secret
-    store around create/update/destroy, and reveals it through an audited
-    action gated by the ``reveal`` verb (#68, #168). ``psk_object_label`` is
-    what the change log calls the object."""
-
-    psk_object_label = ""
-    rbac_action_map = {"reveal_psk": "reveal", "bulk_delete": "delete"}
-
-    def _pop_psk(self, serializer):
-        """Take the PSK out of the validated data before the row is saved -
-        the model has no column for it, only a reference."""
-        return serializer.validated_data.pop("psk", "")
-
-    def _apply_psk(self, obj, value) -> None:
-        """None clears; a value stores; blank leaves the stored key alone."""
-        from monitoring.secret_store import SecretStoreError
-
-        if value == "":
-            return
-        try:
-            if value is None:
-                obj.clear_psk()
-            else:
-                obj.store_psk(value)
-        except SecretStoreError as exc:
-            raise ValidationError({"psk": str(exc)}) from exc
-        obj.save(update_fields=["psk_secret_path", "psk_secret_provider"])
-
-    def perform_create(self, serializer):
-        from django.db import transaction
-
-        value = self._pop_psk(serializer)
-        with transaction.atomic():
-            super().perform_create(serializer)
-            self._apply_psk(serializer.instance, value)
-
-    def perform_update(self, serializer):
-        from django.db import transaction
-
-        value = self._pop_psk(serializer)
-        with transaction.atomic():
-            super().perform_update(serializer)
-            self._apply_psk(serializer.instance, value)
-
-    def perform_destroy(self, instance):
-        # Take the key with the record: a profile nobody documents any more
-        # has no business leaving its key in the store.
-        instance.clear_psk()
-        super().perform_destroy(instance)
-
-    @action(detail=True, methods=["post"], url_path="reveal-psk")
-    def reveal_psk(self, request, pk=None):
-        """Return the PSK. Requires the ``reveal`` verb (type and row gates),
-        is audited, and fails closed when no secret store is enabled."""
-        from monitoring.secret_store import SecretStoreDisabled, SecretStoreError
-
-        obj = self.get_object()
-        try:
-            psk = obj.resolve_psk()
-        except (SecretStoreDisabled, SecretStoreError) as exc:
-            raise ValidationError({"detail": str(exc)}) from exc
-        self._audit_reveal(obj)
-        return Response({"psk": psk})
-
-    def _audit_reveal(self, obj):
-        """Revealing writes no model change, so nothing else would log it -
-        same trail the device-credential reveal leaves."""
-        from audit.context import current_request_id, current_via
-        from audit.models import ChangeAction, ChangeLogEntry
-        from audit.site_capture import entry_site_id
-
-        u = getattr(self.request, "user", None)
-        authed = bool(u and u.is_authenticated)
-        ChangeLogEntry.objects.create(
-            tenant_id=getattr(obj, "tenant_id", None),
-            user=u if authed else None,
-            user_name=(u.get_username() if authed else ""),
-            action=ChangeAction.REVEAL,
-            object_type=obj._meta.label_lower,
-            object_label=self.psk_object_label or obj._meta.verbose_name.title(),
-            object_id=str(obj.pk),
-            object_repr=str(obj),
-            object_site_id=entry_site_id(obj),
-            changes={"revealed": "psk"},
-            request_id=current_request_id(),
-            via=current_via() or "system",
-        )
 
 
 class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScopedViewSet):
@@ -8193,7 +8625,7 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
             device = self.request.query_params.get("device")
             if device:
                 qs = qs.filter(interface__device_id=device)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -8281,7 +8713,7 @@ class L2VPNTerminationViewSet(TenantScopedViewSet):
             l2vpn = self.request.query_params.get("l2vpn")
             if l2vpn:
                 qs = qs.filter(l2vpn_id=l2vpn)
-        return qs
+        return restrict_for_view(self, qs)
 
     def _check(self, serializer):
         tenant = self._tenant_or_403()
@@ -8432,7 +8864,8 @@ class RegionViewSet(TenantScopedViewSet):
         if not q:
             raise ValidationError({"q": "Type a place or postal code."})
         try:
-            rows = nominatim_search(q, polygons=True)
+            rows = nominatim_search(
+                q, polygons=True, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
             return Response(
                 {"detail": f"OpenStreetMap lookup failed: {exc}"},
@@ -8453,7 +8886,7 @@ class RegionViewSet(TenantScopedViewSet):
         return Response({"results": candidates})
 
     @action(detail=False, methods=["post"], url_path="parse-boundary",
-            parser_classes=[MultiPartParser, FormParser, JSONParser])
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
     def parse_boundary(self, request):
         """Turn a GeoJSON / QGIS export into a storable boundary (#80).
 
@@ -9093,7 +9526,7 @@ class DocumentViewSet(TenantScopedViewSet):
     serializer_class = DocumentSerializer
     pagination_class = StandardPagination
     # JSON for link/metadata writes; multipart for file uploads.
-    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    parser_classes = [ObjectJSONParser, MultiPartParser, FormParser]
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("category", "supersedes")
@@ -9139,12 +9572,10 @@ class DocumentViewSet(TenantScopedViewSet):
         if not separation_enabled(tenant):
             return None
         from auth_api import rbac
-        from auth_api.site_paths import SITE_PATHS
+        from auth_api.site_paths import site_role_types
 
         ids: set = set()
-        for slug in SITE_PATHS:
-            if slug in ("site", "sitesettings"):
-                continue
+        for slug in site_role_types():
             scope = rbac.site_scope(user, tenant, slug, "view")
             if scope is None:
                 return None  # an unscoped view grant → any site
@@ -9323,9 +9754,41 @@ def _resolve_route_endpoints(plan, body):
     return (a, b, rack_a, rack_b), None
 
 
+def _clone_drawing(src, dst) -> None:
+    """Copy ``src``'s CAD drawing onto plan ``dst``: the file, the render and
+    everything read from it, under ``dst``'s own folder. A drawing still
+    queued is queued again for the copy; cached layer renders are not
+    copied."""
+    import os
+
+    from django.core.files.base import ContentFile
+
+    from . import cad_render
+    from .models import FloorPlanDrawing
+
+    d = FloorPlanDrawing.objects.filter(floor_plan=src, tenant=src.tenant).first()
+    if d is None:
+        return
+    copy = FloorPlanDrawing(tenant=dst.tenant, floor_plan=dst)
+    for f in FloorPlanDrawing._meta.concrete_fields:
+        if f.name in ("id", "tenant", "floor_plan", "source", "rendered", "variants",
+                      "created_at", "updated_at"):
+            continue
+        setattr(copy, f.attname, getattr(d, f.attname))
+    copy.variants = {}
+    with d.source.open("rb") as fh:
+        copy.source.save(os.path.basename(d.source.name), ContentFile(fh.read()), save=False)
+    if d.rendered:
+        with d.rendered.open("rb") as fh:
+            copy.rendered.save("drawing.svg", ContentFile(fh.read()), save=False)
+    copy.save()
+    if copy.status == "queued":
+        cad_render.enqueue(copy.pk, copy.source.name)
+
+
 class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
-        FloorPlan.objects.select_related("location", "location__site")
+        FloorPlan.objects.select_related("location", "location__site", "drawing")
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
@@ -9403,10 +9866,340 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     obj.id = None
                     obj.floor_plan = dst
                     obj.save()
+            _clone_drawing(src, dst)
         return Response(
             FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
             status=drf_status.HTTP_201_CREATED,
         )
+
+    # ── CAD drawing (one per plan; api/cad_render.py) ──────────────────────
+
+    def _drawing_or_404(self, plan):
+        from .models import FloorPlanDrawing
+
+        d = FloorPlanDrawing.objects.filter(floor_plan=plan, tenant=plan.tenant).first()
+        if d is None:
+            raise NotFound("This plan has no drawing.")
+        d.floor_plan = plan
+        return d
+
+    def _drawing_response(self, d, status=200):
+        from .serializers import FloorPlanDrawingSerializer
+
+        return Response(
+            FloorPlanDrawingSerializer(d, context=self.get_serializer_context()).data,
+            status=status,
+        )
+
+    @action(detail=True, methods=["get", "post", "patch", "delete"], url_path="drawing")
+    def drawing(self, request, pk=None):
+        """The plan's CAD drawing.
+
+        GET: the drawing (404 when none). POST (multipart ``file``): upload a
+        DXF, or a DWG when a converter is set up; replaces any drawing and
+        queues processing (202). PATCH: placement - ``x_mm``, ``y_mm``,
+        ``rotation``, ``opacity``, ``hidden_layers``, ``hide_text``. DELETE:
+        remove the drawing and its files."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingPlacementSerializer
+
+        plan = self.get_object()
+        if request.method == "GET":
+            return self._drawing_response(self._drawing_or_404(plan))
+        if request.method == "POST":
+            return self._drawing_upload(request, plan)
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            d.delete()
+            return Response(status=drf_status.HTTP_204_NO_CONTENT)
+        ser = FloorPlanDrawingPlacementSerializer(
+            data=request.data, context={"layers": d.layers}
+        )
+        ser.is_valid(raise_exception=True)
+        d.placement = {
+            **cad_render.default_placement(d.layers or [], d.placement),
+            **(d.placement or {}),
+            **ser.validated_data,
+        }
+        d.save(update_fields=["placement", "updated_at"])
+        return self._drawing_response(d)
+
+    def _drawing_upload(self, request, plan):
+        import os
+
+        from django.db import transaction
+
+        from . import cad_render
+        from .models import FloorPlanDrawing
+
+        f = request.FILES.get("file")
+        if f is None:
+            return Response({"file": ["Choose a DXF or DWG file."]}, status=400)
+        if f.size > cad_render.MAX_UPLOAD_BYTES:
+            return Response({"file": ["The file is over the 50 MB limit."]}, status=400)
+        head = f.read(64)
+        f.seek(0)
+        kind = cad_render.detect_kind(f.name, head)
+        if kind is None:
+            return Response(
+                {"file": ["Not a DXF or DWG drawing (the name and the contents must agree)."]},
+                status=400,
+            )
+        if kind == "dwg":
+            try:
+                cad_render.converter()
+            except cad_render.ConverterUnavailable as exc:
+                return Response({"file": [str(exc)], "code": "converter_missing"}, status=400)
+        name = os.path.basename(f.name)[:255]
+        with transaction.atomic():
+            d = (
+                FloorPlanDrawing.objects.select_for_update()
+                .filter(floor_plan=plan, tenant=plan.tenant).first()
+            )
+            stale = []
+            if d is None:
+                d = FloorPlanDrawing(tenant=plan.tenant, floor_plan=plan)
+            else:
+                stale = [n for n in (d.source.name, d.rendered.name) if n]
+                stale += [v.get("file") for v in (d.variants or {}).values() if v.get("file")]
+            d.source.save(name, f, save=False)
+            d.source_name = name
+            d.source_kind = kind
+            d.source_bytes = f.size
+            d.status = "queued"
+            d.error = ""
+            d.units = ""
+            d.units_mm_per_unit = None
+            # A new file's points are not the old one's, and its units may
+            # be right this time.
+            d.units_override = ""
+            d.calibration = None
+            d.extents = None
+            d.layers = []
+            d.rendered = ""
+            d.rendered_bytes = d.rendered_elements = 0
+            d.simplified = []
+            d.skipped = {}
+            d.variants = {}
+            d.processed_at = None
+            d.save()
+            transaction.on_commit(lambda: cad_render.delete_names(stale))
+            cad_render.enqueue(d.pk, d.source.name)
+        d.floor_plan = plan
+        return self._drawing_response(d, status=drf_status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post"], url_path="drawing/reprocess")
+    def drawing_reprocess(self, request, pk=None):
+        """Process the uploaded file again (after a converter was installed,
+        or the queue was down). 202; 200 with the drawing as it is while a
+        run is already queued, so repeated requests queue one job."""
+        from django.db import transaction
+
+        from . import cad_render
+        from .models import FloorPlanDrawing
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.source_kind == "dwg":
+            try:
+                cad_render.converter()
+            except cad_render.ConverterUnavailable as exc:
+                return Response({"detail": str(exc), "code": "converter_missing"}, status=400)
+        with transaction.atomic():
+            d = FloorPlanDrawing.objects.select_for_update().get(pk=d.pk)
+            # A run queued longer than a job may take was lost; queue again.
+            if d.status == "queued" and cad_render.in_flight(d.updated_at.isoformat()):
+                d.floor_plan = plan
+                return self._drawing_response(d)
+            d.status = "queued"
+            d.error = ""
+            d.save(update_fields=["status", "error", "updated_at"])
+            cad_render.enqueue(d.pk, d.source.name)
+        d.floor_plan = plan
+        return self._drawing_response(d, status=drf_status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=["post", "delete"], url_path="drawing/calibrate")
+    def drawing_calibrate(self, request, pk=None):
+        """POST ``{"a": [x, y], "b": [x, y], "distance_mm": n}`` - two points
+        in the SVG's viewBox units and the real distance between them - sets
+        the scale; DELETE goes back to the file's units."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingCalibrationSerializer
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            d.calibration = None
+        else:
+            if d.status != "ready":
+                return Response({"detail": "The drawing is not processed yet."}, status=409)
+            ser = FloorPlanDrawingCalibrationSerializer(
+                data=request.data, context={"size": cad_render.size_units(d)}
+            )
+            ser.is_valid(raise_exception=True)
+            v = ser.validated_data
+            d.calibration = {
+                "a": list(v["a"]), "b": list(v["b"]), "distance_mm": v["distance_mm"],
+                "mm_per_unit": v["mm_per_unit"],
+            }
+        d.save(update_fields=["calibration", "updated_at"])
+        return self._drawing_response(d)
+
+    @extend_schema(
+        summary="Set the units the drawing is in",
+        request=FloorPlanDrawingUnitsSerializer,
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.OBJECT,
+                description="The drawing, as GET …/drawing/ returns it.",
+            ),
+        },
+    )
+    @action(detail=True, methods=["post", "delete"], url_path="drawing/units")
+    def drawing_units(self, request, pk=None):
+        """POST ``{"units": "m"}`` (mm, cm, m, in, ft) says what the drawing
+        is really drawn in when the file's units are wrong, and drops any
+        calibration - the newer choice wins; ``null`` or DELETE trusts the
+        file again. A calibration made afterwards still wins over it."""
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if request.method == "DELETE":
+            units = None
+        else:
+            ser = FloorPlanDrawingUnitsSerializer(data=request.data)
+            ser.is_valid(raise_exception=True)
+            units = ser.validated_data["units"]
+        d.units_override = units or ""
+        fields = ["units_override", "updated_at"]
+        if units:
+            d.calibration = None
+            fields.append("calibration")
+        d.save(update_fields=fields)
+        return self._drawing_response(d)
+
+    @action(detail=True, methods=["post"], url_path="drawing/fit-grid")
+    def drawing_fit_grid(self, request, pk=None):
+        """Size the grid to the drawing: the drawing moves to the plan's
+        origin and the grid becomes the cells that cover it. Optional
+        ``cell_mm`` sets the cell size first. 400 with ``min_cell_mm`` when
+        the drawing needs more than 512 cells a side."""
+        from django.db import transaction
+
+        from . import cad_render
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.status != "ready" or not d.extents:
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        cell = plan.cell_mm
+        if "cell_mm" in request.data:
+            try:
+                cell = int(request.data.get("cell_mm"))
+            except (TypeError, ValueError):
+                return Response({"cell_mm": ["A whole number of millimetres."]}, status=400)
+            if not 50 <= cell <= 5000:
+                return Response({"cell_mm": ["Between 50 and 5000 mm."]}, status=400)
+        f = cad_render.fit(d, cell)
+        if not f["fits"]:
+            return Response(
+                {"detail": f"The drawing needs cells of at least {f['min_cell_mm']} mm "
+                           "to fit 512 cells.",
+                 "min_cell_mm": f["min_cell_mm"]},
+                status=400,
+            )
+        with transaction.atomic():
+            plan.cell_mm = cell
+            plan.grid_width = f["grid_width"]
+            plan.grid_height = f["grid_height"]
+            plan.save()
+            d.placement = {**(d.placement or {}), "x_mm": 0, "y_mm": 0}
+            d.save(update_fields=["placement", "updated_at"])
+        d.floor_plan = plan
+        return Response({
+            "floor_plan": FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
+            "drawing": self._drawing_response(d).data,
+        })
+
+    @action(detail=True, methods=["get", "post"], url_path="drawing/render")
+    def drawing_render(self, request, pk=None):
+        """A server render with layers left out, for drawings too large to
+        toggle in the browser. POST ``{"hidden_layers": [...], "hide_text":
+        bool}`` returns the cached render (200) or queues one (202); GET
+        ``?key=`` reports on it."""
+        from . import cad_render
+        from .serializers import FloorPlanDrawingPlacementSerializer
+
+        plan = self.get_object()
+        d = self._drawing_or_404(plan)
+        if d.status != "ready":
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        if request.method == "GET":
+            key = request.query_params.get("key", "")
+            entry = (d.variants or {}).get(key)
+            if entry is None:
+                raise NotFound("No such render.")
+            return Response(self._variant_body(key, entry))
+        ser = FloorPlanDrawingPlacementSerializer(
+            data={k: v for k, v in (request.data or {}).items()
+                  if k in ("hidden_layers", "hide_text")},
+            context={"layers": d.layers},
+        )
+        ser.is_valid(raise_exception=True)
+        hidden = ser.validated_data.get("hidden_layers", [])
+        hide_text = ser.validated_data.get("hide_text", False)
+        try:
+            key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+        except cad_render.TooManyRenders:
+            return Response(
+                {"detail": "Other renders of this drawing are still queued. Try again shortly."},
+                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return Response(
+            self._variant_body(key, entry),
+            status=drf_status.HTTP_202_ACCEPTED if queued else 200,
+        )
+
+    @staticmethod
+    def _variant_body(key, entry):
+        from django.core.files.storage import default_storage
+
+        name = entry.get("file") or ""
+        return {
+            "key": key,
+            "status": entry.get("status"),
+            "error": entry.get("error", ""),
+            "url": default_storage.url(name) if name and entry.get("status") == "ready" else None,
+            "bytes": entry.get("bytes", 0),
+            "elements": entry.get("elements", 0),
+            "simplified": entry.get("simplified", []),
+            "hidden_layers": entry.get("hidden_layers", []),
+            "hide_text": entry.get("hide_text", False),
+        }
+
+    @floor_plan_pdf.pdf_schema
+    @action(detail=True, methods=["post"], url_path="export/pdf")
+    def export_pdf(self, request, pk=None):
+        """The plan as the page drew it, its CAD drawing under it, on one
+        sheet of paper (api.floor_plan_pdf)."""
+        return floor_plan_pdf.export_pdf(request, self.get_object())
+
+    @floor_plan_pdf.pdf_file_schema
+    @action(detail=True, methods=["get"], url_path=r"export/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def export_pdf_file(self, request, pk=None, token=None):
+        """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
+        return floor_plan_pdf.export_pdf_file(request, self.get_object(), token)
+
+    @action(detail=False, methods=["get"], url_path="drawing-support")
+    def drawing_support(self, request):
+        """What uploads the server takes: DXF always, DWG when a converter is
+        set up (``message`` says why not), and the size cap."""
+        from . import cad_render
+
+        return Response({
+            **cad_render.converter_status(),
+            "dxf": True,
+            "max_upload_bytes": cad_render.MAX_UPLOAD_BYTES,
+        })
 
     @action(detail=True, methods=["get"], url_path="state")
     def state(self, request, pk=None):
@@ -9500,7 +10293,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
     # `route` is a POST (it carries a body) but computes only - view, not change.
-    rbac_action_map = {"route": "view"}
+    # `drawing_render` asks for a cached server render with layers hidden:
+    # what a viewer toggling layers on a large drawing needs. A PDF of the
+    # plan is a way of looking at it.
+    rbac_action_map = {
+        "route": "view",
+        "drawing_render": "view",
+        "export_pdf": "view",
+        "export_pdf_file": "view",
+    }
 
     @action(detail=True, methods=["post"], url_path="route")
     def route(self, request, pk=None):

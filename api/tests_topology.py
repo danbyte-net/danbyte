@@ -1714,17 +1714,18 @@ class PostQueryTests(_Base):
 
     def test_junk_is_a_400(self):
         for body, detail in (
-            ([str(self.a.id)], "The body must be a JSON object."),
-            ({"devices": ["nope"]}, "devices: not a valid id"),
-            ({"devices": {"a": 1}}, "devices: not a valid id"),
-            ({"device": 7}, "device: not a valid id"),
-            ({"site": "nope"}, "site: not a valid id"),
-            ({"tag": ["edge"]}, "tag: not a valid slug"),
+            # A non-object body is refused by the API-wide parser (#373).
+            ([str(self.a.id)], {"non_field_errors": ["Expected a JSON object."]}),
+            ({"devices": ["nope"]}, {"detail": "devices: not a valid id"}),
+            ({"devices": {"a": 1}}, {"detail": "devices: not a valid id"}),
+            ({"device": 7}, {"detail": "device: not a valid id"}),
+            ({"site": "nope"}, {"detail": "site: not a valid id"}),
+            ({"tag": ["edge"]}, {"detail": "tag: not a valid slug"}),
         ):
             with self.subTest(body=body):
                 r = self._post(body)
                 self.assertEqual(r.status_code, 400, r.content)
-                self.assertEqual(r.json(), {"detail": detail})
+                self.assertEqual(r.json(), detail)
 
     def test_an_infinite_depth_is_not_a_500(self):
         """A JSON 1e999 parses as infinity, which int() cannot take (#275):

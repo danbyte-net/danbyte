@@ -21,6 +21,7 @@ import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useMe } from "@/lib/use-me"
+import { useUrlText } from "@/lib/use-url-state"
 
 export const Route = createFileRoute("/jobs/")({ component: JobsPage })
 
@@ -336,8 +337,9 @@ const columns: ColumnDef<JobBrief>[] = [
 function JobsPage() {
   const { can } = useMe()
   const [tab, setTab] = useState<"scheduled" | "engines" | "queue">("scheduled")
-  const [state, setState] = useState("all")
-  const [queue, setQueue] = useState("all")
+  // Status + queue filters live in the URL (`?state=failed&queue=default`).
+  const [state, setState] = useUrlText("state", "all", { replace: true })
+  const [queue, setQueue] = useUrlText("queue", "all", { replace: true })
   const [offset, setOffset] = useState(0)
 
   const params = new URLSearchParams({

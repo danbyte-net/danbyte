@@ -18,7 +18,7 @@ from rest_framework.routers import DefaultRouter
 
 from agents.views import mcp as agent_mcp
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
-from auth_api import column_prefs, dashboard_prefs
+from auth_api import column_prefs, dashboard_prefs, sidebar_prefs
 from auth_api import views as auth_views
 from auth_api.api import (
     GroupViewSet,
@@ -70,6 +70,14 @@ from compliance.api import (
     compliance_device_status,
     compliance_evaluate,
     compliance_object_types,
+)
+from compliance.eol_api import (
+    eol_import,
+    eol_platform_mapping,
+    eol_product,
+    eol_products,
+    eol_refresh,
+    eol_settings,
 )
 from core import (
     deployment,
@@ -175,6 +183,7 @@ from .presence_views import (
 )
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
+from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
 from .terraform_views import vm_render_view
 from .topology_export import topology_pdf_file_view, topology_pdf_view
 from .topology_views import (
@@ -334,6 +343,8 @@ router.register(r"provider-networks", ProviderNetworkViewSet, basename="provider
 router.register(r"circuit-types", CircuitTypeViewSet, basename="circuit-type")
 router.register(r"circuits",      CircuitViewSet,     basename="circuit")
 router.register(r"circuit-terminations", CircuitTerminationViewSet, basename="circuit-termination")
+router.register(r"support-contracts", SupportContractViewSet, basename="support-contract")
+router.register(r"support-coverage", SupportCoverageViewSet, basename="support-coverage")
 router.register(r"tunnel-terminations", TunnelTerminationViewSet, basename="tunnel-termination")
 router.register(r"l2vpns",        L2VPNViewSet,       basename="l2vpn")
 router.register(r"l2vpn-terminations", L2VPNTerminationViewSet, basename="l2vpn-termination")
@@ -521,6 +532,13 @@ urlpatterns = [
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
     path("compliance/devices/<uuid:device_id>/", compliance_device_status,
          name="compliance-device-status"),
+    path("eol/settings/", eol_settings, name="eol-settings"),
+    path("eol/refresh/", eol_refresh, name="eol-refresh"),
+    path("eol/import/", eol_import, name="eol-import"),
+    path("eol/products/", eol_products, name="eol-products"),
+    path("eol/products/<slug:source>/<str:name>/", eol_product, name="eol-product"),
+    path("eol/platforms/<uuid:platform_id>/", eol_platform_mapping,
+         name="eol-platform-mapping"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,
@@ -579,6 +597,7 @@ urlpatterns = [
     path("list-fields/", list_fields_view, name="list-fields"),
     path("monitoring/", include("monitoring.api_urls")),
     path("zabbix/", include("zabbix.api_urls")),
+    path("oxidized/", include("oxidized.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
@@ -737,6 +756,8 @@ urlpatterns = [
          name="tenant-ldap-groups"),
     path("prefs/dashboard/", dashboard_prefs.dashboard_pref,
          name="dashboard-pref"),
+    path("prefs/sidebar/default/", sidebar_prefs.sidebar_default,
+         name="sidebar-pref-default"),
     path("prefs/columns/", column_prefs.column_prefs_bulk, name="column-prefs-bulk"),
     path("prefs/columns/<slug:table_id>/", column_prefs.column_pref,
          name="column-pref"),

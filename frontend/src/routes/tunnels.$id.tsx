@@ -111,7 +111,9 @@ function Body({ tunnel: t }: { tunnel: Tunnel }) {
         <DetailHero
           title={t.name}
           badges={<StatusBadge status={t.status} />}
-          tags={t.tags.length > 0 && <TagList tags={t.tags} />}
+          tags={
+            t.tags.length > 0 && <TagList tags={t.tags} listTo="/tunnels" />
+          }
           description={t.description}
         />
       }

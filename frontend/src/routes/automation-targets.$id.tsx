@@ -298,6 +298,8 @@ function TargetRuns({ targetId }: { targetId: string }) {
       columns={columns}
       flexColumn="detail"
       tableId="embedded-deploy-runs"
+      searchable
+      searchPlaceholder="Search runs…"
     />
   )
 }

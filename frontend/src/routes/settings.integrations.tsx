@@ -8,10 +8,7 @@ import { useMe } from "@/lib/use-me"
 import { trademarkNotice, VENDORS } from "@/lib/vendors"
 import { Button } from "@/components/ui/button"
 import { SettingsHeader } from "@/components/settings/settings-card"
-import {
-  ToggleCard,
-  ToggleCardGrid,
-} from "@/components/settings/toggle-card"
+import { ToggleCard, ToggleCardGrid } from "@/components/settings/toggle-card"
 import { VendorLogo } from "@/components/settings/vendor-logo"
 import { PluginsSection } from "@/components/settings/plugins-section"
 
@@ -29,6 +26,7 @@ type IntegrationSettings = {
   ai_writes_enabled: boolean
   ai_chat_enabled: boolean
   zabbix_enabled: boolean
+  oxidized_enabled: boolean
 }
 
 interface IntegrationCard {
@@ -106,6 +104,14 @@ const CARDS: IntegrationCard[] = [
     configure: { to: "/zabbix", label: "Connection" },
   },
   {
+    key: "oxidized_enabled",
+    label: "Oxidized config backups",
+    info: "Reads oxidized-web's REST API. Configs stay in Oxidized: Danbyte fetches them when someone opens a device's Config tab and keeps nothing. Reading one needs the view config permission on devices.",
+    description:
+      "Show each device's backed-up configuration, its history and a diff between versions.",
+    configure: { to: "/oxidized", label: "Connection" },
+  },
+  {
     key: "ai_access_enabled",
     label: "Agent access (MCP)",
     info: "Speaks the Model Context Protocol over HTTP at /api/mcp/. An assistant authenticates with an API token and sees exactly what that account sees - the same tenant, sites and objects, through the same permissions.",
@@ -173,10 +179,10 @@ function IntegrationsSettingsPage() {
   return (
     <div className="max-w-5xl space-y-4">
       <SettingsHeader title="Integrations">
-        What Danbyte talks to and what it is allowed to change, plus the
-        plugins installed on this deployment. Everything is off until you turn
-        it on - a disabled integration hides its pages and stops its scheduled
-        syncs for this tenant.
+        What Danbyte talks to and what it is allowed to change, plus the plugins
+        installed on this deployment. Everything is off until you turn it on - a
+        disabled integration hides its pages and stops its scheduled syncs for
+        this tenant.
       </SettingsHeader>
 
       {query.isLoading && (

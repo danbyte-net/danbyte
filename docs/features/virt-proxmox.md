@@ -27,6 +27,7 @@ source under **Integrations → Virtualization sources**; see
 | --- | --- |
 | Cluster | **Cluster** (a *Proxmox VE* cluster type is created on demand) |
 | QEMU / LXC guest | **Virtual machine** (vCPUs, memory, disk, description) |
+| Resource pool | **[VM group](vm-groups.md)** on the cluster, kind *Resource pool* - on by default |
 | Guest tags (`prod;web`) | **Tags** (added, never removed; colors from the cluster's tag color-map, blank-fill only) |
 | Notes | **Description** (blank-filled, never overwrites yours) |
 | Guest NIC (`netX`) | **VM interface** with its MAC |
@@ -72,6 +73,11 @@ Per-source switches widen what a source imports:
   they are. A host you already model is matched **case-insensitively** and
   adopted, never duplicated. This is what lets VMs link to their host, and
   what gives bridge uplinks a Device to hang NICs off.
+- **Sync pools as VM groups** (on by default) - each guest's **resource
+  pool** becomes a [VM group](vm-groups.md) of kind *Resource pool* on the
+  cluster. Membership is read from the `pool` field `cluster/resources`
+  already returns, so it costs no extra request. A guest in no pool has no
+  group.
 
 Once networks are synced, each **virtual switch** page has a **Networks** tab
 and **Maps → Virtual topology** draws the whole picture - switches,

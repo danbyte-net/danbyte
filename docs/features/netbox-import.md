@@ -119,7 +119,9 @@ bridge), console + **console-server** ports, power ports + **outlets**, rear /
 front ports, **MAC addresses**, virtual machines & interfaces, IP addresses,
 **services & templates**, FHRP groups **+ assignments**, cables (+ terminations),
 circuits (+ terminations), contacts (+ assignments), and tags + custom-field
-values on everything that carries them.
+values on everything that carries them. An FHRP group's authentication key
+goes to the [secret store](../architecture/tenant-settings.md); with no store
+enabled the group imports without it and the report notes it.
 
 **Floor plans (netbox-map plugin).** If the source NetBox runs the
 [netbox-map](https://github.com/danbyte-net/netbox-map) plugin, its

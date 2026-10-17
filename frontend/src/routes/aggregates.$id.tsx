@@ -102,7 +102,9 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
               </Link>
             )
           }
-          tags={a.tags.length > 0 && <TagList tags={a.tags} />}
+          tags={
+            a.tags.length > 0 && <TagList tags={a.tags} listTo="/aggregates" />
+          }
           description={a.description}
         />
       }
@@ -203,6 +205,8 @@ function AggregatePrefixes({
       columns={columns}
       flexColumn="description"
       tableId="prefix-embedded"
+      searchable
+      searchPlaceholder="Search prefixes…"
     />
   )
 }

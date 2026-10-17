@@ -7,6 +7,8 @@ import {
   batchCount,
   batchStoppedToast,
   batches,
+  eachCall,
+  eachCallToast,
   runBatches,
   sumCounts,
   sumOf,
@@ -17,8 +19,13 @@ import type { BatchProgress } from "./bulk-batches"
 // consecutive batches, one call at a time, and a failure part-way says what
 // went through and what did not.
 
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }))
-vi.mock("sonner", () => ({ toast: { error: toastError, success: vi.fn() } }))
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
+vi.mock("sonner", () => ({
+  toast: { error: toastError, success: toastSuccess },
+}))
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `id-${i}`)
 
@@ -163,6 +170,102 @@ describe("batchStoppedToast", () => {
     batchStoppedToast("Deleted 1 of 2 circuits.", failure)
     expect(toastError).toHaveBeenCalledWith("Deleted 1 of 2 circuits.", {
       description: "ids: At most 1000 ids per call.",
+    })
+  })
+})
+
+// A multi-pick with no bulk endpoint behind it sends one call per object:
+// every one is tried, and the answer says which went through.
+describe("eachCall", () => {
+  it("tries every item and splits the answer, in the order given", async () => {
+    const refused = new ApiError(400, { object_id: ["Already linked."] })
+    const result = await eachCall(["a", "b", "c", "d"], (x) =>
+      x === "b" || x === "d" ? Promise.reject(refused) : Promise.resolve(x)
+    )
+    expect(result.done).toEqual(["a", "c"])
+    expect(result.failed).toEqual([
+      { item: "b", cause: refused },
+      { item: "d", cause: refused },
+    ])
+  })
+
+  it("keeps at most `parallel` calls in flight", async () => {
+    let inFlight = 0
+    let peak = 0
+    const result = await eachCall(
+      ids(9),
+      async () => {
+        inFlight++
+        peak = Math.max(peak, inFlight)
+        await new Promise((r) => setTimeout(r, 1))
+        inFlight--
+      },
+      3
+    )
+    expect(peak).toBe(3)
+    expect(result.done).toHaveLength(9)
+  })
+
+  it("runs one at a time by default", async () => {
+    const order: string[] = []
+    await eachCall(["a", "b"], async (x) => {
+      order.push(`start ${x}`)
+      await Promise.resolve()
+      order.push(`end ${x}`)
+    })
+    expect(order).toEqual(["start a", "end a", "start b", "end b"])
+  })
+
+  it("answers an empty list without calling", async () => {
+    const call = vi.fn()
+    expect(await eachCall([], call)).toEqual({ done: [], failed: [] })
+    expect(call).not.toHaveBeenCalled()
+  })
+})
+
+describe("eachCallToast", () => {
+  beforeEach(() => {
+    toastError.mockReset()
+    toastSuccess.mockReset()
+  })
+  const what = (n: number) => `${n} object${n === 1 ? "" : "s"}`
+
+  it("counts a clean run", () => {
+    eachCallToast({ done: ["a", "b"], failed: [] }, "Linked", what)
+    expect(toastSuccess).toHaveBeenCalledWith("Linked 2 objects")
+  })
+
+  it("says how many went through, with the first refusal under it", () => {
+    eachCallToast(
+      {
+        done: ["a"],
+        failed: [
+          { item: "b", cause: new ApiError(403, { detail: "No." }) },
+          { item: "c", cause: new ApiError(400, { detail: "Nope." }) },
+        ],
+      },
+      "Linked",
+      what
+    )
+    expect(toastError).toHaveBeenCalledWith(
+      "Linked 1 of 3 objects, 2 refused",
+      {
+        description: "No.",
+      }
+    )
+  })
+
+  it("says nothing went through when every call was refused", () => {
+    eachCallToast(
+      {
+        done: [],
+        failed: [{ item: "a", cause: new ApiError(403, { detail: "No." }) }],
+      },
+      "Linked",
+      what
+    )
+    expect(toastError).toHaveBeenCalledWith("Nothing linked", {
+      description: "No.",
     })
   })
 })

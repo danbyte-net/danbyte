@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input"
 import { DevicePicker } from "@/components/device-picker"
 import { FaceplateView, useHasImagePorts } from "@/components/device-faceplate"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { Field, FormSelect } from "@/components/forms"
+import { Field, FormCombobox } from "@/components/forms"
 import { cn } from "@/lib/utils"
 
 /** One end of a cable, picked the way people actually patch: look at the
@@ -325,7 +325,7 @@ export function CableEndpointPicker({
 
         {source === "circuit" && (
           <div className="grid gap-2">
-            <FormSelect
+            <FormCombobox
               label="Circuit"
               value={circuitId ?? ""}
               onChange={setCircuitId}
@@ -336,6 +336,8 @@ export function CableEndpointPicker({
               placeholder={
                 circuits.isLoading ? "Loading…" : "Select a circuit…"
               }
+              searchPlaceholder="Search circuits…"
+              emptyText="No circuits."
             />
             {circuitId && (
               <div className="overflow-hidden rounded-md border border-border">

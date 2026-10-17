@@ -141,5 +141,6 @@ is `<keychain:NAME>`, the contract form a push tool substitutes
 `reveal`), `audit/apps.py`, `api/search_index.py`, `api/status_registry.py`
 (`staticroute`, `bgpsession`, `routinginstance`, `l2vpn`, `vtep`),
 `auth_api/site_paths.py` (device-bound rows → `device__site`, instance rows
-→ `instance__device__site`, `vtepmembership` → `vtep__device__site`),
+→ `instance__device__site`, `vtepmembership` → `vtep__device__site`,
+`redistribution` → its BGP address family's or IGP instance's device or VM),
 the router in `api/api_urls.py` under `routing/`.

@@ -16,7 +16,9 @@ from __future__ import annotations
 import csv
 import io as _io
 import json
+import re
 
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse, StreamingHttpResponse
@@ -36,7 +38,7 @@ from auth_api import rbac
 from auth_api.object_types import is_registered, model_for
 
 from .bulk_import import plain_db_error
-from .io import io_for, io_types
+from .io import _flat, io_for, io_types
 from .views import _get_active_tenant
 
 MAX_IMPORT_ROWS = 5000
@@ -48,10 +50,24 @@ MAX_IMPORT_BYTES = 25 * 1024 * 1024
 #: carry thousands of formatted-but-empty rows, so blank rows do not count
 #: against MAX_IMPORT_ROWS - but they cannot run forever either.
 MAX_IMPORT_SCANNED_ROWS = MAX_IMPORT_ROWS * 4
+#: Cells one sheet row may hold. Wider rows are refused before openpyxl
+#: builds them: its reader materialises a whole row at once.
+MAX_IMPORT_COLUMNS = 500
+#: XLSX limits checked on the zip itself, before openpyxl opens it (#374).
+#: The upload cap bounds the compressed file only; XML compresses a
+#: thousandfold, so the unpacked size and the shared-strings table (which
+#: openpyxl loads whole, even in read-only mode) are capped as well.
+MAX_XLSX_UNPACKED_BYTES = 50 * 1024 * 1024
+MAX_XLSX_SHARED_STRINGS = 250_000
+MAX_XLSX_MEMBERS = 1000
 
 
 class TooManyRows(ValueError):
     """The import has more rows than the cap; raised while reading."""
+
+
+class FileTooLarge(TooManyRows):
+    """The workbook would unpack past a limit; raised before it is opened."""
 MAX_XLSX_EXPORT_ROWS = 50000
 #: Ids one export may name. A long selection is POSTed: in a GET's query
 #: string ~200 UUIDs already pass the proxy's and gunicorn's 8 KB line limit.
@@ -77,6 +93,36 @@ def _can(request, tenant, slug, action) -> bool:
     )
 
 
+def _refused(handler, request, action):
+    """The API's refusal of ``action`` on this type as a ``Response`` - an
+    integration or plugin switched off, a permission class, a method the
+    viewset does not take - or ``None`` when the API would serve it (#388)."""
+    from rest_framework.exceptions import APIException
+
+    try:
+        handler.api_gate(request, action)
+    except APIException as exc:
+        detail = exc.detail if isinstance(exc.detail, (dict, list)) else {"detail": exc.detail}
+        return Response(detail, status=exc.status_code)
+    return None
+
+
+def _refused_filters(handler, model, visibility, tenant) -> set[str]:
+    """Model fields an export may not filter on: the ones it never writes
+    (secrets and their store paths) and the ones the API hides from this
+    user (#387). Filtering on either would answer a yes/no question about a
+    value the user is not shown."""
+    from core.secret_fields import is_secret_field
+
+    from .bulk_import import _SECRET_REF_FIELDS
+
+    out = handler.hidden_columns(visibility, tenant)
+    for f in model._meta.concrete_fields:
+        if is_secret_field(model, f) or f.name in _SECRET_REF_FIELDS:
+            out.add(f.name)
+    return out
+
+
 @extend_schema(
     summary="List object types the user may export and/or import",
     tags=["import-export"],
@@ -97,9 +143,18 @@ def io_types_view(request):
     for t in io_types():
         slug = t["slug"]
         can_export = _can(request, tenant, slug, "view")
-        can_import = _can(request, tenant, slug, "add") or _can(
-            request, tenant, slug, "change"
+        can_import = t["importable"] and (
+            _can(request, tenant, slug, "add") or _can(request, tenant, slug, "change")
         )
+        if tenant is not None and (can_export or can_import):
+            # A type the API refuses (an integration switched off) is not
+            # offered either (#388).
+            handler = io_for(slug)
+            can_export = can_export and _refused(handler, request, "list") is None
+            can_import = can_import and any(
+                _refused(handler, request, a) is None
+                for a in ("create", "partial_update")
+            )
         if can_export or can_import:
             out.append({**t, "can_export": can_export, "can_import": can_import})
     return Response({"object_types": out})
@@ -123,10 +178,17 @@ def io_fields_view(request, slug):
     res = _resolve(request, slug)
     if isinstance(res, Response):
         return res
-    _tenant, handler, _model = res
+    tenant, handler, _model = res
+    # The columns serve an export or an import: refused only when the API
+    # refuses both (an integration switched off, #388).
+    refusals = [_refused(handler, request, a) for a in ("list", "create", "partial_update")]
+    if all(r is not None for r in refusals):
+        return refusals[0]
+    # Columns the API hides from this user are not offered (#387).
+    hidden = handler.hidden_columns(handler.field_visibility(request), tenant)
     return Response({
-        "fields": handler.field_info(),
-        "columns": handler.column_names(),
+        "fields": [f for f in handler.field_info() if f["name"] not in hidden],
+        "columns": [c for c in handler.column_names() if c not in hidden],
         "natural_key": handler.natural_key,
     })
 
@@ -205,6 +267,9 @@ def io_export_view(request, slug):
     tenant, handler, model = res
     if not _can(request, tenant, slug, "view"):
         return Response({"detail": f"You can't view {slug}."}, status=403)
+    refused = _refused(handler, request, "list")
+    if refused is not None:
+        return refused
 
     # A POST carries the same parameters as the GET, in its body - a bulk
     # bar's selection runs to more ids than a URL can hold.
@@ -228,11 +293,16 @@ def io_export_view(request, slug):
     # Optional field filters (e.g. ipaddress export scoped to ?prefix=<id>).
     # Only narrows the already RBAC-scoped queryset - a concrete model field →
     # exact match; unknown params ignored. Can't widen access, only restrict.
+    # A field the file leaves out for this user is refused, not ignored (#387).
+    visibility = handler.field_visibility(request)
     field_names = {f.name for f in model._meta.concrete_fields}
+    refused_filters = _refused_filters(handler, model, visibility, tenant)
     reserved = {"fmt", "ids", "format"}
     for key, val in params.items():
         if key in reserved or key not in field_names or not val:
             continue
+        if key in refused_filters:
+            return Response({"detail": f"You can't filter on {key}."}, status=400)
         try:
             qs = qs.filter(**{key: val})
         except (ValueError, TypeError, DjangoValidationError):
@@ -240,18 +310,24 @@ def io_export_view(request, slug):
     # Not every type has a created_at (tags don't, #355).
     has_created = any(f.name == "created_at" for f in model._meta.concrete_fields)
     qs = qs.order_by("created_at" if has_created else "pk")
-    cols = handler.column_names()
+    # The columns the API shows this user; a field it hides on one object
+    # only stays empty on that row (#387).
+    hidden = handler.hidden_columns(visibility, tenant)
+    cols = [c for c in handler.column_names() if c not in hidden]
     # One reference cache per export: a site or VRF named on a thousand rows
     # is checked for ambiguity once.
     refs: dict = {}
     fname = f"{slug}.{fmt if fmt != 'xlsx' else 'xlsx'}"
+
+    def to_row(obj):
+        return handler.to_row(obj, refs=refs, columns=cols, visibility=visibility)
 
     if fmt == "json":
         def gen():
             yield "["
             first = True
             for obj in qs.iterator(chunk_size=500):
-                yield ("" if first else ",") + json.dumps(handler.to_row(obj, refs=refs))
+                yield ("" if first else ",") + json.dumps(to_row(obj))
                 first = False
             yield "]"
         resp = StreamingHttpResponse(gen(), content_type="application/json")
@@ -259,7 +335,7 @@ def io_export_view(request, slug):
         return resp
 
     if fmt == "xlsx":
-        return _export_xlsx(qs, handler, cols, slug, refs)
+        return _export_xlsx(qs, to_row, cols, slug)
 
     # CSV (default), streamed.
     class _Echo:
@@ -274,7 +350,7 @@ def io_export_view(request, slug):
         yield writer.writerow(dict(zip(cols, cols)))  # header
         for obj in qs.iterator(chunk_size=500):
             yield writer.writerow(
-                {k: csv_cell(v) for k, v in handler.to_row(obj, refs=refs).items()}
+                {k: csv_cell(v) for k, v in to_row(obj).items()}
             )
 
     resp = StreamingHttpResponse(gen(), content_type="text/csv; charset=utf-8")
@@ -304,7 +380,7 @@ def _export_ids(raw, model):
         raise ValueError("One of the ids is not valid.") from None
 
 
-def _export_xlsx(qs, handler, cols, slug, refs=None):
+def _export_xlsx(qs, to_row, cols, slug):
     from openpyxl import Workbook
     from openpyxl.utils import get_column_letter
 
@@ -320,7 +396,7 @@ def _export_xlsx(qs, handler, cols, slug, refs=None):
     for obj in qs.iterator(chunk_size=500):
         if n >= MAX_XLSX_EXPORT_ROWS:
             break
-        row = handler.to_row(obj, refs=refs)
+        row = to_row(obj)
         ws.append([row.get(c, "") for c in cols])
         xlsx_text_row(ws)
         n += 1
@@ -350,12 +426,14 @@ def _parse_upload(request):
             raise TooManyRows(
                 f"The file is larger than {MAX_IMPORT_BYTES // (1024 * 1024)} MB."
             )
+        _check_xlsx(upload)
+        upload.seek(0)
         wb = load_workbook(upload, read_only=True, data_only=True)
         ws = wb.active
         # Stream the sheet and stop at the cap. It used to be list()-ed whole
         # before the cap was checked, so a few MB of compressed rows held a
         # web worker for most of a minute only to be refused (#225).
-        rows = ws.iter_rows(values_only=True)
+        rows = ws.iter_rows(values_only=True, max_col=MAX_IMPORT_COLUMNS)
         first = next(rows, None)
         if first is None:
             return []
@@ -377,6 +455,63 @@ def _parse_upload(request):
     from .bulk_import import parse_rows
 
     return parse_rows(data.get("content", ""), data.get("format", "csv"))
+
+
+_XLSX_TAG = re.compile(rb"<(?:\w{1,16}:)?(si|row|c)[\s>/]")
+
+
+def _check_xlsx(upload) -> None:
+    """Refuse a workbook that would unpack past the limits, reading only the
+    zip directory and streaming the XML through a tag counter (#374).
+
+    Every member counts towards the unpacked size; a zip entry is never
+    read past its declared size, so the directory is a safe upper bound.
+    Shared strings (``<si>``) are counted wherever they are, as is the
+    widest row, because openpyxl loads the string table whole and builds a
+    row at a time."""
+    import zipfile
+
+    upload.seek(0)
+    with zipfile.ZipFile(upload) as zf:
+        infos = zf.infolist()
+        if len(infos) > MAX_XLSX_MEMBERS:
+            raise FileTooLarge("The workbook has too many parts.")
+        mb = MAX_XLSX_UNPACKED_BYTES // (1024 * 1024)
+        if sum(i.file_size for i in infos) > MAX_XLSX_UNPACKED_BYTES:
+            raise FileTooLarge(f"The workbook is too large once unpacked (max {mb} MB).")
+        strings = 0
+        for info in infos:
+            if info.is_dir():
+                continue
+            cells = 0
+            with zf.open(info) as f:
+                tail = b""
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    buf = tail + chunk
+                    cut = len(buf) if not chunk else max(len(buf) - 32, 0)
+                    for m in _XLSX_TAG.finditer(buf, 0, len(buf)):
+                        if m.start() >= cut:
+                            break
+                        tag = m.group(1)
+                        if tag == b"si":
+                            strings += 1
+                            if strings > MAX_XLSX_SHARED_STRINGS:
+                                raise FileTooLarge(
+                                    "The workbook holds too many distinct texts "
+                                    f"(max {MAX_XLSX_SHARED_STRINGS})."
+                                )
+                        elif tag == b"row":
+                            cells = 0
+                        else:
+                            cells += 1
+                            if cells > MAX_IMPORT_COLUMNS:
+                                raise FileTooLarge(
+                                    f"A row has too many columns (max {MAX_IMPORT_COLUMNS})."
+                                )
+                    if not chunk:
+                        break
+                    tail = buf[cut:]
 
 
 @extend_schema(
@@ -423,10 +558,29 @@ def io_import_view(request, slug):
     if isinstance(res, Response):
         return res
     tenant, handler, model = res
+    if not handler.importable():
+        # Import writes only what the API can write (#364).
+        return Response({"detail": "This object type isn't importable."}, status=400)
     can_add = _can(request, tenant, slug, "add")
     can_change = _can(request, tenant, slug, "change")
     if not (can_add or can_change):
         return Response({"detail": f"You can't import {slug}."}, status=403)
+    # The API's own gates, before any row is read (#388): what it refuses for
+    # a create or an update - an integration switched off, an admin-only
+    # permission class, a method it does not take - import refuses too. One
+    # refused action leaves its rows to the per-row permission error.
+    refusals = {}
+    for action, allowed in (("create", can_add), ("update", can_change)):
+        if allowed:
+            refused = _refused(handler, request,
+                               "create" if action == "create" else "partial_update")
+            if refused is not None:
+                refusals[action] = refused
+    can_add = can_add and "create" not in refusals
+    can_change = can_change and "update" not in refusals
+    if not (can_add or can_change):
+        return next(iter(refusals.values()))
+    reasons = {a: " ".join(_flat(r.data)) for a, r in refusals.items()}
     dry_run = str(request.data.get("dry_run", "")).lower() in ("1", "true", "yes") \
         or request.data.get("dry_run") is True
 
@@ -463,6 +617,7 @@ def io_import_view(request, slug):
         _import_rows(
             rows, handler, tenant, request, change_qs, add_qs, can_add, can_change,
             dry_run, errors, preview, counts := {"created": 0, "updated": 0},
+            reasons=reasons,
         )
     created, updated = counts["created"], counts["updated"]
 
@@ -473,7 +628,8 @@ def io_import_view(request, slug):
 
 
 def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
-                 can_change, dry_run, errors, preview, counts) -> None:
+                 can_change, dry_run, errors, preview, counts, reasons=None) -> None:
+    reasons = reasons or {}
     for i, row in enumerate(rows, start=1):
         try:
             with transaction.atomic():
@@ -486,29 +642,32 @@ def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
                     existing, row, tenant, request.user, request=request
                 )
                 if action == "create" and not can_add:
-                    raise PermissionRow("creating new rows needs 'add' permission")
+                    raise PermissionRow(reasons.get(
+                        "create", "creating new rows needs 'add' permission"))
                 if action == "update" and not can_change:
-                    raise PermissionRow("updating rows needs 'change' permission")
+                    raise PermissionRow(reasons.get(
+                        "update", "updating rows needs 'change' permission"))
 
+                # Saved through the type's API hooks in a dry run too, then
+                # rolled back, so the preview refuses what the commit would.
+                obj = handler.commit(obj, tag_names)
+                # Site-scope guard: the saved row must be in the user's
+                # add/change scope (mirrors the viewset's create/update guard),
+                # so an edit cannot move a row out of the sites they may edit.
+                scope_qs = add_qs if action == "create" else change_qs
+                if not scope_qs.filter(pk=obj.pk).exists():
+                    raise PermissionRow(
+                        "the row falls outside the sites you may edit"
+                    )
                 if dry_run:
                     transaction.set_rollback(True)
-                else:
-                    handler.commit(obj, tag_names)
-                    # Site-scope guard for creates: the saved row must be in the
-                    # user's add-scope (mirrors the viewset write guard).
-                    if action == "create" and not add_qs.filter(
-                        pk=obj.pk
-                    ).exists():
-                        raise PermissionRow(
-                            "the new row falls outside the sites you may edit"
-                        )
                 counts["created" if action == "create" else "updated"] += 1
                 if dry_run:
                     preview.append({
                         "row": i, "action": action,
                         "key": _row_key(handler, row), "changes": changes,
                     })
-        except PermissionRow as exc:
+        except (PermissionRow, DjangoPermissionDenied) as exc:
             errors.append({"row": i, "error": str(exc), "action": "permission"})
         except DatabaseError as exc:
             # Validation catches what it can; the database's own refusal is

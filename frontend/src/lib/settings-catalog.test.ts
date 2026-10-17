@@ -22,6 +22,7 @@ const EXTRA_SOURCES: Record<string, string[]> = {
   directory: ["src/components/settings/ldap-directory.tsx"],
   integrations: ["src/components/settings/plugins-section.tsx"],
   updates: ["src/components/settings/services-section.tsx"],
+  preferences: ["src/components/settings/sidebar-card.tsx"],
 }
 
 function sourcesFor(pageKey: string): string {

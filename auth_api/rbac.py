@@ -345,16 +345,15 @@ def editable_sites(user, tenant):
     """
     if _is_super(user):
         return None
-    from .site_paths import SITE_PATHS
+    from .site_paths import site_role_types
 
     ids: set = set()
     granted = False
-    for slug in SITE_PATHS:
-        # "site" scopes itself; "sitesettings" is the settings-admin surface -
-        # holding it must not make someone an infrastructure editor (with the
-        # delegation and create-defaulting powers that implies).
-        if slug in ("site", "sitesettings"):
-            continue
+    # The types a site role manages: not "site" (scopes itself), not
+    # "sitesettings" (the settings-admin surface) and not the integration
+    # records - holding one of those must not make someone an infrastructure
+    # editor, with the delegation and create-defaulting powers that implies.
+    for slug in site_role_types():
         scope = site_scope(user, tenant, slug, "change")
         if scope is None:
             return None  # an unscoped change grant → any site
@@ -362,6 +361,61 @@ def editable_sites(user, tenant):
             granted = True
             ids |= scope
     return ids if granted else set()
+
+
+class ViewableRows:
+    """Which rows of each type ``user`` may view, memoised for one serializer
+    or one export (#413). A row that shows another row's name asks here
+    before naming it. ``prime`` answers a page's ids in one query per type;
+    ``may_view`` falls back to one query for an id that was not primed.
+    Built on :func:`row_filter`, so it is the scope the type's own list
+    enforces. An unregistered type is never hidden."""
+
+    def __init__(self, user, tenant):
+        self.user = user
+        self.tenant = tenant
+        self._filters: dict = {}
+        self._seen: dict[str, dict] = {}
+
+    def _filter(self, slug):
+        if slug not in self._filters:
+            from .object_types import is_registered
+
+            if _is_super(self.user) or not is_registered(slug):
+                self._filters[slug] = True
+            else:
+                self._filters[slug] = row_filter(self.user, self.tenant, slug, "view")
+        return self._filters[slug]
+
+    def sees_every(self, slug: str) -> bool:
+        """Whether every row of ``slug`` is visible: nothing to hide."""
+        return self._filter(slug) is True
+
+    def prime(self, slug: str, pks) -> None:
+        f = self._filter(slug)
+        seen = self._seen.setdefault(slug, {})
+        todo = {pk for pk in pks if pk is not None and pk not in seen}
+        if not todo:
+            return
+        if f is True or f is None:
+            seen.update(dict.fromkeys(todo, f is True))
+            return
+        from .object_types import model_for
+
+        model = model_for(slug)
+        try:
+            ok = set(model._default_manager.filter(f, pk__in=todo).values_list("pk", flat=True))
+        except FieldError:
+            log.warning("RBAC: bad constraint evaluating %s visibility", slug)
+            ok = set()
+        for pk in todo:
+            seen[pk] = pk in ok
+
+    def may_view(self, slug: str, pk) -> bool:
+        if pk is None:
+            return True
+        self.prime(slug, [pk])
+        return self._seen[slug][pk]
 
 
 def object_matches_constraints(obj, cons) -> bool:

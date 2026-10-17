@@ -16,6 +16,7 @@ import { RowActions } from "@/components/row-actions"
 import { UserDeleteDialog } from "@/components/user-delete-dialog"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useUrlSearch } from "@/lib/url-filters"
 
 // One-click "email a password-reset link" for a row. Sends the email only -
 // the user's current password is untouched; it changes only when they follow
@@ -53,7 +54,7 @@ function ResetButton({ user }: { user: RBACUser }) {
 export const Route = createFileRoute("/users/")({ component: UsersPage })
 
 function UsersPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RBACUser | null>(null)
   const { canDo } = useMe()
   const canAdd = canDo("user", "add")

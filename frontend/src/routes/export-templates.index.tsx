@@ -16,6 +16,7 @@ import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-dialog"
+import { useUrlSearch } from "@/lib/url-filters"
 
 // Render + download a template's output. Fetches the file so we can surface a
 // render error as a toast instead of downloading an error page.
@@ -71,7 +72,7 @@ function ExportTemplatesPage() {
   const { canDo } = useMe()
   const canAdd = canDo("exporttemplate", "add")
   const { humanIds } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ExportTemplate | null>(null)
 
   const query = useQuery({

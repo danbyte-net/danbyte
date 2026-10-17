@@ -319,6 +319,27 @@ class ReadToolTests(_Base):
                                         "since": "24h"})
         self.assertIsInstance(changes["entries"], list)
 
+    def test_changes_leave_contract_cost_out_without_view_cost(self):
+        from api.models import SupportContract
+
+        contract = SupportContract.objects.create(
+            tenant=self.tenant, manufacturer=self.dtype.manufacturer,
+            contract_number="SN-9", cost="100.00", currency="EUR",
+        )
+        contract.cost, contract.description = "250.00", "bumped"
+        contract.save()
+        args = {"type": "supportcontract", "id": str(contract.id)}
+        changes = self.tool("changes", args)
+        self.assertTrue(changes["entries"], changes)
+        # The exact amounts and the field names: a bare "250" can turn up in
+        # an id or a timestamp.
+        text = json.dumps(changes)
+        for leak in ('"250.00"', '"100.00"', '"cost"', '"currency"'):
+            self.assertNotIn(leak, text)
+        self.assertIn("description", text)
+        self.grant(["view_cost"], ["supportcontract"])
+        self.assertIn('"250.00"', json.dumps(self.tool("changes", args)))
+
     def test_search_uses_the_products_own_ranking(self):
         from api.search_index import rebuild
 

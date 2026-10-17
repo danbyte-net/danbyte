@@ -481,5 +481,15 @@ export function CabinetDevicesPane({ cabinetId }: { cabinetId: string }) {
   if (q.isError) return <QueryError error={q.error} />
   if (rows.length === 0)
     return <EmptyState title="No devices in this cabinet." />
-  return <DataTable data={rows} columns={columns} flexColumn="name" embedded />
+  return (
+    <DataTable
+      data={rows}
+      total={q.data?.count}
+      columns={columns}
+      flexColumn="name"
+      embedded
+      searchable
+      searchPlaceholder="Search devices…"
+    />
+  )
 }

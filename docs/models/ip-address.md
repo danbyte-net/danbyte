@@ -41,6 +41,17 @@ UniqueConstraint(
 
 Same IP in two VRFs is fine.
 
+## Site scope
+
+An address belongs to its own `site`, else its prefix's. A permission limited
+to sites reaches an address in another site's prefix no more than it reaches
+the prefix. Only an address with no site in a site-less prefix is shared.
+
+The API row and the export show `prefix`, `assigned_device`,
+`assigned_interface`, `switch`, `switch_interface`, `assigned_vm` and
+`assigned_vm_interface` only when the caller may view that row; otherwise the
+field is `null`.
+
 `vrf` is never set directly - it always mirrors `prefix.vrf`. Saving the address
 re-derives it, and moving the **prefix** into another VRF carries its addresses
 with it. To move an address between VRFs, point it at a prefix in the target VRF.
@@ -94,7 +105,9 @@ use it.
 - Must fall inside its parent prefix's CIDR - enforced in
   `IPAddressSerializer.validate()` (the SPA/API path): rejected with a 400 if the
   address isn't a member of the selected prefix's network, or if its family
-  (v4/v6) doesn't match.
+  (v4/v6) doesn't match. Judged when the address or prefix changes, in any
+  spelling: an address stored outside its prefix still saves from its form.
+  The *Allocate only from ranges* check follows the same rule.
 - Must not collide with another IP in the same `(tenant, vrf)` - DB-level unique
   constraint (failsafe).
 

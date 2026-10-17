@@ -173,6 +173,10 @@ class PlannedChangeSerializer(serializers.ModelSerializer):
 
 class TaskSerializer(serializers.ModelSerializer):
     status_name = serializers.CharField(source="status.name", read_only=True)
+    status_color = serializers.CharField(source="status.color", read_only=True)
+    status_group = serializers.CharField(
+        source="status.semantic_group", read_only=True
+    )
     board_name = serializers.CharField(source="board.name", read_only=True)
     milestone_name = serializers.CharField(
         source="milestone.name", read_only=True, default=None
@@ -193,7 +197,8 @@ class TaskSerializer(serializers.ModelSerializer):
     class Meta:
         model = Task
         fields = [
-            "id", "board", "board_name", "status", "status_name", "title",
+            "id", "board", "board_name", "status", "status_name",
+            "status_color", "status_group", "title",
             "description", "priority", "assignees", "assignee_detail",
             "assigned_group", "assigned_group_name",
             "labels", "label_detail", "milestone", "milestone_name",
@@ -235,3 +240,20 @@ class TaskSerializer(serializers.ModelSerializer):
                     {tfield: "A time needs its date."}
                 )
         return attrs
+
+
+class OverdueTaskSerializer(serializers.ModelSerializer):
+    """Read-shape for the overdue warning on an object's page: what the row
+    needs and nothing else."""
+
+    board_name = serializers.CharField(source="board.name", read_only=True)
+    status_name = serializers.CharField(source="status.name", read_only=True)
+    status_color = serializers.CharField(source="status.color", read_only=True)
+
+    class Meta:
+        model = Task
+        fields = [
+            "id", "board", "board_name", "title", "status_name",
+            "status_color", "priority", "due_date", "due_time",
+        ]
+        read_only_fields = fields

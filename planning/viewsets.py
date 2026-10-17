@@ -8,8 +8,18 @@ retargeting is rejected outright.
 """
 from __future__ import annotations
 
+import uuid
+
 from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
+from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+)
 from rest_framework import permissions
 from rest_framework import status as drf_status
 from rest_framework.decorators import action, api_view, permission_classes
@@ -30,12 +40,15 @@ from .models import (
     Task,
     TaskLabel,
     TaskLink,
+    TaskOverdueDismissal,
     TaskStatus,
     seed_default_statuses,
+    task_due_key,
 )
 from .serializers import (
     BoardSerializer,
     MilestoneSerializer,
+    OverdueTaskSerializer,
     PlannedChangeSerializer,
     TaskLabelSerializer,
     TaskLinkSerializer,
@@ -138,6 +151,43 @@ class TaskLabelViewSet(TenantScopedViewSet):
     serializer_class = TaskLabelSerializer
 
 
+#: Status semantics that mean "no longer open", whatever a board calls them.
+CLOSED_GROUPS = ("completed", "cancelled")
+
+OBJECT_TYPE_PARAM = OpenApiParameter(
+    "object_type", OpenApiTypes.STR, OpenApiParameter.QUERY,
+    description="With object_id: only tasks linked to this object "
+    "(RBAC slug or app label, e.g. device or api.device).",
+)
+OBJECT_ID_PARAM = OpenApiParameter(
+    "object_id", OpenApiTypes.UUID, OpenApiParameter.QUERY,
+    description="With object_type: the linked object's id.",
+)
+
+
+def _mine_q(user) -> Q:
+    """Tasks that are this user's work: assigned to them, or queued on one of
+    their groups with nobody picked yet - the dashboard's "assignee=me"."""
+    return Q(assignees=user) | Q(
+        assigned_group__in=user.groups.all(), assignees__isnull=True
+    )
+
+
+def _local_now():
+    return timezone.localtime()
+
+
+def _overdue_q() -> Q:
+    """Past due in the deployment's time zone. A date-only task is due at the
+    end of its day; a task with a time is due at that time."""
+    now = _local_now()
+    today = now.date()
+    return Q(due_date__lt=today) | Q(
+        due_date=today, due_time__isnull=False, due_time__lte=now.time()
+    )
+
+
+@extend_schema_view(list=extend_schema(parameters=[OBJECT_TYPE_PARAM, OBJECT_ID_PARAM]))
 class TaskViewSet(TenantScopedViewSet):
     queryset = (
         Task.objects.select_related("board", "status", "milestone", "assigned_group")
@@ -145,6 +195,7 @@ class TaskViewSet(TenantScopedViewSet):
         .order_by("weight", "created_at")
     )
     serializer_class = TaskSerializer
+    rbac_action_map = {"overdue": "view", "dismiss_overdue": "view"}
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -153,26 +204,32 @@ class TaskViewSet(TenantScopedViewSet):
             qs = qs.filter(board_id=p["board"])
         if p.get("status"):
             qs = qs.filter(status_id=p["status"])
+        if p.get("object_type") or p.get("object_id"):
+            # Reverse lookup: the tasks linked to one object - the Tasks tab on
+            # every object page. Both halves required; anything malformed is an
+            # empty list, never the whole board.
+            from auth_api.object_types import label_for
+
+            label = label_for(p.get("object_type") or "")
+            try:
+                oid = uuid.UUID(str(p.get("object_id") or ""))
+            except ValueError:
+                oid = None
+            if label is None or oid is None:
+                return qs.none()
+            qs = qs.filter(links__object_type=label, links__object_id=oid)
         if p.get("assignee"):
             # "me" so a dashboard widget needs no user id - and no user.view.
             # "My work" includes the team queue: tasks assigned to one of my
             # groups that nobody has picked up yet.
             if p["assignee"] == "me":
-                qs = qs.filter(
-                    Q(assignees=self.request.user)
-                    | Q(
-                        assigned_group__in=self.request.user.groups.all(),
-                        assignees__isnull=True,
-                    )
-                )
+                qs = qs.filter(_mine_q(self.request.user))
             else:
                 qs = qs.filter(assignees__id=p["assignee"])
         if p.get("open") == "1":
             # Open = the status row's semantics, not its name: "Completed" and
             # "Cancelled" count as closed whatever a board renamed them to.
-            qs = qs.exclude(
-                status__semantic_group__in=["completed", "cancelled"]
-            )
+            qs = qs.exclude(status__semantic_group__in=CLOSED_GROUPS)
         if p.get("label"):
             qs = qs.filter(labels__id=p["label"])
         if p.get("milestone"):
@@ -190,6 +247,60 @@ class TaskViewSet(TenantScopedViewSet):
             raise ValidationError({"board": "Board is not in this tenant."})
         serializer.save(tenant=tenant, created_by=self.request.user)
         self._notify_assignment_changes(serializer.instance, set(), None)
+
+    @extend_schema(
+        parameters=[OBJECT_TYPE_PARAM, OBJECT_ID_PARAM],
+        responses=OverdueTaskSerializer(many=True),
+        description="Open tasks past their due moment that are the caller's "
+        "work (assignee, or an unclaimed task queued on one of their groups), "
+        "minus those the caller dismissed at the current due moment. "
+        "Not paginated.",
+    )
+    @action(detail=False, methods=["get"], url_path="overdue")
+    def overdue(self, request):
+        """The overdue warning on an object's page - decided here, per caller.
+
+        Scoping is the list's (tenant + task view grant + the object filter);
+        "for me" is the session user, never a client-sent id."""
+        qs = (
+            self.get_queryset()
+            .exclude(status__semantic_group__in=CLOSED_GROUPS)
+            .filter(_overdue_q())
+            .filter(_mine_q(request.user))
+            .distinct()
+            .order_by("due_date", "due_time", "title")
+        )
+        tasks = list(qs)
+        hidden = dict(
+            TaskOverdueDismissal.objects.filter(
+                user=request.user, task__in=tasks
+            ).values_list("task_id", "due_key")
+        )
+        rows = [t for t in tasks if hidden.get(t.pk) != task_due_key(t)]
+        return Response(OverdueTaskSerializer(rows, many=True).data)
+
+    @extend_schema(
+        request=None,
+        responses={
+            204: OpenApiResponse(description="Dismissed for this due moment."),
+            403: OpenApiResponse(description="Not one of your tasks."),
+        },
+        description="Hide this task's overdue warning for the caller until "
+        "its due date or time changes.",
+    )
+    @action(detail=True, methods=["post"], url_path="dismiss-overdue")
+    def dismiss_overdue(self, request, pk=None):
+        task = self.get_object()
+        mine = Task.objects.filter(pk=task.pk).filter(_mine_q(request.user))
+        if not mine.exists():
+            raise PermissionDenied("Only the task's assignees can dismiss this.")
+        key = task_due_key(task)
+        if not key:
+            raise ValidationError({"due_date": "This task has no due date."})
+        TaskOverdueDismissal.objects.update_or_create(
+            user=request.user, task=task, defaults={"due_key": key}
+        )
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
 
     def perform_update(self, serializer):
         before_users = set(serializer.instance.assignees.values_list("pk", flat=True))

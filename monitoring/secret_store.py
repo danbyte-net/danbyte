@@ -56,6 +56,7 @@ MANAGED_REF_PREFIXES = (
     "wireless-lans/",
     "ipsec-profiles/",
     "routing-keychains/",
+    "fhrp-groups/",
     "csr/",
     "issuer/",
 )

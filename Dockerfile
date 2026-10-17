@@ -1,17 +1,25 @@
-# syntax=docker/dockerfile:1
 #
 # Production image for Danbyte, built in stages:
 #   frontend  - Node builds the React SPA (frontend/dist)
 #   web       - nginx serving that SPA + proxying api/ws/static/media
+#   cad-tools - builds LibreDWG's dwg2dxf (DWG floor-plan drawings), static
+#   cad-dist  - just that build's output, for the release bundle
 #   runtime   - Python app (gunicorn WSGI, daphne ASGI/WS, rq workers)
 #
 # `runtime` is last so a bare `docker build .` yields the app image; the compose
 # files pick the stage per service via `target:`. See docs/getting-started/docker.md
 # and docker-compose.prod.yml. The dev stack (docker-compose.dev.yml) reuses the
 # `runtime` stage and just overrides the command to `runserver`.
+#
+# Base images come from ECR Public's copy of the Docker official images, not
+# Docker Hub, which throttles anonymous pulls. BASE_IMAGE_REGISTRY points the
+# build at another mirror (the compose files pass it through from .env).
+# There is deliberately no `# syntax=` line: it makes BuildKit pull its
+# Dockerfile frontend from Docker Hub.
+ARG BASE_IMAGE_REGISTRY=public.ecr.aws/docker/library
 
 # ─── 1. Build the SPA ────────────────────────────────────────────────────────
-FROM public.ecr.aws/docker/library/node:22-slim AS frontend
+FROM ${BASE_IMAGE_REGISTRY}/node:22-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -23,7 +31,7 @@ RUN npm run build
 # `/` to the `frontend` service (vite preview) rather than serving files. A
 # self-signed cert is baked in so browsers that force HTTPS still connect (they
 # show a one-time warning); terminate real TLS in front for production.
-FROM public.ecr.aws/docker/library/nginx:1.27.5-alpine AS web
+FROM ${BASE_IMAGE_REGISTRY}/nginx:1.27.5-alpine AS web
 RUN apk add --no-cache openssl \
     && mkdir -p /etc/nginx/tls \
     && openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
@@ -32,8 +40,28 @@ RUN apk add --no-cache openssl \
 COPY deploy/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/maintenance.html /usr/share/nginx/maintenance/maintenance.html
 
-# ─── 3. Python application runtime ───────────────────────────────────────────
-FROM public.ecr.aws/docker/library/python:3.13-slim AS runtime
+# ─── 3. LibreDWG's dwg2dxf, the DWG converter for floor-plan drawings ────────
+# Neither Debian trixie nor Ubuntu 26.04 packages LibreDWG, so it is built from
+# the GNU release tarball, pinned by version and SHA-256 in
+# deploy/cad/build-dwg2dxf.sh - the one recipe, also behind the release
+# bundle's copy (target `cad-dist`) and `make cad-tools`. On Alpine, so the
+# binary is linked statically against musl and runs on any x86_64 Linux.
+# LibreDWG is GPLv3; Danbyte runs it as a separate program (api/cad_render.py)
+# and does not link it. See docs/features/floor-plans.md.
+FROM ${BASE_IMAGE_REGISTRY}/alpine:3.22 AS cad-tools
+# Any GNU mirror; the checksum still has to match.
+ARG GNU_MIRROR=https://ftp.gnu.org/gnu
+RUN apk add --no-cache build-base pkgconf curl xz tar file
+COPY deploy/cad/build-dwg2dxf.sh /build/build-dwg2dxf.sh
+RUN GNU_MIRROR="${GNU_MIRROR}" sh /build/build-dwg2dxf.sh /out
+
+# What the release bundle carries as vendor/cad:
+#   docker build --target cad-dist --output type=local,dest=<dir> .
+FROM scratch AS cad-dist
+COPY --from=cad-tools /out/ /
+
+# ─── 4. Python application runtime ───────────────────────────────────────────
+FROM ${BASE_IMAGE_REGISTRY}/python:3.13-slim AS runtime
 # Marks this as the container deployment: in-app self-upgrade is refused here
 # (a process in a container can't rebuild its image or recreate itself), and
 # the Updates page points to `docker compose build` instead. See core/version.
@@ -55,11 +83,16 @@ WORKDIR /app
 # postgresql-client-17 (from PGDG, the distro's client is older) gives the
 # in-app backup its pg_dump/pg_restore; pg_dump must be at least the server's
 # major version, so bump it together with the postgres image in compose.
+# bubblewrap adds namespaces around sandboxed scripts when the container's
+# seccomp and AppArmor profiles allow user namespaces; otherwise scripts run
+# under Landlock alone and their logs say so (docs/features/scripts.md). The
+# DWG converter runs only inside it: without working namespaces on the
+# workers, DWG is refused (docs/getting-started/docker.md, #424).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential libpq-dev libldap2-dev libsasl2-dev libssl-dev \
         curl iputils-ping traceroute mtr-tiny dnsutils snmp fping \
-        netcat-openbsd \
+        netcat-openbsd bubblewrap \
         libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
         libffi8 fonts-dejavu-core \
     && install -d /usr/share/postgresql-common/pgdg \
@@ -72,6 +105,11 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=cad-tools /out/bin/dwg2dxf /usr/local/bin/dwg2dxf
+COPY --from=cad-tools /out/LICENSE.libredwg /usr/share/doc/libredwg/COPYING
+COPY --from=cad-tools /out/NOTICE /usr/share/doc/libredwg/NOTICE
+ENV DANBYTE_CAD_CONVERTER=/usr/local/bin/dwg2dxf
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

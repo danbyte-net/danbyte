@@ -18,7 +18,7 @@ import { useDateFormat } from "@/lib/datetime"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { FormSelect } from "@/components/forms"
+import { FormCombobox } from "@/components/forms"
 import {
   Popover,
   PopoverContent,
@@ -157,11 +157,13 @@ export function PlanFromObject() {
                   create.mutate()
               }}
             />
-            <FormSelect
+            <FormCombobox
               label="Board"
               value={activeBoard}
               onChange={setBoardId}
               options={boards.map((b) => ({ value: b.id, label: b.name }))}
+              searchPlaceholder="Search boards…"
+              emptyText="No boards."
             />
             <p className="text-[11px] text-muted-foreground">
               This object is linked to the new task automatically, and saving

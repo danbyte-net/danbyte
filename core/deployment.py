@@ -1317,7 +1317,9 @@ def email_template_html(request, key: str):
         return Response({"detail": "Unknown template."}, status=404)
     _subject, html, _text = render_sample(key)
     resp = HttpResponse(inline_logo_for_preview(html), content_type="text/html; charset=utf-8")
-    # Framed by the settings page only; nothing in it runs.
+    # The settings page fetches this and shows it in a sandboxed srcdoc frame
+    # with the same policy inlined (#401). The headers still lock the URL down
+    # when it is opened or framed directly.
     resp["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
     resp["X-Frame-Options"] = "SAMEORIGIN"
     return resp

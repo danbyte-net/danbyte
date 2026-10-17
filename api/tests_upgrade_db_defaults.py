@@ -1,18 +1,149 @@
-"""Columns 0.17 added to existing tables carry a database default (#363).
+"""Columns added to existing tables carry a database default (#363).
 
-During an upgrade a web worker, RQ worker or replica still running 0.16 code
-inserts rows without naming the columns 0.17 added. A NOT NULL column with no
-database default fails that insert, so every such column gets a db_default.
+During an upgrade a web worker, RQ worker or replica still running the
+previous release inserts rows without naming the columns the new release
+added. A NOT NULL column with no database default fails that insert, so every
+such column gets a db_default.
+
+``ReleaseBaselineTests`` is the permanent gate: it compares the migration
+graph with the state the last release shipped, recorded per release in
+``scripts/upgrade/migration_baseline.json``. The classes after it pin the
+0.16 -> 0.17 columns that #363 was about.
 """
 from __future__ import annotations
 
-from django.db import connection
+import importlib.util
+import json
+import subprocess
+from pathlib import Path
+
+from django.conf import settings
+from django.db import connection, models
 from django.db.migrations.loader import MigrationLoader
+from django.db.migrations.state import ModelState, ProjectState
 from django.db.models.fields import NOT_PROVIDED
 from django.test import SimpleTestCase, TestCase
+from packaging.version import Version
 
+import danbyte
 from api.models import Device, Interface
 from core.models import Organization, Tenant
+
+UPGRADE_DIR = Path(settings.BASE_DIR) / "scripts" / "upgrade"
+
+
+def _baseline_module():
+    spec = importlib.util.spec_from_file_location(
+        "migration_baseline", UPGRADE_DIR / "migration_baseline.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def missing_db_defaults(old: ProjectState, new: ProjectState, apps) -> list[str]:
+    """``app.model.field`` for every NOT NULL column ``new`` has on a table
+    ``old`` already had, where the column is new (or was nullable) and carries
+    no db_default. Tables ``old`` lacks are skipped: old code never inserts
+    into them."""
+    missing = []
+    for key, model_state in new.models.items():
+        if key[0] not in apps or key not in old.models:
+            continue
+        old_fields = old.models[key].fields
+        for name, field in model_state.fields.items():
+            if field.many_to_many or field.null or field.generated:
+                continue
+            if name in old_fields and not old_fields[name].null:
+                continue
+            if field.db_default is NOT_PROVIDED:
+                missing.append(f"{key[0]}.{key[1]}.{name}")
+    return sorted(missing)
+
+
+class ReleaseBaselineTests(SimpleTestCase):
+    """Every NOT NULL column added since the last release has a db_default.
+
+    The baseline is the per-app newest migration of the last final release,
+    written by ``scripts/upgrade/migration_baseline.py vX.Y.Z`` after tagging
+    and committed for the next release's branch."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.baseline = json.loads((UPGRADE_DIR / "migration_baseline.json").read_text())
+        cls.loader = MigrationLoader(None, ignore_no_migrations=True)
+
+    def test_every_column_added_since_the_last_release_has_a_db_default(self):
+        graph = self.loader.graph
+        leaves = self.baseline["leaves"]
+        old = graph.make_state(nodes=list(leaves.items()), at_end=True)
+        new = graph.make_state(nodes=graph.leaf_nodes(), at_end=True)
+        self.assertEqual(
+            missing_db_defaults(old, new, set(leaves)), [],
+            f"NOT NULL columns added since {self.baseline['release']} need a db_default",
+        )
+
+    def test_baseline_names_migrations_that_exist(self):
+        nodes = set(self.loader.graph.nodes)
+        gone = [f"{a}.{n}" for a, n in self.baseline["leaves"].items() if (a, n) not in nodes]
+        self.assertEqual(gone, [])
+
+    def test_baseline_is_a_release_not_ahead_of_the_code(self):
+        release = Version(self.baseline["release"])
+        self.assertFalse(release.is_prerelease, "the baseline is a final release")
+        self.assertLessEqual(release, Version(danbyte.__version__))
+
+    def test_baseline_matches_its_tag(self):
+        """Regenerated from git when the tag is there (a full clone)."""
+        tag = f"v{self.baseline['release']}"
+        try:
+            found = subprocess.run(
+                ["git", "rev-parse", "--verify", "-q", f"refs/tags/{tag}"],
+                cwd=settings.BASE_DIR, capture_output=True,
+            ).returncode == 0
+        except OSError:
+            found = False
+        if not found:
+            self.skipTest(f"tag {tag} is not in this checkout")
+        self.assertEqual(
+            _baseline_module().leaves_at(tag, self.loader), self.baseline["leaves"]
+        )
+
+
+class MissingDbDefaultTests(SimpleTestCase):
+    """The comparison the release gate runs, on hand-built states."""
+
+    def _state(self, **fields):
+        state = ProjectState()
+        state.add_model(ModelState("api", "widget", [
+            ("id", models.UUIDField(primary_key=True)), *fields.items(),
+        ]))
+        return state
+
+    def test_new_not_null_column_without_db_default_is_named(self):
+        old = self._state()
+        new = self._state(flag=models.BooleanField(default=False))
+        self.assertEqual(missing_db_defaults(old, new, {"api"}), ["api.widget.flag"])
+
+    def test_db_default_nullable_and_unchanged_columns_pass(self):
+        old = self._state(kept=models.CharField(max_length=5))
+        new = self._state(
+            kept=models.CharField(max_length=5),
+            flag=models.BooleanField(default=False, db_default=False),
+            note=models.TextField(null=True),
+        )
+        self.assertEqual(missing_db_defaults(old, new, {"api"}), [])
+
+    def test_a_nullable_column_made_not_null_is_named(self):
+        old = self._state(note=models.TextField(null=True))
+        new = self._state(note=models.TextField(default=""))
+        self.assertEqual(missing_db_defaults(old, new, {"api"}), ["api.widget.note"])
+
+    def test_new_tables_and_other_apps_are_skipped(self):
+        new = self._state(flag=models.BooleanField(default=False))
+        self.assertEqual(missing_db_defaults(ProjectState(), new, {"api"}), [])
+        self.assertEqual(missing_db_defaults(self._state(), new, {"core"}), [])
 
 # The last migration of each app in v0.16.0, the oldest release an install can
 # upgrade to 0.17 from.

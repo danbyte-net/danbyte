@@ -9,8 +9,10 @@ kills the whole tree rather than leaking grandchildren.
   key, no ``DJANGO_SETTINGS_MODULE``. The process is confined by
   :mod:`scripting.sandbox` (Landlock), so it cannot read the worker's
   ``/proc`` entries, the ``.env`` or anything else outside its work
-  directory and the system, and it gets its own copy of the SDK. Whatever
-  the script does, it does through the API as the run-as user.
+  directory and the system, and it gets its own copy of the SDK. Where
+  bubblewrap works it also runs in its own namespaces, with no network but
+  a relayed port to the API. Whatever the script does, it does through the
+  API as the run-as user.
 * **Trusted** - the same launcher, plus the settings module and the
   database environment, so ``danbyte_sdk.orm`` works. Only a holder of the
   ``trust`` verb can mark a script trusted; this is worker-privilege code
@@ -28,6 +30,7 @@ import resource
 import select
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -144,7 +147,11 @@ def _limits(cpu_seconds: int, confinement=None):
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
         resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT, MEMORY_LIMIT))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        resource.setrlimit(resource.RLIMIT_NPROC, (256, 256))
+        if confinement is None or confinement.bwrap is None:
+            resource.setrlimit(resource.RLIMIT_NPROC, (sandbox.NPROC_LIMIT, sandbox.NPROC_LIMIT))
+        # Under bubblewrap the launcher sets it inside the user namespace,
+        # where it counts the run's own processes rather than every process
+        # of the service account, which bwrap's own forks would trip over.
         if confinement is not None:
             confinement.restrict_child()
 
@@ -154,16 +161,29 @@ def _limits(cpu_seconds: int, confinement=None):
 def confine(run, work: str, pump) -> sandbox.Confinement | None:
     """The confinement for a sandboxed run. Trusted runs are not confined.
     With ``DANBYTE_SCRIPT_SANDBOX=none`` the run goes ahead unconfined and
-    its log says so; otherwise a host that cannot confine refuses the run."""
+    its log says so; otherwise a host that cannot confine refuses the run.
+    The log names the layers in force."""
     if run.trusted:
         return None
-    if sandbox.mode() == "none":
+    mode = sandbox.mode()
+    if mode == "none":
         pump.feed("Sandbox: off (DANBYTE_SCRIPT_SANDBOX=none). This run can read what the "
                   "Danbyte service account can.\n")
         return None
     conf = sandbox.prepare(work)
+    try:
+        if mode in ("auto", "bwrap"):
+            sandbox.with_bwrap(conf, mode)
+    except BaseException:
+        conf.close()
+        raise
+    pump.feed(f"Sandbox: {', '.join(conf.layers)}.\n")
+    if conf.skipped:
+        pump.feed(f"Sandbox: bubblewrap is not used - {conf.skipped}.\n")
     if conf.notes:
         pump.feed(f"Sandbox: partial - {'; '.join(conf.notes)}.\n")
+    logger.info("script run %s sandbox: %s%s", run.id, ", ".join(conf.layers),
+                f" (bubblewrap skipped: {conf.skipped})" if conf.skipped else "")
     return conf
 
 
@@ -279,14 +299,25 @@ def collect_outputs(run: ScriptRun, outputs: str) -> int:
     saved = 0
     for name in sorted(os.listdir(outputs))[:OUTPUT_FILE_LIMIT]:
         path = os.path.join(outputs, name)
-        if not os.path.isfile(path):
+        # The script owns this folder and this worker is not sandboxed: a
+        # link left here would have it read whatever the link names (.env,
+        # /proc/self/environ). Open without following one, then check what
+        # was opened, so a swap after a check can't slip through.
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            logger.warning("run %s: output %s is not a plain file; skipped", run.id, name)
             continue
-        size = os.path.getsize(path)
-        if total + size > OUTPUT_LIMIT:
-            logger.warning("run %s exceeded the output limit; dropping %s", run.id, name)
-            break
-        total += size
-        with open(path, "rb") as fh:
+        with os.fdopen(fd, "rb") as fh:
+            st = os.fstat(fh.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                logger.warning("run %s: output %s is not a plain file; skipped", run.id, name)
+                continue
+            size = st.st_size
+            if total + size > OUTPUT_LIMIT:
+                logger.warning("run %s exceeded the output limit; dropping %s", run.id, name)
+                break
+            total += size
             out = ScriptOutput(
                 run=run, name=name, size=size,
                 content_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
@@ -339,6 +370,7 @@ def run_script(run_id: str) -> ScriptRun | None:
     token = None
     proc = None
     confinement = None
+    relay = None
     pump = _LogPump(run)
     try:
         if run.run_as_user is None:
@@ -353,12 +385,21 @@ def run_script(run_id: str) -> ScriptRun | None:
         env["DANBYTE_SCRIPT_PATH"] = os.path.join(work, "script.py")
         cmd = build_command(run, work)
         timeout = run.script.effective_timeout
+        pass_fds: tuple = ()
+        if confinement is not None and confinement.bwrap is not None:
+            # No network in the sandbox but a loopback port relayed to the API.
+            route = sandbox.api_route(env["DANBYTE_URL"])
+            env["DANBYTE_URL"] = route.url
+            relay = sandbox.ApiRelay(route.target)
+            cmd, pass_fds = confinement.wrap(cmd, route, relay.child_fd)
 
         proc = subprocess.Popen(  # noqa: S603 - argv list, no shell, fixed interpreter
             cmd, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             start_new_session=True, preexec_fn=_limits(timeout, confinement),
-            close_fds=True,
+            close_fds=True, pass_fds=pass_fds,
         )
+        if relay is not None:
+            relay.start()
         if confinement is not None:
             confinement.close()
         code, timed_out = pump_until_done(proc, pump, timeout)
@@ -394,6 +435,8 @@ def run_script(run_id: str) -> ScriptRun | None:
             proc.stdout.close()
         if confinement is not None:
             confinement.close()
+        if relay is not None:
+            relay.stop()
         tokens.revoke(token)
         shutil.rmtree(work, ignore_errors=True)
     run.refresh_from_db()

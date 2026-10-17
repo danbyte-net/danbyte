@@ -21,9 +21,13 @@ import {
 } from "@/lib/api"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { StatusBadge } from "@/components/status-badge"
 import { DataTable, selectionColumn } from "@/components/data-table"
-import { actionsColumn } from "@/components/columns/actions-column"
+import {
+  buildInventoryItemColumns,
+  CORES_PREFIX,
+  coresOf,
+  MEDIA_LABEL,
+} from "@/components/columns/inventory-item-columns"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import {
   Dialog,
@@ -40,8 +44,8 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
-import { DriftBadge } from "@/components/drift-detail"
 import { NameRangeHint } from "@/components/name-range-hint"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { createEach, expandNameRange } from "@/lib/name-range"
 import { useMe } from "@/lib/use-me"
@@ -53,29 +57,6 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { formatMemory } from "@/lib/memory-size"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
 
-const KIND_LABEL = Object.fromEntries(
-  INVENTORY_KIND_OPTIONS.map((k) => [k.value, k.label])
-)
-const MEDIA_LABEL = Object.fromEntries(
-  INVENTORY_MEDIA_OPTIONS.map((m) => [m.value, m.label])
-)
-
-/** "NVMe · 1.92 TB · PCIe 4.0" - the composed hardware summary cell. RAM
- * reads in GB, like the spec sheet. */
-function hardwareSummary(it: InventoryItemRow): string {
-  const cores = it.kind === "cpu" ? coresOf(it) : 0
-  return [
-    it.media ? MEDIA_LABEL[it.media] : "",
-    it.kind === "ram"
-      ? formatMemory(it.capacity_bytes)
-      : formatBytes(it.capacity_bytes),
-    it.speed,
-    cores ? `${cores} cores` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ")
-}
-
 /** "CPU1" → "CPU2", "DIMM A1" → "DIMM A2", "Bay 9" → "Bay 10"; a name with no
  * trailing number is left alone. */
 function nextName(value: string): string {
@@ -84,16 +65,6 @@ function nextName(value: string): string {
   const width = m[2].length
   return `${m[1]}${String(Number(m[2]) + 1).padStart(width, "0")}`
 }
-
-/** The recorded core count, else the "36 x Xeon…" prefix a BMC or
- * hypervisor writes into the description. */
-function coresOf(item: InventoryItemRow): number {
-  if (item.cores) return item.cores
-  const m = CORES_PREFIX.exec(item.description)
-  return m ? Number(m[1]) : 0
-}
-
-const CORES_PREFIX = /^\s*(\d+)\s*[x×]\s/
 
 /** The model text without the "36 x " count prefix; the count is shown as
  * cores, so it must not read twice. */
@@ -273,131 +244,17 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       : []
   )
 
-  // Shared column factory - same DataTable/selection/actions primitives every
-  // other component pane uses, so Hardware reads and behaves identically.
+  // The one inventory column factory, with this pane's selection, drift
+  // and row actions.
   const columns = useMemo<ColumnDef<InventoryItemRow, unknown>[]>(
     () => [
       ...(canWrite ? [selectionColumn<InventoryItemRow>()] : []),
-      {
-        id: "name",
-        header: "Name",
-        accessorFn: (r) => r.name,
-        cell: ({ row }) => (
-          <span
-            className={row.original.parent ? "pl-6 font-medium" : "font-medium"}
-          >
-            {row.original.parent && (
-              <span className="mr-1 text-muted-foreground">└</span>
-            )}
-            {row.original.name}
-          </span>
-        ),
-      },
-      {
-        id: "slot",
-        header: "Slot",
-        accessorKey: "slot",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.slot || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "kind",
-        header: "Kind",
-        accessorFn: (r) =>
-          r.kind && r.kind !== "other" ? KIND_LABEL[r.kind] : "",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.kind && row.original.kind !== "other"
-              ? (KIND_LABEL[row.original.kind] ?? row.original.kind)
-              : "-"}
-          </span>
-        ),
-      },
-      {
-        id: "hardware",
-        header: "Hardware",
-        accessorFn: (r) => hardwareSummary(r),
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {hardwareSummary(row.original) || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "status",
-        header: "Status",
-        accessorFn: (r) => r.status?.name ?? "",
-        cell: ({ row }) => (
-          <span className="flex items-center gap-1.5">
-            <StatusBadge status={row.original.status} />
-            {/* Observed health disagreeing with the set status is a difference
-                to review, not a silent overwrite - same treatment interfaces
-                get. Accepting stays in the drift inbox. */}
-            <DriftBadge items={driftByPart.get(row.original.id) ?? []} />
-          </span>
-        ),
-      },
-      {
-        id: "manufacturer",
-        header: "Manufacturer",
-        accessorFn: (r) => r.manufacturer?.name ?? "",
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.manufacturer?.name ?? "-"}
-          </span>
-        ),
-      },
-      {
-        id: "part_id",
-        header: "Part ID",
-        accessorFn: (r) => r.part_id,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.part_id || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "serial_number",
-        header: "Serial",
-        accessorFn: (r) => r.serial_number,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.serial_number || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "description",
-        header: "Description",
-        accessorFn: (r) => r.description,
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.description || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "asset_tag",
-        header: "Asset tag",
-        accessorFn: (r) => r.asset_tag,
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.asset_tag || "-"}
-          </span>
-        ),
-      },
-      ...(canWrite
-        ? [
-            actionsColumn<InventoryItemRow>({
-              onEdit: setEditing,
-              onDelete: (r) => delMutate(r.id),
-            }),
-          ]
-        : []),
+      ...buildInventoryItemColumns({
+        driftFor: (id) => driftByPart.get(id) ?? [],
+        actions: canWrite
+          ? { onEdit: setEditing, onDelete: (r) => delMutate(r.id) }
+          : undefined,
+      }),
       // Memoised: an inline array is a new identity every render, which makes
       // DataTable's selection effect loop and locks the pane up.
     ],
@@ -409,7 +266,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       {q.isError ? (
         <QueryError error={q.error} />
       ) : q.isLoading ? (
-        <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : items.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">
           No inventory items - serial-tracked parts (disks, PSUs, fans, CPUs,
@@ -440,7 +297,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
           <DataTable
             data={ordered}
             columns={columns}
-            embedded
+            tableId="device-inventory"
             searchable
             searchPlaceholder="Search parts…"
             onSelectedRowsChange={setSelected}

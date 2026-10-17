@@ -18,9 +18,9 @@ import {
 } from "@/components/ui/dialog"
 import {
   FormFooter,
-  FormSelect,
   FormText,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 
 // The Server select's "no server" sentinel - a local, Danbyte-owned scope.
@@ -128,7 +128,7 @@ export function DhcpScopeDialog({
           }}
           className="grid gap-3"
         >
-          <FormSelect
+          <FormCombobox
             label="Server"
             value={connection || null}
             onChange={(v) => setConnection(v ?? "")}
@@ -139,6 +139,8 @@ export function DhcpScopeDialog({
               ...servers.map((c) => ({ value: c.id, label: c.name })),
             ]}
             error={fieldErrors.connection}
+            searchPlaceholder="Search servers…"
+            emptyText="No servers."
           />
           <FormText
             label="Name"
@@ -148,7 +150,7 @@ export function DhcpScopeDialog({
             placeholder="Lab clients"
             error={fieldErrors.name}
           />
-          <FormSelect
+          <FormCombobox
             label="Subnet"
             value={prefixId}
             onChange={(v) => setPrefixId(v ?? NEW_SUBNET)}
@@ -161,6 +163,8 @@ export function DhcpScopeDialog({
               })),
             ]}
             error={fieldErrors.prefix}
+            searchPlaceholder="Search subnets…"
+            emptyText="No subnets."
           />
           {!usingPrefix && (
             <div className="grid grid-cols-2 gap-3">
@@ -173,7 +177,7 @@ export function DhcpScopeDialog({
                 placeholder="10.50.0.0/24"
                 error={fieldErrors.subnet}
               />
-              <FormSelect
+              <FormCombobox
                 label="VRF"
                 value={vrfId || null}
                 onChange={(v) => setVrfId(v ?? "")}
@@ -181,8 +185,11 @@ export function DhcpScopeDialog({
                 options={(vrfs.data?.results ?? []).map((v) => ({
                   value: v.id,
                   label: v.name,
+                  color: v.color,
                 }))}
                 error={fieldErrors.vrf}
+                searchPlaceholder="Search VRFs…"
+                emptyText="No VRFs."
               />
             </div>
           )}

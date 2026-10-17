@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { IpPicker } from "@/components/ip-picker"
 import { apiErrorToast } from "@/lib/api-toast"
+import { eachCall, eachCallToast } from "@/lib/bulk-batches"
 import { useMe } from "@/lib/use-me"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -77,7 +78,6 @@ function DnsNamePage() {
   const { canDo } = useMe()
   const qc = useQueryClient()
   const [assigning, setAssigning] = useState(false)
-  const [pickedIp, setPickedIp] = useState<string | null>(null)
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["dns-records"] })
     qc.invalidateQueries({ queryKey: ["ips", "dns-name", name] })
@@ -104,20 +104,27 @@ function DnsNamePage() {
     onError: (e) => apiErrorToast(e),
   })
 
-  // Point an address Danbyte already tracks at this name.
+  // Point addresses Danbyte already tracks at this name: one PATCH per ticked
+  // address, so a refusal leaves the rest assigned.
   const assign = useMutation({
-    mutationFn: (ipId: string) =>
-      api(`/api/ips/${ipId}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ dns_name: name }),
-      }),
-    onSuccess: () => {
-      toast.success(`Assigned to ${name}`)
-      setAssigning(false)
-      setPickedIp(null)
-      refresh()
+    mutationFn: (items: { id: string }[]) =>
+      eachCall(
+        items,
+        (o) =>
+          api(`/api/ips/${o.id}/`, {
+            method: "PATCH",
+            body: JSON.stringify({ dns_name: name }),
+          }),
+        4
+      ),
+    onSuccess: (result) => {
+      eachCallToast(result, "Assigned", (n) =>
+        n === 1 ? "1 address" : `${n} addresses`
+      )
+      if (!result.failed.length) setAssigning(false)
     },
     onError: (e) => apiErrorToast(e),
+    onSettled: () => refresh(),
   })
 
   if (records.isLoading || ips.isLoading)
@@ -356,7 +363,7 @@ function DnsNamePage() {
       actions={
         canDo("ipaddress", "change") ? (
           <Button variant="outline" onClick={() => setAssigning(true)}>
-            Assign IP
+            Assign IPs
           </Button>
         ) : undefined
       }
@@ -435,22 +442,28 @@ function DnsNamePage() {
       <Dialog open={assigning} onOpenChange={setAssigning}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign an IP to {name}</DialogTitle>
+            <DialogTitle>Assign IPs to {name}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Sets the address's DNS name. This records what Danbyte knows - it
+            Sets each address's DNS name. This records what Danbyte knows - it
             does not create a record on a DNS server.
           </p>
-          <IpPicker value={pickedIp} onChange={setPickedIp} />
+          <IpPicker
+            label="IP addresses"
+            value={null}
+            onChange={() => undefined}
+            onPickMany={(items) => assign.mutate(items)}
+            excludeIds={ipRows.map((ip) => ip.id)}
+            placeholder={assign.isPending ? "Assigning…" : undefined}
+            disabled={assign.isPending}
+          />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAssigning(false)}>
-              Cancel
-            </Button>
             <Button
-              disabled={!pickedIp || assign.isPending}
-              onClick={() => pickedIp && assign.mutate(pickedIp)}
+              variant="ghost"
+              disabled={assign.isPending}
+              onClick={() => setAssigning(false)}
             >
-              {assign.isPending ? "Assigning..." : "Assign"}
+              Done
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -11,11 +11,12 @@ import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { GroupDeleteDialog } from "@/components/group-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/groups/")({ component: GroupsPage })
 
 function GroupsPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<RBACGroup | null>(null)
   const { canDo } = useMe()
   const canAdd = canDo("group", "add")

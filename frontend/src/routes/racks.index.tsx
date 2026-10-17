@@ -9,16 +9,17 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildRackColumns } from "@/components/columns/rack-columns"
 import { ListPageShell } from "@/components/list-page-shell"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { WITH_PORTS } from "@/lib/port-utilization"
 import { useMe } from "@/lib/use-me"
 import { layoutShows, useTablePreference } from "@/lib/use-table-preference"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/racks/")({ component: RacksPage })
 
 function RacksPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Rack | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("rack", "add")
@@ -72,7 +73,7 @@ function RacksPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
 
   return (
     <ListPageShell

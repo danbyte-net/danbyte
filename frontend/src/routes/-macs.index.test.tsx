@@ -27,9 +27,13 @@ import { Route } from "./macs.index"
 // and the bulk bar goes with them - Remove can never act on rows that are
 // neither visible nor ticked.
 
-const { apiMock } = vi.hoisted(() => ({
-  apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
-}))
+const { apiMock, url } = vi.hoisted(() => {
+  const location: { search: Record<string, unknown> } = { search: {} }
+  return {
+    apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+    url: location,
+  }
+})
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
@@ -37,9 +41,13 @@ vi.mock("@/lib/api", async (orig) => ({
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({ me: {}, canDo: () => true }),
 }))
+// No router: the list's filters read `url.search` (empty unless a test sets
+// it) and their URL writes go nowhere (the search box still follows typing).
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  useSearch: () => url.search,
+  useNavigate: () => () => Promise.resolve(),
 }))
 // The page opens on its Recorded tab - the list under test.
 vi.mock("@/lib/use-url-tab", () => ({
@@ -90,6 +98,7 @@ const entry = (mac: string): MacEntry => ({
   vm_interfaces: [],
   ips: [],
   objects: [],
+  location: null,
 })
 const MACS = ["aa:00:00:00:00:01", "aa:00:00:00:00:02", "aa:00:00:00:00:03"]
 
@@ -101,6 +110,7 @@ beforeAll(async () => {
 })
 let listed: MacEntry[] = []
 beforeEach(() => {
+  url.search = {}
   listed = MACS.map(entry)
   apiMock.mockReset()
   // The list, and an empty answer for the table's own preference reads.
@@ -151,6 +161,61 @@ describe("MAC list selection", () => {
       .filter((b) => b.getAttribute("data-state") === "checked")
     expect(ticked).toEqual([])
     expect(removeButton()).toBeNull()
+  })
+
+  it("shows where each MAC was learned, and finds it by place (#344)", async () => {
+    listed[0] = {
+      ...listed[0],
+      location: {
+        kind: "access",
+        site: { id: "s1", name: "HQ" },
+        location: { id: "l1", name: "Room 1" },
+        device: { id: "d1", name: "sw-acc-03" },
+        interface: { id: "i1", name: "Gi1/0/5" },
+        port_name: "Gi1/0/5",
+        vlan: 10,
+        since: "2026-10-01T10:00:00Z",
+        last_seen: "2026-10-01T12:00:00Z",
+        stale: false,
+      },
+    }
+    mount()
+    await screen.findByText(MACS[0])
+    expect(screen.getByRole("columnheader", { name: /Location/ })).toBeTruthy()
+    const row = within(rowOf(MACS[0]))
+    expect(row.getByText("sw-acc-03")).toBeTruthy()
+    expect(row.getByText("Gi1/0/5")).toBeTruthy()
+    expect(row.getByText("HQ · Room 1")).toBeTruthy()
+
+    search("room 1")
+    expect(screen.getByText(MACS[0])).toBeTruthy()
+    expect(screen.queryByText(MACS[1])).toBeNull()
+  })
+
+  it("filters by ?tag=<slug> like the other lists", async () => {
+    const tag = (id: number, slug: string) => ({
+      id,
+      name: slug,
+      slug,
+      color: "",
+      text_color: "",
+    })
+    const object = (tags: ReturnType<typeof tag>[]) => ({
+      id: `o${tags.length}`,
+      numid: 1,
+      mac_address: "",
+      description: "",
+      vendor_override: "",
+      assigned_interface: null,
+      tags,
+    })
+    listed[0] = { ...listed[0], objects: [object([tag(1, "core")])] }
+    listed[1] = { ...listed[1], objects: [object([tag(2, "edge")])] }
+    url.search = { tag: "core" }
+    mount()
+    await screen.findByText(MACS[0])
+    expect(screen.queryByText(MACS[1])).toBeNull()
+    expect(screen.queryByText(MACS[2])).toBeNull()
   })
 
   it("says the list is empty only when there are no MACs at all", async () => {

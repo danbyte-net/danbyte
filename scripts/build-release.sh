@@ -13,6 +13,8 @@
 #   <bundle>/vendor/wheels        every Python dep as a binary wheel (wheelhouse)
 #   <bundle>/vendor/python        standalone CPython 3.13 (relocatable)
 #   <bundle>/vendor/node          Node runtime (matches the ABI node_modules was built with)
+#   <bundle>/vendor/cad           LibreDWG's dwg2dxf, static (bin/), its licence,
+#                                 NOTICE and source tarball (src/) - DWG floor plans
 #   <bundle>/install.sh           the one-shot installer (scripts/install.sh)
 #   <bundle>/BUNDLE_INFO          version / platform / build date
 #
@@ -36,6 +38,12 @@ PLATFORM="linux-x86_64"
 # PBS: the release's SHA256SUMS asset).
 NODE_SHA256="${NODE_SHA256:-9a6bc82f9b491279147219f6a18add1e18424dce90d41d2a5fcd69d4924ba3aa}"
 PBS_SHA256="${PBS_SHA256:-7fd02919461b368adafea3896ad082f5c4f759816d69681dcc6559bfbcd892af}"
+
+# LibreDWG's dwg2dxf (DWG floor-plan drawings): built by the Dockerfile's
+# cad-tools stage from deploy/cad/build-dwg2dxf.sh, which pins its version and
+# SHA-256. CAD_TOOLS_DIR names that stage's output when CI built it already;
+# otherwise it is built here (docker buildx, target cad-dist).
+CAD_TOOLS_DIR="${CAD_TOOLS_DIR:-}"
 
 # Download to a file and verify its pinned SHA-256 before use (no `curl | tar`,
 # which would extract unverified bytes). Args: url expected-sha256 dest-file.
@@ -106,7 +114,32 @@ BUILD_VENV="$(mktemp -d)/venv"
 # nginx reads these from disk as another user; the tarball keeps the modes.
 chmod -R u=rwX,go=rX "$STAGE/staticfiles"
 
-# ── 7. Installer + metadata ──────────────────────────────────────────────────
+# ── 7. DWG converter: static dwg2dxf + licence, NOTICE and source ─────────────
+# The installer and the upgrade stage carry vendor/ over whole, and settings
+# use vendor/cad/bin/dwg2dxf when DANBYTE_CAD_CONVERTER is not set.
+log "DWG converter (LibreDWG dwg2dxf, static)"
+CAD="$STAGE/vendor/cad"
+if [ -n "$CAD_TOOLS_DIR" ]; then
+  mkdir -p "$CAD"
+  cp -a "$CAD_TOOLS_DIR/." "$CAD/"
+else
+  docker buildx build --target cad-dist --output "type=local,dest=$CAD" "$ROOT"
+fi
+LIBREDWG_VERSION="$(sh "$ROOT/deploy/cad/build-dwg2dxf.sh" --version)"
+LIBREDWG_SHA256="$(sh "$ROOT/deploy/cad/build-dwg2dxf.sh" --sha256)"
+[ -x "$CAD/bin/dwg2dxf" ] && [ -f "$CAD/LICENSE.libredwg" ] && [ -f "$CAD/NOTICE" ] \
+  || { echo "vendor/cad is missing dwg2dxf, its licence or NOTICE" >&2; exit 1; }
+# The source offer: exactly the pinned tarball the binary was built from.
+( cd "$CAD/src" && echo "${LIBREDWG_SHA256}  libredwg-${LIBREDWG_VERSION}.tar.xz" | sha256sum -c - ) \
+  || { echo "vendor/cad/src does not hold the pinned LibreDWG source" >&2; exit 1; }
+# Any x86_64 Linux, whatever its libc: it must be static.
+file -b "$CAD/bin/dwg2dxf" | grep -Eq 'statically linked|static-pie linked' \
+  || { echo "vendor/cad/bin/dwg2dxf is not statically linked" >&2; exit 1; }
+"$CAD/bin/dwg2dxf" --version >/dev/null
+chmod 0755 "$CAD/bin/dwg2dxf"
+chmod -R u=rwX,go=rX "$CAD"
+
+# ── 8. Installer + metadata ──────────────────────────────────────────────────
 cp "$STAGE/scripts/install.sh" "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh"
 cat > "$STAGE/BUNDLE_INFO" <<EOF
@@ -114,10 +147,11 @@ danbyte $VERSION
 platform: $PLATFORM
 node: $NODE_VERSION
 python: $PBS_PYTHON ($PBS_TAG)
+dwg2dxf: LibreDWG $LIBREDWG_VERSION (static)
 offline: yes (wheels + node_modules + node + python bundled)
 EOF
 
-# ── 8. Tarball ───────────────────────────────────────────────────────────────
+# ── 9. Tarball ───────────────────────────────────────────────────────────────
 log "Packing ${NAME}.tar.gz"
 # Owned by root in the archive: extracted by root, nobody else on the host
 # can change the installer or anything it runs as root.

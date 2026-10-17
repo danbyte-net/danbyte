@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CabledFilterChips } from "@/components/cabled-filter"
-import {
-  CABLE_STATES,
-  cableState,
-  cableStateMatches,
-  type CableState,
-} from "@/lib/cable-state"
-import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Cable as CableIcon, Pencil, Trash2, Waypoints } from "lucide-react"
 
+import { CabledFilterChips } from "@/components/cabled-filter"
+import { CABLE_STATES, cableState, cableStateMatches } from "@/lib/cable-state"
+import type { CableState } from "@/lib/cable-state"
 import { api } from "@/lib/api"
 import type { FrontPort, Paginated, RearPort } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { CableTraceDialog } from "@/components/cable-trace-dialog"
 import type { CableTraceTarget } from "@/components/cable-trace-dialog"
 import {
@@ -24,40 +17,41 @@ import {
 } from "@/components/ui/dialog"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
-import { TagList } from "@/components/cells/tag-list"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { RearPortForm } from "@/components/rear-port-form"
 import { FrontPortForm } from "@/components/front-port-form"
 import { PortDeleteDialog } from "@/components/port-delete-dialog"
-import { portTint, CableStatusControl } from "@/components/cable-status-control"
-import {
-  MarkConnectedToggle,
-  PortReserveAction,
-} from "@/components/port-reservation-dialog"
+import { portTint } from "@/components/cable-status-control"
 import { useRegisterAddActions } from "@/components/device-add-actions"
+import { buildRearPortColumns } from "@/components/columns/rear-port-columns"
+import { buildFrontPortColumns } from "@/components/columns/front-port-columns"
 import { useMe } from "@/lib/use-me"
-import { hereUrl } from "@/lib/return-url"
 
-// CableMini chip - the one place a cable color is allowed to show (it's the
-// physical cable). Plain "-" when the port isn't cabled.
-function CableCell({ cable }: { cable: RearPort["cable"] }) {
-  if (!cable) return <span className="text-muted-foreground">-</span>
-  return (
-    <Link
-      to="/cables/$id"
-      params={{ id: cable.id }}
-      className="link inline-flex items-center gap-1.5"
-    >
-      <span
-        className="h-2.5 w-2.5 rounded-sm border border-border"
-        style={cable.color ? { backgroundColor: cable.color } : undefined}
-      />
-      <span className="font-mono text-xs">{cable.type || "cable"}</span>
-    </Link>
+/** The cabled-state chips' filter, seeded from the URL (the utilization card's
+ * drill-down) and counted over one port type's rows. */
+function useCabledFilter<T extends Parameters<typeof cableState>[0]>(
+  rows: T[],
+  initial?: CableState | null
+) {
+  const [cabled, setCabled] = useState<CableState | null>(initial ?? null)
+  useEffect(() => setCabled(initial ?? null), [initial])
+  const counts = useMemo(() => {
+    const c: Partial<Record<CableState, number>> = {}
+    for (const s of CABLE_STATES)
+      c[s] = rows.filter((r) => cableStateMatches(cableState(r), s)).length
+    return c
+  }, [rows])
+  const filtered = useMemo(
+    () =>
+      rows.filter((r) => !cabled || cableStateMatches(cableState(r), cabled)),
+    [rows, cabled]
   )
+  return { cabled, setCabled, counts, filtered }
 }
 
-export function DevicePortsPane({
+/** Rear ports - the back of a patch panel, a tab of their own (#345). */
+export function DeviceRearPortsPane({
   deviceId,
   initialCabled,
 }: {
@@ -66,521 +60,112 @@ export function DevicePortsPane({
   initialCabled?: CableState | null
 }) {
   const { canDo } = useMe()
-  const canAddRear = canDo("rearport", "add")
-  const canEditRear = canDo("rearport", "change")
-  const canDeleteRear = canDo("rearport", "delete")
-  const canAddFront = canDo("frontport", "add")
-  const canEditFront = canDo("frontport", "change")
-  const canDeleteFront = canDo("frontport", "delete")
+  const canAdd = canDo("rearport", "add")
+  const canEdit = canDo("rearport", "change")
+  const canDelete = canDo("rearport", "delete")
   const canEditCable = canDo("cable", "change")
   const canConnect = canDo("cable", "add")
   const canReserve = canDo("portreservation", "add")
-  const [rearOpen, setRearOpen] = useState(false)
-  const [editRear, setEditRear] = useState<RearPort | null>(null)
-  const [delRear, setDelRear] = useState<RearPort | null>(null)
-
-  const [frontOpen, setFrontOpen] = useState(false)
-  const [editFront, setEditFront] = useState<FrontPort | null>(null)
-  const [selRear, setSelRear] = useState<RearPort[]>([])
-  const [selFront, setSelFront] = useState<FrontPort[]>([])
-  const [delFront, setDelFront] = useState<FrontPort | null>(null)
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<RearPort | null>(null)
+  const [deleting, setDeleting] = useState<RearPort | null>(null)
+  const [selected, setSelected] = useState<RearPort[]>([])
   const [tracing, setTracing] = useState<CableTraceTarget | null>(null)
 
-  const rear = useQuery({
+  const q = useQuery({
     queryKey: ["device-rear-ports", deviceId],
     queryFn: () =>
       api<Paginated<RearPort>>(`/api/rear-ports/?device=${deviceId}`),
   })
-  const front = useQuery({
-    queryKey: ["device-front-ports", deviceId],
-    queryFn: () =>
-      api<Paginated<FrontPort>>(`/api/front-ports/?device=${deviceId}`),
-  })
+  const all = useMemo(() => q.data?.results ?? [], [q.data])
+  const { cabled, setCabled, counts, filtered } = useCabledFilter(
+    all,
+    initialCabled
+  )
 
-  const rearCols = useMemo<ColumnDef<RearPort>[]>(
+  const columns = useMemo<ColumnDef<RearPort>[]>(
     () => [
       selectionColumn<RearPort>(),
-      {
-        id: "name",
-        header: "Rear port",
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="font-mono font-medium">{row.original.name}</span>
-            {row.original.label && (
-              <span className="truncate font-mono text-[11px] text-muted-foreground">
-                {row.original.label}
-              </span>
-            )}
-          </span>
-        ),
-      },
-      {
-        id: "positions",
-        header: "Positions",
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.positions}</span>
-        ),
-      },
-      {
-        id: "type",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.type ? (
-            <span className="font-mono text-xs">{row.original.type}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "fronts",
-        header: "Front ports",
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.front_port_count}</span>
-        ),
-      },
-      {
-        id: "cable",
-        header: "Cable",
-        cell: ({ row }) => <CableCell cable={row.original.cable} />,
-      },
-      {
-        id: "tags",
-        header: "Tags",
-        cell: ({ row }) =>
-          row.original.tags.length ? (
-            <TagList tags={row.original.tags} />
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "description",
-        header: "Description",
-        cell: ({ row }) =>
-          row.original.description ? (
-            <span className="text-xs">{row.original.description}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1">
-            {row.original.cable && (
-              <CableStatusControl
-                cableId={row.original.cable.id}
-                status={row.original.cable.status}
-                canEdit={canEditCable}
-              />
-            )}
-            {row.original.cable && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                title="Trace this run"
-                aria-label={`Trace ${row.original.name}`}
-                onClick={() =>
-                  setTracing({
-                    id: row.original.cable!.id,
-                    label: row.original.name,
-                  })
-                }
-              >
-                <Waypoints className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {!row.original.cable && (
-              <>
-                {canConnect && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    asChild
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
-                    title="Connect cable"
-                  >
-                    <Link
-                      to="/cables/new"
-                      search={{
-                        a_kind: "rear_port",
-                        a_id: row.original.id,
-                        ret: hereUrl(),
-                      }}
-                    >
-                      <CableIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                )}
-                {!row.original.mark_connected && (
-                  <PortReserveAction
-                    kind="rear_port"
-                    portId={row.original.id}
-                    name={row.original.name}
-                    reservation={row.original.reservation}
-                    canReserve={canReserve}
-                  />
-                )}
-                {
-                  <MarkConnectedToggle
-                    endpoint="/api/rear-ports/"
-                    portId={row.original.id}
-                    name={row.original.name}
-                    marked={!!row.original.mark_connected}
-                    canEdit={canEditRear}
-                  />
-                }
-              </>
-            )}
-            {canEditRear && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setEditRear(row.original)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {canDeleteRear && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => setDelRear(row.original)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ),
-      },
+      ...buildRearPortColumns({
+        actions: {
+          canEdit,
+          canDelete,
+          canEditCable,
+          canConnect,
+          canReserve,
+          onEdit: setEditing,
+          onDelete: setDeleting,
+          onTrace: setTracing,
+        },
+      }),
     ],
-    [canEditRear, canDeleteRear, canEditCable, canConnect, canReserve]
+    [canEdit, canDelete, canEditCable, canConnect, canReserve]
   )
 
-  const frontCols = useMemo<ColumnDef<FrontPort>[]>(
-    () => [
-      selectionColumn<FrontPort>(),
-      {
-        id: "name",
-        header: "Front port",
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="font-mono font-medium">{row.original.name}</span>
-            {row.original.label && (
-              <span className="truncate font-mono text-[11px] text-muted-foreground">
-                {row.original.label}
-              </span>
-            )}
-          </span>
-        ),
-      },
-      {
-        id: "maps",
-        header: "Maps to",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.rear_port.name}
-            <span className="text-muted-foreground">
-              {" "}
-              · strand {row.original.rear_port_position}
-            </span>
-          </span>
-        ),
-      },
-      {
-        id: "type",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.type ? (
-            <span className="font-mono text-xs">{row.original.type}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "cable",
-        header: "Cable",
-        cell: ({ row }) => <CableCell cable={row.original.cable} />,
-      },
-      {
-        id: "tags",
-        header: "Tags",
-        cell: ({ row }) =>
-          row.original.tags.length ? (
-            <TagList tags={row.original.tags} />
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "description",
-        header: "Description",
-        cell: ({ row }) =>
-          row.original.description ? (
-            <span className="text-xs">{row.original.description}</span>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: ({ row }) => (
-          <div className="flex justify-end gap-1">
-            {row.original.cable && (
-              <CableStatusControl
-                cableId={row.original.cable.id}
-                status={row.original.cable.status}
-                canEdit={canEditCable}
-              />
-            )}
-            {row.original.cable && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                title="Trace this run"
-                aria-label={`Trace ${row.original.name}`}
-                onClick={() =>
-                  setTracing({
-                    id: row.original.cable!.id,
-                    label: row.original.name,
-                  })
-                }
-              >
-                <Waypoints className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {!row.original.cable && (
-              <>
-                {canConnect && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    asChild
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
-                    title="Connect cable"
-                  >
-                    <Link
-                      to="/cables/new"
-                      search={{
-                        a_kind: "front_port",
-                        a_id: row.original.id,
-                        ret: hereUrl(),
-                      }}
-                    >
-                      <CableIcon className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                )}
-                {!row.original.mark_connected && (
-                  <PortReserveAction
-                    kind="front_port"
-                    portId={row.original.id}
-                    name={row.original.name}
-                    reservation={row.original.reservation}
-                    canReserve={canReserve}
-                  />
-                )}
-                {
-                  <MarkConnectedToggle
-                    endpoint="/api/front-ports/"
-                    portId={row.original.id}
-                    name={row.original.name}
-                    marked={!!row.original.mark_connected}
-                    canEdit={canEditFront}
-                  />
-                }
-              </>
-            )}
-            {canEditFront && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7"
-                onClick={() => setEditFront(row.original)}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {canDeleteFront && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 text-destructive hover:text-destructive"
-                onClick={() => setDelFront(row.original)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ),
-      },
-    ],
-    [canEditFront, canDeleteFront, canEditCable, canConnect, canReserve]
+  useRegisterAddActions(
+    "rear-ports",
+    canAdd ? [{ label: "Rear port", onClick: () => setOpen(true) }] : []
   )
 
-  const [cabled, setCabled] = useState<CableState | null>(initialCabled ?? null)
-  useEffect(() => setCabled(initialCabled ?? null), [initialCabled])
-  const byState = <T extends Parameters<typeof cableState>[0]>(rows: T[]) =>
-    rows.filter((r) => !cabled || cableStateMatches(cableState(r), cabled))
-  const allRear = rear.data?.results ?? []
-  const allFront = front.data?.results ?? []
-  const cabledCounts = useMemo(() => {
-    const c: Partial<Record<CableState, number>> = {}
-    for (const s of CABLE_STATES)
-      c[s] = [...allRear, ...allFront].filter((r) =>
-        cableStateMatches(cableState(r), s)
-      ).length
-    return c
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rear.data, front.data])
-  const rearRows = byState(allRear)
-  const frontRows = byState(allFront)
-
-  useRegisterAddActions("ports", [
-    ...(canAddRear
-      ? [{ label: "Rear port", onClick: () => setRearOpen(true) }]
-      : []),
-    ...(canAddFront
-      ? [{ label: "Front port", onClick: () => setFrontOpen(true) }]
-      : []),
-  ])
+  const close = () => {
+    setOpen(false)
+    setEditing(null)
+  }
 
   return (
-    <div className="space-y-8">
-      <CabledFilterChips
-        value={cabled}
-        onChange={setCabled}
-        counts={cabledCounts}
-      />
-      <section className="space-y-3">
-        <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-          Rear ports
-        </h3>
-        {rear.isError ? (
-          <QueryError error={rear.error} />
-        ) : rear.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : rearRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {cabled
-              ? "No rear ports match this filter."
-              : "No rear ports. Rear ports are the back of a patch panel - " +
-                "add one, then map front ports to its strands."}
-          </p>
-        ) : (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : q.isLoading ? (
+        <Loading />
+      ) : all.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No rear ports. Rear ports are the back of a patch panel - add one,
+          then map front ports to its strands.
+        </p>
+      ) : (
+        <>
+          <CabledFilterChips
+            value={cabled}
+            onChange={setCabled}
+            counts={counts}
+          />
           <DataTable
-            data={rearRows}
-            columns={rearCols}
+            data={filtered}
+            total={q.data?.count}
+            columns={columns}
             flexColumn="description"
             rowStyle={(r) => portTint(r)}
-            onSelectedRowsChange={setSelRear}
-            embedded
+            onSelectedRowsChange={setSelected}
+            selectedRows={selected}
+            tableId="device-rear-ports"
+            stickyHeader
             searchable
             searchPlaceholder="Search ports…"
           />
-        )}
-      </section>
+        </>
+      )}
 
-      <section className="space-y-3">
-        <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-          Front ports
-        </h3>
-        {front.isError ? (
-          <QueryError error={front.error} />
-        ) : front.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : frontRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No front ports. A front port is a panel's front jack mapped to a
-            rear-port strand - a cable trace passes through it.
-          </p>
-        ) : (
-          <DataTable
-            data={frontRows}
-            columns={frontCols}
-            flexColumn="description"
-            rowStyle={(r) => portTint(r)}
-            onSelectedRowsChange={setSelFront}
-            embedded
-            searchable
-            searchPlaceholder="Search ports…"
-          />
-        )}
-      </section>
-
-      {/* Rear port add / edit */}
-      <Dialog
-        open={rearOpen || !!editRear}
-        onOpenChange={(o) => {
-          if (!o) {
-            setRearOpen(false)
-            setEditRear(null)
-          }
-        }}
-      >
+      <Dialog open={open || !!editing} onOpenChange={(o) => !o && close()}>
         <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
-              {editRear ? "Edit rear port" : "Add rear port"}
+              {editing ? "Edit rear port" : "Add rear port"}
             </DialogTitle>
           </DialogHeader>
           <RearPortForm
-            port={editRear ?? undefined}
+            port={editing ?? undefined}
             deviceId={deviceId}
-            onSaved={() => {
-              setRearOpen(false)
-              setEditRear(null)
-            }}
-            onCancel={() => {
-              setRearOpen(false)
-              setEditRear(null)
-            }}
+            onSaved={close}
+            onCancel={close}
           />
         </DialogContent>
       </Dialog>
-
-      {/* Front port add / edit */}
-      <Dialog
-        open={frontOpen || !!editFront}
-        onOpenChange={(o) => {
-          if (!o) {
-            setFrontOpen(false)
-            setEditFront(null)
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editFront ? "Edit front port" : "Add front port"}
-            </DialogTitle>
-          </DialogHeader>
-          <FrontPortForm
-            port={editFront ?? undefined}
-            deviceId={deviceId}
-            onSaved={() => {
-              setFrontOpen(false)
-              setEditFront(null)
-            }}
-            onCancel={() => {
-              setFrontOpen(false)
-              setEditFront(null)
-            }}
-          />
-        </DialogContent>
-      </Dialog>
-
       <ComponentBulkBar
         endpoint="/api/rear-ports/"
         kindLabel="rear port"
-        selected={selRear}
-        onCleared={() => setSelRear([])}
+        selected={selected}
+        onCleared={() => setSelected([])}
         invalidate={[["device-rear-ports", deviceId]]}
         fields={[
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
@@ -593,11 +178,136 @@ export function DevicePortsPane({
         ]}
         tags
       />
+      <PortDeleteDialog
+        kind="rear"
+        port={deleting}
+        deviceId={deviceId}
+        onOpenChange={(o) => !o && setDeleting(null)}
+      />
+      <CableTraceDialog
+        target={tracing}
+        onOpenChange={(o) => !o && setTracing(null)}
+      />
+    </div>
+  )
+}
+
+/** Front ports - a patch panel's front jacks, a tab of their own (#345). */
+export function DeviceFrontPortsPane({
+  deviceId,
+  initialCabled,
+}: {
+  deviceId: string
+  /** Seed for the cabled-state chips (the utilization card drill-down). */
+  initialCabled?: CableState | null
+}) {
+  const { canDo } = useMe()
+  const canAdd = canDo("frontport", "add")
+  const canEdit = canDo("frontport", "change")
+  const canDelete = canDo("frontport", "delete")
+  const canEditCable = canDo("cable", "change")
+  const canConnect = canDo("cable", "add")
+  const canReserve = canDo("portreservation", "add")
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<FrontPort | null>(null)
+  const [deleting, setDeleting] = useState<FrontPort | null>(null)
+  const [selected, setSelected] = useState<FrontPort[]>([])
+  const [tracing, setTracing] = useState<CableTraceTarget | null>(null)
+
+  const q = useQuery({
+    queryKey: ["device-front-ports", deviceId],
+    queryFn: () =>
+      api<Paginated<FrontPort>>(`/api/front-ports/?device=${deviceId}`),
+  })
+  const all = useMemo(() => q.data?.results ?? [], [q.data])
+  const { cabled, setCabled, counts, filtered } = useCabledFilter(
+    all,
+    initialCabled
+  )
+
+  const columns = useMemo<ColumnDef<FrontPort>[]>(
+    () => [
+      selectionColumn<FrontPort>(),
+      ...buildFrontPortColumns({
+        actions: {
+          canEdit,
+          canDelete,
+          canEditCable,
+          canConnect,
+          canReserve,
+          onEdit: setEditing,
+          onDelete: setDeleting,
+          onTrace: setTracing,
+        },
+      }),
+    ],
+    [canEdit, canDelete, canEditCable, canConnect, canReserve]
+  )
+
+  useRegisterAddActions(
+    "front-ports",
+    canAdd ? [{ label: "Front port", onClick: () => setOpen(true) }] : []
+  )
+
+  const close = () => {
+    setOpen(false)
+    setEditing(null)
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : q.isLoading ? (
+        <Loading />
+      ) : all.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No front ports. A front port is a panel's front jack mapped to a
+          rear-port strand - a cable trace passes through it.
+        </p>
+      ) : (
+        <>
+          <CabledFilterChips
+            value={cabled}
+            onChange={setCabled}
+            counts={counts}
+          />
+          <DataTable
+            data={filtered}
+            total={q.data?.count}
+            columns={columns}
+            flexColumn="description"
+            rowStyle={(r) => portTint(r)}
+            onSelectedRowsChange={setSelected}
+            selectedRows={selected}
+            tableId="device-front-ports"
+            stickyHeader
+            searchable
+            searchPlaceholder="Search ports…"
+          />
+        </>
+      )}
+
+      <Dialog open={open || !!editing} onOpenChange={(o) => !o && close()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? "Edit front port" : "Add front port"}
+            </DialogTitle>
+          </DialogHeader>
+          <FrontPortForm
+            port={editing ?? undefined}
+            deviceId={deviceId}
+            onSaved={close}
+            onCancel={close}
+          />
+        </DialogContent>
+      </Dialog>
       <ComponentBulkBar
         endpoint="/api/front-ports/"
         kindLabel="front port"
-        selected={selFront}
-        onCleared={() => setSelFront([])}
+        selected={selected}
+        onCleared={() => setSelected([])}
         invalidate={[["device-front-ports", deviceId]]}
         fields={[
           { key: "mark_connected", label: "Mark connected", kind: "bool" },
@@ -612,16 +322,10 @@ export function DevicePortsPane({
         tags
       />
       <PortDeleteDialog
-        kind="rear"
-        port={delRear}
-        deviceId={deviceId}
-        onOpenChange={(o) => !o && setDelRear(null)}
-      />
-      <PortDeleteDialog
         kind="front"
-        port={delFront}
+        port={deleting}
         deviceId={deviceId}
-        onOpenChange={(o) => !o && setDelFront(null)}
+        onOpenChange={(o) => !o && setDeleting(null)}
       />
       <CableTraceDialog
         target={tracing}

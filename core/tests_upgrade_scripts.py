@@ -410,7 +410,8 @@ class Host:
             return p.read_text().strip() if p.exists() else ""
         return read("enabled"), read("active")
 
-    def bundle(self, version: str = "0.17.0-dev2", name: str | None = None) -> Path:
+    def bundle(self, version: str = "0.17.0-dev2", name: str | None = None, extra=None) -> Path:
+        """The release's tarball; ``extra(top)`` adds to its tree first."""
         top = self.root / "bundle-src" / f"danbyte-{version}-linux-x86_64"
         self.write_tree(top, version)
         (top / "app" / "old.py").unlink(missing_ok=True)
@@ -429,6 +430,8 @@ class Host:
         for p in (top / "staticfiles").rglob("*"):
             p.chmod(0o750 if p.is_dir() else 0o640)
         (top / "staticfiles").chmod(0o750)
+        if extra:
+            extra(top)
         path = self.root / (name or f"danbyte-{version}-linux-x86_64.tar.gz")
         with tarfile.open(path, "w:gz") as tar:
             tar.add(top, arcname=top.name)

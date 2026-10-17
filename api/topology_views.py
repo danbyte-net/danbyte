@@ -33,6 +33,7 @@ from collections import deque
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from django.core.exceptions import EmptyResultSet
 from django.db import connection
 from django.db.models import Count, Min, Prefetch, Q
 from drf_spectacular.types import OpenApiTypes
@@ -535,6 +536,40 @@ def _terminations_touching(tenant, devices, rear_ids, fronts_of_rear_ids):
         ends.filter(cable_id__in=touching)
         .values_list("cable_id", "front_port__rear_port_id", "rear_port_id")
     )
+
+
+def _links_around(tenant, devices, through_panels=True):
+    """``_physical_links`` narrowed to the cables with an end on ``devices``
+    (ids or a ``values("id")`` queryset) and, with ``through_panels``, every
+    cable reached from those across front⇄rear pass-throughs - what a walk
+    outward from the devices can cross. Same hop tuples and the same cable
+    order as the whole-tenant load, so a walk that takes the first hop on a
+    port picks the same one (#417)."""
+    cable_ids: set = set()
+    asked_rear: set = set()
+    asked_fronts_of: set = set()
+    rear_ids: set = set()
+    fronts_of: set = set()
+    pending = devices
+    while True:
+        rows = _terminations_touching(tenant, pending, rear_ids, fronts_of)
+        pending = None
+        rear_ids, fronts_of = set(), set()
+        for cid, front_rear_id, rear_id in rows:
+            cable_ids.add(cid)
+            if not through_panels:
+                continue
+            if front_rear_id is not None and front_rear_id not in asked_rear:
+                asked_rear.add(front_rear_id)
+                rear_ids.add(front_rear_id)
+            if rear_id is not None and rear_id not in asked_fronts_of:
+                asked_fronts_of.add(rear_id)
+                fronts_of.add(rear_id)
+        if not (rear_ids or fronts_of):
+            break
+    if not cable_ids:
+        return []
+    return _links_from_cables(_cables_qs(tenant).filter(id__in=cable_ids))
 
 
 def _narrowed_graph(tenant, device_filter_q=None, focus_id=None, depth=1,
@@ -1387,12 +1422,17 @@ def _plain_cable_edges(tenant, f_qs, attr, skip_cable_ids):
     created_at, cable id, rank)`` per group pair and type: the device
     graph's edges between two groups on the cables outside
     ``skip_cable_ids``, which are plain device-to-device hops. One query;
-    the device scope is ``f_qs``'s own SQL."""
+    the device scope is ``f_qs``'s own SQL. A scope Django proves empty
+    (an RBAC constraint such as ``name__in: []``) has no SQL to embed: no
+    devices, so no edges (#368)."""
     qn = connection.ops.quote_name
     term = CableTermination._meta
-    f_sql, f_params = (
-        f_qs.order_by().values_list("id", f"{attr}_id").query.sql_with_params()
-    )
+    try:
+        f_sql, f_params = (
+            f_qs.order_by().values_list("id", f"{attr}_id").query.sql_with_params()
+        )
+    except EmptyResultSet:
+        return []
     devices, joins = [], []
     for i, point in enumerate(_DEVICE_POINT_ATTRS):
         field = term.get_field(point)
@@ -1953,7 +1993,9 @@ def device_paths(device, viewable_ids=None):
     from .fiber_colors import fiber_color, is_fiber_type
     from .models import FiberSettings
 
-    links = _physical_links(device.tenant)
+    # Only the cables a run from this device can cross: its own, then across
+    # each panel it reaches. The whole tenant's hops were built per call (#417).
+    links = _links_around(device.tenant, {device.id})
     palette = FiberSettings.for_tenant(device.tenant).colors
     by_port = {}
     for cab, da, pa, ka, db, pb, kb in links:

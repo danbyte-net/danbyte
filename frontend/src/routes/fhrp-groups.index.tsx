@@ -14,21 +14,22 @@ import { numidColumn } from "@/components/cells/numid"
 import {
   FilterRail,
   FacetGroup,
-  toggleInSet,
+  tagObjectsLink,
   type FacetOption,
 } from "@/components/filter-rail"
 import { FhrpGroupDeleteDialog } from "@/components/fhrp-group-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch, toggled, useKnown, useUrlSet } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/fhrp-groups/")({
   component: FhrpGroupsPage,
 })
 
 function FhrpGroupsPage() {
-  const [q, setQ] = useState("")
-  const [protoFilter, setProtoFilter] = useState<Set<string>>(new Set())
-  const [tagFilter, setTagFilter] = useState<Set<string>>(new Set())
+  const [q, setQ] = useUrlSearch()
+  const [protoFilterRaw, setProtoFilter] = useUrlSet("protocol")
+  const [tagFilterRaw, setTagFilter] = useUrlSet("tag")
   const [deleting, setDeleting] = useState<FHRPGroup | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("fhrpgroup", "add")
@@ -44,20 +45,18 @@ function FhrpGroupsPage() {
   })
 
   const allRows = query.data?.results ?? []
-  const rows = useMemo(() => {
-    return allRows.filter((g) => {
-      if (protoFilter.size > 0 && !protoFilter.has(g.protocol)) return false
-      if (tagFilter.size > 0 && !g.tags.some((t) => tagFilter.has(t.slug)))
-        return false
-      return true
-    })
-  }, [allRows, protoFilter, tagFilter])
 
   const facets = useMemo(() => {
     const proto: Record<string, { label: string; count: number }> = {}
     const tags: Record<
       string,
-      { name: string; color?: string; textColor?: string; count: number }
+      {
+        id: number
+        name: string
+        color?: string
+        textColor?: string
+        count: number
+      }
     > = {}
     for (const g of allRows) {
       if (!proto[g.protocol])
@@ -66,6 +65,7 @@ function FhrpGroupsPage() {
       for (const t of g.tags) {
         if (!tags[t.slug])
           tags[t.slug] = {
+            id: t.id,
             name: t.name,
             color: t.color,
             textColor: t.text_color,
@@ -90,9 +90,21 @@ function FhrpGroupsPage() {
           count: v.count,
           color: v.color,
           textColor: v.textColor,
+          link: tagObjectsLink(v.id),
         })),
     }
   }, [allRows])
+  // A value no row carries (a stale link) is ignored.
+  const protoFilter = useKnown(protoFilterRaw, facets.proto)
+  const tagFilter = useKnown(tagFilterRaw, facets.tags)
+  const rows = useMemo(() => {
+    return allRows.filter((g) => {
+      if (protoFilter.size > 0 && !protoFilter.has(g.protocol)) return false
+      if (tagFilter.size > 0 && !g.tags.some((t) => tagFilter.has(t.slug)))
+        return false
+      return true
+    })
+  }, [allRows, protoFilter, tagFilter])
 
   const handleDelete = useCallback((g: FHRPGroup) => setDeleting(g), [])
   const columns = useMemo<ColumnDef<FHRPGroup>[]>(
@@ -103,7 +115,7 @@ function FhrpGroupsPage() {
         canDelete,
         humanIds,
         tagFilter,
-        onToggleTag: (v) => toggleInSet(tagFilter, v, setTagFilter),
+        onToggleTag: (v) => setTagFilter((s) => toggled(s, v)),
       }),
     [handleDelete, canEdit, canDelete, humanIds, tagFilter]
   )
@@ -114,13 +126,13 @@ function FhrpGroupsPage() {
         label="Protocol"
         options={facets.proto}
         selected={protoFilter}
-        onToggle={(v) => toggleInSet(protoFilter, v, setProtoFilter)}
+        onToggle={(v) => setProtoFilter((s) => toggled(s, v))}
       />
       <FacetGroup
         label="Tags"
         options={facets.tags}
         selected={tagFilter}
-        onToggle={(v) => toggleInSet(tagFilter, v, setTagFilter)}
+        onToggle={(v) => setTagFilter((s) => toggled(s, v))}
       />
     </FilterRail>
   )

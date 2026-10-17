@@ -331,7 +331,7 @@ function ProtocolDialog({
   const dtOptQ = useQuery({
     queryKey: ["device-types-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; model: string }>>(
+      api<Paginated<{ id: string; name: string; model?: string }>>(
         "/api/device-types/?picker=1&page_size=500"
       ),
     enabled: open,
@@ -339,18 +339,20 @@ function ProtocolDialog({
   const roleOptQ = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      api<Paginated<{ id: string; name: string; color?: string }>>(
         "/api/device-roles/?picker=1&page_size=500"
       ),
     enabled: open,
   })
   const dtOptions = (dtOptQ.data?.results ?? []).map((o) => ({
     id: o.id,
-    name: o.model,
+    // The picker list carries the type's name; `model` is a part number.
+    name: o.name || o.model || "",
   }))
   const roleOptions = (roleOptQ.data?.results ?? []).map((o) => ({
     id: o.id,
     name: o.name,
+    color: o.color ?? null,
   }))
 
   const mutation = useMutation({

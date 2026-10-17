@@ -326,5 +326,15 @@ function PlacedTilesTable({ typeId }: { typeId: string }) {
         the palette.
       </EmptyState>
     )
-  return <DataTable data={rows} columns={columns} flexColumn="label" embedded />
+  return (
+    <DataTable
+      data={rows}
+      total={q.data?.count}
+      columns={columns}
+      flexColumn="label"
+      embedded
+      searchable
+      searchPlaceholder="Search tiles…"
+    />
+  )
 }

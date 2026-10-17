@@ -14,6 +14,8 @@ from __future__ import annotations
 import ipaddress
 import logging
 
+from core.tags import TAGS, tags_of
+
 from .models import Alert, AlertRule, AlertSeverity, AlertStatus
 
 log = logging.getLogger("monitoring.alerts")
@@ -34,7 +36,7 @@ def _dedup_key(target_ip_id, template_id) -> str:
 
 def _ip_matches(rule: AlertRule, ip) -> bool:
     if rule.match_tag_slugs:
-        ip_slugs = {t.slug for t in ip.tags.all()}
+        ip_slugs = {t.slug for t in tags_of(ip)}
         if not set(rule.match_tag_slugs) & ip_slugs:
             return False
     if rule.match_prefix_id:
@@ -105,7 +107,7 @@ def process_transitions(transitions, now) -> dict:
         ip.id: ip
         for ip in IPAddress.objects.filter(
             id__in={tr.target_ip_id for tr in bad}
-        ).prefetch_related("tags")
+        ).prefetch_related(TAGS)
     }
 
     opened = updated = resolved = 0

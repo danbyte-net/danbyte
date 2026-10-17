@@ -168,7 +168,11 @@ function Body({ vc }: { vc: VirtualChassis }) {
       hero={
         <DetailHero
           title={vc.name}
-          tags={vc.tags.length > 0 && <TagList tags={vc.tags} />}
+          tags={
+            vc.tags.length > 0 && (
+              <TagList tags={vc.tags} listTo="/virtual-chassis" />
+            )
+          }
           description={vc.description}
         />
       }

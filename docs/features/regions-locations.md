@@ -44,6 +44,8 @@ the region** - it is fetched once, at your click, never on a schedule.
 - **Clear** removes the stored polygon; searching again replaces it.
 - Geometry is simplified at fetch time and size-capped, so payloads stay
   small; results without an area outline (plain points) are filtered out.
+- Candidate names come back in your browser's language (English when it
+  sends none), like the address lookup on the site form.
 
 ### Importing your own boundary (GeoJSON / QGIS) {#import-geojson}
 

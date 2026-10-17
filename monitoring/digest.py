@@ -107,6 +107,14 @@ def build_digest(tenant, since) -> dict:
     except Exception:  # noqa: BLE001 - same rule: a section never sinks the mail
         logger.exception("digest task summary failed")
 
+    coverage = None
+    try:
+        from api.support_coverage import digest_summary
+
+        coverage = digest_summary(tenant, now=timezone.now())
+    except Exception:  # noqa: BLE001 - same rule: a section never sinks the mail
+        logger.exception("digest support coverage summary failed")
+
     return {
         "tenant": tenant,
         "since": since,
@@ -126,6 +134,7 @@ def build_digest(tenant, since) -> dict:
         "changes": changes,
         "certs": certs,
         "tasks": tasks,
+        "coverage": coverage,
     }
 
 
@@ -204,6 +213,20 @@ def render_text(data: dict) -> str:
             lines.append(
                 f"  {r['due']:%Y-%m-%d}{flag}  {r['title']} "
                 f"[{r['board']}] - {r['assignees']}"
+            )
+    coverage = d.get("coverage")
+    if coverage and coverage["rows"]:
+        lines += [
+            "",
+            f"Support contracts: {coverage['expiring']} ending within "
+            f"{coverage['warning_days']} days, {coverage['expired_recently']} "
+            "ended in the last 30 days",
+        ]
+        for r in coverage["rows"]:
+            flag = " (EXPIRED)" if r["expired"] else ""
+            lines.append(
+                f"  {r['end_date']:%Y-%m-%d}{flag}  {r['manufacturer']} "
+                f"{r['contract_number']}"
             )
     if d["top_alerts"]:
         lines.append("")
@@ -432,6 +455,28 @@ def render_html(data: dict, deployment_name: str) -> str:
                     for r in tasks["rows"]
                 ],
             ))
+
+    coverage = d.get("coverage")
+    if coverage and coverage["rows"]:
+        parts.append(ek.section("Support contracts"))
+        parts.append(ek.stat_grid([
+            (coverage["expiring"], f"ending ≤ {coverage['warning_days']}d",
+             ek.STATUS_BG["warning"] if coverage["expiring"] else ek.PALETTE["ink"]),
+            (coverage["expired_recently"], "ended, last 30d",
+             ek.STATUS_BG["down"] if coverage["expired_recently"] else ek.PALETTE["ink"]),
+        ]))
+        parts.append(ek.data_table(
+            ["Contract", "Manufacturer", "Ends"],
+            [
+                [
+                    escape(r["contract_number"]),
+                    escape(r["manufacturer"]),
+                    (ek.pill(f"{r['end_date']:%b %-d}", "down")
+                     if r["expired"] else f"{r['end_date']:%b %-d}"),
+                ]
+                for r in coverage["rows"]
+            ],
+        ))
 
     if d["top_alerts"]:
         parts.append(ek.section("Open alerts"))

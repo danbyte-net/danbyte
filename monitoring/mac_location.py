@@ -416,6 +416,38 @@ def location_ref(loc: Location) -> dict:
     }
 
 
+def location_cells(tenant, macs, user=None, now=None) -> dict:
+    """``{canonical mac: cell}`` - the Location a MAC list row shows (#344):
+    the same choice the MAC page makes (:func:`locate`), with the switch's
+    site and location and when it was seen there. A batch costs the same
+    few queries whatever its size. MACs with no present sighting the caller
+    may view are absent."""
+    from api.models import Device
+
+    locs = {mac: loc for mac, loc in locate(tenant, macs, user).items() if loc}
+    if not locs:
+        return {}
+    places = {
+        pk: (site_id, site_name, loc_id, loc_name)
+        for pk, site_id, site_name, loc_id, loc_name in Device.objects.filter(
+            tenant=tenant, pk__in={loc.at.device_id for loc in locs.values()}
+        ).values_list("id", "site_id", "site__name", "location_id", "location__name")
+    }
+    out = {}
+    for mac, loc in locs.items():
+        site_id, site_name, loc_id, loc_name = places.get(loc.at.device_id, (None,) * 4)
+        out[mac] = {
+            **location_ref(loc),
+            "site": {"id": str(site_id), "name": site_name} if site_id else None,
+            "location": {"id": str(loc_id), "name": loc_name} if loc_id else None,
+            "vlan": loc.at.vlan,
+            "since": loc.at.first_seen,
+            "last_seen": loc.at.last_seen,
+            "stale": is_stale(loc.at.last_seen, now),
+        }
+    return out
+
+
 # ─── MAC → IP → name ────────────────────────────────────────────────────────
 
 

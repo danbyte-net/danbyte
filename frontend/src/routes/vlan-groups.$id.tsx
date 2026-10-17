@@ -214,6 +214,8 @@ function GroupVlansTable({ groupId }: { groupId: string }) {
       columns={columns}
       flexColumn="description"
       embedded
+      searchable
+      searchPlaceholder="Search VLANs…"
     />
   )
 }

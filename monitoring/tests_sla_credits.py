@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from rest_framework.test import APITestCase
 
+from auth_api.builtin_groups import ensure_builtin_groups
 from auth_api.models import ObjectPermission, UserProfile
 
 from . import sla
@@ -131,9 +132,51 @@ class CreditVisibilityTests(_Priced):
         r = self.client.patch(url, {"description": "Core"}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
 
+    def test_the_change_log_leaves_money_out(self):
+        # The history of a priced change would otherwise show the fee the API
+        # hides.
+        self.agreement.period_fee = Decimal("4321")
+        self.agreement.description = "Core"
+        self.agreement.save()
+        url = f"/api/changelog/?object_type=monitoring.slaagreement&object_id={self.agreement.id}"
+        self.login(self.viewer("view"))
+        rows = self.client.get(url).json()["results"]
+        self.assertTrue(rows)
+        self.assertNotIn("4321", str(rows))
+        for row in rows:
+            self.assertFalse({"period_fee", "credit_tiers", "currency"} & set(row["changes"]))
+        self.login(self.viewer("view", "view_credits"))
+        rows = self.client.get(url).json()["results"]
+        self.assertTrue(any("period_fee" in r["changes"] for r in rows))
+
     def test_a_credit_viewer_sees_it(self):
         self.login(self.viewer("view", "view_credits"))
         self.assertEqual(self.current()["credit"]["currency"], "DKK")
+
+    def builtin(self, name):
+        ensure_builtin_groups()
+        user = User.objects.create_user(f"b-{name}", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        user.groups.add(Group.objects.get(name=name))
+        return user
+
+    def test_administrator_sees_credits_operator_and_read_only_do_not(self):
+        self.agreement.period_fee = Decimal("4321")
+        self.agreement.description = "Core"
+        self.agreement.save()
+        log = f"/api/changelog/?object_type=monitoring.slaagreement&object_id={self.agreement.id}"
+        for name, sees in (("Administrator", True), ("Operator", False), ("Read-only", False)):
+            with self.subTest(group=name):
+                self.login(self.builtin(name))
+                body = self.client.get(f"{A}{self.agreement.id}/").json()
+                self.assertEqual("period_fee" in body, sees)
+                self.assertEqual("credit_tiers" in body, sees)
+                credit = self.current()["credit"]
+                self.assertEqual(credit is not None, sees)
+                rows = self.client.get(log).json()["results"]
+                self.assertTrue(rows)
+                self.assertEqual(any("period_fee" in r["changes"] for r in rows), sees)
+                self.assertEqual("4321" in str(rows), sees)
 
     def test_a_slice_of_the_analysis_is_not_priced(self):
         self.login(User.objects.create_superuser("admin", "a@b.c", "pw"))

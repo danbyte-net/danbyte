@@ -87,7 +87,9 @@ class SnmpDiscoveryRbacTests(_TenantClientMixin, APITestCase):
 
     def test_bulk_status_prefix_list_capped(self):
         self._client(self._user("ro4", group="Read-only"))
-        ids = ",".join(str(self.prefix.id) for _ in range(501))
+        from monitoring.views import MAX_STATUS_PREFIXES
+
+        ids = ",".join(str(self.prefix.id) for _ in range(MAX_STATUS_PREFIXES + 1))
         r = self.client.get(f"/api/monitoring/status/?prefixes={ids}")
         self.assertEqual(r.status_code, 400)
 

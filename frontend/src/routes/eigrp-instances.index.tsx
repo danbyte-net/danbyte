@@ -15,6 +15,7 @@ function Page() {
   const spec = useMemo<RoutingListSpec<EIGRPInstance>>(
     () => ({
       title: "EIGRP instances",
+      noun: ["EIGRP instance", "EIGRP instances"],
       objectType: "eigrpinstance",
       endpoint: "/api/routing/eigrp-instances/",
       queryKey: "eigrp-instances",

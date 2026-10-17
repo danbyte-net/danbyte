@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react"
-import { afterEach, describe, expect, it } from "vitest"
+import { cleanup, fireEvent, render } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { FloorPlan, FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
@@ -207,5 +207,136 @@ describe("a rack tile coloured by a measure", () => {
     const faded = paint("space", rackLive(10), { dimmed: true })
     expect(tileGroup(faded).getAttribute("opacity")).toBe("0.25")
     expect(faded.querySelector('[data-part="highlight"]')).toBeNull()
+  })
+})
+
+// Drawing calibration: in point-pick mode a click reports its world point
+// and nothing under it is opened or selected; the drawing sits under the
+// grid.
+describe("point-pick mode and the drawing underlay", () => {
+  it("reports a click's world point instead of opening the tile", () => {
+    const onPick = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[tile()]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        onOpenTile={onOpen}
+        onPickPoint={onPick}
+      />
+    )
+    const svg = container.querySelector("svg")!
+    svg.setPointerCapture = () => {}
+    const g = tileGroup(container)
+    fireEvent.pointerDown(g, { button: 0, clientX: 140, clientY: 90 })
+    fireEvent.pointerUp(g, { button: 0, clientX: 140, clientY: 90 })
+    expect(onOpen).not.toHaveBeenCalled()
+    // The default view is translated by (40, 40) at zoom 1.
+    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 })
+  })
+
+  it("draws the underlay before the grid", () => {
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        underlay={<g data-testid="under" />}
+      />
+    )
+    const under = container.querySelector('[data-testid="under"]')!
+    const grid = container.querySelector('rect[fill="url(#fp-grid)"]')!
+    expect(
+      under.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+})
+
+// Working a selection: Shift- or Ctrl/⌘-click grows it, dragging one of
+// its tiles moves all of it by whole cells (one gesture, one undo step),
+// and a press that never moves is a plain click on that tile.
+describe("a multi-selection", () => {
+  const two = [
+    tile({ id: "t1", x: 2, y: 2, width: 1, height: 1, linked: null }),
+    tile({ id: "t2", x: 4, y: 2, width: 1, height: 1, linked: null }),
+  ]
+  const setup = () => {
+    Element.prototype.setPointerCapture = () => {}
+    const props = {
+      onSelect: vi.fn(),
+      onToggleSelect: vi.fn(),
+      onMoveSelection: vi.fn((_dx: number, _dy: number) => true),
+      onGestureStart: vi.fn(),
+      onGestureEnd: vi.fn(),
+    }
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={two}
+        selectedId={null}
+        editable
+        showGrid
+        armed={null}
+        multiSelectedIds={new Set(["t1", "t2"])}
+        {...props}
+      />
+    )
+    const svg = container.querySelector("svg")!
+    const first = container.querySelector<SVGGElement>('g[data-tile="t1"]')!
+    return { props, svg, first }
+  }
+  // The default view is translated by (40, 40) at zoom 1: cell (x, y) is
+  // at client 40 + 40x.
+  const at = (x: number, y: number) => ({
+    button: 0,
+    clientX: 45 + 40 * x,
+    clientY: 45 + 40 * y,
+  })
+
+  it("Shift-click toggles a tile instead of moving it", () => {
+    const { props, first } = setup()
+    fireEvent.pointerDown(first, { ...at(2, 2), shiftKey: true })
+    expect(props.onToggleSelect).toHaveBeenCalledWith("t1")
+    expect(props.onGestureStart).not.toHaveBeenCalled()
+  })
+
+  it("dragging one of its tiles moves the whole selection", () => {
+    const { props, svg, first } = setup()
+    fireEvent.pointerDown(first, at(2, 2))
+    fireEvent.pointerMove(svg, at(3, 4))
+    fireEvent.pointerMove(svg, at(3, 4))
+    fireEvent.pointerUp(svg, at(3, 4))
+    expect(props.onGestureStart).toHaveBeenCalledTimes(1)
+    expect(props.onMoveSelection).toHaveBeenCalledTimes(1)
+    expect(props.onMoveSelection).toHaveBeenCalledWith(1, 2)
+    expect(props.onGestureEnd).toHaveBeenCalledTimes(1)
+    expect(props.onSelect).not.toHaveBeenCalled()
+  })
+
+  it("a refused step waits and the next one catches up", () => {
+    const { props, svg, first } = setup()
+    props.onMoveSelection.mockReturnValueOnce(false)
+    fireEvent.pointerDown(first, at(2, 2))
+    fireEvent.pointerMove(svg, at(3, 2))
+    fireEvent.pointerMove(svg, at(4, 2))
+    expect(props.onMoveSelection.mock.calls).toEqual([
+      [1, 0],
+      [2, 0],
+    ])
+  })
+
+  it("a press without a move is a plain click on that tile", () => {
+    const { props, svg, first } = setup()
+    fireEvent.pointerDown(first, at(2, 2))
+    fireEvent.pointerUp(svg, at(2, 2))
+    expect(props.onMoveSelection).not.toHaveBeenCalled()
+    expect(props.onSelect).toHaveBeenCalledWith("t1")
   })
 })

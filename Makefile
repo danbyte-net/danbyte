@@ -19,7 +19,7 @@ SHARED_SERVICES := danbyte-workers danbyte-fastlane danbyte-docs
 SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 # Timer-driven oneshots (monitoring beat). Each has a .service + a .timer; the
 # timer is what gets enabled. Not part of `up`/`down` (they're not long-running).
-TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn
+TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-oxidized-sync
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
 .PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
@@ -33,7 +33,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         migrate makemigrations superuser bootstrap seed-demo seed-fabric shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
-        linger service-user
+        linger service-user cad-tools
 
 help:
 	@echo "Danbyte dev shortcuts"
@@ -58,6 +58,7 @@ help:
 	@echo ""
 	@echo "  Django"
 	@echo "    make migrate / makemigrations / superuser / shell / test / check"
+	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
 	@echo ""
 	@echo "  Reverse proxy (everything on https/443)"
 	@echo "    make proxy-install     One-time: nginx + self-signed cert + config"
@@ -424,6 +425,13 @@ coverage:
 
 check:
 	@$(PY) manage.py check
+
+# DWG floor-plan drawings on a source checkout: LibreDWG's dwg2dxf, built
+# static from the pinned release into vendor/cad - where a release bundle
+# carries it and where settings look when DANBYTE_CAD_CONVERTER is unset.
+# Needs a C toolchain, pkg-config, curl, xz and file; restart the workers after.
+cad-tools:
+	@sh deploy/cad/build-dwg2dxf.sh vendor/cad
 
 # Gather Django static (admin + DRF assets) into STATIC_ROOT so nginx serves
 # them from disk in production (gunicorn doesn't serve static with DEBUG off).

@@ -49,6 +49,47 @@ ergonomics on top:
     journal history. A Site-A viewer never sees Site-B rows through a side door,
     and a note can only be attached to an object the author may actually view.
 
+    A row the viewer *may* read never names a related row they can't: an IP
+    address shows its prefix, device, interface, switch and VM as empty when
+    those belong to another site - in the API, the spreadsheet export and the
+    context line of a search hit.
+
+## Which rows belong to a site
+
+A row belongs to a site through its own site, or through the object it hangs
+off:
+
+- an **IP address** - its own site, else its prefix's. An address inside
+  Site B's prefix is Site B's even when the prefix doesn't copy its site onto
+  addresses; only an address in a site-less prefix is shared;
+- a **service** - its device's or VM's site, else its address's;
+- **NAT rules, virtual chassis, site-map markers** - their device's (the
+  master's, for a virtual chassis);
+- **IP ranges, DHCP scopes** - their prefix's; DHCP reservations and leases,
+  their scope's prefix's;
+- **VLAN groups** - their site, else their cluster's;
+- **circuit terminations** - their own site, else the site of the VM whose
+  interface they land on;
+- **FHRP group assignments, tunnel and L2VPN terminations** - their
+  interface's device or VM (an L2VPN's VLAN, for a VLAN termination);
+- **routing rows** - BGP address families, redistributions and IGP
+  interfaces, their instance's device or VM; VTEP memberships, their VTEP's
+  device;
+- **virtual disks, virtual switches** - their VM's, their cluster's;
+- **DNS records and drift, certificate bindings** - their IP address's;
+- **config snapshots and state, BMC endpoints, port-utilization rules, Zabbix
+  host links and pending changes, virtualization changes** - their device's
+  or VM's.
+
+A site-limited grant narrows all of these, for reading and writing. Types
+that only *refer* to a site-bound row stay tenant-wide: FHRP groups, wireless
+LANs, prefix-list rules, notification channels, virtualization networks and
+placement rules, Zabbix connections and adoption rules. Check assignments,
+monitoring policies, alert rules and silences follow the object they target.
+
+Circuits, tunnels and L2VPNs are tenant-wide, but their ends are not: a
+circuit, tunnel or L2VPN lists only the terminations the reader may view.
+
 ## Creating prefixes: your space, or a fresh one
 
 A site editor can create prefixes two ways:
@@ -97,6 +138,12 @@ With separation **on**, they gain a locality dimension so a site can't "fix"
 
 With separation **off**, the locality stamp is kept but not enforced -
 catalogs behave tenant-wide exactly as before.
+
+The [site roles](../features/permissions.md#site-roles-local-it-in-one-click)
+read the catalogs their objects use, a silo editor and a viewer included: with
+separation on, global entries and their own sites' local ones; with it off,
+the tenant's whole catalog. Catalogs without locality - device roles,
+platforms, rack and cabinet types, and the like - read tenant-wide either way.
 
 !!! warning "Tags are tenant-scoped now (independent of this mode)"
     Tags used to live in one global table - every tenant saw every other

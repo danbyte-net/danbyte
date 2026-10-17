@@ -23,7 +23,7 @@ import { copyWithToast } from "@/lib/clipboard"
 import { RowActions } from "@/components/row-actions"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { buildVmColumns } from "@/components/columns/vm-columns"
-import { FormSelect, FormText } from "@/components/forms"
+import { FormSelect, FormText, FormCombobox } from "@/components/forms"
 import { InfoTip } from "@/components/ui/info-tip"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -253,12 +253,18 @@ function SourceDetailPage() {
           },
         ]),
     { label: "Platforms", value: source.sync_platforms ? "Yes" : "No" },
+    {
+      label: "VM groups",
+      value: source.sync_vm_groups
+        ? cloudDirector
+          ? "vApps"
+          : source.kind === "vcenter"
+            ? "Folders"
+            : "Pools"
+        : "No",
+    },
     ...(cloudDirector
       ? [
-          {
-            label: "VM groups",
-            value: source.sync_vm_groups ? "vApps" : "No",
-          },
           {
             label: "External addresses",
             value: source.sync_nat ? "As NAT rules" : "No",
@@ -446,7 +452,6 @@ function SourceVms({ sourceId }: { sourceId: string }) {
   )
   if (query.isError) return <QueryError error={query.error} />
   const rows = query.data?.results ?? []
-  const total = query.data?.count ?? 0
   if (!query.isLoading && rows.length === 0)
     return (
       <EmptyState title="No virtual machines yet.">
@@ -454,22 +459,20 @@ function SourceVms({ sourceId }: { sourceId: string }) {
         wait in the review inbox until you accept them.
       </EmptyState>
     )
+  // `total` makes the table say when the list is capped - never let a cap
+  // look like the whole truth, and a search box say it covers only the first
+  // page.
   return (
-    <div className="space-y-2">
-      <DataTable
-        data={rows}
-        columns={columns}
-        tableId="source-vms"
-        flexColumn="name"
-        embedded
-      />
-      {total > rows.length && (
-        // Never let a cap look like the whole truth.
-        <p className="text-xs text-muted-foreground">
-          Showing the first {rows.length} of {total}.
-        </p>
-      )}
-    </div>
+    <DataTable
+      data={rows}
+      total={query.data?.count}
+      columns={columns}
+      tableId="source-vms"
+      flexColumn="name"
+      embedded
+      searchable
+      searchPlaceholder="Search virtual machines…"
+    />
   )
 }
 
@@ -518,10 +521,13 @@ function SourceHosts({ sourceId }: { sourceId: string }) {
   return (
     <DataTable
       data={rows}
+      total={query.data?.count}
       columns={columns}
       tableId="source-hosts"
       flexColumn="name"
       embedded
+      searchable
+      searchPlaceholder="Search hosts…"
     />
   )
 }
@@ -617,6 +623,8 @@ function SyncLogTable({ text }: { text: string }) {
       data={rows}
       tableId="virt-sync-log"
       flexColumn="message"
+      searchable
+      searchPlaceholder="Search log…"
     />
   )
 }
@@ -895,7 +903,7 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                   : undefined
               }
             />
-            <FormSelect
+            <FormCombobox
               label="Site"
               value={siteId}
               onChange={(v) => {
@@ -907,8 +915,10 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                 value: s.id,
                 label: s.name,
               }))}
+              searchPlaceholder="Search sites…"
+              emptyText="No sites."
             />
-            <FormSelect
+            <FormCombobox
               label="Location"
               info="Optional. Only locations inside the site above are offered - a location elsewhere would place the machine where it isn't."
               value={locationId}
@@ -919,6 +929,8 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
                 value: l.id,
                 label: l.name,
               }))}
+              searchPlaceholder="Search locations…"
+              emptyText="No locations."
             />
             <FormText
               label="Weight"

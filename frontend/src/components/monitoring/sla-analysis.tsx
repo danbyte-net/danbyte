@@ -46,6 +46,7 @@ import { DayDrill, MemberPanel } from "./sla-drill"
 import { BurnNow } from "./sla-burn-rules"
 import { fmtCredit } from "./sla-credit-tiers"
 import { ObjectiveCards } from "./sla-objectives"
+import { SlaDownByCause } from "./sla-follow-up"
 import { MembersMatrix } from "./sla-matrix"
 
 type FilterKey = "group" | "site" | "member" | "kind" | "redundancy"
@@ -574,6 +575,14 @@ export function SlaAnalysisView({
               <AnalysisCard title="Incident lengths">
                 <IncidentLengths data={d} />
               </AnalysisCard>
+              {d.by_cause.length > 0 && (
+                <AnalysisCard
+                  title="Down time by cause"
+                  description="From incident follow-up; disputed time still counts"
+                >
+                  <SlaDownByCause rows={d.by_cause} />
+                </AnalysisCard>
+              )}
               <AnalysisCard title="Latency against objectives">
                 <LatencyAgainstObjective data={d} />
               </AnalysisCard>

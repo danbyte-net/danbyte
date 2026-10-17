@@ -13,11 +13,12 @@ import { timeAgoColumn } from "@/components/cells/time-ago"
 import { ContactRoleDeleteDialog } from "@/components/contact-role-delete-dialog"
 import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/contact-roles/")({ component: ListPage })
 
 function ListPage() {
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<ContactRole | null>(null)
   const { canDo, humanIds } = useMe()
   const canAdd = canDo("contactrole", "add")

@@ -39,10 +39,10 @@ import {
 import {
   FormColor,
   FormFooter,
-  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
+  FormCombobox,
 } from "@/components/forms"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { EmptyState } from "@/components/empty-state"
@@ -699,7 +699,7 @@ function CategoryField({
 
   return (
     <div className="grid gap-1.5">
-      <FormSelect
+      <FormCombobox
         label="Category"
         value={value}
         onChange={onChange}
@@ -707,6 +707,8 @@ function CategoryField({
         options={categories.map((c) => ({ value: c.id, label: c.name }))}
         placeholder="Uncategorized"
         error={error}
+        searchPlaceholder="Search categories…"
+        emptyText="No categories."
       />
       <Button
         type="button"

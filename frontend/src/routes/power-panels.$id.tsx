@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { SiteCell } from "@/components/cells/site-cell"
+import { LocationCell } from "@/components/cells/location-cell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -83,7 +84,11 @@ function Body({ panel: p }: { panel: PowerPanel }) {
         <DetailHero
           title={p.name}
           subtitle={p.site && <SiteCell site={p.site} />}
-          tags={p.tags.length > 0 && <TagList tags={p.tags} />}
+          tags={
+            p.tags.length > 0 && (
+              <TagList tags={p.tags} listTo="/power-panels" />
+            )
+          }
         />
       }
       tabs={[
@@ -135,6 +140,10 @@ function PanelOverview({ panel: p }: { panel: PowerPanel }) {
       : []),
     { label: "Name", value: p.name, copy: p.name },
     { label: "Site", value: p.site ? <SiteCell site={p.site} /> : dash },
+    {
+      label: "Location",
+      value: p.location ? <LocationCell location={p.location} /> : dash,
+    },
     { label: "Feeds", value: <span className="num">{p.feed_count}</span> },
   ]
 

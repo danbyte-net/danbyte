@@ -34,10 +34,12 @@ import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
 import { VirtualChassisPicker } from "@/components/virtual-chassis-picker"
+import { VMPicker } from "@/components/vm-picker"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PERIOD_LABEL } from "./sla-figure"
 import { MEMBER_NOUN } from "./sla-drill"
+import { useSlaTemplates } from "./sla-templates"
 
 // A new agreement in three steps: what is promised, to what, and which
 // checks measure it. Everything else keeps its default and is on the full
@@ -148,6 +150,9 @@ export function SlaWizard({
   const [forName, setForName] = useState("")
   const [target, setTarget] = useState("99.9")
   const [period, setPeriod] = useState<SlaPeriod>("month")
+  // An SLA template (tier): its rules fill what this wizard does not ask.
+  const [tier, setTier] = useState<string | null>(null)
+  const tierList = useSlaTemplates()
   // Step 2
   const [kind, setKind] = useState<WizardKind>("api.device")
   const [members, setMembers] = useState<Picked[]>([])
@@ -163,15 +168,6 @@ export function SlaWizard({
         .map((i) => ({ type: kind, id: i.id, label: i.label, color: i.color })),
     ])
 
-  const vms = useQuery({
-    queryKey: ["vms-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
-    enabled: kind === "api.virtualmachine",
-    staleTime: 5 * 60_000,
-  })
   const circuits = useQuery({
     queryKey: ["circuits-picker"],
     queryFn: () =>
@@ -247,6 +243,7 @@ export function SlaWizard({
           target_pct: target,
           period,
           status: "active",
+          ...(tier ? { template: tier } : {}),
         }),
       })
       const group = await api<{ id: string }>(
@@ -320,6 +317,28 @@ export function SlaWizard({
       {step === 0 && (
         <FormSection title="Agreement" card>
           <div className="grid gap-3 sm:grid-cols-2">
+            {(tierList.data?.results.length ?? 0) > 0 && (
+              <FormCombobox
+                label="Template"
+                value={tier}
+                onChange={(id) => {
+                  setTier(id)
+                  const t = tierList.data?.results.find((x) => x.id === id)
+                  if (t) {
+                    setTarget(t.target_pct)
+                    setPeriod(t.period)
+                  }
+                }}
+                options={(tierList.data?.results ?? []).map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+                noneLabel="None"
+                placeholder="None"
+                info="Takes the template's target, hours, counting rules, objectives and credits."
+                className="sm:col-span-2"
+              />
+            )}
             <FormText
               label="Name"
               value={name}
@@ -435,20 +454,10 @@ export function SlaWizard({
                 />
               )}
               {kind === "api.virtualmachine" && (
-                <FormCombobox
-                  label="Virtual machine"
+                <VMPicker
                   value={null}
-                  onChange={(id) => {
-                    const vm = vms.data?.results.find((v) => v.id === id)
-                    if (vm) add([{ id: vm.id, label: vm.name }])
-                  }}
-                  options={(vms.data?.results ?? []).map((v) => ({
-                    value: v.id,
-                    label: v.name,
-                  }))}
-                  placeholder="Add a VM"
-                  searchPlaceholder="Search VMs…"
-                  emptyText="No virtual machines."
+                  onChange={() => undefined}
+                  onPickMany={add}
                 />
               )}
               {kind === "api.circuit" && (

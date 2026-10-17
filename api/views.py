@@ -673,18 +673,14 @@ def _subnet_details(prefix) -> list[dict] | None:
         "copy": f"/{net.prefixlen}",
     })
 
-    # First / last usable. /31 and /32 (IPv4) are point-to-point or host
-    # routes - every address is "usable", so show first==network and
-    # last==broadcast directly without the "+1/-1" trim.
-    if net.version == 4 and net.prefixlen <= 30:
-        first_usable = str(net.network_address + 1)
-        last_usable = str(net.broadcast_address - 1)
-    elif net.version == 6 and net.prefixlen <= 126:
-        first_usable = str(net.network_address + 1)
-        last_usable = str(net.broadcast_address - 1)
-    else:
-        first_usable = str(net.network_address)
-        last_usable = str(net.broadcast_address)
+    # First / last usable and the usable count follow the one host rule
+    # (api.models.usable_host_count) that utilisation and next available use:
+    # IPv6 has no broadcast, so its last address is a host (#382).
+    from .models import usable_host_bounds, usable_host_count
+
+    bounds = usable_host_bounds(net)
+    first_usable = str(bounds[0]) if bounds else str(net.network_address)
+    last_usable = str(bounds[1]) if bounds else str(net.broadcast_address)
     rows.append({
         "label": "First usable", "value": first_usable, "mono": True,
         "copy": first_usable,
@@ -703,12 +699,7 @@ def _subnet_details(prefix) -> list[dict] | None:
 
     # Total addresses + usable hosts.
     total = net.num_addresses
-    if net.version == 4 and net.prefixlen <= 30:
-        usable = total - 2
-    elif net.version == 6 and net.prefixlen <= 126:
-        usable = total - 2
-    else:
-        usable = total
+    usable = usable_host_count(net)
     rows.append({
         "label": "Total addresses",
         "value": f"{total:,}", "mono": False, "copy": str(total),
@@ -784,8 +775,9 @@ def _next_available_ips(prefix, *, count: int = 5) -> list[str]:
                     if len(out) >= count:
                         return out
         return out
-    # `.hosts()` skips network + broadcast on /30 or shorter, which is what
-    # operators want here - those addresses aren't normally assignable.
+    # `.hosts()` is the shared host rule (api.models.usable_host_count): it
+    # skips the IPv4 network + broadcast on /30 or shorter and the IPv6
+    # Subnet-Router anycast on /126 or shorter.
     for host in net.hosts():
         addr = str(host)
         if addr not in used:

@@ -139,6 +139,8 @@ export type PathChip = {
     label?: string
     interfaceId?: string
     powerFeedId?: string
+    /** The device page's Components sub-tab that lists this port. */
+    deviceSub?: DevicePortSub
   }[]
   /** The container is a power panel, not a device - `deviceId` is the panel's,
    * so the chip links to /power-panels/$id and its ports to /power-feeds/$id. */
@@ -250,8 +252,8 @@ export function PathStrip({
             >
               {s.chip.ports.map((port, pi) => {
                 // Interfaces and site power feeds open their own page; other
-                // ports (front/rear/console/power) open their device's
-                // Hardware tab.
+                // ports (front/rear/console/power) open the device's
+                // Components sub-tab that lists them.
                 const onClick = port.interfaceId
                   ? () =>
                       navigate({
@@ -269,7 +271,10 @@ export function PathStrip({
                           navigate({
                             to: "/devices/$id",
                             params: { id: s.chip.deviceId! },
-                            search: { tab: "components", sub: "hardware" },
+                            search: {
+                              tab: "components",
+                              sub: port.deviceSub ?? "hardware",
+                            },
                           })
                       : undefined
                 return (
@@ -281,7 +286,7 @@ export function PathStrip({
                         : port.powerFeedId
                           ? "Open power feed"
                           : onClick
-                            ? "Open in Hardware"
+                            ? "Open on device"
                             : undefined
                     }
                   >
@@ -421,13 +426,27 @@ export function portOf(n: { id: string; data: { name: string } }): {
   name: string
   interfaceId?: string
   powerFeedId?: string
+  deviceSub?: DevicePortSub
 } {
   if (n.id.startsWith("if:"))
     return { name: n.data.name, interfaceId: n.id.slice(3) }
   // "pfd:" - a site power feed (trace's NODE_PREFIX), which has its own page.
   if (n.id.startsWith("pfd:"))
     return { name: n.data.name, powerFeedId: n.id.slice(4) }
-  return { name: n.data.name }
+  return { name: n.data.name, deviceSub: SUB_OF[n.id.split(":")[0]] }
+}
+
+/** The device page's Components sub-tabs a traced port can open on. */
+export type DevicePortSub = "front-ports" | "rear-ports" | "console" | "power"
+
+/** Trace node prefix (the backend's NODE_PREFIX) → the sub-tab listing it. */
+const SUB_OF: Record<string, DevicePortSub> = {
+  fp: "front-ports",
+  rp: "rear-ports",
+  cp: "console",
+  csp: "console",
+  pp: "power",
+  po: "power",
 }
 
 type TraceEdge = TraceGraph["edges"][number]

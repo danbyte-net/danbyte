@@ -160,7 +160,7 @@ class StackEndpointTests(_Stack):
         self.assertTrue(self.member.interfaces.filter(name="Gi2/0/2").exists())
 
     def test_vc_poll_goes_to_the_owner(self):
-        with mock.patch("monitoring.views.poll_device") as poll:
+        with mock.patch("monitoring.views.poll_target") as poll:
             poll.return_value = (self.state, None)
             r = self.client.post(f"/api/monitoring/virtual-chassis/{self.vc.id}/snmp-poll/")
         self.assertEqual(r.status_code, 200, r.content)
@@ -184,7 +184,7 @@ class StackEndpointTests(_Stack):
         req.session = client.session
         token = get_token(req)
         client.cookies["csrftoken"] = token
-        with mock.patch("monitoring.views.poll_device") as poll:
+        with mock.patch("monitoring.views.poll_target") as poll:
             poll.return_value = (self.state, None)
             r = client.post(
                 f"/api/monitoring/virtual-chassis/{self.vc.id}/snmp-poll/",
@@ -203,7 +203,7 @@ class PollTests(_Stack):
 
     def test_polling_a_member_polls_the_owner(self):
         with mock.patch("monitoring.snmp_poll.fetch_snmp") as fetch, mock.patch(
-            "monitoring.snmp_poll.resolve_device_profile"
+            "monitoring.snmp_resolve.resolve_device_profile"
         ) as prof:
             prof.return_value = (SnmpProfile.objects.create(tenant=self.tenant, name="p"), "x")
             fetch.return_value = {"reachable": True, "data": {}, "interfaces": []}

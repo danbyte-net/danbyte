@@ -25,6 +25,7 @@ import { OnboardingWizard } from "@/components/onboarding-wizard"
 import { UpdatePrompt } from "@/components/update-prompt"
 import { PresenceProvider } from "@/lib/presence-context"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { IntegrationGate } from "@/components/integration-gate"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
@@ -228,7 +229,11 @@ function AppLayout() {
                 extension mutating React's DOM on unmount) recovers the moment
                 the user navigates, instead of dead-until-refresh. */}
               <ErrorBoundary resetKey={pathname}>
-                <Outlet />
+                {/* An integration's pages while it is switched off: an
+                    empty state, not the API's 404 (#429). */}
+                <IntegrationGate pathname={pathname}>
+                  <Outlet />
+                </IntegrationGate>
               </ErrorBoundary>
             </div>
             {/* First-run setup wizard - self-gates on a fresh tenant, renders

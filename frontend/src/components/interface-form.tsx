@@ -449,13 +449,15 @@ export function InterfaceForm({
               error={fieldErrors.device_id}
             />
             {isEdit && vcId && memberOptions.length > 1 && (
-              <FormSelect
+              <FormCombobox
                 label="Stack member"
                 value={memberId ?? deviceId}
                 onChange={(v) => setMemberId(v)}
                 options={memberOptions}
                 hint="Moving keeps cables, IPs and MAC objects on the port."
                 error={fieldErrors.device_id}
+                searchPlaceholder="Search members…"
+                emptyText="No members."
               />
             )}
             {/* Type labels run long ("Link Aggregation Group (LAG)"); the

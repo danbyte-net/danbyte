@@ -14,7 +14,7 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import serializers, viewsets
 from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -23,6 +23,7 @@ from auth_api.permissions import can_manage_deployment
 
 from .models import OuiImport, OuiPrefix
 from .oui import OuiError, next_free_mac, parse_prefix
+from .parsers import ObjectJSONParser
 from .views import _get_active_tenant
 
 
@@ -68,7 +69,7 @@ def oui_status(request):
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser, JSONParser])
+@parser_classes([MultiPartParser, FormParser, ObjectJSONParser])
 def oui_import(request):
     """Accepts the maclookup.app CSV or IEEE ``oui.csv`` / ``mam.csv`` /
     ``oui36.csv``. Deployment-admin only: the registry is shared by every

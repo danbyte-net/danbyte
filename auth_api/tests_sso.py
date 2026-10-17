@@ -6,11 +6,18 @@ glue over this).
 """
 from __future__ import annotations
 
+import os
+import socket
+from unittest import mock
+
+import requests
 from django.contrib.auth.models import Group, User
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
 from core.models import Organization, Tenant
+from core.ssrf import _allowlist
 
+from . import saml, sso
 from .models import IdentityProvider, SsoGroupMapping, UserProfile
 from .sso import SsoError, resolve_user
 
@@ -296,3 +303,73 @@ class SsoProviderListTests(TestCase):
         self.assertEqual(slugs, {"global", "scoped"})
         # Nothing about the tenant is exposed to an anonymous caller.
         self.assertNotIn("tenant", body["providers"][0])
+
+
+def _resolves_to(ip):
+    return mock.patch(
+        "core.ssrf.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))],
+    )
+
+
+class IdpPrivateAddressWarningTests(SimpleTestCase):
+    """IdP URLs are set by a deployment admin, so a private or loopback
+    address stays allowed, but it is logged (#321)."""
+
+    def setUp(self):
+        sso._discovery_cache.clear()
+        saml._metadata_cache.clear()
+        _allowlist.cache_clear()
+        db_allowlist = mock.patch("core.ssrf._db_allowlist", return_value=())
+        db_allowlist.start()
+        self.addCleanup(db_allowlist.stop)
+        self.addCleanup(_allowlist.cache_clear)
+
+    def _discover(self, ip):
+        doc = {
+            "issuer": "https://idp.example", "token_endpoint": "https://idp.example/token",
+            "jwks_uri": "https://idp.example/jwks",
+        }
+        fake = mock.Mock(status_code=200, json=mock.Mock(return_value=doc))
+        with _resolves_to(ip), mock.patch.object(sso.requests, "get", return_value=fake) as get:
+            self.assertEqual(sso.discover("https://idp.example"), doc)
+        get.assert_called_once()  # still fetched
+
+    def test_private_oidc_issuer_is_allowed_and_logged(self):
+        with self.assertLogs("danbyte.sso", "WARNING") as logs:
+            self._discover("10.0.0.7")
+        text = "\n".join(logs.output)
+        self.assertIn(
+            "OIDC issuer idp.example resolves to a non-public address (10.0.0.7)", text
+        )
+        self.assertIn("OIDC token_endpoint", text)
+        self.assertIn("OIDC jwks_uri", text)
+
+    def test_public_oidc_issuer_is_not_logged(self):
+        with self.assertNoLogs("danbyte.sso", "WARNING"):
+            self._discover("93.184.216.34")
+
+    def test_allowlisted_address_is_not_logged(self):
+        with mock.patch.dict(os.environ, {"DANBYTE_SSRF_ALLOWLIST": "10.0.0.0/8"}):
+            _allowlist.cache_clear()
+            with self.assertNoLogs("danbyte.sso", "WARNING"):
+                self._discover("10.0.0.7")
+
+    def test_unresolvable_issuer_is_left_to_the_request(self):
+        with mock.patch("core.ssrf.socket.getaddrinfo", side_effect=socket.gaierror("nx")), \
+                mock.patch.object(sso.requests, "get",
+                                  side_effect=requests.ConnectionError("nx")), \
+                self.assertNoLogs("danbyte.sso", "WARNING"), \
+                self.assertRaises(SsoError):
+            sso.discover("https://idp.example")
+
+    def test_loopback_saml_metadata_is_allowed_and_logged(self):
+        fake = mock.Mock(content=b"<not-metadata/>")
+        with _resolves_to("127.0.0.1"), \
+                mock.patch.object(saml.requests, "get", return_value=fake) as get, \
+                self.assertLogs("danbyte.sso", "WARNING") as logs, \
+                self.assertRaises(saml.SamlError):
+            saml.fetch_idp_metadata("https://idp.local/metadata", use_cache=False)
+        get.assert_called_once()
+        self.assertIn("SAML IdP metadata URL idp.local", logs.output[0])
+        self.assertIn("127.0.0.1", logs.output[0])

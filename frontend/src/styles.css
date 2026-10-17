@@ -398,6 +398,12 @@
   line-height: 14px;
   font-variant-numeric: tabular-nums;
 }
+/* Utilization's direction chips: the arrow turns to point along its half. */
+.sm-speed-dir {
+  display: inline-block;
+  margin-right: 2px;
+  color: var(--muted-foreground);
+}
 
 /* Label declutter (full map only - the container carries .sm-zl). Name chips
    hide until their zoom threshold; the route toggles .sm-zl-sites /
@@ -790,4 +796,11 @@
    focus keeps its ring; mouse clicks don't. */
 path.leaflet-interactive:focus:not(:focus-visible) {
   outline: none;
+}
+
+/* A floor plan's CAD drawing (components/floorplan/cad-layer.tsx): strokes
+   keep their screen width at any zoom, so true-scale lineweights - a
+   fraction of a millimetre - stay visible. */
+[data-cad-layer] path {
+  vector-effect: non-scaling-stroke;
 }

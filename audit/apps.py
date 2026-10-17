@@ -34,6 +34,8 @@ AUDITED_MODELS = [
     "api.CircuitType",
     "api.Circuit",
     "api.CircuitTermination",
+    "api.SupportContract",
+    "api.SupportCoverage",
     "api.PowerPanel",
     "api.PowerFeed",
     "api.WirelessLANGroup",
@@ -138,12 +140,14 @@ AUDITED_MODELS = [
     "zabbix.ZabbixConnection",
     "zabbix.ZabbixProvisionRule",
     "zabbix.ZabbixAdoptionRule",
+    "oxidized.OxidizedConnection",
     "api.Service",
     "api.ServiceTemplate",
     "api.DeviceTypeService",
     "api.FloorTileType",
     "api.FloorPlan",
     "api.FloorPlanTile",
+    "api.FloorPlanDrawing",
     "api.SiteMarker",
     "api.FloorPlanTray",
     "api.FloorPlanRaisedFloorArea",
@@ -169,6 +173,10 @@ AUDITED_MODELS = [
     "monitoring.SlaMember",
     "monitoring.SlaExclusion",
     "monitoring.HolidayCalendar",
+    "monitoring.SlaIncidentCause",
+    "monitoring.SlaIncidentFollowUp",
+    "monitoring.SlaReportSchedule",
+    "monitoring.SlaTemplate",
     "planning.Board",
     "planning.TaskStatus",
     "planning.TaskLabel",
@@ -206,6 +214,8 @@ AUDITED_MODELS = [
     "integrations.DnsZone",
     # Governance config.
     "compliance.ComplianceRule",
+    "compliance.EolSettings",
+    "compliance.EolMapping",
     # Access: object permissions + public share links.
 ]
 

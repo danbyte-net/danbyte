@@ -1,8 +1,10 @@
 import * as React from "react"
 
+import { useFieldControlProps } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, ...rest }: React.ComponentProps<"input">) {
+  const props = useFieldControlProps(rest)
   return (
     <input
       type={type}

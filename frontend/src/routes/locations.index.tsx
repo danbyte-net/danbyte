@@ -12,7 +12,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { RowActions } from "@/components/row-actions"
 import { LocationDeleteDialog } from "@/components/location-delete-dialog"
@@ -20,6 +20,7 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { LocationCell } from "@/components/cells/location-cell"
 import { StatusBadge } from "@/components/status-badge"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/locations/")({
   component: LocationsPage,
@@ -34,7 +35,7 @@ function LocationsPage() {
   const canEdit = canDo("location", "change")
   const [sel, setSel] = useState<Location[]>([])
   const { humanIds } = useMe()
-  const [q, setQ] = useState("")
+  const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<Location | null>(null)
 
   const query = useQuery({
@@ -147,7 +148,7 @@ function LocationsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, allRows)
+  } = useUrlTableFilters(columns, allRows)
   const rows = useMemo(() => nestByParent(filteredRows), [filteredRows])
 
   return (

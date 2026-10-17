@@ -409,6 +409,9 @@ class IntegrationSettings(TimestampedModel):
     #: and re-checked at job time, so switching it off stops the background
     #: work rather than only hiding the pages.
     zabbix_enabled = models.BooleanField(default=False)
+    #: Read device configuration backups from an Oxidized server (#35). Off
+    #: until an admin turns it on; the configs themselves stay in Oxidized.
+    oxidized_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"

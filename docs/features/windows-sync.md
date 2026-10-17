@@ -204,7 +204,9 @@ for that **name**, showing everything Danbyte knows about it:
 - **Addresses** - every address the name resolves to, with each one's status,
   prefix and what it is assigned to. More than one row is normal: that is round
   robin, and it is the reason this page is keyed on the name rather than on a
-  single record.
+  single record. **Assign IPs** points addresses Danbyte already tracks at the
+  name: tick several in the picker and each one's DNS name is set. Addresses
+  already on the name are left out of the list.
 - **Records** - all record types for the name (A, AAAA, CNAME, MX, TXT…), with
   their TTL and zone.
 - A **split horizon** badge when the same name exists in more than one zone, so

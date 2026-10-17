@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import regex
 
+from core.tags import TAGS, tags_of
+
 from .models import ComplianceRule, OBJECT_TYPES
 
 # Cap the string a regex rule is matched against. Compliance patterns are
@@ -22,11 +24,12 @@ _ROUTES = {
     "vlan": "vlans",
     "vrf": "vrfs",
     "site": "sites",
+    "virtualmachine": "virtual-machines",
 }
 
 
 def _models():
-    from api.models import Device, IPAddress, Prefix, Site, VLAN, VRF
+    from api.models import VLAN, VRF, Device, IPAddress, Prefix, Site, VirtualMachine
 
     return {
         "prefix": Prefix,
@@ -35,6 +38,7 @@ def _models():
         "vlan": VLAN,
         "vrf": VRF,
         "site": Site,
+        "virtualmachine": VirtualMachine,
     }
 
 
@@ -42,8 +46,53 @@ def _empty(v) -> bool:
     return v is None or v == "" or v == [] or v == {}
 
 
-def _violates(rule: ComplianceRule, obj, tag_slugs) -> bool:
+def _eol_violates(rule: ComplianceRule, obj, eol_cfg) -> bool:
+    """An ``eol_status`` rule (#8) on the object's platform. While the feature
+    is off there is no end-of-life data to judge, so nothing fails."""
+    from .eol import mapping_of, status_of
+
+    if eol_cfg is None or not eol_cfg.enabled:
+        return False
+    status = status_of(mapping_of(getattr(obj, "platform", None)), eol_cfg.warning_days)
+    if rule.eol_fail_on == "eol":
+        return status == "eol"
+    if rule.eol_fail_on == "ending":
+        return status in ("ending", "eol")
+    if rule.eol_fail_on == "unknown":
+        return status == "unknown"
+    return False
+
+
+def _coverage_violates(rule: ComplianceRule, obj, tag_slugs, warning_days) -> bool:
+    """A ``coverage`` rule (#421) on a device's support coverage. A rule with
+    a tag judges only the devices that carry it."""
+    from api.support_coverage import device_end, status_for
+
+    if rule.tag and rule.tag not in tag_slugs:
+        return False
+    status = status_for(device_end(obj), warning_days)
+    if rule.coverage_fail_on == "expired":
+        return status in ("expired", "none")
+    if rule.coverage_fail_on == "expiring":
+        return status in ("expiring", "expired", "none")
+    return False
+
+
+def _needs_tags(rule: ComplianceRule) -> bool:
+    return rule.check_type == "required_tag" or (
+        rule.check_type == "coverage" and bool(rule.tag)
+    )
+
+
+def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None,
+              coverage_days=None) -> bool:
     ct = rule.check_type
+    if ct == "eol_status":
+        return _eol_violates(rule, obj, eol_cfg)
+    if ct == "coverage":
+        if coverage_days is None:
+            return False
+        return _coverage_violates(rule, obj, tag_slugs, coverage_days)
     if ct == "required_tag":
         return rule.tag not in tag_slugs
     if ct == "required_cf":
@@ -79,17 +128,32 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
         tenant=tenant, enabled=True, object_type=object_type
     )
     tag_slugs: set[str] | None = None
+    eol_cfg = None
+    coverage_days = None
     failed = []
     for rule in rules:
-        if rule.check_type == "required_tag" and tag_slugs is None:
-            tag_slugs = {t.slug for t in obj.tags.all()}
-        if _violates(rule, obj, tag_slugs or set()):
+        if _needs_tags(rule) and tag_slugs is None:
+            tag_slugs = {t.slug for t in tags_of(obj)}
+        if rule.check_type == "eol_status" and eol_cfg is None:
+            from .eol import load_config
+
+            eol_cfg = load_config()
+        if rule.check_type == "coverage" and coverage_days is None:
+            from core.effective_settings import coverage_warning_days
+
+            coverage_days = coverage_warning_days(tenant)
+        if _violates(rule, obj, tag_slugs or set(), eol_cfg, coverage_days):
             failed.append(rule)
     return failed
 
 
-def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
-    """Return per-rule violation counts + a flat violation list."""
+def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
+    """Return per-rule violation counts + a flat violation list.
+
+    ``scope(object_type, queryset)`` returns the rows of ``queryset`` the
+    caller may view, or None for all of them: the flat list then names only
+    those. The per-rule counts stay whole - a compliance grant says how many
+    objects fail a rule, not which."""
     if rules is None:
         rules = list(
             ComplianceRule.objects.filter(tenant=tenant, enabled=True)
@@ -108,17 +172,39 @@ def evaluate(tenant, rules=None, cap: int = 5000) -> dict:
     for object_type, type_rules in by_type.items():
         model = models[object_type]
         qs = model.objects.filter(tenant=tenant)
-        needs_tags = any(r.check_type == "required_tag" for r in type_rules)
+        shown = None
+        if scope is not None:
+            viewable = scope(object_type, qs)
+            if viewable is not None:
+                shown = set(viewable.values_list("pk", flat=True))
+        needs_tags = any(_needs_tags(r) for r in type_rules)
         if needs_tags:
-            qs = qs.prefetch_related("tags")
+            qs = qs.prefetch_related(TAGS)
+        coverage_days = None
+        if any(r.check_type == "coverage" for r in type_rules):
+            from api.support_coverage import annotate_devices
+            from core.effective_settings import coverage_warning_days
+
+            coverage_days = coverage_warning_days(tenant)
+            # The coverage end rides the row: no query per device.
+            qs = annotate_devices(qs)
+        eol_cfg = None
+        if any(r.check_type == "eol_status" for r in type_rules):
+            from .eol import load_config
+
+            eol_cfg = load_config()
+            # The platform's mapping rides the row: no query per object.
+            qs = qs.select_related("platform__eol_mapping")
         for obj in qs[:cap]:
             tag_slugs = (
-                {t.slug for t in obj.tags.all()} if needs_tags else set()
+                {t.slug for t in tags_of(obj)} if needs_tags else set()
             )
             for rule in type_rules:
-                if not _violates(rule, obj, tag_slugs):
+                if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
                     continue
                 counts[rule.id] += 1
+                if shown is not None and obj.pk not in shown:
+                    continue
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.

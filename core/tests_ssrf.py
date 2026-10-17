@@ -1,12 +1,14 @@
 """SSRF guard (#58) - internal addresses are rejected, allow-list overrides."""
 from __future__ import annotations
 
+import http.client
 import os
 import socket
+import ssl
 from unittest import mock
 
 import requests
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from requests.adapters import HTTPAdapter
 
 from core.ssrf import (
@@ -15,6 +17,8 @@ from core.ssrf import (
     _allowlist,
     _PinnedSNIAdapter,
     assert_public_url,
+    pinned_ssl_context,
+    pinned_url,
     safe_request,
 )
 
@@ -217,3 +221,34 @@ class DbAllowlistTests(TestCase):
         # Other private space stays blocked.
         with self.assertRaises(SSRFError):
             assert_public_host("10.9.9.9", 443)
+
+
+class PinningHelperTests(SimpleTestCase):
+    """The pieces non-requests clients (WinRM, vSphere SOAP) pin with (#321)."""
+
+    def test_pinned_url_keeps_path_port_and_host_header(self):
+        self.assertEqual(
+            pinned_url("http://dc.example:5985/wsman?a=1", "93.184.216.34"),
+            ("http://93.184.216.34:5985/wsman?a=1", "dc.example:5985"),
+        )
+        self.assertEqual(
+            pinned_url("https://vc.example/sdk", "2001:db8::1"),
+            ("https://[2001:db8::1]/sdk", "vc.example"),
+        )
+
+    def test_ssl_context_sends_the_name_to_an_address(self):
+        """http.client wraps the socket for the host it dialled (the pinned
+        address); SNI and the certificate check use the name instead."""
+        ctx = pinned_ssl_context("vc.example")
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        with mock.patch("socket.create_connection") as dial, \
+                mock.patch.object(ssl.SSLContext, "wrap_socket") as wrap:
+            http.client.HTTPSConnection("93.184.216.34", 443, context=ctx).connect()
+        self.assertEqual(dial.call_args.args[0], ("93.184.216.34", 443))
+        self.assertEqual(wrap.call_args.kwargs["server_hostname"], "vc.example")
+
+    def test_unverified_context_checks_no_certificate(self):
+        ctx = pinned_ssl_context("vc.example", verify=False)
+        self.assertFalse(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_NONE)

@@ -39,7 +39,12 @@ export function toFieldSpec(f: EditableFieldSpec): BulkFieldSpec | null {
         : null
     case "object":
       return f.object_model
-        ? { ...base, kind: "object", object_model: f.object_model }
+        ? {
+            ...base,
+            kind: "object",
+            object_model: f.object_model,
+            ...(f.endpoint ? { endpoint: f.endpoint } : {}),
+          }
         : null
     default:
       return null

@@ -15,10 +15,11 @@ from django.db.models import Exists, OuterRef, Q
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
-from api.bulk_delete import bulk_ids
+from api.bulk_delete import SafeBulkDeleteMixin
+from api.parsers import ObjectJSONParser
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
@@ -240,7 +241,7 @@ class CertificateViewSet(TenantScopedViewSet):
 
     queryset = Certificate.objects.all()
     serializer_class = CertificateSerializer
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
     # Importing a bundle creates rows, so it needs an ``add`` grant, not the
     # ``change`` a custom mutating action defaults to.
     rbac_action_map = {"import_bundle": "add"}
@@ -460,7 +461,7 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
 
     queryset = SSHHostKey.objects.select_related("device").all()
     serializer_class = SSHHostKeySerializer
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
 
     def get_queryset(self):
         qs = super().get_queryset().order_by("device_id", "key_type")
@@ -2293,7 +2294,7 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
     # Global resource: DEPLOYMENT admin only. A tenant-scoped change-user
     # grant must not let a tenant admin push software to every outpost.
     permission_classes = [_IsDeploymentAdminOnly]
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    parser_classes = [MultiPartParser, FormParser, ObjectJSONParser]
 
     def perform_create(self, serializer):
         self._stamp_size(serializer.save())
@@ -2363,10 +2364,13 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
         )
 
 
-class WatchedEndpointViewSet(TenantScopedViewSet):
+class WatchedEndpointViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     """CRUD for bare TLS endpoints watched on a schedule (host:port + SNI, no
     device). Tenant-scoped + RBAC via the registered object type. A ``check
-    now`` action reads the certificate immediately."""
+    now`` action reads the certificate immediately; ``bulk-delete`` is the
+    shared one (api.bulk_delete) and needs ``delete``."""
+
+    rbac_action_map = {"bulk_delete": "delete"}
 
     queryset = WatchedEndpoint.objects.select_related("last_certificate").order_by(
         "host", "port"
@@ -2392,11 +2396,3 @@ class WatchedEndpointViewSet(TenantScopedViewSet):
         ep.refresh_from_db()
         return Response(self.get_serializer(ep).data)
 
-    @action(detail=False, methods=["post"], url_path="bulk-delete")
-    def bulk_delete(self, request):
-        ids = bulk_ids(request)
-        # get_queryset already scopes to the tenant + RBAC, so this can only
-        # ever delete the caller's own endpoints.
-        qs = self.get_queryset().filter(id__in=ids)
-        _, by_model = qs.delete()
-        return Response({"deleted": by_model.get(qs.model._meta.label, 0)})

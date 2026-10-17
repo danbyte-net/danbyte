@@ -15,6 +15,7 @@ function Page() {
   const spec = useMemo<RoutingListSpec<ISISInstance>>(
     () => ({
       title: "IS-IS instances",
+      noun: ["IS-IS instance", "IS-IS instances"],
       objectType: "isisinstance",
       endpoint: "/api/routing/isis-instances/",
       queryKey: "isis-instances",

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Danbyte end-of-life data daily
+
+[Timer]
+OnCalendar=*-*-* 05:35:00
+OnBootSec=300
+Persistent=true
+AccuracySec=15m
+
+[Install]
+WantedBy=timers.target

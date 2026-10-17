@@ -12,8 +12,9 @@ import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TimeCell } from "@/components/cells/time-ago"
-import { useTableFilters } from "@/components/table-filters"
+import { useUrlTableFilters } from "@/components/table-filters"
 import { useMe } from "@/lib/use-me"
+import { useUrlSearch } from "@/lib/url-filters"
 import { PortReservationDialog } from "@/components/port-reservation-dialog"
 
 // Direct holds on single uncabled ports - the planning half of cabling that
@@ -41,7 +42,7 @@ function PortReservationsPage() {
   const { canDo } = useMe()
   const canRelease = canDo("portreservation", "delete")
   const canEdit = canDo("portreservation", "change")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useUrlSearch()
   const [sel, setSel] = useState<PortReservation[]>([])
   const [editing, setEditing] = useState<PortReservation | null>(null)
 
@@ -248,7 +249,7 @@ function PortReservationsPage() {
     restore,
     activeCount,
     columns: wiredColumns,
-  } = useTableFilters(columns, searched)
+  } = useUrlTableFilters(columns, searched)
 
   return (
     <ListPageShell
