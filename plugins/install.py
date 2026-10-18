@@ -14,6 +14,7 @@ against path traversal, oversized archives, and too many members.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tarfile
 import tempfile
@@ -55,6 +56,33 @@ def _write_manifest(names) -> None:
     _manifest_path().write_text(
         json.dumps({"plugins": sorted(set(names))}, indent=2)
     )
+
+
+ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".tar", ".zip")
+
+
+def _archive_suffix(filename: str) -> str:
+    """The archive type an upload's name declares, or a clear error."""
+    lower = filename.lower()
+    for suffix in ARCHIVE_SUFFIXES:
+        if lower.endswith(suffix):
+            return suffix
+    raise PluginInstallError(
+        "unsupported archive type - use .tar.gz, .tgz, .tar or .zip"
+    )
+
+
+def _plugin_dir(name: str) -> Path:
+    """``PLUGIN_UPLOAD_DIR/<name>`` for a plugin module name, refusing
+    anything that is not a plain identifier or would land outside the
+    upload directory."""
+    if not isinstance(name, str) or not name.isidentifier():
+        raise PluginInstallError(f"invalid plugin package name: {name!r}")
+    base = os.path.realpath(_dir())
+    target = os.path.realpath(os.path.join(base, name))
+    if not target.startswith(base + os.sep):
+        raise PluginInstallError(f"invalid plugin package name: {name!r}")
+    return Path(target)
 
 
 def _safe_extract(archive: Path, dest: Path) -> None:
@@ -138,7 +166,9 @@ def install_archive(django_file) -> dict:
     _dir().mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        arch = tmp / (Path(django_file.name or "upload").name)
+        # The upload's own name only chooses the extractor; the file on disk
+        # gets a fixed name inside the private temp dir.
+        arch = tmp / ("upload" + _archive_suffix(django_file.name or ""))
         with open(arch, "wb") as fh:
             for chunk in django_file.chunks():
                 fh.write(chunk)
@@ -147,9 +177,7 @@ def install_archive(django_file) -> dict:
         _safe_extract(arch, extract_dir)
         pkg = _find_package(extract_dir)
         name = pkg.name
-        if not name.isidentifier():
-            raise PluginInstallError(f"invalid plugin package name: {name!r}")
-        target = _dir() / name
+        target = _plugin_dir(name)
         if target.exists():
             shutil.rmtree(target)  # replace = upgrade
         shutil.copytree(pkg, target)
@@ -167,9 +195,12 @@ def uninstall(name: str) -> bool:
     names = uploaded_names()
     if name not in names:
         return False
+    try:
+        target = _plugin_dir(name)
+    except PluginInstallError:
+        return False
     names.remove(name)
     _write_manifest(names)
-    target = _dir() / name
     if target.is_dir():
         shutil.rmtree(target, ignore_errors=True)
     return True
