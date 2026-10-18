@@ -76,6 +76,13 @@ from .port_state import (
     module_interfaces,
     termination_component as termination_component,
 )
+from .visible_counts import related_count
+
+
+def _visible_count(serializer, obj, rel_name: str) -> int:
+    """Count of ``obj``'s ``rel_name`` rows the reader may view (#438): the
+    number the related list shows them, not every site's rows."""
+    return related_count(serializer.context.get("request"), obj, rel_name)
 
 
 def detail_only(default=None):
@@ -2088,12 +2095,12 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
         v = getattr(obj, "usage_count_annotated", None)
         if v is not None:
             return v
-        return sum(getattr(obj, rn).count() for rn in self._USAGE_RELS)
+        return sum(_visible_count(self, obj, rn) for rn in self._USAGE_RELS)
 
     @detail_only(0)
     def get_ip_count(self, obj) -> int:
         """The status page's IPs tab: addresses only, not every object."""
-        return obj.ips.count()
+        return _visible_count(self, obj, "ips")
 
     def validate_monitoring_state(self, value):
         """A check state may be claimed by at most one status per tenant.
@@ -2148,7 +2155,7 @@ class IPRoleSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
 
     def get_usage_count(self, obj) -> int:
         v = getattr(obj, "usage_count_annotated", None)
-        return v if v is not None else obj.ips.count()
+        return v if v is not None else _visible_count(self, obj, "ips")
 
     class Meta:
         model = IPRole
@@ -2200,7 +2207,7 @@ class ZoneSerializer(
 
     def get_usage_count(self, obj) -> int:
         v = getattr(obj, "usage_count_annotated", None)
-        return v if v is not None else obj.vlans.count()
+        return v if v is not None else _visible_count(self, obj, "vlans")
 
     class Meta:
         model = Zone
@@ -2333,11 +2340,11 @@ class ManufacturerSerializer(TaggableSerializerMixin, OwningSiteSerializerMixin,
 
     def get_device_type_count(self, obj) -> int:
         v = getattr(obj, "device_type_count_annotated", None)
-        return v if v is not None else obj.device_types.count()
+        return v if v is not None else _visible_count(self, obj, "device_types")
 
     def get_module_type_count(self, obj) -> int:
         v = getattr(obj, "module_type_count_annotated", None)
-        return v if v is not None else obj.module_types.count()
+        return v if v is not None else _visible_count(self, obj, "module_types")
 
     class Meta:
         model = Manufacturer
@@ -2454,7 +2461,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
 
     def get_device_count(self, obj) -> int:
         v = getattr(obj, "device_count_annotated", None)
-        return v if v is not None else obj.device_set.count()
+        return v if v is not None else _visible_count(self, obj, "device")
 
     @detail_only(0)
     def get_sensor_count(self, obj) -> int:
@@ -4867,7 +4874,7 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
         return obj.interface_templates.count()
 
     def get_module_count(self, obj) -> int:
-        return obj.modules.count()
+        return _visible_count(self, obj, "modules")
 
     class Meta:
         model = ModuleType
@@ -5722,7 +5729,7 @@ class ClusterTypeSerializer(NumIdModelSerializer):
 
     def get_cluster_count(self, obj) -> int:
         v = getattr(obj, "cluster_count_annotated", None)
-        return v if v is not None else obj.clusters.count()
+        return v if v is not None else _visible_count(self, obj, "clusters")
 
     class Meta:
         model = ClusterType
@@ -5743,7 +5750,7 @@ class ClusterGroupSerializer(NumIdModelSerializer):
 
     def get_cluster_count(self, obj) -> int:
         v = getattr(obj, "cluster_count_annotated", None)
-        return v if v is not None else obj.clusters.count()
+        return v if v is not None else _visible_count(self, obj, "clusters")
 
     class Meta:
         model = ClusterGroup
@@ -6198,7 +6205,7 @@ class RackRoleSerializer(NumIdModelSerializer):
 
     def get_rack_count(self, obj) -> int:
         v = getattr(obj, "rack_count_annotated", None)
-        return v if v is not None else obj.racks.count()
+        return v if v is not None else _visible_count(self, obj, "racks")
 
     class Meta:
         model = RackRole
@@ -6281,7 +6288,7 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     def get_rack_count(self, obj) -> int:
         v = getattr(obj, "rack_count_annotated", None)
-        return v if v is not None else obj.racks.count()
+        return v if v is not None else _visible_count(self, obj, "racks")
 
     class Meta:
         model = RackType
@@ -6567,7 +6574,7 @@ class CabinetRoleSerializer(NumIdModelSerializer):
 
     def get_cabinet_count(self, obj) -> int:
         v = getattr(obj, "cabinet_count_annotated", None)
-        return v if v is not None else obj.cabinets.count()
+        return v if v is not None else _visible_count(self, obj, "cabinets")
 
     class Meta:
         model = CabinetRole
@@ -6688,7 +6695,7 @@ class CabinetTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     def get_cabinet_count(self, obj) -> int:
         v = getattr(obj, "cabinet_count_annotated", None)
-        return v if v is not None else obj.cabinets.count()
+        return v if v is not None else _visible_count(self, obj, "cabinets")
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -6924,10 +6931,10 @@ class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin,
         return {"id": str(t.id), "name": t.name} if t else None
 
     def get_device_count(self, obj) -> int:
-        return obj.devices.count()
+        return _visible_count(self, obj, "devices")
 
     def get_vm_count(self, obj) -> int:
-        return obj.virtual_machines.count()
+        return _visible_count(self, obj, "virtual_machines")
 
     class Meta:
         model = DeviceRole
@@ -6958,7 +6965,7 @@ class PlatformGroupSerializer(NumIdModelSerializer):
 
     def get_platform_count(self, obj) -> int:
         v = getattr(obj, "platform_count_annotated", None)
-        return v if v is not None else obj.platforms.count()
+        return v if v is not None else _visible_count(self, obj, "platforms")
 
     def get_child_count(self, obj) -> int:
         return obj.children.count()
@@ -7020,15 +7027,16 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         t = obj.config_template
         return {"id": str(t.id), "name": t.name} if t else None
 
+    # The viewset annotates both counts; a bare instance (create/update) counts.
     def get_device_count(self, obj) -> int:
-        return obj.devices.count()
+        n = getattr(obj, "device_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "devices")
 
     vm_count = serializers.SerializerMethodField()
 
     def get_vm_count(self, obj) -> int:
-        # The viewset annotates it; a bare instance (create/update) counts.
-        n = getattr(obj, "vm_count", None)
-        return n if n is not None else obj.virtual_machines.count()
+        n = getattr(obj, "vm_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "virtual_machines")
 
     lifecycle_state = serializers.ReadOnlyField()
     eol = serializers.SerializerMethodField()
@@ -7454,7 +7462,7 @@ class RIRSerializer(NumIdModelSerializer):
 
     def get_aggregate_count(self, obj) -> int:
         v = getattr(obj, "aggregate_count_annotated", None)
-        return v if v is not None else obj.aggregates.count()
+        return v if v is not None else _visible_count(self, obj, "aggregates")
 
     class Meta:
         model = RIR
@@ -7609,7 +7617,7 @@ class VLANGroupSerializer(NumIdModelSerializer):
 
     def get_vlan_count(self, obj) -> int:
         v = getattr(obj, "vlan_count_annotated", None)
-        return v if v is not None else obj.vlans.count()
+        return v if v is not None else _visible_count(self, obj, "vlans")
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -7794,7 +7802,7 @@ class ContactGroupSerializer(NumIdModelSerializer):
 
     def get_contact_count(self, obj) -> int:
         v = getattr(obj, "contact_count_annotated", None)
-        return v if v is not None else obj.contacts.count()
+        return v if v is not None else _visible_count(self, obj, "contacts")
 
     def get_child_count(self, obj) -> int:
         return obj.children.count()
@@ -8011,11 +8019,11 @@ class ProviderSerializer(
 
     def get_circuit_count(self, obj) -> int:
         v = getattr(obj, "circuit_count_annotated", None)
-        return v if v is not None else obj.circuits.count()
+        return v if v is not None else _visible_count(self, obj, "circuits")
 
     def get_network_count(self, obj) -> int:
         v = getattr(obj, "network_count_annotated", None)
-        return v if v is not None else obj.networks.count()
+        return v if v is not None else _visible_count(self, obj, "networks")
 
     class Meta:
         model = Provider
@@ -8044,7 +8052,7 @@ class CircuitTypeSerializer(NumIdModelSerializer):
 
     def get_circuit_count(self, obj) -> int:
         v = getattr(obj, "circuit_count_annotated", None)
-        return v if v is not None else obj.circuits.count()
+        return v if v is not None else _visible_count(self, obj, "circuits")
 
     class Meta:
         model = CircuitType
@@ -8364,7 +8372,7 @@ class WirelessLANGroupSerializer(NumIdModelSerializer):
 
     def get_wlan_count(self, obj) -> int:
         v = getattr(obj, "wlan_count_annotated", None)
-        return v if v is not None else obj.wireless_lans.count()
+        return v if v is not None else _visible_count(self, obj, "wireless_lans")
 
     class Meta:
         model = WirelessLANGroup
@@ -8478,7 +8486,7 @@ class TunnelGroupSerializer(NumIdModelSerializer):
 
     def get_tunnel_count(self, obj) -> int:
         v = getattr(obj, "tunnel_count_annotated", None)
-        return v if v is not None else obj.tunnels.count()
+        return v if v is not None else _visible_count(self, obj, "tunnels")
 
     class Meta:
         model = TunnelGroup
@@ -8507,7 +8515,7 @@ class IPSecProfileSerializer(SecretPSKSerializerMixin, NumIdModelSerializer):
 
     def get_tunnel_count(self, obj) -> int:
         v = getattr(obj, "tunnel_count_annotated", None)
-        return v if v is not None else obj.tunnels.count()
+        return v if v is not None else _visible_count(self, obj, "tunnels")
 
     class Meta:
         model = IPSecProfile
@@ -8643,7 +8651,7 @@ class RegionSerializer(NumIdModelSerializer):
     child_count = serializers.SerializerMethodField()
 
     def get_site_count(self, obj) -> int:
-        return obj.sites.count()
+        return _visible_count(self, obj, "sites")
 
     def get_child_count(self, obj) -> int:
         return obj.children.count()
@@ -9296,7 +9304,7 @@ class FloorTileTypeSerializer(NumIdModelSerializer):
     tile_count = serializers.SerializerMethodField()
 
     def get_tile_count(self, obj) -> int:
-        return obj.tiles.count()
+        return _visible_count(self, obj, "tiles")
 
     class Meta:
         model = FloorTileType

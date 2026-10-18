@@ -39,6 +39,7 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
+from .visible_counts import related_count_expr
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
@@ -455,6 +456,13 @@ MAP_INCLUDE_PARAMETER = OpenApiParameter(
         "Adds `meta` to the graph."
     ),
 )
+
+
+def _visible_n(view, rel_name: str):
+    """A catalog list's count of its ``rel_name`` rows, narrowed to the ones
+    the reader may view - the rows the linked list shows them (#438)."""
+    return related_count_expr(view.request, view.queryset.model, rel_name)
+
 
 class StandardPagination(PageNumberPagination):
     # The SPA loads the full result set and paginates/filters client-side (the
@@ -2795,7 +2803,7 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             if search:
                 qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         if self.usage_relation:
-            qs = qs.annotate(usage_count_annotated=Count(self.usage_relation))
+            qs = qs.annotate(usage_count_annotated=_visible_n(self, self.usage_relation))
         return qs
 
     def _prepare(self, serializer):
@@ -2827,23 +2835,17 @@ class _IpCatalogViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         pass
 
 
-def _status_usage_expr():
+def _status_usage_expr(request):
     """Sum of every relation StatusSerializer counts, as correlated subqueries,
-    so a list of N statuses is one statement instead of 14 COUNT(*) per row."""
-    from django.db.models import Count, IntegerField, OuterRef, Subquery, Value
-    from django.db.models.functions import Coalesce
+    so a list of N statuses is one statement instead of 14 COUNT(*) per row.
+    Each counts the rows the reader may view (#438)."""
+    from django.db.models import Value
 
     from .serializers import StatusSerializer
 
     expr = Value(0)
     for rn in StatusSerializer._USAGE_RELS:
-        rel = Status._meta.get_field(rn)
-        fk = rel.field.name
-        sub = (
-            rel.related_model._default_manager.filter(**{fk: OuterRef("pk")})
-            .order_by().values(fk).annotate(c=Count("pk")).values("c")
-        )
-        expr = expr + Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
+        expr = expr + related_count_expr(request, Status, rn)
     return expr
 
 
@@ -2861,7 +2863,7 @@ class StatusViewSet(_IpCatalogViewSet):
             avail = self.request.query_params.get("available_to")
             if avail:
                 qs = qs.filter(available_to__contains=[avail])
-        return qs.annotate(usage_count_annotated=_status_usage_expr())
+        return qs.annotate(usage_count_annotated=_status_usage_expr(self.request))
 
     def _after_save(self, obj):
         # At most one default status per (tenant, object-type): strip each slug
@@ -2916,8 +2918,8 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         # distinct=True on both: two Counts over different relations in one
         # annotate() join-multiply each other without it (Django fan-out).
         return qs.annotate(
-            device_type_count_annotated=Count("device_types", distinct=True),
-            module_type_count_annotated=Count("module_types", distinct=True),
+            device_type_count_annotated=_visible_n(self, "device_types"),
+            module_type_count_annotated=_visible_n(self, "module_types"),
         )
 
     def _slug(self, serializer, tenant):
@@ -3424,7 +3426,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             elif imagery == "faceplate":
                 # A drawn faceplate, not a photo - what the port map renders.
                 qs = qs.exclude(faceplate=None).exclude(faceplate={})
-        return qs.annotate(device_count_annotated=Count("device"))
+        return qs.annotate(device_count_annotated=_visible_n(self, "device"))
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -5895,7 +5897,7 @@ class _SlugCatalogViewSet(TenantScopedViewSet):
                     description__icontains=s
                 ) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
-            cluster_count_annotated=Count(self.count_rel)
+            cluster_count_annotated=_visible_n(self, self.count_rel)
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -6272,8 +6274,9 @@ class RackRoleViewSet(_SlugCatalogViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        from django.db.models import Count as _C
-        return qs.annotate(rack_count_annotated=_C("racks")).order_by(NATURAL_NAME)
+        return qs.annotate(
+            rack_count_annotated=_visible_n(self, "racks"),
+        ).order_by(NATURAL_NAME)
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -6312,8 +6315,7 @@ class RackTypeViewSet(TenantScopedViewSet):
             m = self.request.query_params.get("manufacturer")
             if m:
                 qs = qs.filter(manufacturer_id=m)
-        from django.db.models import Count as _C
-        return qs.annotate(rack_count_annotated=_C("racks", distinct=True)) \
+        return qs.annotate(rack_count_annotated=_visible_n(self, "racks")) \
             .order_by(NATURAL_NAME)
 
     def get_serializer_class(self):
@@ -6382,7 +6384,9 @@ class CabinetRoleViewSet(_SlugCatalogViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
-        return qs.annotate(cabinet_count_annotated=Count("cabinets")).order_by(NATURAL_NAME)
+        return qs.annotate(
+            cabinet_count_annotated=_visible_n(self, "cabinets"),
+        ).order_by(NATURAL_NAME)
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -6426,7 +6430,7 @@ class CabinetTypeViewSet(TenantScopedViewSet):
             if manufacturer:
                 qs = qs.filter(manufacturer_id=manufacturer)
         return qs.annotate(
-            cabinet_count_annotated=Count("cabinets", distinct=True)
+            cabinet_count_annotated=_visible_n(self, "cabinets")
         ).order_by(NATURAL_NAME)
 
     def get_serializer_class(self):
@@ -7126,7 +7130,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
-            platform_count_annotated=Count("platforms")
+            platform_count_annotated=_visible_n(self, "platforms")
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -7191,7 +7195,10 @@ class PlatformViewSet(DeviceRoleViewSet):
             qs = apply_status_filter(qs, self.request, "eol_mapping__")
         if getattr(self, "action", None) in ("list", "retrieve"):
             # One query for the list's VM counts, not one per platform.
-            qs = qs.annotate(vm_count=Count("virtual_machines", distinct=True))
+            qs = qs.annotate(
+                device_count_annotated=_visible_n(self, "devices"),
+                vm_count_annotated=_visible_n(self, "virtual_machines"),
+            )
         return qs.order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -7464,7 +7471,7 @@ class RIRViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            aggregate_count_annotated=Count("aggregates")
+            aggregate_count_annotated=_visible_n(self, "aggregates")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7601,7 +7608,7 @@ class VLANGroupViewSet(TenantScopedViewSet):
             super()
             .get_queryset()
             .select_related("site", "cluster")
-            .annotate(vlan_count_annotated=Count("vlans"))
+            .annotate(vlan_count_annotated=_visible_n(self, "vlans"))
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -7853,7 +7860,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            contact_count_annotated=Count("contacts")
+            contact_count_annotated=_visible_n(self, "contacts")
         )
         # "Groups nested directly under this one" - the group detail page's
         # Child groups tab. Applied after the tenant scoping above, so a
@@ -8010,8 +8017,8 @@ class ProviderViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         # Two reverse joins in one query - distinct on each, or every circuit
         # would be counted once per network and vice versa.
         qs = super().get_queryset().prefetch_related(TAGS).annotate(
-            circuit_count_annotated=Count("circuits", distinct=True),
-            network_count_annotated=Count("networks", distinct=True),
+            circuit_count_annotated=_visible_n(self, "circuits"),
+            network_count_annotated=_visible_n(self, "networks"),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -8053,7 +8060,7 @@ class CircuitTypeViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            circuit_count_annotated=Count("circuits")
+            circuit_count_annotated=_visible_n(self, "circuits")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -8414,7 +8421,7 @@ class WirelessLANGroupViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            wlan_count_annotated=Count("wireless_lans")
+            wlan_count_annotated=_visible_n(self, "wireless_lans")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -8490,7 +8497,7 @@ class TunnelGroupViewSet(TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            tunnel_count_annotated=Count("tunnels")
+            tunnel_count_annotated=_visible_n(self, "tunnels")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -8527,7 +8534,7 @@ class IPSecProfileViewSet(SecretPSKViewSetMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().annotate(
-            tunnel_count_annotated=Count("tunnels")
+            tunnel_count_annotated=_visible_n(self, "tunnels")
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
