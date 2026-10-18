@@ -21,6 +21,18 @@ import { cn } from "@/lib/utils"
 const INLINE_RE =
   /(`[^`]+`)|(\[[^\]\n]+\]\([^)\s]+\))|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*\n]+\*)|(\bhttps?:\/\/[^\s<>()]+)|((?<![\w/])#\d+\b)/
 
+/** `url` when it parses as an http(s) URL, else undefined: the one gate
+ * every link this renderer emits goes through, so no other scheme
+ * (javascript:, data:, …) ever reaches an href. */
+function webHref(url: string): string | undefined {
+  try {
+    const { protocol } = new URL(url)
+    return protocol === "http:" || protocol === "https:" ? url : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function renderInline(text: string, key = 0, issueBase?: string): ReactNode[] {
   const out: ReactNode[] = []
   let rest = text
@@ -45,10 +57,10 @@ function renderInline(text: string, key = 0, issueBase?: string): ReactNode[] {
     } else if (tok.startsWith("[")) {
       const close = tok.indexOf("](")
       const label = tok.slice(1, close)
-      const href = tok.slice(close + 2, -1)
       // Only genuine web links become anchors; anything else (javascript:,
       // data:, relative paths) stays inert text.
-      if (/^https?:\/\//i.test(href)) {
+      const href = webHref(tok.slice(close + 2, -1))
+      if (href) {
         out.push(
           <a
             key={k++}
@@ -85,11 +97,14 @@ function renderInline(text: string, key = 0, issueBase?: string): ReactNode[] {
       )
     } else if (tok.startsWith("#")) {
       // #123 - an issue in the repo the text came from, when we know it.
+      const issueHref = issueBase
+        ? webHref(`${issueBase}${tok.slice(1)}`)
+        : undefined
       out.push(
-        issueBase ? (
+        issueHref ? (
           <a
             key={k++}
-            href={`${issueBase}${tok.slice(1)}`}
+            href={issueHref}
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-2 hover:text-foreground"
@@ -103,16 +118,21 @@ function renderInline(text: string, key = 0, issueBase?: string): ReactNode[] {
     } else {
       // A bare URL. Trailing punctuation belongs to the sentence.
       const trimmed = tok.replace(/[.,;:!?]+$/, "")
+      const href = webHref(trimmed)
       out.push(
-        <a
-          key={k++}
-          href={trimmed}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="break-all underline underline-offset-2 hover:text-foreground"
-        >
-          {trimmed}
-        </a>
+        href ? (
+          <a
+            key={k++}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all underline underline-offset-2 hover:text-foreground"
+          >
+            {trimmed}
+          </a>
+        ) : (
+          trimmed
+        )
       )
       if (trimmed.length < tok.length) out.push(tok.slice(trimmed.length))
     }
