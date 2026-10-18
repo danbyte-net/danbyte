@@ -126,6 +126,16 @@ number is required."]}`) or falls back to its default; never a server
 error. A query parameter carrying a NUL byte (`%00`) answers `400` on every
 path.
 
+## Error text
+
+An error's `detail` (or `error`) is written for the person reading it: a
+validation message, or what a remote server said when a connection test,
+import or upgrade fails talking to it - only its first line, without the
+file paths an operating-system error names. An exception Danbyte did not
+expect never reaches the response: the server logs it with its traceback
+(logger `danbyte.errors`) and the call answers a plain sentence that points
+there.
+
 ## Bulk calls
 
 Every `bulk-delete/` and `bulk-update/` takes a JSON object whose `ids` is a

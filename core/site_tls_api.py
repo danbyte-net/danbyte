@@ -152,7 +152,13 @@ def site_certificate_acme(request):
     except site_tls.SiteTlsError as exc:
         return Response({"detail": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - the secret store, mostly
-        return Response({"detail": str(exc)[:300]}, status=400)
+        from core.errors import public_error
+        from monitoring.secret_store import SecretStoreError
+
+        return Response({"detail": public_error(
+            exc, "The order could not be started. The details are in the server log.",
+            expected=SecretStoreError,
+        )}, status=400)
     return Response({"order": str(order.id), "status": order.status}, status=202)
 
 

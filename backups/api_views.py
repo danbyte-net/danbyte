@@ -17,6 +17,7 @@ from rest_framework.response import Response
 
 from api.devicetype_import_tasks import QueueUnavailable
 from auth_api.permissions import can_manage_deployment
+from core.errors import public_error
 from core.models import DeploymentSettings
 
 from . import maintenance
@@ -49,6 +50,13 @@ class DeploymentAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         u = request.user
         return bool(u and u.is_authenticated and can_manage_deployment(u))
+
+
+def _storage_error(exc: Exception) -> str:
+    """A storage failure for the admin: the backend's message, an OS error's
+    reason without the path it names."""
+    return public_error(exc, "the details are in the server log",
+                        expected=(StorageError, OSError))
 
 
 def _restore_in_progress() -> bool:
@@ -129,7 +137,7 @@ class BackupTargetViewSet(viewsets.ModelViewSet):
         try:
             adopted = adopt_orphans(target)
         except (StorageError, OSError) as exc:
-            return Response({"ok": False, "detail": str(exc)}, status=400)
+            return Response({"ok": False, "detail": _storage_error(exc)}, status=400)
         return Response({"ok": True, "adopted": adopted})
 
 
@@ -222,7 +230,8 @@ class BackupViewSet(viewsets.ReadOnlyModelViewSet):
         try:
             fh = backup.target.backend().open(backup.filename)
         except (StorageError, OSError) as exc:
-            return Response({"detail": f"The archive could not be opened: {exc}"}, status=502)
+            return Response(
+                {"detail": f"The archive could not be opened: {_storage_error(exc)}"}, status=502)
         resp = StreamingHttpResponse(FileWrapper(fh, 1024 * 1024), content_type="application/octet-stream")
         resp["Content-Disposition"] = f'attachment; filename="{backup.filename}"'
         if backup.size:
@@ -318,7 +327,8 @@ def backup_upload(request):
             location = target.backend().put(path, name)
         except (StorageError, OSError) as exc:
             backup.delete()
-            return Response({"detail": f"Could not store the archive: {exc}"}, status=502)
+            return Response(
+                {"detail": f"Could not store the archive: {_storage_error(exc)}"}, status=502)
         backup.filename = name
         backup.location = location
         backup.steps = [{"name": "upload", "status": "success", "started_at": backup.started_at.isoformat(),

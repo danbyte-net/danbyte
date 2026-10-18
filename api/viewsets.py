@@ -32,6 +32,7 @@ from rest_framework.response import Response
 
 from audit.bulk import apply_and_log_bulk_tags, log_bulk_delete, log_bulk_update
 from auth_api.drf import RBACViewSetMixin, restrict_for_view
+from core.errors import NETWORK_ERRORS, public_error
 from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
@@ -2187,8 +2188,9 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         try:
             rows = nominatim_search(q, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
+            reason = public_error(exc, "see the server log", expected=NETWORK_ERRORS)
             return Response(
-                {"detail": f"OpenStreetMap lookup failed: {exc}"},
+                {"detail": f"OpenStreetMap lookup failed: {reason}"},
                 status=502,
             )
         candidates = []
@@ -3227,8 +3229,9 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                         status=drf_status.HTTP_400_BAD_REQUEST,
                     )
                 except Exception as exc:  # noqa: BLE001
+                    reason = public_error(exc, "see the server log", expected=NETWORK_ERRORS)
                     return Response(
-                        {"detail": f"Couldn't list that folder: {exc}"},
+                        {"detail": f"Couldn't list that folder: {reason}"},
                         status=drf_status.HTTP_400_BAD_REQUEST,
                     )
                 if not files:
@@ -3283,9 +3286,10 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
                     })
                     continue
                 except Exception as exc:  # noqa: BLE001 - report, don't abort
+                    reason = public_error(exc, "see the server log", expected=NETWORK_ERRORS)
                     results.append({
                         "ok": False, "name": url, "id": None, "created": {},
-                        "skipped": [], "error": f"Fetch failed: {exc}",
+                        "skipped": [], "error": f"Fetch failed: {reason}",
                         "kind": "device-type",
                     })
                     continue
@@ -8867,8 +8871,9 @@ class RegionViewSet(TenantScopedViewSet):
             rows = nominatim_search(
                 q, polygons=True, language=request.META.get("HTTP_ACCEPT_LANGUAGE", ""))
         except Exception as exc:  # noqa: BLE001 - surfaced, not raised
+            reason = public_error(exc, "see the server log", expected=NETWORK_ERRORS)
             return Response(
-                {"detail": f"OpenStreetMap lookup failed: {exc}"},
+                {"detail": f"OpenStreetMap lookup failed: {reason}"},
                 status=502,
             )
         candidates = []

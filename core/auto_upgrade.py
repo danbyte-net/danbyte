@@ -156,7 +156,7 @@ def check_and_upgrade(now=None) -> dict:
     except UpgradeLaunchUncertain as exc:
         return {"skipped": "launch_uncertain", "error": str(exc)}
     except Exception as exc:  # noqa: BLE001
-        _record_launch_failure(exc)
+        error = _record_launch_failure(exc)
         _release_upgrade_lock(lock_owner)
-        return {"skipped": "launch_failed", "error": str(exc)}
+        return {"skipped": "launch_failed", "error": error}
     return {"upgrading": target, "from": cur, "attempt": attempt}

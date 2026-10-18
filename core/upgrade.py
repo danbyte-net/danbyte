@@ -522,20 +522,39 @@ def _write_status_fields(**values: object) -> None:
     os.replace(tmp, STATUS_FILE)
 
 
-def _record_launch_failure(exc: Exception) -> None:
-    """Publish a retryable failure that happened before any external launch."""
+#: What starting an upgrade fails with that reads well to the admin: the
+#: ``RuntimeError`` messages this module raises and download/verify/file
+#: errors. Anything else is logged and reported generically.
+_LAUNCH_EXPECTED = (RuntimeError, OSError, ValueError)
+
+
+def _launch_error(exc: Exception) -> str:
+    """The admin-facing reason an upgrade could not start."""
+    from .errors import public_error
+
+    return public_error(
+        exc, "The upgrade could not start. The details are in the server log.",
+        expected=_LAUNCH_EXPECTED,
+    )
+
+
+def _record_launch_failure(exc: Exception) -> str:
+    """Publish a retryable failure that happened before any external launch.
+    Returns the reason as published, for the caller's own answer."""
+    error = _launch_error(exc)
     try:
         status = _read_status()
         status.update({
             "state": "failed",
             "step": status.get("step") or "launch",
             "pct": 0,
-            "error": str(exc),
+            "error": error,
             "launch_attempted": False,
         })
         STATUS_FILE.write_text(json.dumps(status))
     except Exception:  # noqa: BLE001 - lock release must still happen
         pass
+    return error
 
 
 def _raise_launch_uncertain(
@@ -736,7 +755,7 @@ def start_upgrade(version: str, lock_owner: str, *, trigger: str = "button",
     except Exception as exc:  # noqa: BLE001 - surface a readable reason
         STATUS_FILE.write_text(json.dumps({
             "state": "failed", "step": "download", "pct": 0,
-            "version_to": version, "error": str(exc),
+            "version_to": version, "error": _launch_error(exc),
             "launch_attempted": False, "stage_api": STAGE_API,
             "trigger": trigger, "attempt": int(attempt or 1),
             # a network or repo hiccup: the timer may try again later
@@ -834,9 +853,9 @@ def system_upgrade(request):
     except UpgradeLaunchUncertain as exc:
         return Response({"detail": str(exc)}, status=502)
     except Exception as exc:  # noqa: BLE001 - bundle download / verify failure
-        _record_launch_failure(exc)
+        error = _record_launch_failure(exc)
         _release_upgrade_lock(lock_owner)
-        return Response({"detail": str(exc)}, status=502)
+        return Response({"detail": error}, status=502)
     return Response({"launched": True, "version": version, "via": how})
 
 
@@ -907,9 +926,9 @@ def system_upgrade_upload(request):
     except UpgradeLaunchUncertain as exc:
         return Response({"detail": str(exc)}, status=502)
     except Exception as exc:  # noqa: BLE001
-        _record_launch_failure(exc)
+        error = _record_launch_failure(exc)
         _release_upgrade_lock(lock_owner)
-        return Response({"detail": str(exc)}, status=500)
+        return Response({"detail": error}, status=500)
     return Response({"launched": True, "via": how, "file": f.name})
 
 
