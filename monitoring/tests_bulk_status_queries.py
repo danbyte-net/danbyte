@@ -262,3 +262,17 @@ class PrefixBulkStatusTests(_BulkStatusBase):
         self._login(user)
         _, out = self._post("prefixes", self._all())
         self.assertEqual(out, {})
+
+    def test_span_filter_is_not_correlated(self):
+        # The candidate addresses run as a subquery of the check-state query.
+        # A span test naming ``api_ipaddress`` bound to the outer query's join
+        # there, and Postgres re-ran the subquery per check state (#437).
+        body = {"prefixes": [str(p.id) for p in self._all()]}
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.post("/api/monitoring/status/", body, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        sqls = [q["sql"] for q in ctx.captured_queries]
+        self.assertFalse([s for s in sqls if "host(api_ipaddress." in s])
+        states = [s for s in sqls if 'FROM "monitoring_checkstate"' in s and "host(" in s]
+        self.assertEqual(len(states), 1, sqls)
+        self.assertRegex(states[0], r'host\(U\d+\."ip_address"\)::inet BETWEEN')

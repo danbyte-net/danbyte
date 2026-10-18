@@ -36,8 +36,7 @@ from api.models import (
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from django.db.models import BooleanField, Count, F, Q
-from django.db.models.expressions import RawSQL
+from django.db.models import BooleanField, Count, F, Func, Q
 from django.db.models.functions import Coalesce
 
 from django.utils import timezone
@@ -86,9 +85,24 @@ GRID_CAP = 1000
 MAX_STATUS_PREFIXES = 5000
 
 
-# The address with any stored mask dropped (a legacy row may carry one; the
-# model reads it back bare), so containment matches what Python would say.
-_HOST_INET = "host(api_ipaddress.ip_address)::inet"
+class _HostInet(Func):
+    """``host(<ip_address>)::inet <op> <params>``, a boolean test on an address.
+
+    The address with any stored mask dropped (a legacy row may carry one; the
+    model reads it back bare), so containment matches what Python would say.
+    Django compiles the column with its own alias: a raw ``api_ipaddress``
+    bound to the outer query's join once this ran as a subquery, which made
+    Postgres re-run it per check state (#437)."""
+
+    output_field = BooleanField()
+
+    def __init__(self, test, *params):
+        super().__init__(F("ip_address"))
+        self.test, self.params = test, list(params)
+
+    def as_sql(self, compiler, connection, **extra):
+        col, col_params = compiler.compile(self.source_expressions[0])
+        return f"host({col})::inet {self.test}", [*col_params, *self.params]
 
 
 def _child_ip_ids(prefix, tenant) -> list:
@@ -102,9 +116,7 @@ def _child_ip_ids(prefix, tenant) -> list:
         return []
     return list(
         IPAddress.objects.filter(tenant=tenant, vrf_id=prefix.vrf_id)
-        .annotate(_inside=RawSQL(
-            f"{_HOST_INET} <<= %s::inet", (str(net),), output_field=BooleanField(),
-        ))
+        .annotate(_inside=_HostInet("<<= %s::inet", str(net)))
         .filter(_inside=True)
         .values_list("id", flat=True)
     )
@@ -137,20 +149,18 @@ def _prefix_rollups(request, tenant, prefixes) -> dict:
         vrf_q |= Q(vrf_id__isnull=True)
     # Only the addresses that can sit in a requested prefix: the span from the
     # lowest to the highest address the prefixes cover, per family.
-    span_sql, span_params = [], []
+    span, spans = Q(), {}
     for version in (4, 6):
         fam = [n for _, n in nets.values() if n.version == version]
         if fam:
-            span_sql.append(f"{_HOST_INET} BETWEEN %s::inet AND %s::inet")
-            span_params += [
+            spans[f"_in_span{version}"] = _HostInet(
+                "BETWEEN %s::inet AND %s::inet",
                 str(min(n.network_address for n in fam)),
                 str(max(n.broadcast_address for n in fam)),
-            ]
+            )
+            span |= Q(**{f"_in_span{version}": True})
     candidates = _viewable_ips(
-        request, tenant,
-        IPAddress.objects.filter(vrf_q).annotate(_in_span=RawSQL(
-            " OR ".join(span_sql), span_params, output_field=BooleanField(),
-        )).filter(_in_span=True),
+        request, tenant, IPAddress.objects.filter(vrf_q).annotate(**spans).filter(span),
     )
     # Every candidate, sorted per (VRF, family); a prefix's children are one
     # contiguous run of it.

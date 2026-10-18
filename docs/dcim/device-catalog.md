@@ -836,6 +836,8 @@ for configuration rendering.
 
 A platform's page has a **Devices** tab and a **Virtual machines** tab, each
 listing what runs it; the API gives both counts (`device_count`, `vm_count`).
+Like every catalog count, they count only the devices and virtual machines
+you may view, so a site-limited user's tab number matches the table under it.
 
 ### Platform groups and the effective platform
 
