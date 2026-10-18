@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from core.errors import NETWORK_ERRORS, public_error
+
 logger = logging.getLogger(__name__)
 
 _MAX_BYTES = 64 * 1024 * 1024
@@ -63,7 +65,10 @@ def run_oui_import(run_id: str) -> None:
     except Exception as exc:  # noqa: BLE001 - land it on the run, keep the worker
         logger.exception("oui import failed")
         run.status = "failed"
-        run.error = str(exc)[:2000]
+        run.error = public_error(
+            exc, "The import failed. The details are in the server log.",
+            expected=NETWORK_ERRORS, log=False,
+        )
     finally:
         run.finished_at = timezone.now()
         if run.file:

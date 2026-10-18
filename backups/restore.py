@@ -21,6 +21,7 @@ from django.core.management import call_command
 from django.db import connection, connections
 from django.utils import timezone
 
+from core.errors import public_error
 from core.upgrade import _acquire_upgrade_lock, _release_upgrade_lock, _upgrade_running
 
 from . import maintenance
@@ -36,6 +37,7 @@ from .engine import (
     work_dir,
 )
 from .models import Backup, BackupSchedule, BackupTarget, RestoreRun
+from .storage import StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,8 @@ def _db_ownership() -> tuple[bool, str]:
             row = c.fetchone()
             schema_owner = row[0] if row else ""
     except Exception as exc:  # noqa: BLE001
-        return False, f"could not read ownership: {exc}"
+        return False, "could not read ownership: " + public_error(
+            exc, "the database did not answer; the details are in the server log")
     if superuser or owner == me:
         return True, f"{me} owns the database"
     if schema_owner == me:
@@ -103,7 +106,8 @@ def preview(backup: Backup, *, holding_lock: bool = False) -> dict:
         check("archive", False, str(exc))
     except Exception as exc:  # noqa: BLE001 - storage unreachable
         key_ok = False
-        check("archive", False, f"could not read the archive: {exc}")
+        check("archive", False, "could not read the archive: " + public_error(
+            exc, "the details are in the server log", expected=(StorageError, OSError)))
 
     comps = list(manifest.get("components") or backup.components or [])
     check("components", bool(comps), ", ".join(comps) or "nothing to restore")
