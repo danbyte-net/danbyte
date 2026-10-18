@@ -100,7 +100,9 @@ def target_allowed(host: str, *, allow_private: bool = False) -> tuple[bool, str
 
 def _verifying_context() -> ssl.SSLContext:
     """The normal, fully verifying client context (system trust store)."""
-    return ssl.create_default_context()
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
 
 
 def _reading_context() -> ssl.SSLContext:
@@ -108,6 +110,7 @@ def _reading_context() -> ssl.SSLContext:
     verifying pass already rejected. Never reused, never returned to a caller,
     and every result obtained through it is tagged ``unverified``."""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
