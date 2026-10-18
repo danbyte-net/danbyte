@@ -5,8 +5,10 @@ views against the regular test client.
 """
 from __future__ import annotations
 
+import socket
 from unittest import mock
 
+import httpx
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
@@ -112,7 +114,7 @@ class _FakeClient:
 def _patch_client(tree=None):
     return mock.patch(
         "monitoring.redfish._Client",
-        lambda endpoint: _FakeClient(endpoint, tree),
+        lambda endpoint, address=None: _FakeClient(endpoint, tree),
     )
 
 
@@ -195,6 +197,68 @@ class RedfishReconcileTests(_Base):
         self.ep.refresh_from_db()
         self.assertFalse(self.ep.reachable)
         self.assertIn("loopback", self.ep.error)
+
+
+class RedfishPinningTests(_Base):
+    """Requests go to the address that was checked, and a BMC's references
+    are paths on it - never a way to send the walker elsewhere."""
+
+    def _poll(self, tree):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            body = tree.get(request.url.path)
+            if body is None:
+                return httpx.Response(404, json={})
+            return httpx.Response(200, json=body)
+
+        real = httpx.Client
+
+        def client(**kw):
+            return real(transport=httpx.MockTransport(handler), **kw)
+
+        addr = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.10.5", 0))]
+        with mock.patch("monitoring.redfish.socket.getaddrinfo", return_value=addr), \
+                mock.patch("monitoring.redfish.httpx.Client", side_effect=client):
+            poll_endpoint(self.ep)
+        return seen
+
+    def test_requests_are_pinned_to_the_checked_address(self):
+        self.ep.host = "bmc.example.net"
+        self.ep.save(update_fields=["host"])
+        seen = self._poll(TREE)
+        self.ep.refresh_from_db()
+        self.assertTrue(self.ep.reachable, self.ep.error)
+        self.assertTrue(seen)
+        for req in seen:
+            self.assertEqual(req.url.host, "192.168.10.5")
+            self.assertEqual(req.headers["Host"], "bmc.example.net")
+            self.assertEqual(req.extensions.get("sni_hostname"), "bmc.example.net")
+
+    def test_a_reference_cannot_name_another_host(self):
+        import copy
+
+        tree = copy.deepcopy(TREE)
+        tree["/redfish/v1/Systems"]["Members"] = [
+            {"@odata.id": "@169.254.169.254/latest/meta-data"},
+            {"@odata.id": "https://169.254.169.254/latest"},
+            {"@odata.id": "/redfish/v1/Systems/1"},
+        ]
+        seen = self._poll(tree)
+        self.assertTrue(seen)
+        for req in seen:
+            self.assertEqual(req.url.host, "192.168.10.5")
+            self.assertTrue(req.url.path.startswith("/redfish/"))
+        self.assertEqual(self.device.inventory_items.count(), 6)
+
+    def test_a_fragment_reference_fetches_its_resource(self):
+        from .redfish import _Client
+
+        c = _Client(self.ep, "192.168.10.5")
+        url = c.url("/redfish/v1/Chassis/1/Power#/PowerSupplies/0")
+        self.assertEqual(str(url), "https://192.168.10.5/redfish/v1/Chassis/1/Power")
+        c.close()
 
 
 class RedfishApiTests(_Base):

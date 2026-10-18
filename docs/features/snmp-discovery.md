@@ -773,7 +773,11 @@ BMCs live on management (RFC1918) networks, which Danbyte's outbound-request
 guard normally blocks. A Redfish endpoint is a deliberate, **scoped**
 exception: it's configured by someone with device-change permission, pinned
 to that one host, fetched with redirects disabled, and loopback/link-local
-addresses are still refused. TLS verification is off by default (BMC
+addresses are still refused. Every request of a poll goes to the address the
+name resolved to when it was checked, and the BMC's own `@odata.id` links are
+followed only as `/redfish/…` paths on that address, so neither a DNS change
+nor a crafted response can send the poll, or its credentials, anywhere
+else. TLS verification is off by default (BMC
 certificates are usually self-signed) - enable it when yours chain to a
 trusted CA.
 
