@@ -122,6 +122,26 @@ def _bind_connection(dep):
     return conn
 
 
+def _ldap_error(exc: Exception) -> str:
+    """What the directory said, for the admin testing it: python-ldap's
+    ``desc``/``info`` pair, the SSRF guard's refusal or a transport error.
+    Anything else is logged and reported generically."""
+    import ldap
+
+    from core.errors import NETWORK_ERRORS, public_error
+
+    if isinstance(exc, ldap.LDAPError):
+        info = exc.args[0] if exc.args and isinstance(exc.args[0], dict) else {}
+        parts = [str(info.get(key) or "").strip() for key in ("desc", "info")]
+        text = " - ".join(part for part in parts if part)
+        if text:
+            return text[:300]
+    return public_error(
+        exc, "The directory could not be queried. The details are in the server log.",
+        expected=(*NETWORK_ERRORS, ldap.LDAPError),
+    )
+
+
 @extend_schema(
     summary="Test the deployment LDAP service-account bind",
     tags=["ldap"],
@@ -150,7 +170,7 @@ def ldap_test(request):
         conn = _bind_connection(dep)
         conn.unbind_s()
     except Exception as exc:  # noqa: BLE001 - surface the bind error to the admin
-        return Response({"ok": False, "error": str(exc)}, status=502)
+        return Response({"ok": False, "error": _ldap_error(exc)}, status=502)
     return Response({"ok": True})
 
 
@@ -301,7 +321,7 @@ def ldap_groups(request):
         )
         conn.unbind_s()
     except Exception as exc:  # noqa: BLE001
-        return Response({"detail": str(exc)}, status=502)
+        return Response({"detail": _ldap_error(exc)}, status=502)
 
     out = []
     for dn, attrs in rows:
@@ -493,7 +513,7 @@ def tenant_ldap_test(request):
         conn = _bind_connection(ts)
         conn.unbind_s()
     except Exception as exc:  # noqa: BLE001 - surface the bind error to the admin
-        return Response({"ok": False, "error": str(exc)}, status=502)
+        return Response({"ok": False, "error": _ldap_error(exc)}, status=502)
     return Response({"ok": True})
 
 
@@ -644,7 +664,7 @@ def tenant_ldap_groups(request):
         )
         conn.unbind_s()
     except Exception as exc:  # noqa: BLE001
-        return Response({"detail": str(exc)}, status=502)
+        return Response({"detail": _ldap_error(exc)}, status=502)
 
     out = []
     for dn, attrs in rows:

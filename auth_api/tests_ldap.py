@@ -168,3 +168,35 @@ class LDAPLoginGrantsTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(r.json()["grants_superuser"])
+
+
+class LDAPTestErrorTextTests(TestCase):
+    """The bind test repeats what the directory said, never an internal error."""
+
+    def setUp(self):
+        dep = DeploymentSettings.load()
+        dep.ldap_server_uri = "ldap://dc.example.test"
+        dep.save()
+        self.client.force_login(User.objects.create_superuser("root", "r@e.com", "x"))
+
+    def _test(self, exc):
+        from unittest import mock
+
+        with mock.patch("auth_api.ldap.ldap_available", return_value=True), \
+                mock.patch("auth_api.ldap_api._bind_connection", side_effect=exc):
+            return self.client.post("/api/deployment/ldap/test/")
+
+    def test_directory_reply_is_shown(self):
+        import ldap
+
+        r = self._test(ldap.INVALID_CREDENTIALS(
+            {"desc": "Invalid credentials", "info": "80090308: LdapErr: DSID-0C09"}))
+        self.assertEqual(r.status_code, 502, r.content)
+        self.assertEqual(r.json()["error"], "Invalid credentials - 80090308: LdapErr: DSID-0C09")
+
+    def test_internal_error_is_not_echoed(self):
+        with self.assertLogs("danbyte.errors", "ERROR"):
+            r = self._test(KeyError("ldap_bind_password in /srv/danbyte/secrets"))
+        self.assertEqual(r.status_code, 502, r.content)
+        self.assertNotIn("srv/danbyte", r.json()["error"])
+        self.assertIn("server log", r.json()["error"])
