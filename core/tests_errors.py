@@ -58,5 +58,35 @@ class PublicErrorTests(SimpleTestCase):
         with self.assertLogs("danbyte.errors", "ERROR"):
             self.assertEqual(public_error(ValueError("internal")), GENERIC_ERROR)
 
+    def test_log_false_stays_quiet(self):
+        with self.assertNoLogs("danbyte.errors"):
+            self.assertEqual(public_error(KeyError("k"), "fallback", log=False), "fallback")
+
     def test_expected_without_text_falls_back(self):
         self.assertEqual(public_error(OSError(), "Unreachable.", expected=OSError), "Unreachable.")
+
+
+class SmtpErrorTextTests(SimpleTestCase):
+    """The SMTP test endpoints' wording runs on the same rules."""
+
+    def test_server_reply(self):
+        from core.email import describe_smtp_error, smtp_error_text
+
+        exc = smtplib.SMTPAuthenticationError(535, b"5.7.8 Username and Password not accepted")
+        self.assertEqual(smtp_error_text(exc), "5.7.8 Username and Password not accepted")
+        self.assertIn("rejected the login", describe_smtp_error(exc))
+
+    def test_refused_recipient(self):
+        from core.email import describe_smtp_error
+
+        exc = smtplib.SMTPRecipientsRefused({"x@example.test": (550, b"5.1.1 No such user")})
+        self.assertIn("rejected the recipient (550)", describe_smtp_error(exc))
+        self.assertIn("No such user", describe_smtp_error(exc))
+
+    def test_unexpected_is_not_echoed(self):
+        from core.email import describe_smtp_error, smtp_error_text
+
+        exc = AttributeError("'NoneType' object has no attribute 'email_host'")
+        self.assertEqual(smtp_error_text(exc), "")
+        with self.assertLogs("danbyte.errors", "ERROR"):
+            self.assertNotIn("NoneType", describe_smtp_error(exc))

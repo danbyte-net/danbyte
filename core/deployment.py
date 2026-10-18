@@ -1216,9 +1216,13 @@ def system_updates(request):
     try:
         releases = list_releases(repo, token)
     except Exception as e:  # noqa: BLE001 - surface a friendly reason
+        from core.errors import NETWORK_ERRORS, public_error
+
         return Response({
             "current": cur, "repo_url": repo, "releases": [],
-            "update_available": False, "error": str(e),
+            "update_available": False,
+            "error": public_error(e, "The release list could not be read.",
+                                  expected=NETWORK_ERRORS),
         })
     if dep.update_channel == "stable":
         releases = [r for r in releases if not r["prerelease"]]
@@ -1269,10 +1273,10 @@ def deployment_test_email(request):
             connection=conn,
         ).send(fail_silently=False)
     except Exception as exc:  # noqa: BLE001 - surface the SMTP error to the admin
-        from core.email import describe_smtp_error
+        from core.email import describe_smtp_error, smtp_error_text
 
         return Response(
-            {"ok": False, "detail": describe_smtp_error(exc), "error": str(exc)},
+            {"ok": False, "detail": describe_smtp_error(exc), "error": smtp_error_text(exc)},
             status=502,
         )
     return Response({"ok": True, "to": to})

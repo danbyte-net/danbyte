@@ -68,18 +68,22 @@ def public_error(
     fallback: str = GENERIC_ERROR,
     *,
     expected: type[BaseException] | tuple[type[BaseException], ...] = (),
+    log: bool = True,
 ) -> str:
     """Text about ``exc`` that is safe to return to a client.
 
     ``expected`` exceptions answer with their own message
     (:func:`exception_text`), or ``fallback`` when they carry none. Any other
-    exception is logged with its traceback and answers ``fallback``.
+    exception is logged with its traceback (unless ``log=False``, for a
+    caller that already logged it) and answers ``fallback``.
     """
     if expected and isinstance(exc, expected):
         text = exception_text(exc)
         if text:
             return text
         logger.debug("%s without a message; answered %r", type(exc).__name__, fallback)
+        return fallback
+    if not log:
         return fallback
     logger.error(
         "Unexpected %s; the client was told %r", type(exc).__name__, fallback,

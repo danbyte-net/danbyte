@@ -511,14 +511,50 @@ def send_html_email(
         return False
 
 
+#: What a send can fail with that is worth repeating to the admin: SMTP and
+#: socket/TLS errors (all ``OSError``), a bad address (``ValueError``) and the
+#: ``RuntimeError`` messages Danbyte's own senders raise. Anything else is a
+#: bug, logged and not echoed.
+SMTP_EXPECTED_ERRORS = (OSError, ValueError, RuntimeError)
+
+
+def smtp_error_text(exc: Exception) -> str:
+    """The mail server's own reply, or the transport error's message - ``""``
+    for an exception that is neither."""
+    from core.errors import exception_text
+
+    reply = getattr(exc, "smtp_error", None)
+    if isinstance(reply, bytes):
+        reply = reply.decode("utf-8", "replace")
+    if isinstance(reply, str) and reply.strip():
+        return " ".join(reply.split())[:300]
+    # SMTPRecipientsRefused: {address: (code, reply)} - the first refusal.
+    refused = getattr(exc, "recipients", None)
+    if isinstance(refused, dict) and refused:
+        address, answer = next(iter(refused.items()))
+        if isinstance(answer, tuple) and len(answer) == 2:
+            code, said = answer
+            if isinstance(said, bytes):
+                said = said.decode("utf-8", "replace")
+            return " ".join(f"{address}: {code} {said}".split())[:300]
+    if isinstance(exc, SMTP_EXPECTED_ERRORS):
+        return exception_text(exc)
+    return ""
+
+
 def describe_smtp_error(exc: Exception) -> str:
     """A human sentence for an SMTP failure - what went wrong and what to do.
 
     The raw exceptions ("(421, b'Service not available')") are useless in a
     toast; every test/preview endpoint routes its error through here so the UI
-    can say something actionable.
+    can say something actionable. An exception that is not a send failure is
+    logged with its traceback and described only generically.
     """
-    text = str(exc) or exc.__class__.__name__
+    if not isinstance(exc, SMTP_EXPECTED_ERRORS):
+        from core.errors import public_error
+
+        return public_error(exc, "Sending failed. The details are in the server log.")
+    text = smtp_error_text(exc) or exc.__class__.__name__
     code = getattr(exc, "smtp_code", None)
     if code is None:
         import re
