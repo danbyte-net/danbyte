@@ -170,6 +170,7 @@ class SsoSuperuserGrantTests(TestCase):
 
     def _claims(self, groups):
         return {
+            "sub": "root-ish-sub",
             "preferred_username": "root-ish",
             "email": "root@example.com",
             "groups": groups,
@@ -194,6 +195,192 @@ class SsoSuperuserGrantTests(TestCase):
         self.provider.save(update_fields=["tenant"])
         user = resolve_user(self.provider, self._claims(["DanbyteAdmins"]))
         self.assertFalse(user.is_superuser)
+
+
+class SsoAccountLinkingGuardTests(TestCase):
+    """Linking an existing account by username/email must never hand out an
+    account bound to another provider, a superuser/staff/Admin account, or -
+    through a tenant-scoped provider - anything beyond that tenant."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.msp = Tenant.objects.create(org=org, name="MSP", slug="msp")
+        self.cust = Tenant.objects.create(org=org, name="Customer", slug="cust")
+        self.corp = IdentityProvider.objects.create(
+            name="Corp IdP", slug="corp", protocol="oidc", tenant=None,
+        )
+        self.cust_idp = IdentityProvider.objects.create(
+            name="Customer IdP", slug="cust", protocol="oidc", tenant=self.cust,
+        )
+
+    def _sso_user(self, name, provider, subject, superuser=False):
+        u = User.objects.create_user(name, f"{name}@corp.example")
+        u.set_unusable_password()
+        u.is_superuser = superuser
+        u.is_staff = superuser
+        u.save()
+        UserProfile.objects.create(
+            user=u, auth_source="sso", sso_provider=provider, sso_subject=subject
+        )
+        return u
+
+    def _unbound(self, name, tenants=(), **profile):
+        u = User.objects.create_user(name, f"{name}@corp.example")
+        u.set_unusable_password()
+        u.save()
+        prof = UserProfile.objects.create(user=u, **profile)
+        prof.tenants.set(tenants)
+        return u
+
+    def _assert_binding(self, user, provider, subject):
+        prof = UserProfile.objects.get(user=user)
+        self.assertEqual(prof.sso_provider_id, provider.id if provider else None)
+        self.assertEqual(prof.sso_subject, subject)
+
+    def test_tenant_provider_cannot_take_over_superuser_of_other_provider(self):
+        boss = self._sso_user("boss", self.corp, "corp-sub-boss", superuser=True)
+        claims = {
+            "sub": "customer-sub-mallory", "preferred_username": "boss",
+            "email": "mallory@customer.example",
+        }
+        with self.assertRaises(SsoError):
+            resolve_user(self.cust_idp, claims)
+        self._assert_binding(boss, self.corp, "corp-sub-boss")
+
+    def test_other_deployment_provider_cannot_take_over_bound_account(self):
+        other = IdentityProvider.objects.create(name="Other", slug="other", protocol="oidc")
+        u = self._sso_user("ann", self.corp, "corp-sub-ann")
+        with self.assertRaises(SsoError):
+            resolve_user(other, {"sub": "x", "preferred_username": "ann"})
+        with self.assertRaises(SsoError):
+            resolve_user(other, {
+                "sub": "y", "preferred_username": "zz", "email": "ann@corp.example",
+                "email_verified": True,
+            })
+        self._assert_binding(u, self.corp, "corp-sub-ann")
+
+    def test_bound_account_still_signs_in_with_its_own_identity(self):
+        u = self._sso_user("ann", self.corp, "corp-sub-ann")
+        got = resolve_user(self.corp, {"sub": "corp-sub-ann", "preferred_username": "ann"})
+        self.assertEqual(got.pk, u.pk)
+
+    def test_tenant_provider_cannot_link_unbound_account_outside_its_tenant(self):
+        # No tenant at all (e.g. a fresh LDAP/admin-created account) and an
+        # account of another tenant are both refused.
+        ops = self._unbound("ops")
+        msp_user = self._unbound("tech", tenants=[self.msp])
+        both = self._unbound("both", tenants=[self.cust, self.msp])
+        for u in (ops, msp_user, both):
+            with self.assertRaises(SsoError):
+                resolve_user(self.cust_idp, {"sub": f"c-{u.username}",
+                                             "preferred_username": u.username})
+            self._assert_binding(u, None, "")
+
+    def test_tenant_provider_cannot_link_ldap_account_of_its_tenant(self):
+        u = self._unbound("dir", tenants=[self.cust], auth_source="ldap")
+        with self.assertRaises(SsoError):
+            resolve_user(self.cust_idp, {"sub": "c-dir", "preferred_username": "dir"})
+        self._assert_binding(u, None, "")
+
+    def test_tenant_provider_cannot_link_member_of_unscoped_group(self):
+        u = self._unbound("grp", tenants=[self.cust])
+        from .models import ObjectPermission
+
+        g = Group.objects.create(name="Everywhere")
+        perm = ObjectPermission.objects.create(name="all", enabled=True)
+        perm.groups.add(g)
+        u.groups.add(g)
+        with self.assertRaises(SsoError):
+            resolve_user(self.cust_idp, {"sub": "c-grp", "preferred_username": "grp"})
+
+    def test_tenant_provider_links_precreated_account_of_its_tenant(self):
+        u = self._unbound("cara", tenants=[self.cust])
+        got = resolve_user(self.cust_idp, {"sub": "c-cara", "preferred_username": "cara"})
+        self.assertEqual(got.pk, u.pk)
+        self._assert_binding(u, self.cust_idp, "c-cara")
+
+    def test_privileged_accounts_are_never_auto_linked(self):
+        su = self._unbound("root1")
+        su.is_superuser = True
+        su.save()
+        staff = self._unbound("staff1")
+        staff.is_staff = True
+        staff.save()
+        admin_role = self._unbound("adm1", role="admin")
+        for u in (su, staff, admin_role):
+            for provider in (self.corp, self.cust_idp):
+                with self.assertRaises(SsoError):
+                    resolve_user(provider, {"sub": f"s-{u.username}",
+                                            "preferred_username": u.username})
+            self._assert_binding(u, None, "")
+
+    def test_tenant_provider_never_signs_in_privileged_bound_account(self):
+        u = self._sso_user("promoted", self.cust_idp, "c-promoted")
+        u.is_superuser = True
+        u.save()
+        with self.assertRaises(SsoError):
+            resolve_user(self.cust_idp, {"sub": "c-promoted",
+                                         "preferred_username": "promoted"})
+
+    def test_deployment_provider_signs_in_bound_superuser(self):
+        boss = self._sso_user("boss", self.corp, "corp-sub-boss", superuser=True)
+        got = resolve_user(self.corp, {"sub": "corp-sub-boss", "preferred_username": "boss"})
+        self.assertEqual(got.pk, boss.pk)
+
+    def test_deployment_provider_links_ordinary_unbound_account(self):
+        u = self._unbound("plain")
+        got = resolve_user(self.corp, {"sub": "corp-plain", "preferred_username": "plain"})
+        self.assertEqual(got.pk, u.pk)
+
+    def test_orphaned_binding_relinks_only_via_deployment_provider(self):
+        old = IdentityProvider.objects.create(name="Old", slug="old", protocol="oidc")
+        u = self._sso_user("mover", old, "old-sub")
+        old.delete()  # SET_NULL leaves the subject behind
+        with self.assertRaises(SsoError):
+            resolve_user(self.cust_idp, {"sub": "c-mover", "preferred_username": "mover"})
+        got = resolve_user(self.corp, {"sub": "corp-mover", "preferred_username": "mover"})
+        self.assertEqual(got.pk, u.pk)
+        self._assert_binding(u, self.corp, "corp-mover")
+
+
+class SsoViewLinkingGuardTests(TestCase):
+    """The OIDC callback and SAML ACS refuse the takeover and log nobody in."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        cust = Tenant.objects.create(org=org, name="Customer", slug="cust")
+        corp = IdentityProvider.objects.create(name="Corp", slug="corp", protocol="oidc")
+        IdentityProvider.objects.create(
+            name="Cust OIDC", slug="cust-oidc", protocol="oidc", tenant=cust, enabled=True,
+        )
+        IdentityProvider.objects.create(
+            name="Cust SAML", slug="cust-saml", protocol="saml", tenant=cust, enabled=True,
+        )
+        boss = User.objects.create_user("boss", "boss@corp.example")
+        boss.set_unusable_password()
+        boss.is_superuser = boss.is_staff = True
+        boss.save()
+        UserProfile.objects.create(user=boss, sso_provider=corp, sso_subject="corp-sub")
+        self.claims = {"sub": "mallory", "nameid": "mallory", "preferred_username": "boss",
+                       "email": "boss@corp.example", "email_verified": True}
+
+    def _assert_refused(self, r):
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("sso_error=", r["Location"])
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_oidc_callback_refuses_takeover(self):
+        s = self.client.session
+        s.update({"sso_state": "st", "sso_nonce": "n", "sso_slug": "cust-oidc"})
+        s.save()
+        with mock.patch("auth_api.sso_api.exchange_code", return_value=self.claims):
+            r = self.client.get("/api/auth/sso/cust-oidc/callback/?code=c&state=st")
+        self._assert_refused(r)
+
+    def test_saml_acs_refuses_takeover(self):
+        with mock.patch("auth_api.saml.parse_and_validate", return_value=self.claims):
+            r = self.client.post("/api/auth/sso/cust-saml/acs/", {"SAMLResponse": "x"})
+        self._assert_refused(r)
 
 
 class SsoUserEditTests(TestCase):
