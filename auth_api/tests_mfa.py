@@ -94,6 +94,45 @@ class LoginFlowTests(TestCase):
         self.assertEqual(ver.status_code, 200)
         self.assertTrue(self._authed())
 
+    def test_self_enrolled_authenticator_is_asked_without_require_mfa(self):
+        # Enrolled under Preferences, no admin requirement: the password alone
+        # must not sign in any more.
+        _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
+        secret = _post(self.c, "/api/auth/mfa/totp/setup/").json()["secret"]
+        conf = _post(self.c, "/api/auth/mfa/totp/confirm/", code=pyotp.TOTP(secret).now())
+        self.assertEqual(conf.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)
+        self.assertFalse(self.profile.require_mfa)
+
+        _post(self.c, "/api/auth/logout/")
+        r = _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body.get("mfa_required"))
+        self.assertNotIn("ok", body)
+        self.assertIn("totp", body["methods"])
+        self.assertFalse(self._authed())
+
+        from datetime import UTC, datetime
+
+        ver = _post(
+            self.c, "/api/auth/mfa/verify/", method="totp",
+            code=pyotp.TOTP(secret).at(datetime.now(UTC), 1),
+        )
+        self.assertEqual(ver.status_code, 200)
+        self.assertTrue(self._authed())
+
+    def test_removing_self_enrolled_authenticator_restores_password_login(self):
+        _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
+        secret = _post(self.c, "/api/auth/mfa/totp/setup/").json()["secret"]
+        _post(self.c, "/api/auth/mfa/totp/confirm/", code=pyotp.TOTP(secret).now())
+        off = _post(self.c, "/api/auth/mfa/totp/disable/", password="pw12345!")
+        self.assertEqual(off.status_code, 200)
+        _post(self.c, "/api/auth/logout/")
+        r = _post(self.c, "/api/auth/login/", username="alice", password="pw12345!")
+        self.assertEqual(r.json(), {"ok": True})
+
     def test_invite_create_and_set_password(self):
         from urllib.parse import parse_qs, urlparse
 

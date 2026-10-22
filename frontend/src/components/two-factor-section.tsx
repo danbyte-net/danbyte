@@ -14,8 +14,10 @@ import { SettingsCard } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 
 // Two-factor authentication: authenticator (TOTP) enrolment for the current
-// user. Email OTP needs no setup here - it's available at login whenever the
-// account has an email and `mfa_email` is on; an admin toggles `require_mfa`.
+// user. A confirmed authenticator is asked at every password (local or LDAP)
+// sign-in, with or without the admin's `require_mfa`; SSO leaves it to the
+// IdP. Email OTP needs no setup - it is offered whenever a code is asked and
+// the account has an email with `mfa_email` on.
 export function TwoFactorSection() {
   const { me } = useMe()
   const qc = useQueryClient()
@@ -78,7 +80,9 @@ export function TwoFactorSection() {
         <>
           Add a second factor to your sign-in. Scan the QR with an authenticator
           app (1Password, Authy, Google Authenticator) for a rolling 6-digit
-          code. {me.mfa?.email_available && "Email codes are also available."}
+          code. Once set up, every password sign-in asks for it.{" "}
+          {me.mfa?.email_available && "A code sent to your email also works. "}
+          Single sign-on uses your identity provider's two-factor instead.
         </>
       }
     >
