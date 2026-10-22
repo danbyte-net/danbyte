@@ -650,6 +650,24 @@ class CsvDialectTests(APITestCase):
         self.assertEqual(res["created"], 0)
         self.assertEqual(res["errors"][0]["error"], "name: This field cannot be blank.")
 
+    def test_an_unexpected_row_error_is_not_echoed(self):
+        from unittest import mock
+
+        from django.db import DataError
+
+        boom = DataError('value too long for type character varying(64) in "api_site"')
+        with mock.patch("api.io.ModelIOHandler.apply", side_effect=boom):
+            res = self._import("name\nX\n")
+        self.assertEqual(res["created"], 0)
+        # a database refusal is worded plainly (#353) ...
+        self.assertNotIn("character varying", res["errors"][0]["error"])
+        with mock.patch("api.io.ModelIOHandler.apply", side_effect=TypeError("'NoneType'")), \
+                self.assertLogs("danbyte.errors", "ERROR"):
+            res = self._import("name\nX\n")
+        # ... and a bug is logged, not shown
+        self.assertNotIn("NoneType", res["errors"][0]["error"])
+        self.assertIn("server log", res["errors"][0]["error"])
+
 
 class IOImportStatusTests(_IOCase):
     """A status goes only on the kinds of object its catalog entry offers it

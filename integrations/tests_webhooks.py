@@ -82,6 +82,16 @@ class WebhookMatchTests(TestCase):
         self.assertFalse(res["ok"])
         self.assertIn("boom", res["error"])
 
+    def test_unexpected_delivery_error_is_not_echoed(self):
+        h = self._hook()
+        with mock.patch("integrations.webhooks.safe_request",
+                        side_effect=TypeError("unsupported operand in /app/integrations/x.py")), \
+                self.assertLogs("danbyte.errors", "ERROR"):
+            res = wh.deliver_webhook(str(h.id), "created", "prefix", "x", {})
+        self.assertFalse(res["ok"])
+        self.assertNotIn("operand", res["error"])
+        self.assertIn("server log", res["error"])
+
 
 class WebhookHeaderSecrecyTests(APITestCase):
     """Additional headers carry Authorization values, so the API never reads

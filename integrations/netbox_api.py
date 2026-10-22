@@ -116,7 +116,12 @@ def netbox_test(request):
     except SSRFError as exc:
         return Response({"ok": False, "error": f"Refused: {exc}"}, status=400)
     except Exception as exc:  # noqa: BLE001 - surface the connection error
-        return Response({"ok": False, "error": str(exc)}, status=502)
+        from core.errors import NETWORK_ERRORS, public_error
+
+        return Response({"ok": False, "error": public_error(
+            exc, "NetBox could not be reached. The details are in the server log.",
+            expected=NETWORK_ERRORS,
+        )}, status=502)
     return Response({
         "ok": True,
         "netbox_version": status.get("netbox-version") or status.get("version"),

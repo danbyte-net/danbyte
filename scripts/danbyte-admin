@@ -4666,6 +4666,7 @@ def served_fingerprint(host: str, port: int = 443, sni: str = "") -> dict | None
     fingerprint, so the screen can say whether a reload took."""
     import hashlib
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     try:

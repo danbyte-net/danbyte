@@ -17,6 +17,14 @@ class SpeedHelpersTests(APITestCase):
         self.assertEqual(speed_mbps("10G"), 10000)
         self.assertIsNone(speed_mbps("fast"))
 
+    def test_spaced_units_and_junk(self):
+        self.assertEqual(speed_mbps(" 1 Gbps "), 1000)
+        self.assertEqual(speed_mbps("100 Mbit/s"), 100)
+        self.assertEqual(speed_mbps("2.5G"), 2500)
+        self.assertIsNone(speed_mbps("1G 2G"))
+        # A long run of digits is refused outright, not scanned.
+        self.assertIsNone(speed_mbps("9" * 50_000 + "x"))
+
     def test_normalize(self):
         for raw, want in (
             ("1000000", "1G"), ("25000000", "25G"), ("2500000", "2.5G"),

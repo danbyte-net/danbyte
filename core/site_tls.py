@@ -147,6 +147,7 @@ def served(host: str = "", port: int = 443, timeout: float = 2.0) -> dict | None
     """What ``:443`` presents right now for the site's name - the truth the
     card shows beside what was dropped. None when nothing answers."""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     sni = host or public_host()

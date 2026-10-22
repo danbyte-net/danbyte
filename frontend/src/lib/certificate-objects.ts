@@ -29,3 +29,16 @@ export const CERTIFICATE_OBJECT_TYPES: Record<
 export function certificateObjectLabel(objectType: string): string {
   return CERTIFICATE_OBJECT_TYPES[objectType]?.label ?? objectType
 }
+
+/** Whether an ACME directory URL is Let's Encrypt's production CA, judged
+ * by the URL's host rather than a substring anywhere in it. */
+export function isLetsEncryptDirectory(directoryUrl: string): boolean {
+  try {
+    return (
+      new URL(directoryUrl).hostname.toLowerCase() ===
+      "acme-v02.api.letsencrypt.org"
+    )
+  } catch {
+    return false
+  }
+}

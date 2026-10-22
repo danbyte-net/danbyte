@@ -1109,9 +1109,11 @@ class CertificateRequestViewSet(TenantScopedViewSet):
                 "monitoring.acme_engine.finalize_order_job", str(order.id)
             )
         except Exception as exc:  # noqa: BLE001 - Redis down: report, don't 500
-            raise ValidationError(
-                {"detail": f"Could not enqueue the issuance job: {exc}"}
-            ) from exc
+            from core.errors import public_error
+
+            raise ValidationError({"detail": public_error(
+                exc, "Could not queue the issuance job. Is Redis running?"
+            )}) from exc
         return Response(AcmeOrderSerializer(order).data, status=202)
 
     @action(detail=True, methods=["post"], url_path="acme-issue")
@@ -1157,9 +1159,11 @@ class CertificateRequestViewSet(TenantScopedViewSet):
             )
         except Exception as exc:  # noqa: BLE001 - Redis down: report, don't 500
             order.delete()
-            raise ValidationError(
-                {"detail": f"Could not enqueue the issuance job: {exc}"}
-            ) from exc
+            from core.errors import public_error
+
+            raise ValidationError({"detail": public_error(
+                exc, "Could not queue the issuance job. Is Redis running?"
+            )}) from exc
         return Response(AcmeOrderSerializer(order).data, status=202)
 
     def perform_destroy(self, instance):
@@ -1772,13 +1776,18 @@ class NotificationChannelViewSet(TenantScopedViewSet):
         try:
             send_test(channel)
         except Exception as exc:  # noqa: BLE001 - surface the transport error
-            from core.email import describe_smtp_error
+            from core.email import SMTP_EXPECTED_ERRORS, describe_smtp_error, smtp_error_text
+            from core.errors import public_error
 
-            detail = (
-                describe_smtp_error(exc) if channel.kind == "email" else str(exc)
-            )
+            if channel.kind == "email":
+                detail, error = describe_smtp_error(exc), smtp_error_text(exc)
+            else:
+                detail = error = public_error(
+                    exc, "The test alert could not be sent. The details are in the server log.",
+                    expected=SMTP_EXPECTED_ERRORS,
+                )
             return Response(
-                {"ok": False, "detail": detail, "error": str(exc)}, status=502
+                {"ok": False, "detail": detail, "error": error}, status=502
             )
         return Response({"ok": True})
 
@@ -2321,9 +2330,11 @@ class OutpostReleaseViewSet(viewsets.ModelViewSet):
         try:
             rels = _list_github_releases(s.outpost_repo_url, token)
         except Exception as e:  # noqa: BLE001 - surface a friendly reason
-            return Response(
-                {"repo_url": s.outpost_repo_url, "versions": [], "error": str(e)}
-            )
+            from core.errors import NETWORK_ERRORS, public_error
+
+            error = public_error(e, "The release list could not be read.",
+                                 expected=NETWORK_ERRORS)
+            return Response({"repo_url": s.outpost_repo_url, "versions": [], "error": error})
         imported = set(OutpostRelease.objects.values_list("version", flat=True))
         for r in rels:
             r["imported"] = r["tag"] in imported or r["tag"].lstrip("v") in imported
@@ -2392,7 +2403,11 @@ class WatchedEndpointViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         try:
             run_watched_endpoint(ep)
         except Exception as exc:  # noqa: BLE001
-            raise ValidationError({"detail": f"Check failed: {exc}"}) from exc
+            from core.errors import NETWORK_ERRORS, public_error
+
+            reason = public_error(exc, "The details are in the server log.",
+                                  expected=NETWORK_ERRORS)
+            raise ValidationError({"detail": f"Check failed: {reason}"}) from exc
         ep.refresh_from_db()
         return Response(self.get_serializer(ep).data)
 

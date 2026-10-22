@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
@@ -28,7 +29,11 @@ def login_view(request):
     form = LoginForm(request, data=request.POST or None)
     if request.method == "POST" and form.is_valid():
         auth_login(request, form.get_user())
-        next_url = request.GET.get("next") or reverse("api:prefixes")
+        next_url = request.GET.get("next") or ""
+        if not url_has_allowed_host_and_scheme(
+            next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+        ):
+            next_url = reverse("api:prefixes")
         return redirect(next_url)
     return render(request, "auth/login.html", {"form": form})
 

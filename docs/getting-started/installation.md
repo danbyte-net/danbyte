@@ -470,6 +470,7 @@ Any of these can change later without a reinstall:
 |---|---|---|
 | `DB_HOST` / `DB_PORT` | `127.0.0.1` / `5432` | PostgreSQL host / port |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` | `danbyte` | Database name / role / password |
+| `DB_JIT` | `off` | `off` turns PostgreSQL JIT off for Danbyte's sessions; `on` keeps the server's setting ([why](../reference/settings.md#database-postgres-only)) |
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated; set on a server |
 | `DJANGO_SECRET_KEY` | `dev-key-change-in-prod` | **Required when `DEBUG=False`** |
 | `DEBUG` | `True` | Disable in prod |

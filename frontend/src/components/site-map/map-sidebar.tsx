@@ -20,6 +20,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CheckCountBadge,
   FoldableGroup,
+  ObjectRow,
   RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
@@ -98,19 +99,24 @@ function SiteRow({
   onSelect: (sel: MapSelected | null) => void
 }) {
   return (
-    <button
-      type="button"
+    <ObjectRow
       onClick={() => {
         onFocus(s.latitude!, s.longitude!)
         onSelect({ kind: "site", id: s.id })
       }}
-      className={cn(
-        "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
-        indent && "pl-6",
-        selected?.kind === "site" && selected.id === s.id
-          ? "bg-muted font-medium"
-          : "hover:bg-muted/60"
-      )}
+      selected={selected?.kind === "site" && selected.id === s.id}
+      className={cn(indent && "pl-6")}
+      trailing={
+        <>
+          <VisibilityToggle
+            vis={{ shown, onChange: onShownChange, what: s.name }}
+          />
+          <RowCheckBadge check={s.check} />
+          <span className="num text-[11px] text-muted-foreground/70">
+            {s.device_count}
+          </span>
+        </>
+      }
     >
       {/* No color dot: the pin on the map carries the site's color; in the
           list it's noise. Status chips are the only color here. */}
@@ -119,16 +125,7 @@ function SiteRow({
       >
         {s.name}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5">
-        <VisibilityToggle
-          vis={{ shown, onChange: onShownChange, what: s.name }}
-        />
-        <RowCheckBadge check={s.check} />
-        <span className="num text-[11px] text-muted-foreground/70">
-          {s.device_count}
-        </span>
-      </span>
-    </button>
+    </ObjectRow>
   )
 }
 

@@ -54,6 +54,13 @@ ergonomics on top:
     those belong to another site - in the API, the spreadsheet export and the
     context line of a search hit.
 
+    Counts on catalog objects count only what the reader may view: a
+    platform's devices and virtual machines, a device type's or role's
+    devices, a manufacturer's device and module types, a rack or cabinet
+    role's racks, a status's usage, a region's sites, and the like. The
+    number on a tab matches the table under it, and says nothing about other
+    sites.
+
 ## Which rows belong to a site
 
 A row belongs to a site through its own site, or through the object it hangs

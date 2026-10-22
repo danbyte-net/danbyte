@@ -58,4 +58,10 @@ describe("Markdown", () => {
   it("leaves an issue reference plain without a repo", () => {
     expect(html("fixes #1")).not.toContain("<a")
   })
+
+  it("links issues only under a web repo URL", () => {
+    const out = html("fixes #1", "javascript:alert(1)//")
+    expect(out).not.toContain("<a")
+    expect(out).not.toContain("javascript:")
+  })
 })

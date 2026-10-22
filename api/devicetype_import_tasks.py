@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import logging
 
+from core.errors import NETWORK_ERRORS, public_error
+
 logger = logging.getLogger(__name__)
 
 #: Keep at most this many per-file failures on the run (avoid unbounded JSON).
@@ -83,7 +85,9 @@ def run_devicetype_import(run_id: str) -> None:
             except Exception as exc:  # noqa: BLE001 - record, keep going
                 failed += 1
                 if len(failures) < _MAX_FAILURES:
-                    failures.append({"name": url, "error": str(exc)})
+                    failures.append({"name": url, "error": public_error(
+                        exc, "import failed", expected=NETWORK_ERRORS,
+                    )})
             done += 1
             if done % _PROGRESS_EVERY == 0 or done == total:
                 run.progress = {
@@ -95,7 +99,10 @@ def run_devicetype_import(run_id: str) -> None:
     except Exception as exc:  # noqa: BLE001 - the expand/list step blew up
         logger.exception("devicetype import %s failed", run_id)
         run.status = "failed"
-        run.error = str(exc)
+        run.error = public_error(
+            exc, "The import failed. The details are in the server log.",
+            expected=NETWORK_ERRORS, log=False,
+        )
     finally:
         run.failures = failures
         run.finished_at = timezone.now()
@@ -226,7 +233,10 @@ def run_devicetype_image_reimport(run_id: str) -> None:
     except Exception as exc:  # noqa: BLE001 - scope/airgap refusal, DB trouble
         logger.exception("devicetype image reimport %s failed", run_id)
         run.status = "failed"
-        run.error = str(exc)
+        run.error = public_error(
+            exc, "The reimport failed. The details are in the server log.",
+            expected=NETWORK_ERRORS, log=False,
+        )
     finally:
         run.failures = failures
         run.finished_at = timezone.now()

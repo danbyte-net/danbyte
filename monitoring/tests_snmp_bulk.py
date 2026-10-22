@@ -158,6 +158,23 @@ class BulkPollTests(_BulkBase):
             r = self.bulk("poll", [self.acc])
         self.assertEqual(r.status_code, 503)
 
+    def test_without_a_worker_it_says_so_and_queues_nothing(self):
+        # #441: the Docker workers had never started, so every run sat at
+        # 0 of N. With no worker on the queue the request answers 503.
+        for action in ("poll", "macs", "sync"):
+            with mock.patch("rq.Worker.count", return_value=0):
+                r = self.bulk(action, [self.acc])
+            self.assertEqual(r.status_code, 503, action)
+            self.assertIn("worker", r.json()["detail"])
+        self.assertEqual(self.queue.jobs, [])
+        self.assertEqual(self.redis.hashes, {})
+
+    def test_a_listening_worker_lets_the_run_start(self):
+        with mock.patch("rq.Worker.count", return_value=2) as count:
+            r = self.bulk("poll", [self.acc])
+        self.assertEqual(r.status_code, 202, r.content)
+        self.assertIs(count.call_args.kwargs["queue"], self.queue)
+
 
 class BulkScopeTests(_BulkBase):
     def test_bulk_needs_device_change(self):

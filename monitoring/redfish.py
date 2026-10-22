@@ -48,36 +48,74 @@ def _drive_media(media_type: str, protocol: str) -> str:
     return ""
 
 
-def _host_allowed(host: str) -> tuple[bool, str]:
-    """Loopback/link-local are never a BMC - refuse them even though the
-    endpoint is admin-configured. RFC1918 is expressly allowed here."""
+def _resolve_bmc(host: str) -> tuple[str, str]:
+    """``(address, "")`` to pin the connection to, or ``("", reason)``.
+
+    Loopback/link-local are never a BMC - refuse them even though the
+    endpoint is admin-configured. RFC1918 is expressly allowed here. The
+    caller connects to the returned address, not the name, so a DNS answer
+    that changes between this check and the connect cannot reach anything
+    the check refused."""
     try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError as exc:
-        return False, f"cannot resolve {host}: {exc}"
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError) as exc:
+        return "", f"cannot resolve {host}: {exc}"
     for info in infos:
         addr = ipaddress.ip_address(info[4][0])
         if addr.is_loopback or addr.is_link_local or addr.is_unspecified:
-            return False, f"{addr} is loopback/link-local - not a BMC address"
-    return True, ""
+            return "", f"{addr} is loopback/link-local - not a BMC address"
+    if not infos:
+        return "", f"cannot resolve {host}"
+    return infos[0][4][0], ""
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 class _Client:
-    """Minimal Redfish walker: GET a path, follow @odata.id references."""
+    """Minimal Redfish walker: GET a path, follow @odata.id references.
 
-    def __init__(self, endpoint):
+    Every request goes to the one validated address: the BMC's own
+    ``@odata.id`` references are taken as paths under ``/redfish/`` and
+    never as URLs, so a response cannot point the walker - or the
+    credentials it carries - at another host."""
+
+    def __init__(self, endpoint, address: str):
         creds = endpoint.secret_params or {}
-        self.base = f"https://{endpoint.host}:{endpoint.port}"
+        self.host = endpoint.host
+        self.address = address
+        self.port = int(endpoint.port)
+        host_header = self.host if self.port == 443 else f"{self.host}:{self.port}"
+        if ":" in self.host and _is_ip(self.host):
+            host_header = f"[{self.host}]" if self.port == 443 else f"[{self.host}]:{self.port}"
+        self.extensions = {} if _is_ip(self.host) else {"sni_hostname": self.host}
         self.http = httpx.Client(
             auth=(creds.get("username", ""), creds.get("password", "")),
             verify=endpoint.verify_tls,
             timeout=endpoint.timeout_ms / 1000,
             follow_redirects=False,
-            headers={"Accept": "application/json"},
+            headers={"Accept": "application/json", "Host": host_header},
         )
 
+    def url(self, ref: str) -> httpx.URL:
+        """The request URL for a Redfish reference, on the pinned address.
+        A fragment (``Power#/PowerSupplies/0``) names part of a resource and
+        is never sent."""
+        if not isinstance(ref, str) or not ref.startswith("/redfish/") or any(
+            c.isspace() or ord(c) < 32 for c in ref
+        ):
+            raise ValueError(f"not a Redfish path: {str(ref)[:200]!r}")
+        path, _, query = ref.partition("#")[0].partition("?")
+        url = httpx.URL(scheme="https", host=self.address, port=self.port, path=path)
+        return url.copy_with(query=query.encode()) if query else url
+
     def get(self, path: str) -> dict[str, Any]:
-        r = self.http.get(self.base + path)
+        r = self.http.get(self.url(path), extensions=self.extensions)
         r.raise_for_status()
         return r.json()
 
@@ -88,7 +126,7 @@ class _Client:
             if ref:
                 try:
                     out.append(self.get(ref))
-                except httpx.HTTPError as exc:  # skip broken members, keep going
+                except (httpx.HTTPError, ValueError) as exc:  # skip broken members
                     logger.info("redfish member %s failed: %s", ref, exc)
         return out
 
@@ -108,10 +146,10 @@ def _present(res: dict[str, Any]) -> bool:
 def collect(endpoint) -> dict[str, Any]:
     """Walk the BMC and return the observed hardware dict (see model help).
     Raises httpx.HTTPError / OSError on failure - callers persist the error."""
-    ok, reason = _host_allowed(endpoint.host)
-    if not ok:
+    address, reason = _resolve_bmc(endpoint.host)
+    if not address:
         raise OSError(reason)
-    c = _Client(endpoint)
+    c = _Client(endpoint, address)
     try:
         root = c.get("/redfish/v1/")
         out: dict[str, Any] = {

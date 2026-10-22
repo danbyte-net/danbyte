@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import re
 
+# Anchored at both ends and matched against stripped text: one number, one
+# unit, nothing else. The length cap below keeps any input cheap.
 _SPEED_RE = re.compile(
-    r"\s*(\d+(?:\.\d+)?)\s*(g|gbps|gbit/?s?|m|mbps|mbit/?s?)\s*", re.IGNORECASE
+    r"^(\d+(?:\.\d+)?)\s*(g|gbps|gbit/?s?|m|mbps|mbit/?s?)$", re.IGNORECASE
 )
+_MAX_SPEED_LEN = 32
 
 
 def speed_mbps(value) -> int | None:
@@ -21,6 +24,8 @@ def speed_mbps(value) -> int | None:
     IPAM/DCIM tools use for a numeric speed field (``1000000`` = 1 Gbps).
     """
     text = str(value or "").strip()
+    if len(text) > _MAX_SPEED_LEN:
+        return None
     if text.isdigit():
         return int(text) // 1000
     m = _SPEED_RE.fullmatch(text)

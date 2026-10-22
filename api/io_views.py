@@ -17,6 +17,7 @@ import csv
 import io as _io
 import json
 import re
+import zipfile
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -36,6 +37,7 @@ from rest_framework.response import Response
 
 from auth_api import rbac
 from auth_api.object_types import is_registered, model_for
+from core.errors import public_error
 
 from .bulk_import import plain_db_error
 from .io import _flat, io_for, io_types
@@ -589,7 +591,8 @@ def io_import_view(request, slug):
     except TooManyRows as exc:
         return Response({"detail": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001
-        return Response({"detail": f"Couldn't parse file: {exc}"}, status=400)
+        reason = public_error(exc, "see the server log", expected=_UNREADABLE_FILE)
+        return Response({"detail": f"Couldn't parse file: {reason}"}, status=400)
     if not rows:
         return Response({"detail": "No rows found."}, status=400)
     if len(rows) > MAX_IMPORT_ROWS:
@@ -674,17 +677,44 @@ def _import_rows(rows, handler, tenant, request, change_qs, add_qs, can_add,
             # worded plainly, never its text with constraint names and ids.
             errors.append({"row": i, "error": plain_db_error(exc)})
         except Exception as exc:  # noqa: BLE001
-            # Name the field: "name: This field cannot be blank." beats a bare
-            # "This field cannot be blank." with five columns to guess from.
-            md = getattr(exc, "message_dict", None)
-            msgs = (
-                [f"{k}: {' '.join(v)}" if k != "__all__" else " ".join(v) for k, v in md.items()]
-                if md else getattr(exc, "messages", None)
-            )
-            errors.append({
-                "row": i,
-                "error": "; ".join(msgs) if msgs else str(exc),
-            })
+            errors.append({"row": i, "error": _row_error(exc)})
+
+
+#: A spreadsheet or CSV that does not read: a bad value, a damaged zip,
+#: malformed CSV. Anything else is a bug, logged and not echoed.
+_UNREADABLE_FILE = (ValueError, csv.Error, zipfile.BadZipFile)
+
+
+def _row_error(exc: Exception) -> str:
+    """One row's refusal for the import report. Validation and API errors
+    are written for the user; anything else is logged and not echoed."""
+    from rest_framework.exceptions import APIException
+
+    # Name the field: "name: This field cannot be blank." beats a bare
+    # "This field cannot be blank." with five columns to guess from.
+    md = getattr(exc, "message_dict", None)
+    msgs = (
+        [f"{k}: {' '.join(v)}" if k != "__all__" else " ".join(v) for k, v in md.items()]
+        if md else getattr(exc, "messages", None)
+    )
+    if msgs:
+        return "; ".join(msgs)
+    if isinstance(exc, APIException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            msgs = [
+                " ".join(_flat(v)) if k in ("non_field_errors", "detail")
+                else f"{k}: {' '.join(_flat(v))}"
+                for k, v in detail.items()
+            ]
+        else:
+            msgs = _flat(detail)
+        if msgs:
+            return "; ".join(msgs)
+    return public_error(
+        exc, "This row could not be imported. The details are in the server log.",
+        expected=(ValueError, LookupError),
+    )
 
 
 class PermissionRow(Exception):

@@ -342,12 +342,21 @@ them out of tenant relays.
 
 ## Two-factor sign-in (MFA)
 
-You can require a second step at sign-in for any account.
+You can require a second step at sign-in for any account, and anyone can add
+one to their own.
 
 - Turn it on per user with **require two-factor sign-in**.
 - People set up their second factor under their own **Preferences → Two-factor
   authentication**, using either an authenticator app (scan a QR code) or a
   6-digit code sent to their email.
+- An authenticator someone sets up themselves is asked for at every password
+  sign-in (local or directory), whether or not two-factor is required on the
+  account. A code sent to their email also works when the account has an
+  email address and email codes are allowed. Removing the authenticator goes
+  back to the password alone, unless two-factor is required.
+- Single sign-on doesn't ask for Danbyte's second factor: the identity
+  provider authenticates the person, so set up MFA there. API tokens are
+  separate, scoped credentials and don't use it either.
 - An account that requires two-factor but has no second factor yet is asked to
   set up an authenticator app right after entering its password, and is not
   signed in until that is done.
@@ -356,6 +365,9 @@ You can require a second step at sign-in for any account.
   removed: add an email address first, or have an administrator clear it with
   `danbyte-admin users clear-mfa`.
 - An authenticator code is accepted once.
+- The Django admin (`/admin/`) and the job queue page (`/django-rq/`) have no
+  sign-in form of their own: they send you to the normal sign-in, second factor
+  included, and back again afterwards.
 
 ## Company directory (LDAP / Active Directory)
 
