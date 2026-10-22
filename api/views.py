@@ -78,10 +78,12 @@ SORT_FIELDS = {
 def _get_active_tenant(request=None):
     """The current tenant, scoped to what the signed-in user can access.
 
-    Picks the user's session-stored tenant if they still have access; else
-    falls back to the first allowed tenant. Anonymous callers or users
-    without any granted tenants get None - views should handle that with
-    ``api/no_org.html``.
+    A request authenticated by an API token gets exactly the token's tenant,
+    or None when that tenant is no longer allowed - never a fallback. Anything
+    else picks the user's session-stored tenant if they still have access;
+    else falls back to the home tenant, then the first allowed tenant.
+    Anonymous callers or users without any granted tenants get None - views
+    should handle that with ``api/no_org.html``.
 
     Unauthenticated calls (no request, or anonymous user) keep the legacy
     behaviour of returning the first active tenant. Anything signed in is
@@ -112,10 +114,14 @@ def _get_active_tenant(request=None):
     from auth_api.permissions import user_tenants
     allowed = user_tenants(request.user)
     tenant = None
-    # An API token is scoped to a tenant - honour it (runners have no session).
+    # An API token is scoped to exactly one tenant (runners have no session).
+    # If that tenant is no longer allowed the answer is None - never the
+    # session or home tenant, or the token would act in a tenant it was not
+    # issued for (#442). Token auth already refuses such a token; this keeps
+    # the resolver fail-closed for any other path that sets request.auth.
     if tok_tid:
         tenant = allowed.filter(pk=tok_tid).first()
-    if tenant is None:
+    else:
         # Session choice, else the profile's home tenant (site-role
         # provisioning sets it to where the user's grants live, so a
         # multi-tenant user does not land on an arbitrary first tenant), else

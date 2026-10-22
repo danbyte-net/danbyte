@@ -11,6 +11,15 @@ from rest_framework.permissions import SAFE_METHODS
 
 _LAST_USED_THROTTLE = 300  # only stamp last_used_at every N seconds
 
+TENANT_UNAVAILABLE = "This API token's tenant is no longer available to its user."
+
+
+def token_tenant_allowed(token) -> bool:
+    """True while the token's user may still work in the token's tenant."""
+    from .permissions import user_can_access_tenant
+
+    return user_can_access_tenant(token.user, token.tenant)
+
 
 class ApiTokenAuthentication(BaseAuthentication):
     keyword = b"token"
@@ -36,6 +45,11 @@ class ApiTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed("API token has expired.")
         if not token.user.is_active:
             raise AuthenticationFailed("User is inactive.")
+        if not token_tenant_allowed(token):
+            # The token speaks for exactly one tenant. Once that tenant is
+            # gone for its user (membership removed, tenant deactivated) the
+            # token is dead - it never moves to another tenant (#442).
+            raise AuthenticationFailed(TENANT_UNAVAILABLE)
         if token.read_only and request.method not in SAFE_METHODS:
             raise PermissionDenied("This API token is read-only.")
 
