@@ -415,6 +415,25 @@ class LandlockOnlyConfinementTests(ConfinementTests):
     """The same guarantees with bubblewrap off: the floor every level keeps."""
 
 
+class ProcessLimitTests(TestCase):
+    """RLIMIT_NPROC counts the whole service account, so outside bubblewrap
+    a run's limit sits on top of what the account already runs; a flat 256
+    made the first fork fail on a busy worker."""
+
+    def test_limit_adds_to_what_the_account_runs(self):
+        limit = sandbox.account_nproc_limit()
+        self.assertGreater(limit, sandbox.NPROC_LIMIT)  # this test process counts
+
+    def test_limit_stays_within_the_hard_limit(self):
+        with mock.patch("scripting.sandbox.resource.getrlimit", return_value=(10, 100)):
+            self.assertEqual(sandbox.account_nproc_limit(), 100)
+
+    def test_unlimited_hard_limit_is_not_a_cap(self):
+        inf = sandbox.resource.RLIM_INFINITY
+        with mock.patch("scripting.sandbox.resource.getrlimit", return_value=(inf, inf)):
+            self.assertGreater(sandbox.account_nproc_limit(), sandbox.NPROC_LIMIT)
+
+
 class SandboxModeTests(TestCase):
     """DANBYTE_SCRIPT_SANDBOX values (#316)."""
 

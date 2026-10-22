@@ -170,7 +170,7 @@ What each layer blocks:
 | Other processes | Cannot signal or trace processes outside the run | Its own process namespace: it sees only its own processes |
 | User | The service account | `nobody` (65534) in its own user namespace, which cannot create further namespaces; still the service account to the host |
 | Host name, IPC | The host's | Its own |
-| Processes | 256, counted across the service account | 256 for the run |
+| Processes | 256 more than the service account already runs | 256 for the run |
 
 Both layers apply together: inside bubblewrap the run is still under
 Landlock and the unix-socket filter, so a missing or refused `bwrap`
