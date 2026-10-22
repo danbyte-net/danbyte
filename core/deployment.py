@@ -531,6 +531,7 @@ FLOORPLAN_POPOVER_FIELDS = [
     # ── live state (already polled; no fetch) ──
     "utilization",
     "power",
+    "cooling",
     "weight",
     "device_count",
     "rail_count",

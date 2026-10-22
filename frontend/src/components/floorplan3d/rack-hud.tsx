@@ -5,7 +5,7 @@ import type { FloorPlanLiveState, Rack } from "@/lib/api"
 import { CapacityBar } from "@/components/cells/capacity-bar"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { PortsFigure } from "@/components/cells/ports-figure"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
 import { RowCheckBadge } from "@/components/foldable-group"
 import { PanelRow } from "@/components/map-panel"
 import { BarButton, BarTip } from "@/components/map-toolbar"
@@ -13,14 +13,18 @@ import { OpenLink } from "@/components/open-link"
 import { StatusBadge } from "@/components/status-badge"
 import { LEGEND_PILL } from "@/components/map-legend"
 import { WITH_PORTS } from "@/lib/port-utilization"
-import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
+import {
+  capacityRatio,
+  hasCoolingData,
+  hasPowerData,
+} from "@/lib/rack-capacity"
 
 import type { SceneTile } from "./world"
 
 /**
  * The card for the rack selected in the 3D room: its name and height, how
- * full it is - space, power, ports and panel ports, as the rack page and the
- * floor plan read them - its role and status as their pills, live
+ * full it is - space, power, cooling, ports and panel ports, as the rack page
+ * and the floor plan read them - its role and status as their pills, live
  * monitoring, and the focus / flip / isolate controls with the jump-off.
  *
  * The figures come from the plan's racks when the plan has them (it is
@@ -62,6 +66,7 @@ export function RackHud({
   const used = rackLive?.used_units ?? detail?.used_units ?? null
   const height = rackLive?.u_height ?? rack.u_height
   const power = rackLive?.power ?? detail?.power ?? null
+  const cooling = rackLive?.cooling ?? detail?.cooling ?? null
   const devices = rackLive?.device_count ?? rack.devices.length
   const panel = detail?.panel_ports
   return (
@@ -95,6 +100,11 @@ export function RackHud({
         {hasPowerData(power) && (
           <PanelRow label="Power">
             <PowerFigure power={power} bar barClassName="w-10" />
+          </PanelRow>
+        )}
+        {hasCoolingData(cooling) && (
+          <PanelRow label="Cooling">
+            <CoolingFigure cooling={cooling} bar barClassName="w-10" />
           </PanelRow>
         )}
         {detail?.ports && detail.ports.total > 0 && (

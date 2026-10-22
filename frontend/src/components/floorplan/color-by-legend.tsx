@@ -22,6 +22,7 @@ import type { CapacityMetric, ColorBy, RackFigures } from "./tile-paint"
 const BASIS: Record<CapacityMetric, string> = {
   space: "units used",
   power: "demand of supply",
+  cooling: "heat of capacity",
   ports: "in use",
   panel_ports: "in use",
 }

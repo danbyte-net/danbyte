@@ -199,6 +199,37 @@ describe("TilePopover on a rack tile", () => {
     ).toBe("critical")
   })
 
+  it("reads cooling as heat over capacity (#434), off by default", () => {
+    expect(POPOVER_FIELDS.cooling.label).toBe("Cooling")
+    expect(DEFAULT_POPOVER_FIELDS).not.toContain("cooling")
+    const live = (cooling: {
+      available_w: number
+      heat_allocated_w: number
+      heat_maximum_w: number
+    }) => ({
+      ...rackLive({ available_w: 0, allocated_w: 0, maximum_w: 0 }),
+      cooling: {
+        ...cooling,
+        supply: cooling.available_w > 0 ? ("budget" as const) : null,
+        mismatched: 0,
+      },
+    })
+    const rows = open(
+      rackTile,
+      ["cooling"],
+      live({ available_w: 10_000, heat_allocated_w: 3_200, heat_maximum_w: 0 })
+    )
+    expect(rows.Cooling.textContent).toBe("3.2 kW / 10 kW")
+    cleanup()
+    // Nothing to say: no row.
+    const none = open(
+      rackTile,
+      ["name", "cooling"],
+      live({ available_w: 0, heat_allocated_w: 0, heat_maximum_w: 0 })
+    )
+    expect(none.Cooling).toBeUndefined()
+  })
+
   it("says No feed, and skips a rack with no power at all", () => {
     const rows = open(
       rackTile,

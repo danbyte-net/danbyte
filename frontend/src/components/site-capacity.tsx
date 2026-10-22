@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import type {
   PortCountRow,
+  RackCooling,
   RackPower,
   SiteCapacity,
   SiteCapacityPlan,
@@ -12,7 +13,7 @@ import type {
 } from "@/lib/api"
 import { CapacityBar } from "@/components/cells/capacity-bar"
 import { PortsFigure } from "@/components/cells/ports-figure"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
@@ -53,6 +54,7 @@ export function showCapacityTab(
 const METRICS: readonly CapacityMetric[] = [
   "space",
   "power",
+  "cooling",
   "ports",
   "panel_ports",
 ]
@@ -63,6 +65,7 @@ export function siteRackFigures(r: SiteCapacityRack): RackFigures {
     used_units: r.u_used,
     u_height: r.u_height,
     power: r.power,
+    cooling: r.cooling,
     ports: r.ports,
     panel_ports: r.panel_ports,
     role: r.role,
@@ -314,7 +317,8 @@ function RackNames({ racks }: { racks: readonly SiteCapacityRack[] }) {
 }
 
 /** A card's figures: racks and devices, the units in use, power as demand
- * over supply, and the ports - which open the site's Port utilization. */
+ * over supply, cooling as heat over capacity, and the ports - which open the
+ * site's Port utilization. */
 function Totals({
   totals,
   siteId,
@@ -336,6 +340,27 @@ function Totals({
           (p.budget ?? 0) > 0 && `Budget: ${p.budget}`,
           p.pdu_rating > 0 && `PDU rating: ${p.pdu_rating}`,
           p.no_supply > 0 && `No supply: ${p.no_supply}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : ""
+  // Heat over cooling capacity (#434): the racks without a capacity add
+  // their heat, never a capacity, so the note counts them.
+  const c = totals.cooling
+  const cooling: RackCooling | null = c
+    ? {
+        available_w: c.available_w,
+        heat_allocated_w: c.heat_allocated_w,
+        heat_maximum_w: c.heat_maximum_w,
+        supply: c.available_w > 0 ? "budget" : null,
+        mismatched: c.mismatched,
+      }
+    : null
+  const coolingNote =
+    c && c.available_w > 0
+      ? [
+          c.no_supply > 0 && `No capacity: ${c.no_supply}`,
+          c.mismatched > 0 && `Mismatched: ${c.mismatched}`,
         ]
           .filter(Boolean)
           .join(" · ")
@@ -372,6 +397,19 @@ function Totals({
           {supplyNote && (
             <span className="text-[11px] text-muted-foreground">
               {supplyNote}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Cooling",
+      value: (
+        <span className="grid gap-0.5">
+          <CoolingFigure cooling={cooling} bar />
+          {coolingNote && (
+            <span className="text-[11px] text-muted-foreground">
+              {coolingNote}
             </span>
           )}
         </span>

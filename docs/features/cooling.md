@@ -105,6 +105,19 @@ tick it, sorting by the share of the capacity the heat takes; the rail
 filters by capability. A site's [Capacity](../models/site.md#capacity) API
 adds the racks up.
 
+## On the floor plan
+
+**Display → Color by → Cooling** colours a floor plan's racks - in 2D and in
+the 3D room - by their heat over their cooling capacity, on the same scale,
+grey with *No data* where a rack has no capacity
+([Color by](floor-plans.md#color-by)). The rack table under the plan gains a
+**Cooling** column, the tile popover a **Cooling** field (off by default,
+picked under **Settings → Floor plans → Tile popover**), and a rack's card
+in the 3D room a **Cooling** row under **Power**. The figure refreshes with
+the plan's 30-second live state, which carries each rack tile's `cooling`.
+A site's [Capacity](../models/site.md#the-capacity-tab) tab measures by
+**Cooling** too and adds its racks' heat up.
+
 ## In the API
 
 | Object | Fields |

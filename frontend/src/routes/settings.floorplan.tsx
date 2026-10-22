@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import {
   FieldListEditor,
   FieldScopeHeading,
@@ -53,6 +54,7 @@ const FIELD_META: Partial<Record<string, FieldMeta>> = {
     hint: "Racks: used U + a bar · cabinets: devices, rails",
   },
   power: { label: "Power", hint: "Racks: demand vs supply" },
+  cooling: { label: "Cooling", hint: "Racks: heat vs cooling capacity" },
   ports: { label: "Ports", hint: "Racks: ports and panel ports in use" },
   weight: { label: "Weight", hint: "Racks: total vs maximum load" },
   device_count: {
@@ -106,6 +108,7 @@ const GROUPS: { title: string; keys: string[] }[] = [
     keys: [
       "utilization",
       "power",
+      "cooling",
       "ports",
       "weight",
       "device_count",
@@ -220,8 +223,7 @@ function FloorplanSettingsPage() {
       </p>
     )
   if (q.isError) return <QueryError error={q.error} />
-  if (!q.data || fields === null || overrides === null)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!q.data || fields === null || overrides === null) return <Loading />
 
   // When this tenant inherits, the whole editor is a read-only preview of what
   // it's inheriting.
@@ -451,7 +453,8 @@ function inheritedSummary(
   return (
     <span>
       {labels.length ? labels.join(" · ") : "Just the tile name"}
-      {types > 0 && ` · ${types} type ${types === 1 ? "override" : "overrides"}`}
+      {types > 0 &&
+        ` · ${types} type ${types === 1 ? "override" : "overrides"}`}
     </span>
   )
 }

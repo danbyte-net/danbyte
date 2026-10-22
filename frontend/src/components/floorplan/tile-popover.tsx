@@ -31,11 +31,15 @@ import {
 import { tileName } from "@/components/floorplan/floor-canvas"
 import { CapacityBar } from "@/components/cells/capacity-bar"
 import { PortsFigure } from "@/components/cells/ports-figure"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
 import { FaceplateView } from "@/components/device-faceplate"
 import type { FaceplateSide } from "@/lib/faceplate-layout"
 import { useDateFormat } from "@/lib/datetime"
-import { capacityRatio, hasPowerData } from "@/lib/rack-capacity"
+import {
+  capacityRatio,
+  hasCoolingData,
+  hasPowerData,
+} from "@/lib/rack-capacity"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -285,6 +289,15 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       const r = rack(live)
       if (!r || !hasPowerData(r.power)) return null
       return <PowerFigure power={r.power} className="text-[11px]" />
+    },
+  },
+  cooling: {
+    label: "Cooling",
+    render: ({ live }) => {
+      // Heat / cooling capacity (#434), as the rack page reads it.
+      const r = rack(live)
+      if (!r || !hasCoolingData(r.cooling)) return null
+      return <CoolingFigure cooling={r.cooling} className="text-[11px]" />
     },
   },
   ports: {

@@ -10393,10 +10393,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def state(self, request, pk=None):
         """Live per-tile metrics for linked objects, keyed by tile id.
 
-        Rack tiles → space (used_units/u_height), power rollup, and the worst
-        monitoring status across the rack's devices' IPs; device tiles →
-        object status + monitoring rollup. The canvas polls/refetches this to
-        paint overlays without re-reading the whole plan."""
+        Rack tiles → space (used_units/u_height), power and cooling rollups,
+        and the worst monitoring status across the rack's devices' IPs;
+        device tiles → object status + monitoring rollup. The canvas
+        polls/refetches this to paint overlays without re-reading the whole
+        plan."""
         from django.utils import timezone
 
         from monitoring.models import CheckState
@@ -10459,6 +10460,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "used_units": rs.get_used_units(rack),
                     "u_height": rack.u_height,
                     "power": rs.get_power(rack),
+                    "cooling": rs.get_cooling(rack),
                     "total_weight_kg": rs.get_total_weight_kg(rack),
                     "max_weight_kg": rs.get_max_weight_kg(rack),
                     "device_count": len(rack_devices[rack.id]),

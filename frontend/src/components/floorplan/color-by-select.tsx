@@ -15,7 +15,7 @@ import type { ColorBy } from "./tile-paint"
  * rack's catalog colours. */
 const GROUPS: ColorBy[][] = [
   ["type"],
-  ["space", "power", "ports", "panel_ports"],
+  ["space", "power", "cooling", "ports", "panel_ports"],
   ["role", "status"],
 ]
 

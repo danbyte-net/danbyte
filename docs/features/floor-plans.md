@@ -329,9 +329,9 @@ uploaded blueprint or CAD drawing textures it.
 - **View rear** on a rack's card flips the camera to the cabinet's other
   face - the same framing as a double-click fly-to, mirrored through the
   rack - and flips back with **View front**.
-- **A rack's card** gives its devices, **Space**, **Power**, **Ports** and
-  **Panel ports** as bars on the racks' scale, and its role and status as
-  their pills.
+- **A rack's card** gives its devices, **Space**, **Power**, **Cooling**,
+  **Ports** and **Panel ports** as bars on the racks' scale, and its role and
+  status as their pills.
 - **Color by** (Display) colours the room's racks as it colours their 2D
   tiles: a cabinet takes its tile's fill - the whole frame from afar, the
   posts, caps and side panels up close - with the same legend in the corner,
@@ -578,7 +578,8 @@ stay zones.
 
 The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds - a
 poll that costs the same number of queries however many devices the plan
-holds. A rack tile's figures are the rack page's, its `power` included (see
+holds. A rack tile's figures are the rack page's, its `power` and `cooling`
+included (see
 [Racks](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports)); a
 plan's racks with their port figures are
 `GET /api/racks/?floor_plan=<id>&include=ports`, asked for once rather than
@@ -609,15 +610,17 @@ what they are - in 2D and in the 3D room alike:
 | **Type** (the default) | The plan as it always looked: every tile in its type's colour. |
 | **Space** | Units in use over its height. |
 | **Power** | Demand over supply, as the [rack page](../dcim/racks.md) reads it. |
+| **Cooling** | Heat over its cooling capacity, as the rack page reads it - see [Cooling](cooling.md). |
 | **Ports** | Ports in use - cabled or reserved - over its devices' counted interfaces, patch panels aside. |
 | **Panel ports** | The same for its front ports and patch-panel devices. |
 | **Rack role** | Its role's colour. |
 | **Status** | Its status's colour. |
 
-- The four measures fill a rack's tile with its level on the racks' one
+- The five measures fill a rack's tile with its level on the racks' one
   scale - green up to the tenant's warning level, amber above it, red above
   its critical level (80 % and 95 % unless changed) - and grey where
-  there is nothing to measure: no supply, no ports counted. The figure is
+  there is nothing to measure: no supply, no cooling capacity, no ports
+  counted. The figure is
   always written on the tile, `86%` or *No data*, on a one-cell rack too, so
   the reading never rests on colour alone; the bar along the tile's foot
   shows the same measure.
@@ -634,7 +637,7 @@ what they are - in 2D and in the 3D room alike:
   with no Hide button, so the [PNG](#export) carries it.
 - The choice is saved with the plan, like its other view settings: an
   editor's choice is the plan's, a viewer's lasts the visit.
-- Units and power refresh with the 30-second [live state](#live-state-on-tiles);
+- Units, power and cooling refresh with the 30-second [live state](#live-state-on-tiles);
   ports, roles and statuses come from the plan's racks, asked for once when a
   rack choice is picked (`GET /api/racks/?floor_plan=<id>&include=ports`),
   never on the poll.
@@ -643,8 +646,9 @@ what they are - in 2D and in the 3D room alike:
 
 While the plan is coloured by its racks, a table of them opens under it,
 the width of the page: the racks list's own columns - **Name**, **Role**,
-**Status**, **Devices**, **Used**, **Power**, **Ports**, **Panel ports** and
-**Tags** - sortable, with the rest and the custom fields in **Columns**.
+**Status**, **Devices**, **Used**, **Power**, **Cooling**, **Ports**,
+**Panel ports** and **Tags** - sortable, with the rest and the custom fields
+in **Columns**.
 *Find rack…* matches a name or facility ID; the rail filters by role, status
 and tag, and its advanced filter reaches custom fields.
 
@@ -936,7 +940,8 @@ cable runs, just the trays, or both.
   outside dismisses it. Which rows appear is configurable - see
   [Popover fields](#popover-fields). **Power** reads as the rack page reads
   it: demand over supply (`1.2 kW / 3.6 kW`), marked *nameplate* when no draw
-  is recorded and *No feed* when no feed is.
+  is recorded and *No feed* when no feed is. **Cooling** reads the same way:
+  heat over cooling capacity, *No capacity* without one.
 - **Objects** (header toggle) opens a side list of everything placed on the
   plan - the same Objects sidebar the [site map](site-map.md) and the
   [topology map](topology.md) open. Tiles fold into groups by **device role**
@@ -1042,6 +1047,10 @@ automatically - no rack utilization on a wall tile - so turning one on is safe
 everywhere. A cabinet has no units to fill, so on its tile **Utilization**
 reads as its devices and rails; **Rails** shows the rail count on its own, and
 the cabinet's custom fields can be picked like a rack's.
+
+**Cooling** (off by default) gives a rack tile's heat over its cooling
+capacity, from the 30-second poll like **Power** - see
+[Cooling](cooling.md).
 
 **Ports** (off by default) gives a rack tile's ports in use over its counted
 ports, and its **panel ports** under them when it has any - the split the
