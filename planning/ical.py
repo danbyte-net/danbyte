@@ -88,6 +88,12 @@ def _resolve_token(request):
     )
     if token is None or token.is_expired or not token.user.is_active:
         return None
+    # Same rule as the header auth: a token whose tenant is gone for its
+    # user is dead, not moved elsewhere (#442).
+    from auth_api.token_auth import token_tenant_allowed
+
+    if not token_tenant_allowed(token):
+        return None
     return token
 
 
