@@ -30,7 +30,10 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 ## The detail page
 
 **Overview** carries the attribute cards, the disk list and the VM's
-**Topology** card - its networks as rails, the same drawing as the
+**Topology** card. Under the platform, **OS support** is its
+[lifetime bar](lifecycle.md#the-lifetime-bar): the platform's effective dates,
+entered or from its [end-of-life](end-of-life-data.md) cycle. The Topology
+card draws the VM's networks as rails, the same drawing as the
 [Virtual topology](virtual-switches.md#network-topology). With none mapped,
 the card says *No virtual networks yet.* and what to do: run a sync, turn on
 **Sync virtual switches & networks** on its source, or give one of its

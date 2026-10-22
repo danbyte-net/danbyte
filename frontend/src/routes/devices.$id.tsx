@@ -50,7 +50,7 @@ import { SiteCell } from "@/components/cells/site-cell"
 import {
   LifecycleBar,
   LifecycleFlag,
-  lifecyclePct,
+  hasLifetime,
 } from "@/components/cells/lifecycle-cell"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
@@ -831,7 +831,8 @@ function DeviceOverview({
         dash
       ),
     },
-    ...(d.platform && lifecyclePct(d.platform) !== null
+    // Its effective dates: entered, else the end-of-life mapping (#436).
+    ...(hasLifetime(d.platform)
       ? [
           {
             label: "OS support",
@@ -905,7 +906,7 @@ function DeviceOverview({
         dash
       ),
     },
-    ...(d.device_type && lifecyclePct(d.device_type) !== null
+    ...(hasLifetime(d.device_type)
       ? [
           {
             label: "Hardware support",
@@ -916,9 +917,7 @@ function DeviceOverview({
     // Support & warranty coverage (#421), next to the vendor lifecycle.
     {
       label: "Support coverage",
-      value: (
-        <CoverageSummary status={d.coverage?.status} end={d.coverage?.end} />
-      ),
+      value: <CoverageSummary deviceId={d.id} status={d.coverage?.status} />,
     },
     {
       label: "Serial number",

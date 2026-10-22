@@ -11,7 +11,9 @@ below derives from what you entered.
 
 For operating systems and software, platforms can also take their dates from
 a public source instead - see [End-of-life data](end-of-life-data.md). The two
-are kept apart; fetched data never overwrites what you entered here.
+are kept apart; fetched data never overwrites what you entered here. Where a
+platform has both, the bars read the
+[effective OS date](#the-effective-os-date).
 
 These dates describe the model. Whether a single device is under a support
 contract or warranty is [Support & warranty coverage](support-coverage.md);
@@ -37,21 +39,56 @@ Both **device types** (hardware) and **platforms** (OS) have the same
   → *End of life*. Shown as a badge on the type/platform detail header and,
   for at-risk states only, next to the type/platform name in the devices
   table (healthy rows stay quiet).
-- **Lifetime progress bar** - when both *Released* and *End of support* are
-  set: how much of the support window is already consumed, with an
-  "EoL in 2 y" / "EoL 3 mo ago" countdown. Rendered in the device-types and
-  platforms tables, on their detail overviews, and on each device's overview
-  (*Hardware support* from its type, *OS support* from its platform - so a
-  device answers "how long does this box and its OS have left?" directly).
+- **Lifetime bar** - how much of the support window is already used, with an
+  "EoL in 2 y" / "EoL 3 mo ago" countdown; the exact date is in its tooltip.
+  Rendered in the device-types and platforms tables, on their detail
+  overviews, on each device's overview (*Hardware support* from its type,
+  *OS support* from its platform - so a device answers "how long does this
+  box and its OS have left?" directly) and on each virtual machine's
+  overview (*OS support*).
 - **Filter** - `?lifecycle=eol|security_ended|eos|supported|none` on
   `/api/device-types/` and `/api/platforms/`; the list pages expose it as a
   Lifecycle facet. Combined with the device counts, "which EoL hardware do we
   still run the most of?" is one filter + one sort.
+
+### The lifetime bar
+
+Every end date in Danbyte - hardware, OS and support coverage - is drawn with
+the same bar:
+
+- **Fill** - the share of *Released* → *End of support* that has passed.
+- **Colour** - by the time left, so the bar agrees with the status badges:
+  red once the end has passed, amber when it falls inside the warning
+  window, otherwise the accent colour. Hardware and OS use the end-of-life
+  **warning window** (Settings → General → End-of-life data, 180 days by
+  default - it applies to entered dates even while fetching is off);
+  coverage uses the tenant's coverage window.
+- **Missing dates** - with an end and no start there is no track, only the
+  countdown; with no end but a known state (a cycle the source marks end of
+  life) the state's badge alone; with nothing, a dash.
+
+### The effective OS date
+
+A platform can have dates you entered here and a mapped
+[end-of-life](end-of-life-data.md) cycle. The OS bars - the platform's *OS
+lifecycle* card and column, a device's and a VM's *OS support* - read one
+**effective** date, field by field:
+
+- the **start** is the entered *Released*, else the cycle's release date;
+- the **end** is the entered *End of support*, else the cycle's end of life.
+
+What you entered wins - it covers extended support you bought. The cycle's
+dates count only while end-of-life data is on. The bar's tooltip says which
+the end came from: *Entered* or *endoflife.date*. Both cards stay on the
+platform page, and nothing is copied either way. The API carries the result
+as `effective_release`, `effective_end` and `effective_source` (`entered` or
+the source, e.g. `endoflife_date`) on platforms and on the nested `platform`
+of devices and virtual machines.
 
 ## API
 
 The fields live on the DeviceType and Platform resources; `lifecycle_state`
 is read-only and computed server-side. Device payloads carry
 `lifecycle_state` (+ the bar dates) on their nested `device_type` and
-`platform` references, so device tables and detail pages render without
-extra requests.
+`platform` references, and virtual machine payloads on their nested
+`platform`, so tables and detail pages render without extra requests.

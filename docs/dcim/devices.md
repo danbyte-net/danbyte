@@ -95,13 +95,19 @@ The default tab lays the device's facts out in four cards:
 
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
-| **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
+| **Device**     | name, status, role, platform and its **OS support** bar, description, comments |
+| **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
 **copy button** so you can grab them in one click.
+
+The three support rows are [lifetime bars](../features/lifecycle.md#the-lifetime-bar):
+*OS support* from the platform's effective dates (entered, else its
+[end-of-life](../features/end-of-life-data.md) cycle), *Hardware support*
+from the device type, and *Support coverage* from the device's contracts and
+warranty ([Support & warranty coverage](../features/support-coverage.md)).
 
 Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable

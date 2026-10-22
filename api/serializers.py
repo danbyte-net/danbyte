@@ -2379,13 +2379,46 @@ def _img_url(serializer, f):
         return None
 
 
+def _eol_config(context):
+    """The end-of-life settings, read once per request - or once per
+    serializer when there is no request (an export, a job)."""
+    from compliance.eol import config_for
+
+    context = context if context is not None else {}
+    request = context.get("request")
+    if request is not None:
+        return config_for(request)
+    cfg = context.get("_eol_config")
+    if cfg is None:
+        cfg = config_for(None)
+        context["_eol_config"] = cfg
+    return cfg
+
+
 def _eol_payload(platform, context) -> dict | None:
     """A platform's end-of-life block (#8), or None while the feature is off.
     The setting is read once per request; lists join ``eol_mapping`` so the
     rows cost no extra query."""
-    from compliance.eol import config_for, payload
+    from compliance.eol import payload
 
-    return payload(platform, config_for((context or {}).get("request")))
+    return payload(platform, _eol_config(context))
+
+
+def _platform_lifecycle(platform, context) -> dict:
+    """The OS lifecycle a nested platform carries: the entered window, its
+    state, the end-of-life block and the effective dates the OS support bar
+    reads (entered wins, else the mapping while the feature is on)."""
+    from compliance.eol import effective_payload, payload
+
+    cfg = _eol_config(context)
+    return {
+        "release_date": platform.release_date,
+        "end_of_support": platform.end_of_support,
+        "lifecycle_state": platform.lifecycle_state,
+        # End-of-life data (#8): null while the feature is off.
+        "eol": payload(platform, cfg),
+        **effective_payload(platform, cfg),
+    }
 
 
 # User-entered vendor lifecycle window + the derived state - shared by
@@ -3071,11 +3104,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Carries the OS lifecycle window so device pages can render the
         # "OS support" bar without a second fetch.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "release_date": p.release_date,
-                "end_of_support": p.end_of_support,
-                "lifecycle_state": p.lifecycle_state,
-                # End-of-life data (#8): null while the feature is off.
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
 
     @extend_schema_field(inline_serializer("DeviceCoverageBrief", {
         "status": serializers.ChoiceField(choices=["covered", "expiring", "expired", "none"]),
@@ -6044,8 +6073,10 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         p = obj.platform
         if not p:
             return None
+        # The OS lifecycle rides along for the overview's OS support bar,
+        # as on the device's nested platform.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -7059,10 +7090,34 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     lifecycle_state = serializers.ReadOnlyField()
     eol = serializers.SerializerMethodField()
+    # The dates the OS lifecycle bar reads: entered wins, else the
+    # end-of-life mapping while the feature is on (and which one it was).
+    effective_release = serializers.SerializerMethodField()
+    effective_end = serializers.SerializerMethodField()
+    effective_source = serializers.SerializerMethodField()
+    # The OS lifecycle column already draws them.
+    list_columns_exclude = ("effective_release", "effective_end", "effective_source")
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_eol(self, obj):
         return _eol_payload(obj, self.context)
+
+    def _effective(self, obj):
+        from compliance.eol import effective_of
+
+        return effective_of(obj, _eol_config(self.context))
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_release(self, obj):
+        return self._effective(obj).start
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_end(self, obj):
+        return self._effective(obj).end
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_effective_source(self, obj) -> str | None:
+        return self._effective(obj).source
 
     class Meta:
         model = Platform
@@ -7070,7 +7125,8 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "eol", "device_count", "vm_count", "created_at", "updated_at"]
+                  "eol", "effective_release", "effective_end", "effective_source",
+                  "device_count", "vm_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "vm_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 

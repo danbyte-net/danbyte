@@ -93,6 +93,30 @@ def public_end(end: date | None) -> date | None:
     return None if end == OPEN_ENDED else end
 
 
+def governed_by(contract_end: date | None, warranty_end: date | None) -> str | None:
+    """What sets a device's coverage end: ``contract`` (its contract with the
+    latest end - ``OPEN_ENDED`` for an open-ended one - reaches at least as
+    far as the warranty), ``warranty``, or ``None`` with neither. The
+    governing contract's start is where the coverage bar starts; a warranty
+    has no start."""
+    if contract_end is not None and (warranty_end is None or contract_end >= warranty_end):
+        return "contract"
+    if warranty_end is not None:
+        return "warranty"
+    return None
+
+
+def contract_order(prefix: str = "") -> tuple:
+    """Contracts best first: the latest end (open-ended first), then by
+    number - so the governing contract is the same one everywhere. ``prefix``
+    reaches the contract from another model (``"contract__"``)."""
+    return (
+        Coalesce(f"{prefix}end_date", Value(OPEN_ENDED), output_field=DateField()).desc(),
+        f"{prefix}contract_number",
+        f"{prefix}id",
+    )
+
+
 # ─── the warning window ──────────────────────────────────────────────────────
 
 
@@ -458,6 +482,7 @@ def schema(kind: str):
     if kind == "device":
         return inline_serializer("DeviceCoverage", {
             "status": s.ChoiceField(choices=STATUSES),
+            "start": s.DateField(allow_null=True),
             "end": s.DateField(allow_null=True),
             "warranty_end": s.DateField(allow_null=True),
             "warning_days": s.IntegerField(),

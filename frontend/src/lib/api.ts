@@ -1321,6 +1321,16 @@ export interface GeocodeCandidate {
 /** Derived, most-severe-passed-milestone lifecycle state. "" = no dates. */
 export type LifecycleState = "" | "supported" | "eos" | "security_ended" | "eol"
 
+/** A platform's OS lifetime as the bars read it (#436): what was entered
+ * wins, field by field; the end-of-life mapping fills the blanks while that
+ * feature is on. `effective_source` says where the end came from (else the
+ * start): "entered" or a source key ("endoflife_date"). */
+export interface EffectiveOsDates {
+  effective_release?: string | null
+  effective_end?: string | null
+  effective_source?: string | null
+}
+
 /** Vendor lifecycle window (LifecycleMixin) - DeviceType + Platform. */
 export interface LifecycleInfo {
   /** GA / first-ship date - the start of the lifetime bar. */
@@ -1583,16 +1593,18 @@ export interface Device {
     color: string
     icon: string
   } | null
-  platform: {
-    id: string
-    name: string
-    slug: string
-    release_date?: string | null
-    end_of_support?: string | null
-    lifecycle_state?: LifecycleState
-    /** End-of-life data (#8); null while the feature is off. */
-    eol?: EolInfo | null
-  } | null
+  platform:
+    | ({
+        id: string
+        name: string
+        slug: string
+        release_date?: string | null
+        end_of_support?: string | null
+        lifecycle_state?: LifecycleState
+        /** End-of-life data (#8); null while the feature is off. */
+        eol?: EolInfo | null
+      } & EffectiveOsDates)
+    | null
   /** Read-only: the device's own platform, else its type's default. */
   effective_platform: { id: string; name: string } | null
   status: StatusMini | null
@@ -1848,7 +1860,7 @@ export interface PlatformGroupOption {
   slug: string
 }
 
-export interface Platform extends LifecycleInfo {
+export interface Platform extends LifecycleInfo, EffectiveOsDates {
   id: string
   numid: number | null
   name: string
@@ -4998,13 +5010,18 @@ export interface VirtualMachine {
     color: string
     icon: string
   } | null
-  platform: {
-    id: string
-    name: string
-    slug: string
-    /** End-of-life data (#8); null while the feature is off. */
-    eol?: EolInfo | null
-  } | null
+  platform:
+    | ({
+        id: string
+        name: string
+        slug: string
+        release_date?: string | null
+        end_of_support?: string | null
+        lifecycle_state?: LifecycleState
+        /** End-of-life data (#8); null while the feature is off. */
+        eol?: EolInfo | null
+      } & EffectiveOsDates)
+    | null
   status: StatusMini | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
@@ -9494,6 +9511,9 @@ export interface DeviceCoverageContract {
 /** GET /api/devices/<id>/coverage/ */
 export interface DeviceCoverage {
   status: CoverageStatus
+  /** Start of the contract that sets the end, when you may view it; null
+   * for a warranty, a hidden contract or one without a start (#436). */
+  start: string | null
   end: string | null
   warranty_end: string | null
   warning_days: number

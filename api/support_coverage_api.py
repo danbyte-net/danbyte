@@ -530,7 +530,7 @@ def device_coverage(request, device) -> dict:
     rows = list(
         SupportContract.objects.filter(tenant=device.tenant_id, coverage__device=device)
         .select_related("manufacturer")
-        .order_by(Coalesce("end_date", cov.OPEN_ENDED).desc())
+        .order_by(*cov.contract_order())
     )
     visible = rbac.restrict_queryset(
         SupportContract.objects.filter(pk__in=[c.pk for c in rows]),
@@ -542,8 +542,13 @@ def device_coverage(request, device) -> dict:
     end = max([e for e in (contract_end, device.warranty_end) if e], default=None)
     today = timezone.localdate()
     active = any(e >= today for e in ends)
+    # The coverage bar starts where the governing contract started - one the
+    # caller may see; a warranty has no start.
+    governing = rows[0] if cov.governed_by(contract_end, device.warranty_end) == "contract" else None
+    start = governing.start_date if governing is not None and governing.pk in visible else None
     return {
         "status": cov.status_for(end, days, today),
+        "start": start,
         "end": cov.public_end(end),
         "warranty_end": device.warranty_end,
         "warning_days": days,
