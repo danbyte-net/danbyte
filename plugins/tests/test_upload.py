@@ -139,3 +139,29 @@ class PluginUploadTests(APITestCase):
             self.assertEqual(
                 self.client.delete("/api/plugins/nope/uploaded/").status_code, 404
             )
+
+    def test_upload_name_never_becomes_a_path(self):
+        # Only the extension of the uploaded file's name is used.
+        self.client.force_login(self.superuser)
+        with self._override():
+            r = self._upload(_plugin_tar(), name="../../../etc/plugin.tar.gz")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["installed"], "danbyte_uptest")
+
+    def test_uninstall_stays_inside_the_upload_dir(self):
+        import json
+        from pathlib import Path
+
+        from plugins.install import uninstall, uploaded_names
+
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        victim = Path(outside.name) / "victim"
+        victim.mkdir()
+        rel = str(Path("..") / Path(outside.name).name / "victim")
+        base = Path(self._tmp.name)
+        (base / "installed.json").write_text(json.dumps({"plugins": [rel]}))
+        with self._override():
+            self.assertFalse(uninstall(rel))
+            self.assertIn(rel, uploaded_names())
+        self.assertTrue(victim.is_dir())

@@ -232,6 +232,10 @@ class CheckerTests(TestCase):
         checker = get_checker("tls_cert")
         return asyncio.run(checker.run("svc.example.internal", params or {}, {}, 5000))
 
+    def test_contexts_refuse_tls_below_1_2(self):
+        for ctx in (tls_cert._verifying_context(), tls_cert._reading_context()):
+            self.assertEqual(ctx.minimum_version, ssl.TLSVersion.TLSv1_2)
+
     def test_registered_in_the_shared_registry(self):
         checker = get_checker("tls_cert")
         self.assertIsNotNone(checker)

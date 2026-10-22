@@ -849,3 +849,137 @@ class DeviceRackListTests(_Base):
         self.assertEqual(
             {r["rack"]["name"] for r in body["results"]}, {"r0", "r2", "r4"}
         )
+
+
+class CatalogListTests(_Base):
+    """Catalog and component lists that ran a query or more per row (#444):
+    counts are annotated, related rows joined or prefetched. Each list costs
+    the same for a page of two as for a page of six."""
+
+    N = 6
+    LISTS = (
+        "tenants", "tenant-groups", "regions", "label-templates", "contacts",
+        "contact-groups", "contact-roles", "provider-networks", "virtual-chassis",
+        "manufacturers", "virtual-switches", "device-roles", "platform-groups",
+        "platforms", "nat-rules", "service-templates", "front-ports", "aux-ports",
+        "module-types", "floor-tile-types", "floor-plans", "custom-fields",
+        "custom-field-groups", "route-targets", "groups",
+    )
+
+    def setUp(self):
+        from django.contrib.auth.models import Group
+
+        from core.models import TenantGroup
+        from customization.models import CustomField, CustomFieldGroup
+
+        from . import models as m
+
+        super().setUp()
+        t, org = self.tenant, self.tenant.org
+        site = Site.objects.create(tenant=t, name="HQ")
+        mf = m.Manufacturer.objects.create(tenant=t, name="mf", slug="mf")
+        role = m.DeviceRole.objects.create(tenant=t, name="role", slug="role")
+        dt = m.DeviceType.objects.create(tenant=t, manufacturer=mf, model="dt")
+        panel = Device.objects.create(tenant=t, name="panel", site=site, role=role, device_type=dt)
+        vrf = m.VRF.objects.create(tenant=t, name="v")
+        tg = TenantGroup.objects.create(org=org, name="tg", slug="tg")
+        reg = m.Region.objects.create(tenant=t, name="reg", slug="reg")
+        cg = m.ContactGroup.objects.create(tenant=t, name="cg", slug="cg")
+        pg = m.PlatformGroup.objects.create(tenant=t, name="pg", slug="pg")
+        prov = m.Provider.objects.create(tenant=t, name="p", slug="p")
+        loc = m.Location.objects.create(tenant=t, name="L", slug="l", site=site)
+        cfg = CustomFieldGroup.objects.create(tenant=t, name="cfg", slug="cfg")
+        crole = m.ContactRole.objects.create(tenant=t, name="cr", slug="cr")
+        ops = Group.objects.create(name="ops")
+        for i in range(self.N):
+            Tenant.objects.create(org=org, name=f"t{i}", slug=f"t{i}", group=tg)
+            TenantGroup.objects.create(org=org, name=f"tg{i}", slug=f"tg{i}", parent=tg)
+            r = m.Region.objects.create(tenant=t, name=f"r{i}", slug=f"r{i}", parent=reg)
+            Site.objects.create(tenant=t, name=f"s{i}", region=r)
+            lt = m.LabelTemplate.objects.create(tenant=t, name=f"lt{i}", object_type="device")
+            lt.device_types.add(dt)
+            lt.roles.add(role)
+            c = m.Contact.objects.create(tenant=t, name=f"c{i}", group=cg)
+            m.ContactAssignment.objects.create(
+                tenant=t, contact=c, role=crole, object_type="site", object_id=site.id
+            )
+            m.ContactGroup.objects.create(tenant=t, name=f"cg{i}", slug=f"cg{i}", parent=cg)
+            m.ContactRole.objects.create(tenant=t, name=f"cr{i}", slug=f"cr{i}")
+            m.ProviderNetwork.objects.create(tenant=t, provider=prov, name=f"pn{i}")
+            vc = m.VirtualChassis.objects.create(tenant=t, name=f"vc{i}")
+            vc.master = Device.objects.create(
+                tenant=t, name=f"vcm{i}", site=site, virtual_chassis=vc, vc_position=1
+            )
+            vc.save()
+            m.Manufacturer.objects.create(
+                tenant=t, name=f"mf{i}", slug=f"mf{i}", owning_site=site
+            )
+            m.VirtualSwitch.objects.create(tenant=t, name=f"vs{i}")
+            m.DeviceRole.objects.create(tenant=t, name=f"role{i}", slug=f"role{i}")
+            m.PlatformGroup.objects.create(tenant=t, name=f"pg{i}", slug=f"pg{i}", parent=pg)
+            m.Platform.objects.create(
+                tenant=t, name=f"pl{i}", slug=f"pl{i}", manufacturer=mf, group=pg
+            )
+            vlan = VLAN.objects.create(tenant=t, site=site, vlan_id=100 + i, name=f"vl{i}")
+            px = Prefix.objects.create(
+                tenant=t, cidr=f"10.9.{i}.0/24", vrf=vrf, site=site, vlan=vlan
+            )
+            m.NATRule.objects.create(tenant=t, name=f"nat{i}", source_prefix=px, device=panel)
+            m.ServiceTemplate.objects.create(tenant=t, name=f"st{i}", slug=f"st{i}")
+            rear = m.RearPort.objects.create(device=panel, name=f"rp{i}")
+            m.FrontPort.objects.create(device=panel, name=f"fp{i}", rear_port=rear)
+            m.AuxPort.objects.create(device=panel, name=f"aux{i}")
+            m.ModuleType.objects.create(tenant=t, name=f"mt{i}", manufacturer=mf)
+            m.FloorTileType.objects.create(tenant=t, name=f"ftt{i}", slug=f"ftt{i}")
+            m.FloorPlan.objects.create(tenant=t, location=loc, name=f"fp{i}")
+            CustomField.objects.create(
+                tenant=t, key=f"k{i}", label=f"K{i}", group=cfg, owning_site=site
+            )
+            CustomFieldGroup.objects.create(
+                tenant=t, name=f"cfg{i}", slug=f"cfg{i}", owning_site=site
+            )
+            m.RouteTarget.objects.create(tenant=t, name=f"65000:{i}", owning_site=site)
+            Group.objects.create(name=f"g{i}")
+        User.objects.get(username="admin").groups.add(ops)
+
+    def test_page_cost_is_flat(self):
+        for name in self.LISTS:
+            with self.subTest(name):
+                small, _ = self._queries(f"/api/{name}/?page_size=2")
+                big, body = self._queries(f"/api/{name}/?page_size={self.N}")
+                self.assertEqual(len(body["results"]), self.N)
+                self.assertEqual(small, big, f"{name}: a bigger page costs more queries")
+
+    def _rows(self, name, key="name"):
+        _, body = self._queries(f"/api/{name}/?page_size=500")
+        return {r[key]: r for r in body["results"]}
+
+    def test_annotated_counts_match(self):
+        tenant = self._rows("tenants")["Acme"]
+        self.assertEqual(
+            (tenant["site_count"], tenant["prefix_count"], tenant["vlan_count"],
+             tenant["ip_count"]),
+            (self.N + 1, self.N, self.N, 0),
+        )
+        group = self._rows("tenant-groups")["tg"]
+        self.assertEqual((group["tenant_count"], group["child_count"]), (self.N, self.N))
+        regions = self._rows("regions")
+        self.assertEqual(regions["reg"]["child_count"], self.N)
+        self.assertEqual(regions["r0"]["site_count"], 1)
+        self.assertEqual(self._rows("contacts")["c0"]["assignment_count"], 1)
+        self.assertEqual(self._rows("contact-roles")["cr"]["assignment_count"], self.N)
+        self.assertEqual(self._rows("contact-groups")["cg"]["child_count"], self.N)
+        self.assertEqual(self._rows("platform-groups")["pg"]["child_count"], self.N)
+        self.assertEqual(self._rows("device-roles")["role"]["device_count"], 1)
+        self.assertEqual(self._rows("groups")["ops"]["user_count"], 1)
+        self.assertEqual(self._rows("module-types")["mt0"]["interface_template_count"], 0)
+
+    def test_related_rows_read_the_same(self):
+        vc = self._rows("virtual-chassis")["vc0"]
+        self.assertEqual(vc["member_count"], 1)
+        self.assertEqual([d["name"] for d in vc["members"]], ["vcm0"])
+        lt = self._rows("label-templates")["lt0"]
+        self.assertEqual([d["name"] for d in lt["device_types_detail"]], ["dt"])
+        self.assertEqual([r["name"] for r in lt["roles_detail"]], ["role"])
+        self.assertEqual(self._rows("manufacturers")["mf0"]["owning_site"]["name"], "HQ")
+        self.assertEqual(self._rows("nat-rules")["nat0"]["source_prefix"]["vlan"]["name"], "vl0")

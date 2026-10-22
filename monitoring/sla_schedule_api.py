@@ -128,7 +128,12 @@ class SlaReportScheduleViewSet(TenantScopedViewSet):
         except ValidationError:
             raise
         except Exception as e:  # noqa: BLE001 - the error is the answer
-            raise ValidationError({"detail": f"Not sent: {e}"}) from None
+            from core.email import SMTP_EXPECTED_ERRORS
+            from core.errors import public_error
+
+            reason = public_error(e, "the details are in the server log.",
+                                  expected=SMTP_EXPECTED_ERRORS)
+            raise ValidationError({"detail": f"Not sent: {reason}"}) from None
         # Sending by hand leaves the schedule's own stamp where it was.
         SlaReportSchedule.objects.filter(pk=s.pk).update(report_sent_at=prev)
         return Response({"sent": True})

@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+# Every job only checks out and builds; none writes back to the repository.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

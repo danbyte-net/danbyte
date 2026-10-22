@@ -34,6 +34,7 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CheckCountBadge,
   FoldableGroup,
+  ObjectRow,
   RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
@@ -467,33 +468,29 @@ export function TopologyObjectsSidebar({
               const g = n.data as unknown as TopoGroupData
               const key = g.kind === "site" ? "sites" : "locations"
               return (
-                <button
+                <ObjectRow
                   key={n.id}
-                  type="button"
                   onClick={() => onPickGroup(n)}
                   onDoubleClick={() => onDrillGroup(g)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
-                    !shown(n) && "text-muted-foreground/60",
-                    selectedGroupId === g.group_id
-                      ? "bg-muted font-medium"
-                      : "hover:bg-muted/60"
-                  )}
+                  selected={selectedGroupId === g.group_id}
+                  className={cn(!shown(n) && "text-muted-foreground/60")}
+                  trailing={
+                    <>
+                      <VisibilityToggle
+                        vis={{
+                          shown: shown(n),
+                          onChange: (v) => toggle(key, g.name, v),
+                          what: g.name,
+                        }}
+                      />
+                      <span className="num text-[11px] text-muted-foreground/70">
+                        {g.device_count}
+                      </span>
+                    </>
+                  }
                 >
                   <span className="min-w-0 truncate">{g.name}</span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <VisibilityToggle
-                      vis={{
-                        shown: shown(n),
-                        onChange: (v) => toggle(key, g.name, v),
-                        what: g.name,
-                      }}
-                    />
-                    <span className="num text-[11px] text-muted-foreground/70">
-                      {g.device_count}
-                    </span>
-                  </span>
-                </button>
+                </ObjectRow>
               )
             }}
           />
@@ -546,17 +543,26 @@ export function TopologyObjectsSidebar({
                 rows={g.rows}
                 estimate={ROW_H}
                 row={(d) => (
-                  <button
+                  <ObjectRow
                     key={d.id}
-                    type="button"
                     onClick={() => onPickNode(d.node)}
+                    selected={selectedDeviceId === d.device_id}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[13px]",
-                      !shown(d.node) && "text-muted-foreground/60",
-                      selectedDeviceId === d.device_id
-                        ? "bg-muted font-medium"
-                        : "hover:bg-muted/60"
+                      "pl-6",
+                      !shown(d.node) && "text-muted-foreground/60"
                     )}
+                    trailing={
+                      <>
+                        <VisibilityToggle
+                          vis={{
+                            shown: !hidden.devices.includes(d.id),
+                            onChange: (v) => toggle("devices", d.id, v),
+                            what: d.name,
+                          }}
+                        />
+                        <RowCheckBadge check={d.check} />
+                      </>
+                    }
                   >
                     <span className="min-w-0 truncate">{d.name}</span>
                     {mode !== "role" && d.data.role && (
@@ -571,17 +577,7 @@ export function TopologyObjectsSidebar({
                         {d.data.device_type}
                       </span>
                     )}
-                    <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                      <VisibilityToggle
-                        vis={{
-                          shown: !hidden.devices.includes(d.id),
-                          onChange: (v) => toggle("devices", d.id, v),
-                          what: d.name,
-                        }}
-                      />
-                      <RowCheckBadge check={d.check} />
-                    </span>
-                  </button>
+                  </ObjectRow>
                 )}
               />
             </FoldableGroup>
@@ -630,17 +626,25 @@ export function TopologyObjectsSidebar({
                     : ROW_H
                 }
                 row={(e) => (
-                  <button
+                  <ObjectRow
                     key={e.id}
-                    type="button"
                     onClick={() => onPickEdge(e)}
+                    selected={selectedEdgeId === e.id}
                     className={cn(
-                      "flex w-full items-center gap-2 rounded px-1.5 py-1 pl-6 text-left text-[12px]",
-                      edgeDim(e) && "text-muted-foreground/60",
-                      selectedEdgeId === e.id
-                        ? "bg-muted font-medium"
-                        : "hover:bg-muted/60"
+                      "pl-6 text-[12px]",
+                      edgeDim(e) && "text-muted-foreground/60"
                     )}
+                    trailing={
+                      // A line hidden on its own (its right-click menu's
+                      // Hide) comes back here.
+                      <VisibilityToggle
+                        vis={{
+                          shown: !hidden.edges.includes(e.id),
+                          onChange: (v) => toggle("edges", e.id, v),
+                          what: edgeEnds(e),
+                        }}
+                      />
+                    }
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{edgeEnds(e)}</span>
@@ -650,18 +654,7 @@ export function TopologyObjectsSidebar({
                         </span>
                       )}
                     </span>
-                    {/* A line hidden on its own (its right-click menu's
-                        Hide) comes back here. */}
-                    <span className="flex shrink-0 items-center">
-                      <VisibilityToggle
-                        vis={{
-                          shown: !hidden.edges.includes(e.id),
-                          onChange: (v) => toggle("edges", e.id, v),
-                          what: edgeEnds(e),
-                        }}
-                      />
-                    </span>
-                  </button>
+                  </ObjectRow>
                 )}
               />
             </FoldableGroup>

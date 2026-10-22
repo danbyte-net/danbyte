@@ -142,13 +142,19 @@ def trusted_env(run, env: dict) -> dict:
 def _limits(cpu_seconds: int, confinement=None):
     """Applied in the child between fork and exec. A confinement that
     cannot be applied raises here, so the child never starts."""
+    # Counted here, before the fork: the child should do as little as it can.
+    nproc = (
+        sandbox.account_nproc_limit()
+        if confinement is None or confinement.bwrap is None
+        else None
+    )
 
     def apply() -> None:
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
         resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT, MEMORY_LIMIT))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        if confinement is None or confinement.bwrap is None:
-            resource.setrlimit(resource.RLIMIT_NPROC, (sandbox.NPROC_LIMIT, sandbox.NPROC_LIMIT))
+        if nproc is not None:
+            resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
         # Under bubblewrap the launcher sets it inside the user namespace,
         # where it counts the run's own processes rather than every process
         # of the service account, which bwrap's own forks would trip over.

@@ -1,15 +1,16 @@
 """Session login + MFA (email OTP / TOTP authenticator) for the React SPA.
 
 Two-step login. The SPA POSTs credentials to ``/api/auth/login/``; if the
-account has ``require_mfa`` set *and* a usable second factor, we stash the
-**pending** user in the session and answer ``{mfa_required, methods}`` instead
-of logging in. The SPA then POSTs the code to ``/api/auth/mfa/verify/`` which
+account has ``require_mfa`` set, or the user has confirmed an authenticator of
+their own, we stash the **pending** user in the session and answer
+``{mfa_required, methods}`` instead of logging in. The SPA then POSTs the code to ``/api/auth/mfa/verify/`` which
 finalises the session. TOTP enrolment (``/api/auth/mfa/totp/...``) is for an
 already-signed-in user from the preferences page.
 
 Sessions are server-side (DB-backed), so the email OTP and the pending-user
 marker live safely in ``request.session`` - the client only holds the signed
-cookie, never the code. Superusers can still use ``/admin/login/`` directly.
+cookie, never the code. ``/admin/login/`` hands off to this sign-in too
+(``auth_api.admin_login``), so it is the only way in with a password.
 """
 from __future__ import annotations
 
@@ -346,7 +347,9 @@ def login_api(request):
     _clear_login_failures(request, username)
     profile = _profile(user)
     methods = _methods(profile, user)
-    if profile.require_mfa:
+    # A confirmed authenticator is always asked for, whether an admin requires
+    # two-factor sign-in or the user enrolled it themselves.
+    if profile.require_mfa or profile.mfa_totp_confirmed:
         request.session[SESSION_KEY] = {
             "user_id": user.id,
             "exp": time.time() + MFA_PENDING_TTL,

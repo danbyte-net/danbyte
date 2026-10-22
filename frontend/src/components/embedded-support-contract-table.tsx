@@ -12,7 +12,9 @@ import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 
 /** One manufacturer's support contracts. The page calls it for the tab count
- * too; both share the query key, so it is fetched once. */
+ * too; both share the query key, so it is fetched once. It takes the API's
+ * default page, as the Support contracts list does, rather than a smaller
+ * cap that hid the rest under a tab count naming them all (#439). */
 export function useManufacturerContracts(
   manufacturerId: string,
   enabled = true
@@ -23,7 +25,6 @@ export function useManufacturerContracts(
       api<Paginated<SupportContract>>(
         `/api/support-contracts/?${new URLSearchParams({
           manufacturer: manufacturerId,
-          page_size: "500",
         }).toString()}`
       ),
     enabled,
@@ -61,6 +62,8 @@ export function EmbeddedSupportContractTable({
   return (
     <DataTable
       data={rows}
+      // Past even that page, the table says it holds the first rows only.
+      total={q.data?.count}
       columns={columns}
       flexColumn="contract_number"
       tableId="embedded-support-contracts"

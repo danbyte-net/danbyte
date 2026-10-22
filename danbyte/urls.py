@@ -6,7 +6,12 @@ from django.urls import include, path, re_path
 from django.views.generic import RedirectView
 
 from api.media_views import serve_media
+from auth_api.admin_login import admin_login
 from core.site_tls_api import acme_challenge
+
+# The admin signs in through the app's own sign-in (second factor, rate limit,
+# SSO); its password form is never served (auth_api.admin_login).
+admin.site.login = admin_login
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -19,8 +24,7 @@ urlpatterns = [
     path("api/", include("api.api_urls")),
     # Root → React app. The old HTML urlconfs (api.urls, auth_api.urls)
     # are NOT included because their templates were archived to
-    # reference/. Log in via Django admin at /admin/login/ - that sets the
-    # session cookie the React app needs.
+    # reference/. Sign in through the React app at /login.
     path("", RedirectView.as_view(url="http://localhost:3000/", permanent=False)),
 ]
 

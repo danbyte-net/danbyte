@@ -49,6 +49,7 @@ import ipaddress
 import logging
 import os
 import platform
+import resource
 import shutil
 import socket
 import subprocess
@@ -300,6 +301,30 @@ BWRAP_SEARCH_PATH = "/usr/bin:/bin:/usr/local/bin"
 SANDBOX_ID = 65534
 SANDBOX_HOSTNAME = "danbyte-script"
 NPROC_LIMIT = 256  # processes and threads per run
+
+
+def account_nproc_limit() -> int:
+    """RLIMIT_NPROC for a run outside bubblewrap. The kernel counts every
+    process and thread of the service account against it, not just the
+    run's, so a flat 256 makes the run's first fork fail on a busy worker
+    (EAGAIN). Allow what the account already runs plus NPROC_LIMIT, kept
+    within the account's hard limit. Under bubblewrap the launcher sets the
+    flat limit inside the user namespace instead."""
+    uid = os.getuid()
+    running = 0
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            if os.stat(f"/proc/{pid}").st_uid == uid:
+                running += len(os.listdir(f"/proc/{pid}/task"))
+        except OSError:
+            continue  # gone, or not ours to read
+    limit = running + NPROC_LIMIT
+    hard = resource.getrlimit(resource.RLIMIT_NPROC)[1]
+    if hard != resource.RLIM_INFINITY:
+        limit = min(limit, hard)
+    return limit
 PROBE_TTL = 600  # seconds a probe result is shared between worker processes
 _INNER_FALLBACK_PORT = 8080
 

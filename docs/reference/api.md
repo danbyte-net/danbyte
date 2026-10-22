@@ -28,7 +28,13 @@ so the interactive docs work on **airgapped** installs with no CDN access.
 
 - **API token** - create one under **Settings → Preferences → API tokens**, then
   send it as a header: `Authorization: Token <key>`. In Swagger UI, click
-  **Authorize** and paste the token. Tokens are scoped to a tenant. Tick
+  **Authorize** and paste the token. Every token is scoped to exactly one
+  tenant and acts only there: it ignores the session's tenant switch and the
+  user's home tenant. When the token's user loses that tenant (removed from
+  it, or the tenant is deactivated - superusers included), every request with
+  the token is refused with 401 `This API token's tenant is no longer
+  available to its user.`; it never moves to another tenant. Restoring the
+  access makes the token work again, on the same tenant. Tick
   **Read only** when creating one and every write is refused with 403 no
   matter what the owning user may do - the right choice for reporting,
   inventory pulls, and AI assistants. Tokens are created and revoked from a
@@ -125,6 +131,16 @@ and is not either answers `400` naming the parameter (`{"limit": ["A whole
 number is required."]}`) or falls back to its default; never a server
 error. A query parameter carrying a NUL byte (`%00`) answers `400` on every
 path.
+
+## Error text
+
+An error's `detail` (or `error`) is written for the person reading it: a
+validation message, or what a remote server said when a connection test,
+import or upgrade fails talking to it - only its first line, without the
+file paths an operating-system error names. An exception Danbyte did not
+expect never reaches the response: the server logs it with its traceback
+(logger `danbyte.errors`) and the call answers a plain sentence that points
+there.
 
 ## Bulk calls
 

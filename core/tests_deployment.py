@@ -802,6 +802,27 @@ class SystemUpgradeApiTests(APITestCase):
         from core import upgrade
         self.assertFalse(upgrade.LOCK_FILE.exists())
 
+    def test_unexpected_launch_failure_is_not_echoed(self):
+        import json
+        from unittest.mock import patch
+
+        from core import upgrade
+        rel = [{"tag": "v0.1.0", "name": "0.1.0", "body": "", "published_at": None,
+                "prerelease": False, "has_binary": False}]
+        with patch("core.github.list_releases", return_value=rel), \
+             patch("core.upgrade._is_git_install", return_value=False), \
+             patch("core.upgrade._download_release_bundle",
+                   side_effect=KeyError("release_repo_token")), \
+             self.assertLogs("danbyte.errors", "ERROR"):
+            r = self.client.post("/api/system/upgrade/",
+                                  {"version": "v0.1.0"}, format="json")
+        self.assertEqual(r.status_code, 502, r.content)
+        self.assertNotIn("release_repo_token", r.json()["detail"])
+        self.assertIn("server log", r.json()["detail"])
+        # the status file the Updates page polls says the same
+        self.assertNotIn("release_repo_token", json.loads(upgrade.STATUS_FILE.read_text())["error"])
+        self.assertFalse(upgrade.LOCK_FILE.exists())
+
 
 class AutoUpgradeTests(APITestCase):
     def setUp(self):

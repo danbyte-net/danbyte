@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { Issuer, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { isLetsEncryptDirectory } from "@/lib/certificate-objects"
 import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -608,10 +609,7 @@ function AcmeDialog({
               options={[
                 { value: LE, label: "Let's Encrypt" },
                 ...rows
-                  .filter(
-                    (i) =>
-                      !i.directory_url.includes("acme-v02.api.letsencrypt.org")
-                  )
+                  .filter((i) => !isLetsEncryptDirectory(i.directory_url))
                   .map((i) => ({ value: i.id, label: i.name })),
               ]}
               searchPlaceholder="Search issuers…"

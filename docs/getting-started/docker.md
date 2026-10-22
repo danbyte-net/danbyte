@@ -381,6 +381,21 @@ running against the database while it does (a plain `up -d --build` recreates
 them one by one, some after the migration has started). `up -d` then starts
 them all on the new image. The named volumes keep your data.
 
+`ws`, `workers`, `fastlane` and `scheduler` start only once the backend's
+health check passes, which is after the migration. The check allows the
+backend 30 minutes to get there. Up to 0.18.0 it allowed 60 seconds: a longer
+migration marked the backend unhealthy, `up -d` stopped with *dependency
+failed to start*, and those four were left `Created` or `Exited` while the
+site itself came up. Nothing queued then ever ran - **Poll**, **Refresh
+MACs** and **Sync from SNMP** on many devices stayed at *0 / N*, and a bulk
+action now answers *No background worker is running* instead (#441). If
+`ps` shows any of them not running, run `up -d` again:
+
+```bash
+docker compose -f docker-compose.prod.yml ps ws workers fastlane scheduler
+docker compose -f docker-compose.prod.yml --env-file .env up -d
+```
+
 Take a backup first: **Settings → Backups → Back up now** writes an encrypted
 archive to the `backups` volume (`/app/backup-archives` in `backend` and `workers`).
 A restore later runs inside `workers` without restarting any container - see

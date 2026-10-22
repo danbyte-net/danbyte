@@ -188,8 +188,13 @@ def _dispatch(principal, viewset, actions: dict, request, **kwargs):
         if hasattr(response, "render") and not getattr(response, "is_rendered", True):
             response.render()
     except (ValidationError, DataError, ValueError) as exc:
-        # A bad value reaching the ORM: report it, never a traceback.
-        detail = getattr(exc, "messages", None) or [str(exc)]
+        # A bad value reaching the ORM: report it, never a traceback - nor the
+        # database's own text, which names tables and column types.
+        from core.errors import public_error
+
+        detail = getattr(exc, "messages", None) or [public_error(
+            exc, "A value does not fit the field it is meant for.", expected=ValueError,
+        )]
         raise ToolError("; ".join(str(m) for m in detail)[:300]) from exc
     return response.status_code, getattr(response, "data", None)
 

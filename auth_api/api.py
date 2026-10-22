@@ -369,11 +369,14 @@ class GroupSerializer(serializers.ModelSerializer):
         p = getattr(obj, "profile", None)
         return bool(p and p.built_in)
 
+    # The list annotates both (#444); a bare instance counts.
     def get_user_count(self, obj) -> int:
-        return obj.user_set.count()
+        n = getattr(obj, "user_n", None)
+        return n if n is not None else obj.user_set.count()
 
     def get_permission_count(self, obj) -> int:
-        return obj.object_permissions.count()
+        n = getattr(obj, "permission_n", None)
+        return n if n is not None else obj.object_permissions.count()
 
     @transaction.atomic
     def create(self, validated):
@@ -407,6 +410,15 @@ class GroupViewSet(viewsets.ModelViewSet):
     serializer_class = GroupSerializer
     permission_classes = [IsAuthenticated, RBACObjectPermission, DeploymentAdminForWrites]
     rbac_object_type = "group"
+
+    def get_queryset(self):
+        from django.db.models import Count
+
+        # Distinct: the two many-to-many joins multiply each other's rows.
+        return super().get_queryset().annotate(
+            user_n=Count("user", distinct=True),
+            permission_n=Count("object_permissions", distinct=True),
+        )
 
     def destroy(self, request, *args, **kwargs):
         group = self.get_object()

@@ -98,12 +98,17 @@ services:
       - staticfiles:/app/staticfiles
       - media:/app/media
       - backups:/app/backup-archives
+    # The start period covers migrate + bootstrap + collectstatic: ws, workers,
+    # fastlane and scheduler wait for this check, and a backend still
+    # migrating when it ran out was marked unhealthy, so compose gave up and
+    # left them Created - never started (#441). A check that passes ends the
+    # start period at once, so a quick start is not held back.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health/"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 60s
+      start_period: 30m
 
   # WebSockets - a SEPARATE ASGI process (channels never sits in the HTTP path).
   # Wait for the backend to be healthy: it runs migrate/bootstrap once, so ws

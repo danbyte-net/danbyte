@@ -179,7 +179,12 @@ class AutomationTargetViewSet(TenantScopedViewSet):
             r = safe_request("HEAD", t.base_url, timeout=10, verify=t.ssl_verify)
             return Response({"ok": r.status_code < 500, "status_code": r.status_code})
         except Exception as exc:  # noqa: BLE001
-            return Response({"ok": False, "error": str(exc)}, status=502)
+            from core.errors import NETWORK_ERRORS, public_error
+
+            return Response({"ok": False, "error": public_error(
+                exc, "The test could not run. The details are in the server log.",
+                expected=NETWORK_ERRORS,
+            )}, status=502)
 
     @action(detail=True, methods=["post"])
     def deploy(self, request, pk=None):

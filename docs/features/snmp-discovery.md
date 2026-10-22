@@ -488,13 +488,16 @@ an Outpost).
   when you click and again when each job runs. Devices you may not change are
   counted, not named.
 - **Limits:** 5,000 devices per run. Poll and Refresh MACs queue one job per
-  device; Sync queues one job per 25 devices. Needs the RQ workers running.
+  device; Sync queues one job per 25 devices. Needs the RQ workers running:
+  with none listening, the action answers *No background worker is running*
+  and queues nothing.
 
 API: `POST /api/monitoring/snmp-drift/bulk-poll/`, `bulk-mac-refresh/` and
 `bulk-sync/` with `{"devices": [id, ...]}` answer `202` with a `run_id`
 (`run_id: null` and `200` when nothing was left to queue, such as all on
-Outposts); `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/` returns its
-progress to the user who started it.
+Outposts), or `503` when no RQ worker listens or Redis is down;
+`GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/` returns its progress to
+the user who started it.
 
 Both tabs answer the same question - *does reality match intent?* - from the two
 sources Danbyte has (your runner, and SNMP).
@@ -773,7 +776,11 @@ BMCs live on management (RFC1918) networks, which Danbyte's outbound-request
 guard normally blocks. A Redfish endpoint is a deliberate, **scoped**
 exception: it's configured by someone with device-change permission, pinned
 to that one host, fetched with redirects disabled, and loopback/link-local
-addresses are still refused. TLS verification is off by default (BMC
+addresses are still refused. Every request of a poll goes to the address the
+name resolved to when it was checked, and the BMC's own `@odata.id` links are
+followed only as `/redfish/…` paths on that address, so neither a DNS change
+nor a crafted response can send the poll, or its credentials, anywhere
+else. TLS verification is off by default (BMC
 certificates are usually self-signed) - enable it when yours chain to a
 trusted CA.
 

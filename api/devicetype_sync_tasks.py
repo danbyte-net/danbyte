@@ -18,7 +18,15 @@ from __future__ import annotations
 
 import logging
 
+from django.core.exceptions import ValidationError
+
+from core.errors import public_error
+
 logger = logging.getLogger(__name__)
+
+#: A device the templates do not fit: reported by its message. Anything else
+#: is logged and reported generically.
+_SYNC_EXPECTED = (ValueError, ValidationError)
 
 #: Failures recorded per run, so one broken fleet can't bloat the row.
 FAILURE_CAP = 50
@@ -133,7 +141,9 @@ def run_devicetype_component_sync(run_id: str) -> None:
             except Exception as exc:  # noqa: BLE001 - one device must not stop the fleet
                 progress["failed"] += 1
                 if len(failures) < FAILURE_CAP:
-                    failures.append({"name": device.name, "error": str(exc)})
+                    failures.append({"name": device.name, "error": public_error(
+                        exc, "sync failed", expected=_SYNC_EXPECTED, log=False,
+                    )})
                 logger.exception("component sync failed for %s", device.name)
             finally:
                 progress["done"] += 1
@@ -143,7 +153,10 @@ def run_devicetype_component_sync(run_id: str) -> None:
         run.status = "success"
     except Exception as exc:  # noqa: BLE001
         run.status = "failed"
-        run.error = str(exc)
+        run.error = public_error(
+            exc, "The sync failed. The details are in the server log.",
+            expected=_SYNC_EXPECTED, log=False,
+        )
         logger.exception("component sync run failed")
     finally:
         run.progress = dict(progress)

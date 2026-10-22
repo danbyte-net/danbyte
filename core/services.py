@@ -213,8 +213,11 @@ def set_worker_count(n: int) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"[Service]\nEnvironment=RQ_WORKERS={n}\n")
     except Exception as exc:  # noqa: BLE001
+        from .errors import public_error
+
+        reason = public_error(exc, "see the server log", expected=OSError)
         return {"ok": False, "saved": True, "rq_workers": n,
-                "detail": f"Saved, but could not write the systemd drop-in: {exc}"}
+                "detail": f"Saved, but could not write the systemd drop-in: {reason}"}
 
     # Re-read units so the new RQ_WORKERS is picked up, then restart the pool.
     try:

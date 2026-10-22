@@ -3,6 +3,7 @@
 Docker fills a named volume from the image only when the volume is created,
 so one mounted over a code folder serves that folder's first copy forever and
 hides every later release's code."""
+import re
 from pathlib import Path
 
 import yaml
@@ -59,3 +60,25 @@ class ComposeInternalUrlTests(SimpleTestCase):
         doc = yaml.safe_load((ROOT / "docker-compose.dev.yml").read_text())
         env = doc["services"]["workers"]["environment"]
         self.assertEqual(env["DANBYTE_INTERNAL_URL"], "http://backend:8000")
+
+
+class ComposeBackendStartTests(SimpleTestCase):
+    """The services that wait for a healthy backend must not be left unstarted
+    by a backend that is still migrating (#441): the workers stayed Created,
+    and every queued job, the bulk SNMP actions among them, never ran."""
+
+    @staticmethod
+    def seconds(value: str) -> int:
+        units = {"s": 1, "m": 60, "h": 3600}
+        return sum(int(n) * units[u] for n, u in re.findall(r"(\d+)([smh])", value))
+
+    def test_start_period_outlasts_a_long_migration(self):
+        doc = yaml.safe_load((ROOT / "docker-compose.prod.yml").read_text())
+        check = doc["services"]["backend"]["healthcheck"]
+        self.assertGreaterEqual(self.seconds(check["start_period"]), 30 * 60)
+        waiting = [
+            name for name, svc in doc["services"].items()
+            if isinstance(svc.get("depends_on"), dict)
+            and (svc["depends_on"].get("backend") or {}).get("condition") == "service_healthy"
+        ]
+        self.assertEqual(sorted(waiting), ["fastlane", "scheduler", "workers", "ws"])

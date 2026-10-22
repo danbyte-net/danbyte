@@ -206,5 +206,10 @@ def deliver_webhook(webhook_id, event, slug, object_id, data, *, delivery_id=Non
             )
         return {"ok": ok, "status_code": resp.status_code}
     except Exception as exc:  # noqa: BLE001
+        from core.errors import NETWORK_ERRORS, public_error
+
         logger.warning("webhook %s delivery error: %s", hook.name, exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": public_error(
+            exc, "The delivery failed. The details are in the server log.",
+            expected=NETWORK_ERRORS,
+        )}
