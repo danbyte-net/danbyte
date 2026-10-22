@@ -66,7 +66,7 @@ from .models import (
     L2VPN, L2VPNTermination, VirtualChassis,
     materialize_device_components,
 )
-from .capacity import rack_power, used_units
+from .capacity import rack_cooling, rack_power, used_units
 # The far-end helpers moved to api.port_state (#248); re-exported here for
 # the imports that predate the move.
 from .port_state import (
@@ -3226,6 +3226,22 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             rack = rack_units.lock_rack(rack)
         if site_changed:
             self._validate_site(attrs, rack)
+        if rack is not None and changed("rack", "device_type", "cooling_method"):
+            # The rack's cooling takes the device (#434). Judged when the
+            # placement, the type or the device's own method changes, so a
+            # rack made stricter later keeps its devices editable.
+            from .cooling import placement_error
+
+            message = placement_error(
+                rack, eff_type, attrs.get("cooling_method", getattr(inst, "cooling_method", "")),
+            )
+            if message:
+                field = (
+                    "rack_id" if changed("rack")
+                    else "device_type_id" if changed("device_type")
+                    else "cooling_method"
+                )
+                raise serializers.ValidationError({field: message})
         position = attrs.get("position", getattr(self.instance, "position", None))
         face = attrs.get("face", getattr(self.instance, "face", ""))
         dt = attrs.get("device_type", getattr(self.instance, "device_type", None))
@@ -6354,10 +6370,13 @@ class RackMiniSerializer(NumIdModelSerializer):
 
 
 class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
-    # The power roll-up and the two port rows are sets of figures the rack
-    # page draws, not one value a column can show; max_weight_kg repeats Max
-    # weight in kg for the load bar (see api.list_fields).
-    list_columns_exclude = ("power", "max_weight_kg", "ports", "panel_ports")
+    # The power and cooling roll-ups and the two port rows are sets of
+    # figures the rack page draws, not one value a column can show;
+    # max_weight_kg repeats Max weight in kg for the load bar (see
+    # api.list_fields).
+    list_columns_exclude = (
+        "power", "cooling", "max_weight_kg", "ports", "panel_ports",
+    )
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
         source="site", queryset=Site.objects.all(), write_only=True
@@ -6545,6 +6564,25 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         (api.capacity.rack_power)."""
         return rack_power(obj)
 
+    cooling = serializers.SerializerMethodField()
+    cooling_free_w = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_cooling(self, obj):
+        """Heat load against the rack's cooling capacity, and the devices its
+        capability does not take (api.capacity.rack_cooling, #434)."""
+        return rack_cooling(obj)
+
+    def get_cooling_free_w(self, obj) -> int | None:
+        """Capacity less the allocated heat, in watts; null without a
+        capacity - from the same figure as ``cooling``, so the two never
+        disagree. ``?cooling_free_w_gte=`` filters the list on its SQL twin
+        (api.capacity.cooling_free_annotation)."""
+        figure = rack_cooling(obj)
+        if figure["supply"] is None:
+            return None
+        return figure["available_w"] - figure["heat_allocated_w"]
+
     # ``?include=ports`` (#247): the viewset splits the page's counted ports
     # in one go (api.capacity.rack_port_split) and hands them in as the
     # ``rack_ports`` context; without it both read null.
@@ -6578,6 +6616,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "max_weight", "max_weight_unit", "max_power_w",
                   "cooling_capability", "cooling_capacity_w",
                   "total_weight_kg", "max_weight_kg", "power",
+                  "cooling", "cooling_free_w",
                   "starting_unit", "desc_units", "description",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]

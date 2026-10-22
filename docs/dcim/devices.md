@@ -267,7 +267,9 @@ administrator has enabled:
 
 The setting is stored on the deployment singleton and read/written via
 `GET`/`PUT /api/deployment/device-fields/` (a flat object of those seven
-booleans). Hidden fields disappear from the form and detail page, but any data
+booleans). A hidden cooling method still counts: a rack's cooling capability
+is checked against the device's effective method whether the field shows or
+not. Hidden fields disappear from the form and detail page, but any data
 already set is preserved. If the setting can't be loaded, Danbyte falls back to
 the same defaults.
 

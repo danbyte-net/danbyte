@@ -56,9 +56,11 @@ Fields:
   accepts; the type's page shows it in the **Hardware** card.
 - **Cooling** - how the hardware is cooled: air, liquid, hybrid or immersion
   (`cooling_method`; blank reads as air). A device of the type takes it unless
-  it sets its own - see [Cooling](../features/cooling.md).
+  it sets its own, and a rack's cooling capability is checked against it -
+  see [Cooling](../features/cooling.md).
 - **Heat output (W)** - the heat the hardware gives off, where that is not its
-  allocated draw (`heat_output_w`). Blank counts the draw.
+  allocated draw (`heat_output_w`): a rack counts it in place of the device's
+  draw when it adds up its heat. Blank counts the draw.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
   millimetre. Drawings scale the hardware by it.
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,

@@ -2178,11 +2178,13 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 "`x`, `y`, `w`, `h`, `orientation`) with `grid_width` / "
                 "`grid_height`; `unplaced`: the racks on no floor plan. A rack "
                 "carries `u_height`, `u_used`, `u_pct`, `power` (with `supply`: "
-                "`feed`, `pdu_rating` or null), `ports`, `panel_ports` and "
-                "`device_count`; `totals` add them up, with `racks`, `devices` "
-                "and, under `power`, how many racks have only their PDUs' rating "
-                "(`pdu_rating`) or no supply figure (`no_supply`). `count_virtual` "
-                "says whether virtual interfaces were counted."
+                "`feed`, `pdu_rating` or null), `cooling` (heat against its "
+                "cooling capacity), `ports`, `panel_ports` and `device_count`; "
+                "`totals` add them up, with `racks`, `devices`, under `power` "
+                "how many racks have only their PDUs' rating (`pdu_rating`) or "
+                "no supply figure (`no_supply`), and under `cooling` how many "
+                "have a cooling capacity (`budget`) or none (`no_supply`). "
+                "`count_virtual` says whether virtual interfaces were counted."
             ),
         ),
     )
@@ -3604,6 +3606,28 @@ ASSIGNED_IP_RELATED = (
 )
 
 
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter(
+            name="cooling_method",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "The device's effective cooling method - its own, else its "
+                "type's, else air: air, liquid, hybrid or immersion."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_mismatch",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only devices whose rack's cooling capability does not take "
+                "their effective method; 0: the rest."
+            ),
+        ),
+    ]),
+)
 class DeviceViewSet(
     FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
 ):
@@ -4308,6 +4332,7 @@ class DeviceViewSet(
                 if profile not in {"ts35", "ts15", "g32"}:
                     raise ValidationError({"din_profile": "One of ts35, ts15, g32."})
                 qs = qs.filter(device_type__din_profiles__contains=[profile])
+            qs = self._cooling_filters(qs)
             # The physical hosts behind a virtualization source. There is no
             # FK from Device to the source - the honest link is that the source
             # syncs VMs onto them, or into a cluster they belong to. Covers a
@@ -4335,6 +4360,34 @@ class DeviceViewSet(
             if tag_slugs:
                 qs = qs.distinct()
             qs = _apply_custom_field_scope(self.request, qs, "device")
+        return qs
+
+    def _cooling_filters(self, qs):
+        """``?cooling_method=`` - the device's effective method (its own,
+        else its type's, else air) - and ``?cooling_mismatch=1`` - the
+        devices whose rack's cooling capability does not take that method
+        (``=0`` the rest). Both computed in the query (api.cooling), and
+        only when asked for (#434)."""
+        from . import cooling
+        from .dcim_choices import COOLING_METHOD_CHOICES
+
+        params = self.request.query_params
+        method = params.get("cooling_method")
+        mismatch = (params.get("cooling_mismatch") or "").lower()
+        if not method and not mismatch:
+            return qs
+        qs = cooling.annotate_devices(qs)
+        if method:
+            known = [value for value, _label in COOLING_METHOD_CHOICES]
+            if method not in known:
+                raise ValidationError({"cooling_method": f"One of {', '.join(known)}."})
+            qs = qs.filter(cooling_effective=method)
+        if mismatch in ("1", "true", "yes"):
+            qs = qs.filter(cooling_mismatch=True)
+        elif mismatch in ("0", "false", "no"):
+            qs = qs.filter(cooling_mismatch=False)
+        elif mismatch:
+            raise ValidationError({"cooling_mismatch": "1 or 0."})
         return qs
 
     def perform_create(self, serializer):
@@ -6667,6 +6720,24 @@ RACK_INCLUDE_PARAMETER = OpenApiParameter(
                 "you may view the plan."
             ),
         ),
+        OpenApiParameter(
+            name="cooling_capability",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "What the rack's cooling takes: air, hybrid, liquid, immersion, "
+                "or none for not recorded."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_free_w_gte",
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "Racks whose cooling capacity less their allocated heat is at "
+                "least this many watts; racks without a capacity are left out."
+            ),
+        ),
         RACK_INCLUDE_PARAMETER,
     ]),
     retrieve=extend_schema(parameters=[RACK_INCLUDE_PARAMETER]),
@@ -6720,6 +6791,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            qs = self._cooling_filters(qs)
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
@@ -6738,6 +6810,35 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             floor_plan = self.request.query_params.get("floor_plan")
             if floor_plan:
                 qs = self._on_floor_plan(qs, floor_plan)
+        return qs
+
+    def _cooling_filters(self, qs):
+        """``?cooling_capability=`` - what the rack's cooling takes (``none``:
+        not recorded) - and ``?cooling_free_w_gte=`` - the racks whose
+        cooling capacity less their allocated heat is at least that many
+        watts: the racks that can still take a load (#434)."""
+        from .dcim_choices import COOLING_CAPABILITY_CHOICES
+
+        params = self.request.query_params
+        capability = params.get("cooling_capability")
+        if capability:
+            known = [value for value, _label in COOLING_CAPABILITY_CHOICES]
+            if capability not in (*known, "none"):
+                raise ValidationError(
+                    {"cooling_capability": f"One of {', '.join(known)} or none."})
+            qs = qs.filter(cooling_capability="" if capability == "none" else capability)
+        raw = params.get("cooling_free_w_gte")
+        if raw not in (None, ""):
+            try:
+                watts = int(raw)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {"cooling_free_w_gte": "A whole number of watts."}) from None
+            # The rows' cooling_free_w in SQL (api.capacity), in the list's
+            # own query - only when asked for, as it walks every device.
+            qs = qs.annotate(
+                cooling_free_annotated=capacity.cooling_free_annotation()
+            ).filter(cooling_free_annotated__gte=watts)
         return qs
 
     def _on_floor_plan(self, qs, raw):

@@ -97,11 +97,15 @@ plan, for the site page's Capacity tab. The site's `rack_count` (on its own
 
 A rack carries its `role`, `status`, `u_height`, `u_used` and `u_pct` (units
 in use, as a percentage), `power` (with `supply`: `feed`, `pdu_rating` or
-null), `ports`, `panel_ports` and `device_count` - the figures its own
+null), `cooling` (its heat against its cooling capacity), `ports`,
+`panel_ports` and `device_count` - the figures its own
 [rack page](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports) gives
 it. `totals` add these up, with the number of `racks` and `devices`; under
 `power`, `pdu_rating` and `no_supply` count the racks whose supply is only
-their PDUs' rating, or that have no supply figure at all.
+their PDUs' rating, or that have no supply figure at all; under `cooling`,
+`budget` and `no_supply` count the racks with a cooling capacity and without
+one, and `mismatched` the devices their racks' cooling does not take (see
+[Cooling](../features/cooling.md)).
 
 It needs **view** on sites (another tenant's site, or one outside the sites
 you are limited to, is a 404), and lists only the floor plans and racks you

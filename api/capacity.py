@@ -1,12 +1,12 @@
-"""Rack capacity - space, power and ports - one rule each.
+"""Rack capacity - space, power, cooling and ports - one rule each.
 
 The rack page, the floor plan's live overlay, the rack's Rack view (#248), the
 racks of a floor plan and a site's Capacity tab (#247) read their figures from
-here, so a rack reports the same numbers everywhere. Space and power read the
-rack's ``devices`` (and ``power_feeds``) through ``.all()``: a caller that
-prefetched them with :func:`racked_devices_prefetch` - ``RackViewSet``, the
-floor plan's ``state`` and the site capacity do - pays no query per rack or
-device. Ports use the shared counting rule of ``api.port_utilization``.
+here, so a rack reports the same numbers everywhere. Space, power and cooling
+read the rack's ``devices`` (and ``power_feeds``) through ``.all()``: a caller
+that prefetched them with :func:`racked_devices_prefetch` - ``RackViewSet``,
+the floor plan's ``state`` and the site capacity do - pays no query per rack
+or device. Ports use the shared counting rule of ``api.port_utilization``.
 """
 from __future__ import annotations
 
@@ -135,10 +135,7 @@ def rack_power(rack) -> dict:
         # restates its children's draws, so counting both doubled the
         # rack's demand. Distributors contribute supply topology, not
         # demand - and their inlets' rating is the supply of last resort.
-        outlet_n = getattr(d, "outlet_n", None)
-        if outlet_n is None:
-            outlet_n = d.power_outlets.count()
-        if outlet_n:
+        if _is_distributor(d):
             rating = pdu_rating(d)
             if rating:
                 ratings.append(rating)
@@ -163,6 +160,119 @@ def rack_power(rack) -> dict:
     if budget:
         out.update(available_w=budget, supply=SUPPLY_BUDGET, supplied_w=available_w)
     return out
+
+
+def _is_distributor(device) -> bool:
+    """A device with power outlets - a PDU: its inlet restates the draw of
+    what it feeds, so it adds no load of its own (see ``rack_power``)."""
+    outlet_n = getattr(device, "outlet_n", None)
+    if outlet_n is None:
+        outlet_n = device.power_outlets.count()
+    return bool(outlet_n)
+
+
+def rack_cooling(rack, devices=None) -> dict:
+    """Rack heat load against its cooling (#434): ``{"available_w",
+    "heat_allocated_w", "heat_maximum_w", "supply", "mismatched"}`` - the
+    shape of ``rack_power``.
+
+    Heat = per device, its type's ``heat_output_w`` where set, else the power
+    it draws - allocated in ``heat_allocated_w``, the nameplate (maximum) sum
+    in ``heat_maximum_w`` - skipping distributors (PDUs) as power demand
+    does. Supply = the rack's ``cooling_capacity_w``, ``supply`` ``"budget"``;
+    without one, ``supply`` is None and ``available_w`` 0. ``mismatched``
+    counts the devices whose effective cooling method the rack's capability
+    does not take (``api.cooling``), 0 for a rack without one.
+
+    ``devices`` defaults to ``rack.devices.all()`` - prefetch them with
+    :func:`racked_devices_prefetch`. ``cooling_free_annotation`` is the same
+    allocated figure in SQL, for filtering a list of racks."""
+    from .cooling import admits
+
+    if devices is None:
+        devices = rack.devices.all()
+    capability = getattr(rack, "cooling_capability", "") or ""
+    allocated = maximum = mismatched = 0
+    for d in devices:
+        if capability and not admits(capability, d.effective_cooling_method):
+            mismatched += 1
+        if _is_distributor(d):
+            continue
+        heat = d.device_type.heat_output_w if d.device_type is not None else None
+        if heat is not None:
+            allocated += heat
+            maximum += heat
+            continue
+        for pp in d.power_ports.all():
+            allocated += pp.allocated_draw or 0
+            maximum += pp.maximum_draw or 0
+    capacity = getattr(rack, "cooling_capacity_w", None)
+    if capacity:
+        supply, available = SUPPLY_BUDGET, capacity
+    else:
+        # The rack's own capacity is the only supply until cooling sources
+        # and their feeds are modelled; with neither there is no figure.
+        supply, available = None, 0
+    return {
+        "available_w": available,
+        "heat_allocated_w": allocated,
+        "heat_maximum_w": maximum,
+        "supply": supply,
+        "mismatched": mismatched,
+    }
+
+
+def cooling_free_annotation():
+    """A rack queryset's ``cooling_capacity_w`` less the heat its devices
+    give off, allocated - ``rack_cooling``'s figures, as one SQL expression:
+    NULL for a rack without a capacity. What ``?cooling_free_w_gte=`` filters
+    on, in the list's own query."""
+    from django.db.models import (
+        Case,
+        Exists,
+        ExpressionWrapper,
+        F,
+        IntegerField,
+        OuterRef,
+        Subquery,
+        Sum,
+        Value,
+        When,
+    )
+    from django.db.models.functions import Coalesce
+
+    from .models import Device, PowerOutlet, PowerPort
+
+    drawn = (
+        PowerPort.objects.filter(device=OuterRef("pk"))
+        .order_by().values("device").annotate(w=Sum("allocated_draw")).values("w")
+    )
+    device_heat = Case(
+        When(Exists(PowerOutlet.objects.filter(device=OuterRef("pk"))), then=Value(0)),
+        default=Coalesce(
+            F("device_type__heat_output_w"),
+            Subquery(drawn, output_field=IntegerField()),
+            Value(0),
+        ),
+        output_field=IntegerField(),
+    )
+    heat = (
+        Device.objects.filter(rack=OuterRef("pk"))
+        .order_by().annotate(heat=device_heat)
+        .values("rack").annotate(total=Sum("heat")).values("total")
+    )
+    return Case(
+        When(
+            cooling_capacity_w__gt=0,
+            then=ExpressionWrapper(
+                F("cooling_capacity_w")
+                - Coalesce(Subquery(heat, output_field=IntegerField()), Value(0)),
+                output_field=IntegerField(),
+            ),
+        ),
+        default=None,
+        output_field=IntegerField(),
+    )
 
 
 def rack_ports(devices, *, count_virtual: bool) -> dict:
@@ -249,14 +359,15 @@ def pct(used, total) -> int | None:
 
 def rack_figures(rack, split: dict) -> dict:
     """What one rack adds to a capacity rollup: its units (and the share in
-    use), power, ``ports`` / ``panel_ports`` (its ``rack_port_split`` entry)
-    and device count."""
+    use), power, cooling, ``ports`` / ``panel_ports`` (its
+    ``rack_port_split`` entry) and device count."""
     space = rack_space(rack)
     return {
         "u_height": space["u_height"],
         "u_used": space["u_used"],
         "u_pct": pct(space["u_used"], space["u_height"]),
         "power": rack_power(rack),
+        "cooling": rack_cooling(rack),
         "ports": split["ports"],
         "panel_ports": split["panel_ports"],
         "device_count": len(rack.devices.all()),
@@ -267,13 +378,19 @@ def sum_figures(figures) -> dict:
     """``rack_figures`` added up: ``racks`` and ``devices`` counts, units and
     their share in use, power with ``pdu_rating`` / ``no_supply`` /
     ``budget`` - how many of the racks have only their PDUs' rating, no
-    supply figure at all, or a power budget - and the two port rows."""
+    supply figure at all, or a power budget - cooling with ``budget`` /
+    ``no_supply`` - the racks with and without a cooling capacity - and
+    ``mismatched`` devices, and the two port rows."""
     figures = list(figures)
     u_height = sum(f["u_height"] for f in figures)
     u_used = sum(f["u_used"] for f in figures)
     power = {
         "available_w": 0, "allocated_w": 0, "maximum_w": 0,
         "pdu_rating": 0, "no_supply": 0, "budget": 0,
+    }
+    cooling = {
+        "available_w": 0, "heat_allocated_w": 0, "heat_maximum_w": 0,
+        "budget": 0, "no_supply": 0, "mismatched": 0,
     }
     ports = dict.fromkeys(PORT_FIELDS, 0)
     panel = dict.fromkeys(PORT_FIELDS, 0)
@@ -286,6 +403,9 @@ def sum_figures(figures) -> dict:
             power["budget"] += 1
         elif f["power"]["supply"] is None:
             power["no_supply"] += 1
+        for k in ("available_w", "heat_allocated_w", "heat_maximum_w", "mismatched"):
+            cooling[k] += f["cooling"][k]
+        cooling["budget" if f["cooling"]["supply"] == SUPPLY_BUDGET else "no_supply"] += 1
         for k in PORT_FIELDS:
             ports[k] += f["ports"][k]
             panel[k] += f["panel_ports"][k]
@@ -296,6 +416,7 @@ def sum_figures(figures) -> dict:
         "u_used": u_used,
         "u_pct": pct(u_used, u_height),
         "power": power,
+        "cooling": cooling,
         "ports": ports,
         "panel_ports": panel,
     }

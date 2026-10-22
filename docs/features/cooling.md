@@ -45,6 +45,47 @@ A [rack type](../dcim/racks.md#rack-types) carries both too: picking the type
 fills them in, and **Sync type** reports and copies them where a rack has
 drifted from its model.
 
+## Which hardware a rack takes
+
+A rack with a capability takes only the hardware its cooling can serve,
+judged by each device's effective cooling method:
+
+| Rack cooling | Takes hardware cooled by |
+|---|---|
+| **Air** | air |
+| **Hybrid** | air, liquid, hybrid |
+| **Liquid** | liquid, hybrid |
+| **Immersion** | immersion |
+
+A rack without a capability takes anything. A device the rack does not take
+is refused - *Rack R12 is air-cooled; this device type is liquid-cooled.* -
+on the field that changed: **Rack** when it is placed, **Device type** when
+it is re-typed, **Cooling** when its own method is changed. The rule holds on
+every write: the form, the API and the
+[spreadsheet import](import-export.md), and a device's own method is checked
+even while the field is hidden.
+
+Making a rack's capability stricter is allowed. Its devices stay where they
+are and nothing is judged again until a device's placement, type or own
+method changes, so they keep editing from their forms; the rack counts them
+as **mismatched** and lists them (see below). Moving a rack to another site
+takes its devices along in their rack, so the move has nothing new to judge.
+
+## Heat load and capacity
+
+A rack's **heat** adds up its devices: each device's type **heat output**
+where it has one, else the power the device draws - the allocated draw where
+you recorded it, the nameplate (maximum) sum beside it. Devices with power
+outlets are distributors (PDUs) and add no heat, as they add no power
+demand. The rack's **capacity** is what the heat is measured against.
+
+The figure reads like a rack's [power](power.md): heat over capacity, with
+the nameplate sum standing in where nothing is allocated, on the racks' one
+scale - green up to the tenant's warning level, amber above it, red above its
+critical level (80 % and 95 % unless changed under **Settings → Tenant policy
+→ Rack capacity**), and nothing to measure without a capacity. A site's
+[Capacity](../models/site.md#capacity) API adds the racks up.
+
 ## In the API
 
 | Object | Fields |
@@ -53,8 +94,26 @@ drifted from its model.
 | Module type | `cooling_method` |
 | Device | `cooling_method` (blank inherits), and the read-only `effective_cooling_method` |
 | Rack type | `cooling_capability`, `cooling_capacity_w` |
-| Rack | `cooling_capability`, `cooling_capacity_w` |
+| Rack | `cooling_capability`, `cooling_capacity_w`, and the read-only `cooling` and `cooling_free_w` |
 
+A rack's `cooling` holds `available_w` (its capacity, 0 without one),
+`heat_allocated_w`, `heat_maximum_w`, `supply` (`budget` when the rack has a
+capacity, else null) and `mismatched`, the devices its capability does not
+take. `cooling_free_w` is the capacity less the allocated heat, null without
+a capacity. Both are worked out from the rack's devices as the list already
+loads them, so a page of racks costs the same queries whatever stands in
+them.
+
+Filters:
+
+| List | Filter | Keeps |
+|---|---|---|
+| `GET /api/racks/` | `?cooling_capability=liquid` | racks with that capability; `none` for racks without one |
+| `GET /api/racks/` | `?cooling_free_w_gte=5000` | racks whose capacity less their allocated heat is at least that many watts - the racks that can still take 5 kW. Racks without a capacity are left out. |
+| `GET /api/devices/` | `?cooling_method=liquid` | devices whose *effective* method is that one |
+| `GET /api/devices/` | `?cooling_mismatch=1` | devices whose rack does not take their effective method; `0` the rest |
+
+A value outside the lists, or a figure that is no whole number, is a 400.
 Watts are whole numbers. `GET /api/dcim/choices/` serves the two lists as
 `cooling_method` and `cooling_capability`, each option a `value` and a
 `label`. The fields travel with a device-type

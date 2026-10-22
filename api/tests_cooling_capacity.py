@@ -5,22 +5,37 @@ capacity, and which hardware a rack may take."""
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 
+from . import capacity
 from .devicetype_import import import_racktype_yaml
 from .models import (
     Device,
     DeviceType,
     Manufacturer,
     ModuleType,
+    PowerOutlet,
+    PowerPort,
     Rack,
     RackType,
     Site,
 )
 
 User = get_user_model()
+
+#: The cooling methods each rack capability takes (#434) - the rule under
+#: test, written out once more on purpose.
+ADMITS = {
+    "air": {"air"},
+    "hybrid": {"air", "liquid", "hybrid"},
+    "liquid": {"liquid", "hybrid"},
+    "immersion": {"immersion"},
+}
+METHODS = ("air", "liquid", "hybrid", "immersion")
 
 
 class _Base(APITestCase):
@@ -283,3 +298,293 @@ class TravelTests(_Base):
         text = self._export("device").replace("hybrid", "immersion")
         self.assertEqual(self._import("device", text)["updated"], 1)
         self.assertEqual(Device.objects.get(name="n1").cooling_method, "immersion")
+
+
+class HeatLoadTests(_Base):
+    """A rack's heat against its cooling capacity (api.capacity.rack_cooling):
+    each device's type heat output where set, else its power draw, PDUs
+    aside."""
+
+    def setUp(self):
+        super().setUp()
+        self.server = self.dtype("1U server", u_height=1)
+        self.gpu = self.dtype("GPU node", "liquid", u_height=2, heat_output_w=1500)
+        self.strip = self.dtype("PDU strip", u_height=0, heat_output_w=90)
+        self.n = 0
+
+    def device(self, rack, dtype, allocated=None, maximum=None, **extra):
+        self.n += 1
+        d = Device.objects.create(
+            tenant=self.tenant, site=self.site, rack=rack, name=f"d{self.n}",
+            device_type=dtype, **extra,
+        )
+        if allocated is not None or maximum is not None:
+            PowerPort.objects.create(device=d, name="psu", allocated_draw=allocated,
+                                     maximum_draw=maximum)
+        return d
+
+    def loaded(self, name="R1", capability="hybrid", capacity=10000):
+        """300 W / 500 W, nothing allocated / 400 W, a GPU node whose type
+        gives off 1500 W whatever it draws, and a PDU with outlets."""
+        rack = self.rack(name, capability=capability, capacity=capacity)
+        self.device(rack, self.server, 300, 500, position=1, face="front")
+        self.device(rack, self.server, None, 400, position=2, face="front")
+        self.device(rack, self.gpu, 2000, 2500, position=3, face="front")
+        pdu = self.device(rack, self.strip, None, 3680, mount="side_left")
+        PowerOutlet.objects.create(device=pdu, name="C13-1")
+        return rack
+
+    def get(self, rack):
+        return self.client.get(f"/api/racks/{rack.id}/").json()
+
+    def test_heat_is_the_types_output_else_the_draw_and_a_pdu_adds_none(self):
+        body = self.get(self.loaded())
+        self.assertEqual(body["cooling"], {
+            "available_w": 10000, "heat_allocated_w": 300 + 1500,
+            "heat_maximum_w": 500 + 400 + 1500, "supply": "budget", "mismatched": 0,
+        })
+        self.assertEqual(body["cooling_free_w"], 10000 - 1800)
+
+    def test_without_a_capacity_there_is_no_supply(self):
+        body = self.get(self.loaded(capacity=None))
+        self.assertEqual(
+            (body["cooling"]["available_w"], body["cooling"]["supply"],
+             body["cooling"]["heat_allocated_w"]),
+            (0, None, 1800),
+        )
+        self.assertIsNone(body["cooling_free_w"])
+
+    def test_the_free_heat_filter_and_its_sql_agree_with_the_figures(self):
+        roomy = self.loaded("roomy", capacity=10000)            # 8200 W free
+        tight = self.loaded("tight", capacity=2000)             # 200 W free
+        over = self.loaded("over", capacity=1000)               # -800 W free
+        self.loaded("unrated", capacity=None)                   # no figure
+        empty = self.rack("empty", capability="air", capacity=500)  # 500 W free
+
+        def names(**params):
+            r = self.client.get("/api/racks/", params)
+            self.assertEqual(r.status_code, 200, r.content)
+            return sorted(row["name"] for row in r.json()["results"])
+
+        self.assertEqual(names(cooling_free_w_gte=1000), ["roomy"])
+        self.assertEqual(names(cooling_free_w_gte=0), ["empty", "roomy", "tight"])
+        self.assertEqual(names(cooling_free_w_gte=-5000),
+                         ["empty", "over", "roomy", "tight"])
+        bad = self.client.get("/api/racks/", {"cooling_free_w_gte": "lots"})
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("cooling_free_w_gte", bad.json())
+        # The SQL the filter reads is the figure every row shows.
+        sql = dict(
+            Rack.objects.filter(tenant=self.tenant)
+            .annotate(free=capacity.cooling_free_annotation())
+            .values_list("name", "free")
+        )
+        rows = {r["name"]: r["cooling_free_w"]
+                for r in self.client.get("/api/racks/").json()["results"]}
+        self.assertEqual(sql, rows)
+        self.assertEqual(
+            (rows["roomy"], rows["tight"], rows["over"], rows["unrated"], rows["empty"]),
+            (8200, 200, -800, None, 500),
+        )
+        self.assertEqual(self.get(over)["cooling"]["heat_allocated_w"], 1800)
+        self.assertEqual(self.get(empty)["cooling"]["heat_allocated_w"], 0)
+        self.assertEqual(self.get(tight)["cooling_free_w"], 200)
+        self.assertEqual(self.get(roomy)["cooling_free_w"], 8200)
+
+    def test_the_capability_filter(self):
+        self.rack("a", capability="air")
+        self.rack("l", capability="liquid")
+        self.rack("n")
+
+        def names(value):
+            r = self.client.get("/api/racks/", {"cooling_capability": value})
+            return r.status_code, sorted(row["name"] for row in r.json().get("results", []))
+
+        self.assertEqual(names("liquid"), (200, ["l"]))
+        self.assertEqual(names("none"), (200, ["n"]))
+        self.assertEqual(names("oil")[0], 400)
+
+    def test_a_page_of_racks_costs_the_same_whatever_they_hold(self):
+        self.loaded("first")
+
+        def count():
+            self.client.get("/api/racks/")
+            with CaptureQueriesContext(connection) as ctx:
+                r = self.client.get("/api/racks/")
+            self.assertEqual(r.status_code, 200)
+            return len(ctx.captured_queries)
+
+        small = count()
+        for i in range(4):
+            self.loaded(f"more{i}")
+        self.assertEqual(count(), small)
+
+    def test_a_site_adds_the_racks_up(self):
+        self.loaded("R1")
+        self.loaded("R2", capacity=None)
+        body = self.client.get(f"/api/sites/{self.site.id}/capacity/").json()
+        self.assertEqual(body["totals"]["cooling"], {
+            "available_w": 10000, "heat_allocated_w": 3600, "heat_maximum_w": 4800,
+            "budget": 1, "no_supply": 1, "mismatched": 0,
+        })
+        entry = {r["name"]: r for r in body["unplaced"]["racks"]}["R1"]
+        self.assertEqual(entry["cooling"], self.get(Rack.objects.get(name="R1"))["cooling"])
+
+
+class PlacementTests(_Base):
+    """Which hardware a rack takes: the admit matrix on create, on update -
+    a move into a rack, a re-typed device, a re-marked one - and through the
+    spreadsheet import. A rack made stricter keeps its devices."""
+
+    def setUp(self):
+        super().setUp()
+        # One type per method; "air" is a type with none set, which reads
+        # as air.
+        self.types = {m: self.dtype(f"{m} box", "" if m == "air" else m) for m in METHODS}
+        self.racks = {c: self.rack(f"rack-{c}", capability=c) for c in ADMITS}
+        self.n = 0
+
+    def post(self, rack, method, **extra):
+        self.n += 1
+        return self.client.post("/api/devices/", {
+            "name": f"dev{self.n}", "site_id": str(self.site.id),
+            "rack_id": str(rack.id), "device_type_id": str(self.types[method].id),
+            **extra,
+        }, format="json")
+
+    @staticmethod
+    def refusal(capability, method, subject="this device type"):
+        return f"Rack rack-{capability} is {capability}-cooled; {subject} is {method}-cooled."
+
+    def test_create_every_cell(self):
+        for capability, allowed in ADMITS.items():
+            for method in METHODS:
+                with self.subTest(capability=capability, method=method):
+                    r = self.post(self.racks[capability], method)
+                    if method in allowed:
+                        self.assertEqual(r.status_code, 201, r.content)
+                    else:
+                        self.assertEqual(r.status_code, 400, r.content)
+                        # The type sets every method but air, which is the
+                        # default of a type with none.
+                        subject = "this device" if method == "air" else "this device type"
+                        self.assertEqual(r.json(), {
+                            "rack_id": [self.refusal(capability, method, subject)]})
+
+    def test_a_rack_without_a_capability_takes_anything(self):
+        bare = self.rack("bare")
+        for method in METHODS:
+            self.assertEqual(self.post(bare, method).status_code, 201)
+
+    def test_moving_into_a_rack_every_cell(self):
+        for capability, allowed in ADMITS.items():
+            for method in METHODS:
+                with self.subTest(capability=capability, method=method):
+                    d = Device.objects.create(
+                        tenant=self.tenant, site=self.site, name=f"m-{capability}-{method}",
+                        device_type=self.types[method])
+                    r = self.client.patch(f"/api/devices/{d.id}/",
+                                          {"rack_id": str(self.racks[capability].id)},
+                                          format="json")
+                    self.assertEqual(r.status_code, 200 if method in allowed else 400,
+                                     r.content)
+                    if method not in allowed:
+                        self.assertIn("rack_id", r.json())
+
+    def test_a_new_type_or_method_is_judged_on_the_field_that_changed(self):
+        d = self.post(self.racks["liquid"], "liquid").json()
+        url = f"/api/devices/{d['id']}/"
+        r = self.client.patch(url, {"cooling_method": "air"}, format="json")
+        self.assertEqual(r.json(), {"cooling_method": [
+            self.refusal("liquid", "air", "this device")]})
+        r = self.client.patch(url, {"device_type_id": str(self.types["immersion"].id)},
+                              format="json")
+        self.assertEqual(r.json(), {"device_type_id": [
+            self.refusal("liquid", "immersion")]})
+        # The device's own method stands over its type's.
+        r = self.client.patch(url, {"cooling_method": "hybrid",
+                                    "device_type_id": str(self.types["air"].id)},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["effective_cooling_method"], "hybrid")
+        r = self.client.post("/api/devices/", {
+            "name": "own-air", "rack_id": str(self.racks["liquid"].id),
+            "device_type_id": str(self.types["liquid"].id), "cooling_method": "air",
+        }, format="json")
+        self.assertEqual(r.json(), {"rack_id": [self.refusal("liquid", "air", "this device")]})
+
+    def test_a_stricter_rack_keeps_its_devices_and_lists_them(self):
+        rack = self.racks["hybrid"]
+        liquid = self.post(rack, "liquid").json()
+        fits = self.post(rack, "air").json()
+        r = self.client.patch(f"/api/racks/{rack.id}/", {"cooling_capability": "air"},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["cooling"]["mismatched"], 1)
+        # Nothing is judged again until the placement, type or method changes:
+        # the form sends the rack back unchanged.
+        r = self.client.patch(f"/api/devices/{liquid['id']}/",
+                              {"description": "kept", "rack_id": str(rack.id)},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+        def listed(**params):
+            r = self.client.get("/api/devices/", {"rack": str(rack.id), **params})
+            self.assertEqual(r.status_code, 200, r.content)
+            return [row["id"] for row in r.json()["results"]]
+
+        self.assertEqual(listed(cooling_mismatch="1"), [liquid["id"]])
+        self.assertEqual(listed(cooling_mismatch="0"), [fits["id"]])
+        self.assertEqual(
+            self.client.get("/api/devices/", {"cooling_mismatch": "maybe"}).status_code, 400)
+
+    def test_the_method_filter_reads_the_effective_method(self):
+        Device.objects.create(tenant=self.tenant, name="own", cooling_method="immersion",
+                              device_type=self.types["liquid"])
+        Device.objects.create(tenant=self.tenant, name="typed", device_type=self.types["liquid"])
+        Device.objects.create(tenant=self.tenant, name="plain", device_type=self.types["air"])
+        Device.objects.create(tenant=self.tenant, name="bare")
+
+        def names(method):
+            r = self.client.get("/api/devices/", {"cooling_method": method})
+            self.assertEqual(r.status_code, 200, r.content)
+            return sorted(row["name"] for row in r.json()["results"])
+
+        self.assertEqual(names("immersion"), ["own"])
+        self.assertEqual(names("liquid"), ["typed"])
+        self.assertEqual(names("air"), ["bare", "plain"])
+        self.assertEqual(
+            self.client.get("/api/devices/", {"cooling_method": "oil"}).status_code, 400)
+
+    def test_the_import_refuses_what_the_form_refuses(self):
+        rows = ["name,site,rack,device_type"]
+        for capability in ADMITS:
+            for method in METHODS:
+                rows.append(f"imp-{capability}-{method},dc1,{self.racks[capability].id},"
+                            f"{self.types[method].id}")
+        r = self.client.post("/api/io/device/import/",
+                             {"format": "csv", "content": "\n".join(rows) + "\n"},
+                             format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        made = set(Device.objects.filter(name__startswith="imp-").values_list("name", flat=True))
+        expected = {f"imp-{c}-{m}" for c, allowed in ADMITS.items() for m in allowed}
+        self.assertEqual(made, expected)
+        self.assertEqual(body["created"], len(expected))
+        self.assertEqual(len(body["errors"]), 16 - len(expected))
+        self.assertIn("is liquid-cooled", str(body["errors"]))
+
+    def test_a_rack_move_takes_its_devices_as_they_are(self):
+        # Moving a rack to another site keeps every device in its rack, so
+        # the rule has nothing new to judge - not even a device placed
+        # before the rack was made stricter.
+        rack = self.racks["hybrid"]
+        self.post(rack, "liquid")
+        Rack.objects.filter(pk=rack.pk).update(cooling_capability="air")
+        other = Site.objects.create(tenant=self.tenant, name="dc2")
+        r = self.client.post(f"/api/racks/{rack.id}/move/", {"site_id": str(other.id)},
+                             format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        rack.refresh_from_db()
+        self.assertEqual((rack.site_id, rack.cooling_capability), (other.id, "air"))
+        self.assertEqual(Device.objects.get(name="dev1").site_id, other.id)

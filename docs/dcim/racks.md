@@ -197,6 +197,11 @@ A device with no type counts as full depth, as the elevation draws it.
 another site without taking it out of the rack. A device with no site takes
 its rack's. Its **location**, when set, is in its site too.
 
+**A rack takes the hardware its cooling serves.** Where the rack records a
+cooling capability, a device whose cooling method it does not take - liquid
+gear in an air-cooled rack, say - is refused (`Rack R12 is air-cooled; this
+device type is liquid-cooled.`). See [Cooling](../features/cooling.md#which-hardware-a-rack-takes).
+
 **A device type's change keeps its racked devices in place.** A new height,
 full depth or width that would put one of its devices over another device or
 past the top of its rack is refused, naming the devices (`Racked devices of
@@ -449,14 +454,21 @@ The rack's **Power feeds** tab lists the feeds delivered to it, the same rows
 as the feeds list; tick them to edit or delete several at once (see
 [Power](../features/power.md#editing-and-deleting-several-at-once)).
 
+Racks roll up **cooling** the same way: the heat their devices give off -
+each device's type heat output where it has one, else the power it draws,
+PDUs aside - over the rack's **cooling capacity**, on the same scale and with
+the same *nameplate* fallback. A rack's **cooling capability** decides which
+hardware it takes; a device it does not take is refused. See
+[Cooling](../features/cooling.md).
+
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the
 share in use and opening the Port utilization page on the rack. Counting
 ports costs the list a few queries, so it asks for them
 (`?include=ports`) only while one of the two is shown.
 
-A rack's space, power and ports share one scale wherever they are drawn as a
-bar or a colour: green up to the warning level, amber above it, red above the
+A rack's space, power, cooling and ports share one scale wherever they are
+drawn as a bar or a colour: green up to the warning level, amber above it, red above the
 critical level. The levels are 80 % and 95 % until a tenant admin changes them
 under **Settings → Tenant policy → Rack capacity** (`capacity_warn_pct`,
 `capacity_critical_pct`; the warning level must sit below the critical one).
@@ -537,8 +549,13 @@ number of queries whatever stands in them, ports or not.
 A rack's `power` holds `available_w`, `allocated_w`, `maximum_w` and
 `supply`: `feed` when the supply is its primary feeds, `pdu_rating` when it is
 its PDUs' inlet ratings (the smaller of two sides), null when there is
-neither. A site adds its racks up
-floor plan by floor plan on its [Capacity](../models/site.md#capacity) API.
+neither. Its `cooling` holds `available_w` (the cooling capacity),
+`heat_allocated_w`, `heat_maximum_w`, `supply` (`budget`, or null without a
+capacity) and `mismatched`, and `cooling_free_w` is the capacity less the
+allocated heat - see [Cooling](../features/cooling.md#in-the-api), with the
+`?cooling_capability=` and `?cooling_free_w_gte=` filters. A site adds its
+racks up floor plan by floor plan on its
+[Capacity](../models/site.md#capacity) API.
 
 ## API: port state and 3D geometry
 
