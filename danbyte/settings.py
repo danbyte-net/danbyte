@@ -222,7 +222,19 @@ DATABASES = {
         # A dropped connection is noticed before a request uses it, and a
         # database that does not answer fails the request in 10 s, not never.
         "CONN_HEALTH_CHECKS": True,
-        "OPTIONS": {"connect_timeout": 10},
+        "OPTIONS": {
+            "connect_timeout": 10,
+            # JIT off for Danbyte's sessions (#443): its queries are short OLTP
+            # queries, but a list with many correlated count subqueries crosses
+            # jit_above_cost and Postgres spent seconds compiling it on every
+            # request. DB_JIT=on keeps the server's setting (for a pooler that
+            # refuses the "options" startup parameter).
+            **(
+                {}
+                if os.getenv("DB_JIT", "off").strip().lower() in ("on", "true", "1")
+                else {"options": "-c jit=off"}
+            ),
+        },
     }
 }
 
