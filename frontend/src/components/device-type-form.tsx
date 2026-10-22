@@ -97,6 +97,13 @@ export function DeviceTypeForm({
   const [description, setDescription] = useState(src?.description ?? "")
   const [isFullDepth, setIsFullDepth] = useState(src?.is_full_depth ?? true)
   const [airflow, setAirflow] = useState<string | null>(src?.airflow || null)
+  // How the hardware is cooled and the heat it gives off (#434).
+  const [coolingMethod, setCoolingMethod] = useState<string | null>(
+    src?.cooling_method || null
+  )
+  const [heatOutput, setHeatOutput] = useState(
+    src?.heat_output_w != null ? String(src.heat_output_w) : ""
+  )
   const [weight, setWeight] = useState(src?.weight ?? "")
   const [weightUnit, setWeightUnit] = useState(src?.weight_unit || "kg")
   const [subdeviceRole, setSubdeviceRole] = useState<string | null>(
@@ -134,6 +141,10 @@ export function DeviceTypeForm({
     setDescription(deviceType.description)
     setIsFullDepth(deviceType.is_full_depth)
     setAirflow(deviceType.airflow || null)
+    setCoolingMethod(deviceType.cooling_method || null)
+    setHeatOutput(
+      deviceType.heat_output_w != null ? String(deviceType.heat_output_w) : ""
+    )
     setWeight(deviceType.weight ?? "")
     setWeightUnit(deviceType.weight_unit || "kg")
     setSubdeviceRole(deviceType.subdevice_role || null)
@@ -176,6 +187,8 @@ export function DeviceTypeForm({
         description: description.trim(),
         is_full_depth: isFullDepth,
         airflow: airflow ?? "",
+        cooling_method: coolingMethod ?? "",
+        heat_output_w: heatOutput.trim() === "" ? null : Number(heatOutput),
         weight: String(weight).trim() === "" ? null : String(weight).trim(),
         weight_unit: String(weight).trim() === "" ? "" : weightUnit,
         subdevice_role: subdeviceRole ?? "",
@@ -405,6 +418,28 @@ export function DeviceTypeForm({
                   ]}
                 />
               </div>
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormSelect
+                label="Cooling"
+                info="Blank reads as air. Devices of the type take it unless they set their own."
+                value={coolingMethod}
+                onChange={setCoolingMethod}
+                noneLabel="Unspecified"
+                placeholder="Unspecified"
+                options={choices.cooling_method}
+                error={fieldErrors.cooling_method}
+              />
+              <FormText
+                label="Heat output (W)"
+                hint="optional"
+                info="The heat it gives off, where that is not its allocated draw. Blank counts the draw."
+                type="number"
+                min={0}
+                value={heatOutput}
+                onChange={setHeatOutput}
+                error={fieldErrors.heat_output_w}
+              />
             </div>
             <FormSelect
               label="Subdevice role"

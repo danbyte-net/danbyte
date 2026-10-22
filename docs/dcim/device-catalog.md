@@ -60,7 +60,8 @@ Fields:
   see [Cooling](../features/cooling.md).
 - **Heat output (W)** - the heat the hardware gives off, where that is not its
   allocated draw (`heat_output_w`): a rack counts it in place of the device's
-  draw when it adds up its heat. Blank counts the draw.
+  draw when it adds up its heat. Blank counts the draw. Cooling and heat
+  output sit in the form's **Chassis** card and the page's **Hardware** card.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
   millimetre. Drawings scale the hardware by it.
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,

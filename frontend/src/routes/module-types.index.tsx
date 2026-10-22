@@ -20,6 +20,7 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { numidColumn } from "@/components/cells/numid"
 import { manufacturerColumn } from "@/components/cells/manufacturer-cell"
+import { coolingMethodColumn } from "@/components/cells/cooling-cell"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { RowActions } from "@/components/row-actions"
@@ -160,6 +161,11 @@ function buildColumns({
           <span className="text-muted-foreground">-</span>
         ),
     },
+    // How the module is cooled (#434) - hidden until ticked.
+    coolingMethodColumn<ModuleType>({
+      get: (r) => r.cooling_method,
+      field: "cooling_method",
+    }),
     {
       id: "interfaces",
       accessorKey: "interface_template_count",

@@ -31,6 +31,7 @@ import { PlatformCell } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
 import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
+import { coolingMethodColumn } from "@/components/cells/cooling-cell"
 import { rackColumn } from "@/components/cells/rack-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -59,6 +60,7 @@ export type DeviceColumnId =
   | "coverage"
   | "type"
   | "manufacturer"
+  | "cooling"
   | "site"
   | "rack"
   | "cabinet"
@@ -85,6 +87,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "coverage",
   "type",
   "manufacturer",
+  "cooling",
   "site",
   "rack",
   "cabinet",
@@ -372,6 +375,12 @@ export function buildDeviceColumns<T extends Device = Device>(
         },
       },
     }),
+    // The effective method (#434): its own, else its type's, else air.
+    cooling: () =>
+      coolingMethodColumn<T>({
+        get: (r) => r.effective_cooling_method,
+        field: ["cooling_method", "effective_cooling_method"],
+      }),
     site: () => siteColumn<T>({ get: (r) => r.site }),
     rack: () => placement(rackColumn<T>({ get: (r) => r.rack }), "Rack"),
     cabinet: () =>

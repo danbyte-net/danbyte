@@ -25,6 +25,8 @@ const DIM_LABEL: Record<string, string> = {
   max_weight: "Weight budget",
   max_weight_unit: "Budget unit",
   max_power_w: "Power budget (W)",
+  cooling_capability: "Cooling capability",
+  cooling_capacity_w: "Cooling capacity (W)",
 }
 
 /** Accessory-side field names, for the "bring in line" list. */

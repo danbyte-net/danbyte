@@ -457,9 +457,11 @@ as the feeds list; tick them to edit or delete several at once (see
 Racks roll up **cooling** the same way: the heat their devices give off -
 each device's type heat output where it has one, else the power it draws,
 PDUs aside - over the rack's **cooling capacity**, on the same scale and with
-the same *nameplate* fallback. A rack's **cooling capability** decides which
-hardware it takes; a device it does not take is refused. See
-[Cooling](../features/cooling.md).
+the same *nameplate* fallback. The rack page's Capacity card reads it under
+**Cooling** (`3.2 kW / 10 kW`, *No capacity* without one), with the rack's
+**Cooling capability** beneath, and the racks list offers a **Cooling**
+column like **Power**. The capability decides which hardware the rack takes;
+a device it does not take is refused. See [Cooling](../features/cooling.md).
 
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the

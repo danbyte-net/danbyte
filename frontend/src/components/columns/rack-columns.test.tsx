@@ -91,6 +91,43 @@ describe("rack columns", () => {
     expect(cell("power", rack()).textContent).toBe("-")
   })
 
+  it("offers Cooling hidden, read as heat over capacity (#434)", () => {
+    const cooling = buildRackColumns().find((c) => c.id === "cooling")
+    expect(cooling?.meta).toMatchObject({
+      label: "Cooling",
+      defaultHidden: true,
+      field: ["cooling", "cooling_free_w"],
+    })
+    const heat = (
+      available_w: number,
+      heat_allocated_w: number,
+      heat_maximum_w: number
+    ) => ({
+      available_w,
+      heat_allocated_w,
+      heat_maximum_w,
+      supply: available_w > 0 ? ("budget" as const) : null,
+      mismatched: 0,
+    })
+    const el = cell("cooling", rack({ cooling: heat(10_000, 8_500, 9_000) }))
+    expect(el.textContent).toBe("8.5 kW / 10 kW")
+    expect(level(el)).toBe("warn")
+    // Nothing allocated: the nameplate sum, marked.
+    const np = cell("cooling", rack({ cooling: heat(10_000, 0, 4_000) }))
+    expect(np.textContent).toBe("4 kW / 10 kWnameplate")
+    expect(level(np)).toBe("good")
+    // Heat with no capacity recorded: said, never a guess at a level.
+    const none = cell("cooling", rack({ cooling: heat(0, 900, 900) }))
+    expect(none.textContent).toBe("900 WNo capacity")
+    expect(level(none)).toBeUndefined()
+    expect(cell("cooling", rack()).textContent).toBe("-")
+    // It sorts by the share of the capacity the heat takes.
+    const fn = (cooling as { accessorFn: (r: Rack, i: number) => unknown })
+      .accessorFn
+    expect(fn(rack({ cooling: heat(10_000, 8_500, 9_000) }), 0)).toBe(0.85)
+    expect(fn(rack(), 0)).toBe(-1)
+  })
+
   it("offers Ports and Panel ports hidden, shown where a table asks (#247)", () => {
     const meta = (id: RackColumnId, opts = {}) =>
       buildRackColumns(opts).find((c) => c.id === id)?.meta

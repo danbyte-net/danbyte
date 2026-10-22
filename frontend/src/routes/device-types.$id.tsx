@@ -7,6 +7,8 @@ import { useCallback, useState } from "react"
 import { api, type DeviceType } from "@/lib/api"
 import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import { choiceLabel, useDcimChoices } from "@/lib/use-dcim-choices"
+import { formatWatts } from "@/lib/rack-capacity"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { Loading } from "@/components/loading"
@@ -309,6 +311,27 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     {
       label: "Airflow",
       value: d.airflow ? choiceLabel(choices.airflow, d.airflow) : dash,
+    },
+    {
+      // A blank method reads as air for the type's devices (#434).
+      label: "Cooling",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <CoolingMethodText value={d.cooling_method || "air"} />
+          {!d.cooling_method && (
+            <span className="text-[11px] text-muted-foreground">(default)</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Heat output",
+      value:
+        d.heat_output_w != null ? (
+          <span className="num">{formatWatts(d.heat_output_w)}</span>
+        ) : (
+          dash
+        ),
     },
   ]
 

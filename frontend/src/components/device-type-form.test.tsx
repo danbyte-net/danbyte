@@ -239,6 +239,29 @@ describe("DeviceTypeForm size and DIN rail", () => {
     expect(await sent()).toMatchObject({ airflow: "rear-to-front" })
   })
 
+  it("sends its cooling method and heat output, blank as cleared (#434)", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/dcim/choices/"
+        ? Promise.resolve({
+            cooling_method: [{ value: "liquid", label: "Liquid" }],
+          })
+        : base(path, init)
+    )
+    renderForm({
+      deviceType: { ...DIN_TYPE, cooling_method: "liquid", heat_output_w: 900 },
+    })
+    const trigger = within(field("Cooling")).getByRole("combobox")
+    await waitFor(() => expect(trigger.textContent).toBe("Liquid"))
+    expect(box("Heat output (W)").value).toBe("900")
+    type("Heat output (W)", "")
+    submit()
+    expect(await sent()).toMatchObject({
+      cooling_method: "liquid",
+      heat_output_w: null,
+    })
+  })
+
   it("shows the server's refusal on the field it is about", async () => {
     refuse = {
       width_mm: ["A DIN-rail type needs its body size."],

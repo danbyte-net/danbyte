@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { CapacityBar } from "./capacity-bar"
-import { PowerFigure } from "./power-figure"
+import { CoolingFigure, PowerFigure } from "./power-figure"
 
 afterEach(cleanup)
 
@@ -77,6 +77,51 @@ describe("PowerFigure", () => {
       none.container.querySelector("[data-slot=capacity-bar]")
     ).not.toBeNull()
     expect(fill(none.container)).toBeNull()
+  })
+})
+
+describe("CoolingFigure (#434)", () => {
+  const heat = (
+    available_w: number,
+    heat_allocated_w: number,
+    heat_maximum_w: number
+  ) => ({
+    available_w,
+    heat_allocated_w,
+    heat_maximum_w,
+    supply: available_w > 0 ? ("budget" as const) : null,
+    mismatched: 0,
+  })
+
+  it("reads heat over capacity, as power reads demand over supply", () => {
+    const { container } = render(
+      <CoolingFigure cooling={heat(10_000, 3_200, 5_000)} />
+    )
+    expect(container.textContent).toBe("3.2 kW / 10 kW")
+    // A capacity is the rack's own figure: no note, unlike a power budget.
+    expect(container.querySelector("[data-slot=cooling-figure]")).not.toBeNull()
+  })
+
+  it("marks a nameplate heat, and heat with no capacity", () => {
+    const np = render(<CoolingFigure cooling={heat(10_000, 0, 4_000)} />)
+    expect(np.container.textContent).toBe("4 kW / 10 kWnameplate")
+    np.unmount()
+    const none = render(<CoolingFigure cooling={heat(0, 900, 900)} />)
+    expect(none.container.textContent).toBe("900 WNo capacity")
+  })
+
+  it("turns red over capacity and leads with the bar when asked", () => {
+    const over = render(<CoolingFigure cooling={heat(1_000, 1_200, 0)} bar />)
+    expect(over.container.querySelector(".text-destructive")).not.toBeNull()
+    expect(fill(over.container)?.dataset.level).toBe("critical")
+  })
+
+  it("is a dash with nothing to say", () => {
+    for (const c of [heat(0, 0, 0), null, undefined]) {
+      const { container, unmount } = render(<CoolingFigure cooling={c} />)
+      expect(container.textContent).toBe("-")
+      unmount()
+    }
   })
 })
 

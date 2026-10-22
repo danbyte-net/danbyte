@@ -1036,3 +1036,34 @@ describe("DeviceForm side mount", () => {
     expect(JSON.parse(String(call[1]?.body)).mount).toBe("left")
   })
 })
+
+describe("DeviceForm cooling (#434)", () => {
+  it("sends the device's own cooling method when the field is on", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/device-fields/"
+        ? Promise.resolve({ comments: true, cooling_method: true })
+        : path === "/api/dcim/choices/"
+          ? Promise.resolve({
+              cooling_method: [
+                { value: "air", label: "Air" },
+                { value: "liquid", label: "Liquid" },
+              ],
+            })
+          : base(path, init)
+    )
+    renderForm()
+    await screen.findByText("Cooling", { selector: "label" })
+    expect(trigger("Cooling").textContent).toBe("Inherit")
+    await choose("Cooling", "Liquid")
+    await save()
+    expect(await sent()).toMatchObject({ cooling_method: "liquid" })
+  })
+
+  it("hides it by default and sends blank, which inherits the type's", async () => {
+    renderForm()
+    await save()
+    expect(await sent()).toMatchObject({ cooling_method: "" })
+    expect(screen.queryByText("Cooling", { selector: "label" })).toBeNull()
+  })
+})

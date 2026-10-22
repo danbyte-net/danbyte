@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { LocalityBadge } from "@/components/locality-badge"
 import { PlannedChangeMarker } from "@/components/planning/planned-change-badge"
+import { coolingMethodColumn } from "@/components/cells/cooling-cell"
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { lifecycleColumn } from "@/components/cells/lifecycle-cell"
@@ -32,6 +33,7 @@ export type DeviceTypeColumnId =
   | "model"
   | "part_number"
   | "u_height"
+  | "cooling"
   | "images"
   | "faceplate"
   | "devices"
@@ -48,6 +50,7 @@ const CANONICAL_ORDER: DeviceTypeColumnId[] = [
   "model",
   "part_number",
   "u_height",
+  "cooling",
   "images",
   "faceplate",
   "devices",
@@ -182,6 +185,12 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
         },
       },
     }),
+    // The type's own cooling method (#434); blank reads as air on its devices.
+    cooling: () =>
+      coolingMethodColumn<T>({
+        get: (r) => r.cooling_method,
+        field: "cooling_method",
+      }),
     images: () => ({
       id: "images",
       // Which faces exist is the detail (and what exports); whether any does is

@@ -1403,6 +1403,11 @@ export interface DeviceType extends LifecycleInfo {
   /** Occupies both rack faces (hatched on the opposite face in elevations). */
   is_full_depth: boolean
   airflow: string
+  /** How the hardware is cooled (#434); "" reads as air. */
+  cooling_method: string
+  /** Heat it gives off (W) where that is not its allocated draw; null
+   * counts its draw. */
+  heat_output_w: number | null
   weight: string | null
   weight_unit: string
   subdevice_role: string
@@ -1453,6 +1458,8 @@ export interface DeviceTypeWritePayload {
   image_ports?: ImagePorts | null
   is_full_depth?: boolean
   airflow?: string
+  cooling_method?: string
+  heat_output_w?: number | null
   weight?: string | null
   weight_unit?: string
   width_mm?: number | null
@@ -1608,6 +1615,10 @@ export interface Device {
   airflow: string
   /** Read-only: the device's own airflow, else its type's default. */
   effective_airflow?: string
+  /** How the device is cooled (#434); "" inherits its type's. */
+  cooling_method?: string
+  /** Read-only: its own cooling method, else its type's, else "air". */
+  effective_cooling_method?: string
   /** Port labels on this device's faceplate renders: inherit / on / off. */
   port_labels: DevicePortLabels
   latitude: string | null
@@ -1714,6 +1725,7 @@ export interface DeviceWritePayload {
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments?: string
   airflow?: string
+  cooling_method?: string
   port_labels?: DevicePortLabels
   latitude?: string | null
   longitude?: string | null
@@ -1736,6 +1748,7 @@ export interface DeviceFieldVisibility {
   location: boolean
   cluster: boolean
   airflow: boolean
+  cooling_method: boolean
   latitude: boolean
   longitude: boolean
 }
@@ -1771,6 +1784,7 @@ export const DEFAULT_DEVICE_FIELD_VISIBILITY: DeviceFieldVisibility = {
   location: true,
   cluster: false,
   airflow: false,
+  cooling_method: false,
   latitude: false,
   longitude: false,
 }
@@ -2033,6 +2047,10 @@ export interface RackTypeOption {
   max_weight_unit: string
   /** The power budget (W) a rack of this model starts with; null = none. */
   max_power_w: number | null
+  /** What the model's cooling takes (#434); "" = not recorded. */
+  cooling_capability: string
+  /** Heat (W) the model's cooling removes; null = not recorded. */
+  cooling_capacity_w: number | null
 }
 
 export interface RackType extends RackTypeOption {
@@ -2057,6 +2075,8 @@ export interface RackTypeWritePayload {
   max_weight?: string | null
   max_weight_unit?: string
   max_power_w?: number | null
+  cooling_capability?: string
+  cooling_capacity_w?: number | null
   description?: string
   tag_ids?: number[]
 }
@@ -2077,6 +2097,20 @@ export interface RackPower {
   /** With `supply: "budget"`: what the feeds or PDUs would give (0 when
    * neither is known). `available_w` is then the budget. */
   supplied_w?: number
+}
+
+/** A rack's heat load against its cooling (api.capacity.rack_cooling,
+ * #434). Heat is each device's type heat output where set, else its power
+ * draw - allocated, beside the nameplate sum - PDUs aside, as for power. */
+export interface RackCooling {
+  /** The rack's cooling capacity (W); 0 without one. */
+  available_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** `budget`: the rack's own capacity; null: none recorded. */
+  supply: "budget" | null
+  /** Devices whose cooling method the rack's capability does not take. */
+  mismatched: number
 }
 
 export interface Rack {
@@ -2100,12 +2134,20 @@ export interface Rack {
   max_weight_unit: string
   /** Power budget in watts; null = measure against the feeds. */
   max_power_w?: number | null
+  /** What the rack's cooling takes (#434); "" = not recorded, no check. */
+  cooling_capability?: string
+  /** Heat (W) the rack's cooling removes; null = not recorded. */
+  cooling_capacity_w?: number | null
   /** Sum of racked devices' type weights, normalised to kg. */
   total_weight_kg: number
   max_weight_kg: number | null
   /** Supply from primary feeds (else the PDUs' rating) vs the racked
    * devices' power-port draws. */
   power: RackPower
+  /** Heat load vs the rack's cooling capacity (#434). */
+  cooling?: RackCooling
+  /** Capacity less the allocated heat (W); null without a capacity. */
+  cooling_free_w?: number | null
   /** `?include=ports` only, else null (#247): the counted interfaces of
    * devices that are not patch panels. */
   ports?: PortCountRow | null
@@ -2135,6 +2177,8 @@ export interface RackWritePayload {
   max_weight?: string | null
   max_weight_unit?: string
   max_power_w?: number | null
+  cooling_capability?: string
+  cooling_capacity_w?: number | null
   site_id: string
   role_id?: string | null
   rack_type_id?: string | null
@@ -2731,6 +2775,10 @@ export interface DcimChoices {
   /** Chassis airflow directions - a device type's default and a device's
    * own. */
   airflow: DcimChoice[]
+  /** How hardware is cooled (#434): air, liquid, hybrid, immersion. */
+  cooling_method: DcimChoice[]
+  /** What a rack's cooling takes (#434): air, hybrid, liquid, immersion. */
+  cooling_capability: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
   common_speeds: string[]
@@ -3104,6 +3152,8 @@ export interface ModuleType {
   manufacturer: { id: string; name: string } | null
   part_number: string
   faceplate: FaceplateDoc | null
+  /** How the module is cooled (#434); "" = not recorded. */
+  cooling_method?: string
   description: string
   custom_fields: Record<string, unknown>
   tags: Tag[]
@@ -3117,6 +3167,7 @@ export interface ModuleTypeWritePayload {
   name: string
   manufacturer_id?: string | null
   part_number?: string
+  cooling_method?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -4724,6 +4775,8 @@ export interface SiteCapacityRack {
   /** Units in use, as a whole percentage; null for a 0U rack. */
   u_pct: number | null
   power: RackPower
+  /** Heat load vs cooling capacity (#434). */
+  cooling?: RackCooling
   ports: PortCountRow
   panel_ports: PortCountRow
   device_count: number
@@ -4745,6 +4798,16 @@ export interface SiteCapacityTotals {
     /** Racks whose supply figure is their power budget. */
     budget?: number
     no_supply: number
+  }
+  /** Heat load and cooling capacity added up (#434); `budget` / `no_supply`
+   * count the racks with and without a cooling capacity. */
+  cooling?: {
+    available_w: number
+    heat_allocated_w: number
+    heat_maximum_w: number
+    budget: number
+    no_supply: number
+    mismatched: number
   }
   ports: PortCountRow
   panel_ports: PortCountRow
@@ -11145,6 +11208,8 @@ export interface FloorTileRackState {
   used_units: number
   u_height: number
   power: RackPower
+  /** Heat load vs cooling capacity (#434), as the rack page reads it. */
+  cooling?: RackCooling
   total_weight_kg: number
   max_weight_kg: number | null
   device_count: number

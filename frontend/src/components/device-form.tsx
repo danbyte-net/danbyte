@@ -219,6 +219,8 @@ export function DeviceForm({
     seed?.cluster?.id ?? null
   )
   const [airflow, setAirflow] = useState(seed?.airflow ?? "")
+  // Blank inherits the type's method (#434).
+  const [coolingMethod, setCoolingMethod] = useState(seed?.cooling_method ?? "")
   const [portLabels, setPortLabels] = useState<DevicePortLabels>(
     seed?.port_labels ?? ""
   )
@@ -277,6 +279,7 @@ export function DeviceForm({
     setLocationId(device.location?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
+    setCoolingMethod(device.cooling_method ?? "")
     setPortLabels(device.port_labels ?? "")
     setLatitude(device.latitude ?? "")
     setLongitude(device.longitude ?? "")
@@ -565,6 +568,7 @@ export function DeviceForm({
             : null,
         comments: comments.trim(),
         airflow,
+        cooling_method: coolingMethod,
         port_labels: portLabels,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
@@ -814,15 +818,31 @@ export function DeviceForm({
                 error={fieldErrors.warranty_end}
               />
             </div>
-            {visibility.airflow && (
-              <FormSelect
-                label="Airflow"
-                value={airflow === "" ? null : airflow}
-                onChange={(v) => setAirflow(v ?? "")}
-                noneLabel="-"
-                options={choices.airflow}
-                error={fieldErrors.airflow}
-              />
+            {(visibility.airflow || visibility.cooling_method) && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                {visibility.airflow && (
+                  <FormSelect
+                    label="Airflow"
+                    value={airflow === "" ? null : airflow}
+                    onChange={(v) => setAirflow(v ?? "")}
+                    noneLabel="-"
+                    options={choices.airflow}
+                    error={fieldErrors.airflow}
+                  />
+                )}
+                {visibility.cooling_method && (
+                  <FormSelect
+                    label="Cooling"
+                    info="Blank takes the device type's; nothing set anywhere reads as air."
+                    value={coolingMethod === "" ? null : coolingMethod}
+                    onChange={(v) => setCoolingMethod(v ?? "")}
+                    noneLabel="Inherit"
+                    placeholder="Inherit"
+                    options={choices.cooling_method}
+                    error={fieldErrors.cooling_method}
+                  />
+                )}
+              </div>
             )}
             <FormSelect
               label="Port labels"

@@ -99,7 +99,7 @@ The default tab lays the device's facts out in four cards:
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow - the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
+| **Hardware**   | device type, serial number, asset tag, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
