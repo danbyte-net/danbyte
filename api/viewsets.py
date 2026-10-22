@@ -3000,6 +3000,7 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
     # not copied (rebuilt on the new type).
     clone_fields = (
         "manufacturer", "u_height", "rack_width", "is_full_depth", "airflow",
+        "cooling_method", "heat_output_w",
         "weight", "weight_unit", "subdevice_role", "exclude_from_utilization",
         "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
         "description",
@@ -3684,6 +3685,7 @@ class DeviceViewSet(
     # multi-field write, and the serializer rejects an inconsistent one.
     editable_str_fields = (
         "description", "comments", "serial_number", "asset_tag", "airflow",
+        "cooling_method",
     )
     editable_fk_fields = {
         "status_id": Status, "role_id": DeviceRole, "platform_id": Platform,
@@ -3693,8 +3695,8 @@ class DeviceViewSet(
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
         "device_type", "role", "platform", "status", "site", "location",
-        "cluster", "airflow", "description", "comments", "topology_card",
-        "topology_photo_size",
+        "cluster", "airflow", "cooling_method", "description", "comments",
+        "topology_card", "topology_photo_size",
     )
 
     @action(detail=True, methods=["get"], url_path="spec-sheet")

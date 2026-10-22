@@ -54,9 +54,9 @@ PHOTO_SIDES = ("front", "rear")
 # free-text field the catalog also carries.
 TYPE_FIELDS = (
     "name", "model", "part_number", "u_height", "rack_width", "is_full_depth",
-    "airflow", "weight", "weight_unit", "subdevice_role",
-    "exclude_from_utilization", "width_mm", "height_mm", "depth_mm",
-    "din_profiles", "din_rail_mm", "description",
+    "airflow", "cooling_method", "heat_output_w", "weight", "weight_unit",
+    "subdevice_role", "exclude_from_utilization", "width_mm", "height_mm",
+    "depth_mm", "din_profiles", "din_rail_mm", "description",
 )
 
 # Component templates: bundle key → (device-type relation, exported fields).

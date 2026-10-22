@@ -54,6 +54,11 @@ Fields:
   to right, right to left, passive, mixed - are the `airflow` list of
   `GET /api/dcim/choices/`, the list the forms offer and the library import
   accepts; the type's page shows it in the **Hardware** card.
+- **Cooling** - how the hardware is cooled: air, liquid, hybrid or immersion
+  (`cooling_method`; blank reads as air). A device of the type takes it unless
+  it sets its own - see [Cooling](../features/cooling.md).
+- **Heat output (W)** - the heat the hardware gives off, where that is not its
+  allocated draw (`heat_output_w`). Blank counts the draw.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
   millimetre. Drawings scale the hardware by it.
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
@@ -92,9 +97,12 @@ console/console-server ports, power ports/outlets, front/rear ports,
 **module bays**, **device bays** (+ subdevice role, exclude-from-utilisation),
 **inventory items**, plus **full-depth, airflow, and weight** - comes across, and
 the library's **elevation images** are downloaded automatically when the file
-declares them. **Module-type files** (`module-types/…`) and **rack-type
+declares them. The library has no cooling key, so a device type arrives
+without a cooling method or heat output. **Module-type files** (`module-types/…`) and **rack-type
 files** (`rack-types/…`) import through the same dialog - auto-detected, so a
-mixed paste works. The Module types and Rack types pages open the same
+mixed paste works; the keys a rack-type file may carry, Danbyte's own
+`max_power_w`, `cooling_capability` and `cooling_capacity_w` among them, are
+listed under [Rack types](racks.md#rack-types). The Module types and Rack types pages open the same
 dialog from the same **Import from library** button, right after
 **Import / Export** on all three pages (CSV round-trips live in that menu).
 **Every construct in the library schema now maps** - anything unrecognised in
@@ -269,6 +277,8 @@ it is knowledge about the **model** - identical for everyone who owns that box.
 A **bundle** is that work in one file. On a device type, **Export bundle**
 downloads everything that makes the model work:
 
+- the type's own fields - height, width, depth, airflow, cooling method and
+  heat output, weight, DIN rails
 - every component template (interfaces, console, power, panel ports, bays)
 - the faceplate layout and the photo-port markers
 - the front and rear photos, when you tick **Include photos**
@@ -728,7 +738,9 @@ token](virtual-chassis.md#position-aware-interface-names) still applies after.
 The `[1-24]` range shorthand works here too: `A[1-24]` or
 `TenGigabitEthernet1/{module}/[1-8]` adds one template per port in a single
 add, from the dialog or the API. A range written with curly braces
-(`{1-24}`) is refused rather than stored literally.
+(`{1-24}`) is refused rather than stored literally. A module type records its
+own **cooling** method (`cooling_method`) too; it is a fact about the module
+and does not change its host device's.
 
 The workflow:
 

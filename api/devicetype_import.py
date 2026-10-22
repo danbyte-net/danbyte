@@ -37,7 +37,7 @@ import re
 import yaml
 from django.utils.text import slugify
 
-from .dcim_choices import AIRFLOW_CHOICES
+from .dcim_choices import AIRFLOW_CHOICES, COOLING_CAPABILITY_CHOICES
 from .models import (
     AuxPortTemplate,  # noqa: F401 - future: library has no aux ports (yet)
     ConsolePortTemplate,
@@ -62,6 +62,7 @@ from .models import (
 UNSUPPORTED_KEYS = ["modules"]
 
 VALID_AIRFLOW = {value for value, _label in AIRFLOW_CHOICES}
+VALID_COOLING_CAPABILITY = {value for value, _label in COOLING_CAPABILITY_CHOICES}
 VALID_WEIGHT_UNITS = {"kg", "g", "lb", "oz"}
 
 # The library keeps elevation images beside the YAML:
@@ -602,9 +603,10 @@ _TO_MM = {"mm": 1.0, "in": 25.4}
 def import_racktype_yaml(tenant, text: str) -> dict:
     """Create a RackType from a rack-types YAML doc: model, width, height,
     unit numbering, outer size and load budget, plus Danbyte's own
-    ``max_power_w`` (the library carries no power figures). What Danbyte's
-    rack types don't hold (form factor, outer height, own weight, mounting
-    depth) is reported as skipped."""
+    ``max_power_w``, ``cooling_capability`` and ``cooling_capacity_w`` (the
+    library carries no power or cooling figures). What Danbyte's rack types
+    don't hold (form factor, outer height, own weight, mounting depth) is
+    reported as skipped."""
     from .models import Rack, RackType
 
     try:
@@ -683,6 +685,11 @@ def import_racktype_yaml(tenant, text: str) -> dict:
         skipped.append(f"weight_unit {weight_unit!r} not recognised - max_weight dropped")
         max_weight, weight_unit = None, ""
     max_power = watts("max_power_w")
+    cooling_capacity = watts("cooling_capacity_w")
+    capability = str(data.get("cooling_capability") or "").strip()
+    if capability and capability not in VALID_COOLING_CAPABILITY:
+        skipped.append(f"cooling_capability {capability!r} not recognised - dropped")
+        capability = ""
     for key in ("form_factor", "outer_height", "weight", "mounting_depth"):
         if data.get(key) not in (None, ""):
             skipped.append(f"{key}: not modelled on rack types - skipped")
@@ -697,6 +704,8 @@ def import_racktype_yaml(tenant, text: str) -> dict:
         max_weight=max_weight if max_weight is not None else None,
         max_weight_unit=weight_unit if max_weight is not None else "",
         max_power_w=max_power,
+        cooling_capability=capability,
+        cooling_capacity_w=cooling_capacity,
         description=description,
     )
     return {"ok": True, "name": model, "id": None, "created": {"rack_type": 1},

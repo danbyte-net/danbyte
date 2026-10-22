@@ -74,6 +74,7 @@ nav = [
     "connectivity/index.md",
     { "Circuits"          = "features/circuits.md" },
     { "Power"             = "features/power.md" },
+    { "Cooling"           = "features/cooling.md" },
     { "Wireless"          = "features/wireless.md" },
     { "VPN tunnels"       = "features/vpn.md" },
   ] },

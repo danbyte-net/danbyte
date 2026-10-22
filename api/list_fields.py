@@ -84,6 +84,10 @@ LIST_FIELD_HINTS: dict[tuple[str, str], dict] = {
     ("api.device", "effective_airflow"): {
         "kind": "choice", "options_from": "airflow",
     },
+    # A model property: the device's cooling method, else its type's, else air.
+    ("api.device", "effective_cooling_method"): {
+        "kind": "choice", "options_from": "cooling_method",
+    },
 }
 
 # Device fields an administrator can switch off (Settings → Device fields).
@@ -92,6 +96,8 @@ LIST_FIELD_HINTS: dict[tuple[str, str], dict] = {
 DEVICE_FIELD_SWITCHES: dict[str, str] = {
     "comments": "comments", "location": "location", "cluster": "cluster",
     "airflow": "airflow", "effective_airflow": "airflow",
+    "cooling_method": "cooling_method",
+    "effective_cooling_method": "cooling_method",
     "latitude": "latitude", "longitude": "longitude",
 }
 

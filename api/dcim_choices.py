@@ -593,6 +593,37 @@ AIRFLOW_CHOICES: Choices = [
 ]
 
 
+# ─── Cooling (#434) ─────────────────────────────────────────────────────────
+# How hardware is cooled - a device type's, a module type's, and a device's
+# own override - and what a rack's cooling takes. Blank on a device inherits
+# its type's; nothing set anywhere is air. Blank on a rack is not recorded,
+# so nothing is checked against it.
+COOLING_METHOD_CHOICES: Choices = [
+    ("air", "Air"),
+    ("liquid", "Liquid"),
+    ("hybrid", "Hybrid"),
+    ("immersion", "Immersion"),
+]
+COOLING_DEFAULT = "air"
+
+COOLING_CAPABILITY_CHOICES: Choices = [
+    ("air", "Air"),
+    ("hybrid", "Hybrid"),
+    ("liquid", "Liquid"),
+    ("immersion", "Immersion"),
+]
+
+#: The cooling methods a rack of each capability takes (``api.cooling``): a
+#: hybrid rack has air and a liquid loop, a liquid rack the loop alone, an
+#: immersion rack is a tank.
+COOLING_ADMITS: dict[str, frozenset[str]] = {
+    "air": frozenset({"air"}),
+    "hybrid": frozenset({"air", "liquid", "hybrid"}),
+    "liquid": frozenset({"liquid", "hybrid"}),
+    "immersion": frozenset({"immersion"}),
+}
+
+
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
     return [(value, label) for _, options in groups for value, label in options]
@@ -630,7 +661,8 @@ from rest_framework.response import Response
             "Single source of truth for the DCIM dropdowns: grouped interface, "
             "cable, console/power/aux/front-port type choices (each row carries "
             "value/label/group), duplex/mode/PoE options, airflow directions, "
-            "connector fibre counts, and common speed suggestions."
+            "cooling methods and rack cooling capabilities, connector fibre "
+            "counts, and common speed suggestions."
         ),
     ),
 )
@@ -700,5 +732,7 @@ def dcim_choices_view(request):
         "antenna_polarizations": flat(ANTENNA_POLARIZATION_CHOICES),
         "rf_connector_types": flat(RF_CONNECTOR_CHOICES),
         "airflow": flat(AIRFLOW_CHOICES),
+        "cooling_method": flat(COOLING_METHOD_CHOICES),
+        "cooling_capability": flat(COOLING_CAPABILITY_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

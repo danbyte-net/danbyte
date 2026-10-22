@@ -2694,7 +2694,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
                   "topology_photo_size",
-                  "is_full_depth", "airflow", "weight", "weight_unit",
+                  "is_full_depth", "airflow", "cooling_method", "heat_output_w",
+                  "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "custom_fields",
@@ -2936,6 +2937,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     effective_platform = serializers.SerializerMethodField()
     # Model property: the device's own airflow, else its type's default.
     effective_airflow = serializers.CharField(read_only=True)
+    # Model property: the device's own cooling method, else its type's, else
+    # air (#434).
+    effective_cooling_method = serializers.CharField(read_only=True)
     location = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
 
@@ -3510,6 +3514,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "status", "status_id",  "serial_number", "asset_tag",
                   "warranty_end", "coverage",
                   "description", "comments", "airflow", "effective_airflow",
+                  "cooling_method", "effective_cooling_method",
                   "port_labels", "topology_card", "topology_photo_size",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
@@ -4889,7 +4894,8 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
     class Meta:
         model = ModuleType
         fields = ["id", "name", "manufacturer", "manufacturer_id",
-                  "part_number", "description", "faceplate", "custom_fields",
+                  "part_number", "description", "faceplate", "cooling_method",
+                  "custom_fields",
                   "tags", "tag_ids", "interface_template_count",
                   "module_count", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -6285,7 +6291,7 @@ class RackTypeMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "width", "u_height",
                   "starting_unit", "desc_units", "outer_width_mm",
                   "outer_depth_mm", "max_weight", "max_weight_unit",
-                  "max_power_w"]
+                  "max_power_w", "cooling_capability", "cooling_capacity_w"]
 
 
 class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
@@ -6311,7 +6317,8 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "width", "u_height", "starting_unit", "desc_units",
                   "outer_width_mm", "outer_depth_mm",
-                  "max_weight", "max_weight_unit", "max_power_w", "description",
+                  "max_weight", "max_weight_unit", "max_power_w",
+                  "cooling_capability", "cooling_capacity_w", "description",
                   "accessories", "rack_count",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "accessories", "rack_count",
@@ -6569,6 +6576,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit", "max_power_w",
+                  "cooling_capability", "cooling_capacity_w",
                   "total_weight_kg", "max_weight_kg", "power",
                   "starting_unit", "desc_units", "description",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",
