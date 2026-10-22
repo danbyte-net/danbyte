@@ -602,10 +602,12 @@ class TenantGroupSerializer(serializers.ModelSerializer):
     child_count = serializers.SerializerMethodField()
 
     def get_tenant_count(self, obj) -> int:
-        return obj.tenants.count()
+        n = getattr(obj, "tenant_n", None)
+        return n if n is not None else obj.tenants.count()
 
     def get_child_count(self, obj) -> int:
-        return obj.children.count()
+        n = getattr(obj, "child_n", None)
+        return n if n is not None else obj.children.count()
 
     def validate_parent_id(self, value):
         if value and self.instance:
@@ -640,17 +642,22 @@ class TenantSerializer(NumIdModelSerializer):
     vlan_count = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
 
+    # The list annotates the four counts (``*_n``); a single tenant counts.
     def get_site_count(self, obj) -> int:
-        return obj.sites.count()
+        n = getattr(obj, "site_n", None)
+        return n if n is not None else obj.sites.count()
 
     def get_prefix_count(self, obj) -> int:
-        return obj.prefixes.count()
+        n = getattr(obj, "prefix_n", None)
+        return n if n is not None else obj.prefixes.count()
 
     def get_vlan_count(self, obj) -> int:
-        return obj.vlans.count()
+        n = getattr(obj, "vlan_n", None)
+        return n if n is not None else obj.vlans.count()
 
     def get_ip_count(self, obj) -> int:
-        return obj.ip_addresses.count()
+        n = getattr(obj, "ip_n", None)
+        return n if n is not None else obj.ip_addresses.count()
 
     class Meta:
         model = Tenant
@@ -4870,11 +4877,14 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
     interface_template_count = serializers.SerializerMethodField()
     module_count = serializers.SerializerMethodField()
 
+    # The list annotates both counts (#444); a bare instance counts.
     def get_interface_template_count(self, obj) -> int:
-        return obj.interface_templates.count()
+        v = getattr(obj, "interface_template_count_annotated", None)
+        return v if v is not None else obj.interface_templates.count()
 
     def get_module_count(self, obj) -> int:
-        return _visible_count(self, obj, "modules")
+        v = getattr(obj, "module_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "modules")
 
     class Meta:
         model = ModuleType
@@ -5855,10 +5865,15 @@ class VirtualSwitchSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_uplink_interfaces(self, obj):
+        # The list prefetches them with their devices (#444).
+        if "uplink_interfaces" in getattr(obj, "_prefetched_objects_cache", {}):
+            rows = obj.uplink_interfaces.all()
+        else:
+            rows = obj.uplink_interfaces.select_related("device")
         return [
             {"id": str(i.id), "name": i.name,
              "device": {"id": str(i.device_id), "name": i.device.name}}
-            for i in obj.uplink_interfaces.select_related("device").all()
+            for i in rows
         ]
 
     class Meta:
@@ -6930,11 +6945,14 @@ class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin,
         t = obj.config_template
         return {"id": str(t.id), "name": t.name} if t else None
 
+    # The list annotates both counts (#444); a bare instance counts.
     def get_device_count(self, obj) -> int:
-        return _visible_count(self, obj, "devices")
+        n = getattr(obj, "device_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "devices")
 
     def get_vm_count(self, obj) -> int:
-        return _visible_count(self, obj, "virtual_machines")
+        n = getattr(obj, "vm_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "virtual_machines")
 
     class Meta:
         model = DeviceRole
@@ -6968,7 +6986,8 @@ class PlatformGroupSerializer(NumIdModelSerializer):
         return v if v is not None else _visible_count(self, obj, "platforms")
 
     def get_child_count(self, obj) -> int:
-        return obj.children.count()
+        v = getattr(obj, "child_count_annotated", None)
+        return v if v is not None else obj.children.count()
 
     def validate_parent_id(self, value):
         if value and self.instance:
@@ -7805,7 +7824,8 @@ class ContactGroupSerializer(NumIdModelSerializer):
         return v if v is not None else _visible_count(self, obj, "contacts")
 
     def get_child_count(self, obj) -> int:
-        return obj.children.count()
+        v = getattr(obj, "child_count_annotated", None)
+        return v if v is not None else obj.children.count()
 
     def validate_parent_id(self, value):
         if value and self.instance:
@@ -7837,7 +7857,8 @@ class ContactRoleSerializer(NumIdModelSerializer):
     assignment_count = serializers.SerializerMethodField()
 
     def get_assignment_count(self, obj) -> int:
-        return obj.assignments.count()
+        v = getattr(obj, "assignment_count_annotated", None)
+        return v if v is not None else obj.assignments.count()
 
     class Meta:
         model = ContactRole
@@ -7943,7 +7964,8 @@ class ContactSerializer(
     )
 
     def get_assignment_count(self, obj) -> int:
-        return obj.assignments.count()
+        v = getattr(obj, "assignment_count_annotated", None)
+        return v if v is not None else obj.assignments.count()
 
     class Meta:
         model = Contact
@@ -8084,7 +8106,8 @@ class ProviderNetworkSerializer(
     )
 
     def get_circuit_count(self, obj) -> int:
-        return obj.circuit_terminations.count()
+        v = getattr(obj, "termination_count_annotated", None)
+        return v if v is not None else obj.circuit_terminations.count()
 
     class Meta:
         model = ProviderNetwork
@@ -8651,10 +8674,12 @@ class RegionSerializer(NumIdModelSerializer):
     child_count = serializers.SerializerMethodField()
 
     def get_site_count(self, obj) -> int:
-        return _visible_count(self, obj, "sites")
+        v = getattr(obj, "site_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "sites")
 
     def get_child_count(self, obj) -> int:
-        return obj.children.count()
+        v = getattr(obj, "child_count_annotated", None)
+        return v if v is not None else obj.children.count()
 
     def validate_parent_id(self, value):
         if value and self.instance and value.pk == self.instance.pk:
@@ -9037,6 +9062,14 @@ class VirtualChassisSerializer(
     def get_oob_ip(self, obj):
         return self._ip_mini(obj.master.oob_ip if obj.master_id else None)
 
+    @staticmethod
+    def _members(obj):
+        """The stack's members by position: the list viewset's prefetch when
+        it ran (same order), else one query."""
+        if "members" in getattr(obj, "_prefetched_objects_cache", {}):
+            return list(obj.members.all())
+        return list(obj.members.select_related("status").order_by("vc_position", "name"))
+
     @extend_schema_field(serializers.ListField())
     def get_members(self, obj):
         return [
@@ -9054,12 +9087,12 @@ class VirtualChassisSerializer(
                     if d.status_id else None
                 ),
             }
-            for d in obj.members.select_related("status").order_by(
-                "vc_position", "name"
-            )
+            for d in self._members(obj)
         ]
 
     def get_member_count(self, obj) -> int:
+        if "members" in getattr(obj, "_prefetched_objects_cache", {}):
+            return len(obj.members.all())
         return obj.members.count()
 
     def validate_master_id(self, value):
@@ -9304,7 +9337,8 @@ class FloorTileTypeSerializer(NumIdModelSerializer):
     tile_count = serializers.SerializerMethodField()
 
     def get_tile_count(self, obj) -> int:
-        return _visible_count(self, obj, "tiles")
+        v = getattr(obj, "tile_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "tiles")
 
     class Meta:
         model = FloorTileType
@@ -9352,7 +9386,8 @@ class FloorPlanSerializer(
         return _img_url(self, obj.background_image)
 
     def get_tile_count(self, obj) -> int:
-        return obj.tiles.count()
+        v = getattr(obj, "tile_count_annotated", None)
+        return v if v is not None else obj.tiles.count()
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_drawing(self, obj):

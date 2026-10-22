@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   CheckCountBadge,
   FoldableGroup,
+  ObjectRow,
   RowCheckBadge,
   VisibilityToggle,
 } from "./foldable-group"
@@ -65,8 +66,11 @@ describe("FoldableGroup", () => {
     )
     expect(screen.getByText("AP badge")).toBeTruthy()
     expect(screen.getByText("row")).toBeTruthy()
-    // The eye sits inside the header button; its click must not fold.
-    fireEvent.click(screen.getByRole("button", { name: "Hide Access Point" }))
+    // The eye sits beside the header button, not in it; its click must
+    // not fold.
+    const eye = screen.getByRole("button", { name: "Hide Access Point" })
+    expect(eye.parentElement!.closest("button")).toBeNull()
+    fireEvent.click(eye)
     expect(onChange).toHaveBeenCalledWith(false)
     expect(screen.getByText("row")).toBeTruthy()
     const header = screen.getByRole("button", { expanded: true })
@@ -84,6 +88,44 @@ describe("FoldableGroup", () => {
     expect(JSON.parse(localStorage.getItem("test:folds")!)).toEqual({
       Links: false,
     })
+  })
+})
+
+describe("ObjectRow", () => {
+  function row(onClick = vi.fn(), onChange = vi.fn()) {
+    render(
+      <ObjectRow
+        onClick={onClick}
+        trailing={
+          <>
+            <VisibilityToggle vis={{ shown: true, onChange, what: "sw-01" }} />
+            <RowCheckBadge check="up" />
+          </>
+        }
+      >
+        <span>sw-01</span>
+      </ObjectRow>
+    )
+    return { onClick, onChange }
+  }
+
+  it("keeps the eye a sibling of the row's button (#445)", () => {
+    row()
+    const buttons = screen.getAllByRole("button")
+    expect(buttons).toHaveLength(2)
+    for (const b of buttons) expect(b.querySelector("button")).toBeNull()
+    expect(screen.getByRole("button", { name: "sw-01" })).toBeTruthy()
+  })
+
+  it("selects from the button or the row, and hides without selecting", () => {
+    const { onClick, onChange } = row()
+    fireEvent.click(screen.getByRole("button", { name: "sw-01" }))
+    expect(onClick).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText("Up"))
+    expect(onClick).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole("button", { name: "Hide sw-01" }))
+    expect(onChange).toHaveBeenCalledWith(false)
+    expect(onClick).toHaveBeenCalledTimes(2)
   })
 })
 

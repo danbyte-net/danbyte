@@ -748,6 +748,7 @@ function RangeFacetGroup({
           }
           value={value.min}
           onChange={(e) => onChange({ ...value, min: e.target.value })}
+          aria-label={`Minimum ${label}`}
           className="h-7 px-2 text-xs"
         />
         <span className="text-[11px] text-muted-foreground">to</span>
@@ -761,6 +762,7 @@ function RangeFacetGroup({
           }
           value={value.max}
           onChange={(e) => onChange({ ...value, max: e.target.value })}
+          aria-label={`Maximum ${label}`}
           className="h-7 px-2 text-xs"
         />
         {unit && (

@@ -56,28 +56,22 @@ export interface GroupVisibility {
 }
 
 /** The eye button both the group headers and the object rows use, so hiding
- * a role and hiding one device look and behave the same. */
+ * a role and hiding one device look and behave the same. It sits beside the
+ * row's own button (ObjectRow, FoldableGroup), never inside it. */
 export function VisibilityToggle({ vis }: { vis: GroupVisibility }) {
   const Icon = vis.shown ? Eye : EyeOff
   const label = `${vis.shown ? "Hide" : "Show"} ${vis.what}`
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          role="button"
-          tabIndex={0}
-          // Inside a <button> header, so it cannot be a nested button - and
-          // the click must not reach the fold underneath.
+        <button
+          type="button"
+          // The row around it selects or folds on click; hiding must not.
           onClick={(e) => {
             e.stopPropagation()
             vis.onChange(!vis.shown)
           }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return
-            e.preventDefault()
-            e.stopPropagation()
-            vis.onChange(!vis.shown)
-          }}
+          onDoubleClick={(e) => e.stopPropagation()}
           aria-label={label}
           className={cn(
             "flex size-4 shrink-0 items-center justify-center rounded",
@@ -87,10 +81,59 @@ export function VisibilityToggle({ vis }: { vis: GroupVisibility }) {
           )}
         >
           <Icon className="size-3" />
-        </span>
+        </button>
       </TooltipTrigger>
       <TooltipContent variant="default">{label}</TooltipContent>
     </Tooltip>
+  )
+}
+
+/**
+ * One object in a Maps sidebar list: the row's button (select it) and, beside
+ * it, the trailing controls and facts - the eye, a status pill, a count. The
+ * eye is a sibling of the row's button, not nested in it (#445). A click
+ * anywhere on the row outside the eye still selects it, as before.
+ */
+export function ObjectRow({
+  onClick,
+  onDoubleClick,
+  selected,
+  className,
+  children,
+  trailing,
+}: {
+  onClick: () => void
+  onDoubleClick?: () => void
+  selected?: boolean
+  /** Padding and text size, e.g. "pl-6 text-[12px]" for a row in a group. */
+  className?: string
+  /** Inside the row's button: the name and what labels it. */
+  children: React.ReactNode
+  /** Right of the button: the VisibilityToggle and any badges or counts. */
+  trailing?: React.ReactNode
+}) {
+  return (
+    // The click handler on the row is a mouse convenience: the button below
+    // is the keyboard's way in, and its own click bubbles here.
+    <div
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-[13px]",
+        selected ? "bg-muted font-medium" : "hover:bg-muted/60",
+        className
+      )}
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        {children}
+      </button>
+      {trailing && (
+        <span className="flex shrink-0 items-center gap-1.5">{trailing}</span>
+      )}
+    </div>
   )
 }
 
@@ -132,36 +175,42 @@ export function FoldableGroup({
     })
   return (
     <div>
-      <button
-        type="button"
+      {/* The header row folds on a click anywhere outside the eye; the
+          button is the keyboard's way in, and the eye is its sibling. */}
+      <div
         onClick={toggle}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-[12px] font-medium hover:bg-muted/60"
+        className="flex w-full cursor-pointer items-center gap-1.5 rounded px-1 py-1 text-[12px] font-medium hover:bg-muted/60"
       >
-        <ChevronDown
-          className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform",
-            !open && "-rotate-90"
-          )}
-        />
-        <span
-          className={cn(
-            "min-w-0 truncate",
-            visibility &&
-              !visibility.shown &&
-              (label ? "opacity-60" : "text-muted-foreground/60")
-          )}
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          {label ?? name}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1">
+          <ChevronDown
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground transition-transform",
+              !open && "-rotate-90"
+            )}
+          />
+          <span
+            className={cn(
+              "min-w-0 truncate",
+              visibility &&
+                !visibility.shown &&
+                (label ? "opacity-60" : "text-muted-foreground/60")
+            )}
+          >
+            {label ?? name}
+          </span>
+        </button>
+        <span className="flex shrink-0 items-center gap-1">
           {visibility && <VisibilityToggle vis={visibility} />}
           {extra}
           <span className="num text-[11px] text-muted-foreground/70">
             {count}
           </span>
         </span>
-      </button>
+      </div>
       {open && <div className="mb-1 flex flex-col">{children}</div>}
     </div>
   )

@@ -17,11 +17,30 @@ DATABASES["default"] = {
     "PASSWORD": os.getenv("DB_PASSWORD", "danbyte"),
     "HOST":     os.getenv("DB_HOST", "127.0.0.1"),
     "PORT":     os.getenv("DB_PORT", "5432"),
+    "OPTIONS":  {"connect_timeout": 10, "options": "-c jit=off"},
 }
 ```
 
 SQLite is no longer supported. Postgres 15+ is required for the
 `nulls_distinct=False` unique constraint that makes the VRF model work.
+
+### JIT
+
+Danbyte turns PostgreSQL's JIT compiler off for its own connections
+(`-c jit=off` in the connection options). Its queries are short OLTP queries,
+and JIT only costs time there: the full Devices list crossed `jit_above_cost`
+and Postgres spent about 4 seconds compiling it on every request, against
+0.15 s running it. The distro packages and the official `postgres` image both
+ship with JIT on, so this applies to bundled, Docker and external databases
+alike. Only Danbyte's sessions change; nothing is set on the server.
+
+A connection pooler such as PgBouncer can refuse the `options` startup
+parameter. Set `DB_JIT=on` in `.env` to leave it out (and the server's JIT
+setting in force), or turn JIT off on the server instead:
+
+```sql
+ALTER DATABASE danbyte SET jit = off;
+```
 
 ## CORS
 

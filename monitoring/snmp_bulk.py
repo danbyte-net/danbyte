@@ -82,6 +82,19 @@ def _queue():
     return django_rq.get_queue("default")
 
 
+def has_worker(queue) -> bool:
+    """Whether an RQ worker listens on ``queue``. Without one a run would sit
+    at 0 of N for good (#441: the Docker workers had never started), so the
+    request says so instead. A Redis error reads as yes: queueing then fails
+    and reports that itself."""
+    try:
+        from rq import Worker
+
+        return Worker.count(queue=queue) > 0
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def run_key(run_id) -> str:
     return f"snmp-bulk:run:{run_id}"
 
@@ -363,6 +376,13 @@ def _bulk(request, action):
     }
     if not devices:
         return Response(body)
+    if not has_worker(_queue()):
+        log.warning("bulk SNMP %s not queued: no RQ worker listens on the queue", action)
+        return Response(
+            {"detail": "No background worker is running, so the run would never "
+                       "start. Start the workers service and try again."},
+            status=503,
+        )
     try:
         body["run_id"] = start(action, tenant, request.user, devices, via=current_via())
     except Exception as exc:  # noqa: BLE001 - Redis down

@@ -465,6 +465,13 @@ def _visible_n(view, rel_name: str):
     return related_count_expr(view.request, view.queryset.model, rel_name)
 
 
+def _all_n(model, rel_name: str):
+    """A list's count of every ``rel_name`` row of each object, as one
+    correlated subquery instead of a COUNT per row (#444). For the counts
+    that were never narrowed to the reader's view."""
+    return related_count_expr(None, model, rel_name)
+
+
 class StandardPagination(PageNumberPagination):
     # The SPA loads the full result set and paginates/filters client-side (the
     # DataTable pager uses the user's page_size preference), so return everything
@@ -661,6 +668,11 @@ class CatalogLocalityMixin:
     With separation off, catalog locality is inert (site_path_for returns
     None) but the actions still work for admins pre-staging locality.
     """
+
+    def get_queryset(self):
+        # Every row names its owning site; join it rather than fetch it per
+        # row of a site-local catalog (#444).
+        return super().get_queryset().select_related("owning_site")
 
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
@@ -2614,7 +2626,10 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
-        return qs
+        return qs.annotate(
+            tenant_n=_all_n(TenantGroup, "tenants"),
+            child_n=_all_n(TenantGroup, "children"),
+        )
 
     def perform_create(self, serializer):
         org = Organization.objects.first()
@@ -2635,7 +2650,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardPagination
-    queryset = Tenant.objects.all().order_by(NATURAL_NAME)
+    queryset = Tenant.objects.select_related("group").order_by(NATURAL_NAME)
     serializer_class = TenantSerializer
     rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
 
@@ -2668,6 +2683,14 @@ class TenantViewSet(viewsets.ModelViewSet):
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
+        if self.get_serializer_class() is TenantSerializer:
+            # The roll-up counts, one subquery each for the page (#444).
+            qs = qs.annotate(
+                site_n=_all_n(Tenant, "sites"),
+                prefix_n=_all_n(Tenant, "prefixes"),
+                vlan_n=_all_n(Tenant, "vlans"),
+                ip_n=_all_n(Tenant, "ip_addresses"),
+            )
         return qs
 
     def perform_create(self, serializer):
@@ -2919,7 +2942,7 @@ class ManufacturerViewSet(CatalogLocalityMixin, TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         # distinct=True on both: two Counts over different relations in one
         # annotate() join-multiply each other without it (Django fan-out).
-        return qs.annotate(
+        return qs.prefetch_related(TAGS).annotate(
             device_type_count_annotated=_visible_n(self, "device_types"),
             module_type_count_annotated=_visible_n(self, "module_types"),
         )
@@ -5337,7 +5360,9 @@ class RearPortViewSet(_DevicePortViewSet):
 
 class FrontPortViewSet(_DevicePortViewSet):
     queryset = (
-        FrontPort.objects.select_related("device", "rear_port")
+        # The rear port's device too: the serializer names it, and without
+        # it a patch panel's Front ports tab ran a query per port (#444).
+        FrontPort.objects.select_related("device", "rear_port", "rear_port__device")
         .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
@@ -5372,7 +5397,7 @@ class ConsolePortViewSet(_DevicePortViewSet):
 class AuxPortViewSet(_DevicePortViewSet):
     queryset = (
         AuxPort.objects.select_related("device")
-        .prefetch_related(TAGS, "reservations")
+        .prefetch_related(TAGS, "terminations__cable__status", "reservations")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = AuxPortSerializer
@@ -5687,6 +5712,11 @@ class ModuleTypeViewSet(TenantScopedViewSet):
             mfr = self.request.query_params.get("manufacturer")
             if mfr:
                 qs = qs.filter(manufacturer_id=mfr)
+        if self.get_serializer_class() is ModuleTypeSerializer:
+            qs = qs.annotate(
+                interface_template_count_annotated=_all_n(ModuleType, "interface_templates"),
+                module_count_annotated=_visible_n(self, "modules"),
+            )
         return restrict_for_view(self, qs)
 
     def perform_create(self, serializer):
@@ -6032,7 +6062,12 @@ class VirtualSwitchViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("cluster")
+        qs = (
+            super().get_queryset().select_related("cluster", "vrf")
+            .prefetch_related(
+                Prefetch("uplink_interfaces", queryset=Interface.objects.select_related("device"))
+            )
+        )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -7081,6 +7116,12 @@ class DeviceRoleViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+        if self.get_serializer_class() is DeviceRoleSerializer:
+            # Counts, tags and the config template once per page (#444).
+            qs = qs.select_related("config_template").prefetch_related(TAGS).annotate(
+                device_count_annotated=_visible_n(self, "devices"),
+                vm_count_annotated=_visible_n(self, "virtual_machines"),
+            )
         return qs
 
     def _slug(self, serializer, tenant):
@@ -7134,7 +7175,8 @@ class PlatformGroupViewSet(TenantScopedViewSet):
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
-            platform_count_annotated=_visible_n(self, "platforms")
+            platform_count_annotated=_visible_n(self, "platforms"),
+            child_count_annotated=_all_n(PlatformGroup, "children"),
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -7182,8 +7224,8 @@ class PlatformViewSet(DeviceRoleViewSet):
 
     def get_queryset(self):
         qs = TenantScopedViewSet.get_queryset(self).select_related(
-            "manufacturer", "group", "eol_mapping"
-        )
+            "manufacturer", "group", "eol_mapping", "config_template"
+        ).prefetch_related(TAGS)
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -7243,8 +7285,10 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     def get_queryset(self):
         qs = (
             super().get_queryset()
+            # The source prefix's mini shape names its VRF, site and VLAN.
             .select_related("device", "status", "external_ip", "internal_ip",
-                            "source_ip", "source_prefix")
+                            "source_ip", "source_prefix", "source_prefix__vrf",
+                            "source_prefix__site", "source_prefix__vlan")
             .prefetch_related(TAGS)
         )
         if not self.request:
@@ -7354,7 +7398,7 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs
+        return qs.prefetch_related(TAGS)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data
@@ -7863,8 +7907,9 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
     model = ContactGroup
 
     def get_queryset(self):
-        qs = super().get_queryset().annotate(
-            contact_count_annotated=_visible_n(self, "contacts")
+        qs = super().get_queryset().select_related("parent").annotate(
+            contact_count_annotated=_visible_n(self, "contacts"),
+            child_count_annotated=_all_n(ContactGroup, "children"),
         )
         # "Groups nested directly under this one" - the group detail page's
         # Child groups tab. Applied after the tenant scoping above, so a
@@ -7892,6 +7937,11 @@ class ContactRoleViewSet(_ContactCatalogViewSet):
     serializer_class = ContactRoleSerializer
     picker_serializer = ContactRoleMiniSerializer
     model = ContactRole
+
+    def get_queryset(self):
+        return super().get_queryset().annotate(
+            assignment_count_annotated=_all_n(ContactRole, "assignments")
+        )
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
@@ -7934,7 +7984,7 @@ class ContactViewSet(TenantScopedViewSet):
             group = self.request.query_params.get("group")
             if group:
                 qs = qs.filter(group_id=group)
-        return qs
+        return qs.annotate(assignment_count_annotated=_all_n(Contact, "assignments"))
 
 
 class ContactAssignmentViewSet(TenantScopedViewSet):
@@ -8148,7 +8198,9 @@ class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             provider = self.request.query_params.get("provider")
             if provider:
                 qs = qs.filter(provider_id=provider)
-        return qs
+        return qs.annotate(
+            termination_count_annotated=_all_n(ProviderNetwork, "circuit_terminations")
+        )
 
 
 class CircuitTerminationViewSet(TenantScopedViewSet):
@@ -8754,7 +8806,17 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     queryset = (
         VirtualChassis.objects
         .select_related("master", "master__primary_ip", "master__oob_ip")
-        .prefetch_related("members__status", TAGS)
+        .prefetch_related(
+            # In the order the serializer lists them, so it reads this
+            # instead of querying each stack's members again (#444).
+            Prefetch(
+                "members",
+                queryset=Device.objects.select_related("status").order_by(
+                    "vc_position", "name"
+                ),
+            ),
+            TAGS,
+        )
         .order_by(NATURAL_NAME)
     )
     serializer_class = VirtualChassisSerializer
@@ -8992,6 +9054,12 @@ class RegionViewSet(TenantScopedViewSet):
             parent = self.request.query_params.get("parent")
             if parent:
                 qs = qs.filter(parent_id=parent)
+        if self.get_serializer_class() is RegionSerializer:
+            # The site and sub-region counts, once per page (#444).
+            qs = qs.annotate(
+                site_count_annotated=_visible_n(self, "sites"),
+                child_count_annotated=_all_n(Region, "children"),
+            )
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -9209,7 +9277,8 @@ class LabelTemplateViewSet(TenantScopedViewSet):
             role = self.request.query_params.get("role")
             if role:
                 qs = qs.filter(Q(roles__isnull=True) | Q(roles=role)).distinct()
-        return qs
+        # The targeting ids and names, once per page rather than per row (#444).
+        return qs.prefetch_related("device_types", "roles")
 
     def _view_scoped(self, model, object_type, qs):
         """Narrow ``qs`` to rows the caller may actually VIEW - tenant plus the
@@ -9674,6 +9743,8 @@ class FloorTileTypeViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+        if self.get_serializer_class() is FloorTileTypeSerializer:
+            qs = qs.annotate(tile_count_annotated=_visible_n(self, "tiles"))
         return qs
 
     def _slug(self, serializer, tenant):
@@ -9825,6 +9896,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(location__site_id=site)
+        if self.get_serializer_class() is FloorPlanSerializer:
+            qs = qs.annotate(tile_count_annotated=_all_n(FloorPlan, "tiles"))
         return qs
 
     def perform_create(self, serializer):
