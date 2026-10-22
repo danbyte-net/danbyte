@@ -37,6 +37,31 @@ what* and Danbyte decides *what that means*.
 A JIT-created account is granted access to the provider's **tenant** (or the
 provider's *default tenant* when it's deployment-wide).
 
+### Linking an existing account
+
+After its first sign-in an account is bound to that provider and the IdP's
+subject, and later sign-ins match by that binding only. On a first sign-in
+Danbyte may instead link an account an admin already created (by username, or
+by email when the IdP marks it verified) - but only when that is safe. It
+refuses, and nobody is signed in, when the account:
+
+- has a local password (an admin must link it deliberately);
+- is already bound to another provider, or to another subject at this one;
+- is a superuser, staff, or **Admin**-role account - through any provider;
+- for a **tenant-scoped** provider: isn't an account of that tenant alone -
+  its tenants must be exactly the provider's tenant, its groups and grants
+  narrowed to it, and it must not be a directory (LDAP) account.
+
+A tenant-scoped provider also never signs in a superuser, staff, or
+Admin-role account, even one it is bound to: those reach every tenant.
+
+To give an existing administrator SSO, create the account without
+administrator rights (or take them away), let the person sign in through the
+deployment-wide provider once, then grant them - or let a superuser group
+mapping grant superuser. When you replace a provider, delete the old one:
+accounts bound to a deleted provider can be linked again by a deployment-wide
+provider (never a tenant-scoped one).
+
 ## Add an OIDC provider (example: Microsoft Entra ID)
 
 **In Entra → App registrations → New registration:**
@@ -180,7 +205,12 @@ LDAP, so AD accounts sign in via Keycloak:
 - **Account binding is by the IdP's stable subject** (OIDC `sub` / SAML
   `NameID`), never a mutable email. An existing local account that already has a
   password is never silently taken over by an SSO assertion - an administrator
-  must link it deliberately. An unverified email never links an account.
+  must link it deliberately. An unverified email never links an account, and an
+  account bound to one provider is never linked by another (see
+  [Linking an existing account](#linking-an-existing-account)).
+- **MFA is the identity provider's job.** An SSO sign-in doesn't ask for
+  Danbyte's own second factor, even when the account has an authenticator or
+  requires two-factor - enforce MFA at the IdP.
 - The OIDC flow uses `state` + `nonce` and validates the ID token against the
   provider's JWKS (issuer, audience, `azp` when multi-audience, nonce, expiry).
 - **SAML is SP-initiated and replay-safe:** every login is started from Danbyte,
@@ -190,7 +220,8 @@ LDAP, so AD accounts sign in via Keycloak:
   are rejected. The assertion signature, issuer, audience (this SP), recipient
   (this ACS), and validity window are all mandatory.
 - The client secret is stored encrypted at rest and never returned by the API.
-- Tenant-scoped providers aren't advertised on the public login page, and a
-  tenant provider can only map (or default to) groups narrowed to its tenant.
+- A tenant provider can only map (or default to) groups narrowed to its
+  tenant, can't grant superuser, and only links or signs in accounts of its
+  tenant.
 - The provider is operator-configured, so Danbyte reaches it directly (TLS-
   verified) - the same trust tier as the LDAP/Vault configuration.

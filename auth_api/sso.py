@@ -169,17 +169,80 @@ def _email_verified(claims) -> bool:
     return v is True or str(v).strip().lower() == "true"
 
 
+def _is_privileged(user) -> bool:
+    """Deployment-wide power: superuser, Django staff, or the Admin role (which
+    ignores tenant membership and sees every tenant)."""
+    if user.is_superuser or user.is_staff:
+        return True
+    prof = getattr(user, "profile", None)
+    return prof is not None and prof.role == "admin"
+
+
+def _account_of_tenant(user, tenant) -> bool:
+    """Is this existing account a plain member of ``tenant`` and nothing more?
+
+    The ownership rule a tenant-scoped provider links by - its operators sit
+    outside the deployment admin's control, so it may only adopt an account
+    whose whole reach is that one tenant: profile tenants exactly {tenant},
+    every group and direct grant narrowed to it, and not owned by a directory
+    (LDAP accounts belong to their directory, see ``auth_api/ldap.py``)."""
+    from .ldap import group_is_tenant_safe
+
+    prof = getattr(user, "profile", None)
+    if prof is None:
+        return False
+    if prof.auth_source == "ldap" or prof.ldap_source_tenant_id:
+        return False
+    if set(prof.tenants.values_list("pk", flat=True)) != {tenant.pk}:
+        return False
+    if not all(group_is_tenant_safe(g, tenant) for g in user.groups.all()):
+        return False
+    for perm in user.object_permissions.filter(enabled=True).prefetch_related("tenants"):
+        scoped = list(perm.tenants.all())
+        if not scoped or any(t.pk != tenant.pk for t in scoped):
+            return False
+    return True
+
+
+def _guard_sign_in(user, provider) -> None:
+    """Applies to every SSO sign-in, bound or freshly linked: superuser, staff
+    and Admin-role accounts are global, so a tenant-scoped provider never signs
+    one in - the same rule that keeps it from granting superuser."""
+    if provider.tenant_id and _is_privileged(user):
+        raise SsoError(
+            "This account can't sign in through this provider. Ask an administrator."
+        )
+
+
 def _guard_safe_link(user, provider, subject) -> None:
     """Refuse to attach this SSO identity to an existing account when doing so
     could hijack it - the core defence against an IdP asserting someone else's
-    email/username to seize their Danbyte account."""
+    email/username to seize their Danbyte account. Fails closed."""
     prof = getattr(user, "profile", None)
-    if (prof is not None and prof.sso_provider_id == provider.id
-            and prof.sso_subject and subject and prof.sso_subject != subject):
-        raise SsoError("This account is linked to a different SSO identity.")
+    if prof is not None and prof.sso_subject:
+        # Already bound to an SSO identity. Matching (provider, subject) never
+        # reaches here, so this is another provider's or another subject's
+        # account. A binding left by a deleted provider may only be re-linked
+        # by a deployment-wide provider (replacing a provider), never by a
+        # tenant-scoped one.
+        orphaned = prof.sso_provider_id is None
+        if not orphaned or provider.tenant_id:
+            raise SsoError("This account is linked to a different SSO identity.")
     # A usable password means it's a local login already in use; never let an
     # IdP assertion silently take it over. An admin must link it deliberately.
     if user.has_usable_password():
+        raise SsoError(
+            "An account with this name already exists. Ask an administrator to "
+            "link it to SSO."
+        )
+    # Superusers, staff and Admin-role accounts are never linked by a name or
+    # email match, whatever the provider: a colliding username at any IdP would
+    # otherwise hand out the deployment.
+    if _is_privileged(user):
+        raise SsoError(
+            "This account can't be linked to SSO automatically. Ask an administrator."
+        )
+    if provider.tenant_id and not _account_of_tenant(user, provider.tenant):
         raise SsoError(
             "An account with this name already exists. Ask an administrator to "
             "link it to SSO."
@@ -193,7 +256,8 @@ def resolve_user(provider, claims):
 
     Matching is by the IdP's stable **subject** first; an existing local account
     is only linked when it is safe to (:func:`_guard_safe_link`), and an
-    unverified email never links an account."""
+    unverified email never links an account. A tenant-scoped provider never
+    signs in a superuser, staff or Admin-role account (:func:`_guard_sign_in`)."""
     from django.contrib.auth.models import User
 
     from .models import UserProfile
@@ -214,6 +278,7 @@ def resolve_user(provider, claims):
         )
         if prof is not None:
             user = prof.user
+            _guard_sign_in(user, provider)
 
     # 2. First login for this subject: link an existing account, but only safely.
     if user is None:
