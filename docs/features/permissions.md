@@ -365,6 +365,9 @@ one to their own.
   removed: add an email address first, or have an administrator clear it with
   `danbyte-admin users clear-mfa`.
 - An authenticator code is accepted once.
+- The Django admin (`/admin/`) and the job queue page (`/django-rq/`) have no
+  sign-in form of their own: they send you to the normal sign-in, second factor
+  included, and back again afterwards.
 
 ## Company directory (LDAP / Active Directory)
 

@@ -9,7 +9,8 @@ already-signed-in user from the preferences page.
 
 Sessions are server-side (DB-backed), so the email OTP and the pending-user
 marker live safely in ``request.session`` - the client only holds the signed
-cookie, never the code. Superusers can still use ``/admin/login/`` directly.
+cookie, never the code. ``/admin/login/`` hands off to this sign-in too
+(``auth_api.admin_login``), so it is the only way in with a password.
 """
 from __future__ import annotations
 

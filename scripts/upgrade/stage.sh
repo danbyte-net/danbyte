@@ -469,7 +469,9 @@ if [ -n "$_serve" ]; then
   wait_health "${DANBYTE_UPGRADE_HEALTH_WAIT:-120}" "$VERSION" || fail "the new release did not answer healthy: $HEALTH"
   _h=$(app_hosts | awk '{print $1}')
   _c=$(http_code "http://127.0.0.1:8000/admin/login/" -H "Host: $_h" -H 'X-Forwarded-Proto: https' -H "@$WORK/probe.hdr")
-  [ "$_c" = 200 ] || fail "the admin login page answered HTTP $_c"
+  # 302: it hands off to the app's sign-in. A 400 here is a host or proxy
+  # setting the new release refuses.
+  case "$_c" in 200|302) ;; *) fail "the admin login page answered HTTP $_c" ;; esac
 fi
 # shellcheck disable=SC2086
 start_units 0 $_ui || fail "the frontend units did not start"

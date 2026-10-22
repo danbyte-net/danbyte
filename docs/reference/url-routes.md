@@ -53,6 +53,6 @@ Defined in `api/urls.py`. Mounted at the project root by `danbyte/urls.py`.
 
 | Pattern | View |
 |---|---|
-| `/admin/` | Django admin |
+| `/admin/` | Django admin. `/admin/login/` redirects to `/login` (no password form of its own) |
 | `/django-rq/` | RQ queue monitoring |
 | `/static/...` | Static files (served by Django in DEBUG; whitenoise / nginx in prod) |

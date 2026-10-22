@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { KeyRound, LogIn, Mail, } from "lucide-react"
 import { QRCodeSVG } from "qrcode.react"
 
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
+import { isServerPath, safeRedirect } from "@/lib/safe-redirect"
 
 export const Route = createFileRoute("/login")({
   validateSearch: (
@@ -100,16 +101,22 @@ function LoginPage() {
   const [resent, setResent] = useState(false)
 
   // Already signed in? Bounce straight through.
+  const go = useCallback(() => {
+    const to = safeRedirect(redirect)
+    if (isServerPath(to)) window.location.assign(to)
+    else nav({ to, replace: true })
+  }, [nav, redirect])
+
   useEffect(() => {
-    if (me.is_authenticated) nav({ to: redirect ?? "/", replace: true })
-  }, [me.is_authenticated, nav, redirect])
+    if (me.is_authenticated) go()
+  }, [me.is_authenticated, go])
 
   async function finish() {
     // Wipe any cached data from a previous account in this browser before
     // the new session's queries run (cross-account cache leak).
     qc.clear()
     await qc.invalidateQueries({ queryKey: ["me"] })
-    nav({ to: redirect ?? "/", replace: true })
+    go()
   }
 
   async function submitCredentials(e: React.FormEvent) {
