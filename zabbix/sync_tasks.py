@@ -7,7 +7,8 @@ often to be walking somebody's whole host list.
 
 The tenant switch is re-checked **here, at run time**, not only when the job was
 enqueued: a toggle flipped in between has to win, or Danbyte writes hosts into
-a Zabbix somebody just switched off.
+a Zabbix somebody just switched off. A deactivated tenant is skipped the same
+way, at both ends.
 """
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ def run_sync(connection_id: str) -> dict:
     if conn is None:
         return {"skipped": "gone"}
     # Re-checked at run time on purpose - see the module docstring.
+    if not conn.tenant.is_active:
+        return {"skipped": "tenant inactive"}
     if not integration_enabled(conn.tenant, "zabbix"):
         return {"skipped": "integration off"}
     if conn.provision_mode == ZabbixConnection.OFF:
@@ -64,7 +67,9 @@ def enqueue_due_syncs(now=None) -> dict:
     now = now or timezone.now()
     queue = django_rq.get_queue("low")
     queued = maintenance = status = 0
-    for conn in ZabbixConnection.objects.filter(enabled=True).select_related("tenant"):
+    for conn in ZabbixConnection.objects.filter(
+        enabled=True, tenant__is_active=True
+    ).select_related("tenant"):
         if not integration_enabled(conn.tenant, "zabbix"):
             continue
         if conn.auto_sync and conn.sync_due(now):
