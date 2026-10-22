@@ -104,6 +104,7 @@ import { DeviceDriftPanel } from "@/components/device-drift-panel"
 import { DeviceInventoryPanel } from "@/components/device-inventory-panel"
 import { DeviceHardwareHealth } from "@/components/device-hardware-health"
 import { useDateFormat } from "@/lib/datetime"
+import { choiceLabel, useDcimChoices } from "@/lib/use-dcim-choices"
 import {
   CoverageSummary,
   DeviceCoverageCard,
@@ -785,6 +786,7 @@ function DeviceOverview({
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
   const { formatDate } = useDateFormat()
+  const choices = useDcimChoices()
 
   // How many VMs run on this device (a hypervisor host). One cheap count -
   // page_size=1 and read the total.
@@ -943,8 +945,16 @@ function DeviceOverview({
       ? [
           {
             label: "Airflow",
-            value: d.airflow ? (
-              <span className="capitalize">{d.airflow.replace(/-/g, " ")}</span>
+            value: d.effective_airflow ? (
+              <span className="inline-flex items-center gap-2">
+                {choiceLabel(choices.airflow, d.effective_airflow)}
+                {/* No airflow of its own - inherited from the device type. */}
+                {!d.airflow && (
+                  <span className="text-[11px] text-muted-foreground">
+                    (from type)
+                  </span>
+                )}
+              </span>
             ) : (
               dash
             ),

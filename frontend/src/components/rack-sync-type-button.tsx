@@ -24,6 +24,7 @@ const DIM_LABEL: Record<string, string> = {
   outer_depth_mm: "Outer depth (mm)",
   max_weight: "Weight budget",
   max_weight_unit: "Budget unit",
+  max_power_w: "Power budget (W)",
 }
 
 /** Accessory-side field names, for the "bring in line" list. */

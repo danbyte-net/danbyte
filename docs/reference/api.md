@@ -62,8 +62,9 @@ hard-code a list that can go stale:
 
 - **`GET /api/dcim/choices/`** - the option lists behind the long taxonomy
   dropdowns (interface and cable types, duplex, 802.1Q modes, PoE, connector
-  fibre counts, common speeds). Each option carries `value`, `label` and a
-  `group` so a UI can render sub-categorised dropdowns.
+  fibre counts, common speeds) and the hardware's `airflow` directions. Each
+  option carries `value` and `label`, and the grouped taxonomies a `group` so
+  a UI can render sub-categorised dropdowns.
 - **`GET /api/editable-fields/`** - which fields of a model a *field-level*
   write path may set, and what editor each needs. `?model=interface` (registry
   slug or `api.interface`) returns descriptors:
@@ -95,8 +96,10 @@ hard-code a list that can go stale:
   {"path": "/api/devices/", "model": "api.device", "slug": "device", "cf_model": "device",
    "fields": [
      {"key": "asset_tag",   "label": "Asset tag", "kind": "text",   "group": "fields"},
+     {"key": "face",        "label": "Face",      "kind": "choice", "group": "fields",
+      "options": [{"value": "front", "label": "Front"}, {"value": "rear", "label": "Rear"}]},
      {"key": "airflow",     "label": "Airflow",   "kind": "choice", "group": "fields",
-      "options": [{"value": "front-to-rear", "label": "Front to rear"}], "setting": "airflow"},
+      "choices": "airflow", "setting": "airflow"},
      {"key": "site.region", "label": "Region",    "kind": "object", "group": "related",
       "related": "api.region", "via": "Site"},
      {"key": "config_template", "path": "config_template.resolved", "label": "Config template",
@@ -107,8 +110,9 @@ hard-code a list that can go stale:
   `key` is a dotted path into a row (`path` when the value sits deeper);
   `kind` is one of `text`, `longtext`, `ip`, `number`, `bool`, `choice`,
   `date`, `datetime`, `color`, `object`, `objects`, `tags` or `auto` (render
-  by the value's shape). A long choice list names its `/api/dcim/choices/`
-  key in `choices` instead of inlining `options`. `related` is the
+  by the value's shape). A choice list `/api/dcim/choices/` publishes - the
+  long taxonomies, airflow - is named by its key in `choices` instead of
+  inlined as `options`. `related` is the
   `app.model` an object points at. `setting` names the device-field switch
   (Settings → Device fields) that hides the field. `custom_fields` are the
   model's visible custom-field definitions.

@@ -181,6 +181,7 @@ export function RackForm({
     setOuterDepth(t.outer_depth_mm != null ? String(t.outer_depth_mm) : "")
     setMaxWeight(t.max_weight ?? "")
     setMaxWeightUnit(t.max_weight_unit || "kg")
+    setMaxPower(t.max_power_w != null ? String(t.max_power_w) : "")
   }
   // Arriving from a rack type ("Add rack" on its page) pre-picks the model
   // before its dims have loaded - apply the profile once they land, and only

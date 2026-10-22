@@ -578,6 +578,21 @@ CONNECTOR_FIBERS: dict[str, int] = {
 }
 
 
+# ─── Airflow ────────────────────────────────────────────────────────────────
+# Which way air moves through a chassis: a device type's default and a
+# device's own override (``DeviceType.airflow``, ``Device.airflow``), and what
+# the device-type import accepts. NetBox's airflow slugs, so library files
+# carry over.
+AIRFLOW_CHOICES: Choices = [
+    ("front-to-rear", "Front to rear"),
+    ("rear-to-front", "Rear to front"),
+    ("left-to-right", "Left to right"),
+    ("right-to-left", "Right to left"),
+    ("passive", "Passive"),
+    ("mixed", "Mixed"),
+]
+
+
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
     return [(value, label) for _, options in groups for value, label in options]
@@ -614,8 +629,8 @@ from rest_framework.response import Response
         description=(
             "Single source of truth for the DCIM dropdowns: grouped interface, "
             "cable, console/power/aux/front-port type choices (each row carries "
-            "value/label/group), duplex/mode/PoE options, connector fibre counts, "
-            "and common speed suggestions."
+            "value/label/group), duplex/mode/PoE options, airflow directions, "
+            "connector fibre counts, and common speed suggestions."
         ),
     ),
 )
@@ -684,5 +699,6 @@ def dcim_choices_view(request):
         "antenna_bands": flat(ANTENNA_BAND_CHOICES),
         "antenna_polarizations": flat(ANTENNA_POLARIZATION_CHOICES),
         "rf_connector_types": flat(RF_CONNECTOR_CHOICES),
+        "airflow": flat(AIRFLOW_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

@@ -2031,6 +2031,8 @@ export interface RackTypeOption {
   outer_depth_mm: number | null
   max_weight: string | null
   max_weight_unit: string
+  /** The power budget (W) a rack of this model starts with; null = none. */
+  max_power_w: number | null
 }
 
 export interface RackType extends RackTypeOption {
@@ -2054,6 +2056,7 @@ export interface RackTypeWritePayload {
   outer_depth_mm?: number | null
   max_weight?: string | null
   max_weight_unit?: string
+  max_power_w?: number | null
   description?: string
   tag_ids?: number[]
 }
@@ -2725,6 +2728,9 @@ export interface DcimChoices {
   antenna_polarizations: DcimChoice[]
   rf_connector_types: DcimChoice[]
   feed_legs: DcimChoice[]
+  /** Chassis airflow directions - a device type's default and a device's
+   * own. */
+  airflow: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
   common_speeds: string[]

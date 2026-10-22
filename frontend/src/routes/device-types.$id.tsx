@@ -6,6 +6,7 @@ import { useCallback, useState } from "react"
 
 import { api, type DeviceType } from "@/lib/api"
 import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
+import { choiceLabel, useDcimChoices } from "@/lib/use-dcim-choices"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { Loading } from "@/components/loading"
@@ -267,6 +268,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
  * tables. Only the identifying manufacturer/model stay up top. */
 function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
   const { humanIds, canDo } = useMe()
+  const choices = useDcimChoices()
 
   const hardware: KvRow[] = [
     ...(humanIds && d.numid != null
@@ -303,6 +305,10 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     {
       label: "Rack units",
       value: <span className="num">{d.u_height}U</span>,
+    },
+    {
+      label: "Airflow",
+      value: d.airflow ? choiceLabel(choices.airflow, d.airflow) : dash,
     },
   ]
 

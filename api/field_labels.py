@@ -56,8 +56,11 @@ ACRONYM_WORDS: dict[str, str] = {
 }
 
 # A unit as the last word of a name reads as the forms write it:
-# "outer_width_mm" -> "Outer width (mm)", "utilisation_pct" -> "Utilisation %".
-UNIT_SUFFIXES: dict[str, str] = {"mm": "(mm)", "kg": "(kg)", "ms": "(ms)", "pct": "%"}
+# "outer_width_mm" -> "Outer width (mm)", "utilisation_pct" -> "Utilisation %",
+# "max_power_w" -> "Max power (W)".
+UNIT_SUFFIXES: dict[str, str] = {
+    "mm": "(mm)", "kg": "(kg)", "ms": "(ms)", "pct": "%", "w": "(W)",
+}
 
 # Timestamps read as the moment, not the column name.
 NAME_LABELS: dict[str, str] = {

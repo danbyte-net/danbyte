@@ -19,7 +19,7 @@ familiar front/rear diagram showing what's mounted in each rack unit.
    derived from the rail width plus a 150 mm frame).
 
 Picking a [**rack type**](#rack-types) fills the height, width, outer
-dimensions and weight budget from the cabinet model in one go.
+dimensions, weight budget and power budget from the cabinet model in one go.
 
 A rack's units can't shrink or shift out from under its devices: lowering
 the **height** or raising the **starting unit** below a mounted device is
@@ -39,10 +39,12 @@ roles** page - like everything else, none ship by default.
 
 A **rack type** is a cabinet *model* - "APC NetShelter SX 42U 600mm" - with
 the dimensions a cabinet of that model always has: rail width, height in U,
-starting unit and numbering direction, outer width/depth (mm), and the load
-rating. Define them on **DCIM → Rack types**; picking one on the rack form
-**pre-fills all of those fields** (each stays editable - the rack remains the
-source of truth, so a one-off odd cabinet just overrides a value).
+starting unit and numbering direction, outer width/depth (mm), the load
+rating, and the **power budget (W)** a rack of the model may draw. Define them
+on **DCIM → Rack types**; picking one on the rack form **pre-fills all of
+those fields** (each stays editable - the rack remains the source of truth,
+so a one-off odd cabinet just overrides a value). The API carries the budget
+as `max_power_w` on the rack type and on the `rack_type` a rack embeds.
 
 **Import from library** on the Rack types page reads the NetBox
 devicetype-library's `rack-types/` folder - single files, pasted YAML, uploads,
@@ -50,8 +52,10 @@ or a `/tree/` link to a manufacturer - through the same import the device types
 use. The model, width, height, starting unit, top-down numbering, outer width
 and depth (converted from inches when the file uses them) and load budget come
 across; the form factor, outer height, the rack's own weight and mounting depth
-aren't held on a rack type, and the import report lists them as skipped. A
-model that already exists is left alone.
+aren't held on a rack type, and the import report lists them as skipped. The
+library has no power figures, but a file of your own may add Danbyte's
+`max_power_w` key (whole watts); a value that is not a positive whole number
+is dropped and reported. A model that already exists is left alone.
 
 A rack type can also carry **accessories**: the factory-fitted 0U gear the
 model ships with - typically a pair of vertical PDU strips. Each accessory
@@ -77,9 +81,9 @@ or its recorded depth was wrong. **Sync type** on a rack's page (the rack
 twin of a device's *Sync from type*) compares the two and shows a preview
 before touching anything:
 
-- **Dimensions to copy** - every dimension that drifted from the model, old
-  value and new. Drift is legitimate (you can edit a rack's dims after
-  picking a type), so this reports rather than nags.
+- **Dimensions to copy** - every dimension and budget (weight, power) that
+  drifted from the model, old value and new. Drift is legitimate (you can
+  edit a rack's dims after picking a type), so this reports rather than nags.
 - **Accessories to add** - strips the type defines that this rack hasn't
   got, stamped exactly as they would be at creation.
 - **Strips to bring in line** - a strip that *exists* but no longer agrees

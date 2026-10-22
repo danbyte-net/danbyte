@@ -6284,7 +6284,8 @@ class RackTypeMiniSerializer(NumIdModelSerializer):
         model = RackType
         fields = ["id", "name", "manufacturer", "width", "u_height",
                   "starting_unit", "desc_units", "outer_width_mm",
-                  "outer_depth_mm", "max_weight", "max_weight_unit"]
+                  "outer_depth_mm", "max_weight", "max_weight_unit",
+                  "max_power_w"]
 
 
 class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
@@ -6310,7 +6311,7 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id",
                   "width", "u_height", "starting_unit", "desc_units",
                   "outer_width_mm", "outer_depth_mm",
-                  "max_weight", "max_weight_unit", "description",
+                  "max_weight", "max_weight_unit", "max_power_w", "description",
                   "accessories", "rack_count",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "accessories", "rack_count",

@@ -11,6 +11,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from .dcim_choices import (
+    AIRFLOW_CHOICES,
     ANTENNA_BAND_CHOICES,
     ANTENNA_POLARIZATION_CHOICES,
     ANTENNA_TYPE_CHOICES,
@@ -408,17 +409,6 @@ class Manufacturer(NumIdMixin, TimestampedModel, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
-
-
-# Shared by DeviceType (hardware default) and Device (per-box override).
-AIRFLOW_CHOICES = [
-    ("front-to-rear", "Front to rear"),
-    ("rear-to-front", "Rear to front"),
-    ("left-to-right", "Left to right"),
-    ("right-to-left", "Right to left"),
-    ("passive", "Passive"),
-    ("mixed", "Mixed"),
-]
 
 
 class LifecycleMixin(models.Model):
@@ -1578,11 +1568,12 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     return {"added": {k: v for k, v in added.items() if v}, "removed": removed}
 
 
-# Dimension fields a rack inherits from its type - the ones the rack form
-# pre-fills, and therefore the ones that can drift from the model.
+# Fields a rack inherits from its type - its dimensions and budgets, the ones
+# the rack form pre-fills, and therefore the ones that can drift from the model.
 _RACK_TYPE_DIMS = (
     "width", "u_height", "starting_unit", "desc_units",
     "outer_width_mm", "outer_depth_mm", "max_weight", "max_weight_unit",
+    "max_power_w",
 )
 
 
@@ -2235,8 +2226,8 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                   "role's, then the platform's, when unset.",
     )
     # ── Physical attributes ──────────────────────────────────────────────
-    # Kept as a class attribute for backwards references; the list itself is
-    # module-level (shared with DeviceType).
+    # Kept as a class attribute for backwards references; the list itself
+    # lives in api.dcim_choices (shared with DeviceType and the importer).
     AIRFLOW_CHOICES = AIRFLOW_CHOICES
     airflow = models.CharField(
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
@@ -5417,6 +5408,11 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
     max_weight_unit = models.CharField(
         max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
         blank=True, default="",
+    )
+    # The power budget a rack of this model starts with (Rack.max_power_w).
+    max_power_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Power budget in watts a rack of this model starts with.",
     )
     description = models.TextField(blank=True)
 

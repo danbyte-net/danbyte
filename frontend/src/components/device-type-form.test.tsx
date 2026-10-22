@@ -223,6 +223,22 @@ describe("DeviceTypeForm size and DIN rail", () => {
     ).toBeTruthy()
   })
 
+  it("offers airflow from the API's choice list", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/dcim/choices/"
+        ? Promise.resolve({
+            airflow: [{ value: "rear-to-front", label: "Rear to front" }],
+          })
+        : base(path, init)
+    )
+    renderForm({ deviceType: { ...DIN_TYPE, airflow: "rear-to-front" } })
+    const trigger = within(field("Airflow")).getByRole("combobox")
+    await waitFor(() => expect(trigger.textContent).toBe("Rear to front"))
+    submit()
+    expect(await sent()).toMatchObject({ airflow: "rear-to-front" })
+  })
+
   it("shows the server's refusal on the field it is about", async () => {
     refuse = {
       width_mm: ["A DIN-rail type needs its body size."],

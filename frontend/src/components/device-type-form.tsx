@@ -37,6 +37,7 @@ import {
   TopologyPhotoSizeSelect,
 } from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
 
 /** A size as the form holds it: blank stays blank, not 0. */
 const mmText = (v: number | string | null | undefined) =>
@@ -159,6 +160,8 @@ export function DeviceTypeForm({
     queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
+  // Airflow's options are the model's own list (/api/dcim/choices/).
+  const choices = useDcimChoices()
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: DeviceTypeWritePayload = {
@@ -378,14 +381,7 @@ export function DeviceTypeForm({
                 onChange={setAirflow}
                 noneLabel="Unspecified"
                 placeholder="Unspecified"
-                options={[
-                  { value: "front-to-rear", label: "Front to rear" },
-                  { value: "rear-to-front", label: "Rear to front" },
-                  { value: "left-to-right", label: "Left to right" },
-                  { value: "right-to-left", label: "Right to left" },
-                  { value: "passive", label: "Passive" },
-                  { value: "mixed", label: "Mixed" },
-                ]}
+                options={choices.airflow}
                 error={fieldErrors.airflow}
               />
               <div className="grid grid-cols-[1fr_90px] gap-2">

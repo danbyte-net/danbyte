@@ -94,6 +94,20 @@ class RackTypeImportTests(_Base):
         self.assertFalse(again["ok"])
         self.assertEqual(again["kind"], "rack-type")
 
+    def test_the_power_budget_key(self):
+        r = import_racktype_yaml(self.tenant, RACK + "max_power_w: 7400\n")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(RackType.objects.get(name="AR3100").max_power_w, 7400)
+        for i, raw in enumerate(("lots", "0", "7400.5", "true")):
+            bad = import_racktype_yaml(
+                self.tenant,
+                RACK.replace("model: AR3100", f"model: B{i}") + f"max_power_w: {raw}\n",
+            )
+            # The type comes across without the budget, and the report says so.
+            self.assertTrue(bad["ok"], bad)
+            self.assertIsNone(RackType.objects.get(name=f"B{i}").max_power_w)
+            self.assertTrue(any("max_power_w" in s for s in bad["skipped"]), bad)
+
 
 class KindPermissionTests(_Base):
     def post(self, *docs):

@@ -47,6 +47,7 @@ import {
   useBindingDraftsRoot,
 } from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -69,15 +70,6 @@ import { useMe } from "@/lib/use-me"
 const PORT_LABEL_OPTIONS = [
   { value: "on", label: "Shown" },
   { value: "off", label: "Hidden" },
-]
-
-const AIRFLOW_OPTIONS: { value: string; label: string }[] = [
-  { value: "front-to-rear", label: "Front to rear" },
-  { value: "rear-to-front", label: "Rear to front" },
-  { value: "left-to-right", label: "Left to right" },
-  { value: "right-to-left", label: "Right to left" },
-  { value: "passive", label: "Passive" },
-  { value: "mixed", label: "Mixed" },
 ]
 
 interface ClusterOption {
@@ -394,6 +386,8 @@ export function DeviceForm({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  // Airflow's options are the model's own list (/api/dcim/choices/).
+  const choices = useDcimChoices()
   // What the topology card shows while this device inherits: its role's
   // lines, else All devices. A saved view's own lines come first on its map.
   const cardConfig = useCardLineConfig()
@@ -826,7 +820,7 @@ export function DeviceForm({
                 value={airflow === "" ? null : airflow}
                 onChange={(v) => setAirflow(v ?? "")}
                 noneLabel="-"
-                options={AIRFLOW_OPTIONS}
+                options={choices.airflow}
                 error={fieldErrors.airflow}
               />
             )}

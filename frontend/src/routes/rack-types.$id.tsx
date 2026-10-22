@@ -47,6 +47,7 @@ import { QueryError } from "@/components/query-error"
 import { RackTypeDeleteDialog } from "@/routes/rack-types.index"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { formatWatts } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 
 export const Route = createFileRoute("/rack-types/$id")({
@@ -122,6 +123,15 @@ function Body({ rackType: rt }: { rackType: RackType }) {
     {
       label: "Weight budget",
       value: rt.max_weight ? `${rt.max_weight} ${rt.max_weight_unit}` : dash,
+    },
+    {
+      label: "Power budget",
+      value:
+        rt.max_power_w != null ? (
+          <span className="num">{formatWatts(rt.max_power_w)}</span>
+        ) : (
+          dash
+        ),
     },
   ]
 

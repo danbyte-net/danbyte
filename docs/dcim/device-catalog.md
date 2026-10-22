@@ -50,7 +50,10 @@ Fields:
   of the type over another or past the top of its rack is refused, naming the
   devices.
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
-  an override)
+  an override). The airflow directions - front to rear, rear to front, left
+  to right, right to left, passive, mixed - are the `airflow` list of
+  `GET /api/dcim/choices/`, the list the forms offer and the library import
+  accepts; the type's page shows it in the **Hardware** card.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
   millimetre. Drawings scale the hardware by it.
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
