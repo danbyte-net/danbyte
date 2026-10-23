@@ -9523,6 +9523,49 @@ export interface DeviceCoverage {
   flags: { code: "contract_after_eol" | "eol_under_contract"; label: string }[]
 }
 
+// ─── Lifecycle overview (#436) ─────────────────────────────────────────
+
+/** Where a lifecycle row's end comes from. `application` is reserved for
+ * installed software and lists nothing yet. */
+export type LifecycleSource = "hardware" | "os" | "coverage" | "application"
+/** The fixed bucket of a row's end, the same scale for every source. */
+export type LifecycleWindow = "past" | "d90" | "d180" | "y1" | "later" | "none"
+
+/** GET /api/lifecycle/ - one row per object per source. */
+export interface LifecycleRow {
+  object: { id: string; name: string; kind: "device" | "virtualmachine" }
+  source: LifecycleSource
+  /** Device type, platform, contract (`id` null and named "Contract" when
+   * you may not view it) or the warranty; null when nothing covers it. */
+  item: {
+    type: "devicetype" | "platform" | "supportcontract" | "warranty"
+    id: string | null
+    name: string
+    /** OS rows: "entered" or the end-of-life source. */
+    date_source?: string | null
+  } | null
+  /** Hardware and OS: an EolStatus; coverage: a CoverageStatus. */
+  status: EolStatus | CoverageStatus
+  start: string | null
+  end: string | null
+  /** Negative once the end has passed; null without a date. */
+  days_left: number | null
+  window: LifecycleWindow
+  site: { id: string; name: string } | null
+  role: { id: string; name: string; color: string } | null
+  tenant: { id: string; name: string }
+  manufacturer: { id: string; name: string } | null
+  tags: Tag[]
+}
+
+export interface LifecycleOverview {
+  results: LifecycleRow[]
+  /** Every row the request reached, the undated ones included. */
+  counts: Record<LifecycleWindow, number>
+  windows: { eol_warning_days: number; coverage_warning_days: number }
+  eol_enabled: boolean
+}
+
 /** GET /api/devices/coverage-summary/?site=&manufacturer= */
 export interface SupportCoverageSummary {
   warning_days: number

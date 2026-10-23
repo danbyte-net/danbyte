@@ -18,6 +18,17 @@ describe("app sidebar sections", () => {
     ])
   })
 
+  it("lists Lifecycle under DCIM after Support contracts, for device or VM viewers", () => {
+    const dcim = urlsOf("DCIM")
+    expect(dcim.indexOf("/lifecycle")).toBe(
+      dcim.indexOf("/support-contracts") + 1
+    )
+    const item = sections
+      .flatMap((s) => s.clusters.flatMap((c) => c.items))
+      .find((i) => i.url === "/lifecycle")
+    expect(item?.anyOf).toEqual(["device", "virtualmachine"])
+  })
+
   it("names the virtual page Virtual topology", () => {
     const item = sections
       .flatMap((s) => s.clusters.flatMap((c) => c.items))

@@ -4,10 +4,12 @@ icon: lucide/calendar-clock
 
 # Lifecycle overview
 
-The lifecycle overview lists every device and virtual machine against the end
-dates that matter to it, soonest first: the hardware's end of support, the
-operating system's end of life and the end of the device's support coverage.
-It answers "what goes out of support next, and where?" across the estate.
+**DCIM → Devices → Lifecycle** lists every device and virtual machine
+against the end dates that matter to it, soonest first: the hardware's end of
+support, the operating system's end of life and the end of the device's
+support coverage. It answers "what goes out of support next, and where?"
+across the estate. It is in the sidebar for anyone who may view devices or
+virtual machines.
 
 Nothing ships pre-filled. The dates come from what you enter on
 [device types and platforms](lifecycle.md), the
@@ -55,6 +57,43 @@ compare on one scale:
 
 Rows with no date are counted but left out of the list unless you ask for
 them.
+
+## The page
+
+Above the table, a **count chip per window** - *Past 12*, *≤ 90 d 7*, … *No
+date 41* - counts every row you may view, whatever the rail has ticked.
+Clicking a chip ticks that window in the **Window** facet; clicking it again
+unticks it. *No date* also lists the undated rows.
+
+| Column | Shows |
+|---|---|
+| Object | The device or VM, linked |
+| Kind | Device or VM |
+| Source | Hardware, OS or Coverage |
+| Item | The device type, the platform, the contract number (or *Contract* when you may not view it), or *Warranty* - linked |
+| Status | The source's own badge |
+| Lifetime | The [lifetime bar](lifecycle.md#the-lifetime-bar): the share used and a countdown, the date in its tooltip - with *Entered* or *endoflife.date* on an OS row. No end but a state is that state's badge (*End of life*, *Open-ended*) |
+| End | The end date |
+| Days left | Negative once past; the default order |
+| Site, Role, Manufacturer | The device's or VM's own |
+
+*Window*, *Tenant* and *Tags* are in the **Columns** menu. The rail has
+facets for Source, Window, Status, Site, Role, Manufacturer, Kind and Tag,
+and **Show undated** adds the rows with no date. The search box matches the
+object and the item.
+
+- **Deep links** - the facets live in the URL, so a link lands filtered:
+  `/lifecycle?source=coverage&window=90` is the coverage that ends within 90
+  days, `/lifecycle?window=past` everything already past. `undated=1` shows
+  the undated rows.
+- **Export** - the table's **Download** menu (CSV, Excel, HTML, print)
+  exports the rows as filtered, or the ticked ones; the Lifetime column
+  exports its end date and the Status column its label.
+- **Saved views** - the page keeps its own views, separate from the Devices
+  list's.
+
+With no dated rows at all, the page says where the dates come from: device
+types, platforms and **Settings → General → End-of-life data**.
 
 ## Permissions
 
