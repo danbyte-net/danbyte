@@ -1681,6 +1681,8 @@ export interface Device {
   hardware_count: number
   console_count: number
   power_count: number
+  /** Cooling intakes + outflows (#434); detail only. */
+  cooling_count?: number
   /** Detail payload only; 0 on the list. */
   front_port_count?: number
   rear_port_count?: number
@@ -2825,6 +2827,7 @@ export interface DcimChoices {
   cooling_fluids: DcimChoice[]
   /** Cooling feed kinds (#434): primary, redundant. */
   cooling_feed_types: DcimChoice[]
+  cooling_connectors: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
   common_speeds: string[]
@@ -3181,6 +3184,95 @@ export interface PowerOutletWritePayload {
   tag_ids?: number[]
 }
 
+// ─── Cooling intakes and outflows (#434) ────────────────────────────────────
+// Hoses are references, not cables: an intake names the feed - or the other
+// device's outflow (a CDU) - it takes coolant from.
+
+export interface CoolingDeviceRef {
+  id: string
+  name: string
+  device: { id: string; name: string }
+}
+
+interface CoolingComponentBase {
+  id: string
+  device: { id: string; name: string }
+  name: string
+  label: string
+  connector: string
+  connector_display: string
+  diameter_mm: number | null
+  /** Decimal string, null when not recorded. */
+  max_flow_lpm: string | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingIntake extends CoolingComponentBase {
+  cooling_feed: {
+    id: string
+    name: string
+    source: { id: string; name: string }
+  } | null
+  outflow: CoolingDeviceRef | null
+}
+
+export interface CoolingOutflow extends CoolingComponentBase {
+  intake: { id: string; name: string } | null
+  /** The intakes on other devices this outflow feeds. */
+  served: CoolingDeviceRef[]
+}
+
+export interface CoolingComponentWritePayload {
+  device_id: string
+  name: string
+  label?: string
+  connector?: string
+  diameter_mm?: number | null
+  max_flow_lpm?: string | null
+  description?: string
+  cooling_feed_id?: string | null
+  outflow_id?: string | null
+  intake_id?: string | null
+}
+
+/** One hop of a cooling path, upstream first; a hop the caller may not
+ * view comes back `{kind, hidden: true}`. */
+export type CoolingHop =
+  | {
+      kind: "source" | "feed"
+      id: string
+      name: string
+      hidden?: undefined
+    }
+  | {
+      kind: "device"
+      id: string
+      name: string
+      intake: { id: string; name: string } | null
+      outflow: { id: string; name: string } | null
+      hidden?: undefined
+    }
+  | { kind: "source" | "feed" | "device"; hidden: true }
+
+export type CoolingPathStatus = "fed" | "open" | "loop" | "truncated"
+
+export interface CoolingPath {
+  intake: { id: string; name: string }
+  status: CoolingPathStatus
+  hops: CoolingHop[]
+}
+
+/** `GET /api/devices/<id>/cooling-path/`. */
+export interface DeviceCoolingPath {
+  device: { id: string; name: string }
+  max_depth: number
+  paths: CoolingPath[]
+}
+
 // ─── Device-type component templates ────────────────────────────────────────
 // Materialised onto every new device of the type.
 // ─── Modules (pluggable line cards) ─────────────────────────────────────────
@@ -3473,6 +3565,20 @@ export interface PowerPortTemplate extends ComponentTemplateBase {
 export interface PowerOutletTemplate extends ComponentTemplateBase {
   power_port_template: { id: string; name: string } | null
   feed_leg: "" | "A" | "B" | "C"
+}
+
+export interface CoolingIntakeTemplate extends Omit<
+  ComponentTemplateBase,
+  "type"
+> {
+  connector: string
+  connector_display: string
+  diameter_mm: number | null
+  max_flow_lpm: string | null
+}
+
+export interface CoolingOutflowTemplate extends CoolingIntakeTemplate {
+  intake_template: { id: string; name: string } | null
 }
 
 export interface RearPortTemplate extends ComponentTemplateBase {
@@ -9854,6 +9960,19 @@ export interface CoolingFeedCapacity {
   heat_maximum_w: number
   /** A redundant feed is measured against the whole rack too. */
   redundant: boolean
+  /** "intakes": the heat of the devices cooling intakes connect to the
+   * feed, CDUs included; "rack": its rack's heat. */
+  basis?: "intakes" | "rack"
+  /** How many devices the intakes connect, on the "intakes" basis. */
+  devices?: number | null
+}
+
+/** A feed's flow (#434): the summed max flow of the intakes on it against
+ * its own flow rate, in L/min; null where not recorded. */
+export interface CoolingFeedFlow {
+  connected_lpm: number | null
+  rated_lpm: number | null
+  intakes: number
 }
 
 export type CoolingFeedType = "primary" | "redundant"
@@ -9878,6 +9997,7 @@ export interface CoolingFeed {
   max_utilization: number
   comments: string
   capacity: CoolingFeedCapacity
+  flow?: CoolingFeedFlow
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string

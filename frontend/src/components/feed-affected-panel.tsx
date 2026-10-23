@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { CalendarPlus, Container, Server, Snowflake, Zap } from "lucide-react"
 
 import { api } from "@/lib/api"
+import type { CoolingPath } from "@/lib/api"
+import { coolingPathText } from "@/components/cooling-path"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/empty-state"
@@ -34,7 +36,12 @@ export interface AffectedImpact {
 export interface Affected {
   feeds: { id: string; name: string; type: string; rack: AffectedRef | null }[]
   racks: (AffectedRef & { level: string })[]
-  devices: (AffectedRef & { level: string; rack: AffectedRef })[]
+  devices: (AffectedRef & {
+    level: string
+    rack: AffectedRef | null
+    /** Cooling only: the device's path from source, through any CDU. */
+    path?: CoolingPath | null
+  })[]
   impacts: AffectedImpact[]
 }
 
@@ -227,7 +234,9 @@ export function AffectedPanel({
                 icon={Server}
                 name={d.name}
                 level={d.level}
-                note={d.rack.name}
+                note={
+                  d.path ? coolingPathText(d.path) : (d.rack?.name ?? undefined)
+                }
                 link={
                   <Link
                     to="/devices/$id"

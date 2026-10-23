@@ -96,11 +96,12 @@ falls back to the default tab instead of showing an empty pane.
 
 ### Overview tab
 
-The default tab lays the device's facts out in four cards:
+The default tab lays the device's facts out in cards:
 
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform (with the software version and the platform's target) and its **OS support** bar, description, comments |
+| **Cooling path** | shown once the device has a cooling intake or outflow: each intake's path from source through any CDU, each hop a link - see [Cooling](../features/cooling.md#cooling-path) |
 | **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
@@ -291,7 +292,8 @@ the same defaults.
 ### Component tables {#component-tables}
 
 Every table on the Components tab - interfaces, console ports, console server
-ports, power ports, power outlets, front ports, rear ports and inventory parts -
+ports, power ports, power outlets, cooling intakes and outflows, front ports,
+rear ports and inventory parts -
 has the **Columns** menu the list pages have: tick columns on or off, drag
 them into order, and **Reset**. The layout is saved per user for each table,
 and the menu also offers the list's other fields and custom fields as
@@ -307,7 +309,7 @@ A cable trace opens a front, rear, console or power port on its own sub-tab
 (`?sub=front-ports`, `?sub=rear-ports`, `?sub=console`, `?sub=power`).
 
 `GET /api/devices/<id>/` counts the port tabs as `front_port_count` and
-`rear_port_count`; since 0.18 `hardware_count` no longer includes front and
+`rear_port_count`, and the Cooling sub-tab as `cooling_count`; since 0.18 `hardware_count` no longer includes front and
 rear ports. Like the other tab counts they are 0 on the device list.
 
 ### Other tabs
@@ -315,7 +317,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | Tab            | What's there                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------------- |
 | **IPs**        | Every IP address assigned to this device.                                                       |
-| **Components** | Six sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
+| **Components** | Seven sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Cooling** (intakes and outflows - see [Cooling](../features/cooling.md#cooling-intakes-and-outflows)), **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |

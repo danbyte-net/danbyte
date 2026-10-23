@@ -77,6 +77,8 @@ const TEMPLATE_BULK_FIELDS: Record<string, BulkFieldSpec[]> = {
   "console-server-port": [DESC],
   "power-port": [DESC],
   "power-outlet": [DESC],
+  "cooling-intake": [DESC],
+  "cooling-outflow": [DESC],
   "rear-port": [DESC],
   "front-port": [DESC],
   "aux-port": [DESC],
@@ -101,6 +103,42 @@ const typeCol: ColumnDef<AnyTemplate> = {
       dash
     ),
 }
+
+// Cooling intakes and outflows (#434): connector, bore and rated flow.
+const coolingCols: ColumnDef<AnyTemplate>[] = [
+  {
+    id: "connector",
+    header: "Connector",
+    cell: ({ row }) =>
+      row.original.connector ? (
+        <span className="text-xs">{row.original.connector_display}</span>
+      ) : (
+        dash
+      ),
+  },
+  {
+    id: "diameter_mm",
+    header: "Diameter",
+    cell: ({ row }) =>
+      row.original.diameter_mm != null ? (
+        <span className="num text-xs">{row.original.diameter_mm} mm</span>
+      ) : (
+        dash
+      ),
+  },
+  {
+    id: "max_flow_lpm",
+    header: "Max flow",
+    cell: ({ row }) =>
+      row.original.max_flow_lpm != null ? (
+        <span className="num text-xs">
+          {Number(row.original.max_flow_lpm)} L/min
+        </span>
+      ) : (
+        dash
+      ),
+  },
+]
 
 // Per-kind middle columns, spliced between Name and Description.
 const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
@@ -250,6 +288,22 @@ const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
         ),
     },
   ],
+  "cooling-intake": coolingCols,
+  "cooling-outflow": [
+    ...coolingCols,
+    {
+      id: "intake",
+      header: "Fed by",
+      cell: ({ row }) =>
+        row.original.intake_template ? (
+          <span className="font-mono text-xs">
+            {row.original.intake_template.name}
+          </span>
+        ) : (
+          dash
+        ),
+    },
+  ],
   "rear-port": [
     typeCol,
     {
@@ -303,6 +357,16 @@ const SECTIONS: { kind: TemplateKind; title: string; empty: string }[] = [
     kind: "power-outlet",
     title: "Power outlets",
     empty: "No power outlet templates. Outlets can feed from a power port.",
+  },
+  {
+    kind: "cooling-intake",
+    title: "Cooling intakes",
+    empty: "No cooling intake templates.",
+  },
+  {
+    kind: "cooling-outflow",
+    title: "Cooling outflows",
+    empty: "No cooling outflow templates.",
   },
   {
     kind: "rear-port",
@@ -650,6 +714,10 @@ function TemplateDeleteDialog({
       if (kind === "power-port")
         qc.invalidateQueries({
           queryKey: [TEMPLATE_QUERY_KEY["power-outlet"], deviceTypeId],
+        })
+      if (kind === "cooling-intake")
+        qc.invalidateQueries({
+          queryKey: [TEMPLATE_QUERY_KEY["cooling-outflow"], deviceTypeId],
         })
       onOpenChange(false)
     },

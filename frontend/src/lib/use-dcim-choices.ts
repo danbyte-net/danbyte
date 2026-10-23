@@ -30,6 +30,7 @@ const EMPTY: DcimChoices = {
   cooling_source_types: [],
   cooling_fluids: [],
   cooling_feed_types: [],
+  cooling_connectors: [],
   connector_fibers: {},
   common_speeds: [],
 }
