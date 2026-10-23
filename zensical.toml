@@ -55,6 +55,7 @@ nav = [
     { "Virtual chassis"   = "dcim/virtual-chassis.md" },
     { "Device catalog"    = "dcim/device-catalog.md" },
     { "Hardware lifecycle (EoL)" = "features/lifecycle.md" },
+    { "Lifecycle overview" = "features/lifecycle-overview.md" },
     { "Support & warranty coverage" = "features/support-coverage.md" },
     { "Racks"             = "dcim/racks.md" },
     { "Cabinets"          = "dcim/cabinets.md" },

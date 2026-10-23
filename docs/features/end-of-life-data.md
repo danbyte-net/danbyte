@@ -105,6 +105,9 @@ calendar without a refresh.
   and column, and the *OS support* row on device and VM pages. Entered dates
   win; the bar's tooltip says *Entered* or *endoflife.date*. See
   [The effective OS date](lifecycle.md#the-effective-os-date).
+- **Lifecycle overview** - the OS rows of the
+  [lifecycle overview](lifecycle-overview.md) (`GET /api/lifecycle/`) read
+  the same effective date, for devices and virtual machines alike.
 - **API** - `eol` on platforms, and on the nested `platform` of devices and VMs
   (`null` while the feature is off), next to `effective_release`,
   `effective_end` and `effective_source`. Filter lists with

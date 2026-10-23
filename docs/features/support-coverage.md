@@ -89,6 +89,9 @@ under **Settings → Tenant policy → Support coverage** (1-730 days).
 - **Dashboard** - the *Support coverage* widget: devices per status, narrowed
   by site and manufacturer, and the contracts that end soonest. A count opens
   the devices list filtered to it.
+- **Lifecycle overview** - a *Coverage* row per device next to its hardware
+  and OS rows, soonest end first (`GET /api/lifecycle/?source=coverage`). See
+  [Lifecycle overview](lifecycle-overview.md).
 
 ### Lifecycle flags
 

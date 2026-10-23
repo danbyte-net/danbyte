@@ -50,6 +50,9 @@ Both **device types** (hardware) and **platforms** (OS) have the same
   `/api/device-types/` and `/api/platforms/`; the list pages expose it as a
   Lifecycle facet. Combined with the device counts, "which EoL hardware do we
   still run the most of?" is one filter + one sort.
+- **Lifecycle overview** - every device's hardware row and every device's
+  and VM's OS row, next to its support coverage, soonest end first. See
+  [Lifecycle overview](lifecycle-overview.md).
 
 ### The lifetime bar
 

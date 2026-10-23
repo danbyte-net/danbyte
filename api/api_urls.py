@@ -172,6 +172,7 @@ from .io_views import (
     io_import_view,
     io_types_view,
 )
+from .lifecycle_api import lifecycle_overview
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
@@ -551,6 +552,8 @@ urlpatterns = [
          name="people-group-detail"),
     path("people/<int:pk>/", PersonDetail.as_view(), name="people-detail"),
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
+    # The Lifecycle page (#436): end dates per device and VM, soonest first.
+    path("lifecycle/", lifecycle_overview, name="lifecycle-overview"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).
     path("io/types/", io_types_view, name="io-types"),
