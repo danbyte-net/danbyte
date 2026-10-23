@@ -8395,12 +8395,6 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
             location = self.request.query_params.get("location")
             if location:
                 qs = qs.filter(location_id=location)
-            # VMs whose *cluster* sits at a site - they run there even when the
-            # cluster's site was not applied to them (see Cluster.
-            # apply_site_to_vms). Lets a site page show what it hosts.
-            cluster_site = self.request.query_params.get("cluster_site")
-            if cluster_site:
-                qs = qs.filter(cluster__site_id=cluster_site)
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):

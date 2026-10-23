@@ -14,6 +14,7 @@ import { SiteCell } from "@/components/cells/site-cell"
 import { LocationCell } from "@/components/cells/location-cell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
@@ -32,8 +33,7 @@ function PowerPanelDetail() {
     queryKey: ["power-panel", id],
     queryFn: () => api<PowerPanel>(`/api/power-panels/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">

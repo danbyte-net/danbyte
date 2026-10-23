@@ -13,6 +13,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { RackCell } from "@/components/cells/rack-cell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { Loading } from "@/components/loading"
 import { StatusBadge } from "@/components/status-badge"
 import { QueryError } from "@/components/query-error"
 import { PowerFeedDeleteDialog } from "@/components/power-feed-delete-dialog"
@@ -32,8 +33,7 @@ function PowerFeedDetail() {
     queryKey: ["power-feed", id],
     queryFn: () => api<PowerFeed>(`/api/power-feeds/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">

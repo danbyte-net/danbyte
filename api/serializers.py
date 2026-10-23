@@ -9574,9 +9574,8 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         "rack": "/racks/{id}",
         "cabinet": "/cabinets/{id}",
         "device": "/devices/{id}",
-        # Panels/feeds have no detail page - their edit page is the deep-link.
-        "powerpanel": "/power-panels/{id}/edit",
-        "powerfeed": "/power-feeds/{id}/edit",
+        "powerpanel": "/power-panels/{id}",
+        "powerfeed": "/power-feeds/{id}",
         "floorplan": "/floorplans/{id}",
     }
 
