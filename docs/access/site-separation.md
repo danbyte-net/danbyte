@@ -88,6 +88,8 @@ off:
   interfaces, their instance's device or VM; VTEP memberships, their VTEP's
   device;
 - **virtual disks, virtual switches** - their VM's, their cluster's;
+- **power feeds, cooling feeds** - their power panel's, their cooling
+  source's;
 - **DNS records and drift, certificate bindings** - their IP address's;
 - **config snapshots and state, BMC endpoints, port-utilization rules, Zabbix
   host links and pending changes, virtualization changes** - their device's

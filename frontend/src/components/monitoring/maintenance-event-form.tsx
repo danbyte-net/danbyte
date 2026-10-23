@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -22,8 +23,50 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useSaveObject } from "@/lib/save-object"
+import { LEVELS, levelTone } from "@/components/monitoring/impact-levels"
+
+/** An impact a new event brings along on create - the derived list from a
+ *  power or cooling source's Affected tab (#434). */
+export interface InitialImpact {
+  object_type: string
+  object_id: string
+  level: string
+}
+
+// Singular / plural per impacted object type, for the one-line summary. Feeds
+// of either kind share a noun, so they add up.
+const IMPACT_NOUNS: Record<string, [string, string]> = {
+  coolingsource: ["cooling source", "cooling sources"],
+  coolingfeed: ["feed", "feeds"],
+  powerpanel: ["power panel", "power panels"],
+  powerfeed: ["feed", "feeds"],
+  rack: ["rack", "racks"],
+  device: ["device", "devices"],
+}
+
+function countBy(items: string[]): [string, number][] {
+  const out = new Map<string, number>()
+  for (const k of items) out.set(k, (out.get(k) ?? 0) + 1)
+  return [...out]
+}
+
+function nouns(objectType: string): [string, string] {
+  const slug = objectType.split(".").pop() ?? objectType
+  return IMPACT_NOUNS[slug] ?? [slug, slug]
+}
+
+/** "1 cooling source, 2 feeds, 2 racks, 14 devices". */
+export function impactSummary(impacts: InitialImpact[]): string {
+  return countBy(impacts.map((i) => nouns(i.object_type).join("|")))
+    .map(([key, n]) => {
+      const [one, many] = key.split("|")
+      return `${n} ${n === 1 ? one : many}`
+    })
+    .join(", ")
+}
 
 // ISO ↔ <input type="datetime-local"> - same helpers the silence form uses.
 function toLocalInput(iso: string | null): string {
@@ -40,10 +83,15 @@ export function MaintenanceEventForm({
   event,
   onSaved,
   onCancel,
+  initialImpacts,
+  initialName,
 }: {
   event?: MaintenanceEvent
   onSaved: () => void
   onCancel: () => void
+  /** Create only: impacts to add with the event, and a starting name. */
+  initialImpacts?: InitialImpact[]
+  initialName?: string
 }) {
   const isEdit = !!event
   const qc = useQueryClient()
@@ -56,7 +104,11 @@ export function MaintenanceEventForm({
   const [statusId, setStatusId] = useState<string | null>(
     event?.status?.id ?? null
   )
-  const [name, setName] = useState(event?.name ?? "")
+  const [name, setName] = useState(event?.name ?? initialName ?? "")
+  // Edits never carry impacts - the event's own impact panel owns them then.
+  const [impacts, setImpacts] = useState<InitialImpact[]>(
+    isEdit ? [] : (initialImpacts ?? [])
+  )
   const [description, setDescription] = useState(event?.description ?? "")
   const [provider, setProvider] = useState<string | null>(
     event?.provider ?? null
@@ -113,6 +165,7 @@ export function MaintenanceEventForm({
           starts_at: fromLocalInput(startsAt),
           ends_at: fromLocalInput(endsAt),
           etr: kind === "outage" ? fromLocalInput(etr) : null,
+          ...(!isEdit && impacts.length ? { impacts } : {}),
         },
       })
     },
@@ -259,6 +312,44 @@ export function MaintenanceEventForm({
               error={fieldErrors.external_ref}
             />
           </FormSection>
+
+          {impacts.length > 0 && (
+            <FormSection title="Impacts" card>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-[13px]" data-testid="impact-summary">
+                    {impactSummary(impacts)}
+                  </p>
+                  <p className="text-[11px]">
+                    {countBy(impacts.map((i) => i.level)).map(
+                      ([level, n], idx) => (
+                        <span key={level}>
+                          {idx > 0 && (
+                            <span className="text-muted-foreground"> · </span>
+                          )}
+                          <span className={levelTone[level] ?? ""}>
+                            {n}{" "}
+                            {(
+                              LEVELS.find((l) => l.value === level)?.label ??
+                              level
+                            ).toLowerCase()}
+                          </span>
+                        </span>
+                      )
+                    )}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setImpacts([])}
+                >
+                  <X className="h-3.5 w-3.5" /> Drop
+                </Button>
+              </div>
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

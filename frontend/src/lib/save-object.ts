@@ -62,6 +62,8 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.contact",
   "api.contactgroup",
   "api.contactrole",
+  "api.coolingfeed",
+  "api.coolingsource",
   "api.device",
   "api.devicerole",
   "api.devicetype",

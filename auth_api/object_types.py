@@ -106,9 +106,11 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.CircuitType", "Circuit types", "Circuits"),
     ("api.Circuit", "Circuits", "Circuits"),
     ("api.CircuitTermination", "Circuit terminations", "Circuits"),
-    # ─── Power ──────────────────────────────────────────────────────
-    ("api.PowerPanel", "Power panels", "Power"),
-    ("api.PowerFeed", "Power feeds", "Power"),
+    # ─── Power & cooling ────────────────────────────────────────────
+    ("api.PowerPanel", "Power panels", "Power & cooling"),
+    ("api.PowerFeed", "Power feeds", "Power & cooling"),
+    ("api.CoolingSource", "Cooling sources", "Power & cooling"),
+    ("api.CoolingFeed", "Cooling feeds", "Power & cooling"),
     # ─── Wireless ───────────────────────────────────────────────────
     ("api.WirelessLANGroup", "Wireless LAN groups", "Wireless"),
     ("api.WirelessLAN", "Wireless LANs", "Wireless"),

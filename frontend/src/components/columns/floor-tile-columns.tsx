@@ -26,6 +26,7 @@ const LINK_ROUTES: Record<FloorPlanLinkKind, string> = {
   device: "/devices/$id",
   powerpanel: "/power-panels/$id",
   powerfeed: "/power-feeds/$id",
+  coolingsource: "/cooling-sources/$id",
   floorplan: "/floorplans/$id",
 }
 

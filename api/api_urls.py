@@ -220,6 +220,8 @@ from .viewsets import (
     ContactGroupViewSet,
     ContactRoleViewSet,
     ContactViewSet,
+    CoolingFeedViewSet,
+    CoolingSourceViewSet,
     CustomFieldGroupViewSet,
     CustomFieldViewSet,
     DeviceBayTemplateViewSet,
@@ -352,6 +354,8 @@ router.register(r"l2vpn-terminations", L2VPNTerminationViewSet, basename="l2vpn-
 router.register(r"virtual-chassis", VirtualChassisViewSet, basename="virtual-chassis")
 router.register(r"power-panels",  PowerPanelViewSet,  basename="power-panel")
 router.register(r"power-feeds",   PowerFeedViewSet,   basename="power-feed")
+router.register(r"cooling-sources", CoolingSourceViewSet, basename="cooling-source")
+router.register(r"cooling-feeds", CoolingFeedViewSet, basename="cooling-feed")
 router.register(r"wireless-lan-groups", WirelessLANGroupViewSet, basename="wireless-lan-group")
 router.register(r"wireless-lans", WirelessLANViewSet, basename="wireless-lan")
 router.register(r"tunnel-groups", TunnelGroupViewSet, basename="tunnel-group")

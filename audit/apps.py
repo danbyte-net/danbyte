@@ -38,6 +38,8 @@ AUDITED_MODELS = [
     "api.SupportCoverage",
     "api.PowerPanel",
     "api.PowerFeed",
+    "api.CoolingSource",
+    "api.CoolingFeed",
     "api.WirelessLANGroup",
     "api.WirelessLAN",
     "api.TunnelGroup",

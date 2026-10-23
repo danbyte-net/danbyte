@@ -373,6 +373,7 @@ SPECTACULAR_SETTINGS = {
         {"name": "routing", "description": "Static routes, routing policies, prefix lists, communities, keychains."},
         {"name": "virtual-machines", "description": "VMs, clusters, and VM interfaces."},
         {"name": "power-panels", "description": "Power panels and feeds."},
+        {"name": "cooling-sources", "description": "Cooling sources and feeds."},
         {"name": "monitoring", "description": "Checks, status, alerts, and SNMP."},
         {"name": "tenants", "description": "Tenants and tenant groups."},
     ],

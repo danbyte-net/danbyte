@@ -21,7 +21,7 @@ SUPPLY_PDU_RATING = "pdu_rating"
 SUPPLY_BUDGET = "budget"
 
 
-def racked_devices_prefetch():
+def racked_devices_prefetch(prefix: str = ""):
     """The ``Prefetch`` of a rack queryset's ``devices`` with everything the
     figures here read: each device's type and role, its power ports and an
     ``outlet_n`` count of its power outlets. Every device in the rack, as a
@@ -44,7 +44,7 @@ def racked_devices_prefetch():
         )
         .prefetch_related("power_ports")
     )
-    return Prefetch("devices", queryset=racked)
+    return Prefetch(f"{prefix}devices", queryset=racked)
 
 
 def used_units(devices) -> int:
@@ -180,7 +180,11 @@ def rack_cooling(rack, devices=None) -> dict:
     it draws - allocated in ``heat_allocated_w``, the nameplate (maximum) sum
     in ``heat_maximum_w`` - skipping distributors (PDUs) as power demand
     does. Supply = the rack's ``cooling_capacity_w``, ``supply`` ``"budget"``;
-    without one, ``supply`` is None and ``available_w`` 0. ``mismatched``
+    without one, the primary cooling feeds delivered to the rack (rated
+    capacity × max-utilisation%, :func:`feed_cooling_w`), ``supply``
+    ``"feed"``; with neither, ``supply`` is None and ``available_w`` 0. Reads
+    ``rack.cooling_feeds`` - prefetch them, as ``rack_power``'s callers do
+    ``power_feeds``. ``mismatched``
     counts the devices whose effective cooling method the rack's capability
     does not take (``api.cooling``), 0 for a rack without one.
 
@@ -207,11 +211,16 @@ def rack_cooling(rack, devices=None) -> dict:
             allocated += pp.allocated_draw or 0
             maximum += pp.maximum_draw or 0
     capacity = getattr(rack, "cooling_capacity_w", None)
+    fed = 0
+    if not capacity and getattr(rack, "pk", None) is not None:
+        fed = sum(
+            feed_cooling_w(f) for f in rack.cooling_feeds.all() if f.type == "primary"
+        )
     if capacity:
         supply, available = SUPPLY_BUDGET, capacity
+    elif fed:
+        supply, available = SUPPLY_FEED, fed
     else:
-        # The rack's own capacity is the only supply until cooling sources
-        # and their feeds are modelled; with neither there is no figure.
         supply, available = None, 0
     return {
         "available_w": available,
@@ -222,11 +231,69 @@ def rack_cooling(rack, devices=None) -> dict:
     }
 
 
+def feed_cooling_w(feed) -> int:
+    """What one cooling feed delivers: its rated capacity × its
+    max-utilisation %, in whole watts rounded down (as the SQL twin in
+    :func:`cooling_free_annotation`); 0 without a rating."""
+    if not feed.rated_capacity_w:
+        return 0
+    return feed.rated_capacity_w * (feed.max_utilization or 0) // 100
+
+
+def _rack_heat(rack) -> tuple[int, int]:
+    """``(allocated, maximum)`` heat of ``rack``; 0, 0 without one."""
+    if rack is None:
+        return 0, 0
+    fig = rack_cooling(rack)
+    return fig["heat_allocated_w"], fig["heat_maximum_w"]
+
+
+def cooling_feed_capacity(feed) -> dict:
+    """A cooling feed's load (#434): its rack's heat against what the feed
+    delivers - ``{"available_w", "rated_w", "heat_allocated_w",
+    "heat_maximum_w", "redundant"}``. A redundant feed is measured against
+    the whole rack too: it must carry it alone when the primary fails.
+    ``available_w`` is 0 without a rating, the heat 0 without a rack."""
+    allocated, maximum = _rack_heat(feed.rack)
+    return {
+        "available_w": feed_cooling_w(feed),
+        "rated_w": feed.rated_capacity_w or 0,
+        "heat_allocated_w": allocated,
+        "heat_maximum_w": maximum,
+        "redundant": feed.type == "redundant",
+    }
+
+
+def cooling_source_capacity(source) -> dict:
+    """A cooling source's load (#434): the heat of the racks its feeds
+    deliver to - each rack once, however many of the source's feeds reach
+    it - against the source's ``rated_capacity_w``: ``{"available_w",
+    "heat_allocated_w", "heat_maximum_w", "racks"}``. Prefetch
+    ``cooling_feeds__rack`` and the racks' devices
+    (``racked_devices_prefetch("cooling_feeds__rack__")``)."""
+    allocated = maximum = 0
+    seen: set = set()
+    for f in source.cooling_feeds.all():
+        if f.rack_id is None or f.rack_id in seen:
+            continue
+        seen.add(f.rack_id)
+        a, m = _rack_heat(f.rack)
+        allocated += a
+        maximum += m
+    return {
+        "available_w": source.rated_capacity_w or 0,
+        "heat_allocated_w": allocated,
+        "heat_maximum_w": maximum,
+        "racks": len(seen),
+    }
+
+
 def cooling_free_annotation():
-    """A rack queryset's ``cooling_capacity_w`` less the heat its devices
-    give off, allocated - ``rack_cooling``'s figures, as one SQL expression:
-    NULL for a rack without a capacity. What ``?cooling_free_w_gte=`` filters
-    on, in the list's own query."""
+    """A rack queryset's cooling supply less the heat its devices give off,
+    allocated - ``rack_cooling``'s figures, as one SQL expression: the
+    ``cooling_capacity_w``, else the primary cooling feeds' sum; NULL for a
+    rack with neither. What ``?cooling_free_w_gte=`` filters on, in the
+    list's own query."""
     from django.db.models import (
         Case,
         Exists,
@@ -241,7 +308,7 @@ def cooling_free_annotation():
     )
     from django.db.models.functions import Coalesce
 
-    from .models import Device, PowerOutlet, PowerPort
+    from .models import CoolingFeed, Device, PowerOutlet, PowerPort
 
     drawn = (
         PowerPort.objects.filter(device=OuterRef("pk"))
@@ -261,12 +328,27 @@ def cooling_free_annotation():
         .order_by().annotate(heat=device_heat)
         .values("rack").annotate(total=Sum("heat")).values("total")
     )
+    fed = (
+        CoolingFeed.objects.filter(
+            rack=OuterRef("pk"), type="primary", rated_capacity_w__isnull=False
+        )
+        .order_by().values("rack")
+        .annotate(w=Sum(ExpressionWrapper(
+            F("rated_capacity_w") * F("max_utilization") / 100,
+            output_field=IntegerField(),
+        )))
+        .values("w")
+    )
+    used = Coalesce(Subquery(heat, output_field=IntegerField()), Value(0))
     return Case(
         When(
             cooling_capacity_w__gt=0,
+            then=ExpressionWrapper(F("cooling_capacity_w") - used, output_field=IntegerField()),
+        ),
+        When(
+            Exists(fed.filter(w__gt=0)),
             then=ExpressionWrapper(
-                F("cooling_capacity_w")
-                - Coalesce(Subquery(heat, output_field=IntegerField()), Value(0)),
+                Subquery(fed, output_field=IntegerField()) - used,
                 output_field=IntegerField(),
             ),
         ),
