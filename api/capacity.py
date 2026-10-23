@@ -200,16 +200,9 @@ def rack_cooling(rack, devices=None) -> dict:
     for d in devices:
         if capability and not admits(capability, d.effective_cooling_method):
             mismatched += 1
-        if _is_distributor(d):
-            continue
-        heat = d.device_type.heat_output_w if d.device_type is not None else None
-        if heat is not None:
-            allocated += heat
-            maximum += heat
-            continue
-        for pp in d.power_ports.all():
-            allocated += pp.allocated_draw or 0
-            maximum += pp.maximum_draw or 0
+        a, m = device_heat(d)
+        allocated += a
+        maximum += m
     capacity = getattr(rack, "cooling_capacity_w", None)
     fed = 0
     if not capacity and getattr(rack, "pk", None) is not None:
@@ -231,6 +224,22 @@ def rack_cooling(rack, devices=None) -> dict:
     }
 
 
+def device_heat(d) -> tuple[int, int]:
+    """``(allocated, maximum)`` heat one device gives off - its type's
+    ``heat_output_w`` where set, else its power ports' draws; 0, 0 for a
+    distributor (PDU). See :func:`rack_cooling`."""
+    if _is_distributor(d):
+        return 0, 0
+    heat = d.device_type.heat_output_w if d.device_type is not None else None
+    if heat is not None:
+        return heat, heat
+    allocated = maximum = 0
+    for pp in d.power_ports.all():
+        allocated += pp.allocated_draw or 0
+        maximum += pp.maximum_draw or 0
+    return allocated, maximum
+
+
 def feed_cooling_w(feed) -> int:
     """What one cooling feed delivers: its rated capacity × its
     max-utilisation %, in whole watts rounded down (as the SQL twin in
@@ -248,19 +257,81 @@ def _rack_heat(rack) -> tuple[int, int]:
     return fig["heat_allocated_w"], fig["heat_maximum_w"]
 
 
+def _connected_heat(feed) -> tuple[int, int, int]:
+    """``(allocated, maximum, devices)``: the heat of every device the feed
+    reaches through cooling intakes (api.cooling_trace.downstream)."""
+    from django.db.models import Count
+
+    from .cooling_trace import downstream
+    from .models import Device
+
+    reached = downstream([feed.pk], feed.tenant_id)
+    if not reached:
+        return 0, 0, 0
+    devices = (
+        Device.objects.filter(pk__in=list(reached)).select_related("device_type")
+        .annotate(outlet_n=Count("power_outlets", distinct=True))
+        .prefetch_related("power_ports")
+    )
+    allocated = maximum = 0
+    for d in devices:
+        a, m = device_heat(d)
+        allocated += a
+        maximum += m
+    return allocated, maximum, len(reached)
+
+
+def _has_intakes(feed) -> bool:
+    cache = getattr(feed, "_prefetched_objects_cache", {})
+    if "intakes" in cache:
+        return bool(cache["intakes"])
+    return feed.intakes.exists()
+
+
 def cooling_feed_capacity(feed) -> dict:
-    """A cooling feed's load (#434): its rack's heat against what the feed
+    """A cooling feed's load (#434): the heat on it against what the feed
     delivers - ``{"available_w", "rated_w", "heat_allocated_w",
-    "heat_maximum_w", "redundant"}``. A redundant feed is measured against
-    the whole rack too: it must carry it alone when the primary fails.
-    ``available_w`` is 0 without a rating, the heat 0 without a rack."""
-    allocated, maximum = _rack_heat(feed.rack)
+    "heat_maximum_w", "redundant", "basis", "devices"}``. Where cooling
+    intakes name the feed, the heat is that of the devices they connect -
+    behind CDUs too - ``basis`` ``"intakes"`` and ``devices`` how many;
+    otherwise its rack's heat, ``basis`` ``"rack"``. A redundant feed is
+    measured against the whole load too: it must carry it alone when the
+    primary fails. ``available_w`` is 0 without a rating, the heat 0 without
+    a rack or intakes."""
+    devices = None
+    if feed.pk is not None and _has_intakes(feed):
+        allocated, maximum, devices = _connected_heat(feed)
+        basis = "intakes"
+    else:
+        allocated, maximum = _rack_heat(feed.rack)
+        basis = "rack"
     return {
         "available_w": feed_cooling_w(feed),
         "rated_w": feed.rated_capacity_w or 0,
         "heat_allocated_w": allocated,
         "heat_maximum_w": maximum,
         "redundant": feed.type == "redundant",
+        "basis": basis,
+        "devices": devices,
+    }
+
+
+def cooling_feed_flow(feed) -> dict:
+    """A cooling feed's flow (#434): ``{"connected_lpm", "rated_lpm",
+    "intakes"}`` - the summed ``max_flow_lpm`` of the intakes on it (those
+    that give one) against its own ``flow_rate_lpm``; null where neither is
+    recorded."""
+    connected = None
+    n = 0
+    for i in feed.intakes.all():
+        n += 1
+        if i.max_flow_lpm is not None:
+            connected = (connected or 0) + float(i.max_flow_lpm)
+    rated = feed.flow_rate_lpm
+    return {
+        "connected_lpm": round(connected, 1) if connected is not None else None,
+        "rated_lpm": float(rated) if rated is not None else None,
+        "intakes": n,
     }
 
 

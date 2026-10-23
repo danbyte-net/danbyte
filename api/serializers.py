@@ -70,6 +70,7 @@ from .models import (
 )
 from .capacity import (
     cooling_feed_capacity,
+    cooling_feed_flow,
     cooling_source_capacity,
     rack_cooling,
     rack_power,
@@ -8883,6 +8884,7 @@ class CoolingFeedSerializer(StatusSerializerMixin,
     type_display = serializers.CharField(source="get_type_display", read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     capacity = serializers.SerializerMethodField()
+    flow = serializers.SerializerMethodField()
 
     source_id = TenantScopedPrimaryKeyRelatedField(
         source="source", queryset=CoolingSource.objects.all(), write_only=True,
@@ -8905,6 +8907,10 @@ class CoolingFeedSerializer(StatusSerializerMixin,
     def get_capacity(self, obj):
         return cooling_feed_capacity(obj)
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_flow(self, obj):
+        return cooling_feed_flow(obj)
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         # A loop runs inside its source's site: a rack elsewhere is refused
@@ -8925,9 +8931,9 @@ class CoolingFeedSerializer(StatusSerializerMixin,
         fields = ["id", "name", "source", "source_id", "site", "rack", "rack_id",
                   "status", "status_id", "type", "type_display",
                   "rated_capacity_w", "flow_rate_lpm", "supply_temp_c", "return_temp_c",
-                  "connector", "max_utilization", "comments", "capacity",
+                  "connector", "max_utilization", "comments", "capacity", "flow",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "site", "type_display", "capacity",
+        read_only_fields = ["id", "site", "type_display", "capacity", "flow",
                             "created_at", "updated_at"]
 
 

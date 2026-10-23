@@ -3653,6 +3653,15 @@ ASSIGNED_IP_RELATED = (
                 "their effective method; 0: the rest."
             ),
         ),
+        OpenApiParameter(
+            name="cooling_unconnected",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only liquid, hybrid or immersion devices with no cooling "
+                "intake connected to a feed or an outflow."
+            ),
+        ),
         SOFTWARE_TARGET_PARAMETER,
     ]),
 )
@@ -3775,6 +3784,17 @@ class DeviceViewSet(
             f'{disposition}; filename="{spec_filename(obj, suffix)}"'
         )
         return resp
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"], url_path="cooling-path")
+    def cooling_path(self, request, pk=None):
+        """Where the device's coolant comes from (#434): each cooling
+        intake's path upstream - through CDUs - to its feed and source,
+        loop-guarded and at most eight devices deep; hops the caller may not
+        view come back hidden (api.cooling_trace)."""
+        from .cooling_trace import device_path
+
+        return Response(device_path(self.get_object(), request.user, _get_active_tenant(request)))
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -4405,7 +4425,8 @@ class DeviceViewSet(
         params = self.request.query_params
         method = params.get("cooling_method")
         mismatch = (params.get("cooling_mismatch") or "").lower()
-        if not method and not mismatch:
+        unconnected = (params.get("cooling_unconnected") or "").lower()
+        if not method and not mismatch and not unconnected:
             return qs
         qs = cooling.annotate_devices(qs)
         if method:
@@ -4419,6 +4440,10 @@ class DeviceViewSet(
             qs = qs.filter(cooling_mismatch=False)
         elif mismatch:
             raise ValidationError({"cooling_mismatch": "1 or 0."})
+        if unconnected in ("1", "true", "yes"):
+            qs = qs.filter(cooling.unconnected_q())
+        elif unconnected and unconnected not in ("0", "false", "no"):
+            raise ValidationError({"cooling_unconnected": "1 or 0."})
         return qs
 
     def perform_create(self, serializer):
@@ -8901,6 +8926,7 @@ class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVi
             .select_related("source__site", "rack", "status")
             .prefetch_related(
                 TAGS, "rack__cooling_feeds", capacity.racked_devices_prefetch("rack__"),
+                "intakes",
             )
         )
         if self.request:
