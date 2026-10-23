@@ -17,7 +17,7 @@ The hard-isolation scope. Lives in `core.models`.
 | `slug` | slug | required | URL-safe; unique within `org` |
 | `color` | char(7) | `""` | Optional `#xxxxxx` - shown as a sidebar dot |
 | `description` | text | `""` | |
-| `is_active` | bool | `True` | Inactive tenants are hidden from the switcher |
+| `is_active` | bool | `True` | Inactive tenants are hidden from the switcher; their API and Outpost tokens are refused and their scheduled syncs skipped |
 | `created_at` / `updated_at` | timestamp | auto | |
 
 ## Constraints

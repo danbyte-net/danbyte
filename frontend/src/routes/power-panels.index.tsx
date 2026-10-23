@@ -7,14 +7,10 @@ import { useCallback, useMemo, useState } from "react"
 import { api, type PowerPanel, type Paginated } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { tagsColumn } from "@/components/cells/tag-list"
-import { numidColumn } from "@/components/cells/numid"
-import { siteColumn } from "@/components/cells/site-cell"
-import { locationColumn } from "@/components/cells/location-cell"
+import { DataTable } from "@/components/data-table"
+import { buildPowerPanelColumns } from "@/components/columns/power-panel-columns"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
 import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
 import { PowerPanelBulkBar } from "@/components/power-bulk-bars"
 import { useUrlSearch } from "@/lib/url-filters"
@@ -44,63 +40,26 @@ function PowerPanelsPage() {
   const rows = query.data?.results ?? []
   const onDelete = useCallback((p: PowerPanel) => setDeleting(p), [])
   const columns = useMemo<ColumnDef<PowerPanel>[]>(
-    () => [
-      ...(canEdit || canDelete ? [selectionColumn<PowerPanel>()] : []),
-      ...(humanIds ? [numidColumn<PowerPanel>({ get: (r) => r.numid })] : []),
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Name" />,
-        cell: ({ row }) => (
-          <Link
-            to="/power-panels/$id"
-            params={{ id: row.original.id }}
-            className="link font-medium"
-          >
-            {row.original.name}
-          </Link>
-        ),
-      },
-      siteColumn<PowerPanel>({ get: (r) => r.site, className: "text-xs" }),
-      locationColumn<PowerPanel>({
-        get: (r) => r.location,
-        className: "text-xs",
+    () =>
+      buildPowerPanelColumns<PowerPanel>({
+        humanIds,
+        selection: canEdit || canDelete,
+        actions: {
+          editTo: "/power-panels/$id/edit",
+          editParams: (p) => ({ id: p.id }),
+          onDelete,
+        },
       }),
-      {
-        id: "feeds",
-        accessorKey: "feed_count",
-        header: ({ column }) => <SortHeader column={column} label="Feeds" />,
-        cell: ({ row }) => (
-          <span className="num text-xs">{row.original.feed_count}</span>
-        ),
-      },
-      {
-        id: "comments",
-        accessorKey: "comments",
-        header: "Comments",
-        cell: ({ row }) => (
-          <span className="line-clamp-1 block text-muted-foreground">
-            {row.original.comments || "-"}
-          </span>
-        ),
-      },
-      tagsColumn<PowerPanel>({ getTags: (r) => r.tags }),
-      {
-        id: "actions",
-        enableHiding: false,
-        cell: ({ row }) => (
-          <RowActions
-            editTo="/power-panels/$id/edit"
-            editParams={{ id: row.original.id }}
-            onDelete={() => onDelete(row.original)}
-          />
-        ),
-      },
-    ],
     [onDelete, humanIds, canEdit, canDelete]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useUrlTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: facetColumns,
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell

@@ -85,6 +85,12 @@ class PanelLocationTests(_LocBase):
         self.assertEqual([p["name"] for p in r.json()["results"]], ["MDB-1"])
         self.assertEqual(r.json()["results"][0]["location"]["id"], str(self.hall.id))
 
+    def test_cluster_site_is_ignored(self):
+        # A VM filter: a panel has no cluster, and the parameter used to 500.
+        r = self.client.get(f"{URL}?cluster_site={self.site.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["count"], PowerPanel.objects.filter(tenant=self.tenant).count())
+
 
 class PanelLocationBulkTests(_LocBase):
     def test_bulk_sets_and_clears_the_location_and_logs_each_row(self):

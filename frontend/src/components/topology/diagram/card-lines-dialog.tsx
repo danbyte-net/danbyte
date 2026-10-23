@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { NoFieldControl } from "@/components/ui/field-control"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -138,12 +139,16 @@ export function CardLinesEditor({
 
       {custom ? (
         <label className="flex items-center gap-2 text-[13px] whitespace-nowrap">
-          <Switch
-            size="sm"
-            checked={nameOnly}
-            onCheckedChange={setNameOnly}
-            aria-label="Name only"
-          />
+          {/* Named by its own label; a surrounding Field's label would
+              otherwise point at it and toggle it on a click. */}
+          <NoFieldControl>
+            <Switch
+              size="sm"
+              checked={nameOnly}
+              onCheckedChange={setNameOnly}
+              aria-label="Name only"
+            />
+          </NoFieldControl>
           Name only
         </label>
       ) : (

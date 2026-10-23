@@ -324,6 +324,10 @@ device is picked up on the next poll with no re-enrollment.
 > **One tenant per engine.** An Outpost only ever sees its own tenant's targets
 > and credentials. A colo serving two tenants runs two Outposts.
 
+An Outpost of a **deactivated tenant** is refused: its token gets `401` on every
+`/api/outpost/` endpoint and on the build download, and Danbyte stops driving
+the tenant's SSH Outposts. Reactivating the tenant lets the same token back in.
+
 ## Status
 
 - **Phase 0 (shipped)** - the control plane: engines, the built-in local engine,

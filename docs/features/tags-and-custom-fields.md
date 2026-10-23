@@ -21,7 +21,8 @@ to group, filter, and find them. Tags are **shared across all tenants**.
 3. Save.
 
 The Tags list shows how many objects use each tag, and you can filter by usage or
-colour.
+colour. For a site-scoped user the number counts only the tagged objects at
+the sites they can view (and shared, site-less ones).
 
 ### Seeing where a tag is used
 

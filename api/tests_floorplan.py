@@ -16,6 +16,8 @@ from .models import (
     FloorTileType,
     Interface,
     Location,
+    PowerFeed,
+    PowerPanel,
     Rack,
     Site,
 )
@@ -250,6 +252,23 @@ class TileTests(_Base):
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertIsNone(resp.json()["linked"])
+
+    def test_power_links_open_the_detail_pages(self):
+        panel = PowerPanel.objects.create(tenant=self.tenant, site=self.site, name="MDB-1")
+        feed = PowerFeed.objects.create(tenant=self.tenant, power_panel=panel, name="F-1")
+        for x, (kind, obj, route) in enumerate((
+            ("powerpanel", panel, f"/power-panels/{panel.id}"),
+            ("powerfeed", feed, f"/power-feeds/{feed.id}"),
+        )):
+            resp = self.client.post(
+                "/api/floor-plan-tiles/",
+                {"floor_plan_id": str(self.plan.id), "x": 2 * x, "y": 8,
+                 "tile_type_id": str(self.tt.id),
+                 "link_kind": kind, "link_id": str(obj.id)},
+                format="json",
+            )
+            self.assertEqual(resp.status_code, 201, resp.content)
+            self.assertEqual(resp.json()["linked"]["route"], route)
 
     def test_nested_plan_link_round_trips(self):
         child = FloorPlan.objects.create(

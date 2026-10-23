@@ -193,6 +193,8 @@ def run_maintenance_sync(connection_id: str) -> dict:
     )
     if conn is None:
         return {"skipped": "gone"}
+    if not conn.tenant.is_active:
+        return {"skipped": "tenant inactive"}
     if not integration_enabled(conn.tenant, "zabbix"):
         return {"skipped": "integration off"}
     if not (conn.enabled and conn.sync_maintenance and conn.token_set):

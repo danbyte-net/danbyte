@@ -380,7 +380,9 @@ like every other scheduled task, so when it stops you can see that it stopped.
 
 The tenant switch is re-checked **inside the job**, not only when it was
 queued: a toggle flipped in between wins, or Danbyte writes hosts into a Zabbix
-somebody just switched off.
+somebody just switched off. A deactivated tenant's connections are skipped the
+same way - the beat queues nothing for them, and a queued pass, maintenance
+reconcile or host-status read returns without touching Zabbix.
 
 ### Working the queue
 

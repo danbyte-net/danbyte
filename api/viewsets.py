@@ -40,7 +40,7 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
-from .visible_counts import related_count_expr
+from .visible_counts import path_count_expr, related_count_expr, tagged_count_expr
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
@@ -2394,7 +2394,8 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     the tenant-scoped base + catalog mixin.
 
     ``?picker=1`` returns the light picker shape (no usage count); the default
-    list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+    list/detail shape carries a ``usage_count`` of the tagged objects the
+    reader may view, annotated in one subquery (#438).
     """
 
     permission_classes = [permissions.IsAuthenticated]
@@ -2420,7 +2421,10 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
             if search:
                 qs = qs.filter(name__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         qs = restrict_for_view(self, qs)
-        return qs.annotate(usage_count_annotated=Count("tagged_items"))
+        # The usage panel lists the objects instead; it needs no count.
+        if self.action != "usage" and self.get_serializer_class() is TagManageSerializer:
+            qs = qs.annotate(usage_count_annotated=tagged_count_expr(self.request))
+        return qs
 
     def _guard_legacy(self, obj):
         if obj.tenant_id is None and not self.request.user.is_superuser:
@@ -2566,7 +2570,7 @@ class CustomFieldGroupViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     serializer_class = CustomFieldGroupSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().annotate(field_count_annotated=Count("fields"))
+        qs = super().get_queryset().annotate(field_count_annotated=_visible_n(self, "fields"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -5769,7 +5773,7 @@ class ModuleTypeViewSet(TenantScopedViewSet):
                 qs = qs.filter(manufacturer_id=mfr)
         if self.get_serializer_class() is ModuleTypeSerializer:
             qs = qs.annotate(
-                interface_template_count_annotated=_all_n(ModuleType, "interface_templates"),
+                interface_template_count_annotated=_visible_n(self, "interface_templates"),
                 module_count_annotated=_visible_n(self, "modules"),
             )
         return restrict_for_view(self, qs)
@@ -6082,7 +6086,7 @@ class ClusterViewSet(TenantScopedViewSet):
             .get_queryset()
             .select_related("type", "group", "site")
             .prefetch_related(TAGS)
-            .annotate(vm_count_annotated=Count("virtual_machines"))
+            .annotate(vm_count_annotated=_visible_n(self, "virtual_machines"))
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -6149,7 +6153,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
             .prefetch_related(TAGS)
         )
         if self.action == "list":
-            qs = qs.annotate(vm_count_annotated=Count("virtual_machines"))
+            qs = qs.annotate(vm_count_annotated=_visible_n(self, "virtual_machines"))
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
@@ -6589,7 +6593,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             )
             .prefetch_related(TAGS, "rails")
             .annotate(document_n=Coalesce(Subquery(documents), 0),
-                      device_n=Count("devices", distinct=True))
+                      device_n=_visible_n(self, "devices"))
         )
         if self.request:
             params = self.request.query_params
@@ -7279,7 +7283,7 @@ class PlatformGroupViewSet(TenantScopedViewSet):
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
         return qs.annotate(
             platform_count_annotated=_visible_n(self, "platforms"),
-            child_count_annotated=_all_n(PlatformGroup, "children"),
+            child_count_annotated=_visible_n(self, "children"),
         ).order_by(NATURAL_NAME)
 
     def _slug(self, serializer, tenant):
@@ -8012,7 +8016,7 @@ class ContactGroupViewSet(_ContactCatalogViewSet):
     def get_queryset(self):
         qs = super().get_queryset().select_related("parent").annotate(
             contact_count_annotated=_visible_n(self, "contacts"),
-            child_count_annotated=_all_n(ContactGroup, "children"),
+            child_count_annotated=_visible_n(self, "children"),
         )
         # "Groups nested directly under this one" - the group detail page's
         # Child groups tab. Applied after the tenant scoping above, so a
@@ -8043,7 +8047,7 @@ class ContactRoleViewSet(_ContactCatalogViewSet):
 
     def get_queryset(self):
         return super().get_queryset().annotate(
-            assignment_count_annotated=_all_n(ContactRole, "assignments")
+            assignment_count_annotated=_visible_n(self, "assignments")
         )
 
     def destroy(self, request, *args, **kwargs):
@@ -8087,7 +8091,7 @@ class ContactViewSet(TenantScopedViewSet):
             group = self.request.query_params.get("group")
             if group:
                 qs = qs.filter(group_id=group)
-        return qs.annotate(assignment_count_annotated=_all_n(Contact, "assignments"))
+        return qs.annotate(assignment_count_annotated=_visible_n(self, "assignments"))
 
 
 class ContactAssignmentViewSet(TenantScopedViewSet):
@@ -8301,8 +8305,12 @@ class ProviderNetworkViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             provider = self.request.query_params.get("provider")
             if provider:
                 qs = qs.filter(provider_id=provider)
+        # The Circuits tab's count: the circuits the reader may view that
+        # terminate here (#438).
         return qs.annotate(
-            termination_count_annotated=_all_n(ProviderNetwork, "circuit_terminations")
+            circuit_count_annotated=path_count_expr(
+                self.request, Circuit, "terminations__provider_network"
+            )
         )
 
 
@@ -8490,12 +8498,6 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
             location = self.request.query_params.get("location")
             if location:
                 qs = qs.filter(location_id=location)
-            # VMs whose *cluster* sits at a site - they run there even when the
-            # cluster's site was not applied to them (see Cluster.
-            # apply_site_to_vms). Lets a site page show what it hosts.
-            cluster_site = self.request.query_params.get("cluster_site")
-            if cluster_site:
-                qs = qs.filter(cluster__site_id=cluster_site)
         return qs.order_by(NATURAL_NAME)
 
     def destroy(self, request, *args, **kwargs):
@@ -8852,7 +8854,7 @@ class L2VPNViewSet(TenantScopedViewSet):
             vl = self.request.query_params.get("vlan")
             if vl:
                 qs = qs.filter(terminations__vlan_id=vl)
-        return qs.annotate(vtep_count_annotated=Count("vtep_memberships", distinct=True))
+        return qs.annotate(vtep_count_annotated=_visible_n(self, "vtep_memberships"))
 
 
 class L2VPNTerminationViewSet(TenantScopedViewSet):
@@ -9161,7 +9163,7 @@ class RegionViewSet(TenantScopedViewSet):
             # The site and sub-region counts, once per page (#444).
             qs = qs.annotate(
                 site_count_annotated=_visible_n(self, "sites"),
-                child_count_annotated=_all_n(Region, "children"),
+                child_count_annotated=_visible_n(self, "children"),
             )
         return qs.order_by(NATURAL_NAME)
 
@@ -9213,17 +9215,13 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("site", "parent")
-        # Detail tabs show Devices/Racks counts; annotate (distinct) so the
-        # serializer serves them without an N+1 per row.
-        # Cabinets by subquery: a third joined count would multiply the rows.
-        cabinets = (
-            Cabinet.objects.filter(location=OuterRef("pk")).order_by()
-            .values("location").annotate(n=Count("pk")).values("n")
-        )
+        # Detail tabs show Devices/Racks/Cabinets counts; annotated so the
+        # serializer serves them without an N+1 per row, and narrowed to the
+        # rows the reader may view (#438).
         qs = qs.annotate(
-            device_count_annotated=Count("devices", distinct=True),
-            rack_count_annotated=Count("racks", distinct=True),
-            cabinet_count_annotated=Coalesce(Subquery(cabinets), 0),
+            device_count_annotated=_visible_n(self, "devices"),
+            rack_count_annotated=_visible_n(self, "racks"),
+            cabinet_count_annotated=_visible_n(self, "cabinets"),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -10000,7 +9998,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             if site:
                 qs = qs.filter(location__site_id=site)
         if self.get_serializer_class() is FloorPlanSerializer:
-            qs = qs.annotate(tile_count_annotated=_all_n(FloorPlan, "tiles"))
+            qs = qs.annotate(tile_count_annotated=_visible_n(self, "tiles"))
         return qs
 
     def perform_create(self, serializer):

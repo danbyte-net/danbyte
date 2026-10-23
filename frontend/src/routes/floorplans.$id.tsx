@@ -2937,21 +2937,13 @@ function LinkedObjectLink({
       )
     case "powerpanel":
       return (
-        <OpenLink
-          to="/power-panels/$id/edit"
-          params={params}
-          className={className}
-        >
+        <OpenLink to="/power-panels/$id" params={params} className={className}>
           Open power panel
         </OpenLink>
       )
     case "powerfeed":
       return (
-        <OpenLink
-          to="/power-feeds/$id/edit"
-          params={params}
-          className={className}
-        >
+        <OpenLink to="/power-feeds/$id" params={params} className={className}>
           Open power feed
         </OpenLink>
       )

@@ -33,6 +33,9 @@ off, with a link to Settings → Integrations for tenant admins. DNS zones/recor
 features and stay fully usable regardless - author a **local** zone (no
 server) or a local scope, and the sync never touches them.
 
+The connections and sources of a **deactivated tenant** are skipped: the beat
+queues nothing for them, and a sync already queued returns without running.
+
 ## Where things live
 
 Two places, on purpose:

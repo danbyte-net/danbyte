@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { TopologyCardConfig } from "@/lib/api"
+import { Field } from "@/components/forms/field"
 import {
   CardLinesDialog,
   CardLinesEditor,
@@ -209,6 +210,48 @@ describe("CardLinesEditor", () => {
       [],
     ])
     expect(submit).not.toHaveBeenCalled()
+  })
+
+  it("under its form heading, no label points at nothing or at Name only (#445)", () => {
+    function Harness({ group }: { group: boolean }) {
+      const [value, setValue] = useState<string[] | null>(["serial"])
+      return (
+        <Field label="Card lines" group={group}>
+          <CardLinesEditor
+            value={value}
+            onChange={setValue}
+            config={CONFIG}
+            inherited={CONFIG.fields}
+            from="All devices"
+          />
+        </Field>
+      )
+    }
+    const misdirected = () =>
+      [...document.querySelectorAll("label[for]")].filter((label) => {
+        const target = document.getElementById(label.getAttribute("for")!)
+        return target === null || target.getAttribute("role") === "switch"
+      })
+    render(
+      <QueryClientProvider client={client()}>
+        <Harness group />
+      </QueryClientProvider>
+    )
+    expect(screen.getByRole("group", { name: "Card lines" })).toBeTruthy()
+    expect(misdirected()).toEqual([])
+    expect(nameOnly().id).toBe("")
+    fireEvent.click(tab("Inherit"))
+    expect(misdirected()).toEqual([])
+    cleanup()
+
+    // Under a plain field the switch still keeps its own name.
+    render(
+      <QueryClientProvider client={client()}>
+        <Harness group={false} />
+      </QueryClientProvider>
+    )
+    expect(nameOnly().id).toBe("")
+    expect(nameOnly().getAttribute("aria-labelledby")).toBeNull()
   })
 
   it("compact: no hints, and the add picker opens on demand", () => {

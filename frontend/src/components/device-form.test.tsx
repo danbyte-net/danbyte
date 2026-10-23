@@ -971,6 +971,17 @@ describe("DeviceForm rack elevation", () => {
   })
 })
 
+describe("DeviceForm labels", () => {
+  it("heads Card lines as a group, and no label points at nothing (#445)", async () => {
+    renderForm()
+    await screen.findByRole("group", { name: "Card lines" })
+    const dangling = [...document.querySelectorAll("label[for]")]
+      .filter((label) => !document.getElementById(label.getAttribute("for")!))
+      .map((label) => label.textContent)
+    expect(dangling).toEqual([])
+  })
+})
+
 describe("DeviceForm side mount", () => {
   it("keeps a strip's side mount while the device types load", async () => {
     // Until the types answer, the strip's type is unknown - not "takes

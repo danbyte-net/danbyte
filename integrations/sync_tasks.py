@@ -1,9 +1,10 @@
 """Scheduling glue for the external syncs (Windows DHCP/DNS, virtualization).
 
 The beat (``manage.py external_sync``, driven by ``danbyte-external-sync.timer``)
-selects due, enabled connections whose tenant has the matching toggle on and
-enqueues one RQ job each on the ``low`` queue. Jobs re-check enablement at run
-time - a toggle flipped between enqueue and execution wins.
+selects due, enabled connections whose tenant is active and has the matching
+toggle on, and enqueues one RQ job each on the ``low`` queue. Jobs re-check
+enablement and the tenant at run time - a toggle flipped or a tenant
+deactivated between enqueue and execution wins.
 """
 from __future__ import annotations
 
@@ -22,9 +23,11 @@ def run_windows_sync(conn_id: str) -> dict:
     from .dhcp_sync import record_sync_failure, sync_dhcp
     from .models import WindowsServerConnection
 
-    conn = WindowsServerConnection.objects.filter(id=conn_id).first()
+    conn = WindowsServerConnection.objects.filter(id=conn_id).select_related("tenant").first()
     if conn is None or not conn.enabled:
         return {"skipped": "gone-or-disabled"}
+    if not conn.tenant.is_active:
+        return {"skipped": "tenant-inactive"}
     result: dict = {}
     try:
         if conn.dhcp_enabled and integration_enabled(conn.tenant, "dhcp"):
@@ -54,9 +57,9 @@ def enqueue_due_syncs() -> dict:
     now = timezone.now()
     queued = 0
     q = django_rq.get_queue("low")
-    for conn in WindowsServerConnection.objects.filter(enabled=True).select_related(
-        "tenant"
-    ):
+    for conn in WindowsServerConnection.objects.filter(
+        enabled=True, tenant__is_active=True
+    ).select_related("tenant"):
         wants = (
             (conn.dhcp_enabled and integration_enabled(conn.tenant, "dhcp"))
             or (conn.dns_enabled and integration_enabled(conn.tenant, "dns"))
@@ -77,9 +80,11 @@ def run_virt_sync(source_id: str) -> dict:
         sync_vcloud,
     )
 
-    source = VirtualizationSource.objects.filter(id=source_id).first()
+    source = VirtualizationSource.objects.filter(id=source_id).select_related("tenant").first()
     if source is None or not source.enabled:
         return {"skipped": "gone-or-disabled"}
+    if not source.tenant.is_active:
+        return {"skipped": "tenant-inactive"}
     # Each hypervisor has its own switch, so turning one off leaves the
     # other's schedule alone.
     if not integration_enabled(source.tenant, f"virt_{source.kind}"):
@@ -126,9 +131,9 @@ def enqueue_due_virt_syncs() -> int:
     now = timezone.now()
     queued = 0
     q = django_rq.get_queue("low")
-    for source in VirtualizationSource.objects.filter(enabled=True).select_related(
-        "tenant"
-    ):
+    for source in VirtualizationSource.objects.filter(
+        enabled=True, tenant__is_active=True
+    ).select_related("tenant"):
         # manual sources only sync on demand - the beat leaves them alone.
         if source.sync_mode == "manual":
             continue
