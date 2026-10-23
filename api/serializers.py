@@ -52,7 +52,8 @@ from .models import (
     NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
-    ConfigBundle, ConfigContext, ExportTemplate, Location, PowerFeed, PowerOutlet,
+    ConfigBundle, ConfigContext, CoolingFeed, CoolingSource, ExportTemplate, Location,
+    PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
     RackTypeAccessory, RearPort,
@@ -66,7 +67,13 @@ from .models import (
     L2VPN, L2VPNTermination, VirtualChassis,
     materialize_device_components,
 )
-from .capacity import rack_cooling, rack_power, used_units
+from .capacity import (
+    cooling_feed_capacity,
+    cooling_source_capacity,
+    rack_cooling,
+    rack_power,
+    used_units,
+)
 # The far-end helpers moved to api.port_state (#248); re-exported here for
 # the imports that predate the move.
 from .port_state import (
@@ -2095,6 +2102,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
     _USAGE_RELS = [
         "ips", "devices", "prefixes", "ip_ranges", "racks", "cabinets", "clusters",
         "virtual_machines", "cables", "circuits", "power_feeds",
+        "cooling_sources", "cooling_feeds",
         "wireless_lans", "tunnels", "locations", "maintenance_events", "vlans",
     ]
 
@@ -8427,6 +8435,152 @@ class PowerFeedSerializer(StatusSerializerMixin,
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id",  "type_display",
                             "supply_display", "phase_display", "cable_count",
+                            "created_at", "updated_at"]
+
+
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+class CoolingSourceMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = CoolingSource
+        fields = ["id", "name"]
+
+
+class CoolingSourceSerializer(StatusSerializerMixin,
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    """A cooling unit (#434) - shaped like ``PowerPanelSerializer``, with
+    the unit's own status, rating and ``capacity``: the heat of the racks
+    its feeds reach against its rating (api.capacity.cooling_source_capacity)."""
+
+    cf_model = "coolingsource"
+    site = SiteMiniSerializer(read_only=True)
+    tags = TagSerializer(many=True, read_only=True)
+    feed_count = serializers.SerializerMethodField()
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    fluid_display = serializers.CharField(source="get_fluid_display", read_only=True)
+    capacity = serializers.SerializerMethodField()
+
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True,
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    device = serializers.SerializerMethodField()
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def get_feed_count(self, obj) -> int:
+        v = getattr(obj, "feed_count_annotated", None)
+        return v if v is not None else obj.cooling_feeds.count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name} if loc else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        d = obj.device
+        return {"id": str(d.id), "name": d.name} if d else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_capacity(self, obj):
+        return cooling_source_capacity(obj)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # As a power panel's: the location must be in the source's site,
+        # judged only when either changes (#389).
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        site = attrs.get("site", getattr(self.instance, "site", None))
+        if (
+            location is not None and site is not None and location.site_id != site.id
+            and _changes(self.instance, attrs, "location", "site")
+        ):
+            raise serializers.ValidationError(
+                {"location_id": "Pick a location within the source's site."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingSource
+        fields = ["id", "name", "site", "site_id", "location", "location_id",
+                  "type", "type_display", "status", "status_id",
+                  "fluid", "fluid_display", "rated_capacity_w", "redundancy_group",
+                  "device", "device_id", "comments", "feed_count", "capacity",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "type_display", "fluid_display", "feed_count",
+                            "capacity", "created_at", "updated_at"]
+
+
+class CoolingFeedSerializer(StatusSerializerMixin,
+    CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
+):
+    """A cooling loop from a source to a rack (#434) - shaped like
+    ``PowerFeedSerializer``. ``capacity`` is the rack's heat against what the
+    feed delivers (api.capacity.cooling_feed_capacity)."""
+
+    cf_model = "coolingfeed"
+    source = CoolingSourceMiniSerializer(read_only=True)
+    site = serializers.SerializerMethodField()
+    rack = RackMiniSerializer(read_only=True)
+    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    tags = TagSerializer(many=True, read_only=True)
+    capacity = serializers.SerializerMethodField()
+
+    source_id = TenantScopedPrimaryKeyRelatedField(
+        source="source", queryset=CoolingSource.objects.all(), write_only=True,
+    )
+    rack_id = TenantScopedPrimaryKeyRelatedField(
+        source="rack", queryset=Rack.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = obj.source.site if obj.source_id else None
+        return {"id": str(site.id), "name": site.name} if site else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_capacity(self, obj):
+        return cooling_feed_capacity(obj)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # A loop runs inside its source's site: a rack elsewhere is refused
+        # when either end changes, so a feed whose rack moved still saves.
+        source = attrs.get("source", getattr(self.instance, "source", None))
+        rack = attrs.get("rack", getattr(self.instance, "rack", None))
+        if (
+            source is not None and rack is not None and rack.site_id != source.site_id
+            and _changes(self.instance, attrs, "source", "rack")
+        ):
+            raise serializers.ValidationError(
+                {"rack_id": "Pick a rack within the source's site."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingFeed
+        fields = ["id", "name", "source", "source_id", "site", "rack", "rack_id",
+                  "status", "status_id", "type", "type_display",
+                  "rated_capacity_w", "flow_rate_lpm", "supply_temp_c", "return_temp_c",
+                  "connector", "max_utilization", "comments", "capacity",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "site", "type_display", "capacity",
                             "created_at", "updated_at"]
 
 

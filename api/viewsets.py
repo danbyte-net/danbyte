@@ -82,6 +82,7 @@ from .models import (
     ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
     reinstall_module, uninstall_module,
     CableTermination, PortReservation,
+    CoolingFeed, CoolingSource,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
@@ -171,6 +172,9 @@ from .serializers import (
     DocumentSerializer,
     DocumentCategorySerializer,
     PowerPanelSerializer,
+    CoolingFeedSerializer,
+    CoolingSourceMiniSerializer,
+    CoolingSourceSerializer,
     PowerPanelMiniSerializer,
     PortReservationSerializer,
     PowerFeedSerializer,
@@ -6781,7 +6785,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             .select_related(
                 "site", "site__region", "role", "location", "rack_type__manufacturer"
             )
-            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds")
+            .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
         )
         if self.request:
@@ -8560,6 +8564,212 @@ class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedView
                 ("status", "status"),
             ):
                 val = self.request.query_params.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+        return qs
+
+
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+_COOLING_SOURCE_FILTERS = [
+    OpenApiParameter("search", str, description="Name or custom-field text."),
+    OpenApiParameter("site", str, description="Site id."),
+    OpenApiParameter("location", str, description="Location id."),
+    OpenApiParameter("type", str, description="Unit type, e.g. `crah`."),
+    OpenApiParameter("status", str, description="Status id."),
+    OpenApiParameter("rack", str, description="Sources with a feed to this rack."),
+    OpenApiParameter("picker", str, description="`1`: id and name only."),
+]
+_COOLING_FEED_FILTERS = [
+    OpenApiParameter("search", str, description="Name or custom-field text."),
+    OpenApiParameter("source", str, description="Cooling source id."),
+    OpenApiParameter("site", str, description="The source's site id."),
+    OpenApiParameter("rack", str, description="Rack id."),
+    OpenApiParameter("type", str, description="`primary` or `redundant`."),
+    OpenApiParameter("status", str, description="Status id."),
+]
+
+
+@extend_schema_view(list=extend_schema(tags=["cooling-sources"],
+                                       parameters=_COOLING_SOURCE_FILTERS))
+@extend_schema(tags=["cooling-sources"])
+class CoolingSourceViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Cooling units and plant (#434), shaped like ``PowerPanelViewSet``: bulk
+    edit sets site, location, type, fluid, status and tags; a source with
+    feeds is a 409 to delete, and bulk delete keeps it unless ``with_feeds``
+    takes them along."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
+    queryset = CoolingSource.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CoolingSourceSerializer
+    pagination_class = StandardPagination
+    bulk_str_fields = ("type", "fluid", "redundancy_group")
+    bulk_int_fields = ("rated_capacity_w",)
+    bulk_fk_fields = {"site_id": Site, "location_id": Location, "status_id": Status}
+    bulk_tags = True
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "site_id" in updates:
+            names_free_after_move(rows, "site_id", updates["site_id"], "site_id")
+
+    def _with_feeds(self) -> bool:
+        data = getattr(self.request, "data", None)
+        return self.action == "bulk_delete" and isinstance(data, dict) and \
+            bool(data.get("with_feeds"))
+
+    def _deletable_feed_counts(self) -> dict:
+        """``{source id: feeds of it the caller may delete}``."""
+        if not hasattr(self, "_feed_counts"):
+            from auth_api import rbac
+
+            tenant = _get_active_tenant(self.request)
+            feeds = rbac.restrict_queryset(
+                CoolingFeed.objects.filter(
+                    tenant=tenant, source_id__in=bulk_ids(self.request, MAX_IDS)
+                ),
+                self.request.user, tenant, "coolingfeed", "delete",
+            )
+            self._feed_counts = dict(
+                feeds.values("source_id").annotate(n=Count("pk"))
+                .values_list("source_id", "n")
+            )
+        return self._feed_counts
+
+    def bulk_blocker(self, obj):
+        n = getattr(obj, "feed_count_annotated", None)
+        if n is None:
+            n = obj.cooling_feeds.count()
+        if not n:
+            return None
+        feeds = f"{n} cooling feed{'s' if n != 1 else ''}"
+        if not self._with_feeds():
+            return f"In use: {feeds}."
+        if self._deletable_feed_counts().get(obj.pk, 0) < n:
+            return f"In use: {feeds}, not all of them yours to delete."
+        return None
+
+    def bulk_collector(self):
+        from .power_bulk import FeedsFirstCollector
+
+        if self._with_feeds():
+            return FeedsFirstCollector(feed_model=CoolingFeed)
+        return super().bulk_collector()
+
+    def bulk_collect_into(self, collector, rows):
+        if self._with_feeds():
+            feeds = list(CoolingFeed.objects.filter(source__in=rows))
+            if feeds:
+                collector.collect(feeds)
+        collector.collect(rows)
+
+    def bulk_destroy(self, rows):
+        if self._with_feeds():
+            feeds = list(CoolingFeed.objects.filter(source__in=rows))
+            if feeds:
+                self.delete_together(feeds)
+        self.delete_together(rows)
+
+    def perform_destroy(self, instance):
+        if self._with_feeds():
+            CoolingFeed.objects.filter(source=instance).delete()
+        super().perform_destroy(instance)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingSourceMiniSerializer
+        return CoolingSourceSerializer
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("site", "location", "status", "device")
+            .prefetch_related(
+                TAGS, "cooling_feeds__rack__cooling_feeds",
+                capacity.racked_devices_prefetch("cooling_feeds__rack__"),
+            )
+            .annotate(feed_count_annotated=Count("cooling_feeds", distinct=True))
+        )
+        if self.request:
+            p = self.request.query_params
+            s = p.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+            for param, field in (
+                ("site", "site_id"),
+                ("location", "location_id"),
+                ("type", "type"),
+                ("status", "status"),
+            ):
+                val = p.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+            rack = p.get("rack")
+            if rack:
+                qs = qs.filter(cooling_feeds__rack_id=rack).distinct()
+        return qs.order_by(NATURAL_NAME)
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        n = obj.cooling_feeds.count()
+        if n:
+            return Response(
+                {"detail": f"{n} feed{'s' if n != 1 else ''} run from this "
+                           "source - delete them first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
+@extend_schema_view(list=extend_schema(tags=["cooling-sources"],
+                                       parameters=_COOLING_FEED_FILTERS))
+@extend_schema(tags=["cooling-sources"])
+class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
+    """Cooling loops from a source to a rack (#434), shaped like
+    ``PowerFeedViewSet``."""
+
+    rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
+    queryset = CoolingFeed.objects.all().order_by(NATURAL_NAME)
+    serializer_class = CoolingFeedSerializer
+    pagination_class = StandardPagination
+    bulk_str_fields = ("type", "connector")
+    bulk_int_fields = ("rated_capacity_w", "max_utilization")
+    bulk_fk_fields = {"status_id": Status, "source_id": CoolingSource, "rack_id": Rack}
+    bulk_tags = True
+    bulk_rename = None
+    bulk_clone = None
+
+    def check_bulk_rows(self, rows, updates):
+        from .power_bulk import names_free_after_move
+
+        if "source_id" in updates:
+            names_free_after_move(rows, "source_id", updates["source_id"], "source_id")
+
+    def get_queryset(self):
+        qs = (
+            super()
+            .get_queryset()
+            .select_related("source__site", "rack", "status")
+            .prefetch_related(
+                TAGS, "rack__cooling_feeds", capacity.racked_devices_prefetch("rack__"),
+            )
+        )
+        if self.request:
+            p = self.request.query_params
+            s = p.get("search", "").strip()
+            if s:
+                qs = qs.filter(name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+            for param, field in (
+                ("source", "source_id"),
+                ("site", "source__site_id"),
+                ("rack", "rack_id"),
+                ("type", "type"),
+                ("status", "status"),
+            ):
+                val = p.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
         return qs
@@ -10415,7 +10625,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         racks = {
             r.id: r
             for r in Rack.objects.filter(id__in=rack_ids).prefetch_related(
-                capacity.racked_devices_prefetch(), "power_feeds"
+                capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds"
             )
         }
         cabinets = {

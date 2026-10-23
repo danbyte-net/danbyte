@@ -1,4 +1,5 @@
-"""The parts of the power panel and power feed bulk actions (#313) that the
+"""The parts of the power panel and power feed bulk actions (#313) - and the
+cooling source and feed ones that mirror them (#434) - that the
 shared bulk machinery does not already cover: what a feed is cabled to, a
 panel deleted together with its feeds, and names that stay unique when rows
 move to another parent."""
@@ -63,15 +64,18 @@ def cabled_feed_notes(feeds) -> list[dict]:
 
 class FeedsFirstCollector(Collector):
     """Works out a panel delete that takes its feeds along: once the feeds
-    are collected, their ``PROTECT`` reference no longer holds the panel."""
+    are collected, their ``PROTECT`` reference no longer holds the panel.
+    ``feed_model`` is the feeds' model - :class:`PowerFeed` for a power
+    panel, ``CoolingFeed`` for a cooling source (#434)."""
 
-    def __init__(self, using=DEFAULT_DB_ALIAS, **kwargs):
+    def __init__(self, using=DEFAULT_DB_ALIAS, feed_model=PowerFeed, **kwargs):
         super().__init__(using=using, **kwargs)
+        self.feed_model = feed_model
 
     def related_objects(self, related_model, related_fields, objs):
         qs = super().related_objects(related_model, related_fields, objs)
-        going = self.data.get(PowerFeed)
-        if related_model is PowerFeed and going:
+        going = self.data.get(self.feed_model)
+        if related_model is self.feed_model and going:
             qs = qs.exclude(pk__in=[f.pk for f in going])
         return qs
 

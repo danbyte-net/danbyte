@@ -41,6 +41,7 @@ from .models import (
     Cluster,
     ConsolePort,
     ConsoleServerPort,
+    CoolingFeed,
     Device,
     DeviceBay,
     FloorPlanTile,
@@ -188,6 +189,17 @@ def plan(rack: Rack, site, location, *, user, tenant) -> Plan:
         n = sum(1 for s in feeds if s == site_id)
         p.block("power_feed", f"{n} power feed{'s' if n != 1 else ''} from {{site}} "
                               f"deliver{'' if n != 1 else 's'} to this rack.",
+                site=_site(site_id, names))
+    # Cooling loops as power feeds (#434): a source's site is the loop's.
+    loops = list(
+        CoolingFeed.objects.filter(rack=rack)
+        .exclude(source__site_id=site.pk)
+        .values_list("source__site_id", flat=True)
+    )
+    for site_id in sorted(set(loops), key=lambda s: names.get(s, "")):
+        n = sum(1 for s in loops if s == site_id)
+        p.block("cooling_feed", f"{n} cooling feed{'s' if n != 1 else ''} from {{site}} "
+                                f"deliver{'' if n != 1 else 's'} to this rack.",
                 site=_site(site_id, names))
     if separation_enabled(rack.tenant):
         _check_catalog(p, names)

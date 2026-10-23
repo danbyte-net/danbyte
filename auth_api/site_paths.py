@@ -30,9 +30,11 @@ SITE_PATHS: dict[str, str] = {
     # A group belongs to exactly one cluster, so it inherits that cluster's site.
     "virtualmachinegroup": "cluster__site",
     "powerpanel": "site",
+    "coolingsource": "site",
     "location": "site",
     # Indirect (one hop).
     "powerfeed": "power_panel__site",
+    "coolingfeed": "source__site",
     "interface": "device__site",
     "frontport": "device__site",
     "rearport": "device__site",

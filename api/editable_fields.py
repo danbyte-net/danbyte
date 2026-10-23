@@ -67,6 +67,9 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.moduletype", "cooling_method"): "cooling_method",
     ("api.rack", "cooling_capability"): "cooling_capability",
     ("api.racktype", "cooling_capability"): "cooling_capability",
+    ("api.coolingsource", "type"): "cooling_source_types",
+    ("api.coolingsource", "fluid"): "cooling_fluids",
+    ("api.coolingfeed", "type"): "cooling_feed_types",
 }
 
 # Free-text fields with well-known values worth offering as suggestions. The

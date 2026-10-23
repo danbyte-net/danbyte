@@ -624,6 +624,32 @@ COOLING_ADMITS: dict[str, frozenset[str]] = {
     "immersion": frozenset({"immersion"}),
 }
 
+# The cooling plant (#434): what kind of unit a cooling source is, the fluid
+# its loop carries, and whether a feed is a rack's primary loop or a spare.
+COOLING_SOURCE_TYPE_CHOICES: Choices = [
+    ("chiller", "Chiller"),
+    ("cooling_tower", "Cooling tower"),
+    ("dry_cooler", "Dry cooler"),
+    ("crac", "CRAC"),
+    ("crah", "CRAH"),
+    ("in_row", "In-row"),
+    ("other", "Other"),
+]
+
+COOLING_FLUID_CHOICES: Choices = [
+    ("air", "Air"),
+    ("water", "Water"),
+    ("glycol", "Glycol"),
+    ("dielectric", "Dielectric"),
+    ("refrigerant", "Refrigerant"),
+    ("other", "Other"),
+]
+
+COOLING_FEED_TYPE_CHOICES: Choices = [
+    ("primary", "Primary"),
+    ("redundant", "Redundant"),
+]
+
 
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
@@ -735,5 +761,8 @@ def dcim_choices_view(request):
         "airflow": flat(AIRFLOW_CHOICES),
         "cooling_method": flat(COOLING_METHOD_CHOICES),
         "cooling_capability": flat(COOLING_CAPABILITY_CHOICES),
+        "cooling_source_types": flat(COOLING_SOURCE_TYPE_CHOICES),
+        "cooling_fluids": flat(COOLING_FLUID_CHOICES),
+        "cooling_feed_types": flat(COOLING_FEED_TYPE_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

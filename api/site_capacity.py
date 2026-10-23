@@ -50,7 +50,7 @@ def site_capacity(request, site) -> dict:
             Rack.objects.filter(tenant=tenant, site=site), user, tenant, "rack", "view"
         )
         .select_related("role", "status")
-        .prefetch_related(capacity.racked_devices_prefetch(), "power_feeds")
+        .prefetch_related(capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
         # On any floor plan at all - a rack on a plan the caller cannot see
         # is not "on no floor plan".
         .annotate(placed=Exists(FloorPlanTile.objects.filter(rack=OuterRef("pk"))))

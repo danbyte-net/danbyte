@@ -20,7 +20,10 @@ from .dcim_choices import (
     CONSOLE_PORT_TYPE_CHOICES,
     COOLING_CAPABILITY_CHOICES,
     COOLING_DEFAULT,
+    COOLING_FEED_TYPE_CHOICES,
+    COOLING_FLUID_CHOICES,
     COOLING_METHOD_CHOICES,
+    COOLING_SOURCE_TYPE_CHOICES,
     INTERFACE_TYPE_CHOICES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
@@ -7285,6 +7288,119 @@ class PowerFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             models.UniqueConstraint(
                 fields=["tenant", "power_panel", "name"],
                 name="uniq_powerfeed_tenant_panel_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# ─── Cooling ─────────────────────────────────────────────────────────────────
+class CoolingSource(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A cooling unit or plant within a site - a chiller, a CRAH, an in-row
+    unit - the source that cooling feeds run from (#434). Mirrors
+    :class:`PowerPanel`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cooling_sources"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.PROTECT, related_name="cooling_sources"
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_sources",
+        help_text="Where in the site the unit is (building / floor / room).",
+    )
+    name = models.CharField(max_length=128)
+    type = models.CharField(
+        max_length=16, choices=COOLING_SOURCE_TYPE_CHOICES, default="other"
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cooling_sources",
+    )
+    fluid = models.CharField(
+        max_length=16, choices=COOLING_FLUID_CHOICES, blank=True, default=""
+    )
+    rated_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Heat the unit removes, in watts."
+    )
+    redundancy_group = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Units that back each other up share a group (N+1, A/B).",
+    )
+    device = models.ForeignKey(
+        Device, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_sources",
+        help_text="The device that monitors or is the unit.",
+    )
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                name="uniq_coolingsource_tenant_site_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class CoolingFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A cooling loop from a source to a rack - one feed is the loop's supply
+    and return. Carries the loop's capacity and a utilisation ceiling, like a
+    :class:`PowerFeed`; its site is its source's."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cooling_feeds"
+    )
+    source = models.ForeignKey(
+        CoolingSource, on_delete=models.PROTECT, related_name="cooling_feeds"
+    )
+    rack = models.ForeignKey(
+        Rack, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cooling_feeds",
+    )
+    name = models.CharField(max_length=128)
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="cooling_feeds",
+    )
+    type = models.CharField(
+        max_length=16, choices=COOLING_FEED_TYPE_CHOICES, default="primary"
+    )
+    rated_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Heat the loop carries away, in watts."
+    )
+    flow_rate_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        help_text="Litres per minute.",
+    )
+    supply_temp_c = models.DecimalField(
+        max_digits=4, decimal_places=1, null=True, blank=True, help_text="°C."
+    )
+    return_temp_c = models.DecimalField(
+        max_digits=4, decimal_places=1, null=True, blank=True, help_text="°C."
+    )
+    connector = models.CharField(max_length=64, blank=True, default="")
+    max_utilization = models.PositiveSmallIntegerField(
+        default=80, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="Share of the rated capacity a rack may load, as a percent.",
+    )
+    comments = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "source", "name"],
+                name="uniq_coolingfeed_tenant_source_name",
             )
         ]
 
