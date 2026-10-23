@@ -770,6 +770,7 @@ export function DeviceForm({
           <FormSection title="Topology card" card>
             <Field
               label="Card lines"
+              group
               info="Device, then view, then role, then All devices."
               error={fieldErrors.topology_card}
             >

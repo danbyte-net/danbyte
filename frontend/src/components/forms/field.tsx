@@ -24,6 +24,11 @@ export interface FieldProps {
    * submit. That absence is why so many fields say `hint="optional"`: the
    * codebase was signalling the inverse because the direct signal was dead. */
   required?: boolean
+  /** The children are a group of controls that name themselves, not one
+   * control: the label is a caption naming the group (`role="group"`)
+   * instead of a `<label>` pointing at a control, and nothing inside takes
+   * the field's id. */
+  group?: boolean
   className?: string
   children: React.ReactNode
 }
@@ -34,6 +39,7 @@ export function Field({
   info,
   error,
   required,
+  group = false,
   className,
   children,
 }: FieldProps) {
@@ -55,6 +61,18 @@ export function Field({
     () => ({ id, labelId, describedBy, invalid: !!error }),
     [id, labelId, describedBy, error]
   )
+  const caption = (
+    <>
+      {label}
+      {required && (
+        // Not `text-destructive`: an untouched required field isn't an
+        // error, and colouring it red on load reads as one.
+        <span aria-hidden className="ml-0.5 font-semibold text-primary">
+          *
+        </span>
+      )}
+    </>
+  )
 
   return (
     // content-start: when a grid stretches this cell to match a taller
@@ -67,6 +85,9 @@ export function Field({
     // trigger's own `truncate` finally do its job.
     <div
       data-field-error={error ? "" : undefined}
+      role={group ? "group" : undefined}
+      aria-labelledby={group ? labelId : undefined}
+      aria-describedby={group ? describedBy : undefined}
       className={cn("grid min-w-0 content-start gap-1.5", className)}
     >
       {/* The label never wraps: it is the thing the eye reads first, and a
@@ -78,20 +99,24 @@ export function Field({
             it: inside, their buttons would be read out as part of the
             field's name. */}
         <span className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap">
-          <Label
-            id={labelId}
-            htmlFor={id}
-            className="gap-1 text-xs whitespace-nowrap"
-          >
-            {label}
-            {required && (
-              // Not `text-destructive`: an untouched required field isn't an
-              // error, and colouring it red on load reads as one.
-              <span aria-hidden className="ml-0.5 font-semibold text-primary">
-                *
-              </span>
-            )}
-          </Label>
+          {group ? (
+            // Same look, but a caption: there is no one control to point at.
+            <Label
+              asChild
+              id={labelId}
+              className="gap-1 text-xs whitespace-nowrap"
+            >
+              <span>{caption}</span>
+            </Label>
+          ) : (
+            <Label
+              id={labelId}
+              htmlFor={id}
+              className="gap-1 text-xs whitespace-nowrap"
+            >
+              {caption}
+            </Label>
+          )}
           {info && <InfoTip>{info}</InfoTip>}
           {/* "A change to this value is already planned" - renders
               nothing unless a PendingFieldsProvider says so. */}
@@ -106,7 +131,7 @@ export function Field({
           </span>
         )}
       </div>
-      <FieldControlContext.Provider value={control}>
+      <FieldControlContext.Provider value={group ? null : control}>
         {children}
       </FieldControlContext.Provider>
       {hint && hintBelow && (

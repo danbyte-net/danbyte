@@ -112,7 +112,10 @@ and `aria-invalid` on an error. A child of `<Field>` built from these needs no
 wiring. A second control in the same field (a unit box beside a number) goes
 in `NoFieldControl` with its own `aria-label`; popover, dialog, sheet and menu
 content already cut the link. An unlabelled control outside a `Field` (a
-filter rail) takes an `aria-label`.
+filter rail) takes an `aria-label`. A field whose body is a run of controls
+that each name themselves (the device form's **Card lines**) is a
+`<Field group>`: the same caption, but it names the `role="group"` instead of
+pointing a `<label>` at one control, and nothing inside takes the field's id.
 
 Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not
