@@ -123,6 +123,9 @@ SITE_PATHS: dict[str, str] = {
     # A covered device's row follows the device (#421); the contract itself
     # is tenant-wide.
     "supportcoverage": "device__site",
+    # Installed software follows its device or VM (#436); the application
+    # catalog itself is tenant-wide, like platforms.
+    "installedsoftware": "device__site|virtual_machine__site",
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.

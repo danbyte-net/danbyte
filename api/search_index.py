@@ -192,6 +192,8 @@ SPECS: dict[str, IndexSpec] = {
     "devicerole": IndexSpec("api.DeviceRole", "/device-roles/{id}", weight=4, site=None),
     "platform": IndexSpec("api.Platform", "/platforms/{id}", weight=5, site=None,
                           subtitle="manufacturer.name"),
+    "application": IndexSpec("api.Application", "/applications/{id}", weight=5, site=None,
+                             subtitle="manufacturer.name", facets=("manufacturer",)),
     "platformgroup": IndexSpec("api.PlatformGroup", "/platform-groups/{id}", weight=4, site=None),
     "rackrole": IndexSpec("api.RackRole", "/rack-roles/{id}", weight=4, site=None),
     "racktype": IndexSpec("api.RackType", "/rack-types/{id}", weight=4, site=None),

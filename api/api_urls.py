@@ -161,6 +161,7 @@ from routing.viewsets import (
     VTEPViewSet,
 )
 
+from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
 from .dashboard_views import dashboard_view
 from .dcim_choices import dcim_choices_view
@@ -388,6 +389,8 @@ router.register(r"cabinet-types", CabinetTypeViewSet, basename="cabinet-type")
 router.register(r"device-roles",  DeviceRoleViewSet,  basename="device-role")
 router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-group")
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
+router.register(r"applications", ApplicationViewSet, basename="application")
+router.register(r"installed-software", InstalledSoftwareViewSet, basename="installed-software")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 # Routing - on this router (not a mounted app router) so bulk edit, planned
 # changes, CSV IO and the assistant's router walk all see the types.

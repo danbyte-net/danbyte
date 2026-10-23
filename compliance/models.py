@@ -118,6 +118,10 @@ class ComplianceRule(TimestampedModel):
     #   software_target               → {"fail_on_unknown": false} - a blank
     #                                    software version fails too (#395)
     fail_on_unknown = models.BooleanField(default=False, db_default=False)
+    #   eol_status                    → {"include_software": false} - a device
+    #                                    or VM also fails on its installed
+    #                                    software (#436)
+    include_software = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["object_type", "name"]
@@ -194,15 +198,22 @@ class EolProduct(TimestampedModel):
 
 
 class EolMapping(TimestampedModel):
-    """A platform's end-of-life product and cycle, with the cycle's facts as
-    of the last refresh. Scoped like the platform: same tenant."""
+    """A platform's or an application's end-of-life product and cycle, with
+    the cycle's facts as of the last refresh. Scoped like its subject: same
+    tenant. A platform has one; an application has one per cycle its installs
+    run (#436), made and dropped with the installs."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="eol_mappings"
     )
     platform = models.OneToOneField(
-        "api.Platform", on_delete=models.CASCADE, related_name="eol_mapping"
+        "api.Platform", on_delete=models.CASCADE, related_name="eol_mapping",
+        null=True, blank=True,
+    )
+    application = models.ForeignKey(
+        "api.Application", on_delete=models.CASCADE, related_name="eol_mappings",
+        null=True, blank=True,
     )
     source = models.CharField(max_length=32)
     product = models.CharField(max_length=128)
@@ -224,6 +235,18 @@ class EolMapping(TimestampedModel):
     class Meta:
         ordering = ["product", "cycle"]
         indexes = [models.Index(fields=["source", "product"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(platform__isnull=False, application__isnull=True)
+                    | models.Q(platform__isnull=True, application__isnull=False)
+                ),
+                name="eolmapping_one_subject",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "cycle"], name="uniq_eolmapping_application_cycle"
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.product} {self.cycle}"

@@ -27,7 +27,7 @@ from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
 from .models import (
-    Antenna, AntennaTemplate,
+    Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, Cabinet, CabinetRole, CabinetType, DinRail,
     DinRailTemplate,
@@ -2434,7 +2434,7 @@ def _platform_lifecycle(platform, context) -> dict:
 
 #: The ``lifecycle_next`` shape on device and VM rows.
 LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
-    "source": serializers.ChoiceField(choices=["hardware", "os", "coverage"]),
+    "source": serializers.ChoiceField(choices=["hardware", "os", "coverage", "software"]),
     "end": serializers.DateField(),
     "start": serializers.DateField(allow_null=True),
 }, allow_null=True)
@@ -2468,6 +2468,12 @@ def _lifecycle_next(serializer, obj, *, device: bool) -> dict | None:
         end = device_end(obj)
         if end is not None and end != OPEN_ENDED:
             found.append((end, 2, "coverage", None))
+    # Installed software (#436): the list's annotation, entered dates alone
+    # while end-of-life data is off. A row without it (a write) skips it.
+    sw = getattr(obj, "software_end_any" if _eol_config(serializer.context).enabled
+                 else "software_end_entered", None)
+    if sw is not None:
+        found.append((sw, 3, "software", None))
     if not found:
         return None
     end, _rank, source, start = min(found, key=lambda f: (f[0], f[1]))
@@ -7520,11 +7526,22 @@ class ServiceTemplateSerializer(CustomFieldsSerializerMixin, ProtocolPortsSerial
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # The software behind the service (#436).
+    application = serializers.SerializerMethodField()
+    application_id = TenantScopedPrimaryKeyRelatedField(
+        source="application", queryset=Application.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_application(self, obj):
+        a = obj.application
+        return {"id": str(a.id), "name": a.name} if a else None
 
     class Meta:
         model = ServiceTemplate
         fields = ["id", "name", "slug", "protocol", "protocol_display", "ports",
-                  "protocol_ports",
+                  "protocol_ports", "application", "application_id",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

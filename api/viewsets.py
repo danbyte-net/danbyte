@@ -44,6 +44,7 @@ from .visible_counts import path_count_expr, related_count_expr, tagged_count_ex
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, software_target, support_coverage
+from .applications import software_end_annotations
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -3693,6 +3694,8 @@ class DeviceViewSet(
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
             **support_coverage.device_annotations(),
+            # Installed software's soonest end (#436), for Next end of life.
+            **software_end_annotations("device"),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -6281,6 +6284,8 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
                 synced_from=Subquery(latest_src),
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
+                # Installed software's soonest end (#436), for Next end of life.
+                **software_end_annotations("virtual_machine"),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.
@@ -7528,7 +7533,7 @@ class ServiceTemplateViewSet(TenantScopedViewSet):
             s = self.request.query_params.get("search", "").strip()
             if s:
                 qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-        return qs.prefetch_related(TAGS)
+        return qs.select_related("application").prefetch_related(TAGS)
 
     def _slug(self, serializer, tenant):
         data = serializer.validated_data

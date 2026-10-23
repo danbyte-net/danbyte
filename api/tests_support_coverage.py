@@ -806,7 +806,8 @@ class SiteRoleUpgradeTests(TestCase):
         org = Organization.objects.create(name="O", slug="o")
         tenant = Tenant.objects.create(org=org, name="T", slug="t")
         site = Site.objects.create(tenant=tenant, name="A")
-        old_types = sorted(set(site_role_types()) - {"supportcoverage"})
+        # The roles as 0030 found them: no type a later migration added.
+        old_types = sorted((set(site_role_types()) & mig.KNOWN) - {"supportcoverage"})
 
         def grant(name, types, actions):
             perm = ObjectPermission.objects.create(
