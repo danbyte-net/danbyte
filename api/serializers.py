@@ -9765,6 +9765,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         "device": Device,
         "powerpanel": PowerPanel,
         "powerfeed": PowerFeed,
+        "coolingsource": CoolingSource,
         "floorplan": FloorPlan,
     }
     _LINK_ROUTES = {
@@ -9774,6 +9775,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         # Panels/feeds have no detail page - their edit page is the deep-link.
         "powerpanel": "/power-panels/{id}/edit",
         "powerfeed": "/power-feeds/{id}/edit",
+        "coolingsource": "/cooling-sources/{id}",
         "floorplan": "/floorplans/{id}",
     }
 

@@ -11092,7 +11092,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ser.save(floor_plan=plan)
         tiles = plan.tiles.select_related(
             "tile_type", "role_type", "rack", "device",
-            "power_panel", "power_feed", "linked_floor_plan",
+            "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
         ).order_by("y", "x")
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
@@ -11127,7 +11127,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
 
     queryset = FloorPlanTile.objects.select_related(
         "floor_plan", "tile_type", "role_type", "rack", "cabinet", "device",
-        "power_panel", "power_feed", "linked_floor_plan",
+        "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
     ).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
@@ -11144,6 +11144,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
                 ("rack", "rack_id"),
                 ("cabinet", "cabinet_id"),
                 ("device", "device_id"),
+                ("cooling_source", "cooling_source_id"),
                 # "Where is this tile type placed" - the floor-tile-type
                 # detail page's Tiles tab.
                 ("tile_type", "tile_type_id"),

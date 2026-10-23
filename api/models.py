@@ -8399,6 +8399,7 @@ class FloorPlanTile(TimestampedModel):
         "device": "device",
         "powerpanel": "power_panel",
         "powerfeed": "power_feed",
+        "coolingsource": "cooling_source",
         "floorplan": "linked_floor_plan",
     }
 
@@ -8472,6 +8473,13 @@ class FloorPlanTile(TimestampedModel):
         blank=True,
         related_name="floor_tiles",
     )
+    cooling_source = models.ForeignKey(
+        CoolingSource,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="floor_tiles",
+    )
     linked_floor_plan = models.ForeignKey(
         FloorPlan,
         on_delete=models.SET_NULL,
@@ -8526,9 +8534,11 @@ class FloorPlanTile(TimestampedModel):
                             f"{f}__isnull": True
                             for f in [
                                 "rack",
+                                "cabinet",
                                 "device",
                                 "power_panel",
                                 "power_feed",
+                                "cooling_source",
                                 "linked_floor_plan",
                             ]
                         }
@@ -8545,6 +8555,7 @@ class FloorPlanTile(TimestampedModel):
                                         "device",
                                         "power_panel",
                                         "power_feed",
+                                        "cooling_source",
                                         "linked_floor_plan",
                                     ]
                                     if other != set_field
@@ -8557,6 +8568,7 @@ class FloorPlanTile(TimestampedModel):
                             "device",
                             "power_panel",
                             "power_feed",
+                            "cooling_source",
                             "linked_floor_plan",
                         ]
                     ],
