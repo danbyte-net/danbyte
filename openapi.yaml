@@ -58395,7 +58395,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       parameters:
       - name: page
         required: false
@@ -58433,7 +58434,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       tags:
       - tags
       requestBody:
@@ -58471,7 +58473,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       parameters:
       - in: path
         name: id
@@ -58503,7 +58506,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       parameters:
       - in: path
         name: id
@@ -58547,7 +58551,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       parameters:
       - in: path
         name: id
@@ -58590,7 +58595,8 @@ paths:
         the tenant-scoped base + catalog mixin.
 
         ``?picker=1`` returns the light picker shape (no usage count); the default
-        list/detail shape carries a ``usage_count`` annotated in one GROUP BY.
+        list/detail shape carries a ``usage_count`` of the tagged objects the
+        reader may view, annotated in one subquery (#438).
       parameters:
       - in: path
         name: id
@@ -102795,9 +102801,10 @@ components:
     PatchedTagManageRequest:
       type: object
       description: |-
-        Read+write Tag for the Tags management page. Adds ``usage_count``.
+        Read+write Tag for the Tags management page. Adds ``usage_count``, the
+        tagged objects the reader may view (#438).
 
-        The list viewset annotates ``usage_count_annotated`` (one GROUP BY) so the
+        The list viewset annotates ``usage_count_annotated`` (one subquery) so the
         method field is cheap there; on a single create/update response it falls
         back to a single COUNT.
       properties:
@@ -112765,9 +112772,10 @@ components:
     TagManage:
       type: object
       description: |-
-        Read+write Tag for the Tags management page. Adds ``usage_count``.
+        Read+write Tag for the Tags management page. Adds ``usage_count``, the
+        tagged objects the reader may view (#438).
 
-        The list viewset annotates ``usage_count_annotated`` (one GROUP BY) so the
+        The list viewset annotates ``usage_count_annotated`` (one subquery) so the
         method field is cheap there; on a single create/update response it falls
         back to a single COUNT.
       properties:
@@ -112818,9 +112826,10 @@ components:
     TagManageRequest:
       type: object
       description: |-
-        Read+write Tag for the Tags management page. Adds ``usage_count``.
+        Read+write Tag for the Tags management page. Adds ``usage_count``, the
+        tagged objects the reader may view (#438).
 
-        The list viewset annotates ``usage_count_annotated`` (one GROUP BY) so the
+        The list viewset annotates ``usage_count_annotated`` (one subquery) so the
         method field is cheap there; on a single create/update response it falls
         back to a single COUNT.
       properties:

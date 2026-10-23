@@ -57,9 +57,14 @@ ergonomics on top:
     Counts on catalog objects count only what the reader may view: a
     platform's devices and virtual machines, a device type's or role's
     devices, a manufacturer's device and module types, a rack or cabinet
-    role's racks, a status's usage, a region's sites, and the like. The
-    number on a tab matches the table under it, and says nothing about other
-    sites.
+    role's racks, a status's usage, a region's sites, and the like. So do a
+    tag's usage, a contact's or contact role's assignments, a custom-field
+    group's fields, the circuits on a provider network, a cluster's or VM
+    group's virtual machines, a location's devices, racks and cabinets, a
+    cabinet's devices, a floor plan's tiles, an L2VPN's VTEPs, a module
+    type's interface templates, and the sub-groups of regions, platform
+    groups and contact groups. The number on a tab matches the table under
+    it, and says nothing about other sites.
 
 ## Which rows belong to a site
 
