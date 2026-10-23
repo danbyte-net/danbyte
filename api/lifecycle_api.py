@@ -1,17 +1,17 @@
 """The Lifecycle page (#436): every device and virtual machine against the end
 dates that matter to it - one row per object per source, soonest first.
 
-``GET /api/lifecycle/`` reads three sources:
+``GET /api/lifecycle/`` reads four sources:
 
 * ``hardware`` - a device's type: its release date to its end of support;
 * ``os`` - a device's or a VM's own platform, by its effective date: what was
   entered, else its end-of-life mapping while that feature is on
   (``compliance.eol.effective_dates``);
 * ``coverage`` - a device's support coverage: its contract with the latest
-  end, else its warranty (``api.support_coverage``).
-
-``application`` is accepted and lists nothing yet: installed software is a
-source still to come.
+  end, else its warranty (``api.support_coverage``);
+* ``software`` - each application installed on a device or VM, by the same
+  rule as the OS: dates entered on the install, else its (application,
+  cycle) end-of-life mapping while that feature is on.
 
 Every source is cut to what the caller may view. Devices and VMs come
 through ``rbac.restrict_queryset`` (site scope included); a source whose
@@ -31,7 +31,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import CharField
+from django.db.models import CharField, Q
 from django.db.models.functions import Cast
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -46,10 +46,10 @@ from compliance.eol import config_for, date_status, effective_dates
 from core.models import Tag, TaggedItem
 
 from . import support_coverage as cov
-from .models import Device, SupportContract, VirtualMachine
+from .models import Device, InstalledSoftware, SupportContract, VirtualMachine
 from .views import _get_active_tenant
 
-SOURCES = ("hardware", "os", "coverage", "application")
+SOURCES = ("hardware", "os", "coverage", "software")
 
 #: The windows every source is bucketed into - fixed, not the settings, so
 #: the page compares sources on one scale. ``none`` has no date.
@@ -306,6 +306,60 @@ def _vms(rows: _Rows, vms) -> None:
             rows.os_row(_object(rows, "virtualmachine", r, tags), r)
 
 
+_PARENTS = (("device", "device__"), ("virtualmachine", "virtual_machine__"))
+
+
+def _software(rows: _Rows, installs) -> None:
+    """One row per install: the application and version on its device or
+    VM, ended by the dates entered on the install, else the (application,
+    cycle) mapping while end-of-life data is on. One query for the installs
+    and one per parent type for the tags."""
+    fields = ["version", "application__name", "end_of_support", "release_date",
+              "application__manufacturer__name",
+              "eol_mapping__source", "eol_mapping__release_date",
+              "eol_mapping__eol_date", "eol_mapping__eol_reached",
+              "eol_mapping__synced_at"]
+    ids = {"app_ref": "application_id", "mfr_ref": "application__manufacturer_id",
+           "install_ref": "id"}
+    for _kind, p in _PARENTS:
+        fields += [f"{p}name", f"{p}site__name", f"{p}role__name", f"{p}role__color"]
+        ids.update({f"{p}oid": f"{p}id", f"{p}site_ref": f"{p}site_id",
+                    f"{p}role_ref": f"{p}role_id"})
+    data = list(installs.order_by().values(*fields, **_ids(**ids)))
+    tags = {
+        **_tags(Device, installs.filter(device__isnull=False).values("device_id")),
+        **_tags(VirtualMachine,
+                installs.filter(virtual_machine__isnull=False).values("virtual_machine_id")),
+    }
+    cfg = rows.eol
+    for r in data:
+        kind, p = next(((k, p) for k, p in _PARENTS if r[f"{p}oid"]), (None, None))
+        if kind is None:
+            continue
+        parent = {"oid": r[f"{p}oid"], "name": r[f"{p}name"],
+                  "site_ref": r[f"{p}site_ref"], "site__name": r[f"{p}site__name"],
+                  "role_ref": r[f"{p}role_ref"], "role__name": r[f"{p}role__name"],
+                  "role__color": r[f"{p}role__color"]}
+        obj = _object(rows, kind, parent, tags, rows.ref(
+            "manufacturer", r["mfr_ref"], name=r["application__manufacturer__name"]))
+        mapping = SimpleNamespace(
+            source=r["eol_mapping__source"], release_date=r["eol_mapping__release_date"],
+            eol_date=r["eol_mapping__eol_date"], eol_reached=r["eol_mapping__eol_reached"],
+            synced_at=r["eol_mapping__synced_at"],
+        )
+        e = effective_dates(r["release_date"], r["end_of_support"], mapping, cfg.enabled)
+        item = {"type": "application", "id": r["app_ref"],
+                "name": f"{r['application__name']} {r['version']}".strip(),
+                "application": r["application__name"], "version": r["version"],
+                "install": r["install_ref"], "date_source": e.source}
+        rows.add(
+            obj, "software", item,
+            date_status(e.end, cfg.warning_days, rows.today, e.eol_reached),
+            e.start, e.end, e.end is not None and e.end <= rows.today,
+            {True: "past", False: "later"}.get(e.eol_reached, "none"),
+        )
+
+
 def _sort_key(row: dict):
     days = row["days_left"]
     if days is None:
@@ -319,7 +373,7 @@ def _sort_key(row: dict):
     parameters=[
         OpenApiParameter(
             "source", OpenApiTypes.STR, OpenApiParameter.QUERY,
-            description="Comma-separated: hardware, os, coverage, application. "
+            description="Comma-separated: hardware, os, coverage, software. "
                         "Default: all.",
         ),
         OpenApiParameter("site", OpenApiTypes.UUID, OpenApiParameter.QUERY),
@@ -367,6 +421,23 @@ def lifecycle_overview(request):
         if site:
             vms = vms.filter(site_id=site)
         _vms(rows, vms)
+    if "software" in sources and rbac.has_action(user, tenant, "installedsoftware", "view"):
+        installs = rbac.restrict_queryset(
+            InstalledSoftware.objects.filter(tenant=tenant), user, tenant,
+            "installedsoftware", "view",
+        )
+        # Only on the devices and VMs the caller may view: the row names them.
+        parents = Q(pk__in=[])
+        for slug, model, field in (("device", Device, "device"),
+                                   ("virtualmachine", VirtualMachine, "virtual_machine")):
+            if rbac.has_action(user, tenant, slug, "view"):
+                seen = rbac.restrict_queryset(model.objects.filter(tenant=tenant),
+                                              user, tenant, slug, "view")
+                parents |= Q(**{f"{field}__in": seen.values("pk")})
+        installs = installs.filter(parents)
+        if site:
+            installs = installs.filter(Q(device__site_id=site) | Q(virtual_machine__site_id=site))
+        _software(rows, installs)
 
     results = rows.out if undated else [r for r in rows.out if r["window"] != "none"]
     results.sort(key=_sort_key)

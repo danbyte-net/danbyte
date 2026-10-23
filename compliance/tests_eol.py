@@ -772,3 +772,104 @@ class ComplianceEolTests(TenantMixin, TestCase):
             "name": "x", "object_type": "device", "check_type": "eol_status"})
         self.assertFalse(missing.is_valid())
         self.assertIn("eol_fail_on", missing.errors)
+
+
+class ApplicationMappingTests(TenantMixin, TestCase):
+    """Application mappings (#436): one per (application, cycle), filled from
+    the cached catalog, kept by the refresh, and the ``include_software``
+    option of the ``eol_status`` check."""
+
+    def setUp(self):
+        from api.models import Application
+
+        self.tenant = self.make_tenant()
+        load_catalog()
+        site = Site.objects.create(tenant=self.tenant, name="S")
+        self.app = Application.objects.create(
+            tenant=self.tenant, name="Ubuntu userland", slug="ubuntu-userland",
+            eol_source="endoflife_date", eol_product="ubuntu")
+        self.devices = {
+            name: Device.objects.create(tenant=self.tenant, name=name, site=site)
+            for name in ("old", "ending", "ok", "bare")
+        }
+        for name, version in (("old", "18.04.6"), ("ending", "22.04.3"), ("ok", "24.04")):
+            self.install(name, version)
+
+    def install(self, name, version):
+        from api.models import InstalledSoftware
+
+        return InstalledSoftware.objects.create(
+            tenant=self.tenant, application=self.app, device=self.devices[name],
+            version=version)
+
+    def rule(self, fail_on, include=True):
+        return ComplianceRule.objects.create(
+            tenant=self.tenant, name=f"eol {fail_on}", object_type="device",
+            check_type="eol_status", eol_fail_on=fail_on, include_software=include)
+
+    def failing(self, rule):
+        return sorted(v["object_repr"] for v in evaluate(self.tenant, rules=[rule])["violations"])
+
+    def test_mappings_per_cycle(self):
+        cycles = sorted(EolMapping.objects.filter(application=self.app)
+                        .values_list("cycle", flat=True))
+        self.assertEqual(cycles, ["18.04", "22.04", "24.04"])
+        m = EolMapping.objects.get(application=self.app, cycle="18.04")
+        self.assertIsNotNone(m.synced_at)
+        self.assertEqual(eol.status_of(m, 180), "eol")
+        self.assertIsNone(m.platform)
+
+    def test_exactly_one_subject(self):
+        from django.db import IntegrityError, transaction
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            EolMapping.objects.create(tenant=self.tenant, source="endoflife_date",
+                                      product="ubuntu", cycle="1")
+
+    def test_include_software_is_off_for_existing_rules(self):
+        enable()
+        self.assertEqual(self.failing(self.rule("ending", include=False)), [])
+
+    def test_include_software_buckets(self):
+        enable()
+        self.assertEqual(self.failing(self.rule("eol")), ["old"])
+        self.assertEqual(self.failing(self.rule("ending")), ["ending", "old"])
+        r = self.rule("ending")
+        detail = {v["object_repr"]: v["detail"]
+                  for v in evaluate(self.tenant, rules=[r])["violations"]}
+        self.assertEqual(detail["old"], "Ubuntu userland 18.04.6")
+        self.assertIn(
+            r, evaluate_for_object(self.tenant, "device", self.devices["ending"]))
+        self.assertEqual(evaluate_for_object(self.tenant, "device", self.devices["bare"]), [])
+
+    def test_include_software_query_count_is_flat(self):
+        enable()
+        r = self.rule("eol")
+        with CaptureQueriesContext(connection) as small:
+            evaluate(self.tenant, rules=[r])
+        site = Site.objects.get(tenant=self.tenant)
+        from api.models import InstalledSoftware
+
+        for i in range(10):
+            dev = Device.objects.create(tenant=self.tenant, name=f"x{i}", site=site)
+            InstalledSoftware.objects.create(tenant=self.tenant, application=self.app,
+                                             device=dev, version="18.04")
+        with CaptureQueriesContext(connection) as big:
+            evaluate(self.tenant, rules=[r])
+        self.assertEqual(len(big.captured_queries), len(small.captured_queries))
+
+    def test_serializer_option(self):
+        ok = ComplianceRuleSerializer(data={
+            "name": "x", "object_type": "device", "check_type": "eol_status",
+            "eol_fail_on": "ending", "include_software": True})
+        self.assertTrue(ok.is_valid(), ok.errors)
+        unknown = ComplianceRuleSerializer(data={
+            "name": "x", "object_type": "device", "check_type": "eol_status",
+            "eol_fail_on": "unknown", "include_software": True})
+        self.assertFalse(unknown.is_valid())
+        self.assertIn("include_software", unknown.errors)
+        other = ComplianceRuleSerializer(data={
+            "name": "x", "object_type": "device", "check_type": "required",
+            "field": "description", "include_software": True})
+        self.assertFalse(other.is_valid())
+        self.assertIn("include_software", other.errors)
