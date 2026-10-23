@@ -7,9 +7,10 @@ icon: lucide/layout-grid
 **Maps → Floor plans** lays out a [location](regions-locations.md) - a room, a
 hall, a floor - as a grid of tiles: racks, aisles, walls, cooling units,
 cameras, doors… Each tile can **link to a real object** (a rack, a DIN-rail
-[cabinet](../dcim/cabinets.md), a device, a power panel or feed, or another
-floor plan), so the drawing stays a live view of your DCIM data rather than a
-static diagram.
+[cabinet](../dcim/cabinets.md), a device, a power panel or feed, a
+[cooling source](cooling.md#on-the-floor-plan), or another floor plan), so
+the drawing stays a live view of your DCIM data rather than a static
+diagram.
 
 Everything is self-contained: an SVG canvas, uploaded background images served
 from your own deployment, no external tile servers - floor plans work fully
@@ -531,7 +532,7 @@ and Export shrinks to its icon, so nothing is ever cut off.
 | Resize | Drag the corner handle of the selected tile |
 | Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
-| Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
+| Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed, cooling source and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
 | Nudge | Arrow keys move the selected tile one cell |
 | Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
@@ -1051,6 +1052,10 @@ the cabinet's custom fields can be picked like a rack's.
 **Cooling** (off by default) gives a rack tile's heat over its cooling
 capacity, from the 30-second poll like **Power** - see
 [Cooling](cooling.md).
+
+A tile linked to a cooling source shows the source itself - its type,
+status, rated capacity and the heat of the racks it feeds against that
+rating - whatever fields are picked.
 
 **Ports** (off by default) gives a rack tile's ports in use over its counted
 ports, and its **panel ports** under them when it has any - the split the

@@ -4,11 +4,11 @@ icon: lucide/snowflake
 
 # Cooling
 
-Cooling is how heat leaves your racks. Danbyte records it in two halves: how
-each piece of **hardware is cooled**, and what each **rack's cooling** can
-take and how much heat it removes. Both work without modelling the cooling
-plant itself - the units, loops and feeds behind a rack come later in this
-release (see [Cooling sources and feeds](#cooling-sources-and-feeds)).
+Cooling is how heat leaves your racks. Danbyte records how each piece of
+**hardware is cooled**, what each **rack's cooling** can take and how much
+heat it removes, and - optionally - the **cooling plant** behind it: the
+units in a site and the loops that run from them to racks (see
+[Cooling sources and feeds](#cooling-sources-and-feeds)).
 
 ## How hardware is cooled
 
@@ -92,7 +92,9 @@ A rack's **heat** adds up its devices: each device's type **heat output**
 where it has one, else the power the device draws - the allocated draw where
 you recorded it, the nameplate (maximum) sum beside it. Devices with power
 outlets are distributors (PDUs) and add no heat, as they add no power
-demand. The rack's **capacity** is what the heat is measured against.
+demand. The rack's **capacity** is what the heat is measured against:
+its own capacity, else what its primary cooling feeds deliver (see
+[Capacity](#capacity)).
 
 The figure reads like a rack's [power](power.md): **heat / capacity**
 (`3.2 kW / 10 kW`, in W below 1 kW), the nameplate sum standing in - marked
@@ -132,9 +134,9 @@ A site's [Capacity](../models/site.md#the-capacity-tab) tab measures by
 
 A rack's `cooling` holds `available_w` (its capacity, 0 without one),
 `heat_allocated_w`, `heat_maximum_w`, `supply` (`budget` when the rack has a
-capacity, else null) and `mismatched`, the devices its capability does not
-take. `cooling_free_w` is the capacity less the allocated heat, null without
-a capacity. Both are worked out from the rack's devices as the list already
+capacity, `feed` when its primary cooling feeds give one, else null) and
+`mismatched`, the devices its capability does not take. `cooling_free_w` is
+the capacity less the allocated heat, null without a capacity. Both are worked out from the rack's devices as the list already
 loads them, so a page of racks costs the same queries whatever stands in
 them.
 
@@ -143,7 +145,7 @@ Filters:
 | List | Filter | Keeps |
 |---|---|---|
 | `GET /api/racks/` | `?cooling_capability=liquid` | racks with that capability; `none` for racks without one |
-| `GET /api/racks/` | `?cooling_free_w_gte=5000` | racks whose capacity less their allocated heat is at least that many watts - the racks that can still take 5 kW. Racks without a capacity are left out. |
+| `GET /api/racks/` | `?cooling_free_w_gte=5000` | racks whose capacity (their own, else their primary feeds') less their allocated heat is at least that many watts - the racks that can still take 5 kW. Racks without a capacity are left out. |
 | `GET /api/devices/` | `?cooling_method=liquid` | devices whose *effective* method is that one |
 | `GET /api/devices/` | `?cooling_mismatch=1` | devices whose rack does not take their effective method; `0` the rest |
 
@@ -158,5 +160,144 @@ Watts are whole numbers. `GET /api/dcim/choices/` serves the two lists as
 
 ## Cooling sources and feeds
 
-Coming in this release: the cooling units and loops in a site, and the feeds
-that run from them to the racks they cool.
+The cooling plant mirrors [power](power.md): **cooling sources** are the units
+in a site - chillers, CRAHs, in-row units - and **cooling feeds** the loops
+that run from them to racks. Find both under **Power & cooling** in the
+sidebar.
+
+### Cooling sources
+
+1. Open **Power & cooling → Cooling sources** and click **Add cooling source**.
+2. Pick the **site**, and optionally a **location** in it - only the site's
+   locations are offered.
+3. Give it a **name**, unique within the site.
+4. Set what it is and what it carries:
+
+| Field | What it records |
+|---|---|
+| **Type** | Chiller, Cooling tower, Dry cooler, CRAC, CRAH, In-row or Other. |
+| **Status** | Planned, Active, Offline or Failed - rows of the [Statuses catalog](catalogs-and-settings.md#statuses), available to *Cooling sources*. |
+| **Fluid** | Air, Water, Glycol, Dielectric, Refrigerant or Other. |
+| **Rated capacity** | The heat the unit removes, in kW on the form and watts in the API. |
+| **Redundancy group** | Free text shared by units that back each other up - *N+1*, *A*, *B*. |
+| **Device** | The device that is or monitors the unit, for its interfaces, checks and alerts. |
+
+A source page has **Overview** (the unit, its load and any planned
+maintenance), **Feeds**, **Affected**, **Journal** and **Change log**. A
+source that still has feeds cannot be deleted - remove or move them first.
+
+### Cooling feeds
+
+A feed is one loop - its supply and its return - from a source to a rack.
+
+1. Open **Power & cooling → Cooling feeds** and click **Add cooling feed**.
+2. Choose the **source** and give the feed a **name**, unique within the source.
+3. Optionally pick the **rack** it cools - only racks in the source's site.
+4. Set the loop:
+
+| Field | What it records |
+|---|---|
+| **Type** | Primary, or Redundant - a spare loop that takes over when the primary fails. |
+| **Rated capacity** | The heat the loop carries away, in kW on the form. |
+| **Max utilization** | The share of the rating the rack may load, 80 % unless changed. |
+| **Flow** | Litres per minute. |
+| **Supply / Return temperature** | °C, to one decimal. |
+| **Connector** | Free text - the quick-disconnect or flange the loop lands on. |
+
+A feed page has **Overview**, whose **Loop** card holds the figures above and
+the feed's load, then **Affected**, **Journal** and **Change log**. A rack's
+page lists its loops on a **Cooling feeds** tab next to **Power feeds**.
+
+A feed's site is its source's. A rack with a feed from its site cannot be
+[moved to another site](../dcim/racks.md) - the move names the feeds, as it
+does power feeds - until the feed is moved or its rack cleared.
+
+### Capacity
+
+A rack's cooling **capacity** comes from the first of:
+
+1. its own **Capacity** (`cooling_capacity_w`), marked *budget*;
+2. its **primary** cooling feeds: each feed's rated capacity × its max
+   utilization, added up (watts, rounded down), marked *feed*;
+3. nothing - *No capacity*.
+
+Redundant feeds never add to the supply: the rack is meant to run on its
+primaries. Wherever the rack's cooling figure shows - the rack page, the
+racks list, the floor plan and a site's Capacity tab - it follows this order,
+and `?cooling_free_w_gte=` filters by the same supply.
+
+Each **feed** shows its rack's heat against what the feed delivers (rating ×
+max utilization). A redundant feed is measured against the whole rack too,
+marked *redundant*: it must carry the rack alone when the primary fails.
+
+Each **source** shows the heat of every rack its feeds reach - a rack fed
+twice by one source counts once - against the source's rated capacity, and
+how many racks that is.
+
+### Affected
+
+The **Affected** tab of a cooling source or feed - and of a
+[power panel or feed](power.md#affected) - walks downstream: source → its
+feeds → the racks they deliver to → the devices in those racks. Each rack and
+device carries the impact work on the source would have:
+
+| Level | When |
+|---|---|
+| **Outage** | The rack has no other feed of the same kind. |
+| **Reduced redundancy** | Another feed - from another source, or one not part of the work - still serves the rack. |
+
+The tab lists only what you may view. **Plan maintenance** opens a new
+[maintenance event](maintenance.md#from-a-source-or-feed) with these impacts
+filled in: the source or feed itself and its feeds as *Outage*, the racks and
+devices at their level. Once the event is saved, the source's Overview shows
+it under **Planned maintenance & outages**, and a confirmed window silences
+the impacted devices' alerts.
+
+### On the floor plan
+
+A floor-plan tile links to a cooling source like it links to a power panel:
+**Inspector → Link → Cooling source**, picking from the tenant's sources. The
+tile popover shows the source's type, status, rated capacity and load, and
+opens its page. In the 3D room such a tile stays a ghost box, as panel tiles
+do. See [Floor plans](floor-plans.md#the-editor).
+
+### Many at once
+
+Tick rows in **Cooling sources** or **Cooling feeds** - or on a source's
+**Feeds** tab, or a rack's **Cooling feeds** tab - for **Edit** and
+**Delete**, as with [power](power.md#editing-and-deleting-several-at-once):
+
+| List | Bulk-editable fields |
+|---|---|
+| Cooling sources | site, location, type, status, fluid, rated capacity, redundancy group, tags |
+| Cooling feeds | source, rack, status, type, rated capacity, max utilization, connector, tags |
+
+A source with feeds is kept by a bulk delete unless **Delete their feeds
+too** is ticked and you may delete every one of them. Every row gets its own
+change-log entry. Both types travel through the
+[spreadsheet import and export](import-export.md): a source is matched by
+site and name, a feed by source and name.
+
+### Cooling plant API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/cooling-sources/` | List and create. Filters: `search`, `site`, `location`, `type`, `status`, `rack` (sources with a feed to it); `?picker=1` returns id and name only. |
+| `GET/PATCH/DELETE /api/cooling-sources/{id}/` | Read, edit, delete - a `409` while feeds run from it. |
+| `GET /api/cooling-sources/{id}/affected/` | The downstream racks and devices, and `impacts` ready for a maintenance event. |
+| `GET/POST /api/cooling-feeds/` | List and create. Filters: `search`, `source`, `site` (the source's), `rack`, `type`, `status`. |
+| `GET /api/cooling-feeds/{id}/affected/` | As for a source. |
+| `POST …/bulk-update/`, `…/bulk-delete/` | On both, as on power panels and feeds; `"with_feeds": true` on sources. |
+
+A source carries `capacity` - `available_w` (its rating, 0 without one),
+`heat_allocated_w`, `heat_maximum_w`, `racks` - and a feed `capacity` with
+`available_w` (rating × max utilization), `rated_w`, the rack's
+`heat_allocated_w` and `heat_maximum_w`, and `redundant`. `affected` answers
+`feeds`, `racks` and `devices` (each with its `level`) and `impacts`, a list
+of `{object_type, object_id, level}`.
+
+`GET /api/dcim/choices/` serves `cooling_source_types`, `cooling_fluids` and
+`cooling_feed_types`. The RBAC types are `coolingsource` and `coolingfeed`
+(**Power & cooling** in the permission editor); a site-limited grant reaches
+a source by its site and a feed by its source's site. Both are audited and
+searchable.

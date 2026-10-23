@@ -87,6 +87,8 @@ export const DOCS_LINKS: Record<string, string> = {
   "/provider-networks": "features/circuits/",
   "/power-panels": "features/power/",
   "/power-feeds": "features/power/",
+  "/cooling-sources": "features/cooling/#cooling-sources",
+  "/cooling-feeds": "features/cooling/#cooling-feeds",
   "/wireless-lans": "features/wireless/",
   "/wireless-lan-groups": "features/wireless/",
   "/tunnels": "features/vpn/",

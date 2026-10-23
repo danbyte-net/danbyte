@@ -305,3 +305,48 @@ describe("TilePopover on a rack tile", () => {
     expect(open(tile(), ["name", "ports"]).Ports).toBeUndefined()
   })
 })
+
+describe("TilePopover on a cooling source tile (#434)", () => {
+  const sourceTile = tile({
+    link_kind: "coolingsource",
+    linked: {
+      kind: "coolingsource",
+      id: "cs1",
+      name: "CRAH-1",
+      route: "/cooling-sources/cs1",
+    },
+  })
+
+  it("reads the source's load where a rack reads its units", () => {
+    expect(fieldsForTile(["name", "utilization"], sourceTile)).toEqual([
+      "name",
+      "source_load",
+    ])
+  })
+
+  it("shows heat against the source's rating, from its detail", async () => {
+    apiMock.mockImplementation((path: string) =>
+      path === "/api/cooling-sources/cs1/"
+        ? Promise.resolve({
+            id: "cs1",
+            type_display: "CRAH",
+            capacity: {
+              available_w: 10_000,
+              heat_allocated_w: 9_600,
+              heat_maximum_w: 0,
+              racks: 2,
+            },
+          })
+        : new Promise(() => undefined)
+    )
+    open(sourceTile, DEFAULT_POPOVER_FIELDS)
+    const figure = await screen.findByText("9.6 kW / 10 kW")
+    expect(screen.getByText("CRAH")).toBeTruthy()
+    // 96 %: past the critical line, on the racks' shared scale.
+    expect(
+      figure.parentElement
+        ?.querySelector("[data-level]")
+        ?.getAttribute("data-level")
+    ).toBe("critical")
+  })
+})

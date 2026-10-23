@@ -14,6 +14,7 @@ import {
   ObjectRow,
   slugFromObjectType,
 } from "@/components/planning/object-chip"
+import { LEVELS, levelTone } from "@/components/monitoring/impact-levels"
 
 /**
  * What this event touches, and how hard - issue #20's Impact model.
@@ -22,20 +23,6 @@ import {
  * the customization object picker), plus the level. The server enforces that
  * you can only mark impact on objects you can view.
  */
-
-const LEVELS = [
-  { value: "no_impact", label: "No impact" },
-  { value: "reduced_redundancy", label: "Reduced redundancy" },
-  { value: "degraded", label: "Degraded" },
-  { value: "outage", label: "Outage" },
-]
-
-const levelTone: Record<string, string> = {
-  no_impact: "text-muted-foreground",
-  reduced_redundancy: "text-amber-600 dark:text-amber-400",
-  degraded: "text-amber-600 dark:text-amber-400",
-  outage: "text-red-600 dark:text-red-400",
-}
 
 export function EventImpactPanel({ event }: { event: MaintenanceEvent }) {
   const qc = useQueryClient()

@@ -51,6 +51,9 @@ const NO_CHOICES: DcimChoices = {
   airflow: [],
   cooling_method: [],
   cooling_capability: [],
+  cooling_source_types: [],
+  cooling_fluids: [],
+  cooling_feed_types: [],
   connector_fibers: {},
   common_speeds: [],
 }

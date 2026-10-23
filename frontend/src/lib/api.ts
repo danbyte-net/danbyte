@@ -970,6 +970,8 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "cable", label: "Cables" },
   { value: "circuit", label: "Circuits" },
   { value: "powerfeed", label: "Power feeds" },
+  { value: "coolingsource", label: "Cooling sources" },
+  { value: "coolingfeed", label: "Cooling feeds" },
   { value: "wirelesslan", label: "Wireless LANs" },
   { value: "tunnel", label: "Tunnels" },
   { value: "location", label: "Locations" },
@@ -2779,6 +2781,12 @@ export interface DcimChoices {
   cooling_method: DcimChoice[]
   /** What a rack's cooling takes (#434): air, hybrid, liquid, immersion. */
   cooling_capability: DcimChoice[]
+  /** Cooling source kinds (#434): chiller, CRAC, in-row… */
+  cooling_source_types: DcimChoice[]
+  /** What a cooling source moves heat with (#434). */
+  cooling_fluids: DcimChoice[]
+  /** Cooling feed kinds (#434): primary, redundant. */
+  cooling_feed_types: DcimChoice[]
   /** Connector value → fibre count, to pre-fill FrontPort.positions. */
   connector_fibers: Record<string, number>
   common_speeds: string[]
@@ -9676,6 +9684,118 @@ export interface PowerFeedWritePayload {
   custom_fields?: Record<string, unknown>
 }
 
+// ─── Cooling (#434) ────────────────────────────────────────────────────
+export interface CoolingSourceOption {
+  id: string
+  name: string
+}
+
+/** A source's load: the heat of the racks its feeds reach (each once)
+ * against its rating (`api/capacity.py cooling_source_capacity`). */
+export interface CoolingSourceCapacity {
+  /** The source's rated capacity (W); 0 without one. */
+  available_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** Racks the source's feeds reach. */
+  racks: number
+}
+
+export interface CoolingSource {
+  id: string
+  numid: number | null
+  name: string
+  site: SiteOption | null
+  location: { id: string; name: string } | null
+  type: string
+  type_display: string
+  status: StatusMini | null
+  /** "" when not recorded. */
+  fluid: string
+  fluid_display: string
+  rated_capacity_w: number | null
+  redundancy_group: string
+  device: { id: string; name: string } | null
+  comments: string
+  feed_count: number
+  capacity: CoolingSourceCapacity
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingSourceWritePayload {
+  name: string
+  site_id: string
+  location_id?: string | null
+  type?: string
+  status_id?: string | null
+  fluid?: string
+  rated_capacity_w?: number | null
+  redundancy_group?: string
+  device_id?: string | null
+  comments?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
+/** A feed's load: its rack's heat against what the feed delivers - rated
+ * capacity × max utilisation (`api/capacity.py cooling_feed_capacity`). */
+export interface CoolingFeedCapacity {
+  available_w: number
+  rated_w: number
+  heat_allocated_w: number
+  heat_maximum_w: number
+  /** A redundant feed is measured against the whole rack too. */
+  redundant: boolean
+}
+
+export type CoolingFeedType = "primary" | "redundant"
+
+export interface CoolingFeed {
+  id: string
+  numid: number | null
+  name: string
+  source: CoolingSourceOption
+  /** The source's site. */
+  site: SiteOption | null
+  rack: { id: string; name: string } | null
+  status: StatusMini | null
+  type: CoolingFeedType
+  type_display: string
+  rated_capacity_w: number | null
+  /** Decimal strings, null when not recorded. */
+  flow_rate_lpm: string | null
+  supply_temp_c: string | null
+  return_temp_c: string | null
+  connector: string
+  max_utilization: number
+  comments: string
+  capacity: CoolingFeedCapacity
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface CoolingFeedWritePayload {
+  name: string
+  source_id: string
+  rack_id?: string | null
+  status_id?: string | null
+  type?: CoolingFeedType
+  rated_capacity_w?: number | null
+  flow_rate_lpm?: string | null
+  supply_temp_c?: string | null
+  return_temp_c?: string | null
+  connector?: string
+  max_utilization?: number
+  comments?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
+}
+
 // ─── Wireless ──────────────────────────────────────────────────────────
 export interface WirelessLANGroupOption {
   id: string
@@ -10788,6 +10908,7 @@ export type FloorPlanLinkKind =
   | "device"
   | "powerpanel"
   | "powerfeed"
+  | "coolingsource"
   | "floorplan"
 
 export type FloorTileStatus =

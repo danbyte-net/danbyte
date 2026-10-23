@@ -65,6 +65,7 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
+  Snowflake,
   Split,
   SquareKanban,
   SquareStack,
@@ -77,6 +78,7 @@ import {
   UserMinus,
   Users,
   UsersRound,
+  Waves,
   Waypoints,
   Bot,
   FileCode,
@@ -970,7 +972,7 @@ export const sections: NavSection[] = [
   },
   {
     id: "power",
-    label: "Power",
+    label: "Power & cooling",
     icon: Zap,
     clusters: [
       {
@@ -986,6 +988,18 @@ export const sections: NavSection[] = [
             url: "/power-panels",
             icon: SquareStack,
             objectType: "powerpanel",
+          },
+          {
+            title: "Cooling sources",
+            url: "/cooling-sources",
+            icon: Snowflake,
+            objectType: "coolingsource",
+          },
+          {
+            title: "Cooling feeds",
+            url: "/cooling-feeds",
+            icon: Waves,
+            objectType: "coolingfeed",
           },
         ],
       },

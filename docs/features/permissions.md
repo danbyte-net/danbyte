@@ -157,6 +157,8 @@ rows*.
    object types**. All object types leaves out Users, Groups and
    Permissions; with it ticked, those three are offered on their own, and
    ticking them makes the grant an administrator grant.
+   Types are grouped by area - power panels and feeds and cooling sources
+   and feeds, for one, under **Power & cooling**.
 4. Tick the **actions** you're granting: view, add, change, delete.
 5. (Optional) Limit it to certain **tenants**. A tenant named here also
    **grants access to that tenant**: members of the group can switch to it

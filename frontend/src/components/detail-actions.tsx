@@ -50,6 +50,8 @@ const SEGMENT_SLUG: Record<string, string> = {
   "wireless-lan-groups": "wirelesslangroup",
   "power-feeds": "powerfeed",
   "power-panels": "powerpanel",
+  "cooling-sources": "coolingsource",
+  "cooling-feeds": "coolingfeed",
   webhooks: "webhook",
   "automation-targets": "automationtarget",
   "config-contexts": "configcontext",

@@ -9,13 +9,15 @@ Power is where you record how electricity reaches your racks - the
 individual racks.
 
 You build it in two layers: **power panels** (the distribution boards) and the
-**power feeds** that draw from them.
+**power feeds** that draw from them. Both live under **Power & cooling** in
+the sidebar, next to the [cooling plant](cooling.md#cooling-sources-and-feeds),
+which is modelled the same way.
 
 ## Add a power panel
 
 A power panel is a distribution board within a site.
 
-1. Open **Power → Power panels** in the sidebar and click **Add power panel**.
+1. Open **Power & cooling → Power panels** in the sidebar and click **Add power panel**.
 2. Pick the **site** the panel lives in.
 3. Optionally pick a **location** in that site - the building, floor or room
    the panel is in. Only the site's locations are offered; changing the site
@@ -33,7 +35,7 @@ the API a panel carries `location` (id and name) and takes `location_id`;
 A power feed is a circuit running from a panel, optionally delivered to a
 specific rack.
 
-1. Open **Power → Power feeds** and click **Add power feed**.
+1. Open **Power & cooling → Power feeds** and click **Add power feed**.
 2. Choose the **panel** it comes from, and give the feed a **name** (unique
    within that panel).
 3. Optionally point it at a **rack** - the rack this feed powers.
@@ -54,15 +56,17 @@ specific rack.
 
 ### Open a feed or a panel
 
-Clicking a name in **Power → Power feeds** or **Power → Power panels** opens
+Clicking a name in **Power & cooling → Power feeds** or **Power panels** opens
 that object's detail page, the same way every other object in Danbyte works.
 
 A **power panel** page has:
 
 - **Overview** - its site and location, how many feeds draw from it,
-  comments, and when it was created and last changed.
+  comments, any planned maintenance, and when it was created and last
+  changed.
 - **Feeds** - every feed on the panel, the same row the feeds list draws;
   tick feeds to edit or delete several at once.
+- **Affected** - the racks and devices downstream (see [Affected](#affected)).
 - **Journal** - your notes on this panel.
 - **Change log** - who changed which field, and when.
 
@@ -73,7 +77,18 @@ A **power feed** page has:
   amperage, max utilization).
 - **Terminations** - the cables landing on this feed, usually the PDU inlet it
   powers. Follow one to trace the whole power path.
-- **Journal** and **Change log**, as above.
+- **Affected**, **Journal** and **Change log**, as above.
+
+### Affected
+
+A panel's or feed's **Affected** tab lists what work on it would take down:
+the racks its feeds deliver to and the devices in them, each marked
+**Outage** - the rack has no other power feed - or **Reduced redundancy** -
+another feed still serves it. It lists only what you may view, and **Plan
+maintenance** opens a new [maintenance event](maintenance.md#from-a-source-or-feed)
+with those impacts filled in. Cooling sources and feeds have the same tab
+([Cooling](cooling.md#affected)). In the API it is
+`GET /api/power-panels/{id}/affected/` and `GET /api/power-feeds/{id}/affected/`.
 
 !!! note "Max utilization is a plan, not a measurement"
     Danbyte records the ceiling you set. It does not meter the feed, so the

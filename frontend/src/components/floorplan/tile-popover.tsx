@@ -37,6 +37,7 @@ import type { FaceplateSide } from "@/lib/faceplate-layout"
 import { useDateFormat } from "@/lib/datetime"
 import {
   capacityRatio,
+  formatWatts,
   hasCoolingData,
   hasPowerData,
 } from "@/lib/rack-capacity"
@@ -47,7 +48,13 @@ type LiveTile = FloorPlanLiveState["tiles"][string]
  * shape (role/status/description/tags/custom_fields) that the linked_* fields
  * work for all three; the ones only some of them have simply render null on
  * the others. */
-export type LinkedDetail = Partial<Rack> & Partial<Device>
+export type LinkedDetail = Partial<Rack> &
+  Partial<Device> &
+  // A linked cooling source's load and kind (#434), from its detail.
+  Partial<{
+    capacity: { available_w: number; heat_allocated_w: number }
+    type_display: string
+  }>
 
 /** Which link kinds carry enough detail to be worth fetching. */
 /** A field's `render` is called as a plain function, so it cannot hold a
@@ -62,6 +69,7 @@ const DETAIL_ENDPOINT: Record<string, string> = {
   rack: "/api/racks",
   cabinet: "/api/cabinets",
   device: "/api/devices",
+  coolingsource: "/api/cooling-sources",
 }
 
 /** Which custom-field model a link kind maps to, for formatting cf_* values. */
@@ -69,6 +77,7 @@ const CF_MODEL: Record<string, string> = {
   rack: "rack",
   cabinet: "cabinet",
   device: "device",
+  coolingsource: "coolingsource",
 }
 
 /** Tile status → semantic badge tone. A tile's status is a plain string union
@@ -298,6 +307,31 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
       const r = rack(live)
       if (!r || !hasCoolingData(r.cooling)) return null
       return <CoolingFigure cooling={r.cooling} className="text-[11px]" />
+    },
+  },
+  source_load: {
+    label: "Cooling",
+    needsLinked: true,
+    // A cooling source's load (#434): the heat of the racks its feeds reach
+    // against its rating - a source tile's "utilization".
+    render: ({ tile, linked }) => {
+      const c = tile.linked?.kind === "coolingsource" ? linked?.capacity : null
+      if (!c) return null
+      const ratio = capacityRatio(c.heat_allocated_w, c.available_w)
+      return (
+        <span className="flex items-center gap-2 whitespace-nowrap">
+          <CapacityBar ratio={ratio} className="w-10" />
+          <span className="num text-[11px]">
+            {formatWatts(c.heat_allocated_w)}
+            {c.available_w > 0 && ` / ${formatWatts(c.available_w)}`}
+          </span>
+          {linked?.type_display && (
+            <span className="text-[11px] text-muted-foreground">
+              {linked.type_display}
+            </span>
+          )}
+        </span>
+      )
     },
   },
   ports: {
@@ -550,6 +584,13 @@ const CABINET_FILL = ["device_count", "rail_count"]
 
 /** The configured keys as they apply to one tile. */
 export function fieldsForTile(fields: string[], tile: FloorPlanTile): string[] {
+  // A cooling source's utilization is its load against its rating (#434).
+  if (tile.linked?.kind === "coolingsource")
+    return fields.flatMap((k) =>
+      k === "utilization" && !fields.includes("source_load")
+        ? ["source_load"]
+        : [k]
+    )
   if (tile.linked?.kind !== "cabinet") return fields
   return fields.flatMap((k) =>
     k === "utilization" ? CABINET_FILL.filter((c) => !fields.includes(c)) : [k]

@@ -19,6 +19,8 @@ import { PowerPanelDeleteDialog } from "@/components/power-panel-delete-dialog"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { AffectedPanel } from "@/components/feed-affected-panel"
+import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { EmbeddedPowerFeedTable } from "@/components/embedded-tables"
 
@@ -45,9 +47,9 @@ function PowerPanelDetail() {
 }
 
 function Body({ panel: p }: { panel: PowerPanel }) {
-  const [tab, setTab] = useUrlTab<"overview" | "feeds" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "feeds" | "affected" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const { canDo } = useMe()
   const [deleting, setDeleting] = useState<PowerPanel | null>(null)
@@ -94,6 +96,7 @@ function Body({ panel: p }: { panel: PowerPanel }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "feeds", label: "Feeds", count: p.feed_count },
+        { value: "affected", label: "Affected" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -101,6 +104,9 @@ function Body({ panel: p }: { panel: PowerPanel }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <UpcomingMaintenancePanel objectType="powerpanel" objectId={p.id} />
+        </div>
         <PanelOverview panel={p} />
       </DetailTab>
       <DetailTab value="feeds">
@@ -109,6 +115,9 @@ function Body({ panel: p }: { panel: PowerPanel }) {
           omitPanel
           emptyText="No feeds draw from this panel yet."
         />
+      </DetailTab>
+      <DetailTab value="affected">
+        <AffectedPanel kind="powerpanel" id={p.id} name={p.name} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.powerpanel" objectId={p.id} />

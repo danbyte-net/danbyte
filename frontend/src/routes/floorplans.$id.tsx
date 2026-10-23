@@ -302,6 +302,7 @@ const LINK_KIND_OPTIONS = [
   { value: "device", label: "Device" },
   { value: "powerpanel", label: "Power panel" },
   { value: "powerfeed", label: "Power feed" },
+  { value: "coolingsource", label: "Cooling source" },
   { value: "floorplan", label: "Floor plan (nested)" },
 ]
 
@@ -2955,6 +2956,16 @@ function LinkedObjectLink({
           Open power feed
         </OpenLink>
       )
+    case "coolingsource":
+      return (
+        <OpenLink
+          to="/cooling-sources/$id"
+          params={params}
+          className={className}
+        >
+          Open cooling source
+        </OpenLink>
+      )
     case "floorplan":
       return (
         <OpenLink to="/floorplans/$id" params={params} className={className}>
@@ -3356,6 +3367,14 @@ function LinkTargetPicker({
       >("/api/power-feeds/"),
     enabled: kind === "powerfeed",
   })
+  const sources = useQuery({
+    queryKey: ["cooling-sources-picker"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/cooling-sources/?picker=1"
+      ),
+    enabled: kind === "coolingsource",
+  })
   const plans = useQuery({
     queryKey: ["floor-plans-picker"],
     queryFn: () =>
@@ -3406,6 +3425,21 @@ function LinkTargetPicker({
         placeholder="Select a feed…"
         searchPlaceholder="Search feeds…"
         emptyText="No power feeds."
+      />
+    )
+  if (kind === "coolingsource")
+    return (
+      <FormCombobox
+        label="Cooling source"
+        value={value}
+        onChange={onPick}
+        options={(sources.data?.results ?? []).map((s) => ({
+          value: s.id,
+          label: s.name,
+        }))}
+        placeholder="Select a source…"
+        searchPlaceholder="Search sources…"
+        emptyText="No cooling sources."
       />
     )
   return (

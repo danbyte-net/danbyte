@@ -80,6 +80,16 @@ const LISTS: Record<
     to: "/cluster-types",
     api: "/api/cluster-types/",
   },
+  coolingfeed: {
+    label: "Cooling feeds",
+    to: "/cooling-feeds",
+    api: "/api/cooling-feeds/",
+  },
+  coolingsource: {
+    label: "Cooling sources",
+    to: "/cooling-sources",
+    api: "/api/cooling-sources/",
+  },
   device: { label: "Devices", to: "/devices", api: "/api/devices/" },
   devicerole: {
     label: "Device roles",
