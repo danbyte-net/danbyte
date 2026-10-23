@@ -48,6 +48,9 @@ const NO_CHOICES: DcimChoices = {
   antenna_polarizations: [],
   rf_connector_types: [],
   feed_legs: [],
+  airflow: [],
+  cooling_method: [],
+  cooling_capability: [],
   connector_fibers: {},
   common_speeds: [],
 }

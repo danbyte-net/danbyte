@@ -23,6 +23,8 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
+import { CoolingFields } from "@/components/cooling-fields"
+import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 
 const WIDTHS: { value: RackWidth; label: string }[] = [
@@ -70,6 +72,16 @@ export function RackTypeForm({
   const [maxWeightUnit, setMaxWeightUnit] = useState(
     rackType?.max_weight_unit || "kg"
   )
+  const [maxPower, setMaxPower] = useState(
+    rackType?.max_power_w != null ? String(rackType.max_power_w) : ""
+  )
+  // The cooling a rack of the model starts with, in kW here (#434).
+  const [coolingCapability, setCoolingCapability] = useState<string | null>(
+    rackType?.cooling_capability || null
+  )
+  const [coolingCapacity, setCoolingCapacity] = useState(
+    wattsToKw(rackType?.cooling_capacity_w)
+  )
   const [description, setDescription] = useState(rackType?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     rackType?.tags.map((t) => t.id) ?? []
@@ -91,6 +103,11 @@ export function RackTypeForm({
     )
     setMaxWeight(rackType.max_weight ?? "")
     setMaxWeightUnit(rackType.max_weight_unit || "kg")
+    setMaxPower(
+      rackType.max_power_w != null ? String(rackType.max_power_w) : ""
+    )
+    setCoolingCapability(rackType.cooling_capability || null)
+    setCoolingCapacity(wattsToKw(rackType.cooling_capacity_w))
     setDescription(rackType.description)
     setTagIds(rackType.tags.map((t) => t.id))
     reset()
@@ -116,6 +133,9 @@ export function RackTypeForm({
         outer_depth_mm: outerDepth.trim() === "" ? null : Number(outerDepth),
         max_weight: maxWeight.trim() === "" ? null : maxWeight.trim(),
         max_weight_unit: maxWeight.trim() === "" ? "" : maxWeightUnit,
+        max_power_w: maxPower.trim() === "" ? null : Number(maxPower),
+        cooling_capability: coolingCapability ?? "",
+        cooling_capacity_w: kwToWatts(coolingCapacity),
         description: description.trim(),
         tag_ids: tagIds,
       }
@@ -267,6 +287,29 @@ export function RackTypeForm({
                 error={fieldErrors.max_weight_unit}
               />
             </div>
+          </FormSection>
+
+          <FormSection title="Power" card>
+            <FormText
+              label="Power budget (W)"
+              hint="optional"
+              info="What a rack of this model may draw. Racks built from it start with this budget."
+              type="number"
+              min={1}
+              value={maxPower}
+              onChange={setMaxPower}
+              error={fieldErrors.max_power_w}
+            />
+          </FormSection>
+
+          <FormSection title="Cooling" card>
+            <CoolingFields
+              capability={coolingCapability}
+              onCapability={setCoolingCapability}
+              capacityKw={coolingCapacity}
+              onCapacityKw={setCoolingCapacity}
+              errors={fieldErrors}
+            />
           </FormSection>
         </FormColumn>
       </FormColumns>

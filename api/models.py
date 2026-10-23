@@ -11,12 +11,16 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from .dcim_choices import (
+    AIRFLOW_CHOICES,
     ANTENNA_BAND_CHOICES,
     ANTENNA_POLARIZATION_CHOICES,
     ANTENNA_TYPE_CHOICES,
     AUX_PORT_TYPE_CHOICES,
     CABLE_TYPE_CHOICES,
     CONSOLE_PORT_TYPE_CHOICES,
+    COOLING_CAPABILITY_CHOICES,
+    COOLING_DEFAULT,
+    COOLING_METHOD_CHOICES,
     INTERFACE_TYPE_CHOICES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
@@ -410,17 +414,6 @@ class Manufacturer(NumIdMixin, TimestampedModel, TaggableMixin):
         return self.name
 
 
-# Shared by DeviceType (hardware default) and Device (per-box override).
-AIRFLOW_CHOICES = [
-    ("front-to-rear", "Front to rear"),
-    ("rear-to-front", "Rear to front"),
-    ("left-to-right", "Left to right"),
-    ("right-to-left", "Right to left"),
-    ("passive", "Passive"),
-    ("mixed", "Mixed"),
-]
-
-
 class LifecycleMixin(models.Model):
     """Vendor lifecycle window for a catalog item (hardware type, OS
     platform). All dates are user-entered - nothing ships pre-filled - and
@@ -552,6 +545,19 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
     airflow = models.CharField(
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
         help_text="Default cooling airflow direction for this hardware.",
+    )
+    # How the hardware is cooled, and the heat it gives off where that is
+    # not its allocated draw (#434). A device without its own method takes
+    # this one; nothing set anywhere is air.
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this hardware is cooled. Blank reads as air.",
+    )
+    heat_output_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat this hardware gives off, in watts, where that is not "
+        "its allocated draw. Blank counts its draw.",
     )
     WEIGHT_UNIT_CHOICES = [
         ("kg", "kg"), ("g", "g"), ("lb", "lb"), ("oz", "oz"),
@@ -982,6 +988,13 @@ class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
         help_text="Saved faceplate layout for this module (FaceplateDoc v1); "
         "null → automatic layout. Composed into the host device's render at "
         "the bay it's installed in.",
+    )
+    # A fact about the module (#434); its host device's own method is what
+    # rack placement reads.
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this module is cooled.",
     )
 
     class Meta:
@@ -1578,11 +1591,12 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
     return {"added": {k: v for k, v in added.items() if v}, "removed": removed}
 
 
-# Dimension fields a rack inherits from its type - the ones the rack form
-# pre-fills, and therefore the ones that can drift from the model.
+# Fields a rack inherits from its type - its dimensions and budgets, the ones
+# the rack form pre-fills, and therefore the ones that can drift from the model.
 _RACK_TYPE_DIMS = (
     "width", "u_height", "starting_unit", "desc_units",
     "outer_width_mm", "outer_depth_mm", "max_weight", "max_weight_unit",
+    "max_power_w", "cooling_capability", "cooling_capacity_w",
 )
 
 
@@ -2235,12 +2249,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                   "role's, then the platform's, when unset.",
     )
     # ── Physical attributes ──────────────────────────────────────────────
-    # Kept as a class attribute for backwards references; the list itself is
-    # module-level (shared with DeviceType).
+    # Kept as a class attribute for backwards references; the list itself
+    # lives in api.dcim_choices (shared with DeviceType and the importer).
     AIRFLOW_CHOICES = AIRFLOW_CHOICES
     airflow = models.CharField(
         max_length=50, choices=AIRFLOW_CHOICES, blank=True, default="",
         help_text="Direction of cooling airflow through the chassis.",
+    )
+    # Blank inherits the type's (effective_cooling_method, #434).
+    cooling_method = models.CharField(
+        max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="How this device is cooled. Blank inherits its type's.",
     )
     # Port labels on this device's faceplate renders: inherit the deployment
     # setting, or force them shown / hidden here (a patch panel wants them,
@@ -2320,6 +2340,17 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "". Derived like ``effective_platform`` - the stored field stays
         untouched, so clearing the override falls back to the hardware's."""
         return self.airflow or (self.device_type.airflow if self.device_type else "")
+
+    @property
+    def effective_cooling_method(self) -> str:
+        """The device's own cooling method when set, else its type's, else
+        air (#434) - what rack placement checks against the rack's
+        capability. Derived like ``effective_airflow``."""
+        return (
+            self.cooling_method
+            or (self.device_type.cooling_method if self.device_type else "")
+            or COOLING_DEFAULT
+        )
 
     def __str__(self) -> str:
         return self.name
@@ -5335,6 +5366,20 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Power budget in watts. When set, demand is measured "
         "against it instead of the feeds.",
     )
+    # What the rack's cooling takes and how much heat it removes (#434): the
+    # capability decides which hardware may be placed in it (api.cooling),
+    # the capacity is what its heat load is measured against
+    # (api.capacity.rack_cooling).
+    cooling_capability = models.CharField(
+        max_length=16, choices=COOLING_CAPABILITY_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="What the rack's cooling takes. Blank: not recorded, so "
+        "nothing is checked.",
+    )
+    cooling_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat the rack's cooling removes, in watts.",
+    )
     u_height = models.PositiveSmallIntegerField(
         default=42, help_text="Height in rack units (U)."
     )
@@ -5417,6 +5462,21 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
     max_weight_unit = models.CharField(
         max_length=8, choices=DeviceType.WEIGHT_UNIT_CHOICES,
         blank=True, default="",
+    )
+    # The power budget and cooling a rack of this model starts with
+    # (Rack.max_power_w, Rack.cooling_capability, Rack.cooling_capacity_w).
+    max_power_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Power budget in watts a rack of this model starts with.",
+    )
+    cooling_capability = models.CharField(
+        max_length=16, choices=COOLING_CAPABILITY_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="What the cooling of this model takes.",
+    )
+    cooling_capacity_w = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Heat the cooling of this model removes, in watts.",
     )
     description = models.TextField(blank=True)
 

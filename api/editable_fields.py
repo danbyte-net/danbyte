@@ -60,6 +60,13 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.frontport", "type"): "front_port_types",
     ("api.rearport", "type"): "front_port_types",
     ("api.cable", "type"): "cable_types",
+    ("api.device", "airflow"): "airflow",
+    ("api.devicetype", "airflow"): "airflow",
+    ("api.device", "cooling_method"): "cooling_method",
+    ("api.devicetype", "cooling_method"): "cooling_method",
+    ("api.moduletype", "cooling_method"): "cooling_method",
+    ("api.rack", "cooling_capability"): "cooling_capability",
+    ("api.racktype", "cooling_capability"): "cooling_capability",
 }
 
 # Free-text fields with well-known values worth offering as suggestions. The

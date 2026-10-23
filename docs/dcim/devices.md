@@ -23,8 +23,8 @@ detail page.
 4. Optionally set the **site**, **location**, **role**, **platform**,
    **cluster**, **status**, **serial number**, **asset tag** and **warranty end**
    (see [Support & warranty coverage](../features/support-coverage.md)).
-5. Optionally fill the **built-in extras** - **comments**, **airflow**, and
-   **latitude / longitude**. Which optional fields appear is controlled by your
+5. Optionally fill the **built-in extras** - **comments**, **airflow**,
+   **cooling method** and **latitude / longitude**. Which optional fields appear is controlled by your
    administrator (see [Built-in fields](#built-in-fields) below), so you may not
    see all of them.
 6. Save.
@@ -34,10 +34,13 @@ detail page.
     fields - including **comments**, **location**, **cluster**, **airflow**
 (the device's own value overrides its type's default; the resolved value is
 served as `effective_airflow` and drives the 3D room's airflow cones),
-    and **latitude** / **longitude**. Comments, location, and the
+    **cooling method** (likewise an override of its type's, served as
+    `effective_cooling_method`, air when neither sets one - see
+    [Cooling](../features/cooling.md)) and **latitude** / **longitude**.
+    Comments, location, and the
     coordinates are on by default (coordinates put a device on the
-    [site map](../features/site-map.md)); cluster and airflow are opt-in
-    under **Settings → Device fields**. Anything beyond that stays a
+    [site map](../features/site-map.md)); cluster, airflow and cooling
+    method are opt-in under **Settings → Device fields**. Anything beyond that stays a
     [custom field](../features/tags-and-custom-fields.md), in line with the
     zero-pre-filled-data philosophy.
 
@@ -96,7 +99,7 @@ The default tab lays the device's facts out in four cards:
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform, description, comments          |
-| **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
+| **Hardware**   | device type, serial number, asset tag, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 
@@ -229,9 +232,9 @@ The same **image gallery** appears on **rack**, **site**, and **location**
 detail pages (on those it sits in the Overview) - one shared attachment system,
 each scoped to its object and gated by that object's change permission.
 
-The rows shown in _italics_ above - comments, airflow, location, coordinates,
-and cluster - are **built-in fields** whose visibility is admin-controlled; a
-device only shows the ones your administrator has enabled.
+The rows shown in _italics_ above - comments, airflow, cooling, location,
+coordinates, and cluster - are **built-in fields** whose visibility is
+admin-controlled; a device only shows the ones your administrator has enabled.
 
 ## Built-in fields
 
@@ -244,6 +247,7 @@ fields** rather than custom fields:
 | **Location**             | The [location](../features/regions-locations.md) within the site where the device lives.           |
 | **Cluster**              | The virtualization/compute cluster the device belongs to.                                          |
 | **Airflow**              | Cooling direction - front-to-rear, rear-to-front, left-to-right, right-to-left, passive, or mixed. |
+| **Cooling method**       | How the device is cooled - air, liquid, hybrid or immersion. Blank inherits its type's; see [Cooling](../features/cooling.md). |
 | **Latitude / Longitude** | Geographic coordinates of the device.                                                              |
 
 **Visibility is admin-controlled.** Each field can be turned on or off
@@ -257,12 +261,15 @@ administrator has enabled:
 | `location`  | Yes              |
 | `cluster`   | No               |
 | `airflow`   | No               |
+| `cooling_method` | No          |
 | `latitude`  | No               |
 | `longitude` | No               |
 
 The setting is stored on the deployment singleton and read/written via
-`GET`/`PUT /api/deployment/device-fields/` (a flat object of those six
-booleans). Hidden fields disappear from the form and detail page, but any data
+`GET`/`PUT /api/deployment/device-fields/` (a flat object of those seven
+booleans). A hidden cooling method still counts: a rack's cooling capability
+is checked against the device's effective method whether the field shows or
+not. Hidden fields disappear from the form and detail page, but any data
 already set is preserved. If the setting can't be loaded, Danbyte falls back to
 the same defaults.
 

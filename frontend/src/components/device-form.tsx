@@ -47,6 +47,7 @@ import {
   useBindingDraftsRoot,
 } from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -69,15 +70,6 @@ import { useMe } from "@/lib/use-me"
 const PORT_LABEL_OPTIONS = [
   { value: "on", label: "Shown" },
   { value: "off", label: "Hidden" },
-]
-
-const AIRFLOW_OPTIONS: { value: string; label: string }[] = [
-  { value: "front-to-rear", label: "Front to rear" },
-  { value: "rear-to-front", label: "Rear to front" },
-  { value: "left-to-right", label: "Left to right" },
-  { value: "right-to-left", label: "Right to left" },
-  { value: "passive", label: "Passive" },
-  { value: "mixed", label: "Mixed" },
 ]
 
 interface ClusterOption {
@@ -227,6 +219,8 @@ export function DeviceForm({
     seed?.cluster?.id ?? null
   )
   const [airflow, setAirflow] = useState(seed?.airflow ?? "")
+  // Blank inherits the type's method (#434).
+  const [coolingMethod, setCoolingMethod] = useState(seed?.cooling_method ?? "")
   const [portLabels, setPortLabels] = useState<DevicePortLabels>(
     seed?.port_labels ?? ""
   )
@@ -285,6 +279,7 @@ export function DeviceForm({
     setLocationId(device.location?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
+    setCoolingMethod(device.cooling_method ?? "")
     setPortLabels(device.port_labels ?? "")
     setLatitude(device.latitude ?? "")
     setLongitude(device.longitude ?? "")
@@ -394,6 +389,8 @@ export function DeviceForm({
     retry: false,
   })
   const visibility = visibilityQuery.data ?? DEFAULT_DEVICE_FIELD_VISIBILITY
+  // Airflow's options are the model's own list (/api/dcim/choices/).
+  const choices = useDcimChoices()
   // What the topology card shows while this device inherits: its role's
   // lines, else All devices. A saved view's own lines come first on its map.
   const cardConfig = useCardLineConfig()
@@ -571,6 +568,7 @@ export function DeviceForm({
             : null,
         comments: comments.trim(),
         airflow,
+        cooling_method: coolingMethod,
         port_labels: portLabels,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
@@ -820,15 +818,31 @@ export function DeviceForm({
                 error={fieldErrors.warranty_end}
               />
             </div>
-            {visibility.airflow && (
-              <FormSelect
-                label="Airflow"
-                value={airflow === "" ? null : airflow}
-                onChange={(v) => setAirflow(v ?? "")}
-                noneLabel="-"
-                options={AIRFLOW_OPTIONS}
-                error={fieldErrors.airflow}
-              />
+            {(visibility.airflow || visibility.cooling_method) && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                {visibility.airflow && (
+                  <FormSelect
+                    label="Airflow"
+                    value={airflow === "" ? null : airflow}
+                    onChange={(v) => setAirflow(v ?? "")}
+                    noneLabel="-"
+                    options={choices.airflow}
+                    error={fieldErrors.airflow}
+                  />
+                )}
+                {visibility.cooling_method && (
+                  <FormSelect
+                    label="Cooling"
+                    info="Blank takes the device type's; nothing set anywhere reads as air."
+                    value={coolingMethod === "" ? null : coolingMethod}
+                    onChange={(v) => setCoolingMethod(v ?? "")}
+                    noneLabel="Inherit"
+                    placeholder="Inherit"
+                    options={choices.cooling_method}
+                    error={fieldErrors.cooling_method}
+                  />
+                )}
+              </div>
             )}
             <FormSelect
               label="Port labels"

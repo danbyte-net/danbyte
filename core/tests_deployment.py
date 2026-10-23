@@ -211,6 +211,7 @@ class DeviceFieldVisibilityApiTests(APITestCase):
         "location": True,
         "cluster": False,
         "airflow": False,
+        "cooling_method": False,
         "latitude": True,
         "longitude": True,
     }

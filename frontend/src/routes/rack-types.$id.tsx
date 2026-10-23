@@ -47,6 +47,9 @@ import { QueryError } from "@/components/query-error"
 import { RackTypeDeleteDialog } from "@/routes/rack-types.index"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { formatWatts } from "@/lib/rack-capacity"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
+import { Loading } from "@/components/loading"
 import { useSaveObject } from "@/lib/save-object"
 
 export const Route = createFileRoute("/rack-types/$id")({
@@ -68,8 +71,7 @@ function RackTypeDetail() {
     queryKey: ["rack-type", id],
     queryFn: () => api<RackType>(`/api/rack-types/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -122,6 +124,33 @@ function Body({ rackType: rt }: { rackType: RackType }) {
     {
       label: "Weight budget",
       value: rt.max_weight ? `${rt.max_weight} ${rt.max_weight_unit}` : dash,
+    },
+    {
+      label: "Power budget",
+      value:
+        rt.max_power_w != null ? (
+          <span className="num">{formatWatts(rt.max_power_w)}</span>
+        ) : (
+          dash
+        ),
+    },
+    {
+      label: "Cooling capability",
+      value: (
+        <CoolingMethodText
+          value={rt.cooling_capability}
+          list="cooling_capability"
+        />
+      ),
+    },
+    {
+      label: "Cooling capacity",
+      value:
+        rt.cooling_capacity_w != null ? (
+          <span className="num">{formatWatts(rt.cooling_capacity_w)}</span>
+        ) : (
+          dash
+        ),
     },
   ]
 
@@ -527,7 +556,7 @@ function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
       {q.isError ? (
         <QueryError error={q.error} />
       ) : q.isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No racks use this type yet - add one here, or pick the type on any

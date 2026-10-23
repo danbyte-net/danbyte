@@ -495,6 +495,9 @@ DEVICE_FIELD_VISIBILITY_DEFAULTS = {
     "location": True,
     "cluster": False,
     "airflow": False,
+    # A device's own cooling method (#434). Off by default like airflow: the
+    # type's method is what most estates set, and racks check it either way.
+    "cooling_method": False,
     # The site map is a first-class surface - coordinates default to visible
     # so a device can be placed without a settings hunt. (Deployments that
     # stored an explicit False keep their choice; stored values win.)
@@ -528,6 +531,7 @@ FLOORPLAN_POPOVER_FIELDS = [
     # ── live state (already polled; no fetch) ──
     "utilization",
     "power",
+    "cooling",
     "weight",
     "device_count",
     "rail_count",
@@ -605,10 +609,11 @@ TOPOLOGY_CARD_MAX_SCOPES = 500
 
 
 class DeviceFieldVisibilitySerializer(serializers.Serializer):
-    """Exposes the 6 optional device-field visibility booleans.
+    """Exposes the optional device-field visibility booleans
+    (``DEVICE_FIELD_VISIBILITY_DEFAULTS``).
 
     On read, stored values are merged over the documented defaults. On write,
-    only the 6 known keys are persisted back to ``device_field_visibility``;
+    only the known keys are persisted back to ``device_field_visibility``;
     unknown keys are ignored.
     """
 
@@ -616,6 +621,7 @@ class DeviceFieldVisibilitySerializer(serializers.Serializer):
     location = serializers.BooleanField(required=False)
     cluster = serializers.BooleanField(required=False)
     airflow = serializers.BooleanField(required=False)
+    cooling_method = serializers.BooleanField(required=False)
     latitude = serializers.BooleanField(required=False)
     longitude = serializers.BooleanField(required=False)
 

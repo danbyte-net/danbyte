@@ -64,20 +64,25 @@ the site has racks and you may view racks; it sits after **Cabinets**.
   [floor plan](../features/floor-plans.md) - and location, a thumbnail of its
   rack tiles (only those, each marked on its front edge), and its racks added
   up: **Racks**, **Devices**, **Space** (units used, with the share),
-  **Power** (demand over supply, as the rack page reads it) and **Ports** /
-  **Panel ports** (in use over counted). A plan with no racks says so.
-- **Space · Power · Ports · Panel ports** above the cards picks what the
-  thumbnails are coloured by, on the racks' one scale: green up to the
-  tenant's warning level, amber above it, red above its critical level (80 %
-  and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where there
-  is nothing to measure (no supply, no ports). The choice stays in the URL (`?measure=power`).
+  **Power** (demand over supply, as the rack page reads it), **Cooling**
+  (heat over cooling capacity - see [Cooling](../features/cooling.md)) and
+  **Ports** / **Panel ports** (in use over counted). A plan with no racks
+  says so.
+- **Space · Power · Cooling · Ports · Panel ports** above the cards picks
+  what the thumbnails are coloured by, on the racks' one scale: green up to
+  the tenant's warning level, amber above it, red above its critical level
+  (80 % and 95 % unless changed, see [Racks](../dcim/racks.md)), grey where
+  there is nothing to measure (no supply, no cooling capacity, no ports). The
+  choice stays in the URL (`?measure=power`).
 - **Not on a floor plan**: the site's racks that no floor plan places, by
   name, with the same figures.
 - The ports open **DCIM → Connections → Port utilization** filtered to the
   site (`/port-utilization?site=<id>`), for the per-device breakdown.
 - Under **Power**, *PDU rating* and *No supply* count the racks whose supply
   is only their PDUs' inlet rating, or that have no supply figure at all -
-  their demand still adds to the total.
+  their demand still adds to the total. Under **Cooling**, *No capacity*
+  counts the racks without a cooling capacity - their heat still adds up -
+  and *Mismatched* the devices their racks' cooling does not take.
 
 A rack on a floor plan you cannot view is on no card - not on *Not on a
 floor plan* either, as it does stand on one.
@@ -97,11 +102,15 @@ plan, for the site page's Capacity tab. The site's `rack_count` (on its own
 
 A rack carries its `role`, `status`, `u_height`, `u_used` and `u_pct` (units
 in use, as a percentage), `power` (with `supply`: `feed`, `pdu_rating` or
-null), `ports`, `panel_ports` and `device_count` - the figures its own
+null), `cooling` (its heat against its cooling capacity), `ports`,
+`panel_ports` and `device_count` - the figures its own
 [rack page](../dcim/racks.md#api-a-floor-plans-racks-and-their-ports) gives
 it. `totals` add these up, with the number of `racks` and `devices`; under
 `power`, `pdu_rating` and `no_supply` count the racks whose supply is only
-their PDUs' rating, or that have no supply figure at all.
+their PDUs' rating, or that have no supply figure at all; under `cooling`,
+`budget` and `no_supply` count the racks with a cooling capacity and without
+one, and `mismatched` the devices their racks' cooling does not take (see
+[Cooling](../features/cooling.md)).
 
 It needs **view** on sites (another tenant's site, or one outside the sites
 you are limited to, is a 404), and lists only the floor plans and racks you

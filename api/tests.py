@@ -591,6 +591,20 @@ class DcimChoicesEndpointTests(APITestCase):
             cable,
         )
 
+    def test_airflow_is_the_model_choice_list(self):
+        # The forms read airflow from here, so it is the field's own list.
+        from api.models import DeviceType
+
+        body = self.client.get("/api/dcim/choices/").json()
+        self.assertEqual(
+            [(r["value"], r["label"]) for r in body["airflow"]],
+            list(Device._meta.get_field("airflow").choices),
+        )
+        self.assertEqual(
+            Device._meta.get_field("airflow").choices,
+            DeviceType._meta.get_field("airflow").choices,
+        )
+
 
 class RackPlacementTests(APITestCase):
     """Rack position collision rules, incl. half-width (rack_width) devices

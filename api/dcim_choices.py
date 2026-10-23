@@ -578,6 +578,53 @@ CONNECTOR_FIBERS: dict[str, int] = {
 }
 
 
+# ─── Airflow ────────────────────────────────────────────────────────────────
+# Which way air moves through a chassis: a device type's default and a
+# device's own override (``DeviceType.airflow``, ``Device.airflow``), and what
+# the device-type import accepts. NetBox's airflow slugs, so library files
+# carry over.
+AIRFLOW_CHOICES: Choices = [
+    ("front-to-rear", "Front to rear"),
+    ("rear-to-front", "Rear to front"),
+    ("left-to-right", "Left to right"),
+    ("right-to-left", "Right to left"),
+    ("passive", "Passive"),
+    ("mixed", "Mixed"),
+]
+
+
+# ─── Cooling (#434) ─────────────────────────────────────────────────────────
+# How hardware is cooled - a device type's, a module type's, and a device's
+# own override - and what a rack's cooling takes. Blank on a device inherits
+# its type's; nothing set anywhere is air. Blank on a rack is not recorded,
+# so nothing is checked against it.
+COOLING_METHOD_CHOICES: Choices = [
+    ("air", "Air"),
+    ("liquid", "Liquid"),
+    ("hybrid", "Hybrid"),
+    ("immersion", "Immersion"),
+]
+COOLING_DEFAULT = "air"
+
+COOLING_CAPABILITY_CHOICES: Choices = [
+    ("air", "Air"),
+    ("hybrid", "Hybrid"),
+    ("liquid", "Liquid"),
+    ("immersion", "Immersion"),
+]
+
+#: The liquid, hybrid and immersion hardware a rack of each capability takes
+#: (``api.cooling``): a hybrid rack has air and a liquid loop, a liquid rack
+#: the loop, an immersion rack is a tank. Air-cooled hardware - a method of
+#: air, or none - goes in any rack.
+COOLING_ADMITS: dict[str, frozenset[str]] = {
+    "air": frozenset(),
+    "hybrid": frozenset({"liquid", "hybrid"}),
+    "liquid": frozenset({"liquid", "hybrid"}),
+    "immersion": frozenset({"immersion"}),
+}
+
+
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
     return [(value, label) for _, options in groups for value, label in options]
@@ -614,8 +661,9 @@ from rest_framework.response import Response
         description=(
             "Single source of truth for the DCIM dropdowns: grouped interface, "
             "cable, console/power/aux/front-port type choices (each row carries "
-            "value/label/group), duplex/mode/PoE options, connector fibre counts, "
-            "and common speed suggestions."
+            "value/label/group), duplex/mode/PoE options, airflow directions, "
+            "cooling methods and rack cooling capabilities, connector fibre "
+            "counts, and common speed suggestions."
         ),
     ),
 )
@@ -684,5 +732,8 @@ def dcim_choices_view(request):
         "antenna_bands": flat(ANTENNA_BAND_CHOICES),
         "antenna_polarizations": flat(ANTENNA_POLARIZATION_CHOICES),
         "rf_connector_types": flat(RF_CONNECTOR_CHOICES),
+        "airflow": flat(AIRFLOW_CHOICES),
+        "cooling_method": flat(COOLING_METHOD_CHOICES),
+        "cooling_capability": flat(COOLING_CAPABILITY_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })

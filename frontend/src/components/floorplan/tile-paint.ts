@@ -15,6 +15,7 @@ import type {
   FloorTileRackState,
   PortCountRow,
   Rack,
+  RackCooling,
   RackPower,
   StatusMini,
 } from "@/lib/api"
@@ -23,6 +24,7 @@ import {
   CAPACITY_NONE_HEX,
   capacityColor,
   capacityRatio,
+  rackCoolingRatio,
   rackPowerRatio,
 } from "@/lib/rack-capacity"
 
@@ -32,6 +34,7 @@ export const COLOR_BY = [
   "type",
   "space",
   "power",
+  "cooling",
   "ports",
   "panel_ports",
   "role",
@@ -44,6 +47,7 @@ export const COLOR_BY_LABEL: Record<ColorBy, string> = {
   type: "Type",
   space: "Space",
   power: "Power",
+  cooling: "Cooling",
   ports: "Ports",
   panel_ports: "Panel ports",
   role: "Rack role",
@@ -51,10 +55,19 @@ export const COLOR_BY_LABEL: Record<ColorBy, string> = {
 }
 
 /** The choices that read how full a rack is, on the tenant's capacity levels. */
-export type CapacityMetric = "space" | "power" | "ports" | "panel_ports"
+export type CapacityMetric =
+  "space" | "power" | "cooling" | "ports" | "panel_ports"
+
+const CAPACITY_METRICS: readonly ColorBy[] = [
+  "space",
+  "power",
+  "cooling",
+  "ports",
+  "panel_ports",
+]
 
 export function isCapacityMetric(c: ColorBy): c is CapacityMetric {
-  return c === "space" || c === "power" || c === "ports" || c === "panel_ports"
+  return CAPACITY_METRICS.includes(c)
 }
 
 /** The stored choice (`plan.state.color_by`), anything unknown read as
@@ -77,22 +90,25 @@ export const CHECK_COLOR: Record<string, string> = {
   degraded: "#f59e0b",
 }
 
-/** What a rack tile's colouring reads: its units and power - the live
- * poll's where the poll has them - and, from the plan's racks, its port
+/** What a rack tile's colouring reads: its units, power and cooling - the
+ * live poll's where the poll has them - and, from the plan's racks, its port
  * figures, role and status. A field the plan has not loaded is undefined. */
 export interface RackFigures {
   used_units: number
   u_height: number
   power: RackPower
+  /** Heat against cooling capacity (#434). */
+  cooling?: RackCooling | null
   ports?: PortCountRow | null
   panel_ports?: PortCountRow | null
   role?: { name: string; color: string } | null
   status?: StatusMini | null
 }
 
-/** A rack's figures: the plan's rack row, its units and power refreshed by
- * the tile's live state (polled every 30 s). Either may be missing - a rack
- * you cannot view has live figures only. Null when there is neither. */
+/** A rack's figures: the plan's rack row, its units, power and cooling
+ * refreshed by the tile's live state (polled every 30 s). Either may be
+ * missing - a rack you cannot view has live figures only. Null when there
+ * is neither. */
 export function rackFigures(
   rack: Rack | null | undefined,
   live: FloorTileRackState | null | undefined
@@ -103,6 +119,7 @@ export function rackFigures(
     u_height: live?.u_height ?? rack?.u_height ?? 0,
     power: live?.power ??
       rack?.power ?? { available_w: 0, allocated_w: 0, maximum_w: 0 },
+    cooling: live?.cooling ?? rack?.cooling,
     ports: rack?.ports,
     panel_ports: rack?.panel_ports,
     role: rack?.role,
@@ -111,7 +128,7 @@ export function rackFigures(
 }
 
 /** How full a rack is on one measure, 0-1 (above 1 when over); null when
- * there is nothing to measure against - no feed, no ports. */
+ * there is nothing to measure against - no feed, no capacity, no ports. */
 export function metricRatio(
   fig: RackFigures,
   metric: CapacityMetric
@@ -121,6 +138,8 @@ export function metricRatio(
       return capacityRatio(fig.used_units, fig.u_height)
     case "power":
       return rackPowerRatio(fig.power)
+    case "cooling":
+      return fig.cooling ? rackCoolingRatio(fig.cooling) : null
     case "ports":
       return portsRatio(fig.ports)
     case "panel_ports":
@@ -196,8 +215,9 @@ export const STATE_FILL_OPACITY = 0.35
  * - **Type** (the default) is the plan as it always looked: the tile's own
  *   colour, heavier when it links an object, a rack's space bar along its
  *   foot.
- * - **Space, Power, Ports, Panel ports** fill a rack's tile with its level
- *   on the tenant's capacity levels, grey for no data, and write the figure on it.
+ * - **Space, Power, Cooling, Ports, Panel ports** fill a rack's tile with its
+ *   level on the tenant's capacity levels, grey for no data, and write the
+ *   figure on it.
  * - **Rack role, Status** fill it with the role's or the status's own
  *   colour, grey for none, and keep the space bar.
  *

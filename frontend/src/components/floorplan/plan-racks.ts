@@ -33,8 +33,8 @@ export function usePlanRacks(planId: string, enabled: boolean) {
 }
 
 /** A rack on the plan, as its table lists it: the plan's rack row with its
- * units, power and devices as the live poll last read them, and the tiles
- * that stand for it (one, as a rule). */
+ * units, power, cooling and devices as the live poll last read them, and
+ * the tiles that stand for it (one, as a rule). */
 export interface PlanRack extends Rack {
   tileIds: string[]
 }
@@ -76,6 +76,7 @@ export function planRackRows(
             used_units: fresh.used_units,
             u_height: fresh.u_height,
             power: fresh.power,
+            cooling: fresh.cooling ?? rack.cooling,
             device_count: fresh.device_count,
             total_weight_kg: fresh.total_weight_kg,
           }

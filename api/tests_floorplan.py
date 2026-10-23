@@ -394,6 +394,11 @@ class BulkTileTests(_Base):
         self.assertEqual(rack_state["used_units"], 1)
         self.assertEqual(rack_state["u_height"], self.rack.u_height)
         self.assertIn("power", rack_state)
+        # Heat against cooling capacity (#434), the rack page's own figure.
+        self.assertEqual(
+            rack_state["cooling"],
+            self.client.get(f"/api/racks/{self.rack.id}/").json()["cooling"],
+        )
         self.assertEqual(rack_state["device_count"], 1)
         self.assertEqual(rack_state["check"], "down")
 

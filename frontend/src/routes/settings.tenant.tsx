@@ -16,6 +16,7 @@ import {
   SettingsHeader,
 } from "@/components/settings/settings-card"
 import { QueryError } from "@/components/query-error"
+import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
 
@@ -49,6 +50,11 @@ const DEVICE_FIELDS: { key: string; label: string; hint: string }[] = [
     hint: "Link a device to its virtualization cluster",
   },
   { key: "airflow", label: "Airflow", hint: "Chassis airflow direction" },
+  {
+    key: "cooling_method",
+    label: "Cooling method",
+    hint: "A device's own cooling, over its type's",
+  },
   { key: "latitude", label: "Latitude", hint: "GPS coordinates (for maps)" },
   { key: "longitude", label: "Longitude", hint: "GPS coordinates (for maps)" },
 ]
@@ -85,14 +91,13 @@ function TenantGeneralPage() {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (isLoading)
-    return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (isLoading) return <Loading />
   if (!canManage)
     return (
       <p className="text-sm text-muted-foreground">Tenant admin required.</p>
     )
   if (q.isError) return <QueryError error={q.error} />
-  if (!form) return <p className="text-sm text-muted-foreground">Loading…</p>
+  if (!form) return <Loading />
 
   const dep = form.deployment_defaults
   const set = <K extends keyof TenantSettings>(

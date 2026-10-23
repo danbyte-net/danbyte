@@ -31,6 +31,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { CoolingFields } from "@/components/cooling-fields"
+import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateSiteViews } from "@/lib/site-cache"
 
@@ -104,6 +106,14 @@ export function RackForm({
   const [maxPower, setMaxPower] = useState(
     rack?.max_power_w != null ? String(rack.max_power_w) : ""
   )
+  // What the rack's cooling takes, and the heat it removes - entered in kW,
+  // stored in watts (#434).
+  const [coolingCapability, setCoolingCapability] = useState<string | null>(
+    rack?.cooling_capability || null
+  )
+  const [coolingCapacity, setCoolingCapacity] = useState(
+    wattsToKw(rack?.cooling_capacity_w)
+  )
   const [maxWeightUnit, setMaxWeightUnit] = useState(
     rack?.max_weight_unit || "kg"
   )
@@ -137,6 +147,8 @@ export function RackForm({
     setMaxWeight(rack.max_weight ?? "")
     setMaxWeightUnit(rack.max_weight_unit || "kg")
     setMaxPower(rack.max_power_w != null ? String(rack.max_power_w) : "")
+    setCoolingCapability(rack.cooling_capability || null)
+    setCoolingCapacity(wattsToKw(rack.cooling_capacity_w))
     setDescription(rack.description)
     setTagIds(rack.tags.map((t) => t.id))
     setCustomFields(rack.custom_fields ?? {})
@@ -181,6 +193,9 @@ export function RackForm({
     setOuterDepth(t.outer_depth_mm != null ? String(t.outer_depth_mm) : "")
     setMaxWeight(t.max_weight ?? "")
     setMaxWeightUnit(t.max_weight_unit || "kg")
+    setMaxPower(t.max_power_w != null ? String(t.max_power_w) : "")
+    setCoolingCapability(t.cooling_capability || null)
+    setCoolingCapacity(wattsToKw(t.cooling_capacity_w))
   }
   // Arriving from a rack type ("Add rack" on its page) pre-picks the model
   // before its dims have loaded - apply the profile once they land, and only
@@ -231,6 +246,8 @@ export function RackForm({
         max_weight: maxWeight.trim() === "" ? null : maxWeight.trim(),
         max_weight_unit: maxWeight.trim() === "" ? "" : maxWeightUnit,
         max_power_w: maxPower.trim() === "" ? null : Number(maxPower),
+        cooling_capability: coolingCapability ?? "",
+        cooling_capacity_w: kwToWatts(coolingCapacity),
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -523,6 +540,16 @@ export function RackForm({
               value={maxPower}
               onChange={setMaxPower}
               error={fieldErrors.max_power_w}
+            />
+          </FormSection>
+
+          <FormSection title="Cooling" card>
+            <CoolingFields
+              capability={coolingCapability}
+              onCapability={setCoolingCapability}
+              capacityKw={coolingCapacity}
+              onCapacityKw={setCoolingCapacity}
+              errors={fieldErrors}
             />
           </FormSection>
         </FormColumn>

@@ -30,7 +30,9 @@ import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { PowerFigure } from "@/components/cells/power-figure"
+import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
+import { CoolingMethodText } from "@/components/cells/cooling-cell"
+import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -145,7 +147,10 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
           <RackElevation rack={r} scale={0.6} draggable />
           <div className="min-w-0 flex-1">
-            <RackDevicesPane rackId={r.id} />
+            <RackDevicesPane
+              rackId={r.id}
+              mismatched={r.cooling?.mismatched ?? 0}
+            />
           </div>
         </div>
       </DetailTab>
@@ -176,17 +181,40 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
   )
 }
 
-function RackDevicesPane({ rackId }: { rackId: string }) {
+const COOLING_FILTERS = ["all", "mismatched"] as const
+type CoolingFilter = (typeof COOLING_FILTERS)[number]
+
+function RackDevicesPane({
+  rackId,
+  mismatched,
+}: {
+  rackId: string
+  /** Devices whose cooling the rack does not take (#434). */
+  mismatched: number
+}) {
+  // The devices the rack's cooling capability does not take, offered while
+  // there are any - or while a link asked for them (`?cooling=mismatched`).
+  const [cooling, setCooling] = useUrlTab<CoolingFilter>(
+    "all",
+    "cooling",
+    COOLING_FILTERS
+  )
+  const onlyMismatched = cooling === "mismatched"
   const q = useQuery({
-    queryKey: ["rack-devices", rackId],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
+    queryKey: onlyMismatched
+      ? ["rack-devices", rackId, "cooling-mismatch"]
+      : ["rack-devices", rackId],
+    queryFn: () =>
+      api<Paginated<Device>>(
+        `/api/devices/?rack=${rackId}${onlyMismatched ? "&cooling_mismatch=1" : ""}`
+      ),
   })
   const rows = q.data?.results ?? []
   const columns = useMemo<ColumnDef<Device>[]>(() => {
     // Shared name + status from the device factory; the rack placement columns
     // (position, face, height) are this pane's own and sit between them.
-    const [name, status] = buildDeviceColumns({
-      include: ["name", "status"],
+    const [name, status, coolingColumn] = buildDeviceColumns({
+      include: ["name", "status", "cooling"],
     })
     return [
       name,
@@ -229,23 +257,59 @@ function RackDevicesPane({ rackId }: { rackId: string }) {
         ),
       },
       status,
+      // What each device is cooled by - shown while the list is the ones
+      // that do not fit.
+      ...(onlyMismatched
+        ? [
+            {
+              ...coolingColumn,
+              meta: { ...coolingColumn.meta, defaultHidden: false },
+            },
+          ]
+        : []),
     ]
-  }, [])
-  if (q.isLoading) return <Loading />
-  if (q.isError) return <QueryError error={q.error} />
-  if (rows.length === 0)
-    return (
-      <p className="text-sm text-muted-foreground">No devices in this rack.</p>
-    )
-  return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="name"
-      embedded
-      searchable
-      searchPlaceholder="Search devices…"
+  }, [onlyMismatched])
+  const filter = (mismatched > 0 || onlyMismatched) && (
+    <SegmentedTabs<CoolingFilter>
+      value={cooling}
+      onValueChange={setCooling}
+      items={[
+        { value: "all", label: "All devices" },
+        { value: "mismatched", label: "Mismatched cooling" },
+      ]}
     />
+  )
+  let body: React.ReactNode
+  if (q.isLoading) body = <Loading />
+  else if (q.isError) body = <QueryError error={q.error} />
+  else if (rows.length === 0)
+    body = (
+      <p className="text-sm text-muted-foreground">
+        {onlyMismatched
+          ? "Every device in this rack fits its cooling."
+          : "No devices in this rack."}
+      </p>
+    )
+  else
+    body = (
+      <DataTable
+        // A column set of its own per filter, so each keeps its layout.
+        key={cooling}
+        data={rows}
+        columns={columns}
+        flexColumn="name"
+        embedded
+        searchable
+        searchPlaceholder="Search devices…"
+      />
+    )
+  return filter ? (
+    <div className="grid gap-3">
+      {filter}
+      {body}
+    </div>
+  ) : (
+    body
   )
 }
 
@@ -284,6 +348,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
       <span className="text-muted-foreground">…</span>
     )
   const util = r.u_height ? Math.round((r.used_units / r.u_height) * 100) : 0
+  const mismatched = r.cooling?.mismatched ?? 0
   const overWeight =
     r.max_weight_kg != null && r.total_weight_kg > r.max_weight_kg
   const rackRows: KvRow[] = [
@@ -371,6 +436,32 @@ function RackOverview({ rack: r }: { rack: Rack }) {
     {
       label: "Power",
       value: <PowerFigure power={r.power} />,
+    },
+    {
+      // Heat load over cooling capacity (#434), read like power.
+      label: "Cooling",
+      value: <CoolingFigure cooling={r.cooling} />,
+    },
+    {
+      label: "Cooling capability",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <CoolingMethodText
+            value={r.cooling_capability}
+            list="cooling_capability"
+          />
+          {/* Devices placed before the capability was made stricter. */}
+          {mismatched > 0 && (
+            <Link
+              to="/racks/$id"
+              params={{ id: r.id }}
+              search={{ tab: "devices", cooling: "mismatched" }}
+            >
+              <Badge variant="warning">{mismatched} mismatched</Badge>
+            </Link>
+          )}
+        </span>
+      ),
     },
     {
       label: "Weight",
