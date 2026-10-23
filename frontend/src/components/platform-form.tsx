@@ -64,6 +64,9 @@ export function PlatformForm({
   const [configTemplateId, setConfigTemplateId] = useState<string | null>(
     platform?.config_template?.id ?? null
   )
+  const [targetVersion, setTargetVersion] = useState(
+    platform?.target_version ?? ""
+  )
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
   const [tagIds, setTagIds] = useState<number[]>(
@@ -78,6 +81,7 @@ export function PlatformForm({
     setGroupId(platform.group?.id ?? null)
     setManufacturerId(platform.manufacturer?.id ?? null)
     setConfigTemplateId(platform.config_template?.id ?? null)
+    setTargetVersion(platform.target_version ?? "")
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
     setTagIds(platform.tags?.map((t) => t.id) ?? [])
@@ -118,6 +122,7 @@ export function PlatformForm({
         group_id: groupId,
         manufacturer_id: manufacturerId,
         config_template_id: configTemplateId,
+        target_version: targetVersion.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
@@ -243,6 +248,14 @@ export function PlatformForm({
           searchPlaceholder="Search templates…"
           emptyText="No device export templates."
           error={fieldErrors.config_template_id}
+        />
+        <FormText
+          label="Target version"
+          value={targetVersion}
+          onChange={setTargetVersion}
+          mono
+          placeholder="17.9.5"
+          error={fieldErrors.target_version}
         />
         <FormTextarea
           label="Description"

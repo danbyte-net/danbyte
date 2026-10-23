@@ -18,8 +18,14 @@ from api.viewsets import TenantScopedViewSet
 from api.views import _get_active_tenant
 from auth_api import rbac
 
-from .engine import evaluate, evaluate_for_object
-from .models import COVERAGE_OBJECT_TYPES, EOL_OBJECT_TYPES, OBJECT_TYPES, ComplianceRule
+from .engine import detail_for, evaluate, evaluate_for_object
+from .models import (
+    COVERAGE_OBJECT_TYPES,
+    EOL_OBJECT_TYPES,
+    OBJECT_TYPES,
+    SOFTWARE_TARGET_OBJECT_TYPES,
+    ComplianceRule,
+)
 
 
 def _type_registry():
@@ -95,7 +101,8 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             "id", "name", "description", "remediation", "enabled", "severity",
             "object_type", "object_type_label", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
-            "eol_fail_on", "coverage_fail_on", "created_at", "updated_at",
+            "eol_fail_on", "coverage_fail_on", "fail_on_unknown",
+            "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
 
@@ -156,6 +163,13 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"coverage_fail_on": "Pick what the check fails on."}
                 )
+        if ct == "software_target":
+            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
+            if ot not in SOFTWARE_TARGET_OBJECT_TYPES:
+                raise serializers.ValidationError({
+                    "object_type": "A software target check applies to devices or "
+                                   "virtual machines."
+                })
         return attrs
 
 
@@ -354,6 +368,7 @@ def compliance_device_status(request, device_id):
             "tag": rule.tag,
             "cf_key": rule.cf_key,
             "eol_fail_on": rule.eol_fail_on,
+            "detail": detail_for(rule, device),
         }
         for rule in failed
     ]

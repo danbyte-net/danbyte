@@ -78,6 +78,29 @@ def _coverage_violates(rule: ComplianceRule, obj, tag_slugs, warning_days) -> bo
     return False
 
 
+def _software_target_violates(rule: ComplianceRule, obj) -> bool:
+    """A ``software_target`` rule (#395): the object's software version
+    against its platform's target. No target is nothing to judge; a blank
+    version fails only with ``fail_on_unknown``."""
+    from api.software_target import target_of
+
+    if not target_of(obj):
+        return False
+    version = getattr(obj, "software_version", "") or ""
+    if not version:
+        return rule.fail_on_unknown
+    return version != target_of(obj)
+
+
+def detail_for(rule: ComplianceRule, obj) -> str:
+    """A one-line reason for a violation, where the check has one."""
+    if rule.check_type == "software_target":
+        from api.software_target import describe
+
+        return describe(obj)
+    return ""
+
+
 def _needs_tags(rule: ComplianceRule) -> bool:
     return rule.check_type == "required_tag" or (
         rule.check_type == "coverage" and bool(rule.tag)
@@ -93,6 +116,8 @@ def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None,
         if coverage_days is None:
             return False
         return _coverage_violates(rule, obj, tag_slugs, coverage_days)
+    if ct == "software_target":
+        return _software_target_violates(rule, obj)
     if ct == "required_tag":
         return rule.tag not in tag_slugs
     if ct == "required_cf":
@@ -195,6 +220,12 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
             eol_cfg = load_config()
             # The platform's mapping rides the row: no query per object.
             qs = qs.select_related("platform__eol_mapping")
+        if any(r.check_type == "software_target" for r in type_rules):
+            # The target rides the row: the platform, and a device's type's.
+            qs = qs.select_related(
+                "platform",
+                *(("device_type__platform",) if object_type == "device" else ()),
+            )
         for obj in qs[:cap]:
             tag_slugs = (
                 {t.slug for t in tags_of(obj)} if needs_tags else set()
@@ -221,6 +252,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
                             "object_route": _ROUTES.get(rule.object_type),
                             "object_id": str(obj.pk),
                             "object_repr": str(obj)[:120],
+                            "detail": detail_for(rule, obj),
                         }
                     )
     for rule in rules:

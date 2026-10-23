@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import { LifecycleBar, hasLifetime } from "@/components/cells/lifecycle-cell"
+import { SoftwareVersionText } from "@/components/cells/software-version-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -314,7 +315,18 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         />
       ),
     },
-    { label: "Platform", value: <PlatformCell platform={vm.platform} /> },
+    {
+      label: "Platform",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          <PlatformCell platform={vm.platform} />
+          <SoftwareVersionText
+            version={vm.software_version}
+            target={vm.platform?.target_version}
+          />
+        </span>
+      ),
+    },
     // The platform's effective dates: entered, else its end-of-life mapping.
     ...(hasLifetime(vm.platform)
       ? [

@@ -24,6 +24,7 @@ class CheckType(models.TextChoices):
     REQUIRED_CF = "required_cf", "Custom field must be set"
     EOL_STATUS = "eol_status", "End-of-life status"
     COVERAGE = "coverage", "Support coverage"
+    SOFTWARE_TARGET = "software_target", "Software target"
 
 
 class EolFailOn(models.TextChoices):
@@ -65,6 +66,10 @@ EOL_OBJECT_TYPES = ("device", "virtualmachine")
 # Object types a ``coverage`` rule can target: devices carry support coverage
 # (#421).
 COVERAGE_OBJECT_TYPES = ("device",)
+
+# Object types a ``software_target`` rule can target: the ones that carry a
+# software version and a platform (#395).
+SOFTWARE_TARGET_OBJECT_TYPES = ("device", "virtualmachine")
 
 
 class ComplianceRule(TimestampedModel):
@@ -110,6 +115,9 @@ class ComplianceRule(TimestampedModel):
         max_length=8, choices=CoverageFailOn.choices, blank=True, default="",
         db_default="",
     )
+    #   software_target               → {"fail_on_unknown": false} - a blank
+    #                                    software version fails too (#395)
+    fail_on_unknown = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["object_type", "name"]

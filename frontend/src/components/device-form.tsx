@@ -149,6 +149,9 @@ export function DeviceForm({
   )
   const [serial, setSerial] = useState(device?.serial_number ?? "")
   const [assetTag, setAssetTag] = useState(device?.asset_tag ?? "")
+  const [softwareVersion, setSoftwareVersion] = useState(
+    device?.software_version ?? ""
+  )
   const [warrantyEnd, setWarrantyEnd] = useState(device?.warranty_end ?? "")
   const [description, setDescription] = useState(seed?.description ?? "")
   const [rackId, setRackId] = useState<string | null>(
@@ -256,6 +259,7 @@ export function DeviceForm({
     setStatusId(device.status?.id ?? null)
     setSerial(device.serial_number)
     setAssetTag(device.asset_tag)
+    setSoftwareVersion(device.software_version ?? "")
     setWarrantyEnd(device.warranty_end ?? "")
     setDescription(device.description)
     setRackId(device.rack?.id ?? null)
@@ -542,6 +546,7 @@ export function DeviceForm({
         status_id: statusId,
         serial_number: serial.trim(),
         asset_tag: assetTag.trim(),
+        software_version: softwareVersion.trim(),
         warranty_end: warrantyEnd || null,
         description: description.trim(),
         tag_ids: tagIds,
@@ -731,6 +736,14 @@ export function DeviceForm({
                 }
               />
             </div>
+            <FormText
+              label="Software version"
+              value={softwareVersion}
+              onChange={setSoftwareVersion}
+              mono
+              placeholder="17.9.4a"
+              error={fieldErrors.software_version}
+            />
             <FormCombobox
               label="Config template"
               hint="overrides role/platform"

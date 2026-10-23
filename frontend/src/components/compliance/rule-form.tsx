@@ -39,6 +39,7 @@ const CHECKS: { value: ComplianceCheck; label: string }[] = [
   { value: "required_cf", label: "Custom field must be set" },
   { value: "eol_status", label: "End-of-life status" },
   { value: "coverage", label: "Support coverage" },
+  { value: "software_target", label: "Software target" },
 ]
 // An end-of-life check reads the object's platform mapping (#8), so it only
 // applies to the types that carry a platform.
@@ -50,6 +51,9 @@ const EOL_FAIL_ON: SelectOption[] = [
 ]
 // A support coverage check (#421) reads a device's contracts and warranty.
 const COVERAGE_TYPES = new Set(["device"])
+// A software target check (#395) compares the running version with the
+// platform's target version.
+const SOFTWARE_TARGET_TYPES = new Set(["device", "virtualmachine"])
 const COVERAGE_FAIL_ON: SelectOption[] = [
   { value: "expired", label: "Expired or not covered" },
   { value: "expiring", label: "Expiring, expired or not covered" },
@@ -104,6 +108,9 @@ export function ComplianceRuleForm({
   const [coverageFailOn, setCoverageFailOn] = useState<string>(
     rule?.coverage_fail_on || "expired"
   )
+  const [failOnUnknown, setFailOnUnknown] = useState(
+    rule?.fail_on_unknown ?? false
+  )
 
   const save = useMutation({
     mutationFn: () => {
@@ -121,6 +128,7 @@ export function ComplianceRuleForm({
         cf_key: cfKey,
         eol_fail_on: check === "eol_status" ? eolFailOn : "",
         coverage_fail_on: check === "coverage" ? coverageFailOn : "",
+        fail_on_unknown: check === "software_target" && failOnUnknown,
       }
       return isEdit
         ? api(`/api/compliance-rules/${rule!.id}/`, {
@@ -206,7 +214,10 @@ export function ComplianceRuleForm({
                 options={CHECKS.filter(
                   (c) =>
                     (c.value !== "eol_status" || EOL_TYPES.has(objectType)) &&
-                    (c.value !== "coverage" || COVERAGE_TYPES.has(objectType))
+                    (c.value !== "coverage" ||
+                      COVERAGE_TYPES.has(objectType)) &&
+                    (c.value !== "software_target" ||
+                      SOFTWARE_TARGET_TYPES.has(objectType))
                 )}
               />
             </div>
@@ -273,6 +284,13 @@ export function ComplianceRuleForm({
                   hint="Tag slug; blank = every device"
                 />
               </>
+            )}
+            {check === "software_target" && (
+              <FormCheckbox
+                label="Fail without a version"
+                checked={failOnUnknown}
+                onChange={setFailOnUnknown}
+              />
             )}
             {check === "required_cf" && (
               <FormText

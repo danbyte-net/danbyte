@@ -12,6 +12,10 @@ import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
 import { lifecycleNextColumn } from "@/components/cells/lifecycle-cell"
+import {
+  softwareTargetColumn,
+  softwareVersionColumn,
+} from "@/components/cells/software-version-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -61,6 +65,8 @@ export type VmColumnId =
   | "platform"
   | "eol"
   | "lifecycle_next"
+  | "software_version"
+  | "software_target"
   | "synced_from"
   | "tags"
   | "updated"
@@ -84,6 +90,8 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "platform",
   "eol",
   "lifecycle_next",
+  "software_version",
+  "software_target",
   "synced_from",
   "tags",
   "updated",
@@ -385,6 +393,13 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     // The platform's effective end of life (#436); hidden by default.
     lifecycle_next: () =>
       lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),
+    software_version: () =>
+      softwareVersionColumn<T>({ get: (r) => r.software_version }),
+    software_target: () =>
+      softwareTargetColumn<T>({
+        target: (r) => r.platform?.target_version,
+        version: (r) => r.software_version,
+      }),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

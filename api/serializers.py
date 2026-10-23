@@ -2416,6 +2416,8 @@ def _platform_lifecycle(platform, context) -> dict:
         "release_date": platform.release_date,
         "end_of_support": platform.end_of_support,
         "lifecycle_state": platform.lifecycle_state,
+        # The version operators want running (#395); "" = no target.
+        "target_version": platform.target_version,
         # End-of-life data (#8): null while the feature is off.
         "eol": payload(platform, cfg),
         **effective_payload(platform, cfg),
@@ -3178,7 +3180,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # The device's own platform wins; otherwise fall back to its type's
         # default. Read-only and derived - the stored field is untouched.
         p = obj.platform or (obj.device_type.platform if obj.device_type else None)
-        return {"id": str(p.id), "name": p.name} if p else None
+        return ({"id": str(p.id), "name": p.name, "target_version": p.target_version}
+                if p else None)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
@@ -3237,6 +3240,9 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def validate(self, attrs):
         attrs = super().validate(attrs)
         self._reject_nested_relation_inputs()
+        from .software_target import mark_manual
+
+        mark_manual(attrs, self.instance)
 
         vc = attrs.get(
             "virtual_chassis", getattr(self.instance, "virtual_chassis", None)
@@ -3608,6 +3614,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
+                  "software_version", "software_version_seen_at",
                   "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
@@ -3625,7 +3632,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "contact_count", "document_count", "permissions",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
-                            "created_at", "updated_at"]
+                            "software_version_seen_at", "created_at", "updated_at"]
 
 
 # ─── Cabling: terminations, ports, cables ──────────────────────────────────
@@ -6178,6 +6185,9 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         the cluster it runs on. Moving the VM to another cluster without
         naming a group drops the old one rather than refusing the move."""
         attrs = super().validate(attrs)
+        from .software_target import mark_manual
+
+        mark_manual(attrs, self.instance)
         cluster = attrs.get("cluster", getattr(self.instance, "cluster", None))
         if "group" in attrs:
             group = attrs["group"]
@@ -6201,6 +6211,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
+                  "software_version", "software_version_seen_at",
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count",
                   "primary_ip", "primary_ip_id", "description",
@@ -6208,7 +6219,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",
-                            "created_at", "updated_at"]
+                            "software_version_seen_at", "created_at", "updated_at"]
 
 
 class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
@@ -7232,7 +7243,7 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         model = Platform
         fields = ["id", "name", "slug", "group", "group_id",
                   "manufacturer", "manufacturer_id",
-                  "config_template", "config_template_id",
+                  "config_template", "config_template_id", "target_version",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
                   "eol", "effective_release", "effective_end", "effective_source",
                   "device_count", "vm_count", "created_at", "updated_at"]

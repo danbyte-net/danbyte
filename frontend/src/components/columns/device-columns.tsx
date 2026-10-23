@@ -31,6 +31,10 @@ import {
   lifecycleNextColumn,
 } from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import {
+  softwareTargetColumn,
+  softwareVersionColumn,
+} from "@/components/cells/software-version-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
 import { coverageColumn } from "@/components/cells/coverage-cell"
 import { cabinetColumn } from "@/components/cells/cabinet-cell"
@@ -69,6 +73,8 @@ export type DeviceColumnId =
   | "rack"
   | "cabinet"
   | "serial"
+  | "software_version"
+  | "software_target"
   | "ips"
   | "ports"
   | "monitoring"
@@ -97,6 +103,8 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "rack",
   "cabinet",
   "serial",
+  "software_version",
+  "software_target",
   "ips",
   "ports",
   "monitoring",
@@ -406,6 +414,13 @@ export function buildDeviceColumns<T extends Device = Device>(
           dash
         ),
     }),
+    software_version: () =>
+      softwareVersionColumn<T>({ get: (r) => r.software_version }),
+    software_target: () =>
+      softwareTargetColumn<T>({
+        target: (r) => (r.platform ?? r.effective_platform)?.target_version,
+        version: (r) => r.software_version,
+      }),
     ports: () => ({
       id: "ports",
       accessorFn: (d) => opts.portUtil?.get(d.id) ?? -1,
