@@ -125,6 +125,11 @@ describe("useUrlFlag", () => {
     expect(
       renderHook(() => useUrlFlag("panels", false)).result.current[0]
     ).toBe(true)
+    // A hand-typed ?panels=1 reaches the hook JSON-parsed.
+    search = { panels: 1 }
+    expect(
+      renderHook(() => useUrlFlag("panels", false)).result.current[0]
+    ).toBe(true)
     renderHook(() => useUrlFlag("panels", false)).result.current[1](true)
     expect(written()).toEqual({ panels: "1" })
     renderHook(() => useUrlFlag("panels", false)).result.current[1](false)

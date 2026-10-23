@@ -26,7 +26,10 @@ import {
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { LifecycleFlag } from "@/components/cells/lifecycle-cell"
+import {
+  LifecycleFlag,
+  lifecycleNextColumn,
+} from "@/components/cells/lifecycle-cell"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
 import { coverageColumn } from "@/components/cells/coverage-cell"
@@ -58,6 +61,7 @@ export type DeviceColumnId =
   | "platform"
   | "eol"
   | "coverage"
+  | "lifecycle_next"
   | "type"
   | "manufacturer"
   | "cooling"
@@ -85,6 +89,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "platform",
   "eol",
   "coverage",
+  "lifecycle_next",
   "type",
   "manufacturer",
   "cooling",
@@ -311,6 +316,9 @@ export function buildDeviceColumns<T extends Device = Device>(
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
     // Support & warranty coverage (#421), derived server-side per row.
     coverage: () => coverageColumn<T>({ get: (r) => r.coverage }),
+    // The soonest of hardware, OS and coverage (#436); hidden by default.
+    lifecycle_next: () =>
+      lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),
     type: () => ({
       id: "type",
       accessorFn: (r) => r.device_type?.name ?? "",

@@ -72,21 +72,89 @@ def mapping_of(platform):
         return None
 
 
+def date_status(end: date | None, warning_days: int, today: date | None = None,
+                eol_reached: bool | None = None) -> str:
+    """The status of an end-of-life date, by the rules of the module
+    docstring: ``eol`` on or after the date, ``ending`` within the warning
+    window, ``supported`` beyond it. Without a date the source's own flag
+    (``eol_reached``) decides, else ``unknown``. Plain values, so a mapping,
+    a platform's effective date, a device type's end of support and the
+    Lifecycle page all read one rule."""
+    if end:
+        today = today or timezone.localdate()
+        if end <= today:
+            return "eol"
+        if end <= today + timedelta(days=warning_days):
+            return "ending"
+        return "supported"
+    if eol_reached is True:
+        return "eol"
+    if eol_reached is False:
+        return "supported"
+    return "unknown"
+
+
 def status_of(mapping, warning_days: int, today: date | None = None) -> str:
     if mapping is None or mapping.synced_at is None:
         return "unknown"
-    today = today or timezone.localdate()
-    if mapping.eol_date:
-        if mapping.eol_date <= today:
-            return "eol"
-        if mapping.eol_date <= today + timedelta(days=warning_days):
-            return "ending"
-        return "supported"
-    if mapping.eol_reached is True:
-        return "eol"
-    if mapping.eol_reached is False:
-        return "supported"
-    return "unknown"
+    return date_status(mapping.eol_date, warning_days, today, mapping.eol_reached)
+
+
+# ─── the effective OS date ───────────────────────────────────────────────────
+
+#: ``effective_source`` of dates someone entered on the platform.
+ENTERED = "entered"
+
+
+@dataclass(frozen=True)
+class Effective:
+    """A platform's OS lifetime as the bars and the Lifecycle page read it."""
+
+    start: date | None
+    end: date | None
+    #: The source's end-of-life flag, for a mapped cycle without a date.
+    eol_reached: bool | None
+    #: Where the end came from (else the start): ``ENTERED`` or a source key.
+    source: str | None
+
+
+def effective_dates(release_date, end_of_support, mapping, enabled: bool) -> Effective:
+    """What someone entered wins, field by field; the end-of-life mapping
+    fills what is blank, while the feature is on and once the mapping has
+    been synced. ``mapping`` is anything carrying the mapping's ``source``,
+    ``release_date``, ``eol_date``, ``eol_reached`` and ``synced_at``, or
+    None. Fetched data never overwrites entered data - this only reads."""
+    m = mapping if enabled and mapping is not None and mapping.synced_at is not None else None
+    end, reached, end_src = None, None, None
+    if end_of_support:
+        end, end_src = end_of_support, ENTERED
+    elif m is not None and (m.eol_date or m.eol_reached is not None):
+        end, end_src = m.eol_date, m.source
+        reached = None if m.eol_date else m.eol_reached
+    start, start_src = None, None
+    if release_date:
+        start, start_src = release_date, ENTERED
+    elif m is not None and m.release_date:
+        start, start_src = m.release_date, m.source
+    return Effective(start, end, reached, end_src or start_src)
+
+
+def effective_of(platform, cfg: EolConfig) -> Effective:
+    """:func:`effective_dates` of a platform - the mapping from the
+    select_related cache when the caller joined it, and never read while
+    the feature is off."""
+    return effective_dates(
+        platform.release_date, platform.end_of_support,
+        mapping_of(platform) if cfg.enabled else None, cfg.enabled,
+    )
+
+
+def effective_payload(platform, cfg: EolConfig) -> dict:
+    """``effective_release`` / ``effective_end`` / ``effective_source`` on
+    platforms and on the nested platform of devices and VMs."""
+    e = effective_of(platform, cfg)
+    return {"effective_release": e.start, "effective_end": e.end,
+            "effective_source": e.source}
 
 
 def payload(platform, cfg: EolConfig) -> dict | None:
@@ -370,7 +438,9 @@ def known_sources() -> list[dict]:
 
 
 __all__ = [
-    "EolSourceError", "STATUSES", "apply_mappings", "apply_status_filter",
-    "config_for", "import_payload", "load_config", "payload", "refresh",
-    "status_of", "status_q", "store_catalog", "suggest_products",
+    "ENTERED", "Effective", "EolSourceError", "STATUSES", "apply_mappings",
+    "apply_status_filter", "config_for", "date_status", "effective_dates",
+    "effective_of", "effective_payload", "import_payload", "load_config",
+    "payload", "refresh", "status_of", "status_q", "store_catalog",
+    "suggest_products",
 ]

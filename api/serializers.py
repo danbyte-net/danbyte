@@ -2380,13 +2380,88 @@ def _img_url(serializer, f):
         return None
 
 
+def _eol_config(context):
+    """The end-of-life settings, read once per request - or once per
+    serializer when there is no request (an export, a job)."""
+    from compliance.eol import config_for
+
+    context = context if context is not None else {}
+    request = context.get("request")
+    if request is not None:
+        return config_for(request)
+    cfg = context.get("_eol_config")
+    if cfg is None:
+        cfg = config_for(None)
+        context["_eol_config"] = cfg
+    return cfg
+
+
 def _eol_payload(platform, context) -> dict | None:
     """A platform's end-of-life block (#8), or None while the feature is off.
     The setting is read once per request; lists join ``eol_mapping`` so the
     rows cost no extra query."""
-    from compliance.eol import config_for, payload
+    from compliance.eol import payload
 
-    return payload(platform, config_for((context or {}).get("request")))
+    return payload(platform, _eol_config(context))
+
+
+def _platform_lifecycle(platform, context) -> dict:
+    """The OS lifecycle a nested platform carries: the entered window, its
+    state, the end-of-life block and the effective dates the OS support bar
+    reads (entered wins, else the mapping while the feature is on)."""
+    from compliance.eol import effective_payload, payload
+
+    cfg = _eol_config(context)
+    return {
+        "release_date": platform.release_date,
+        "end_of_support": platform.end_of_support,
+        "lifecycle_state": platform.lifecycle_state,
+        # End-of-life data (#8): null while the feature is off.
+        "eol": payload(platform, cfg),
+        **effective_payload(platform, cfg),
+    }
+
+
+#: The ``lifecycle_next`` shape on device and VM rows.
+LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
+    "source": serializers.ChoiceField(choices=["hardware", "os", "coverage"]),
+    "end": serializers.DateField(),
+    "start": serializers.DateField(allow_null=True),
+}, allow_null=True)
+
+
+def _lifecycle_next(serializer, obj, *, device: bool) -> dict | None:
+    """The soonest dated end across an object's lifecycle sources (#436) - a
+    device's type's end of support, its platform's effective end of life and
+    its coverage end; a VM's platform - for the lists' Next end of life
+    column. Read from the joins and the coverage annotation the list already
+    has, so a page costs no extra query. A tie goes to the hardware, then the
+    OS. Coverage carries no start: the governing contract is not read here."""
+    from compliance.eol import effective_of
+
+    found = []
+    dt = obj.device_type if device else None
+    if dt is not None and dt.end_of_support:
+        found.append((dt.end_of_support, 0, "hardware", dt.release_date))
+    p = obj.platform
+    if p is not None:
+        e = effective_of(p, _eol_config(serializer.context))
+        if e.end:
+            found.append((e.end, 1, "os", e.start))
+    if device:
+        from .support_coverage import OPEN_ENDED, device_end
+
+        view = serializer.context.get("view")
+        if getattr(view, "action", None) in ("create", "update", "partial_update"):
+            # A write response: the row was read before the save.
+            obj.__dict__.pop("coverage_end_annotated", None)
+        end = device_end(obj)
+        if end is not None and end != OPEN_ENDED:
+            found.append((end, 2, "coverage", None))
+    if not found:
+        return None
+    end, _rank, source, start = min(found, key=lambda f: (f[0], f[1]))
+    return {"source": source, "end": end, "start": start}
 
 
 # User-entered vendor lifecycle window + the derived state - shared by
@@ -2906,6 +2981,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         "topology_photo_size",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
+        # Its own column, Next end of life (device-columns.tsx).
+        "lifecycle_next",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -2929,6 +3006,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     # Support & warranty coverage (#421): {status, end, contracts}, from the
     # list queryset's annotations - no query per row.
     coverage = serializers.SerializerMethodField()
+    # The soonest end across hardware, OS and coverage (#436).
+    lifecycle_next = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3076,11 +3155,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Carries the OS lifecycle window so device pages can render the
         # "OS support" bar without a second fetch.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "release_date": p.release_date,
-                "end_of_support": p.end_of_support,
-                "lifecycle_state": p.lifecycle_state,
-                # End-of-life data (#8): null while the feature is off.
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
 
     @extend_schema_field(inline_serializer("DeviceCoverageBrief", {
         "status": serializers.ChoiceField(choices=["covered", "expiring", "expired", "none"]),
@@ -3093,6 +3168,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         view = self.context.get("view")
         fresh = getattr(view, "action", None) in ("create", "update", "partial_update")
         return device_payload(obj, self.context.get("request"), fresh=fresh)
+
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=True)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -3529,7 +3608,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
-                  "warranty_end", "coverage",
+                  "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "port_labels", "topology_card", "topology_photo_size",
@@ -5978,6 +6057,8 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
 
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    # Its own column, Next end of life (vm-columns.tsx).
+    list_columns_exclude = ("lifecycle_next",)
     cluster = ClusterMiniSerializer(read_only=True)
     disks = VirtualDiskSerializer(many=True, read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
@@ -6067,8 +6148,18 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         p = obj.platform
         if not p:
             return None
+        # The OS lifecycle rides along for the overview's OS support bar,
+        # as on the device's nested platform.
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
-                "eol": _eol_payload(p, self.context)}
+                **_platform_lifecycle(p, self.context)}
+
+    # The platform's effective end of life, for the Next end of life
+    # column (#436) - the soonest end once VMs have more sources.
+    lifecycle_next = serializers.SerializerMethodField()
+
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=False)
 
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
@@ -6104,7 +6195,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     class Meta:
         model = VirtualMachine
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
-                  "role", "role_id", "platform", "platform_id",
+                  "role", "role_id", "platform", "platform_id", "lifecycle_next",
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
@@ -7108,10 +7199,34 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
 
     lifecycle_state = serializers.ReadOnlyField()
     eol = serializers.SerializerMethodField()
+    # The dates the OS lifecycle bar reads: entered wins, else the
+    # end-of-life mapping while the feature is on (and which one it was).
+    effective_release = serializers.SerializerMethodField()
+    effective_end = serializers.SerializerMethodField()
+    effective_source = serializers.SerializerMethodField()
+    # The OS lifecycle column already draws them.
+    list_columns_exclude = ("effective_release", "effective_end", "effective_source")
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_eol(self, obj):
         return _eol_payload(obj, self.context)
+
+    def _effective(self, obj):
+        from compliance.eol import effective_of
+
+        return effective_of(obj, _eol_config(self.context))
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_release(self, obj):
+        return self._effective(obj).start
+
+    @extend_schema_field(OpenApiTypes.DATE)
+    def get_effective_end(self, obj):
+        return self._effective(obj).end
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_effective_source(self, obj) -> str | None:
+        return self._effective(obj).source
 
     class Meta:
         model = Platform
@@ -7119,7 +7234,8 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
-                  "eol", "device_count", "vm_count", "created_at", "updated_at"]
+                  "eol", "effective_release", "effective_end", "effective_source",
+                  "device_count", "vm_count", "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "vm_count", "lifecycle_state", "eol",
                             "created_at", "updated_at"]
 

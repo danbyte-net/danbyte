@@ -500,6 +500,20 @@ class CoverageRbacTests(_Base):
         self.assertEqual(summary["ending"], [])
         self.assertEqual(summary["total"], 2)
 
+    def test_coverage_start_only_from_a_contract_the_caller_sees(self):
+        # The bar's start is the governing contract's start (#436): a hidden
+        # contract's dates stay hidden, its end still governs the status.
+        self.c.start_date = days(-300)
+        self.c.save()
+        SupportCoverage.objects.create(tenant=self.tenant, contract=self.c, device=self.a)
+        self.grant(["device"], ["view"])
+        self._login(self.user)
+        body = self.client.get(f"/api/devices/{self.a.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (None, str(days(30))))
+        self.grant(["supportcontract"], ["view"])
+        body = self.client.get(f"/api/devices/{self.a.id}/coverage/").json()
+        self.assertEqual(body["start"], str(days(-300)))
+
 
 # ─── device card, flags and the dashboard summary ────────────────────────────
 
@@ -531,6 +545,29 @@ class DeviceCardTests(_Base):
         d = self.device("d")
         self.contract("C", end=days(20), devices=[d])
         self.assertEqual(self.client.get(f"/api/devices/{d.id}/coverage/").json()["flags"], [])
+
+    def test_coverage_start_is_the_governing_contracts(self):
+        """The coverage bar runs from the start of the contract that sets the
+        end (#436); a warranty that reaches further has no start."""
+        d = self.device("d", warranty_end=days(100))
+        self.contract("SHORT", start_date=days(-50), end=days(20), devices=[d])
+        self.contract("LONG", start_date=days(-200), end=days(300), devices=[d])
+        body = self.client.get(f"/api/devices/{d.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (str(days(-200)), str(days(300))))
+
+        w = self.device("w", warranty_end=days(400))
+        self.contract("UNDER", start_date=days(-10), end=days(30), devices=[w])
+        body = self.client.get(f"/api/devices/{w.id}/coverage/").json()
+        self.assertEqual((body["start"], body["end"]), (None, str(days(400))))
+
+        o = self.device("o", warranty_end=days(400))
+        self.contract("OPEN", start_date=days(-5), devices=[o])
+        body = self.client.get(f"/api/devices/{o.id}/coverage/").json()
+        self.assertEqual((body["status"], body["start"], body["end"]),
+                         ("covered", str(days(-5)), None))
+        self.assertEqual(cov.governed_by(None, None), None)
+        self.assertEqual(cov.governed_by(days(5), days(5)), "contract")
+        self.assertEqual(cov.governed_by(days(4), days(5)), "warranty")
 
     def test_summary_counts_filters_and_ending(self):
         cisco = DeviceType.objects.create(tenant=self.tenant, manufacturer=self.mfr, name="C")

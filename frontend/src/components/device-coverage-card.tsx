@@ -14,6 +14,7 @@ import {
   ContractStateBadge,
   CoverageBadge,
 } from "@/components/cells/coverage-cell"
+import { LifetimeBar } from "@/components/cells/lifecycle-cell"
 
 // Support & warranty coverage on the device overview (#421): the contracts
 // covering the device, best first, and the flags from setting its coverage
@@ -27,23 +28,31 @@ export function useDeviceCoverage(deviceId: string) {
   })
 }
 
-/** The status pill and the end date - the overview's "Support coverage" row. */
+/** The overview's "Support coverage" row: the status pill and the time bar
+ * from the governing contract's start to the coverage end, coloured by the
+ * tenant's coverage window. An open-ended contract has no end to count to. */
 export function CoverageSummary({
+  deviceId,
   status,
-  end,
 }: {
+  deviceId: string
+  /** The device row's status, shown until the coverage detail arrives. */
   status: DeviceCoverage["status"] | undefined
-  end: string | null | undefined
 }) {
-  const { formatDate } = useDateFormat()
-  if (!status) return dash
+  const d = useDeviceCoverage(deviceId).data
+  const shown = d?.status ?? status
+  if (!shown) return dash
   return (
     <span className="inline-flex items-center gap-2">
-      <CoverageBadge status={status} />
-      {end && (
-        <span className="num text-xs text-muted-foreground">
-          until {formatDate(end)}
-        </span>
+      <CoverageBadge status={shown} />
+      {d && d.status !== "none" && (
+        <LifetimeBar
+          start={d.start}
+          end={d.end}
+          warningDays={d.warning_days}
+          label="coverage"
+          fallback={<Badge variant="secondary">Open-ended</Badge>}
+        />
       )}
     </span>
   )

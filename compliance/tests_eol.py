@@ -201,6 +201,60 @@ class StatusTests(TestCase):
         self.assertEqual(eol.status_of(self.m(eol_reached=False), 90), "supported")
         self.assertEqual(eol.status_of(self.m(), 90), "unknown")
 
+    def test_plain_dates_read_the_same_rule(self):
+        today = timezone.localdate()
+        self.assertEqual(eol.date_status(today, 90, today), "eol")
+        self.assertEqual(eol.date_status(today + timedelta(days=90), 90, today), "ending")
+        self.assertEqual(eol.date_status(today + timedelta(days=91), 90, today), "supported")
+        self.assertEqual(eol.date_status(None, 90, today), "unknown")
+        self.assertEqual(eol.date_status(None, 90, today, eol_reached=True), "eol")
+        # A date wins over the source's flag.
+        self.assertEqual(
+            eol.date_status(today + timedelta(days=400), 90, today, eol_reached=True),
+            "supported")
+
+
+class EffectiveDateTests(TestCase):
+    """The OS lifetime the bars and the Lifecycle page read (#436): what was
+    entered wins, field by field; the mapping fills the blanks while the
+    feature is on and once it has been synced."""
+
+    today = timezone.localdate()
+
+    def d(self, n):
+        return self.today + timedelta(days=n)
+
+    def m(self, **kw):
+        kw.setdefault("source", "endoflife_date")
+        kw.setdefault("synced_at", timezone.now())
+        return EolMapping(**kw)
+
+    def test_entered_wins_field_by_field(self):
+        m = self.m(release_date=self.d(-900), eol_date=self.d(30))
+        e = eol.effective_dates(self.d(-100), self.d(400), m, True)
+        self.assertEqual((e.start, e.end, e.source), (self.d(-100), self.d(400), "entered"))
+        e = eol.effective_dates(None, self.d(400), m, True)
+        self.assertEqual((e.start, e.end, e.source), (self.d(-900), self.d(400), "entered"))
+        e = eol.effective_dates(self.d(-100), None, m, True)
+        self.assertEqual(
+            (e.start, e.end, e.source), (self.d(-100), self.d(30), "endoflife_date"))
+
+    def test_mapping_only_while_on_and_synced(self):
+        m = self.m(release_date=self.d(-900), eol_date=self.d(30))
+        self.assertEqual(
+            eol.effective_dates(None, None, m, False), eol.Effective(None, None, None, None))
+        unsynced = self.m(synced_at=None, eol_date=self.d(30))
+        self.assertIsNone(eol.effective_dates(None, None, unsynced, True).end)
+        self.assertEqual(
+            eol.effective_dates(self.d(-5), self.d(5), None, True).source, "entered")
+
+    def test_the_flag_stands_in_for_a_missing_date(self):
+        e = eol.effective_dates(None, None, self.m(eol_reached=True), True)
+        self.assertEqual((e.end, e.eol_reached, e.source), (None, True, "endoflife_date"))
+        # An entered end of support outranks the flag.
+        e = eol.effective_dates(None, self.d(10), self.m(eol_reached=True), True)
+        self.assertEqual((e.end, e.eol_reached, e.source), (self.d(10), None, "entered"))
+
 
 # ─── refresh against the fake server ─────────────────────────────────────────
 
@@ -579,6 +633,39 @@ class ListTests(ApiBase):
             {"v-old": "eol", "v-ending": "ending"})
         self.assertEqual(
             self.client.get("/api/devices/", {"eol": "bogus"}).status_code, 400)
+
+    def test_effective_dates_on_platforms_devices_and_vms(self):
+        """Entered dates win; the mapping fills them while the feature is on,
+        and the payload says which (#436)."""
+        self.device("d", self.platform)
+        self.vm("v", self.platform)
+        self.login(self.lister)
+
+        def effective():
+            p = self.client.get(f"/api/platforms/{self.platform.id}/").json()
+            dev = self.client.get("/api/devices/").json()["results"][0]["platform"]
+            vm = self.client.get("/api/virtual-machines/").json()["results"][0]["platform"]
+            keys = ("effective_release", "effective_end", "effective_source")
+            got = {k: p[k] for k in keys}
+            self.assertEqual({k: dev[k] for k in keys}, got)
+            self.assertEqual({k: vm[k] for k in keys}, got)
+            return got
+
+        # Off: the mapping is not read.
+        self.assertEqual(effective(), {
+            "effective_release": None, "effective_end": None, "effective_source": None})
+        enable()
+        self.assertEqual(effective(), {
+            "effective_release": "2022-04-21", "effective_end": days(60),
+            "effective_source": "endoflife_date"})
+        self.platform.end_of_support = timezone.localdate() + timedelta(days=700)
+        self.platform.save()
+        self.assertEqual(effective(), {
+            "effective_release": "2022-04-21", "effective_end": days(700),
+            "effective_source": "entered"})
+        vm = self.client.get("/api/virtual-machines/").json()["results"][0]["platform"]
+        self.assertEqual(vm["lifecycle_state"], "supported")
+        self.assertEqual(vm["eol"]["status"], "ending")
 
     def _count(self, url):
         with CaptureQueriesContext(connection) as ctx:

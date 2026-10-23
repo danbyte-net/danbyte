@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { LifecycleBar, hasLifetime } from "@/components/cells/lifecycle-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -314,6 +315,15 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       ),
     },
     { label: "Platform", value: <PlatformCell platform={vm.platform} /> },
+    // The platform's effective dates: entered, else its end-of-life mapping.
+    ...(hasLifetime(vm.platform)
+      ? [
+          {
+            label: "OS support",
+            value: <LifecycleBar item={vm.platform} />,
+          } satisfies KvRow,
+        ]
+      : []),
     { label: "Description", value: vm.description || dash },
   ]
   const resourceRows: KvRow[] = [
