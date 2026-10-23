@@ -4,9 +4,11 @@ icon: lucide/calendar-x
 
 # End-of-life data
 
-Danbyte can read platform end-of-life dates from a public source -
+Danbyte can read end-of-life dates for platforms and applications from a
+public source -
 [endoflife.date](https://endoflife.date) today - and show them where you work:
-the platform page, the device and VM lists, and compliance rules.
+the platform and application pages, the device and VM lists, and compliance
+rules.
 
 It is **off by default** and deployment-wide. Nothing is mapped for you: the
 fetched catalog is cached data, and a platform gets end-of-life dates only when
@@ -81,6 +83,21 @@ Saving copies the cycle's facts onto the mapping:
 tenant), and creating, changing or removing one is recorded in the
 [change log](change-log.md).
 
+## Map an application
+
+[Applications](applications.md) map to a **product only**: on an
+application's page, the **End of life** card's **Map** asks for the product
+(suggestions first, as for a platform). The cycle comes from each
+[install's](applications.md#installed-software) version - "16.4" picks the
+cycle "16" - unless the install names its cycle by hand.
+
+Installs of one application on one cycle share one mapping, made the first
+time an install needs it and filled from the cached catalog; the card lists
+each cycle with its status and end of life. A mapping goes when its last
+install goes or moves to another cycle, and **Remove** clears the product and
+every cycle with it. The daily refresh and an import update application
+mappings like platform mappings. All of it is in the change log.
+
 ## Status
 
 | Status | When |
@@ -107,7 +124,10 @@ calendar without a refresh.
   [The effective OS date](lifecycle.md#the-effective-os-date).
 - **Lifecycle overview** - the OS rows of the
   [lifecycle overview](lifecycle-overview.md) (`GET /api/lifecycle/`) read
-  the same effective date, for devices and virtual machines alike.
+  the same effective date, for devices and virtual machines alike, and its
+  software rows read each install's cycle the same way.
+- **Installed software** - the *End of life* column and lifetime bar of the
+  device and VM **Software** tabs, and `eol` on `/api/installed-software/`.
 - **API** - `eol` on platforms, and on the nested `platform` of devices and VMs
   (`null` while the feature is off), next to `effective_release`,
   `effective_end` and `effective_source`. Filter lists with
@@ -128,6 +148,12 @@ a device or virtual machine on its platform's status:
 | Support ending or ended | Support ending or End of life |
 | No end-of-life data | Unknown |
 
+**Include installed software** (off by default, and off on every rule made
+before it) also fails the device or VM when any application installed on it
+is past or ending by the same rule - an install's entered *End of support*,
+else its cycle's end of life. It applies to *End of life* and *Support ending
+or ended*; the violation names the installs.
+
 The failures show up as ordinary violations - the Compliance page, the
 violation markers on the device list, and each device's compliance page. While
 the feature is off these rules report nothing.
@@ -140,11 +166,14 @@ the feature is off these rules report nothing.
 | `PATCH /api/eol/settings/` | Deployment admin |
 | `POST /api/eol/refresh/` | Deployment admin; queues the refresh |
 | `POST /api/eol/import/` | Deployment admin; multipart `file` |
-| `GET /api/eol/products/?q=&platform=&limit=` | `platform.view`; `platform` adds `suggestions` |
-| `GET /api/eol/products/<source>/<name>/` | `platform.view`; the product's cycles |
+| `GET /api/eol/products/?q=&platform=&application=&limit=` | `platform.view` or `application.view`; `platform` or `application` adds `suggestions` |
+| `GET /api/eol/products/<source>/<name>/` | `platform.view` or `application.view`; the product's cycles |
 | `GET /api/eol/platforms/<id>/` | `platform.view` on that platform |
 | `PUT /api/eol/platforms/<id>/` | `platform.change`; body `{"product", "cycle"}` |
 | `DELETE /api/eol/platforms/<id>/` | `platform.change` |
+| `GET /api/applications/<id>/eol/` | `application.view`; `{source, product, cycles}` |
+| `PUT /api/applications/<id>/eol/` | `application.change`; body `{"product"}` (and `source`) |
+| `DELETE /api/applications/<id>/eol/` | `application.change` |
 
 The tenant endpoints answer `404` while the feature is off.
 

@@ -54,6 +54,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/manufacturers": "dcim/device-catalog/",
   "/device-roles": "dcim/device-catalog/",
   "/platforms": "dcim/device-catalog/",
+  "/applications": "features/applications/",
   "/platform-groups": "dcim/device-catalog/",
   "/support-contracts": "features/support-coverage/",
   "/lifecycle": "features/lifecycle-overview/",

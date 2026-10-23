@@ -388,6 +388,7 @@ const NEXT_SOURCE_LABELS: Record<LifecycleNext["source"], string> = {
   hardware: "Hardware",
   os: "OS",
   coverage: "Coverage",
+  software: "Software",
 }
 
 /** Calendar days from today to `end`, for sorting: no end sorts last. */

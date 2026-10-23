@@ -14,6 +14,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { useSaveObject } from "@/lib/save-object"
+import { ApplicationPicker } from "@/components/application-picker"
 import {
   EMPTY_SERVICE_PORTS,
   parseServicePorts,
@@ -52,6 +53,9 @@ export function ServiceTemplateForm({
         )
       : EMPTY_SERVICE_PORTS
   )
+  const [applicationId, setApplicationId] = useState<string | null>(
+    template?.application?.id ?? null
+  )
   const [description, setDescription] = useState(template?.description ?? "")
   const [portErrors, setPortErrors] = useState<{
     tcp: string | null
@@ -68,6 +72,7 @@ export function ServiceTemplateForm({
         template.ports
       )
     )
+    setApplicationId(template.application?.id ?? null)
     setDescription(template.description)
     setPortErrors({ tcp: null, udp: null })
     reset()
@@ -89,6 +94,7 @@ export function ServiceTemplateForm({
         protocol: parsed.protocol,
         ports: parsed.ports,
         protocol_ports: parsed.protocol_ports,
+        application_id: applicationId,
         description: description.trim(),
       }
       return saveObject<ServiceTemplate>({
@@ -140,6 +146,13 @@ export function ServiceTemplateForm({
               portErrors.tcp ?? fieldErrors.ports ?? fieldErrors.protocol_ports,
             udp: portErrors.udp,
           }}
+        />
+        <ApplicationPicker
+          hint="optional"
+          value={applicationId}
+          onChange={setApplicationId}
+          noneLabel="No application"
+          error={fieldErrors.application_id}
         />
         <FormTextarea
           label="Description"

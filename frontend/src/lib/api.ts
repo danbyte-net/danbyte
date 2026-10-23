@@ -1336,7 +1336,7 @@ export interface EffectiveOsDates {
 /** The soonest dated end across a device's or VM's lifecycle sources
  * (#436) - the lists' Next end of life column. Coverage carries no start. */
 export interface LifecycleNext {
-  source: "hardware" | "os" | "coverage"
+  source: "hardware" | "os" | "coverage" | "software"
   end: string
   start: string | null
 }
@@ -1935,6 +1935,72 @@ export interface EolInfo {
   /** The product or cycle has left the catalog; the facts are the last known. */
   missing?: boolean
 }
+
+// ─── Applications and installed software (#436) ────────────────────────
+
+/** `?picker=1` rows; `path` reads "Parent › Child". */
+export interface ApplicationMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+  path: string
+  depth: number
+}
+
+/** One cycle an application's installs run, with its catalog facts. */
+export interface ApplicationEolCycle extends EolInfo {
+  cycle: string
+}
+
+/** An application's end-of-life block; null while the feature is off. */
+export interface ApplicationEol {
+  source: string | null
+  product: string | null
+  cycles: ApplicationEolCycle[]
+}
+
+export interface Application extends ApplicationMini {
+  parent: { id: string; name: string } | null
+  manufacturer: { id: string; name: string } | null
+  eol_source: string
+  eol_product: string
+  eol: ApplicationEol | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  install_count: number
+  child_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type InstalledSoftwareSource = "manual" | "import" | "discovery"
+
+export interface InstalledSoftware extends EffectiveOsDates {
+  id: string
+  numid: number | null
+  application: { id: string; name: string; slug: string; path: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  version: string
+  /** The end-of-life cycle; derived from the version unless set by hand. */
+  cycle: string
+  cycle_manual: boolean
+  service: { id: string; name: string } | null
+  release_date: string | null
+  end_of_support: string | null
+  /** End-of-life status of the (application, cycle); null while off. */
+  eol: EolInfo | null
+  source: InstalledSoftwareSource
+  last_seen: string | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
 export interface EolSettings {
   enabled: boolean
   warning_days: number
@@ -6273,6 +6339,8 @@ export interface ServiceTemplate {
   protocol_display: string
   ports: number[]
   protocol_ports?: ProtocolPorts
+  /** The software behind the service (#436). */
+  application?: { id: string; name: string } | null
   description: string
   service_count?: number
   created_at: string
@@ -6284,6 +6352,7 @@ export interface ServiceTemplateWritePayload {
   protocol: ServiceProtocol
   ports: number[]
   protocol_ports?: ProtocolPorts
+  application_id?: string | null
   description: string
 }
 
@@ -8088,6 +8157,8 @@ export interface ComplianceRule {
   coverage_fail_on?: "" | "expired" | "expiring"
   /** software_target checks (#395): a blank software version fails too. */
   fail_on_unknown?: boolean
+  /** eol_status checks (#436): installed software counts too. */
+  include_software?: boolean
   created_at: string
   updated_at: string
 }
@@ -9644,9 +9715,9 @@ export interface DeviceCoverage {
 
 // ─── Lifecycle overview (#436) ─────────────────────────────────────────
 
-/** Where a lifecycle row's end comes from. `application` is reserved for
- * installed software and lists nothing yet. */
-export type LifecycleSource = "hardware" | "os" | "coverage" | "application"
+/** Where a lifecycle row's end comes from. `software` is installed
+ * software: one row per install. */
+export type LifecycleSource = "hardware" | "os" | "coverage" | "software"
 /** The fixed bucket of a row's end, the same scale for every source. */
 export type LifecycleWindow = "past" | "d90" | "d180" | "y1" | "later" | "none"
 
@@ -9657,11 +9728,15 @@ export interface LifecycleRow {
   /** Device type, platform, contract (`id` null and named "Contract" when
    * you may not view it) or the warranty; null when nothing covers it. */
   item: {
-    type: "devicetype" | "platform" | "supportcontract" | "warranty"
+    type: "devicetype" | "platform" | "supportcontract" | "warranty" | "application"
     id: string | null
     name: string
-    /** OS rows: "entered" or the end-of-life source. */
+    /** OS and software rows: "entered" or the end-of-life source. */
     date_source?: string | null
+    /** Software rows: the application, its version and the install. */
+    application?: string
+    version?: string
+    install?: string
   } | null
   /** Hardware and OS: an EolStatus; coverage: a CoverageStatus. */
   status: EolStatus | CoverageStatus

@@ -115,7 +115,8 @@ from the device type, and *Support coverage* from the device's contracts and
 warranty ([Support & warranty coverage](../features/support-coverage.md)).
 
 The Devices list has the same dates as an optional **Next end of life**
-column (tick it in the **Columns** menu): the soonest of the three as the
+column (tick it in the **Columns** menu): the soonest of the three, or of an
+installed application's end of life ([Software](#other-tabs) tab), as the
 lifetime bar, with which source it is, sorting by days left. The API carries
 it as `lifecycle_next: {source, end, start}` (`null` with no dated end); a
 coverage end has no start there. The whole estate, one row per source, is on
@@ -317,6 +318,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | **IPs**        | Every IP address assigned to this device.                                                       |
 | **Components** | Six sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
+| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here. See [Applications & installed software](../features/applications.md). |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |

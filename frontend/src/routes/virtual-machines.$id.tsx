@@ -34,6 +34,7 @@ import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
 import { ConfigContextPanel } from "@/components/config-context-panel"
 import { VmConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
+import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
@@ -79,6 +80,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "overview"
     | "components"
     | "services"
+    | "software"
     | "routing"
     | "monitoring"
     | "snmp"
@@ -173,6 +175,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.interface_count,
         },
         { value: "services", label: "Services", count: vm.service_count },
+        { value: "software", label: "Software" },
         {
           value: "routing",
           label: "Routing",
@@ -209,6 +212,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       </DetailTab>
       <DetailTab value="services">
         <ServicesPane parent={{ kind: "vm", id: vm.id }} />
+      </DetailTab>
+      <DetailTab value="software">
+        <InstalledSoftwarePane parent={{ kind: "vm", id: vm.id }} />
       </DetailTab>
       <DetailTab value="monitoring">
         <div className="mb-6">

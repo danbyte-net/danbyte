@@ -172,6 +172,7 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
+import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
@@ -198,6 +199,7 @@ const DEVICE_TABS = [
   "monitoring",
   "snmp",
   "services",
+  "software",
   "routing",
   "certificates",
   "contacts",
@@ -418,6 +420,7 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
+        { value: "software", label: "Software" },
         {
           value: "routing",
           label: "Routing",
@@ -529,6 +532,9 @@ function Body({ device: d }: { device: Device }) {
           parent={{ kind: "device", id: d.id }}
           parentHasPrimaryIp={!!d.primary_ip}
         />
+      </DetailTab>
+      <DetailTab value="software">
+        <InstalledSoftwarePane parent={{ kind: "device", id: d.id }} />
       </DetailTab>
       <DetailTab value="routing">
         <RoutingPanel owner={{ kind: "device", id: d.id, name: d.name }} />

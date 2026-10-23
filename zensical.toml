@@ -57,6 +57,7 @@ nav = [
     { "Hardware lifecycle (EoL)" = "features/lifecycle.md" },
     { "Lifecycle overview" = "features/lifecycle-overview.md" },
     { "Support & warranty coverage" = "features/support-coverage.md" },
+    { "Applications & installed software" = "features/applications.md" },
     { "Racks"             = "dcim/racks.md" },
     { "Cabinets"          = "dcim/cabinets.md" },
     { "Interfaces"        = "dcim/interfaces.md" },

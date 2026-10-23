@@ -208,6 +208,32 @@ describe("the Lifecycle page", () => {
     expect(String(search.undated)).toBe("1")
   })
 
+  it("lists installed software as its own source", async () => {
+    body = {
+      ...BODY,
+      results: [
+        ...BODY.results,
+        row("db1", {
+          source: "software",
+          status: "eol",
+          days_left: -3,
+          window: "past",
+          item: {
+            type: "application",
+            id: "a",
+            name: "PostgreSQL 12",
+            application: "PostgreSQL",
+            version: "12",
+          },
+        }),
+      ],
+    }
+    mount("/lifecycle?source=software")
+    await screen.findByText("PostgreSQL 12")
+    expect(screen.getByText("db1")).toBeTruthy()
+    expect(shown()).toEqual([])
+  })
+
   it("points at where the dates come from when there are none", async () => {
     body = { ...BODY, results: [], counts: { ...BODY.counts, past: 0 } }
     mount("/lifecycle")
