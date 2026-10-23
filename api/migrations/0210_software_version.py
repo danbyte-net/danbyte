@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='device',
             name='software_version',
-            field=models.CharField(blank=True, default='', max_length=64),
+            field=models.CharField(blank=True, db_default='', default='', max_length=64),
         ),
         migrations.AddField(
             model_name='device',
@@ -23,12 +23,12 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='platform',
             name='target_version',
-            field=models.CharField(blank=True, default='', max_length=64),
+            field=models.CharField(blank=True, db_default='', default='', max_length=64),
         ),
         migrations.AddField(
             model_name='virtualmachine',
             name='software_version',
-            field=models.CharField(blank=True, default='', max_length=64),
+            field=models.CharField(blank=True, db_default='', default='', max_length=64),
         ),
         migrations.AddField(
             model_name='virtualmachine',
