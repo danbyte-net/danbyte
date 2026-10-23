@@ -99,6 +99,8 @@ _TEMPLATE_RELATIONS = (
     ("antennas", "antenna_templates"),
     ("power_ports", "power_port_templates"),
     ("power_outlets", "power_outlet_templates"),
+    ("cooling_outflows", "cooling_outflow_templates"),
+    ("cooling_intakes", "cooling_intake_templates"),
     ("rear_ports", "rear_port_templates"),
     ("front_ports", "front_port_templates"),
     ("module_bays", "module_bay_templates"),

@@ -42,6 +42,8 @@ SITE_PATHS: dict[str, str] = {
     "consoleserverport": "device__site",
     "powerport": "device__site",
     "poweroutlet": "device__site",
+    "coolingintake": "device__site",
+    "coolingoutflow": "device__site",
     "auxport": "device__site",
     "antenna": "device__site",
     # Denormalized on the row (its port could be any of nine kinds).
@@ -193,6 +195,8 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "consoleserverporttemplate": "device_type__owning_site",
     "powerporttemplate": "device_type__owning_site",
     "poweroutlettemplate": "device_type__owning_site",
+    "coolingintaketemplate": "device_type__owning_site",
+    "coolingoutflowtemplate": "device_type__owning_site",
     "rearporttemplate": "device_type__owning_site",
     "frontporttemplate": "device_type__owning_site",
     "auxporttemplate": "device_type__owning_site",

@@ -53,6 +53,7 @@ from .models import (
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
     ConfigBundle, ConfigContext, CoolingFeed, CoolingSource, ExportTemplate, Location,
+    CoolingIntake, CoolingIntakeTemplate, CoolingOutflow, CoolingOutflowTemplate,
     PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
@@ -296,6 +297,9 @@ _PARENT_TENANT_PATH = {
     "ConsoleServerPort": "device__tenant",
     "PowerPort": "device__tenant",
     "PowerOutlet": "device__tenant",
+    "CoolingIntake": "device__tenant",
+    "CoolingOutflow": "device__tenant",
+    "CoolingIntakeTemplate": "device_type__tenant",
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
 }
@@ -2577,6 +2581,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         ("console-server-port", "console_server_port_templates"),
         ("power-port", "power_port_templates"),
         ("power-outlet", "power_outlet_templates"),
+        ("cooling-intake", "cooling_intake_templates"),
+        ("cooling-outflow", "cooling_outflow_templates"),
         ("rear-port", "rear_port_templates"),
         ("front-port", "front_port_templates"),
         ("device-bay", "device_bay_templates"),
@@ -2606,6 +2612,8 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
             + obj.console_server_port_templates.count()
             + obj.power_port_templates.count()
             + obj.power_outlet_templates.count()
+            + obj.cooling_intake_templates.count()
+            + obj.cooling_outflow_templates.count()
             + obj.front_port_templates.count()
             + obj.rear_port_templates.count()
             + obj.aux_port_templates.count()
@@ -3005,6 +3013,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     hardware_count = serializers.SerializerMethodField()
     console_count = serializers.SerializerMethodField()
     power_count = serializers.SerializerMethodField()
+    cooling_count = serializers.SerializerMethodField()
     front_port_count = serializers.SerializerMethodField()
     rear_port_count = serializers.SerializerMethodField()
     service_count = serializers.SerializerMethodField()
@@ -3551,6 +3560,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return obj.power_ports.count() + obj.power_outlets.count()
 
     @detail_only(0)
+    def get_cooling_count(self, obj) -> int:
+        return obj.cooling_intakes.count() + obj.cooling_outflows.count()
+
+    @detail_only(0)
     def get_service_count(self, obj) -> int:
         return obj.services.count()
 
@@ -3634,7 +3647,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "oob_ip", "oob_ip_id",
                   "tags", "tag_ids", "custom_fields",
                   "interface_count", "ip_count",
-                  "hardware_count", "console_count", "power_count",
+                  "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "permissions",
@@ -5299,6 +5312,198 @@ class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
         model = PowerOutletTemplate
         fields = _ComponentTemplateSerializer.Meta.fields + [
             "power_port_template", "power_port_template_id", "feed_leg",
+        ]
+
+
+# ─── Cooling intakes and outflows (#434) ───────────────────────────────────
+# Hoses are references, not cables: an intake names the feed or the other
+# device's outflow it takes coolant from, an outflow the intake on its own
+# device that feeds it. Nothing here is cable-terminable.
+
+_COOLING_COMPONENT_FIELDS = ["connector", "connector_display", "diameter_mm", "max_flow_lpm"]
+
+
+def _cooling_ref(obj, with_device=False):
+    if obj is None:
+        return None
+    out = {"id": str(obj.pk), "name": obj.name}
+    if with_device:
+        out["device"] = {"id": str(obj.device_id), "name": obj.device.name}
+    return out
+
+
+class _CoolingComponentSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
+                                  serializers.ModelSerializer):
+    device = DeviceMiniSerializer(read_only=True)
+    device_id = TenantScopedPrimaryKeyRelatedField(
+        source="device", queryset=Device.objects.all(), write_only=True,
+    )
+    connector_display = serializers.CharField(
+        source="get_connector_display", read_only=True
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    def _val(self, attrs, field):
+        if field in attrs:
+            return attrs[field]
+        return getattr(self.instance, field, None) if self.instance else None
+
+
+class CoolingIntakeSerializer(_CoolingComponentSerializer):
+    """Where coolant enters a device: fed by a ``cooling_feed`` or by an
+    ``outflow`` on another device (a CDU) - at most one of the two."""
+
+    cf_model = "coolingintake"
+    cooling_feed = serializers.SerializerMethodField()
+    cooling_feed_id = TenantScopedPrimaryKeyRelatedField(
+        source="cooling_feed", queryset=CoolingFeed.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    outflow = serializers.SerializerMethodField()
+    outflow_id = TenantScopedPrimaryKeyRelatedField(
+        source="outflow", queryset=CoolingOutflow.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_cooling_feed(self, obj):
+        f = obj.cooling_feed
+        if f is None:
+            return None
+        return {"id": str(f.pk), "name": f.name,
+                "source": {"id": str(f.source_id), "name": f.source.name}}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_outflow(self, obj):
+        return _cooling_ref(obj.outflow, with_device=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        feed = self._val(attrs, "cooling_feed")
+        outflow = self._val(attrs, "outflow")
+        device = self._val(attrs, "device")
+        if feed is not None and outflow is not None:
+            # Whichever was just set names the clash.
+            field = "outflow_id" if attrs.get("outflow") is not None else "cooling_feed_id"
+            raise serializers.ValidationError(
+                {field: "An intake takes coolant from a feed or an outflow, not both."}
+            )
+        if outflow is not None and device is not None and outflow.device_id == device.pk:
+            raise serializers.ValidationError(
+                {"outflow_id": "Pick an outflow on another device."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingIntake
+        fields = ["id", "device", "device_id", "name", "label",
+                  *_COOLING_COMPONENT_FIELDS,
+                  "cooling_feed", "cooling_feed_id", "outflow", "outflow_id",
+                  "description", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class CoolingOutflowSerializer(_CoolingComponentSerializer):
+    """Where coolant leaves a device; ``intake`` is the intake on the same
+    device that feeds it, ``served`` the intakes on other devices it feeds."""
+
+    cf_model = "coolingoutflow"
+    intake = serializers.SerializerMethodField()
+    intake_id = TenantScopedPrimaryKeyRelatedField(
+        source="intake", queryset=CoolingIntake.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    served = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_intake(self, obj):
+        return _cooling_ref(obj.intake)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_served(self, obj):
+        return [_cooling_ref(i, with_device=True) for i in obj.intakes.all()]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        intake = self._val(attrs, "intake")
+        device = self._val(attrs, "device")
+        if intake is not None and device is not None and intake.device_id != device.pk:
+            raise serializers.ValidationError(
+                {"intake_id": "Pick an intake on the same device."}
+            )
+        return attrs
+
+    class Meta:
+        model = CoolingOutflow
+        fields = ["id", "device", "device_id", "name", "label",
+                  *_COOLING_COMPONENT_FIELDS,
+                  "intake", "intake_id", "served",
+                  "description", "tags", "tag_ids", "custom_fields",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "served", "created_at", "updated_at"]
+
+
+class CoolingComponentMiniSerializer(serializers.Serializer):
+    """``?picker=1`` on the intake and outflow lists: id, name, device."""
+
+    id = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(read_only=True)
+    device = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+
+class _CoolingTemplateSerializer(_ComponentTemplateSerializer):
+    type = None
+    connector_display = serializers.CharField(
+        source="get_connector_display", read_only=True
+    )
+
+    class Meta(_ComponentTemplateSerializer.Meta):
+        fields = [
+            f for f in _ComponentTemplateSerializer.Meta.fields if f != "type"
+        ] + _COOLING_COMPONENT_FIELDS
+
+
+class CoolingIntakeTemplateSerializer(_CoolingTemplateSerializer):
+    class Meta(_CoolingTemplateSerializer.Meta):
+        model = CoolingIntakeTemplate
+
+
+class CoolingOutflowTemplateSerializer(_CoolingTemplateSerializer):
+    intake_template = serializers.SerializerMethodField()
+    intake_template_id = TenantScopedPrimaryKeyRelatedField(
+        source="intake_template", queryset=CoolingIntakeTemplate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_intake_template(self, obj):
+        return _cooling_ref(obj.intake_template)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        it = attrs.get("intake_template")
+        dt = attrs.get("device_type") or (
+            self.instance.device_type if self.instance else None
+        )
+        if it is not None and dt is not None and it.device_type_id != dt.id:
+            raise serializers.ValidationError(
+                {"intake_template_id": "Pick an intake template on the same device type."}
+            )
+        return attrs
+
+    class Meta(_CoolingTemplateSerializer.Meta):
+        model = CoolingOutflowTemplate
+        fields = _CoolingTemplateSerializer.Meta.fields + [
+            "intake_template", "intake_template_id",
         ]
 
 
@@ -8575,6 +8780,16 @@ class CoolingSourceMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = CoolingSource
         fields = ["id", "name"]
+
+
+class CoolingFeedMiniSerializer(NumIdModelSerializer):
+    """``?picker=1`` on the feed list: id, name and source."""
+
+    source = CoolingSourceMiniSerializer(read_only=True)
+
+    class Meta:
+        model = CoolingFeed
+        fields = ["id", "name", "source"]
 
 
 class CoolingSourceSerializer(StatusSerializerMixin,

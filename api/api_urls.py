@@ -221,6 +221,10 @@ from .viewsets import (
     ContactRoleViewSet,
     ContactViewSet,
     CoolingFeedViewSet,
+    CoolingIntakeTemplateViewSet,
+    CoolingIntakeViewSet,
+    CoolingOutflowTemplateViewSet,
+    CoolingOutflowViewSet,
     CoolingSourceViewSet,
     CustomFieldGroupViewSet,
     CustomFieldViewSet,
@@ -438,6 +442,8 @@ router.register(r"console-ports", ConsolePortViewSet, basename="console-port")
 router.register(r"console-server-ports", ConsoleServerPortViewSet, basename="console-server-port")
 router.register(r"power-ports",   PowerPortViewSet,   basename="power-port")
 router.register(r"power-outlets", PowerOutletViewSet, basename="power-outlet")
+router.register(r"cooling-intakes", CoolingIntakeViewSet, basename="cooling-intake")
+router.register(r"cooling-outflows", CoolingOutflowViewSet, basename="cooling-outflow")
 router.register(r"aux-ports",     AuxPortViewSet,     basename="aux-port")
 router.register(r"antennas", AntennaViewSet, basename="antenna")
 router.register(r"interface-templates", InterfaceTemplateViewSet, basename="interface-template")
@@ -446,6 +452,8 @@ router.register(r"console-port-templates", ConsolePortTemplateViewSet, basename=
 router.register(r"console-server-port-templates", ConsoleServerPortTemplateViewSet, basename="console-server-port-template")
 router.register(r"power-port-templates", PowerPortTemplateViewSet, basename="power-port-template")
 router.register(r"power-outlet-templates", PowerOutletTemplateViewSet, basename="power-outlet-template")
+router.register(r"cooling-intake-templates", CoolingIntakeTemplateViewSet, basename="cooling-intake-template")
+router.register(r"cooling-outflow-templates", CoolingOutflowTemplateViewSet, basename="cooling-outflow-template")
 router.register(r"rear-port-templates", RearPortTemplateViewSet, basename="rear-port-template")
 router.register(r"front-port-templates", FrontPortTemplateViewSet, basename="front-port-template")
 router.register(r"aux-port-templates", AuxPortTemplateViewSet, basename="aux-port-template")

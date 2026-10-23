@@ -650,6 +650,19 @@ COOLING_FEED_TYPE_CHOICES: Choices = [
     ("redundant", "Redundant"),
 ]
 
+#: What a cooling intake or outflow's hose lands on (#434) - quick-disconnect
+#: sizes, a barb or a flange.
+COOLING_CONNECTOR_CHOICES: Choices = [
+    ("qd-1/4", "QD 1/4\""),
+    ("qd-3/8", "QD 3/8\""),
+    ("qd-1/2", "QD 1/2\""),
+    ("qd-3/4", "QD 3/4\""),
+    ("qd-1", "QD 1\""),
+    ("barb", "Hose barb"),
+    ("flange", "Flange"),
+    ("other", "Other"),
+]
+
 
 def flatten_choices(groups: GroupedChoices) -> list[tuple[str, str]]:
     """Grouped → flat ``[(value, label), …]`` (e.g. for validation sets)."""
@@ -764,5 +777,6 @@ def dcim_choices_view(request):
         "cooling_source_types": flat(COOLING_SOURCE_TYPE_CHOICES),
         "cooling_fluids": flat(COOLING_FLUID_CHOICES),
         "cooling_feed_types": flat(COOLING_FEED_TYPE_CHOICES),
+        "cooling_connectors": flat(COOLING_CONNECTOR_CHOICES),
         "common_speeds": COMMON_SPEEDS,
     })
