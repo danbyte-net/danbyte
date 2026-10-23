@@ -197,10 +197,11 @@ A device with no type counts as full depth, as the elevation draws it.
 another site without taking it out of the rack. A device with no site takes
 its rack's. Its **location**, when set, is in its site too.
 
-**A rack takes the hardware its cooling serves.** Where the rack records a
-cooling capability, a device whose cooling method it does not take - liquid
-gear in an air-cooled rack, say - is refused (`Rack R12 is air-cooled; this
-device type is liquid-cooled.`). See [Cooling](../features/cooling.md#which-hardware-a-rack-takes).
+**A rack takes the hardware its cooling serves.** Air-cooled gear goes in
+any rack. Where the rack records a cooling capability, a liquid, hybrid or
+immersion device it does not take - liquid gear in an air-cooled rack, say -
+is refused (`Rack R12 is air-cooled; this device type is liquid-cooled.`).
+See [Cooling](../features/cooling.md#which-hardware-a-rack-takes).
 
 **A device type's change keeps its racked devices in place.** A new height,
 full depth or width that would put one of its devices over another device or
@@ -460,8 +461,9 @@ PDUs aside - over the rack's **cooling capacity**, on the same scale and with
 the same *nameplate* fallback. The rack page's Capacity card reads it under
 **Cooling** (`3.2 kW / 10 kW`, *No capacity* without one), with the rack's
 **Cooling capability** beneath, and the racks list offers a **Cooling**
-column like **Power**. The capability decides which hardware the rack takes;
-a device it does not take is refused. See [Cooling](../features/cooling.md).
+column like **Power**. The capability decides which liquid, hybrid and
+immersion hardware the rack takes - air-cooled gear goes in any rack - and a
+device it does not take is refused. See [Cooling](../features/cooling.md).
 
 The racks list offers **Ports** and **Panel ports** the same way - hidden
 until ticked, each a bar and *in use / counted* (`46 / 48`), sorting by the

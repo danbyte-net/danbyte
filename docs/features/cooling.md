@@ -58,13 +58,15 @@ model.
 
 ## Which hardware a rack takes
 
-A rack with a capability takes only the hardware its cooling can serve,
-judged by each device's effective cooling method:
+Air-cooled hardware - a device whose effective cooling method is air, set or
+left blank - goes in any rack: switches, PDUs and patch panels sit in a
+liquid rack or beside an immersion tank as anywhere else. Liquid, hybrid and
+immersion hardware goes only where the rack's capability serves it:
 
-| Rack cooling | Takes hardware cooled by |
+| Rack cooling | Takes liquid, hybrid and immersion hardware cooled by |
 |---|---|
-| **Air** | air |
-| **Hybrid** | air, liquid, hybrid |
+| **Air** | none of them |
+| **Hybrid** | liquid, hybrid |
 | **Liquid** | liquid, hybrid |
 | **Immersion** | immersion |
 

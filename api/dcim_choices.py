@@ -613,12 +613,13 @@ COOLING_CAPABILITY_CHOICES: Choices = [
     ("immersion", "Immersion"),
 ]
 
-#: The cooling methods a rack of each capability takes (``api.cooling``): a
-#: hybrid rack has air and a liquid loop, a liquid rack the loop alone, an
-#: immersion rack is a tank.
+#: The liquid, hybrid and immersion hardware a rack of each capability takes
+#: (``api.cooling``): a hybrid rack has air and a liquid loop, a liquid rack
+#: the loop, an immersion rack is a tank. Air-cooled hardware - a method of
+#: air, or none - goes in any rack.
 COOLING_ADMITS: dict[str, frozenset[str]] = {
-    "air": frozenset({"air"}),
-    "hybrid": frozenset({"air", "liquid", "hybrid"}),
+    "air": frozenset(),
+    "hybrid": frozenset({"liquid", "hybrid"}),
     "liquid": frozenset({"liquid", "hybrid"}),
     "immersion": frozenset({"immersion"}),
 }

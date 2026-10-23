@@ -28,12 +28,13 @@ from .models import (
 User = get_user_model()
 
 #: The cooling methods each rack capability takes (#434) - the rule under
-#: test, written out once more on purpose.
+#: test, written out once more on purpose. Air-cooled hardware goes in every
+#: rack; the matrix decides only for liquid, hybrid and immersion.
 ADMITS = {
     "air": {"air"},
     "hybrid": {"air", "liquid", "hybrid"},
-    "liquid": {"liquid", "hybrid"},
-    "immersion": {"immersion"},
+    "liquid": {"air", "liquid", "hybrid"},
+    "immersion": {"air", "immersion"},
 }
 METHODS = ("air", "liquid", "hybrid", "immersion")
 
@@ -465,11 +466,8 @@ class PlacementTests(_Base):
                         self.assertEqual(r.status_code, 201, r.content)
                     else:
                         self.assertEqual(r.status_code, 400, r.content)
-                        # The type sets every method but air, which is the
-                        # default of a type with none.
-                        subject = "this device" if method == "air" else "this device type"
                         self.assertEqual(r.json(), {
-                            "rack_id": [self.refusal(capability, method, subject)]})
+                            "rack_id": [self.refusal(capability, method)]})
 
     def test_a_rack_without_a_capability_takes_anything(self):
         bare = self.rack("bare")
@@ -494,9 +492,9 @@ class PlacementTests(_Base):
     def test_a_new_type_or_method_is_judged_on_the_field_that_changed(self):
         d = self.post(self.racks["liquid"], "liquid").json()
         url = f"/api/devices/{d['id']}/"
-        r = self.client.patch(url, {"cooling_method": "air"}, format="json")
+        r = self.client.patch(url, {"cooling_method": "immersion"}, format="json")
         self.assertEqual(r.json(), {"cooling_method": [
-            self.refusal("liquid", "air", "this device")]})
+            self.refusal("liquid", "immersion", "this device")]})
         r = self.client.patch(url, {"device_type_id": str(self.types["immersion"].id)},
                               format="json")
         self.assertEqual(r.json(), {"device_type_id": [
@@ -508,10 +506,47 @@ class PlacementTests(_Base):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["effective_cooling_method"], "hybrid")
         r = self.client.post("/api/devices/", {
-            "name": "own-air", "rack_id": str(self.racks["liquid"].id),
+            "name": "own-immersion", "rack_id": str(self.racks["liquid"].id),
+            "device_type_id": str(self.types["liquid"].id), "cooling_method": "immersion",
+        }, format="json")
+        self.assertEqual(r.json(), {
+            "rack_id": [self.refusal("liquid", "immersion", "this device")]})
+        # Marked air, a liquid type's device goes in an air-cooled rack.
+        r = self.client.post("/api/devices/", {
+            "name": "own-air", "rack_id": str(self.racks["air"].id),
             "device_type_id": str(self.types["liquid"].id), "cooling_method": "air",
         }, format="json")
-        self.assertEqual(r.json(), {"rack_id": [self.refusal("liquid", "air", "this device")]})
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_air_cooled_gear_goes_in_any_rack_and_is_never_mismatched(self):
+        # Switches, PDUs and patch panels in a liquid rack or by an
+        # immersion tank: an explicit air method, or none at all.
+        explicit = self.dtype("Switch", "air")
+        for capability in ("liquid", "immersion"):
+            rack = self.racks[capability]
+            with self.subTest(capability=capability):
+                switch = self.client.post("/api/devices/", {
+                    "name": f"sw-{capability}", "rack_id": str(rack.id),
+                    "device_type_id": str(explicit.id),
+                }, format="json")
+                self.assertEqual(switch.status_code, 201, switch.content)
+                # A PDU whose type sets no method: it reads as air.
+                pdu = self.post(rack, "air")
+                self.assertEqual(pdu.status_code, 201, pdu.content)
+                PowerOutlet.objects.create(device_id=pdu.json()["id"], name="C13-1")
+                self.assertEqual(
+                    self.client.get(f"/api/racks/{rack.id}/").json()["cooling"]["mismatched"], 0)
+                listed = self.client.get(
+                    "/api/devices/", {"rack": str(rack.id), "cooling_mismatch": "1"}).json()
+                self.assertEqual(listed["results"], [])
+        # Nor does a stricter capability later make them mismatched.
+        hybrid = self.racks["hybrid"]
+        self.post(hybrid, "air")
+        Rack.objects.filter(pk=hybrid.pk).update(cooling_capability="immersion")
+        self.assertEqual(
+            self.client.get(f"/api/racks/{hybrid.id}/").json()["cooling"]["mismatched"], 0)
+        totals = self.client.get(f"/api/sites/{self.site.id}/capacity/").json()["totals"]
+        self.assertEqual(totals["cooling"]["mismatched"], 0)
 
     def test_a_stricter_rack_keeps_its_devices_and_lists_them(self):
         rack = self.racks["hybrid"]
