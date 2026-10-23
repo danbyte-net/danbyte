@@ -2171,6 +2171,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     serial_number = models.CharField(max_length=255, blank=True)
     asset_tag = models.CharField(max_length=128, blank=True)
+    # The software version running (#395), compared with the platform's
+    # target_version. Typed by hand or filled by an integration; seen_at is
+    # set only by an integration, so a hand-typed value is never overwritten.
+    software_version = models.CharField(max_length=64, blank=True, default="")
+    software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
     warranty_end = models.DateField(
@@ -4942,6 +4947,11 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     disk_gb = models.PositiveIntegerField(
         null=True, blank=True, help_text="Disk in GB."
     )
+    # The software version running (#395), compared with the platform's
+    # target_version. Typed by hand or filled by an integration; seen_at is
+    # set only by an integration, so a hand-typed value is never overwritten.
+    software_version = models.CharField(max_length=64, blank=True, default="")
+    software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
     primary_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -5817,6 +5827,9 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         related_name="+",
         help_text="Default config template for devices on this platform.",
     )
+    # The version operators want running (#395); devices and VMs on this
+    # platform whose software_version differs are off target.
+    target_version = models.CharField(max_length=64, blank=True, default="")
     description = models.TextField(blank=True)
 
     class Meta:

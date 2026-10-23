@@ -2329,6 +2329,34 @@ class HostHardwareTests(TestCase):
         self.assertEqual(dev.device_type_id, mine.id)
         self.assertEqual(dev.serial_number, "MINE-1")
 
+    def test_host_version_fills_the_software_version(self):
+        """#395: the bare ESXi version, stamped as integration-filled, and it
+        follows the host on the next upgrade."""
+        from api.models import Device
+
+        self.sync([{**self.HW, "version": "8.0.3"}])
+        dev = Device.objects.get(name="esxi-lab-01")
+        self.assertEqual(dev.software_version, "8.0.3")
+        self.assertIsNotNone(dev.software_version_seen_at)
+
+        self.sync([{**self.HW, "version": "8.0.4"}])
+        dev.refresh_from_db()
+        self.assertEqual(dev.software_version, "8.0.4")
+
+    def test_a_typed_software_version_is_never_overwritten(self):
+        from api.models import Device
+
+        self.sync([{**self.HW, "version": ""}])
+        dev = Device.objects.get(name="esxi-lab-01")
+        self.assertEqual(dev.software_version, "")
+        dev.software_version = "8.0.2"
+        dev.save(update_fields=["software_version"])
+
+        self.sync([{**self.HW, "version": "8.0.3"}])
+        dev.refresh_from_db()
+        self.assertEqual(dev.software_version, "8.0.2")
+        self.assertIsNone(dev.software_version_seen_at)
+
     def test_a_blank_serial_is_not_written(self):
         """Nested ESXi reports no service tag - that must stay empty."""
         from api.models import Device

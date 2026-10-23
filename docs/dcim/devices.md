@@ -21,7 +21,9 @@ detail page.
    [Device catalog](device-catalog.md) page; it only takes a moment and you'll
    reuse it for every device of that model.
 4. Optionally set the **site**, **location**, **role**, **platform**,
-   **cluster**, **status**, **serial number**, **asset tag** and **warranty end**
+   **software version** (see
+   [Software target](../features/lifecycle.md#software-target)), **cluster**,
+   **status**, **serial number**, **asset tag** and **warranty end**
    (see [Support & warranty coverage](../features/support-coverage.md)).
 5. Optionally fill the **built-in extras** - **comments**, **airflow**, and
    **latitude / longitude**. Which optional fields appear is controlled by your
@@ -95,7 +97,7 @@ The default tab lays the device's facts out in four cards:
 
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
-| **Device**     | name, status, role, platform, description, comments          |
+| **Device**     | name, status, role, platform (with the software version and the platform's target), description, comments |
 | **Hardware**   | device type, serial number, asset tag, height (U), airflow, and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |

@@ -48,6 +48,42 @@ Both **device types** (hardware) and **platforms** (OS) have the same
   Lifecycle facet. Combined with the device counts, "which EoL hardware do we
   still run the most of?" is one filter + one sort.
 
+## Software target
+
+The lifecycle dates say how long a version is supported; the **software
+target** says which version you want running, and finds what does not run it.
+
+- **Target version** on a platform (edit form, shown on its overview) - the
+  version operators want running, e.g. `17.9.5`. Blank means no target.
+- **Software version** on a device or virtual machine - the version it runs,
+  e.g. `17.9.4a`. Typed in the edit form next to the platform, or filled by an
+  integration: the [vCenter sync](virt-vcenter.md) fills an ESXi host's
+  version.
+
+A device is judged against its effective platform: its own, else its device
+type's. The comparison is exact text. Each object is in one of three states:
+
+| State | When |
+|---|---|
+| On target | The software version equals the platform's target version |
+| Off target | Both are set and differ |
+| Unknown | No version recorded, no target, or no platform |
+
+Where it shows:
+
+- **Overview** - the Platform row reads `IOS-XE 17.9.4a · target 17.9.5`; just
+  the version when the platform has no target.
+- **Lists** - devices and virtual machines have *Software version* and
+  *Target* columns, hidden until picked from **Columns**, and a *Software
+  target* facet (On target, Off target, Unknown).
+- **Compliance** - a [Software target check](compliance.md#check-types) turns
+  off-target objects into violations, with `Running 17.9.4a, target 17.9.5`
+  as the reason.
+
+An integration that fills a version also stamps `software_version_seen_at`.
+A version a person types (in the form or the API) drops the stamp, and no
+sync overwrites it; clear the field to hand it back to the sync.
+
 ## API
 
 The fields live on the DeviceType and Platform resources; `lifecycle_state`
@@ -55,3 +91,9 @@ is read-only and computed server-side. Device payloads carry
 `lifecycle_state` (+ the bar dates) on their nested `device_type` and
 `platform` references, so device tables and detail pages render without
 extra requests.
+
+Software target (#395): `target_version` on `/api/platforms/` (and on the
+nested `platform` / `effective_platform` of devices and VMs);
+`software_version` (writable) and `software_version_seen_at` (read-only) on
+`/api/devices/` and `/api/virtual-machines/`. Both lists take
+`?software_target=on|off|unknown`; any other value is a 400.

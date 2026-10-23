@@ -43,7 +43,7 @@ from .natural import natural, natural_key
 from .visible_counts import related_count_expr
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, support_coverage
+from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, software_target, support_coverage
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
     FacePortLoader,
@@ -445,6 +445,18 @@ from .views import (
 # `natural_sort` ICU collation (migration 0099). Used wherever a list orders
 # by a user-visible name; `natural()` does the same for any other field.
 NATURAL_NAME = natural("name")
+
+# ?software_target= on the device and VM lists (#395).
+SOFTWARE_TARGET_PARAMETER = OpenApiParameter(
+    name="software_target",
+    type=OpenApiTypes.STR,
+    location=OpenApiParameter.QUERY,
+    enum=["on", "off", "unknown"],
+    description=(
+        "Software version against the platform's target version: `on` (equal), "
+        "`off` (differs), `unknown` (no version recorded, or no target)."
+    ),
+)
 
 # A device's map and the traces: the topology map's opt-in enrichments.
 MAP_INCLUDE_PARAMETER = OpenApiParameter(
@@ -3603,6 +3615,7 @@ ASSIGNED_IP_RELATED = (
 )
 
 
+@extend_schema_view(list=extend_schema(parameters=[SOFTWARE_TARGET_PARAMETER]))
 class DeviceViewSet(
     FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
 ):
@@ -3684,6 +3697,7 @@ class DeviceViewSet(
     # multi-field write, and the serializer rejects an inconsistent one.
     editable_str_fields = (
         "description", "comments", "serial_number", "asset_tag", "airflow",
+        "software_version",
     )
     editable_fk_fields = {
         "status_id": Status, "role_id": DeviceRole, "platform_id": Platform,
@@ -4280,6 +4294,8 @@ class DeviceViewSet(
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
             # ?coverage=<status> - support & warranty coverage (#421).
             qs = support_coverage.apply_device_filter(qs, self.request)
+            # ?software_target=on|off|unknown (#395).
+            qs = software_target.apply_filter(qs, self.request)
             contract = _uuid_param(self.request.query_params, "support_contract")
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)
@@ -6120,6 +6136,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
         return VirtualMachineGroupSerializer
 
 
+@extend_schema_view(list=extend_schema(parameters=[SOFTWARE_TARGET_PARAMETER]))
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
@@ -6253,6 +6270,8 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             from compliance.eol import apply_status_filter
 
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
+            # ?software_target=on|off|unknown (#395).
+            qs = software_target.apply_filter(qs, self.request)
         return qs
 
 
