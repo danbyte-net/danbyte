@@ -154,6 +154,16 @@ for _e in [
                    route="/providers/$id"),
     ReferenceModel("circuit", "Circuits", "api.Circuit", "/api/circuits/",
                    label_field="cid", route="/circuits/$id"),
+    # Power and cooling plant (#434): what maintenance on a panel or a
+    # cooling unit marks as impacted.
+    ReferenceModel("powerpanel", "Power panels", "api.PowerPanel",
+                   "/api/power-panels/", route="/power-panels/$id"),
+    ReferenceModel("powerfeed", "Power feeds", "api.PowerFeed",
+                   "/api/power-feeds/", picker=False, route="/power-feeds/$id"),
+    ReferenceModel("coolingsource", "Cooling sources", "api.CoolingSource",
+                   "/api/cooling-sources/", route="/cooling-sources/$id"),
+    ReferenceModel("coolingfeed", "Cooling feeds", "api.CoolingFeed",
+                   "/api/cooling-feeds/", picker=False, route="/cooling-feeds/$id"),
 ]:
     register_reference_model(_e)
 

@@ -8513,6 +8513,19 @@ class PowerPanelViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVie
             )
         return super().destroy(request, *args, **kwargs)
 
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, PowerFeed.objects.filter(power_panel=obj)
+        ))
+
 
 class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Bulk edit and a bulk delete that names the feeds still cabled (#313)."""
@@ -8567,6 +8580,19 @@ class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedView
                 if val:
                     qs = qs.filter(**{field: val})
         return qs
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, PowerFeed.objects.filter(pk=obj.pk)
+        ))
 
 
 # ─── Cooling ─────────────────────────────────────────────────────────────────
@@ -8723,6 +8749,19 @@ class CoolingSourceViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScoped
             )
         return super().destroy(request, *args, **kwargs)
 
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, CoolingFeed.objects.filter(source=obj)
+        ))
+
 
 @extend_schema_view(list=extend_schema(tags=["cooling-sources"],
                                        parameters=_COOLING_FEED_FILTERS))
@@ -8773,6 +8812,19 @@ class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVi
                 if val:
                     qs = qs.filter(**{field: val})
         return qs
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"])
+    def affected(self, request, pk=None):
+        """The racks and devices downstream (#434), each with the impact
+        level work here would have, and ``impacts`` ready for a maintenance
+        event (api.feed_impact). Read-only."""
+        from .feed_impact import affected
+
+        obj = self.get_object()
+        return Response(affected(
+            request.user, _get_active_tenant(request), obj, CoolingFeed.objects.filter(pk=obj.pk)
+        ))
 
 
 # ─── Wireless ────────────────────────────────────────────────────────────────
