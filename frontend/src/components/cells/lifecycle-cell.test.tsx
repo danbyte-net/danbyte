@@ -4,11 +4,17 @@ import { cleanup, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { flexRender } from "@tanstack/react-table"
+
+import type { Device, LifecycleNext, VirtualMachine } from "@/lib/api"
+import { buildDeviceColumns } from "@/components/columns/device-columns"
+import { buildVmColumns } from "@/components/columns/vm-columns"
 import {
   LifecycleBar,
   LifetimeBar,
   countdownText,
   hasLifetime,
+  lifecycleNextColumn,
   lifetimeFacts,
 } from "./lifecycle-cell"
 
@@ -158,5 +164,51 @@ describe("LifecycleBar", () => {
     expect(hasLifetime({ lifecycle_state: "" })).toBe(false)
     expect(hasLifetime(mapped)).toBe(true)
     expect(hasLifetime({ end_of_support: "2030-01-01" })).toBe(true)
+  })
+})
+
+describe("Next end of life column", () => {
+  type Row = { lifecycle_next: LifecycleNext | null }
+  const col = lifecycleNextColumn<Row>({ get: (r) => r.lifecycle_next })
+  const os: Row = {
+    lifecycle_next: { source: "os", end: "2026-08-14", start: "2022-04-21" },
+  }
+  const coverage: Row = {
+    lifecycle_next: { source: "coverage", end: "2026-07-25", start: null },
+  }
+  const none: Row = { lifecycle_next: null }
+  const sortValue = (r: Row) =>
+    (col as { accessorFn: (r: Row, i: number) => number }).accessorFn(r, 0)
+
+  it("is hidden until ticked, on the device and VM lists alike", () => {
+    expect(col.meta?.defaultHidden).toBe(true)
+    for (const cols of [
+      buildDeviceColumns<Device>(),
+      buildVmColumns<VirtualMachine>(),
+    ]) {
+      const next = cols.find((c) => c.id === "lifecycle_next")
+      expect(next?.meta?.defaultHidden).toBe(true)
+    }
+  })
+
+  it("sorts by days left, the undated last, and exports the date", () => {
+    expect(sortValue(coverage)).toBe(40)
+    expect(sortValue(os)).toBe(60)
+    expect(sortValue(none)).toBe(Infinity)
+    expect(col.meta?.export?.value(os)).toBe("2026-08-14 (OS)")
+    expect(col.meta?.export?.value(none)).toBe("")
+  })
+
+  it("draws the bar and names the source", () => {
+    const { container } = wrap(
+      flexRender(col.cell, { row: { original: os } } as never)
+    )
+    expect(screen.getByText("EoL in 2 mo")).toBeTruthy()
+    expect(screen.getByText("· OS")).toBeTruthy()
+    expect(track(container)).not.toBeNull()
+    cleanup()
+    wrap(flexRender(col.cell, { row: { original: coverage } } as never))
+    expect(screen.getByText("Ends in 40 d")).toBeTruthy()
+    expect(screen.getByText("· Coverage")).toBeTruthy()
   })
 })

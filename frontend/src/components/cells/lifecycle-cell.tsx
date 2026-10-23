@@ -1,7 +1,12 @@
 import type { ReactNode } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 
-import type { EffectiveOsDates, EolInfo, LifecycleState } from "@/lib/api"
+import type {
+  EffectiveOsDates,
+  EolInfo,
+  LifecycleNext,
+  LifecycleState,
+} from "@/lib/api"
 import { daysBetween, isIsoDate, useDateFormat } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +25,8 @@ import { EolBadge, useEolSettings } from "@/components/cells/eol-cell"
 //   <LifetimeBar start={…} end={…} warningDays={…} />  - any start → end
 //   <LifecycleBar item={row} />                          - a type or platform
 //   lifecycleColumn<MyRow>({ get: (r) => r })            - table column + facet
+//   lifecycleNextColumn<MyRow>({ get: (r) => r.lifecycle_next })
+//                                         - a device's or VM's soonest end
 
 export interface LifecycleLike extends EffectiveOsDates {
   release_date?: string | null
@@ -370,6 +377,68 @@ export function lifecycleColumn<T>(opts: {
               ? "No dates"
               : LIFECYCLE_LABELS[v as Exclude<LifecycleState, "">],
         }),
+      },
+    },
+  }
+}
+
+// ─── Next end of life ────────────────────────────────────────────────────
+
+const NEXT_SOURCE_LABELS: Record<LifecycleNext["source"], string> = {
+  hardware: "Hardware",
+  os: "OS",
+  coverage: "Coverage",
+}
+
+/** Calendar days from today to `end`, for sorting: no end sorts last. */
+function daysUntil(end: string | null | undefined): number {
+  if (!end || !isIsoDate(end)) return Infinity
+  return daysBetween(new Date().toISOString().slice(0, 10), end)
+}
+
+function NextEndCell({ next }: { next: LifecycleNext | null | undefined }) {
+  const eol = useEolSettings()
+  if (!next) return <span className="text-muted-foreground">-</span>
+  const coverage = next.source === "coverage"
+  return (
+    <span className="inline-flex items-center gap-1">
+      <LifetimeBar
+        start={next.start}
+        end={next.end}
+        label={coverage ? "coverage" : "eol"}
+        // A list row does not carry the tenant's coverage window; coverage
+        // has no start here either, so it is the countdown alone.
+        warningDays={coverage ? null : eol.data?.warning_days}
+      />
+      <span className="text-[11px] whitespace-nowrap text-muted-foreground">
+        · {NEXT_SOURCE_LABELS[next.source]}
+      </span>
+    </span>
+  )
+}
+
+/** "Next end of life" (#436): the soonest end across a device's or VM's
+ * sources as the time bar and which source it is, sorted by days left.
+ * Hidden until ticked in the Columns menu, so existing layouts and saved
+ * views keep their columns. */
+export function lifecycleNextColumn<T>(opts: {
+  get: (row: T) => LifecycleNext | null | undefined
+}): ColumnDef<T, unknown> {
+  return {
+    id: "lifecycle_next",
+    accessorFn: (r) => daysUntil(opts.get(r)?.end),
+    header: ({ column }) => (
+      <SortHeader column={column} label="Next end of life" />
+    ),
+    cell: ({ row }) => <NextEndCell next={opts.get(row.original)} />,
+    meta: {
+      label: "Next end of life",
+      defaultHidden: true,
+      export: {
+        value: (r: T) => {
+          const next = opts.get(r)
+          return next ? `${next.end} (${NEXT_SOURCE_LABELS[next.source]})` : ""
+        },
       },
     },
   }

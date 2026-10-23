@@ -2421,6 +2421,48 @@ def _platform_lifecycle(platform, context) -> dict:
     }
 
 
+#: The ``lifecycle_next`` shape on device and VM rows.
+LIFECYCLE_NEXT_SCHEMA = inline_serializer("LifecycleNext", {
+    "source": serializers.ChoiceField(choices=["hardware", "os", "coverage"]),
+    "end": serializers.DateField(),
+    "start": serializers.DateField(allow_null=True),
+}, allow_null=True)
+
+
+def _lifecycle_next(serializer, obj, *, device: bool) -> dict | None:
+    """The soonest dated end across an object's lifecycle sources (#436) - a
+    device's type's end of support, its platform's effective end of life and
+    its coverage end; a VM's platform - for the lists' Next end of life
+    column. Read from the joins and the coverage annotation the list already
+    has, so a page costs no extra query. A tie goes to the hardware, then the
+    OS. Coverage carries no start: the governing contract is not read here."""
+    from compliance.eol import effective_of
+
+    found = []
+    dt = obj.device_type if device else None
+    if dt is not None and dt.end_of_support:
+        found.append((dt.end_of_support, 0, "hardware", dt.release_date))
+    p = obj.platform
+    if p is not None:
+        e = effective_of(p, _eol_config(serializer.context))
+        if e.end:
+            found.append((e.end, 1, "os", e.start))
+    if device:
+        from .support_coverage import OPEN_ENDED, device_end
+
+        view = serializer.context.get("view")
+        if getattr(view, "action", None) in ("create", "update", "partial_update"):
+            # A write response: the row was read before the save.
+            obj.__dict__.pop("coverage_end_annotated", None)
+        end = device_end(obj)
+        if end is not None and end != OPEN_ENDED:
+            found.append((end, 2, "coverage", None))
+    if not found:
+        return None
+    end, _rank, source, start = min(found, key=lambda f: (f[0], f[1]))
+    return {"source": source, "end": end, "start": start}
+
+
 # User-entered vendor lifecycle window + the derived state - shared by
 # DeviceType (hardware) and Platform (OS). `lifecycle_state` is a model
 # property, so ReadOnlyField picks it up on any LifecycleMixin serializer.
@@ -2937,6 +2979,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         "topology_photo_size",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
+        # Its own column, Next end of life (device-columns.tsx).
+        "lifecycle_next",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -2960,6 +3004,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     # Support & warranty coverage (#421): {status, end, contracts}, from the
     # list queryset's annotations - no query per row.
     coverage = serializers.SerializerMethodField()
+    # The soonest end across hardware, OS and coverage (#436).
+    lifecycle_next = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3117,6 +3163,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         view = self.context.get("view")
         fresh = getattr(view, "action", None) in ("create", "update", "partial_update")
         return device_payload(obj, self.context.get("request"), fresh=fresh)
+
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=True)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -3537,7 +3587,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "image_ports",
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
-                  "warranty_end", "coverage",
+                  "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "port_labels", "topology_card", "topology_photo_size",
                   "latitude", "longitude",
@@ -5984,6 +6034,8 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
 
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+    # Its own column, Next end of life (vm-columns.tsx).
+    list_columns_exclude = ("lifecycle_next",)
     cluster = ClusterMiniSerializer(read_only=True)
     disks = VirtualDiskSerializer(many=True, read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
@@ -6078,6 +6130,14 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         return {"id": str(p.id), "name": p.name, "slug": p.slug,
                 **_platform_lifecycle(p, self.context)}
 
+    # The platform's effective end of life, for the Next end of life
+    # column (#436) - the soonest end once VMs have more sources.
+    lifecycle_next = serializers.SerializerMethodField()
+
+    @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
+    def get_lifecycle_next(self, obj):
+        return _lifecycle_next(self, obj, device=False)
+
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
     # Active and powered off at the same time. `power_state_at` ships with it
@@ -6112,7 +6172,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     class Meta:
         model = VirtualMachine
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
-                  "role", "role_id", "platform", "platform_id",
+                  "role", "role_id", "platform", "platform_id", "lifecycle_next",
                   "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",

@@ -1331,6 +1331,14 @@ export interface EffectiveOsDates {
   effective_source?: string | null
 }
 
+/** The soonest dated end across a device's or VM's lifecycle sources
+ * (#436) - the lists' Next end of life column. Coverage carries no start. */
+export interface LifecycleNext {
+  source: "hardware" | "os" | "coverage"
+  end: string
+  start: string | null
+}
+
 /** Vendor lifecycle window (LifecycleMixin) - DeviceType + Platform. */
 export interface LifecycleInfo {
   /** GA / first-ship date - the start of the lifetime bar. */
@@ -1614,6 +1622,8 @@ export interface Device {
   warranty_end?: string | null
   /** Support & warranty coverage (#421), derived server-side. */
   coverage?: DeviceCoverageBrief
+  /** The soonest end across hardware, OS and coverage (#436). */
+  lifecycle_next?: LifecycleNext | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -5022,6 +5032,8 @@ export interface VirtualMachine {
         eol?: EolInfo | null
       } & EffectiveOsDates)
     | null
+  /** The platform's effective end of life (#436). */
+  lifecycle_next?: LifecycleNext | null
   status: StatusMini | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the

@@ -537,6 +537,72 @@ class DeviceListTests(_Base):
         self.assertEqual(rows["sw-04"]["interface_count"], 0)
         self.assertEqual(rows["sw-04"]["ip_count"], 0)
 
+    def test_next_end_of_life_costs_no_query(self):
+        """``lifecycle_next`` (#436) reads the type, the platform and its
+        mapping the list joins, and the coverage annotation: a page costs
+        exactly what it cost without the field, devices and VMs alike."""
+        from datetime import timedelta
+        from unittest import mock
+
+        from django.utils import timezone
+
+        from compliance.models import EolMapping, EolSettings
+
+        from .models import (
+            Cluster,
+            ClusterType,
+            DeviceType,
+            Manufacturer,
+            Platform,
+            SupportContract,
+            SupportCoverage,
+        )
+        from .serializers import DeviceSerializer, VirtualMachineSerializer
+
+        today = timezone.localdate()
+        EolSettings.objects.update_or_create(pk=1, defaults={"enabled": True})
+        dtype = DeviceType.objects.create(
+            tenant=self.tenant, name="T", release_date=today - timedelta(days=900),
+            end_of_support=today + timedelta(days=300))
+        plat = Platform.objects.create(tenant=self.tenant, name="P", slug="p")
+        EolMapping.objects.create(
+            tenant=self.tenant, platform=plat, source="endoflife_date", product="x",
+            cycle="1", eol_date=today + timedelta(days=60), synced_at=timezone.now())
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="CT", slug="ct")
+        cluster = Cluster.objects.create(tenant=self.tenant, name="C", type=ctype)
+        mfr = Manufacturer.objects.create(tenant=self.tenant, name="M", slug="m")
+        contract = SupportContract.objects.create(
+            tenant=self.tenant, manufacturer=mfr, contract_number="K",
+            end_date=today + timedelta(days=30))
+        for i in range(12):
+            d = Device.objects.create(
+                tenant=self.tenant, name=f"d-{i:02d}", device_type=dtype,
+                platform=plat if i % 2 else None,
+                warranty_end=today + timedelta(days=10 + i) if i % 3 else None)
+            if i % 4 == 0:
+                SupportCoverage.objects.create(tenant=self.tenant, contract=contract, device=d)
+            VirtualMachine.objects.create(
+                tenant=self.tenant, name=f"vm-{i:02d}", cluster=cluster,
+                platform=plat if i % 2 else None)
+
+        for url, serializer in (("/api/devices/?page_size=12", DeviceSerializer),
+                                ("/api/virtual-machines/?page_size=12",
+                                 VirtualMachineSerializer)):
+            with_field, body = self._queries(url)
+            with mock.patch.object(serializer, "get_lifecycle_next", return_value=None):
+                without, _ = self._queries(url)
+            self.assertEqual(with_field, without, url)
+            nexts = [r["lifecycle_next"] for r in body["results"]]
+            self.assertTrue(any(nexts), url)
+        small, _ = self._queries("/api/devices/?page_size=4")
+        big, body = self._queries("/api/devices/?page_size=12")
+        self.assertEqual(small, big, "a bigger page must not cost more queries")
+        rows = {r["name"]: r["lifecycle_next"] for r in body["results"]}
+        self.assertEqual(rows["d-01"]["source"], "coverage")   # warranty in 11 days
+        self.assertEqual(rows["d-00"]["source"], "coverage")   # the contract, 30 days
+        self.assertEqual(rows["d-03"]["source"], "os")   # the mapping, 60 days
+        self.assertEqual(rows["d-06"]["source"], "hardware")   # nothing sooner
+
     def test_cabinet_and_rail_are_prefetched_not_joined(self):
         """Joined, the DIN cabinet and rail brought the list query back to 14
         LEFT JOINs and Postgres spent most of the request planning it (#288)."""

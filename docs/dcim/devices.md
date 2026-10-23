@@ -109,6 +109,13 @@ The three support rows are [lifetime bars](../features/lifecycle.md#the-lifetime
 from the device type, and *Support coverage* from the device's contracts and
 warranty ([Support & warranty coverage](../features/support-coverage.md)).
 
+The Devices list has the same dates as an optional **Next end of life**
+column (tick it in the **Columns** menu): the soonest of the three as the
+lifetime bar, with which source it is, sorting by days left. The API carries
+it as `lifecycle_next: {source, end, start}` (`null` with no dated end); a
+coverage end has no start there. The whole estate, one row per source, is on
+the [Lifecycle overview](../features/lifecycle-overview.md).
+
 Devices with ports also get a **Port utilization** card: a segmented bar plus
 counts of **connected** (the port terminates a cable), **reserved** (its cable
 carries the *Planned* status, or the uncabled port holds a direct

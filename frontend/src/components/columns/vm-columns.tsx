@@ -11,6 +11,7 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
+import { lifecycleNextColumn } from "@/components/cells/lifecycle-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -59,6 +60,7 @@ export type VmColumnId =
   | "role"
   | "platform"
   | "eol"
+  | "lifecycle_next"
   | "synced_from"
   | "tags"
   | "updated"
@@ -81,6 +83,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "role",
   "platform",
   "eol",
+  "lifecycle_next",
   "synced_from",
   "tags",
   "updated",
@@ -379,6 +382,9 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     platform: () =>
       platformColumn<T>({ get: (r) => r.platform, className: "text-xs" }),
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
+    // The platform's effective end of life (#436); hidden by default.
+    lifecycle_next: () =>
+      lifecycleNextColumn<T>({ get: (r) => r.lifecycle_next }),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

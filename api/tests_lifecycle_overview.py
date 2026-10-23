@@ -321,6 +321,60 @@ class ScopeTests(_Base):
         self.assertEqual(self.client.get(URL).status_code, 403)
 
 
+class NextEndOfLifeTests(_Base):
+    """``lifecycle_next`` on device and VM rows: the soonest dated end across
+    the object's sources, for the lists' Next end of life column."""
+
+    def next_of(self, url, name):
+        rows = self.client.get(url).json()["results"]
+        return {r["name"]: r for r in rows}[name]["lifecycle_next"]
+
+    def test_the_soonest_source_wins(self):
+        plat = self.platform("P", release=d(-100), end=d(100))
+        self.device("cov", self.dtype("T1", release=d(-900), end=d(300)), plat, warranty=d(50))
+        self.device("hw", self.dtype("T2", release=d(-900), end=d(20)), plat, warranty=d(50))
+        self.device("os", self.dtype("T3", end=d(300)), plat)
+        self.device("tie", self.dtype("T4", release=d(-5), end=d(100)), plat)
+        self.vm("vm", plat)
+        url = "/api/devices/"
+        self.assertEqual(self.next_of(url, "cov"),
+                         {"source": "coverage", "end": str(d(50)), "start": None})
+        self.assertEqual(self.next_of(url, "hw"),
+                         {"source": "hardware", "end": str(d(20)), "start": str(d(-900))})
+        self.assertEqual(self.next_of(url, "os"),
+                         {"source": "os", "end": str(d(100)), "start": str(d(-100))})
+        self.assertEqual(self.next_of(url, "tie")["source"], "hardware")
+        self.assertEqual(self.next_of("/api/virtual-machines/", "vm"),
+                         {"source": "os", "end": str(d(100)), "start": str(d(-100))})
+
+    def test_undated_and_open_ended_ends_are_skipped(self):
+        open_ended = self.device("open")
+        self.contract("FOREVER", [open_ended], start=d(-5))
+        self.device("bare", self.dtype("T"), self.platform("P"))
+        self.assertIsNone(self.next_of("/api/devices/", "open"))
+        self.assertIsNone(self.next_of("/api/devices/", "bare"))
+
+    def test_a_mapping_counts_while_eol_data_is_on(self):
+        mapped = self.platform("Mapped")
+        EolMapping.objects.create(
+            tenant=self.tenant, platform=mapped, source="endoflife_date", product="x",
+            cycle="1", eol_date=d(10), synced_at=timezone.now())
+        self.device("dev", platform=mapped)
+        self.assertIsNone(self.next_of("/api/devices/", "dev"))
+        row = EolSettings.load()
+        row.enabled = True
+        row.save()
+        self.assertEqual(self.next_of("/api/devices/", "dev")["end"], str(d(10)))
+
+    def test_a_write_answers_with_the_new_coverage(self):
+        dev = self.device("dev", self.dtype("T", end=d(300)))
+        r = self.client.patch(f"/api/devices/{dev.id}/", {"warranty_end": str(d(30))},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["lifecycle_next"],
+                         {"source": "coverage", "end": str(d(30)), "start": None})
+
+
 class QueryCountTests(_Base):
     """The page reads the fleet in a fixed number of queries (#436)."""
 
