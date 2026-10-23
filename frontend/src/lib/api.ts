@@ -1590,14 +1590,24 @@ export interface Device {
     release_date?: string | null
     end_of_support?: string | null
     lifecycle_state?: LifecycleState
+    /** The version operators want running (#395); "" = no target. */
+    target_version?: string
     /** End-of-life data (#8); null while the feature is off. */
     eol?: EolInfo | null
   } | null
   /** Read-only: the device's own platform, else its type's default. */
-  effective_platform: { id: string; name: string } | null
+  effective_platform: {
+    id: string
+    name: string
+    target_version?: string
+  } | null
   status: StatusMini | null
   serial_number: string
   asset_tag: string
+  /** The software version running (#395). */
+  software_version?: string
+  /** Set when an integration filled software_version; read-only. */
+  software_version_seen_at?: string | null
   /** Last day of the unit's hardware warranty (#421). */
   warranty_end?: string | null
   /** Support & warranty coverage (#421), derived server-side. */
@@ -1694,6 +1704,8 @@ export interface DeviceWritePayload {
   status_id?: string | null
   serial_number?: string
   asset_tag?: string
+  /** The software version running (#395). */
+  software_version?: string
   /** Last day of the hardware warranty (#421). */
   warranty_end?: string | null
   description?: string
@@ -1856,6 +1868,8 @@ export interface Platform extends LifecycleInfo {
   group: { id: string; name: string; slug: string } | null
   manufacturer: { id: string; name: string; slug: string } | null
   config_template: { id: string; name: string } | null
+  /** The version operators want running (#395); "" = no target. */
+  target_version?: string
   description: string
   tags: Tag[]
   /** End-of-life data (#8); null while the feature is off. */
@@ -1933,6 +1947,8 @@ export interface PlatformWritePayload {
   group_id?: string | null
   manufacturer_id?: string | null
   config_template_id?: string | null
+  /** The version operators want running (#395). */
+  target_version?: string
   description?: string
   release_date?: string | null
   end_of_sale?: string | null
@@ -5002,10 +5018,16 @@ export interface VirtualMachine {
     id: string
     name: string
     slug: string
+    /** The version operators want running (#395); "" = no target. */
+    target_version?: string
     /** End-of-life data (#8); null while the feature is off. */
     eol?: EolInfo | null
   } | null
   status: StatusMini | null
+  /** The software version running (#395). */
+  software_version?: string
+  /** Set when an integration filled software_version; read-only. */
+  software_version_seen_at?: string | null
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
    * operator's lifecycle field: a VM can be Active and powered off. */
@@ -5113,6 +5135,8 @@ export interface VirtualMachineWritePayload {
   vcpus?: number | null
   memory_mb?: number | null
   disk_gb?: number | null
+  /** The software version running (#395). */
+  software_version?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -7934,6 +7958,7 @@ export type ComplianceCheck =
   | "required_cf"
   | "eol_status"
   | "coverage"
+  | "software_target"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 export interface ComplianceRule {
   id: string
@@ -7955,6 +7980,8 @@ export interface ComplianceRule {
   eol_fail_on?: "" | "eol" | "ending" | "unknown"
   /** coverage checks (#421): expired | expiring. */
   coverage_fail_on?: "" | "expired" | "expiring"
+  /** software_target checks (#395): a blank software version fails too. */
+  fail_on_unknown?: boolean
   created_at: string
   updated_at: string
 }
@@ -7967,6 +7994,8 @@ export interface ComplianceViolation {
   object_route: string | null
   object_id: string
   object_repr: string
+  /** Why it fails, where the check says (software_target). */
+  detail?: string
 }
 export interface ComplianceEvaluation {
   rules: {
@@ -8013,6 +8042,7 @@ export interface DeviceComplianceViolation {
   cf_key: string
   eol_fail_on?: string
   coverage_fail_on?: string
+  detail?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance

@@ -1,5 +1,6 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { PlatformCell } from "@/components/cells/platform-cell"
+import { SoftwareVersionText } from "@/components/cells/software-version-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
@@ -820,13 +821,23 @@ function DeviceOverview({
         <span className="inline-flex items-center gap-2">
           <PlatformCell platform={d.platform} />
           <LifecycleFlag state={d.platform.lifecycle_state} />
+          <SoftwareVersionText
+            version={d.software_version}
+            target={d.platform.target_version}
+          />
         </span>
       ) : d.effective_platform ? (
         // No platform of its own - inherited from the device type.
         <span className="inline-flex items-center gap-2">
           {d.effective_platform.name}
           <span className="text-[11px] text-muted-foreground">(from type)</span>
+          <SoftwareVersionText
+            version={d.software_version}
+            target={d.effective_platform.target_version}
+          />
         </span>
+      ) : d.software_version ? (
+        <SoftwareVersionText version={d.software_version} />
       ) : (
         dash
       ),

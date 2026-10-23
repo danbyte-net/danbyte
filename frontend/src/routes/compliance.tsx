@@ -289,7 +289,7 @@ function ViolationsTab({
         header: ({ column }) => <SortHeader column={column} label="Object" />,
         cell: ({ row }) => {
           const route = OBJ_ROUTE[row.original.object_type]
-          return route ? (
+          const name = route ? (
             <Link
               to={route}
               params={{ id: row.original.object_id }}
@@ -301,6 +301,16 @@ function ViolationsTab({
             <span className="font-mono font-medium">
               {row.original.object_repr}
             </span>
+          )
+          return row.original.detail ? (
+            <span className="whitespace-nowrap">
+              {name}
+              <span className="ml-2 text-xs text-muted-foreground">
+                {row.original.detail}
+              </span>
+            </span>
+          ) : (
+            name
           )
         },
       },
@@ -607,6 +617,7 @@ export function ruleSummary(
   r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
     eol_fail_on?: string
     coverage_fail_on?: string
+    fail_on_unknown?: boolean
     check_type: string
     check_type_display?: string
   }
@@ -634,6 +645,10 @@ export function ruleSummary(
         ? `${scope} must have coverage beyond the warning window`
         : `${scope} must have active coverage`
     }
+    case "software_target":
+      return r.fail_on_unknown
+        ? "version must be the platform target, and known"
+        : "version must be the platform target"
     default:
       return r.check_type_display ?? r.check_type
   }

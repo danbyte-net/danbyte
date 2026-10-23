@@ -11,6 +11,10 @@ import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { platformColumn } from "@/components/cells/platform-cell"
 import { eolColumn } from "@/components/cells/eol-cell"
+import {
+  softwareTargetColumn,
+  softwareVersionColumn,
+} from "@/components/cells/software-version-cell"
 import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
@@ -59,6 +63,8 @@ export type VmColumnId =
   | "role"
   | "platform"
   | "eol"
+  | "software_version"
+  | "software_target"
   | "synced_from"
   | "tags"
   | "updated"
@@ -81,6 +87,8 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "role",
   "platform",
   "eol",
+  "software_version",
+  "software_target",
   "synced_from",
   "tags",
   "updated",
@@ -379,6 +387,13 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
     platform: () =>
       platformColumn<T>({ get: (r) => r.platform, className: "text-xs" }),
     eol: () => eolColumn<T>({ get: (r) => r.platform?.eol }),
+    software_version: () =>
+      softwareVersionColumn<T>({ get: (r) => r.software_version }),
+    software_target: () =>
+      softwareTargetColumn<T>({
+        target: (r) => r.platform?.target_version,
+        version: (r) => r.software_version,
+      }),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

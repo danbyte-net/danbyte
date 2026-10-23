@@ -84,6 +84,9 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [diskGb, setDiskGb] = useState(
     vm?.disk_gb != null ? String(vm.disk_gb) : ""
   )
+  const [softwareVersion, setSoftwareVersion] = useState(
+    vm?.software_version ?? ""
+  )
   const [description, setDescription] = useState(vm?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     vm?.tags.map((t) => t.id) ?? []
@@ -106,6 +109,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setVcpus(vm.vcpus != null ? String(vm.vcpus) : "")
     setMemoryMb(vm.memory_mb != null ? String(vm.memory_mb) : "")
     setDiskGb(vm.disk_gb != null ? String(vm.disk_gb) : "")
+    setSoftwareVersion(vm.software_version ?? "")
     setDescription(vm.description)
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
@@ -163,6 +167,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         vcpus: numOrNull(vcpus),
         memory_mb: numOrNull(memoryMb),
         disk_gb: numOrNull(diskGb),
+        software_version: softwareVersion.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -351,6 +356,14 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                 }
               />
             </div>
+            <FormText
+              label="Software version"
+              value={softwareVersion}
+              onChange={setSoftwareVersion}
+              mono
+              placeholder="17.9.4a"
+              error={fieldErrors.software_version}
+            />
           </FormSection>
 
           <FormSection title="Notes" card>
