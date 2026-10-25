@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Field,
   FormCombobox,
   FormDate,
   FormFooter,
@@ -35,6 +36,9 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { ApplicationPicker } from "@/components/application-picker"
+import { DevicePicker } from "@/components/device-picker"
+import { VMPicker } from "@/components/vm-picker"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
@@ -155,25 +159,40 @@ export function InstalledSoftwarePane({ parent }: { parent: SoftwareParent }) {
   )
 }
 
-/** Add or edit one install. The service picker lists the parent's own
- * services only; a blank cycle is derived from the version. */
+const PARENT_KINDS = [
+  { value: "device", label: "Device" },
+  { value: "vm", label: "Virtual machine" },
+] as const
+
+/** Add or edit one install. Either the parent is fixed (device and VM
+ * Software tabs) and the user picks the application, or the application is
+ * fixed (its Installed on tab) and the user picks a device or VM. The service
+ * picker lists the parent's own services only; a blank cycle is derived from
+ * the version. */
 export function InstalledSoftwareDialog({
-  parent,
+  parent: fixedParent,
+  application,
   install,
   open,
   onOpenChange,
   onSaved,
 }: {
-  parent: SoftwareParent
   install: InstalledSoftware | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onSaved: (saved: InstalledSoftware) => void
-}) {
+} & (
+  | { parent: SoftwareParent; application?: undefined }
+  | { parent?: undefined; application: { id: string } }
+)) {
   const isEdit = !!install
   const saveObject = useSaveObject()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [applicationId, setApplicationId] = useState<string | null>(null)
+  const [parentKind, setParentKind] = useState<SoftwareParent["kind"]>("device")
+  const [parentId, setParentId] = useState<string | null>(null)
+  const parent: SoftwareParent | null =
+    fixedParent ?? (parentId ? { kind: parentKind, id: parentId } : null)
   const [version, setVersion] = useState("")
   const [cycle, setCycle] = useState("")
   const [serviceId, setServiceId] = useState<string | null>(null)
@@ -183,7 +202,9 @@ export function InstalledSoftwareDialog({
 
   useEffect(() => {
     if (!open) return
-    setApplicationId(install?.application.id ?? null)
+    setApplicationId(application?.id ?? install?.application.id ?? null)
+    setParentKind(install?.virtual_machine ? "vm" : "device")
+    setParentId(install?.device?.id ?? install?.virtual_machine?.id ?? null)
     setVersion(install?.version ?? "")
     // A derived cycle shows as its placeholder, so clearing stays derived.
     setCycle(install?.cycle_manual ? install.cycle : "")
@@ -192,16 +213,22 @@ export function InstalledSoftwareDialog({
     setEndOfSupport(install?.end_of_support ?? "")
     setDescription(install?.description ?? "")
     reset()
-  }, [open, install, reset])
+  }, [open, install, application?.id, reset])
 
   const services = useQuery({
-    queryKey: ["services", parent.kind, parent.id],
+    queryKey: ["services", parent?.kind, parent?.id],
     queryFn: () =>
       apiAll<Service>(
-        `/api/services/?${parent.kind === "device" ? "device" : "vm"}=${parent.id}`
+        `/api/services/?${parent!.kind === "device" ? "device" : "vm"}=${parent!.id}`
       ),
-    enabled: open,
+    enabled: open && !!parent,
   })
+
+  // The service belongs to the parent, so a new parent drops it.
+  const pickParent = (id: string | null) => {
+    setParentId(id)
+    setServiceId(null)
+  }
 
   const save = useMutation({
     mutationFn: () =>
@@ -212,9 +239,9 @@ export function InstalledSoftwareDialog({
         nameField: "version",
         payload: {
           application_id: applicationId,
-          ...(parent.kind === "device"
-            ? { device_id: parent.id }
-            : { virtual_machine_id: parent.id }),
+          ...(parent?.kind === "vm"
+            ? { virtual_machine_id: parent.id }
+            : { device_id: parent?.id ?? null }),
           version: version.trim(),
           cycle: cycle.trim(),
           service_id: serviceId,
@@ -250,12 +277,44 @@ export function InstalledSoftwareDialog({
           }}
           className="grid gap-4"
         >
-          <ApplicationPicker
-            required
-            value={applicationId}
-            onChange={setApplicationId}
-            error={fieldErrors.application_id}
-          />
+          {fixedParent ? (
+            <ApplicationPicker
+              required
+              value={applicationId}
+              onChange={setApplicationId}
+              error={fieldErrors.application_id}
+            />
+          ) : (
+            <>
+              <Field label="Installed on">
+                <SegmentedTabs
+                  items={PARENT_KINDS}
+                  value={parentKind}
+                  onValueChange={(v) => {
+                    if (v === parentKind) return
+                    setParentKind(v)
+                    setParentId(null)
+                    setServiceId(null)
+                  }}
+                />
+              </Field>
+              {parentKind === "device" ? (
+                <DevicePicker
+                  required
+                  value={parentId}
+                  onChange={pickParent}
+                  error={fieldErrors.device_id}
+                />
+              ) : (
+                <VMPicker
+                  required
+                  value={parentId}
+                  onChange={pickParent}
+                  error={fieldErrors.virtual_machine_id}
+                />
+              )}
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <FormText
               label="Version"
