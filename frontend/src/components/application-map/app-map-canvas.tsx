@@ -6,6 +6,8 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
+  useState,
 } from "react"
 import {
   Background,
@@ -19,6 +21,8 @@ import {
 import type { Edge, Node, NodeTypes } from "@xyflow/react"
 
 import { useTheme } from "@/components/theme-provider"
+import { CanvasTip } from "@/components/topology/canvas-tip"
+import type { CanvasTipHandle } from "@/components/topology/canvas-tip"
 import { BAND_NODE_CLASS } from "@/components/topology/diagram/band-node"
 import type { BandData } from "@/components/topology/diagram/band-node"
 import { LinkEdge } from "@/components/topology/diagram/link-edge"
@@ -27,26 +31,37 @@ import { NODE_KINDS } from "@/components/topology/node-registry"
 import { MIN_ZOOM } from "@/components/topology/opening-view"
 import { ZoomControls } from "@/components/topology/zoom-controls"
 
+import { AppCard } from "./app-card"
+import { focusSet } from "./model"
 import type { AppBand, AppCardNode, AppEdge, AppMapGraph } from "./model"
 
 // The Application map's canvas (#163): React Flow with the topology
-// Diagram's own pieces - its card (CardNode), its row band (BandNode, read
-// only here) and its link (LinkEdge, with arrowheads) - in the page's
-// theme, with the maps' zoom buttons and dotted ground. Only those two
-// node kinds are registered, from the topology's registry: nothing new is
-// added to it, so the topology map draws exactly what it drew before.
+// Diagram's own pieces - its card (CardNode, with an application's colour
+// bar on its edge), its row band (BandNode, read only here) and its link
+// (LinkEdge, with arrowheads, drawn from the plan routing.ts made) - in
+// the page's theme, with the maps' zoom buttons and dotted ground. Nothing
+// new is added to the topology's registry, so the topology map draws
+// exactly what it drew before.
+//
+// Hovering or selecting a card brings it forward with its install or flow
+// lines and the cards at their other ends, and fades the rest, as a
+// search does (`dimmed`). Hovering a host line names its application and
+// version in the canvas tip.
 //
 // The cards drag freely; where they were left is reported on drop, and
 // the page keeps it (in the URL on the Maps page). Nothing on the canvas
 // is deleted by a key.
 
 const nodeTypes: NodeTypes = {
-  card: NODE_KINDS.card.component,
+  card: AppCard,
   band: NODE_KINDS.band.component,
 }
 const edgeTypes = { link: LinkEdge }
 
 const FIT = { padding: 0.12, maxZoom: 1.25 }
+
+/** How faint a line out of focus is drawn. */
+const FADED_LINE = 0.15
 
 export interface AppMapCanvasHandle {
   fit: () => void
@@ -98,26 +113,38 @@ function bandNode(b: AppBand): Node {
   }
 }
 
-function toFlow(
+/** The map as React Flow draws it: a search's misses faint, and with a
+ * card in focus (hovered or selected) everything but it, its lines and
+ * the cards they reach. */
+export function toFlow(
   graph: AppMapGraph,
   matched: Set<string> | null | undefined,
   selectedNodeId: string | null | undefined,
-  selectedEdgeId: string | null | undefined
+  selectedEdgeId: string | null | undefined,
+  focusId?: string | null
 ): { nodes: Node[]; edges: Edge[] } {
+  const focus = focusSet(graph, focusId)
   const nodes: Node[] = [
     ...graph.bands.map(bandNode),
     ...graph.nodes.map((n) => ({
       ...n,
       selected: n.id === selectedNodeId,
-      data: { ...n.data, dimmed: !!matched && !matched.has(n.id) },
+      data: {
+        ...n.data,
+        dimmed:
+          (!!matched && !matched.has(n.id)) ||
+          (!!focus && !focus.nodes.has(n.id)),
+      },
     })),
   ]
   const edges: Edge[] = graph.edges.map((e) => {
-    const hot = e.id === selectedEdgeId
+    const lit = !!focus?.edges.has(e.id)
+    const hot = e.id === selectedEdgeId || lit
     const dim = !!matched && !(matched.has(e.source) || matched.has(e.target))
+    const out = !!focus && !lit
     return {
       ...e,
-      selected: hot,
+      selected: e.id === selectedEdgeId,
       ...(hot ? { className: "topo-hot", zIndex: 1 } : {}),
       data: { ...e.data!, hot },
       style: {
@@ -125,7 +152,7 @@ function toFlow(
         ...(hot
           ? { strokeWidth: Number(e.style?.strokeWidth ?? 1.5) + 1 }
           : {}),
-        ...(dim ? { opacity: 0.2 } : {}),
+        ...(out ? { opacity: FADED_LINE } : dim ? { opacity: 0.2 } : {}),
       },
     }
   })
@@ -150,9 +177,16 @@ const Inner = forwardRef<AppMapCanvasHandle, AppMapCanvasProps>(function Inner(
 ) {
   const { theme } = useTheme()
   const flow = useReactFlow()
+  const root = useRef<HTMLDivElement>(null)
+  const tip = useRef<CanvasTipHandle>(null)
+  // The card under the pointer; none while a card is dragged, so a
+  // rebuild never snaps the dragged card back.
+  const [hover, setHover] = useState<string | null>(null)
+  const dragging = useRef(false)
+  const focusId = hover ?? selectedNodeId ?? null
   const built = useMemo(
-    () => toFlow(graph, matched, selectedNodeId, selectedEdgeId),
-    [graph, matched, selectedNodeId, selectedEdgeId]
+    () => toFlow(graph, matched, selectedNodeId, selectedEdgeId, focusId),
+    [graph, matched, selectedNodeId, selectedEdgeId, focusId]
   )
   const [nodes, setNodes, onNodesChange] = useNodesState(built.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(built.edges)
@@ -194,7 +228,7 @@ const Inner = forwardRef<AppMapCanvasHandle, AppMapCanvasProps>(function Inner(
 
   return (
     // data-lod: the Diagram's line and label styles key on it.
-    <div className="relative h-full w-full" data-lod="0">
+    <div ref={root} className="relative h-full w-full" data-lod="0">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -217,14 +251,31 @@ const Inner = forwardRef<AppMapCanvasHandle, AppMapCanvasProps>(function Inner(
             if (b) onSelectBand?.(b)
           }
         }}
+        onNodeMouseEnter={(_, n) => {
+          if (n.type === "card" && !dragging.current) setHover(n.id)
+        }}
+        onNodeMouseLeave={() => {
+          if (!dragging.current) setHover(null)
+        }}
         onEdgeClick={(_, e) => onSelectEdge?.(e as AppEdge)}
+        onEdgeMouseEnter={(ev, e) => {
+          const text = (e as AppEdge).data?.tip
+          if (text) tip.current?.show(text, ev)
+        }}
+        onEdgeMouseMove={(ev) => tip.current?.move(ev)}
+        onEdgeMouseLeave={() => tip.current?.hide()}
         onPaneClick={() => onPaneClick?.()}
         onNodeContextMenu={(ev, n) => {
           if (n.type !== "card" || !onNodeContext) return
           ev.preventDefault()
           onNodeContext(n as AppCardNode, ev.clientX, ev.clientY)
         }}
+        onNodeDragStart={() => {
+          dragging.current = true
+          setHover(null)
+        }}
         onNodeDragStop={() => {
+          dragging.current = false
           if (!onMoved) return
           const out: Record<string, [number, number]> = {}
           for (const n of flow.getNodes())
@@ -236,6 +287,7 @@ const Inner = forwardRef<AppMapCanvasHandle, AppMapCanvasProps>(function Inner(
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <ZoomControls onFit={fit} />
       </ReactFlow>
+      <CanvasTip ref={tip} root={root} />
     </div>
   )
 })

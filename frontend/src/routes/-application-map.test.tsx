@@ -193,6 +193,47 @@ describe("Application map page", () => {
     ).toBe("/applications/api")
   })
 
+  it("reads the Hosts setting from the URL: under, a row, or off", async () => {
+    const api = application("api", "checkout-api", { install_count: 2 })
+    const pg = application("pg", "PostgreSQL", { install_count: 1 })
+    answers["/api/applications/"] = page([api, pg])
+    const on = (id: string, app: typeof api, version: string) => ({
+      id,
+      application: { id: app.id, name: app.name, slug: app.id, path: "" },
+      device: { id: "d1", name: "web1" },
+      virtual_machine: null,
+      version,
+    })
+    answers["/api/installed-software/"] = page([
+      on("i1", api, "2.1"),
+      on("i2", pg, "16"),
+    ])
+    const ids = () =>
+      (lastCanvas().graph as { nodes: { id: string }[] }).nodes
+        .map((n) => n.id)
+        .sort()
+
+    mount("/application-map?hosts=under")
+    await screen.findByTestId("canvas")
+    // One copy of web1 under each application it runs.
+    expect(ids()).toEqual(
+      ["app:api", "app:pg", "leaf:api:device:d1", "leaf:pg:device:d1"].sort()
+    )
+    expect(screen.getByRole("button", { name: /Hosts/ }).textContent).toMatch(
+      /Under applications/
+    )
+    cleanup()
+
+    mount("/application-map?hosts=0")
+    await screen.findByTestId("canvas")
+    expect(ids()).toEqual(["app:api", "app:pg"])
+    cleanup()
+
+    mount("/application-map")
+    await screen.findByTestId("canvas")
+    expect(ids()).toEqual(["app:api", "app:pg", "host:device:d1"].sort())
+  })
+
   it("draws the flows from the URL's view and filters", async () => {
     mount("/application-map?view=flows&status=s1&apps=a1")
     expect(await screen.findByText("Nothing on the map matches.")).toBeTruthy()

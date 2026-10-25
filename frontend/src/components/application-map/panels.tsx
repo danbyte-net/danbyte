@@ -207,17 +207,34 @@ export function CardPanel({
           {h.kind === "device" ? "Device" : "Virtual machine"}
         </PanelRow>
         <PanelSection label="Installed">
-          {h.installs.map((i) => (
-            <PanelRow key={i.id} label={i.version || "-"}>
-              <Link
-                to="/applications/$id"
-                params={{ id: i.application.id }}
-                className={LINK}
-              >
-                {i.application.name}
-              </Link>
-            </PanelRow>
-          ))}
+          {h.installs.map((i) => {
+            const color = h.colors?.[i.application.id]
+            return (
+              <PanelRow key={i.id} label={i.version || "-"}>
+                {/* The application's colour, as its card's edge and its
+                    lines wear it. */}
+                <span
+                  className="inline-flex items-center gap-1.5"
+                  data-app-color={color}
+                >
+                  {color && (
+                    <span
+                      aria-hidden
+                      className="h-3.5 w-[3px] shrink-0 rounded-sm"
+                      style={{ backgroundColor: color }}
+                    />
+                  )}
+                  <Link
+                    to="/applications/$id"
+                    params={{ id: i.application.id }}
+                    className={LINK}
+                  >
+                    {i.application.name}
+                  </Link>
+                </span>
+              </PanelRow>
+            )
+          })}
         </PanelSection>
       </PanelShell>
     )

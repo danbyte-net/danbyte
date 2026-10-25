@@ -56,6 +56,20 @@ export interface FlowDocumentOptions {
   /** The application's page, for the title block's link. */
   applicationId?: string
   measure?: Measure
+  /** Between two columns, and two cards of a column (`FLOW_LAYOUT`'s
+   * when absent): the Application map asks for more, for its channels. */
+  colGap?: number
+  rowGap?: number
+  /** Put the ends three or more flows meet at the ends of their column -
+   * the bottom, then the top - instead of in the middle of the stack. */
+  hubsOut?: boolean
+}
+
+/** How a group's columns are spaced and stacked. */
+interface Spacing {
+  colGap: number
+  rowGap: number
+  hubsOut: boolean
 }
 
 interface EndCard {
@@ -138,8 +152,13 @@ function placeGroup(
   preds: Map<string, Set<string>>,
   x0: number,
   y0: number,
-  measure: Measure
+  measure: Measure,
+  edges: readonly [string, string][],
+  spacing: Spacing
 ): { w: number; h: number } {
+  const degree = new Map<string, number>()
+  for (const [s, t] of edges)
+    if (s !== t) for (const k of [s, t]) degree.set(k, (degree.get(k) ?? 0) + 1)
   const columns: EndCard[][] = []
   for (const c of cards.values()) (columns[c.rank] ??= []).push(c)
   for (let r = 0; r < columns.length; r++) {
@@ -161,6 +180,23 @@ function placeGroup(
         cmp(a.title, b.title) ||
         cmp(a.key, b.key)
     )
+    if (spacing.hubsOut && col.length > 2) {
+      // The busiest ends to the column's ends: bottom, top, bottom…
+      const hubs = col
+        .filter((c) => (degree.get(c.key) ?? 0) >= 3)
+        .sort(
+          (a, b) =>
+            (degree.get(b.key) ?? 0) - (degree.get(a.key) ?? 0) ||
+            cmp(a.key, b.key)
+        )
+      if (hubs.length && hubs.length < col.length) {
+        const rest = col.filter((c) => !hubs.includes(c))
+        const top: EndCard[] = []
+        const bottom: EndCard[] = []
+        hubs.forEach((h, i) => (i % 2 ? top.push(h) : bottom.unshift(h)))
+        col.splice(0, col.length, ...top, ...rest, ...bottom)
+      }
+    }
     col.forEach((c, i) => (c.order = i))
   }
   const widths = columns.map((col) =>
@@ -187,7 +223,7 @@ function placeGroup(
   const heights = columns.map((col) =>
     col.reduce(
       (s, c, i) =>
-        s + cardTextHeight(c.lines.length) + (i ? FLOW_LAYOUT.ROW_GAP : 0),
+        s + cardTextHeight(c.lines.length) + (i ? spacing.rowGap : 0),
       0
     )
   )
@@ -200,11 +236,11 @@ function placeGroup(
       c.y = y
       c.w = widths[r]
       c.h = cardTextHeight(c.lines.length)
-      y += c.h + FLOW_LAYOUT.ROW_GAP
+      y += c.h + spacing.rowGap
     }
-    x += widths[r] + FLOW_LAYOUT.COL_GAP
+    x += widths[r] + spacing.colGap
   })
-  const w = x - x0 - (columns.length ? FLOW_LAYOUT.COL_GAP : 0)
+  const w = x - x0 - (columns.length ? spacing.colGap : 0)
   return { w, h }
 }
 
@@ -214,6 +250,11 @@ export function buildFlowDocument(
   opts: FlowDocumentOptions
 ): DiagramDocument {
   const measure = opts.measure ?? measureText
+  const spacing: Spacing = {
+    colGap: opts.colGap ?? FLOW_LAYOUT.COL_GAP,
+    rowGap: opts.rowGap ?? FLOW_LAYOUT.ROW_GAP,
+    hubsOut: !!opts.hubsOut,
+  }
   const abs = (path?: string) =>
     path && opts.origin ? `${opts.origin}${path}` : undefined
 
@@ -272,7 +313,15 @@ export function buildFlowDocument(
     }
     const preds = rank(cards, edges)
     const inner = top + BAND.ROW_TITLE + FLOW_LAYOUT.BAND_PAD / 2
-    const size = placeGroup(cards, preds, FLOW_LAYOUT.BAND_PAD, inner, measure)
+    const size = placeGroup(
+      cards,
+      preds,
+      FLOW_LAYOUT.BAND_PAD,
+      inner,
+      measure,
+      edges,
+      spacing
+    )
     placed.push({ app, cards, size, top, flows: group })
     top +=
       BAND.ROW_TITLE +

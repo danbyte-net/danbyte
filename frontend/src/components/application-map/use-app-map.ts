@@ -11,7 +11,7 @@ import type {
 } from "@/lib/api"
 
 import { flowsGraph, treeGraph, withPositions } from "./model"
-import type { AppMapGraph, AppMapView } from "./model"
+import type { AppMapGraph, AppMapView, HostsMode } from "./model"
 
 // What the Application map fetches and draws (#163): the applications and
 // their installs for the Tree, the flows for Flows - each list walked
@@ -28,8 +28,8 @@ export interface AppMapFilters {
   /** A host: `device:<id>` or `vm:<id>`, or "". The Tree keeps the
    * applications installed on it; Flows the flows touching it. */
   host: string
-  /** Tree: the hosts drawn under their applications. */
-  hosts: boolean
+  /** Tree: the hosts - none, a row, or a copy under each application. */
+  hosts: HostsMode
 }
 
 export const NO_FILTERS: AppMapFilters = {
@@ -37,7 +37,7 @@ export const NO_FILTERS: AppMapFilters = {
   status: "",
   protocol: "",
   host: "",
-  hosts: true,
+  hosts: "row",
 }
 
 /** How many filters are in force in a view (Hosts is a display choice;

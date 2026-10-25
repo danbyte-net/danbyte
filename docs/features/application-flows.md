@@ -72,12 +72,26 @@ header:
   per depth, a card per application with its installs and flows
   (*2 installs · 1 flow*), a solid line from each parent to its children.
   Three levels are named *Domains*, *Processes* and *Applications*; one
-  level is *Applications*; other depths are *Level 1*, *Level 2*… With
-  **Hosts** on (the second bar), the devices and VMs the applications are
-  installed on sit in a last *Hosts* row, a dashed line to each of their
-  applications. An application has no colour of its own: its card takes
-  the colour of its first coloured tag, else it is neutral. A VM's card is
-  dashed.
+  level is *Applications*; other depths are *Level 1*, *Level 2*… Each
+  application has a colour: its first coloured tag's, else one picked
+  from a palette of twelve by the application's id (the same on every
+  load, readable in both themes). It shows as a thin bar on the card's
+  left edge, on the application's host lines and beside its name in a
+  host's panel. **Hosts** (the second bar) places the devices and VMs the
+  applications are installed on:
+    - **Row** (default) - one last *Hosts* row, each host under the mean
+      position of its applications (a host with one application right
+      under it). Its dashed lines run as elbows: each application's lines
+      drop into a channel of their own in the gap above the row, so they
+      travel as one bundle, and meet each host at the application's own
+      point along its top edge, in the applications' order.
+    - **Under applications** - a small copy of each host under every
+      application it runs, showing the version installed, so there are no
+      long lines; a host with four applications appears four times.
+    - **Off** - applications only.
+
+    The choice is in the URL (`hosts=row`, `hosts=under`, `hosts=0`). A
+    VM's card is dashed.
 - **Flows** - a row band per application, a card per flow end (an address
   titled with its device or VM, a range, a prefix, *Any*) laid out as the
   flows run, sources left of their destinations, and one line per pair of
@@ -85,7 +99,22 @@ header:
   three, a count). A line takes its flows' status colour - neutral when
   they differ - is dashed while they are all *Planned* and faded once all
   *Retired*. Arrowheads point the way the traffic runs; a flow *Both ways*
-  has one at each end.
+  has one at each end. A line leaves a card's side and enters the facing
+  side through a channel of its own between the two columns; an end many
+  flows meet sits at the top or bottom of its column.
+
+In both views no line crosses a card it does not join: one that would - a
+line spanning a column, a card dragged into its way - goes round the
+cards as an elbow, and is planned again when a card is dropped. A
+protocol label sits on its line clear of the cards and of other labels;
+with no room anywhere it shows only while its line is hovered or
+selected.
+
+Hover or select a card to bring it forward with its lines and the cards
+at their other ends - an application's hosts, a host's applications, a
+flow end's peers - and fade the rest; **Esc** or a click on the canvas
+lets go. Hovering a host line names its application and version
+(*Redis · 7.2*).
 
 Click a card for its panel: an application's path, parent, counts and tags
 with **Open application** and **Installs**; a host's installs; a flow
@@ -111,8 +140,10 @@ and do not hold application maps yet.
 *Title and legend* choices, drawn from the map's data (every card, as
 arranged, in the print theme). The PDF comes from `POST
 /api/diagram/export/pdf/` with `"kind": "application-flows"`, which needs
-`applicationflow.view`. The legend keys the cards, the lines and, in
-Flows, the statuses present.
+`applicationflow.view`. The legend keys the cards, the lines (in the Tree,
+*Line colour follows the application*) and, in Flows, the statuses
+present. Exports carry the application colours and the lines as routed on
+screen.
 
 An empty map says how things get onto it: applications in the
 [Applications](applications.md) list, installs on a device's or VM's

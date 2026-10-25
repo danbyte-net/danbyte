@@ -15,7 +15,8 @@ import { cssColor } from "@/lib/utils"
 import type { AppMapView } from "./model"
 
 // The Application map's legend (#163): what the cards are, what the lines
-// mean - parent to child and installed on in the Tree; in Flows, a line's
+// mean - parent to child and installed on in the Tree, each install line
+// in its application's colour; in Flows, a line's
 // colour is its flows' status (keyed by the statuses' own pills), dashed
 // while planned, faded once retired, arrowed the way the traffic runs, and
 // labelled with its protocols and ports. The exports get the same rows
@@ -23,6 +24,9 @@ import type { AppMapView } from "./model"
 
 const DASH_PLANNED = "6 4"
 const DASH_INSTALL = "4 3"
+/** The Tree's one colour note: each application's colour (its first
+ * coloured tag, else its own pick) on its card's edge and its lines. */
+const LINE_COLOUR = "Line colour follows the application"
 
 /** The statuses on the map's flows, once each, in the catalog's order of
  * first appearance. */
@@ -40,7 +44,8 @@ export function legendItems(
   if (view === "tree")
     return [
       { kind: "line", label: "Parent to child", width: 1.5 },
-      { kind: "line", label: "Installed on", width: 1, dash: DASH_INSTALL },
+      { kind: "line", label: "Installed on", width: 1.25, dash: DASH_INSTALL },
+      { kind: "note", label: LINE_COLOUR },
     ]
   return [
     ...flowStatuses(flows).map((s): LegendItem => ({
@@ -82,12 +87,10 @@ export function AppMapLegend({
               label="Parent to child"
             />
             <LegendRow
-              swatch={<LegendLine width={1} dash={DASH_INSTALL} />}
+              swatch={<LegendLine width={1.25} dash={DASH_INSTALL} />}
               label="Installed on"
             />
-            <p className="pt-1 text-muted-foreground">
-              Card colour: the first coloured tag
-            </p>
+            <p className="pt-1 text-muted-foreground">{LINE_COLOUR}</p>
           </>
         ) : (
           <>

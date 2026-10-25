@@ -98,6 +98,15 @@ export const AppMapStage = forwardRef<
   const [menu, setMenu] = useState<Menu | null>(null)
   // Another map: what was open belonged to the last one.
   useEffect(() => setSel(null), [fitKey])
+  // Esc lets go of what is selected, and of the focus it brings.
+  useEffect(() => {
+    if (!sel) return
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape" && !ev.defaultPrevented) setSel(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [sel])
 
   useImperativeHandle(
     ref,
