@@ -51,6 +51,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.moduletype": "/module-types/$id",
   "api.platform": "/platforms/$id",
   "api.application": "/applications/$id",
+  "api.applicationgroup": "/application-groups/$id",
   "api.platformgroup": "/platform-groups/$id",
   "api.powerfeed": "/power-feeds/$id",
   "api.powerpanel": "/power-panels/$id",

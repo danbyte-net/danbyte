@@ -320,7 +320,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | **IPs**        | Every IP address assigned to this device.                                                       |
 | **Components** | Seven sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Cooling** (intakes and outflows - see [Cooling](../features/cooling.md#cooling-intakes-and-outflows)), **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
-| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here. See [Applications & installed software](../features/applications.md). |
+| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here, or assign an [application group](../features/applications.md#application-groups). See [Applications & installed software](../features/applications.md). |
 | **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |

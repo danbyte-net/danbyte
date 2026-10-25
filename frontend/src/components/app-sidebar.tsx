@@ -823,6 +823,12 @@ export const sections: NavSection[] = [
             objectType: "application",
           },
           {
+            title: "Application groups",
+            url: "/application-groups",
+            icon: LayoutGrid,
+            objectType: "applicationgroup",
+          },
+          {
             title: "Manufacturers",
             url: "/manufacturers",
             icon: Factory,

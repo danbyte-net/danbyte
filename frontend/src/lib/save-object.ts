@@ -46,6 +46,7 @@ export class PlanStaged extends Error {
 export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.aggregate",
   "api.application",
+  "api.applicationgroup",
   "api.asn",
   "api.cabinet",
   "api.cabinetrole",

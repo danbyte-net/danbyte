@@ -1980,7 +1980,11 @@ export interface Application extends ApplicationMini {
   updated_at: string
 }
 
-export type InstalledSoftwareSource = "manual" | "import" | "discovery"
+export type InstalledSoftwareSource =
+  | "manual"
+  | "import"
+  | "discovery"
+  | "group"
 
 export interface InstalledSoftware extends EffectiveOsDates {
   id: string
@@ -1999,11 +2003,59 @@ export interface InstalledSoftware extends EffectiveOsDates {
   eol: EolInfo | null
   source: InstalledSoftwareSource
   last_seen: string | null
+  /** The application group that made the install, while it is its. */
+  group: { id: string; name: string; slug: string } | null
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+// ─── Application groups (#436) ─────────────────────────────────────────
+
+export interface ApplicationGroupMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+}
+
+export interface ApplicationGroupMember {
+  id: string
+  application: { id: string; name: string; slug: string; path: string }
+  version: string
+  position: number
+}
+
+export interface ApplicationGroup extends ApplicationGroupMini {
+  description: string
+  members: ApplicationGroupMember[]
+  member_count: number
+  /** Devices and VMs the reader may view. */
+  host_count: number
+  install_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface ApplicationGroupAssignment {
+  id: string
+  group: { id: string; name: string; slug: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  /** The installs the group made here that are still its. */
+  install_count: number
+  created_at: string
+}
+
+/** What an unassign did with the installs the group made. */
+export interface ApplicationGroupRelease {
+  removed: number
+  kept: number
+  moved: number
 }
 
 // ─── Application flows (#163) ──────────────────────────────────────────

@@ -1,15 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Plus } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { Plus, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import type { InstalledSoftware, Service } from "@/lib/api"
+import type {
+  ApplicationGroupAssignment,
+  InstalledSoftware,
+  Service,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  AssignGroupDialog,
+  UnassignGroupDialog,
+} from "@/components/application-group-assign"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,10 +81,25 @@ export function InstalledSoftwarePane({ parent }: { parent: SoftwareParent }) {
   const [deleting, setDeleting] = useState<InstalledSoftware | null>(null)
   const [selected, setSelected] = useState<InstalledSoftware[]>([])
 
+  const canAssign = canDo("applicationgroupassignment", "add") && canAdd
+  const canUnassign = canDo("applicationgroupassignment", "delete")
+  const [assigningGroup, setAssigningGroup] = useState(false)
+  const [unassigning, setUnassigning] =
+    useState<ApplicationGroupAssignment | null>(null)
+
   const q = useQuery({
     queryKey: softwareQueryKey(parent),
     queryFn: () =>
       apiAll<InstalledSoftware>(`/api/installed-software/?${param(parent)}`),
+  })
+  // The application groups on the host (#436), shown as removable badges.
+  const groups = useQuery({
+    queryKey: ["application-group-assignments", parent.kind, parent.id],
+    queryFn: () =>
+      apiAll<ApplicationGroupAssignment>(
+        `/api/application-group-assignments/?${param(parent)}`
+      ),
+    enabled: canDo("applicationgroupassignment", "view"),
   })
   const rows = q.data?.results ?? []
   const invalidate = useCallback(() => {
@@ -99,16 +124,51 @@ export function InstalledSoftwarePane({ parent }: { parent: SoftwareParent }) {
     [canEdit, canDelete, eol.enabled, eol.data?.warning_days]
   )
 
-  if (q.isLoading) return <Loading />
+  if (q.isLoading || groups.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
 
+  const assigned = groups.data?.results ?? []
   return (
     <div className="space-y-3">
-      {canAdd && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add software
-          </Button>
+      {(canAdd || canAssign || assigned.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {assigned.map((a) => (
+            <Badge key={a.id} variant="secondary" className="gap-1 pr-1">
+              <Link
+                to="/application-groups/$id"
+                params={{ id: a.group.id }}
+                className="hover:underline"
+              >
+                {a.group.name}
+              </Link>
+              {canUnassign && (
+                <button
+                  type="button"
+                  aria-label={`Unassign ${a.group.name}`}
+                  className="rounded-sm text-muted-foreground hover:text-foreground"
+                  onClick={() => setUnassigning(a)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </Badge>
+          ))}
+          <div className="ml-auto flex gap-2">
+            {canAssign && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setAssigningGroup(true)}
+              >
+                <Plus className="h-3.5 w-3.5" /> Assign group
+              </Button>
+            )}
+            {canAdd && (
+              <Button size="sm" onClick={() => setAdding(true)}>
+                <Plus className="h-3.5 w-3.5" /> Add software
+              </Button>
+            )}
+          </div>
         </div>
       )}
       {rows.length === 0 ? (
@@ -146,6 +206,16 @@ export function InstalledSoftwarePane({ parent }: { parent: SoftwareParent }) {
         install={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         onDeleted={invalidate}
+      />
+      <AssignGroupDialog
+        host={parent}
+        assignedGroupIds={assigned.map((a) => a.group.id)}
+        open={assigningGroup}
+        onOpenChange={setAssigningGroup}
+      />
+      <UnassignGroupDialog
+        assignment={unassigning}
+        onOpenChange={(o) => !o && setUnassigning(null)}
       />
       <SafeBulkDeleteBar
         selected={selected}
