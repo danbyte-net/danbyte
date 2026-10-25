@@ -50,6 +50,14 @@ class EolSource:
     def url(self, configured: str = "") -> str:
         return (configured or self.default_url).rstrip("/")
 
+    def product_url(self, name: str) -> str:
+        """The product's page on the source's site; blank without one."""
+        from urllib.parse import quote
+
+        if not (self.homepage and name):
+            return ""
+        return f"{self.homepage.rstrip('/')}/{quote(name)}"
+
     def fetch(self, base_url: str = "") -> list[dict]:
         raise NotImplementedError
 

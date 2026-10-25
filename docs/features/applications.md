@@ -129,12 +129,15 @@ install and the device or VM it runs on.
 | Endpoint | |
 |---|---|
 | `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?picker=1` (`{id, name, slug, path, depth}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
-| `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. |
-| `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?search=`. `POST bulk-delete/`. |
+| `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. `GET` and `PUT` answer `{source, product, cycles, other_cycles, unmapped_installs, in_catalog, source_label, product_label, product_url}`; each cycle carries `install_count`, the installs you may view. |
+| `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?cycle=` (`none` for the installs no cycle took), `?search=`. `POST bulk-delete/`. |
 
 An application carries `parent`, `path`, `depth`, `manufacturer`,
 `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
-the feature is off), `install_count`, `child_count` and `flow_count`. Write `parent_id` and
+the feature is off), `install_count`, `child_count` and `flow_count`. The
+detail adds `ancestors` (root first) and `children` (three levels deep), each
+`{id, name, install_count}`, children with `child_count` and their own
+`children`; the list leaves both empty. Write `parent_id` and
 `manufacturer_id`.
 
 An install carries `application` (`{id, name, slug, path}`), `device` or
