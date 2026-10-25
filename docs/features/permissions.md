@@ -224,7 +224,7 @@ their objects use.
 Both roles **read the catalogs** their site's objects point at - device types
 and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
 roles, rack, cabinet and module types, cluster types, routing policies,
-support contracts (without their cost), applications and the like - so the pickers in **Add device** and an import by name work. They
+support contracts (without their cost), applications, application groups and the like - so the pickers in **Add device** and an import by name work. They
 never change those catalogs: that stays with administrators, or with the site
 editor's own local entries under
 [enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).
@@ -237,9 +237,10 @@ editor's own local entries under
 
 !!! note "Upgrading to 0.19"
     Site roles created earlier gain installed software (the Software tab on
-    their devices and VMs) and application flows (`applicationflow`, the
-    flows of their sites' addresses, prefixes and ranges), and site viewers
-    and silo site editors gain view on applications. A grant edited away from
+    their devices and VMs), application flows (`applicationflow`, the
+    flows of their sites' addresses, prefixes and ranges) and application
+    group assignments (`applicationgroupassignment`), and site viewers and
+    silo site editors gain view on applications and application groups. A grant edited away from
     the role's shape is left as it is.
 
 ### Set it up when you create the user

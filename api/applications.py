@@ -137,6 +137,210 @@ def software_end_annotations(parent_field: str) -> dict:
     }
 
 
+# ─── Application groups ──────────────────────────────────────────────────────
+#
+# A group is a named set of applications. Assigning it to a device or VM
+# records one install per member (``source="group"``, ``group`` set, the
+# member's default version); an install of that application already on the
+# host is left alone. An install is *untouched* while its version is the
+# member's default, it names no service and its cycle was not set by hand;
+# anything else counts as edited. Unassigning, or removing a member, deletes
+# the untouched installs the group made and keeps the edited ones with their
+# group cleared - unless another group on the same host has the application,
+# which then takes the install over. Every write is an ORM save or delete,
+# one row at a time, so the change log records each install.
+
+
+def _host(device=None, virtual_machine=None) -> dict:
+    if (device is None) == (virtual_machine is None):
+        raise ValueError("exactly one of device or virtual_machine")
+    if device is not None:
+        return {"device": device}
+    return {"virtual_machine": virtual_machine}
+
+
+def _host_of(row) -> dict:
+    if row.device_id:
+        return {"device_id": row.device_id}
+    return {"virtual_machine_id": row.virtual_machine_id}
+
+
+def is_untouched(install, default_version: str) -> bool:
+    """Whether an install still reads as its group member made it."""
+    return (install.version == (default_version or "") and install.service_id is None
+            and not install.cycle_manual)
+
+
+def _materialise(member, host: dict):
+    """The member's install on one host, made unless the host already runs
+    the application. Returns the new install or None."""
+    from .models import InstalledSoftware
+
+    if InstalledSoftware.objects.filter(application_id=member.application_id, **host).exists():
+        return None
+    install = InstalledSoftware(
+        tenant_id=member.group.tenant_id, application=member.application,
+        version=member.version, source="group", group=member.group, **host,
+    )
+    install.save()
+    return install
+
+
+def _release(install, default_version: str) -> str:
+    """Let go of an install its group no longer wants: another group on the
+    host with the application takes it over, else it goes while untouched,
+    else it stays with its group cleared. Returns ``moved``, ``removed`` or
+    ``kept``."""
+    from .models import ApplicationGroupAssignment
+
+    other = (
+        ApplicationGroupAssignment.objects.filter(**_host_of(install))
+        .exclude(group_id=install.group_id)
+        .filter(group__members__application_id=install.application_id)
+        .order_by("created_at").values_list("group_id", flat=True).first()
+    )
+    if other is not None:
+        install.group_id = other
+        install.save(update_fields=["group", "updated_at"])
+        return "moved"
+    if is_untouched(install, default_version):
+        install.delete()
+        return "removed"
+    install.group = None
+    install.save(update_fields=["group", "updated_at"])
+    return "kept"
+
+
+def assign_group(group, *, device=None, virtual_machine=None):
+    """Assign ``group`` to one host and record its members' installs.
+    Returns ``(assignment, created installs)``."""
+    from .models import ApplicationGroupAssignment
+
+    host = _host(device, virtual_machine)
+    created = []
+    with transaction.atomic():
+        assignment = ApplicationGroupAssignment(tenant_id=group.tenant_id, group=group, **host)
+        assignment.save()
+        for member in group.members.select_related("application", "group"):
+            install = _materialise(member, host)
+            if install is not None:
+                created.append(install)
+    return assignment, created
+
+
+def unassign_group(assignment) -> dict:
+    """Remove an assignment and let go of the installs its group made on
+    that host. Returns the counts by outcome."""
+    from .models import InstalledSoftware
+
+    counts = {"removed": 0, "kept": 0, "moved": 0}
+    with transaction.atomic():
+        group = assignment.group
+        defaults = dict(group.members.values_list("application_id", "version"))
+        host = _host_of(assignment)
+        assignment.delete()
+        for install in InstalledSoftware.objects.filter(group=group, **host):
+            counts[_release(install, defaults.get(install.application_id, ""))] += 1
+    return counts
+
+
+def add_member(group, application, version: str = "", position: int = 0):
+    """Add an application to a group and install it on every host the group
+    is assigned to."""
+    from .models import ApplicationGroupMember
+
+    with transaction.atomic():
+        member = ApplicationGroupMember(
+            tenant_id=group.tenant_id, group=group, application=application,
+            version=version or "", position=position,
+        )
+        member.save()
+        for a in group.assignments.all():
+            _materialise(member, _host_of(a))
+    return member
+
+
+def remove_member(member) -> None:
+    """Take an application out of a group: the installs it made go (or
+    stay, or move) as on unassign."""
+    from .models import InstalledSoftware
+
+    with transaction.atomic():
+        installs = list(InstalledSoftware.objects.filter(
+            group_id=member.group_id, application_id=member.application_id))
+        member.delete()
+        for install in installs:
+            _release(install, member.version)
+
+
+def set_member_version(member, version: str) -> None:
+    """Change a member's default version; the untouched installs it made
+    follow, unless the host already records the new version."""
+    from .models import InstalledSoftware
+
+    version = version or ""
+    if version == member.version:
+        return
+    with transaction.atomic():
+        for install in InstalledSoftware.objects.filter(
+            group_id=member.group_id, application_id=member.application_id,
+        ):
+            if not is_untouched(install, member.version):
+                continue
+            if InstalledSoftware.objects.filter(
+                application_id=install.application_id, version=version,
+                **_host_of(install),
+            ).exclude(pk=install.pk).exists():
+                continue
+            install.version = version
+            install.save()
+        member.version = version
+        member.save(update_fields=["version"])
+
+
+def set_members(group, rows) -> None:
+    """Make ``group``'s members ``rows`` - ``[(application, version)]`` in
+    order: new ones are added and installed, missing ones removed, changed
+    versions and positions saved."""
+    with transaction.atomic():
+        current = {m.application_id: m for m in group.members.select_related("application")}
+        wanted = {app.pk for app, _v in rows}
+        for app_id, member in current.items():
+            if app_id not in wanted:
+                remove_member(member)
+        for position, (app, version) in enumerate(rows):
+            member = current.get(app.pk)
+            if member is None:
+                add_member(group, app, version, position)
+                continue
+            set_member_version(member, version)
+            if member.position != position:
+                member.position = position
+                member.save(update_fields=["position"])
+
+
+def set_host_groups(groups, *, device=None, virtual_machine=None) -> dict:
+    """Make the host's assigned groups exactly ``groups``. Returns the group
+    ids ``{"assigned": [...], "unassigned": [...]}``."""
+    from .models import ApplicationGroupAssignment
+
+    host = _host(device, virtual_machine)
+    wanted = {g.pk: g for g in groups}
+    out = {"assigned": [], "unassigned": []}
+    with transaction.atomic():
+        have = {a.group_id: a for a in ApplicationGroupAssignment.objects
+                .filter(**host).select_related("group")}
+        for gid, a in have.items():
+            if gid not in wanted:
+                unassign_group(a)
+                out["unassigned"].append(gid)
+        for gid, g in wanted.items():
+            if gid not in have:
+                assign_group(g, **host)
+                out["assigned"].append(gid)
+    return out
+
+
 def _install_deleted(sender, instance, **kwargs) -> None:
     """The last install of a cycle takes its mapping along."""
     if instance.eol_mapping_id:

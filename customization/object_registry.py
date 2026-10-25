@@ -115,6 +115,8 @@ for _e in [
                    "/api/platforms/", route="/platforms/$id"),
     ReferenceModel("application", "Applications", "api.Application",
                    "/api/applications/", route="/applications/$id"),
+    ReferenceModel("applicationgroup", "Application groups", "api.ApplicationGroup",
+                   "/api/application-groups/", route="/application-groups/$id"),
     # A flow has no page of its own; it is read on its application's.
     ReferenceModel("applicationflow", "Application flows", "api.ApplicationFlow",
                    "/api/application-flows/", route=None),

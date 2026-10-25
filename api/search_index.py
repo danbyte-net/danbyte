@@ -194,6 +194,8 @@ SPECS: dict[str, IndexSpec] = {
                           subtitle="manufacturer.name"),
     "application": IndexSpec("api.Application", "/applications/{id}", weight=5, site=None,
                              subtitle="manufacturer.name", facets=("manufacturer",)),
+    "applicationgroup": IndexSpec("api.ApplicationGroup", "/application-groups/{id}", weight=4,
+                                  site=None, subtitle="description"),
     # A flow is read on its application's page (#163).
     "applicationflow": IndexSpec("api.ApplicationFlow", "/applications/{application_id}",
                                  weight=4, site=None, subtitle="application.name",

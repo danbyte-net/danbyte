@@ -128,6 +128,9 @@ SITE_PATHS: dict[str, str] = {
     # Installed software follows its device or VM (#436); the application
     # catalog itself is tenant-wide, like platforms.
     "installedsoftware": "device__site|virtual_machine__site",
+    # An application group follows its host the same way (#436); the group
+    # and its members are a tenant-wide catalog.
+    "applicationgroupassignment": "device__site|virtual_machine__site",
     # An application flow belongs to the site of its first end that has one
     # (#163): the source address (its own site, else its prefix's, as an
     # address's site reads), then the destination address, then the

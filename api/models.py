@@ -6055,6 +6055,7 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
         ("manual", "Manual"),
         ("import", "Import"),
         ("discovery", "Discovery"),
+        ("group", "Group"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -6088,6 +6089,13 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
     eol_mapping = models.ForeignKey(
         "compliance.EolMapping", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="installs", editable=False,
+    )
+    #: The application group whose assignment made this install
+    #: (``source="group"``); cleared when the install stays after the group
+    #: goes (``api.applications.release_installs``).
+    group = models.ForeignKey(
+        "ApplicationGroup", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installs",
     )
     description = models.TextField(blank=True, default="", db_default="")
 
@@ -6135,6 +6143,110 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
             super().save(*args, **kwargs)
             if before and before != self.eol_mapping_id:
                 drop_unused_mappings([before])
+
+
+class ApplicationGroup(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A named set of applications - "RDS", "SCADA" - assigned to a device
+    or VM in one step. Assigning it records one install per member
+    (``api.applications.assign_group``); the inventory export names the
+    groups so automation can set the host up. A tenant catalog like
+    Application."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="application_groups"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_applicationgroup_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ApplicationGroupMember(models.Model):
+    """One application of a group, with the version its installs start at
+    and its place in the group's order."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+"
+    )
+    group = models.ForeignKey(
+        ApplicationGroup, on_delete=models.CASCADE, related_name="members"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="group_memberships"
+    )
+    version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    position = models.PositiveIntegerField(default=0, db_default=0)
+
+    class Meta:
+        ordering = ["position", "application__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["group", "application"], name="uniq_applicationgroupmember"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.group} - {self.application}"
+
+
+class ApplicationGroupAssignment(models.Model):
+    """An application group on exactly one device or virtual machine. A plain
+    row - no tags, no custom fields - so it follows its host's site without
+    being a rack-move subject."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="+"
+    )
+    group = models.ForeignKey(
+        ApplicationGroup, on_delete=models.CASCADE, related_name="assignments"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="application_group_assignments",
+    )
+    virtual_machine = models.ForeignKey(
+        "VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="application_group_assignments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["group__name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="applicationgroupassignment_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["group", "device", "virtual_machine"],
+                name="uniq_applicationgroupassignment",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        host = self.device if self.device_id else self.virtual_machine
+        return f"{self.group} on {host}"
+
+    @property
+    def parent(self):
+        return self.device if self.device_id else self.virtual_machine
 
 
 class ProtocolPortsMixin(models.Model):
