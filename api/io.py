@@ -964,3 +964,13 @@ def register_builtins() -> None:
         fk_keys={"application": "slug", "device": "name", "virtual_machine": "name",
                  "service": "name"},
     ))
+    # Application flows (#163): matched by application slug and flow name;
+    # each end by address, CIDR or (ranges) id.
+    from .models import ApplicationFlow
+
+    register_io(_handler(
+        ApplicationFlow, natural_key=["application", "name"],
+        fk_keys={"application": "slug", "service": "name",
+                 "source_ip": "ip_address", "destination_ip": "ip_address",
+                 "source_prefix": "cidr", "destination_prefix": "cidr"},
+    ))

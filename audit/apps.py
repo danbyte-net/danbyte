@@ -116,6 +116,7 @@ AUDITED_MODELS = [
     "api.Platform",
     "api.Application",
     "api.InstalledSoftware",
+    "api.ApplicationFlow",
     "api.NATRule",
     "routing.PrefixList",
     "routing.PrefixListRule",
