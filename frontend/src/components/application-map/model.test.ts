@@ -13,7 +13,9 @@ import { toDrawio } from "@/lib/diagram/drawio"
 
 import { appMapDocument } from "./document"
 import {
+  APP_COLORS,
   applicationColor,
+  paletteColor,
   decodePositions,
   encodePositions,
   flowArrow,
@@ -33,6 +35,19 @@ import { flowsPath, movedFrom, NO_FILTERS } from "./use-app-map"
 // cards, and the export document both views draw from.
 
 const measure = (s: string) => s.length * 6
+
+/** WCAG contrast between two #rrggbb colours. */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p)
+  return (x + 0.05) / (y + 0.05)
+}
 
 function application(
   id: string,
@@ -247,16 +262,51 @@ describe("treeGraph", () => {
     expect(levelLabels(2)).toEqual(["Level 1", "Level 2"])
   })
 
-  it("fills a card with its first coloured tag, else none", () => {
-    expect(applicationColor({ tags: [] })).toBeNull()
+  it("colours an application by its first coloured tag, else the palette", () => {
     expect(
       applicationColor({
+        id: "x",
         tags: [
           { id: 1, name: "a", slug: "a", color: "", text_color: "" },
           { id: 2, name: "b", slug: "b", color: "0ea5e9", text_color: "" },
         ],
       })
     ).toBe("#0ea5e9")
+    const own = applicationColor({ id: "x", tags: [] })
+    expect(APP_COLORS).toContain(own)
+    // The same on every load: keyed by the id alone.
+    expect(applicationColor({ id: "x", tags: [] })).toBe(own)
+    expect(paletteColor("x")).toBe(own)
+    // Spread over the palette, not one hue for every id.
+    const picks = new Set(
+      Array.from({ length: 60 }, (_, i) => paletteColor(`app-${i}`))
+    )
+    expect(picks.size).toBeGreaterThanOrEqual(10)
+  })
+
+  it("keeps every palette colour readable in both themes", () => {
+    // The light canvas and the dark one: one value serves both.
+    for (const c of APP_COLORS) {
+      expect(contrast(c, "#fafafa"), c).toBeGreaterThanOrEqual(3)
+      expect(contrast(c, "#18181b"), c).toBeGreaterThanOrEqual(3)
+    }
+    expect(new Set(APP_COLORS).size).toBe(12)
+  })
+
+  it("draws the colour as the card's edge and on its install lines", () => {
+    const api = node("app:api")
+    // The card stays neutral; the colour is its accent.
+    expect(api.data.input.color).toBeNull()
+    expect(api.data.accent).toBe(applicationColor(API))
+    for (const e of g.edges.filter((x) => x.data!.kind === "install"))
+      expect(e.style?.stroke).toBe(
+        applicationColor(APPS.find((a) => `app:${a.id}` === e.source)!)
+      )
+    const web1 = node("host:device:web1").data.ref
+    expect(web1.kind === "host" && web1.host.colors).toEqual({
+      api: applicationColor(API),
+      pg: applicationColor(PG),
+    })
   })
 })
 
@@ -387,7 +437,20 @@ describe("appMapDocument", () => {
       origin: "https://d.example",
       measure,
     })
-    expect(doc.nodes).toHaveLength(g.nodes.length)
+    // Every card, and each application's colour bar on its left edge.
+    const cards = doc.nodes.filter((n) => !n.id.endsWith("#accent"))
+    expect(cards).toHaveLength(g.nodes.length)
+    const accent = doc.nodes.find((n) => n.id === "app:api#accent")!
+    const api = doc.nodes.find((n) => n.id === "app:api")!
+    expect(accent.fill).toBe(applicationColor(API))
+    expect(accent.x).toBe(api.x)
+    expect(accent.w).toBeLessThan(5)
+    // The install lines in their application's colour, along their plan.
+    const line = doc.links.find((l) => l.id === "install:api:host:device:web1")!
+    expect(line.stroke).toBe(applicationColor(API))
+    expect(line.kind).toBe("elbow")
+    const plan = g.edges.find((e) => e.id === line.id)!.data!.plan![0].pts
+    expect(line.points).toEqual(plan.slice(1, -1))
     const lone = doc.nodes.find((n) => n.id === "app:lone")!
     expect(lone.x + lone.w / 2).toBe(900)
     expect(lone.link).toBe("https://d.example/applications/lone")

@@ -25,6 +25,8 @@ import type {
   LineType,
 } from "@/components/topology/diagram/types"
 
+import { routeGraph } from "./routing"
+
 // The Application map (#163) as React Flow nodes and edges, drawn by the
 // topology Diagram's own card and link (CardNode, LinkEdge) and exported by
 // the same document writers. Two views:
@@ -46,6 +48,18 @@ export type AppMapView = "tree" | "flows"
 
 export const APP_MAP_VIEWS: readonly AppMapView[] = ["tree", "flows"]
 
+/** The Tree's hosts: none, one row of them, or a small copy of each under
+ * every application it runs. */
+export type HostsMode = "off" | "row" | "under"
+
+export const HOSTS_MODES: readonly HostsMode[] = ["off", "row", "under"]
+
+/** A Hosts setting: false or `off` none, `under`, else a row. */
+export function hostsMode(v: boolean | HostsMode | undefined): HostsMode {
+  if (v === false || v === "off") return "off"
+  return v === "under" ? "under" : "row"
+}
+
 /** A device or VM with installs, as a tree leaf. */
 export interface AppHost {
   kind: "device" | "vm"
@@ -53,12 +67,20 @@ export interface AppHost {
   name: string
   /** The installs on it of the applications shown. */
   installs: InstalledSoftware[]
+  /** Each of its applications' colour, by application id. */
+  colors?: Record<string, string>
 }
 
 /** What a card stands for. */
 export type AppMapRef =
   | { kind: "application"; app: Application }
-  | { kind: "host"; host: AppHost }
+  | {
+      kind: "host"
+      host: AppHost
+      /** Under applications: the application this copy of the host sits
+       * under (its installs are that application's alone). */
+      app?: string
+    }
   | {
       kind: "end"
       end: FlowEnd
@@ -70,6 +92,8 @@ export type AppCardData = DiagramCardData & {
   ref: AppMapRef
   /** What the card was laid out from: the export lays it out the same. */
   input: CardLayoutInput
+  /** An application's colour: a thin bar on the card's left edge. */
+  accent?: string
 }
 
 /** How a line ends: arrowheads at the target, the source, both or none. */
@@ -79,6 +103,8 @@ export type AppEdgeData = DiagramEdgeData & {
   kind: "child" | "install" | "flow"
   /** Flow lines: the flows between the two cards, both ways. */
   flows?: ApplicationFlow[]
+  /** Install lines: what a hover shows ("Application · version"). */
+  tip?: string
   arrow: AppArrow
   /** The line's paint, for the export: the stroke (a colour or a CSS
    * variable), width, dash and whether it is faded (retired). */
@@ -104,6 +130,9 @@ export interface AppMapGraph {
   nodes: AppCardNode[]
   edges: AppEdge[]
   bands: AppBand[]
+  /** Tree: the gap above the Hosts row, where each application's install
+   * lines run in a channel of their own (routing.ts). */
+  hostGap?: { top: number; bottom: number }
 }
 
 /** Spacing of the Tree's rows and cards. */
@@ -116,6 +145,17 @@ export const TREE = {
   PAD_X: 40,
   /** Between two row bands. */
   BAND_GAP: 40,
+  /** The gap above the Hosts row: this much per application with install
+   * lines (its channel), and this much clear above and below them. */
+  SLOT: 8,
+  SLOT_PAD: 10,
+} as const
+
+/** The Flows' spacing: wider than the flow diagram's own, so each line
+ * gets a channel of its own between two columns. */
+export const FLOWS = {
+  COL_GAP: 200,
+  ROW_GAP: 36,
 } as const
 
 const NEUTRAL_LINE = "var(--muted-foreground)"
@@ -126,20 +166,56 @@ const cmp = (a: string, b: string) =>
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`
 
-/** An application card's colour: its first coloured tag, else none (the
- * neutral card) - applications have no colour of their own. */
-export function applicationColor(
-  app: Pick<Application, "tags">
-): string | null {
+/** The application palette: twelve hues at a middle lightness, each at
+ * least 3:1 against both the light and the dark canvas, so one value
+ * serves both themes and the exports. Neighbours differ in hue family. */
+export const APP_COLORS = [
+  "#2563eb",
+  "#ea580c",
+  "#059669",
+  "#c026d3",
+  "#0891b2",
+  "#c2780a",
+  "#7c3aed",
+  "#db2777",
+  "#0d9488",
+  "#5a8f0e",
+  "#6366f1",
+  "#e11d48",
+] as const
+
+/** A stable pick from `APP_COLORS` for an id (FNV-1a): the same on every
+ * load. */
+export function paletteColor(id: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return APP_COLORS[(h >>> 0) % APP_COLORS.length]
+}
+
+/** An application's first coloured tag's colour, or null. */
+export function tagColor(app: Pick<Application, "tags">): string | null {
   const tag = app.tags.find((t) => !!cssColor(t.color))
   return tag ? (cssColor(tag.color) ?? null) : null
 }
 
-/** An application card's text: the name, and its installs and flows. */
+/** An application's colour: its first coloured tag's, else its pick from
+ * the palette. Its card's edge, its install lines and its name in a
+ * host's panel wear it. */
+export function applicationColor(
+  app: Pick<Application, "id" | "tags">
+): string {
+  return tagColor(app) ?? paletteColor(app.id)
+}
+
+/** An application card's text: the name, and its installs and flows. The
+ * card stays neutral: its colour is the bar on its edge. */
 export function applicationCard(app: Application): CardLayoutInput {
   return {
     name: app.name,
-    color: applicationColor(app),
+    color: null,
     lines: [
       {
         key: "counts",
@@ -253,8 +329,9 @@ export interface TreeOptions {
   /** Only the applications installed on this host (`device:<id>` or
    * `vm:<id>`), with their ancestors. */
   host?: string
-  /** Draw the hosts under their applications. */
-  hosts?: boolean
+  /** The hosts: a row of them (true, the default), a copy under each
+   * application (`under`), or none (false, `off`). */
+  hosts?: boolean | HostsMode
   measure?: Measure
 }
 
@@ -340,11 +417,16 @@ export function treeGraph(
   const nodes: AppCardNode[] = []
   const edges: AppEdge[] = []
   const tier = new Map<string, number>()
+  const colors = new Map<string, string>()
   for (const a of ordered) {
     const input = applicationCard(a)
     const box = cardLayout(input, null, opts.measure)
     const id = `app:${a.id}`
-    nodes.push(cardNode(id, { kind: "application", app: a }, input, box))
+    const color = applicationColor(a)
+    colors.set(a.id, color)
+    const n = cardNode(id, { kind: "application", app: a }, input, box)
+    n.data.accent = color
+    nodes.push(n)
     tier.set(id, depth.get(a.id)!)
     if (a.parent && shown.has(a.parent.id))
       edges.push(
@@ -357,7 +439,11 @@ export function treeGraph(
   }
 
   let hostTier = -1
-  if (opts.hosts !== false) {
+  const mode = hostsMode(opts.hosts)
+  // The hosts' cards, and what each wants to sit under: a row's host the
+  // mean of its applications, a copy the one application it sits under.
+  const hostCards: { id: string; apps: string[]; under?: string }[] = []
+  if (mode !== "off") {
     const hosts = new Map<string, AppHost>()
     for (const i of installs) {
       if (!shown.has(i.application.id)) continue
@@ -380,28 +466,65 @@ export function treeGraph(
     const sorted = [...hosts.values()].sort(
       (a, b) => cmp(a.name, b.name) || cmp(a.id, b.id)
     )
+    const installLine = (
+      appId: string,
+      id: string,
+      list: InstalledSoftware[]
+    ) =>
+      linkEdge(`install:${appId}:${id}`, `app:${appId}`, id, "elbow", {
+        kind: "install",
+        arrow: "none",
+        tip: installTip(list),
+        paint: { stroke: colors.get(appId), width: 1.25, dash: "4 3" },
+      })
     for (const h of sorted) {
-      const input: CardLayoutInput = { name: h.name, color: null, lines: [] }
-      const box = cardLayout(input, null, opts.measure)
-      const id = hostKey(h.kind, h.id)
-      // A VM is dashed, as on the topology's Logical tab.
-      nodes.push(
-        cardNode(id, { kind: "host", host: h }, input, box, {
-          ...(h.kind === "vm" ? { panel: true } : {}),
-        })
-      )
-      tier.set(id, hostTier)
+      const key = hostKey(h.kind, h.id)
       const appIds = [
         ...new Set(h.installs.map((i) => i.application.id)),
       ].sort()
-      for (const appId of appIds)
-        edges.push(
-          linkEdge(`install:${appId}:${id}`, `app:${appId}`, id, "bendy", {
-            kind: "install",
-            arrow: "none",
-            paint: { width: 1, dash: "4 3" },
-          })
+      h.colors = Object.fromEntries(appIds.map((a) => [a, colors.get(a)!]))
+      // A VM is dashed, as on the topology's Logical tab.
+      const extra = h.kind === "vm" ? { panel: true } : {}
+      if (mode === "row") {
+        const input: CardLayoutInput = { name: h.name, color: null, lines: [] }
+        const box = cardLayout(input, null, opts.measure)
+        nodes.push(cardNode(key, { kind: "host", host: h }, input, box, extra))
+        tier.set(key, hostTier)
+        hostCards.push({ id: key, apps: appIds.map((a) => `app:${a}`) })
+        for (const appId of appIds)
+          edges.push(
+            installLine(
+              appId,
+              key,
+              h.installs.filter((i) => i.application.id === appId)
+            )
+          )
+        continue
+      }
+      // Under applications: a copy of the host per application, with the
+      // version installed.
+      for (const appId of appIds) {
+        const mine = h.installs.filter((i) => i.application.id === appId)
+        const id = `leaf:${appId}:${key.slice("host:".length)}`
+        const input: CardLayoutInput = {
+          name: h.name,
+          color: null,
+          lines: [{ key: "version", text: versionsOf(mine) || "-" }],
+        }
+        const box = cardLayout(input, null, opts.measure)
+        nodes.push(
+          cardNode(
+            id,
+            { kind: "host", host: { ...h, installs: mine }, app: appId },
+            input,
+            box,
+            extra
+          )
         )
+        tier.set(id, hostTier)
+        hostCards.push({ id, apps: [`app:${appId}`], under: `app:${appId}` })
+        edges.push(installLine(appId, id, mine))
+      }
     }
   }
 
@@ -423,18 +546,73 @@ export function treeGraph(
     const t = tier.get(n.id)!
     heights[t] = Math.max(heights[t], n.height ?? 0)
   }
+  // The gap above the Hosts row holds a channel per application with
+  // install lines.
+  const lined = new Set(
+    edges.filter((e) => e.data!.kind === "install").map((e) => e.source)
+  )
+  const hostGapH = Math.max(
+    TREE.BAND_GAP,
+    lined.size * TREE.SLOT + 2 * TREE.SLOT_PAD
+  )
   // Each row's top, under its band's title strip.
   const tops: number[] = []
+  let hostGap: AppMapGraph["hostGap"]
   let y = BAND.TITLE + TREE.PAD_TOP
   for (let t = 0; t < levels; t++) {
+    if (t > 0) {
+      const above = tops[t - 1] + heights[t - 1] + TREE.PAD_BOTTOM
+      const gap = t === hostTier ? hostGapH : TREE.BAND_GAP
+      if (t === hostTier)
+        hostGap = {
+          top: above + TREE.SLOT_PAD,
+          bottom: above + gap - TREE.SLOT_PAD,
+        }
+      y = above + gap + BAND.TITLE + TREE.PAD_TOP
+    }
     tops.push(y)
-    y +=
-      heights[t] + TREE.PAD_BOTTOM + TREE.BAND_GAP + BAND.TITLE + TREE.PAD_TOP
   }
+  const xOf = (id: string) => (g.node(id) as { x: number }).x
   for (const n of nodes) {
-    const p = g.node(n.id) as { x: number }
     const t = tier.get(n.id)!
-    n.position = { x: Math.round(p.x), y: tops[t] + heights[t] / 2 }
+    n.position = { x: Math.round(xOf(n.id)), y: tops[t] + heights[t] / 2 }
+  }
+
+  // The hosts in their row: each under the mean of its applications (one
+  // application's host right under it, a copy under its application), in
+  // that order, pushed apart only as far as they must be.
+  if (hostCards.length) {
+    const width = new Map(nodes.map((n) => [n.id, n.width ?? 0]))
+    const want = (c: (typeof hostCards)[number]) =>
+      c.apps.reduce((s, a) => s + xOf(a), 0) / c.apps.length
+    // Copies under one application go side by side, as one block.
+    const blocks = new Map<string, { ids: string[]; want: number }>()
+    for (const c of hostCards) {
+      const k = c.under ?? c.id
+      const b = blocks.get(k) ?? { ids: [], want: want(c) }
+      b.ids.push(c.id)
+      blocks.set(k, b)
+    }
+    const span = (ids: string[]) =>
+      ids.reduce((s, id) => s + width.get(id)!, 0) +
+      (ids.length - 1) * TREE.NODE_GAP
+    const placed = packRow(
+      [...blocks.entries()].map(([k, b]) => ({
+        key: k,
+        w: span(b.ids),
+        want: b.want,
+      })),
+      TREE.NODE_GAP
+    )
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    for (const [k, b] of blocks) {
+      let x = placed.get(k)! - span(b.ids) / 2
+      for (const id of b.ids) {
+        const n = byId.get(id)!
+        n.position = { ...n.position, x: Math.round(x + width.get(id)! / 2) }
+        x += width.get(id)! + TREE.NODE_GAP
+      }
+    }
   }
 
   let x0 = Infinity
@@ -456,7 +634,79 @@ export function treeGraph(
       h: BAND.TITLE + TREE.PAD_TOP + heights[t] + TREE.PAD_BOTTOM,
     })
   }
-  return { nodes, edges, bands }
+  return routeGraph(
+    { nodes, edges, bands, ...(hostGap ? { hostGap } : {}) },
+    opts.measure
+  )
+}
+
+/** The versions among installs, once each: "1.2, 1.3". */
+function versionsOf(list: readonly InstalledSoftware[]): string {
+  return [...new Set(list.map((i) => i.version).filter(Boolean))]
+    .sort(cmp)
+    .join(", ")
+}
+
+/** An install line's hover text: "Application · version". */
+function installTip(list: readonly InstalledSoftware[]): string {
+  const v = versionsOf(list)
+  return `${list[0]?.application.name ?? ""}${v ? ` · ${v}` : ""}`
+}
+
+/**
+ * Boxes in one row, each centred as near its `want` as it can be: in
+ * order of `want`, those that would overlap pushed apart as one cluster
+ * centred on their wants' mean, `gap` px between neighbours. Returns each
+ * box's centre.
+ */
+export function packRow(
+  items: readonly { key: string; w: number; want: number }[],
+  gap: number
+): Map<string, number> {
+  type Cluster = { keys: string[]; ws: number[]; left: number; w: number }
+  const sorted = [...items].sort((a, b) => a.want - b.want || cmp(a.key, b.key))
+  const wantOf = new Map(items.map((i) => [i.key, i.want]))
+  // The left edge that best centres every box of a cluster on its want.
+  const bestLeft = (c: Cluster) => {
+    let off = 0
+    let sum = 0
+    c.keys.forEach((k, i) => {
+      sum += wantOf.get(k)! - c.ws[i] / 2 - off
+      off += c.ws[i] + gap
+    })
+    return sum / c.keys.length
+  }
+  const out: Cluster[] = []
+  for (const it of sorted) {
+    let c: Cluster = {
+      keys: [it.key],
+      ws: [it.w],
+      left: it.want - it.w / 2,
+      w: it.w,
+    }
+    for (;;) {
+      const prev = out.at(-1)
+      if (!prev || prev.left + prev.w + gap <= c.left) break
+      out.pop()
+      c = {
+        keys: [...prev.keys, ...c.keys],
+        ws: [...prev.ws, ...c.ws],
+        left: 0,
+        w: prev.w + gap + c.w,
+      }
+      c.left = bestLeft(c)
+    }
+    out.push(c)
+  }
+  const centres = new Map<string, number>()
+  for (const c of out) {
+    let x = c.left
+    c.keys.forEach((k, i) => {
+      centres.set(k, x + c.ws[i] / 2)
+      x += c.ws[i] + gap
+    })
+  }
+  return centres
 }
 
 // ── Flows ─────────────────────────────────────────────────────────────────
@@ -520,6 +770,11 @@ export function flowsGraph(
     title: "",
     generatedAt: "",
     measure: opts.measure,
+    // Room for a channel per line, and the ends many lines meet at the
+    // top or bottom of their column, so their fans do not cross it.
+    colGap: FLOWS.COL_GAP,
+    rowGap: FLOWS.ROW_GAP,
+    hubsOut: true,
   })
   const keyOf = (f: ApplicationFlow, side: "source" | "destination") =>
     `${f.application.id}:${endKey(f[side], side)}`
@@ -606,10 +861,30 @@ export function flowsGraph(
       application: app,
     }
   })
-  return { nodes, edges, bands }
+  return routeGraph({ nodes, edges, bands }, opts.measure)
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────
+
+/** What hovering or selecting a card brings forward: the card, its
+ * install or flow lines and the cards at their other ends (an
+ * application's hosts, a host's applications). Null for no card. */
+export function focusSet(
+  graph: AppMapGraph,
+  id: string | null | undefined
+): { nodes: Set<string>; edges: Set<string> } | null {
+  if (!id || !graph.nodes.some((n) => n.id === id)) return null
+  const nodes = new Set([id])
+  const edges = new Set<string>()
+  for (const e of graph.edges) {
+    if (e.data?.kind === "child") continue
+    if (e.source !== id && e.target !== id) continue
+    edges.add(e.id)
+    nodes.add(e.source)
+    nodes.add(e.target)
+  }
+  return { nodes, edges }
+}
 
 /** Cards moved by hand (centres, by id) put where they were left. */
 export function withPositions(
@@ -617,14 +892,15 @@ export function withPositions(
   positions: Readonly<Record<string, readonly [number, number]>> | undefined
 ): AppMapGraph {
   if (!positions || !Object.keys(positions).length) return graph
-  return {
+  // The lines planned again round the cards where they now stand.
+  return routeGraph({
     ...graph,
     nodes: graph.nodes.map((n) => {
       if (!Object.hasOwn(positions, n.id)) return n
       const [x, y] = positions[n.id]
       return { ...n, position: { x, y } }
     }),
-  }
+  })
 }
 
 /** The words a card is found by: its name and lines, and what it stands
@@ -664,14 +940,14 @@ export function withoutHidden(
   graph: AppMapGraph,
   hidden: ReadonlySet<string>
 ): AppMapGraph {
-  if (!hidden.size) return graph
-  return {
+  if (!hidden.size || !graph.nodes.some((n) => hidden.has(n.id))) return graph
+  return routeGraph({
     ...graph,
     nodes: graph.nodes.filter((n) => !hidden.has(n.id)),
     edges: graph.edges.filter(
       (e) => !hidden.has(e.source) && !hidden.has(e.target)
     ),
-  }
+  })
 }
 
 /** Moved cards in a URL: `id~x~y`, comma-separated. */

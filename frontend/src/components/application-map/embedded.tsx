@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react"
-import { RotateCcw, Server } from "lucide-react"
+import { RotateCcw } from "lucide-react"
 
 import { Loading } from "@/components/loading"
-import { BarButton, BarToggle } from "@/components/map-toolbar"
+import { BarButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -13,7 +13,8 @@ import { useMe } from "@/lib/use-me"
 import { appMapDocument } from "./document"
 import { AppMapEmpty } from "./empty"
 import { legendItems } from "./legend"
-import type { AppMapView } from "./model"
+import { HostsMenu } from "./hosts-menu"
+import type { AppMapView, HostsMode } from "./model"
 import { AppMapStage } from "./stage"
 import { movedFrom, NO_FILTERS, useAppMap } from "./use-app-map"
 import type { AppMapFilters } from "./use-app-map"
@@ -27,13 +28,13 @@ import type { AppMapFilters } from "./use-app-map"
 export function EmbeddedAppMap({ app }: { app: Application }) {
   const { me } = useMe()
   const [view, setView] = useState<AppMapView>("flows")
-  const [hostsOn, setHostsOn] = useState(true)
+  const [hosts, setHosts] = useState<HostsMode>("row")
   const [moved, setMoved] = useState<
     Record<AppMapView, Record<string, [number, number]>>
   >({ tree: {}, flows: {} })
   const filters: AppMapFilters = useMemo(
-    () => ({ ...NO_FILTERS, applications: [app.id], hosts: hostsOn }),
-    [app.id, hostsOn]
+    () => ({ ...NO_FILTERS, applications: [app.id], hosts }),
+    [app.id, hosts]
   )
   const positions = moved[view]
   const data = useAppMap({ view, filters, positions })
@@ -52,11 +53,7 @@ export function EmbeddedAppMap({ app }: { app: Application }) {
             { value: "tree", label: "Tree" },
           ]}
         />
-        {view === "tree" && (
-          <BarToggle pressed={hostsOn} onClick={() => setHostsOn(!hostsOn)}>
-            <Server /> Hosts
-          </BarToggle>
-        )}
+        {view === "tree" && <HostsMenu value={hosts} onChange={setHosts} />}
         {Object.keys(positions).length > 0 && (
           <BarButton onClick={() => setMoved({ ...moved, [view]: {} })}>
             <RotateCcw /> Reset layout
@@ -113,7 +110,7 @@ export function EmbeddedAppMap({ app }: { app: Application }) {
           <AppMapStage
             graph={graph}
             view={view}
-            fitKey={`${app.id}|${view}|${hostsOn}`}
+            fitKey={`${app.id}|${view}|${hosts}`}
             flows={data.flows}
             legendKey="app-map:legend:embedded"
             legendOpen={false}

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useCallback, useMemo, useRef } from "react"
-import { Link as LinkIcon, PanelRight, RotateCcw, Server } from "lucide-react"
+import { Link as LinkIcon, PanelRight, RotateCcw } from "lucide-react"
 
 import { AppMapEmpty } from "@/components/application-map/empty"
 import {
@@ -16,7 +16,8 @@ import {
   matchCards,
   withoutHidden,
 } from "@/components/application-map/model"
-import type { AppMapView } from "@/components/application-map/model"
+import { HostsMenu } from "@/components/application-map/hosts-menu"
+import type { AppMapView, HostsMode } from "@/components/application-map/model"
 import { AppMapObjects } from "@/components/application-map/objects"
 import { AppMapStage } from "@/components/application-map/stage"
 import type { AppMapStageHandle } from "@/components/application-map/stage"
@@ -100,6 +101,9 @@ export const Route = createFileRoute("/application-map")({
 // so a map is a link. The same map is an application's Diagram tab.
 
 const NAME = "Application map"
+/** The Hosts setting as the URL writes it. */
+type HostsParam = "row" | "under" | "0"
+const HOSTS_PARAMS: readonly HostsParam[] = ["row", "under", "0"]
 const PROTOCOLS: readonly (FlowProtocol | "")[] = [
   "",
   ...FLOW_PROTOCOLS.map((p) => p.value),
@@ -116,7 +120,13 @@ function ApplicationMapPage() {
   const [status] = useUrlText("status")
   const [protocol] = useUrlEnum<FlowProtocol | "">("protocol", "", PROTOCOLS)
   const [host] = useUrlText("host")
-  const [hostsOn, setHostsOn] = useUrlFlag("hosts", true)
+  // `hosts=0` off, `hosts=under`, absent (or `row`) a row.
+  const [hostsRaw, setHostsRaw] = useUrlEnum<HostsParam>(
+    "hosts",
+    "row",
+    HOSTS_PARAMS
+  )
+  const hostsSetting: HostsMode = hostsRaw === "0" ? "off" : hostsRaw
   const [query, setQuery] = useUrlText("q", "", { replace: true })
   const [showObjects, setShowObjects] = useUrlFlag("objects", false)
   const [tpos] = useUrlText("tpos")
@@ -130,9 +140,9 @@ function ApplicationMapPage() {
       status,
       protocol,
       host,
-      hosts: hostsOn,
+      hosts: hostsSetting,
     }),
-    [apps, status, protocol, host, hostsOn]
+    [apps, status, protocol, host, hostsSetting]
   )
   const positions = useMemo(() => decodePositions(posRaw), [posRaw])
   const data = useAppMap({ view, filters, positions })
@@ -165,7 +175,7 @@ function ApplicationMapPage() {
     view === "flows" ? filters.status : "",
     view === "flows" ? filters.protocol : "",
     filters.host,
-    view === "tree" ? String(filters.hosts) : "",
+    view === "tree" ? filters.hosts : "",
   ].join("|")
 
   const onFilters = (p: Partial<AppMapFilters>) =>
@@ -247,9 +257,10 @@ function ApplicationMapPage() {
       </header>
       <div className="flex h-10 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-4 lg:px-6">
         {view === "tree" && (
-          <BarToggle pressed={hostsOn} onClick={() => setHostsOn(!hostsOn)}>
-            <Server /> Hosts
-          </BarToggle>
+          <HostsMenu
+            value={hostsSetting}
+            onChange={(v) => setHostsRaw(v === "off" ? "0" : v)}
+          />
         )}
         {posRaw && (
           <BarButton
