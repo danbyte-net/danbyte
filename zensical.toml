@@ -97,6 +97,7 @@ nav = [
     { "SLAs"              = "features/sla.md" },
     { "Outposts (remote engines)" = "monitoring/outposts.md" },
     { "Zabbix" = "monitoring/zabbix.md" },
+    { "PRTG monitoring" = "features/prtg.md" },
     { "SNMP discovery"    = "features/snmp-discovery.md" },
     { "Certificate inventory" = "monitoring/certificates.md" },
     { "SSH host keys"     = "monitoring/ssh-host-keys.md" },

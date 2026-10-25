@@ -13131,3 +13131,39 @@ export interface OxidizedDiff {
   added: number
   removed: number
 }
+
+// ─── PRTG monitoring ────────────────────────────────────────────────────────
+
+/** One PRTG core server Danbyte reads from. The API key is write-only. */
+export interface PrtgConnection {
+  id: string
+  name: string
+  /** The classic web interface; the API lives under /api/ on it. */
+  url: string
+  /** Blank derives it from `url`; `v2_base` is what is used. */
+  api_v2_url: string
+  v2_base: string
+  api_key_set: boolean
+  verify_tls: boolean
+  enabled: boolean
+  status_interval_seconds: number
+  provision_scope: "checks" | "policies"
+  version: string
+  supported: boolean
+  /** Whether API v2 answered the last test; null until one has run. */
+  v2_available: boolean | null
+  last_checked_at: string | null
+  last_error: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PrtgTestResult {
+  ok: boolean
+  detail: string
+  version: string
+  probes: number | null
+  sensors: number | null
+  v2_available: boolean | null
+  v2_detail: string
+}
