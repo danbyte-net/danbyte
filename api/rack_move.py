@@ -42,6 +42,8 @@ from .models import (
     ConsolePort,
     ConsoleServerPort,
     CoolingFeed,
+    CoolingIntake,
+    CoolingOutflow,
     Device,
     DeviceBay,
     FloorPlanTile,
@@ -78,6 +80,7 @@ COMPONENTS = (
     (Interface, "name"), (FrontPort, "name"), (RearPort, "name"),
     (ConsolePort, "name"), (ConsoleServerPort, "name"), (PowerPort, "name"),
     (PowerOutlet, "name"), (AuxPort, "name"), (Antenna, "name"),
+    (CoolingIntake, "name"), (CoolingOutflow, "name"),
     (DeviceBay, "name"), (ModuleBay, "name"), (Module, "module_bay__name"),
     (InventoryItem, "name"),
 )

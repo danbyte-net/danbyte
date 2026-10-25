@@ -160,6 +160,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
             <RackDevicesPane
               rackId={r.id}
               mismatched={r.cooling?.mismatched ?? 0}
+              liquid={!!r.cooling_capability && r.cooling_capability !== "air"}
             />
           </div>
         </div>
@@ -199,16 +200,26 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
   )
 }
 
-const COOLING_FILTERS = ["all", "mismatched"] as const
+const COOLING_FILTERS = ["all", "mismatched", "unconnected"] as const
 type CoolingFilter = (typeof COOLING_FILTERS)[number]
+
+// The device list filter behind each cooling filter.
+const COOLING_QUERY: Record<CoolingFilter, string> = {
+  all: "",
+  mismatched: "&cooling_mismatch=1",
+  unconnected: "&cooling_unconnected=1",
+}
 
 function RackDevicesPane({
   rackId,
   mismatched,
+  liquid,
 }: {
   rackId: string
   /** Devices whose cooling the rack does not take (#434). */
   mismatched: number
+  /** The rack has a liquid loop or a tank - offer the unconnected filter. */
+  liquid: boolean
 }) {
   // The devices the rack's cooling capability does not take, offered while
   // there are any - or while a link asked for them (`?cooling=mismatched`).
@@ -219,12 +230,13 @@ function RackDevicesPane({
   )
   const onlyMismatched = cooling === "mismatched"
   const q = useQuery({
-    queryKey: onlyMismatched
-      ? ["rack-devices", rackId, "cooling-mismatch"]
-      : ["rack-devices", rackId],
+    queryKey:
+      cooling === "all"
+        ? ["rack-devices", rackId]
+        : ["rack-devices", rackId, `cooling-${cooling}`],
     queryFn: () =>
       api<Paginated<Device>>(
-        `/api/devices/?rack=${rackId}${onlyMismatched ? "&cooling_mismatch=1" : ""}`
+        `/api/devices/?rack=${rackId}${COOLING_QUERY[cooling]}`
       ),
   })
   const rows = q.data?.results ?? []
@@ -277,7 +289,7 @@ function RackDevicesPane({
       status,
       // What each device is cooled by - shown while the list is the ones
       // that do not fit.
-      ...(onlyMismatched
+      ...(cooling !== "all"
         ? [
             {
               ...coolingColumn,
@@ -286,14 +298,26 @@ function RackDevicesPane({
           ]
         : []),
     ]
-  }, [onlyMismatched])
-  const filter = (mismatched > 0 || onlyMismatched) && (
+  }, [cooling])
+  const showMismatched = mismatched > 0 || onlyMismatched
+  const showUnconnected = liquid || cooling === "unconnected"
+  const filter = (showMismatched || showUnconnected) && (
     <SegmentedTabs<CoolingFilter>
       value={cooling}
       onValueChange={setCooling}
       items={[
         { value: "all", label: "All devices" },
-        { value: "mismatched", label: "Mismatched cooling" },
+        ...(showMismatched
+          ? [{ value: "mismatched" as const, label: "Mismatched cooling" }]
+          : []),
+        ...(showUnconnected
+          ? [
+              {
+                value: "unconnected" as const,
+                label: "Liquid-cooled, no intake connected",
+              },
+            ]
+          : []),
       ]}
     />
   )
@@ -305,7 +329,9 @@ function RackDevicesPane({
       <p className="text-sm text-muted-foreground">
         {onlyMismatched
           ? "Every device in this rack fits its cooling."
-          : "No devices in this rack."}
+          : cooling === "unconnected"
+            ? "Every liquid-cooled device here has an intake connected."
+            : "No devices in this rack."}
       </p>
     )
   else

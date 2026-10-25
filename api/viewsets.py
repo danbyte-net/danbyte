@@ -82,7 +82,8 @@ from .models import (
     ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
     reinstall_module, uninstall_module,
     CableTermination, PortReservation,
-    CoolingFeed, CoolingSource,
+    CoolingFeed, CoolingIntake, CoolingIntakeTemplate, CoolingOutflow,
+    CoolingOutflowTemplate, CoolingSource,
     PowerFeed, PowerOutlet, PowerOutletTemplate, PowerPanel, PowerPort,
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
@@ -172,7 +173,13 @@ from .serializers import (
     DocumentSerializer,
     DocumentCategorySerializer,
     PowerPanelSerializer,
+    CoolingComponentMiniSerializer,
+    CoolingFeedMiniSerializer,
     CoolingFeedSerializer,
+    CoolingIntakeSerializer,
+    CoolingIntakeTemplateSerializer,
+    CoolingOutflowSerializer,
+    CoolingOutflowTemplateSerializer,
     CoolingSourceMiniSerializer,
     CoolingSourceSerializer,
     PowerPanelMiniSerializer,
@@ -3646,6 +3653,15 @@ ASSIGNED_IP_RELATED = (
                 "their effective method; 0: the rest."
             ),
         ),
+        OpenApiParameter(
+            name="cooling_unconnected",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only liquid, hybrid or immersion devices with no cooling "
+                "intake connected to a feed or an outflow."
+            ),
+        ),
         SOFTWARE_TARGET_PARAMETER,
     ]),
 )
@@ -3768,6 +3784,17 @@ class DeviceViewSet(
             f'{disposition}; filename="{spec_filename(obj, suffix)}"'
         )
         return resp
+
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"], url_path="cooling-path")
+    def cooling_path(self, request, pk=None):
+        """Where the device's coolant comes from (#434): each cooling
+        intake's path upstream - through CDUs - to its feed and source,
+        loop-guarded and at most eight devices deep; hops the caller may not
+        view come back hidden (api.cooling_trace)."""
+        from .cooling_trace import device_path
+
+        return Response(device_path(self.get_object(), request.user, _get_active_tenant(request)))
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -4398,7 +4425,8 @@ class DeviceViewSet(
         params = self.request.query_params
         method = params.get("cooling_method")
         mismatch = (params.get("cooling_mismatch") or "").lower()
-        if not method and not mismatch:
+        unconnected = (params.get("cooling_unconnected") or "").lower()
+        if not method and not mismatch and not unconnected:
             return qs
         qs = cooling.annotate_devices(qs)
         if method:
@@ -4412,6 +4440,10 @@ class DeviceViewSet(
             qs = qs.filter(cooling_mismatch=False)
         elif mismatch:
             raise ValidationError({"cooling_mismatch": "1 or 0."})
+        if unconnected in ("1", "true", "yes"):
+            qs = qs.filter(cooling.unconnected_q())
+        elif unconnected and unconnected not in ("0", "false", "no"):
+            raise ValidationError({"cooling_unconnected": "1 or 0."})
         return qs
 
     def perform_create(self, serializer):
@@ -5539,6 +5571,61 @@ class PowerOutletViewSet(_DevicePortViewSet):
             )
 
 
+
+class _CoolingComponentViewSet(_DevicePortViewSet):
+    """Cooling intakes and outflows (#434): device components, scoped and
+    filtered like power ports and outlets. ``?picker=1`` returns id, name
+    and device."""
+
+    bulk_str_fields = ("label", "connector", "description")
+    bulk_int_fields = ("diameter_mm",)
+    #: ?param → the field it filters on.
+    cooling_filters: dict = {}
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingComponentMiniSerializer
+        return self.serializer_class
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            p = self.request.query_params
+            for param, field in self.cooling_filters.items():
+                val = p.get(param)
+                if val:
+                    qs = qs.filter(**{field: val})
+            # Pickers leave out the device being edited (an intake's outflow
+            # sits on another device).
+            other = p.get("exclude_device")
+            if other:
+                qs = qs.exclude(device_id=other)
+        return qs
+
+
+class CoolingIntakeViewSet(_CoolingComponentViewSet):
+    queryset = (
+        CoolingIntake.objects
+        .select_related("device", "cooling_feed__source", "outflow__device")
+        .prefetch_related(TAGS)
+        .order_by(natural("device__name"), NATURAL_NAME)
+    )
+    serializer_class = CoolingIntakeSerializer
+    cooling_filters = {"cooling_feed": "cooling_feed_id", "outflow": "outflow_id"}
+
+
+class CoolingOutflowViewSet(_CoolingComponentViewSet):
+    queryset = (
+        CoolingOutflow.objects
+        .select_related("device", "intake")
+        .prefetch_related(TAGS, "intakes__device")
+        .order_by(natural("device__name"), NATURAL_NAME)
+    )
+    serializer_class = CoolingOutflowSerializer
+    cooling_filters = {"intake": "intake_id"}
+
+
 # ─── Device-type component templates ─────────────────────────────────────────
 class _ComponentTemplateViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Shared base for the per-device-type component templates - no direct
@@ -5968,6 +6055,24 @@ class PowerOutletTemplateViewSet(_ComponentTemplateViewSet):
         .select_related("device_type", "power_port_template").order_by(NATURAL_NAME)
     )
     serializer_class = PowerOutletTemplateSerializer
+
+
+
+class CoolingIntakeTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = CoolingIntakeTemplate.objects.select_related("device_type").order_by(NATURAL_NAME)
+    serializer_class = CoolingIntakeTemplateSerializer
+    bulk_str_fields = ("connector", "description")
+    bulk_int_fields = ("diameter_mm",)
+
+
+class CoolingOutflowTemplateViewSet(_ComponentTemplateViewSet):
+    queryset = (
+        CoolingOutflowTemplate.objects
+        .select_related("device_type", "intake_template").order_by(NATURAL_NAME)
+    )
+    serializer_class = CoolingOutflowTemplateSerializer
+    bulk_str_fields = ("connector", "description")
+    bulk_int_fields = ("diameter_mm",)
 
 
 class RearPortTemplateViewSet(_ComponentTemplateViewSet):
@@ -8789,7 +8894,7 @@ class CoolingSourceViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScoped
 @extend_schema(tags=["cooling-sources"])
 class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Cooling loops from a source to a rack (#434), shaped like
-    ``PowerFeedViewSet``."""
+    ``PowerFeedViewSet``. ``?picker=1`` returns id, name and source."""
 
     rbac_action_map = {"bulk_delete": "delete", "bulk_update": "change"}
     queryset = CoolingFeed.objects.all().order_by(NATURAL_NAME)
@@ -8808,6 +8913,12 @@ class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVi
         if "source_id" in updates:
             names_free_after_move(rows, "source_id", updates["source_id"], "source_id")
 
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return CoolingFeedMiniSerializer
+        return CoolingFeedSerializer
+
     def get_queryset(self):
         qs = (
             super()
@@ -8815,6 +8926,7 @@ class CoolingFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedVi
             .select_related("source__site", "rack", "status")
             .prefetch_related(
                 TAGS, "rack__cooling_feeds", capacity.racked_devices_prefetch("rack__"),
+                "intakes",
             )
         )
         if self.request:

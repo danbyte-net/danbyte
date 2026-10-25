@@ -77,6 +77,11 @@ COMPONENT_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
      ("name", "description", "type", "maximum_draw", "allocated_draw")),
     ("power_outlets", "power_outlet_templates",
      ("name", "description", "type", "feed_leg")),
+    # Cooling (#434): intakes before outflows, which name their intake.
+    ("cooling_intakes", "cooling_intake_templates",
+     ("name", "description", "connector", "diameter_mm", "max_flow_lpm")),
+    ("cooling_outflows", "cooling_outflow_templates",
+     ("name", "description", "connector", "diameter_mm", "max_flow_lpm")),
     ("rear_ports", "rear_port_templates",
      ("name", "description", "type", "positions", "is_splitter")),
     ("front_ports", "front_port_templates",
@@ -176,6 +181,10 @@ def export_bundle(device_type, *, include_photos: bool = False) -> dict[str, Any
                 )
             elif key == "front_ports":
                 row["rear_port"] = c.rear_port_template.name
+            elif key == "cooling_outflows":
+                row["intake"] = c.intake_template.name if c.intake_template_id else None
+            if row.get("max_flow_lpm") is not None:
+                row["max_flow_lpm"] = str(row["max_flow_lpm"])
             elif key == "inventory_items":
                 row["manufacturer"] = (
                     c.manufacturer.name if c.manufacturer_id else None
@@ -555,6 +564,16 @@ def _import_components(dt, comps: dict, report: dict) -> None:
                         f"{row['power_port']!r}, which isn't in the bundle."
                     )
                 kwargs["power_port_template"] = inlet
+            elif key == "cooling_outflows" and row.get("intake"):
+                intake = made.get("cooling_intakes", {}).get(row["intake"]) or (
+                    dt.cooling_intake_templates.filter(name=row["intake"]).first()
+                )
+                if intake is None:
+                    report["warnings"].append(
+                        f"cooling_outflows: {row['name']} names intake "
+                        f"{row['intake']!r}, which isn't in the bundle."
+                    )
+                kwargs["intake_template"] = intake
             elif key == "front_ports":
                 rear = made.get("rear_ports", {}).get(row.get("rear_port")) or (
                     dt.rear_port_templates.filter(name=row.get("rear_port")).first()

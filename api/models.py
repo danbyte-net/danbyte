@@ -19,6 +19,7 @@ from .dcim_choices import (
     CABLE_TYPE_CHOICES,
     CONSOLE_PORT_TYPE_CHOICES,
     COOLING_CAPABILITY_CHOICES,
+    COOLING_CONNECTOR_CHOICES,
     COOLING_DEFAULT,
     COOLING_FEED_TYPE_CHOICES,
     COOLING_FLUID_CHOICES,
@@ -826,6 +827,56 @@ class PowerOutletTemplate(_ComponentTemplate):
         unique_together = ("device_type", "name")
         ordering = [natural("name")]
 
+class _CoolingTemplateFields(_ComponentTemplate):
+    """What a cooling intake or outflow template carries (#434): the hose's
+    connector, its bore and the flow it is rated for."""
+
+    connector = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=COOLING_CONNECTOR_CHOICES,
+    )
+    diameter_mm = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_flow_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0)], help_text="Litres per minute.",
+    )
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        abstract = True
+
+
+class CoolingIntakeTemplate(_CoolingTemplateFields):
+    """Where coolant enters hardware of this type (#434)."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="cooling_intake_templates",
+    )
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = [natural("name")]
+
+
+class CoolingOutflowTemplate(_CoolingTemplateFields):
+    """Where coolant leaves hardware of this type (#434) - a CDU's
+    secondary ports. ``intake_template`` names the intake that feeds it."""
+
+    device_type = models.ForeignKey(
+        DeviceType, on_delete=models.CASCADE,
+        related_name="cooling_outflow_templates",
+    )
+    intake_template = models.ForeignKey(
+        CoolingIntakeTemplate, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="outflow_templates",
+        help_text="The intake on this type that feeds the outflow (same type).",
+    )
+
+    class Meta:
+        unique_together = ("device_type", "name")
+        ordering = [natural("name")]
+
 
 class RearPortTemplate(_ComponentTemplate):
     device_type = models.ForeignKey(
@@ -1199,6 +1250,38 @@ def materialize_device_components(device) -> dict[str, int]:
     PowerOutlet.objects.bulk_create(made)
     created["power_outlets"] = len(made)
 
+    # Cooling intakes before outflows: an outflow names its intake by name.
+    have = _names(device.cooling_intakes)
+    made = [
+        CoolingIntake(
+            device=device, name=n, connector=t.connector,
+            diameter_mm=t.diameter_mm, max_flow_lpm=t.max_flow_lpm,
+            description=t.description,
+        )
+        for t in dt.cooling_intake_templates.all()
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    CoolingIntake.objects.bulk_create(made)
+    created["cooling_intakes"] = len(made)
+
+    intakes_by_name = {i.name: i for i in device.cooling_intakes.all()}
+    have = _names(device.cooling_outflows)
+    made = [
+        CoolingOutflow(
+            device=device, name=n, connector=t.connector,
+            diameter_mm=t.diameter_mm, max_flow_lpm=t.max_flow_lpm,
+            intake=(
+                intakes_by_name.get(render_component_name(t.intake_template.name, pos))
+                if t.intake_template_id else None
+            ),
+            description=t.description,
+        )
+        for t in dt.cooling_outflow_templates.select_related("intake_template")
+        if (n := render_component_name(t.name, pos)) not in have
+    ]
+    CoolingOutflow.objects.bulk_create(made)
+    created["cooling_outflows"] = len(made)
+
     # Rear ports before front ports (front ports map onto rear positions).
     have = _names(device.rear_ports)
     made = [
@@ -1506,6 +1589,8 @@ _SYNC_KINDS = [
     ("console_server_ports", "console_server_port_templates", True),
     ("power_ports", "power_port_templates", True),
     ("power_outlets", "power_outlet_templates", True),
+    ("cooling_intakes", "cooling_intake_templates", True),
+    ("cooling_outflows", "cooling_outflow_templates", True),
     ("rear_ports", "rear_port_templates", True),
     ("front_ports", "front_port_templates", True),
     ("aux_ports", "aux_port_templates", True),
@@ -1578,10 +1663,10 @@ def sync_device_components(device, *, remove_extra: bool = False) -> dict:
         # Dependents before their targets: front ports FK rear ports, outlets
         # FK inlets - remove the referencing side first to avoid FK errors.
         order = [
-            "front_ports", "power_outlets", "services", "interfaces",
-            "console_ports", "console_server_ports", "aux_ports",
+            "front_ports", "power_outlets", "cooling_outflows", "services",
+            "interfaces", "console_ports", "console_server_ports", "aux_ports",
             "antennas", "inventory_items", "device_bays", "module_bays",
-            "rear_ports", "power_ports",
+            "rear_ports", "power_ports", "cooling_intakes",
         ]
         for dev_rel in order:
             names = diff.get(dev_rel, {}).get("extra", [])
@@ -7419,6 +7504,71 @@ class CoolingFeed(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
 
     def __str__(self) -> str:
         return self.name
+
+class _CoolingComponent(TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """What a device's cooling intake and outflow share (#434). A hose is a
+    reference between them, not a cable: the cable model stays for signal
+    and power. Tenant scope inherited via device."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=64)
+    label = models.CharField(max_length=64, blank=True, default="", db_default="")
+    connector = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=COOLING_CONNECTOR_CHOICES,
+    )
+    diameter_mm = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_flow_lpm = models.DecimalField(
+        max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(0)], help_text="Litres per minute.",
+    )
+    description = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        abstract = True
+
+    def __str__(self) -> str:
+        return f"{self.device.name}:{self.name}"
+
+
+class CoolingIntake(_CoolingComponent):
+    """Where coolant enters a device (#434). Fed by a cooling feed, or by an
+    outflow on another device (a CDU) - one or the other, never both."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="cooling_intakes"
+    )
+    cooling_feed = models.ForeignKey(
+        CoolingFeed, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="intakes",
+    )
+    outflow = models.ForeignKey(
+        "CoolingOutflow", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="intakes",
+        help_text="An outflow on another device - a CDU - that feeds this intake.",
+    )
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = [natural("name")]
+
+
+class CoolingOutflow(_CoolingComponent):
+    """Where coolant leaves a device (#434) - a CDU's secondary ports.
+    ``intake`` names the intake on the same device that feeds it."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name="cooling_outflows"
+    )
+    intake = models.ForeignKey(
+        CoolingIntake, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="outflows",
+        help_text="The intake on this device that feeds the outflow.",
+    )
+
+    class Meta:
+        unique_together = ("device", "name")
+        ordering = [natural("name")]
 
 
 # ─── Wireless ────────────────────────────────────────────────────────────────

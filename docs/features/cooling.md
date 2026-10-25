@@ -8,7 +8,9 @@ Cooling is how heat leaves your racks. Danbyte records how each piece of
 **hardware is cooled**, what each **rack's cooling** can take and how much
 heat it removes, and - optionally - the **cooling plant** behind it: the
 units in a site and the loops that run from them to racks (see
-[Cooling sources and feeds](#cooling-sources-and-feeds)).
+[Cooling sources and feeds](#cooling-sources-and-feeds)) - and where each
+device takes its coolant in and lets it out (see
+[Cooling intakes and outflows](#cooling-intakes-and-outflows)).
 
 ## How hardware is cooled
 
@@ -229,6 +231,10 @@ and `?cooling_free_w_gte=` filters by the same supply.
 Each **feed** shows its rack's heat against what the feed delivers (rating ×
 max utilization). A redundant feed is measured against the whole rack too,
 marked *redundant*: it must carry the rack alone when the primary fails.
+Once [cooling intakes](#cooling-intakes-and-outflows) name the feed, its
+load is the heat of the devices they connect instead - behind CDUs too -
+marked *N connected devices*, and its **Flow** row measures the intakes'
+summed max flow against the feed's own (see [Flow](#flow)).
 
 Each **source** shows the heat of every rack its feeds reach - a rack fed
 twice by one source counts once - against the source's rated capacity, and
@@ -245,6 +251,13 @@ device carries the impact work on the source would have:
 |---|---|
 | **Outage** | The rack has no other feed of the same kind. |
 | **Reduced redundancy** | Another feed - from another source, or one not part of the work - still serves the rack. |
+
+A cooling source or feed's tab also follows the
+[intakes](#cooling-intakes-and-outflows): a device whose intake reaches a feed
+of the work - directly or behind a CDU - is listed wherever it stands. A
+device with intakes takes its level from them: *Outage* when every feed they
+reach is part of the work, *Reduced redundancy* when one is not. Each such
+device shows its path - *CRAH-1 → Loop A → cdu1 → srv1* - under its name.
 
 The tab lists only what you may view. **Plan maintenance** opens a new
 [maintenance event](maintenance.md#from-a-source-or-feed) with these impacts
@@ -301,3 +314,84 @@ of `{object_type, object_id, level}`.
 (**Power & cooling** in the permission editor); a site-limited grant reaches
 a source by its site and a feed by its source's site. Both are audited and
 searchable.
+
+## Cooling intakes and outflows
+
+A liquid-cooled device takes coolant in through an **intake** and, when it
+passes coolant on - a CDU - lets it out through an **outflow**. Both are
+device components, under the device's **Components → Cooling** sub-tab.
+
+The hoses between them are **references, not cables**: an intake names what
+feeds it, and the [cable model](../dcim/cabling.md) stays for signal and
+power. There is nothing to trace hop by hop, and no faceplate marker for a
+cooling port.
+
+| Field | What it records |
+|---|---|
+| **Name**, **Label** | Unique per device; the label is free text. |
+| **Connector** | Quick-disconnect 1/4", 3/8", 1/2", 3/4" or 1", Hose barb, Flange or Other. |
+| **Diameter (mm)** | The hose's bore. |
+| **Max flow (L/min)** | The flow the port is rated for. |
+| **Fed from** (intake) | **Cooling feed**, **Outflow** on another device, or nothing - never both. |
+| **Fed by intake** (outflow) | An intake on the **same** device - a CDU's primary loop. |
+
+An intake whose outflow sits on its own device is refused, as is an outflow
+whose intake sits on another device. Tick rows for **Edit** (connector,
+label, description, tags) and **Delete**.
+
+A [device type](../dcim/device-catalog.md#component-templates) carries
+**cooling intake** and **cooling outflow templates**, stamped onto every new
+device of the type and back-filled by **Sync from type** - an outflow
+template's intake resolves to the intake of the same name on the device.
+
+### Cooling path
+
+The device overview's **Cooling path** card - shown once the device has a
+cooling component - gives one row per intake: its path from the source,
+through any CDU, to the device, each hop a link. A path that does not reach a
+feed says why:
+
+| Badge | Meaning |
+|---|---|
+| **Not connected** | An intake, or a CDU's outflow, names nothing upstream. |
+| **Loop** | The path came back to a device already on it. |
+| **Too deep** | More than eight devices - the path stops there. |
+
+Hops you may not view read *Hidden*.
+
+### Flow
+
+A feed's **Flow** row in its **Loop** card shows the summed **max flow** of
+the intakes that name it against the feed's own **Flow**: *30 / 50 L/min*
+behind the capacity bar, red over it. With no intake giving a flow it shows
+the feed's rate alone.
+
+### Unconnected liquid hardware
+
+A rack whose capability is liquid, hybrid or immersion offers **Liquid-cooled,
+no intake connected** on its **Devices** tab: the devices whose effective
+cooling method is not air and which have no intake fed by a feed or an
+outflow.
+
+### In the API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/cooling-intakes/` | List and create. Filters: `device`, `cooling_feed`, `outflow`, `exclude_device`, `search`; `?picker=1` returns id, name and device. |
+| `GET/POST /api/cooling-outflows/` | List and create. Filters: `device`, `intake`, `exclude_device`, `search`; `?picker=1`. An outflow carries `served`, the intakes it feeds. |
+| `GET/POST /api/cooling-intake-templates/`, `/api/cooling-outflow-templates/` | Templates, filtered by `device_type`. |
+| `POST …/bulk-update/`, `…/bulk-delete/`, `…/bulk-rename/`, `…/bulk-clone/` | On all four, as on power ports and outlets. |
+| `GET /api/devices/{id}/cooling-path/` | `paths`, one per intake: `intake`, `status` (`fed`, `open`, `loop`, `truncated`) and `hops` upstream first - `source`, `feed`, then `device` hops with the `intake` and `outflow` they pass through; a hop you may not view is `{"kind", "hidden": true}`. |
+| `GET /api/devices/?cooling_unconnected=1` | Liquid, hybrid and immersion devices with no connected intake. |
+| `GET /api/cooling-feeds/?picker=1` | Id, name and source of each feed. |
+
+Write `cooling_feed_id`, `outflow_id` and `intake_id`; the answer carries
+`cooling_feed` (with its `source`), `outflow` (with its `device`) and
+`intake`. `max_flow_lpm` is a decimal string. A feed's `capacity` gains
+`basis` (`intakes` or `rack`) and `devices`, and the feed a `flow` object -
+`connected_lpm`, `rated_lpm`, `intakes`. A cooling `affected` device carries
+its `path`, and its `rack` may be null. A device's `cooling_count` counts its
+intakes and outflows. `GET /api/dcim/choices/` serves `cooling_connectors`.
+The RBAC types are `coolingintake`, `coolingoutflow` and their templates,
+under **DCIM**; a site-limited grant reaches a component by its device's site,
+and site roles include both.

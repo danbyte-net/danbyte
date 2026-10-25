@@ -142,6 +142,8 @@ import {
 } from "@/components/vc-stack-interfaces"
 import { DeviceConsolePane } from "@/components/device-console-pane"
 import { DevicePowerPane } from "@/components/device-power-pane"
+import { DeviceCoolingPane } from "@/components/device-cooling-pane"
+import { DeviceCoolingPathCard } from "@/components/device-cooling-path-card"
 import { portTint } from "@/components/cable-status-control"
 import {
   buildInterfaceColumns,
@@ -216,6 +218,7 @@ const DEVICE_COMPONENT_SUBS = [
   "interfaces",
   "console",
   "power",
+  "cooling",
   "front-ports",
   "rear-ports",
   "hardware",
@@ -393,6 +396,7 @@ function Body({ device: d }: { device: Device }) {
               (d.hardware_count || 0) +
               (d.console_count || 0) +
               (d.power_count || 0) +
+              (d.cooling_count || 0) +
               (d.front_port_count || 0) +
               (d.rear_port_count || 0) || undefined,
         },
@@ -663,6 +667,11 @@ function DeviceComponents({
                 count: d.power_count || undefined,
               },
               {
+                value: "cooling",
+                label: "Cooling",
+                count: d.cooling_count || undefined,
+              },
+              {
                 value: "front-ports",
                 label: "Front ports",
                 count: d.front_port_count || undefined,
@@ -731,6 +740,7 @@ function DeviceComponents({
             )}
             {sub === "console" && <DeviceConsolePane deviceId={d.id} />}
             {sub === "power" && <DevicePowerPane deviceId={d.id} />}
+            {sub === "cooling" && <DeviceCoolingPane deviceId={d.id} />}
             {sub === "front-ports" && (
               <DeviceFrontPortsPane deviceId={d.id} initialCabled={cabled} />
             )}
@@ -1180,6 +1190,7 @@ function DeviceOverview({
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
       <DeviceCoverageCard deviceId={d.id} />
+      {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues
         model="device"

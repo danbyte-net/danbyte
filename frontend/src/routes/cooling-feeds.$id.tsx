@@ -13,6 +13,7 @@ import { TagList } from "@/components/cells/tag-list"
 import { RackCell } from "@/components/cells/rack-cell"
 import { SiteCell } from "@/components/cells/site-cell"
 import { CoolingFigure } from "@/components/cells/power-figure"
+import { FlowFigure } from "@/components/cells/flow-figure"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -181,17 +182,27 @@ function FeedOverview({ feed: f }: { feed: CoolingFeed }) {
       value: (
         <span className="inline-flex flex-wrap items-center gap-x-2">
           <CoolingFigure cooling={feedCooling(f.capacity)} bar />
-          {f.capacity.redundant && f.rack && (
+          {f.capacity.basis === "intakes" ? (
             <span className="text-[11px] text-muted-foreground">
-              whole rack, if the primary fails
+              {f.capacity.devices} connected device
+              {f.capacity.devices === 1 ? "" : "s"}
             </span>
+          ) : (
+            f.capacity.redundant &&
+            f.rack && (
+              <span className="text-[11px] text-muted-foreground">
+                whole rack, if the primary fails
+              </span>
+            )
           )}
         </span>
       ),
     },
     {
       label: "Flow",
-      value: (
+      value: f.flow?.connected_lpm != null ? (
+        <FlowFigure flow={f.flow} />
+      ) : (
         <span className="num">{fmtDecimal(f.flow_rate_lpm, "L/min")}</span>
       ),
     },

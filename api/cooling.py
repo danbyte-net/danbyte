@@ -90,3 +90,17 @@ def annotate_devices(qs):
     return qs.annotate(cooling_effective=effective_method_sql()).annotate(
         cooling_mismatch=mismatch_sql()
     )
+
+
+def unconnected_q():
+    """Liquid, hybrid or immersion devices with no cooling intake connected
+    to a feed or an outflow (``?cooling_unconnected=1``). Reads the
+    ``cooling_effective`` annotation (``annotate_devices``)."""
+    from django.db.models import Exists, OuterRef
+
+    from .models import CoolingIntake
+
+    connected = CoolingIntake.objects.filter(device=OuterRef("pk")).filter(
+        Q(cooling_feed__isnull=False) | Q(outflow__isnull=False)
+    )
+    return ~Q(cooling_effective=COOLING_DEFAULT) & ~Exists(connected)

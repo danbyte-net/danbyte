@@ -282,7 +282,9 @@ downloads everything that makes the model work:
 
 - the type's own fields - height, width, depth, airflow, cooling method and
   heat output, weight, DIN rails
-- every component template (interfaces, console, power, panel ports, bays)
+- every component template (interfaces, console, power, cooling, panel ports,
+  bays) - cooling under the keys `cooling_intakes` and `cooling_outflows`, an
+  outflow naming its `intake`
 - the faceplate layout and the photo-port markers
 - the front and rear photos, when you tick **Include photos**
 - inventory-item templates (the disk bays a chassis ships with)
@@ -361,7 +363,8 @@ hand-typing ports per device.
 
 Manage them on the device type's **Components** tab, which splits the component
 kinds - Interfaces, Console ports, Console server ports, Power ports, Power
-outlets, Rear ports, Front ports, **Aux ports**, and **Services** - into
+outlets, **Cooling intakes**, **Cooling outflows**, Rear ports, Front ports,
+**Aux ports**, and **Services** - into
 sub-tabs with counts. The open sub-tab is part of the URL
 (`?tab=components&sub=power-port`), so you can link someone straight at one
 kind, and reload or back/forward without losing your place.
@@ -402,6 +405,10 @@ Notes:
 - Power **outlet** templates can reference the power **inlet** template that
   feeds them; front-port templates map onto rear-port template positions - the
   same relationships the concrete components carry.
+- **Cooling intake** and **cooling outflow** templates carry a connector,
+  diameter and max flow; an outflow template can name the intake template
+  that feeds it, as a CDU's do. They have no faceplate marker. See
+  [Cooling](../features/cooling.md#cooling-intakes-and-outflows).
 - **Service** templates (name · ports per protocol) stamp a **Service** onto each
   new device; tick **Monitor** and those services are watched from the moment
   the device has an IP - fleet-wide service monitoring configured in one place.
