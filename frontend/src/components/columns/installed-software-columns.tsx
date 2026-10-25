@@ -5,7 +5,7 @@ import type { InstalledSoftware, InstalledSoftwareSource } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
-import { eolColumn } from "@/components/cells/eol-cell"
+import { EolBadge, eolColumn } from "@/components/cells/eol-cell"
 import { LifetimeBar } from "@/components/cells/lifecycle-cell"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
@@ -56,6 +56,8 @@ export interface InstalledSoftwareColumnOpts<
   eol?: boolean
   /** The end-of-life warning window, which colours the bar. */
   warningDays?: number | null
+  /** Show the Cycle column by default (the application's Installed on tab). */
+  showCycle?: boolean
   actions?: ActionsColumnOpts<T>
 }
 
@@ -150,11 +152,16 @@ export function buildInstalledSoftwareColumns<
       header: ({ column }) => <SortHeader column={column} label="Cycle" />,
       cell: ({ row }) =>
         row.original.cycle ? (
-          <span className="font-mono text-xs">{row.original.cycle}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs">{row.original.cycle}</span>
+            {row.original.cycle_manual && (
+              <Badge variant="secondary">manual</Badge>
+            )}
+          </span>
         ) : (
           dash
         ),
-      meta: { label: "Cycle", defaultHidden: true },
+      meta: { label: "Cycle", defaultHidden: !opts.showCycle },
     }),
     service: () => ({
       id: "service",
@@ -173,7 +180,26 @@ export function buildInstalledSoftwareColumns<
           dash
         ),
     }),
-    eol: () => eolColumn<T>({ get: (r) => r.eol }),
+    eol: () => {
+      // The status links to the application's End of life card.
+      const col = eolColumn<T>({ get: (r) => r.eol })
+      return {
+        ...col,
+        cell: ({ row }) =>
+          row.original.eol ? (
+            <Link
+              to="/applications/$id"
+              params={{ id: row.original.application.id }}
+              search={{ tab: "overview" }}
+              hash="eol"
+            >
+              <EolBadge info={row.original.eol} />
+            </Link>
+          ) : (
+            dash
+          ),
+      }
+    },
     lifetime: () => ({
       id: "lifetime",
       accessorFn: (r) => r.effective_end ?? "",

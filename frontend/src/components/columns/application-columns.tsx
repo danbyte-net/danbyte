@@ -73,9 +73,19 @@ export function buildApplicationColumns<T extends Application = Application>(
       cell: ({ row }) => {
         const a = row.original
         const above = applicationAncestors(a.path, a.name)
+        const depth = a.depth ?? 0
+        // One step in per level, as the interface list nests its children.
         return (
-          <span className="whitespace-nowrap">
-            {above && <span className="text-muted-foreground">{above} › </span>}
+          <span
+            className="flex items-center gap-1.5 whitespace-nowrap"
+            style={{ paddingLeft: depth * 16 }}
+          >
+            {depth > 0 && (
+              <span className="font-mono text-[11px] text-muted-foreground/50">
+                └
+              </span>
+            )}
+            {above && <span className="text-muted-foreground">{above} ›</span>}
             <Link
               to="/applications/$id"
               params={{ id: a.id }}
