@@ -9299,8 +9299,11 @@ export interface NotificationChannel {
   match_prefix: string | null
   match_ip: string | null
   match_device: string | null
-  /** Telegram bot token is write-only; reads only say whether one is stored. */
+  /** Credentials are write-only; reads only say whether one is stored. The
+   *  webhook `url` and PagerDuty `routing_key` are sent inside `config`. */
   bot_token_set: boolean
+  url_set: boolean
+  routing_key_set: boolean
   auto_created: boolean
   created_at: string
   updated_at: string

@@ -87905,9 +87905,15 @@ components:
     NotificationChannel:
       type: object
       description: |-
-        A notification destination. ``config`` is the transport's plain target and
-        is read back; a credential (the Telegram bot token) is write-only and stored
-        encrypted in ``secrets``, so reads only report whether one is set.
+        A notification destination. ``config`` is the transport's plain target
+        and is read back. Credentials are write-only and stored encrypted in
+        ``secrets``: the webhook ``url`` (webhook/Slack/Teams/Discord) and the
+        PagerDuty ``routing_key`` are written inside ``config``, the Telegram
+        ``bot_token`` as its own field. Reads drop them and report ``url_set`` /
+        ``routing_key_set`` / ``bot_token_set`` instead - for every caller.
+
+        On write a credential key that is present replaces the stored value, an
+        empty string clears it, and an absent one keeps it.
       properties:
         id:
           type: string
@@ -87968,6 +87974,12 @@ components:
         bot_token_set:
           type: boolean
           readOnly: true
+        url_set:
+          type: boolean
+          readOnly: true
+        routing_key_set:
+          type: boolean
+          readOnly: true
         auto_created:
           type: boolean
           readOnly: true
@@ -87986,8 +87998,10 @@ components:
       - id
       - kind
       - name
+      - routing_key_set
       - status_change_last_run
       - updated_at
+      - url_set
     NotificationChannelKindEnum:
       enum:
       - webhook
@@ -88009,9 +88023,15 @@ components:
     NotificationChannelRequest:
       type: object
       description: |-
-        A notification destination. ``config`` is the transport's plain target and
-        is read back; a credential (the Telegram bot token) is write-only and stored
-        encrypted in ``secrets``, so reads only report whether one is set.
+        A notification destination. ``config`` is the transport's plain target
+        and is read back. Credentials are write-only and stored encrypted in
+        ``secrets``: the webhook ``url`` (webhook/Slack/Teams/Discord) and the
+        PagerDuty ``routing_key`` are written inside ``config``, the Telegram
+        ``bot_token`` as its own field. Reads drop them and report ``url_set`` /
+        ``routing_key_set`` / ``bot_token_set`` instead - for every caller.
+
+        On write a credential key that is present replaces the stored value, an
+        empty string clears it, and an absent one keeps it.
       properties:
         name:
           type: string
@@ -100190,9 +100210,15 @@ components:
     PatchedNotificationChannelRequest:
       type: object
       description: |-
-        A notification destination. ``config`` is the transport's plain target and
-        is read back; a credential (the Telegram bot token) is write-only and stored
-        encrypted in ``secrets``, so reads only report whether one is set.
+        A notification destination. ``config`` is the transport's plain target
+        and is read back. Credentials are write-only and stored encrypted in
+        ``secrets``: the webhook ``url`` (webhook/Slack/Teams/Discord) and the
+        PagerDuty ``routing_key`` are written inside ``config``, the Telegram
+        ``bot_token`` as its own field. Reads drop them and report ``url_set`` /
+        ``routing_key_set`` / ``bot_token_set`` instead - for every caller.
+
+        On write a credential key that is present replaces the stored value, an
+        empty string clears it, and an absent one keeps it.
       properties:
         name:
           type: string

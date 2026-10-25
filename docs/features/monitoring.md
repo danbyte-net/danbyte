@@ -100,9 +100,10 @@ will never be redirected to dial some arbitrary hostname.
 
 ### Credentials are encrypted and write-only
 
-SNMP communities, SSH passwords and keys, and SNMP v3 keys are stored encrypted
-at rest. You can set them, but they're **never** shown again or returned through
-the API - the UI only tells you whether a credential is saved.
+SNMP communities, SSH passwords and keys, SNMP v3 keys, and notification channel
+credentials (webhook URLs, PagerDuty routing keys, Telegram bot tokens) are
+stored encrypted at rest. You can set them, but they're **never** shown again or
+returned through the API - the UI only tells you whether a credential is saved.
 
 ### Script and exec checks
 
@@ -1105,6 +1106,19 @@ Supported channels:
 | **Telegram** | A bot token and a chat ID | Posts the alert summary as plain text; optionally into one group topic. |
 | **Webhook** | A URL | POSTs the alert as JSON to your own endpoint. |
 | **Email** | Recipient addresses | Sent via the deployment mail server (below). |
+
+The webhook URL, the routing key and the bot token are credentials - whoever
+has one can post into the channel or open incidents - so they are stored
+encrypted and are **write-only**, for every role including superusers. The
+channel form shows *Stored - type to replace*; leave the field blank to keep the
+stored value.
+
+Through the API, send the URL as `config.url` and the routing key as
+`config.routing_key` (the Telegram token as top-level `bot_token`). Reads leave
+them out of `config` and report `url_set`, `routing_key_set` and `bot_token_set`
+instead. On `PATCH`, a key that is present replaces the stored value, an empty
+string clears it, and an absent key keeps it. A **Send test** error never quotes
+the URL.
 
 Notifications are best-effort: a failing channel is logged and never breaks a
 check run. When a **public base URL** is configured (see below), messages include
