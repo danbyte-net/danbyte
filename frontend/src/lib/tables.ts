@@ -224,6 +224,7 @@ const ROWS: Row[] = [
   ["audit-log", "Audit log", "Governance", "/api/changelog/"],
   ["compliance-rules", "Compliance rules", "Governance", "/api/compliance-rules/"],
   ["compliance-violations", "Compliance violations", "Governance", null],
+  ["compliance-top-offenders", "Compliance top offenders", "Governance", null],
   ["users", "Users", "Access", "/api/users/"],
   ["groups", "Groups", "Access", "/api/groups/"],
   ["permissions", "Permissions", "Access", "/api/object-permissions/"],
