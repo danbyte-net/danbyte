@@ -412,6 +412,9 @@ class IntegrationSettings(TimestampedModel):
     #: Read device configuration backups from an Oxidized server (#35). Off
     #: until an admin turns it on; the configs themselves stay in Oxidized.
     oxidized_enabled = models.BooleanField(default=False, db_default=False)
+    #: Read monitoring status from an existing PRTG. Off until an admin turns
+    #: it on, and re-checked at job time like Zabbix.
+    prtg_enabled = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         verbose_name_plural = "integration settings"
