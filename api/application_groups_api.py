@@ -3,9 +3,11 @@
 * ``/api/application-groups/`` - named sets of applications ("RDS",
   "SCADA"): CRUD, ``?picker=1``, ``?search=``, ``?application=``,
   ``?device=``, ``?virtual_machine=``, ``bulk-delete``. ``members`` is a
-  writable ordered list of ``{application_id, version}``; writing it adds,
-  removes and re-versions members, and the installs on every assigned host
-  follow (``api.applications.set_members``). A delete is refused (409) while
+  writable ordered list of ``{application_id, version, include_children}``;
+  writing it adds, removes and re-versions members, and the installs on every
+  assigned host follow (``api.applications.set_members``). An entry with
+  ``include_children`` brings every application under it along, right after
+  it in tree order, at a blank version, skipping ones already listed. A delete is refused (409) while
   the group is assigned anywhere.
 * ``/api/application-group-assignments/`` - a group on one device or VM:
   list, ``POST`` (assign: records the members' installs), ``DELETE``
@@ -34,7 +36,7 @@ from core.models import Tag
 from core.tags import TAGS
 
 from . import applications as sync
-from .applications_api import PATH_SEP, _paths, _uuid_param
+from .applications_api import PATH_SEP, _paths, _uuid_param, descendants
 from .bulk_delete import SafeBulkDeleteMixin
 from .cf_search import cf_text_q
 from .models import (
@@ -81,10 +83,14 @@ class ApplicationGroupMemberSerializer(serializers.ModelSerializer):
     )
     version = serializers.CharField(max_length=64, required=False, allow_blank=True,
                                     default="")
+    #: Write only: the application's descendants join with it (blank version).
+    include_children = serializers.BooleanField(write_only=True, required=False,
+                                                default=False)
 
     class Meta:
         model = ApplicationGroupMember
-        fields = ["id", "application", "application_id", "version", "position"]
+        fields = ["id", "application", "application_id", "version", "position",
+                  "include_children"]
         read_only_fields = ["id", "position"]
         validators = []
 
@@ -149,12 +155,24 @@ class ApplicationGroupSerializer(
             if app.pk in seen:
                 raise serializers.ValidationError(f"{app.name} is listed twice.")
             seen.add(app.pk)
-        return value
+        out = []
+        for row in value:
+            out.append(row)
+            if not row.get("include_children"):
+                continue
+            request = self.context.get("request")
+            for child in descendants(request, row["application"]):
+                if child.pk not in seen:
+                    seen.add(child.pk)
+                    out.append({"application": child, "version": ""})
+        return out
 
     def _save_members(self, group, rows):
         if rows is None:
             return
         sync.set_members(group, [(r["application"], r.get("version", "")) for r in rows])
+        # The list's annotated count predates the write.
+        group.__dict__.pop("member_count_annotated", None)
 
     def create(self, validated_data):
         rows = validated_data.pop("members", None)
