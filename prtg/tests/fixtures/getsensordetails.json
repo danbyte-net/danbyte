@@ -1,0 +1,29 @@
+{
+  "prtg-version": "26.3.124.1727",
+  "treesize": 0,
+  "sensordata": {
+    "name": "HTTPS",
+    "sensortype": "HTTP",
+    "interval": "60 s",
+    "probename": "Local Probe",
+    "parentgroupname": "Servers",
+    "parentdevicename": "db-dev01",
+    "parentdeviceid": "2200",
+    "lastvalue": "No data",
+    "lastmessage": "<div class=\"status\">Down</div><div class=\"moremessage\">Connection refused (code: PE104)</div>",
+    "favorite": "",
+    "statustext": "Down",
+    "statusid": "5",
+    "lastup": "20.10.2026 03:00:00 [5 d ago]",
+    "lastdown": "25.10.2026 10:12:30 [93 s ago]",
+    "lastcheck": "25.10.2026 10:12:30 [93 s ago]",
+    "uptime": "97.5021%",
+    "uptimetime": "4 d 23 h",
+    "downtime": "2.4979%",
+    "downtimetime": "3 h 1 m",
+    "updowntotal": "5 d [=100% coverage]",
+    "updownsince": "20.10.2026 03:00:00 [5 d ago]",
+    "info": "Monitors a web server using HTTP",
+    "graphimage": ""
+  }
+}
