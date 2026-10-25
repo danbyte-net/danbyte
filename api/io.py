@@ -601,6 +601,7 @@ class ModelIOHandler:
         if _has_custom_fields(self.model) and (obj.custom_fields or {}) != old_cf:
             touched.add("custom_fields")
         self._api_validate(obj, existing, touched, request)
+        _mark_imported_version(obj, touched)
 
         tag_names = None
         if _is_taggable(self.model) and "tags" in row:
@@ -738,6 +739,20 @@ class ModelIOHandler:
             for f in self._fields.values()
             if f.name != "custom_fields"
         }
+
+
+def _mark_imported_version(obj, touched) -> None:
+    """A software version a file sets is the import's (#451): no automatic
+    source overwrites it, and the source says where it came from."""
+    if "software_version" not in touched or not hasattr(obj, "software_version_source"):
+        return
+    source = "import" if obj.software_version else ""
+    obj.software_version_source = source
+    obj.software_version_seen_at = None
+    write = getattr(obj, "_io_write", None)
+    if write is not None:
+        write[0].validated_data["software_version_source"] = source
+        write[0].validated_data["software_version_seen_at"] = None
 
 
 def _flat(err) -> list[str]:

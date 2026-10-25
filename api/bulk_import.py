@@ -318,6 +318,9 @@ def _build(model, tenant, row, fields, user=None):
             setattr(obj, field.attname, val)
     for name, val in fk_set.items():
         setattr(obj, name, val)
+    # A software version a file sets is the import's (#451).
+    if getattr(obj, "software_version", "") and hasattr(obj, "software_version_source"):
+        obj.software_version_source = "import"
     return obj
 
 

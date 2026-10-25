@@ -19,7 +19,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Name**, **status** | As for a device - the same status catalog. |
 | **Power** | Read-only, from the hypervisor - see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
-| **Software version** | The version it runs, judged against the platform's [target version](lifecycle.md#software-target). |
+| **Software version** | The version it runs, judged against the platform's [target version](lifecycle.md#software-target). Typed, or read from SNMP `sysDescr` - the Overview shows [where it came from](lifecycle.md#where-the-running-version-comes-from). |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
 | **Group** | Its [VM group](vm-groups.md) - a vApp, resource pool, folder or one of your own - on the same cluster. Optional. |
 | **Host device** | The physical host *inside* that cluster - see [Placement](#placement-site-and-host-device). |

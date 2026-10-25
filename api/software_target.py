@@ -49,11 +49,10 @@ def describe(obj) -> str:
 
 def mark_manual(attrs, instance) -> None:
     """A person changing the version through the API makes it theirs: the
-    integration stamp goes, so no sync overwrites it."""
-    if instance is None or "software_version" not in attrs:
-        return
-    if attrs["software_version"] != instance.software_version:
-        attrs["software_version_seen_at"] = None
+    integration stamp goes, so no sync overwrites it (#451 adds the source)."""
+    from .software_versions import mark_manual as _mark
+
+    _mark(attrs, instance)
 
 
 def _target_expr(model):

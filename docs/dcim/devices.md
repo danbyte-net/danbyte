@@ -100,7 +100,7 @@ The default tab lays the device's facts out in cards:
 
 | Card           | Shows                                                        |
 | -------------- | ------------------------------------------------------------ |
-| **Device**     | name, status, role, platform (with the software version and the platform's target) and its **OS support** bar, description, comments |
+| **Device**     | name, status, role, platform (with the software version, [where it came from](../features/lifecycle.md#where-the-running-version-comes-from) and the platform's target) and its **OS support** bar, description, comments |
 | **Cooling path** | shown once the device has a cooling intake or outflow: each intake's path from source through any CDU, each hop a link - see [Cooling](../features/cooling.md#cooling-path) |
 | **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |

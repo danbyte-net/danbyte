@@ -859,6 +859,12 @@ A **platform** is the operating system / NOS a device or virtual machine
 runs - IOS-XE, JunOS, PAN-OS, Cumulus. Platforms are handy for filtering and
 for configuration rendering.
 
+A platform also carries a **Target version** and a **Version pattern** - the
+regular expression that reads the running version out of SNMP `sysDescr`
+for devices and VMs on it; see [Software
+target](../features/lifecycle.md#software-target) and [Version
+pattern](../features/lifecycle.md#version-pattern).
+
 A platform's page has a **Devices** tab and a **Virtual machines** tab, each
 listing what runs it; the API gives both counts (`device_count`, `vm_count`).
 Like every catalog count, they count only the devices and virtual machines
