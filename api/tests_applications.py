@@ -378,3 +378,55 @@ class ImportExportTests(_Base):
                                         {"format": "csv", "content": content}, format="json"))
         self.assertEqual(body["created"], 0)
         self.assertTrue(body["errors"])
+
+
+class InstallCountTests(_Base):
+    """``install_count`` on devices and VMs, for the Software tab label: the
+    same figure on the list and the detail, from one annotation."""
+
+    def _row(self, path, obj_id):
+        r = self.client.get(path)
+        self.assertEqual(r.status_code, 200, r.content)
+        (row,) = [x for x in r.json()["results"] if x["id"] == str(obj_id)]
+        return row
+
+    def test_device_install_count(self):
+        detail = f"/api/devices/{self.dev.id}/"
+        self.assertEqual(self.client.get(detail).json()["install_count"], 0)
+        self.install("16.4")
+        self.install("12.1")
+        self.install("16.4", device=self.dev_b)
+        self.assertEqual(self.client.get(detail).json()["install_count"], 2)
+        self.assertEqual(self._row("/api/devices/", self.dev.id)["install_count"], 2)
+        self.assertEqual(self._row("/api/devices/", self.dev_b.id)["install_count"], 1)
+
+    def test_vm_install_count(self):
+        detail = f"/api/virtual-machines/{self.vm.id}/"
+        self.assertEqual(self.client.get(detail).json()["install_count"], 0)
+        self.install("16.4", virtual_machine=self.vm)
+        self.install("16.4")  # on the device, not the VM
+        self.assertEqual(self.client.get(detail).json()["install_count"], 1)
+        self.assertEqual(
+            self._row("/api/virtual-machines/", self.vm.id)["install_count"], 1)
+
+    def test_list_count_costs_no_query_per_row(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def queries(path):
+            with CaptureQueriesContext(connection) as ctx:
+                self.assertEqual(self.client.get(path).status_code, 200)
+            return len(ctx.captured_queries)
+
+        self.install("16.4")
+        self.install("16.4", virtual_machine=self.vm)
+        before = (queries("/api/devices/"), queries("/api/virtual-machines/"))
+        ct = ClusterType.objects.create(tenant=self.tenant, name="CT2", slug="ct2")
+        cl = Cluster.objects.create(tenant=self.tenant, name="C2", type=ct)
+        for i in range(3):
+            d = Device.objects.create(tenant=self.tenant, name=f"x{i}", site=self.site_a)
+            v = VirtualMachine.objects.create(tenant=self.tenant, name=f"v{i}", cluster=cl)
+            self.install("16.4", device=d)
+            self.install("16.4", virtual_machine=v)
+        after = (queries("/api/devices/"), queries("/api/virtual-machines/"))
+        self.assertEqual(before, after)
