@@ -38,7 +38,19 @@ function ApplicationsPage() {
         `/api/applications/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })
-  const rows = query.data?.results ?? []
+  // Tree order: a parent first, then its children under it. The path
+  // ("Payments › Checkout › checkout-api") sorts a child right after its
+  // parent, whatever the API's own ordering.
+  const rows = useMemo(() => {
+    const list = query.data?.results ?? []
+    const collator = new Intl.Collator(undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+    return [...list].sort((a, b) =>
+      collator.compare(a.path || a.name, b.path || b.name)
+    )
+  }, [query.data])
   const onDelete = useCallback((a: Application) => setDeleting(a), [])
   const columns = useMemo(
     () =>

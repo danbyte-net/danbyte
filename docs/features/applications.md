@@ -35,9 +35,10 @@ Payments
     └── PostgreSQL
 ```
 
-The list shows the path before the name (*Payments › Checkout ›
-checkout-api*), indented one step per level, and sorts by it, so children
-follow their parent; the picker reads the same. An application cannot be its own ancestor. Deleting a parent
+The list opens in tree order: a parent, then its children under it, each
+marked `└` and indented one step per level, with the path before the name
+(*Payments › Checkout › checkout-api*). Sorting by *Name* keeps that order;
+the picker reads the same. An application cannot be its own ancestor. Deleting a parent
 is refused while it has children: move or delete them first.
 
 The list shows each application's installs and
