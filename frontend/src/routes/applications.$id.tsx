@@ -32,6 +32,7 @@ import { buildApplicationColumns } from "@/components/columns/application-column
 import { buildInstalledSoftwareColumns } from "@/components/columns/installed-software-columns"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { ApplicationFlowDiagram } from "@/components/application-flow-diagram"
+import { ApplicationGroupsOfApp } from "@/components/application-groups-of-app"
 import { InstalledSoftwareDialog } from "@/components/installed-software-pane"
 
 export const Route = createFileRoute("/applications/$id")({
@@ -62,6 +63,7 @@ function Body({ app }: { app: Application }) {
     | "flows"
     | "diagram"
     | "children"
+    | "groups"
     | "journal"
     | "history"
   >("overview")
@@ -174,6 +176,7 @@ function Body({ app }: { app: Application }) {
           label: "Child applications",
           count: app.child_count,
         },
+        { value: "groups", label: "Groups" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -207,6 +210,9 @@ function Body({ app }: { app: Application }) {
       </DetailTab>
       <DetailTab value="children">
         <Children applicationId={app.id} />
+      </DetailTab>
+      <DetailTab value="groups">
+        <ApplicationGroupsOfApp applicationId={app.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.application" objectId={app.id} />
