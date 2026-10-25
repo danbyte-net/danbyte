@@ -114,9 +114,11 @@ export function ObjectsPanel({
   onQueryChange: (q: string) => void
   /** Enter in the search box - a page jumps to its first hit. */
   onSearchEnter?: () => void
-  status: CheckFilter
-  onStatusChange: (status: CheckFilter) => void
-  statusCounts: Partial<Record<(typeof FILTER_STATES)[number], number>>
+  /** The monitoring filter; a map with nothing monitored (the
+   * Application map) leaves these out and draws no tabs. */
+  status?: CheckFilter
+  onStatusChange?: (status: CheckFilter) => void
+  statusCounts?: Partial<Record<(typeof FILTER_STATES)[number], number>>
   hiddenCount: number
   /** Omit where nothing can be hidden: the row never shows. */
   onShowAll?: () => void
@@ -146,12 +148,14 @@ export function ObjectsPanel({
           className="h-8 pl-7 text-[13px]"
         />
       </div>
-      <CheckFilterTabs
-        className="mb-3"
-        value={status}
-        onChange={onStatusChange}
-        counts={statusCounts}
-      />
+      {onStatusChange && (
+        <CheckFilterTabs
+          className="mb-3"
+          value={status ?? null}
+          onChange={onStatusChange}
+          counts={statusCounts ?? {}}
+        />
+      )}
       {onShowAll && hiddenCount > 0 && (
         <div className="mb-3 flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground">
           <EyeOff className="size-3 shrink-0" />

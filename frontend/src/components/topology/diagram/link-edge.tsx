@@ -167,6 +167,8 @@ export const LinkEdge = memo(function LinkEdge({
   data,
   style,
   labelStyle,
+  markerStart,
+  markerEnd,
 }: EdgeProps<LinkEdgeType>) {
   const s = boxOf(useInternalNode(source))
   const t = boxOf(useInternalNode(target))
@@ -177,8 +179,7 @@ export const LinkEdge = memo(function LinkEdge({
         const ends = data.labels.ends?.[i]
         const side = (end: "a" | "b") => {
           const anchor = (end === "a" ? data.a[i] : data.b[i]) as
-            | Anchor
-            | undefined
+            Anchor | undefined
           const port = portName(anchor)
           const at = p[end]
           const ips = ends?.[end] ?? []
@@ -284,6 +285,10 @@ export const LinkEdge = memo(function LinkEdge({
           id={i === 0 ? id : undefined}
           path={c.route.d}
           style={style}
+          // Arrowheads, where an edge asks for them (an application flow's
+          // direction); the topology's cables carry none.
+          markerStart={markerStart}
+          markerEnd={markerEnd}
           interactionWidth={12}
         />
       ))}

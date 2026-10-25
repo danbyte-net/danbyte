@@ -123,6 +123,9 @@ export interface BandData {
   /** Set by the band's menu (Rename): a new stamp opens the title's
    * editor. */
   renameAt?: number
+  /** A row another map lays out (the Application map's): not moved,
+   * renamed or edited; its title strip only takes a click. */
+  readOnly?: boolean
   [key: string]: unknown
 }
 
@@ -393,11 +396,15 @@ export function BandNode({
           </div>
         ) : (
           <div
-            className={`${BAND_DRAG_HANDLE} pointer-events-auto flex w-full cursor-grab items-center justify-center px-3 active:cursor-grabbing`}
+            className={
+              d.readOnly
+                ? "pointer-events-auto flex w-full items-center justify-center px-3"
+                : `${BAND_DRAG_HANDLE} pointer-events-auto flex w-full cursor-grab items-center justify-center px-3 active:cursor-grabbing`
+            }
             style={{ height: BAND.TITLE }}
-            onDoubleClick={rename}
-            data-tip="Move"
-            data-tip-plain=""
+            onDoubleClick={d.readOnly ? undefined : rename}
+            data-tip={d.readOnly ? undefined : "Move"}
+            data-tip-plain={d.readOnly ? undefined : ""}
           >
             {editing && field}
           </div>
