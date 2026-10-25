@@ -29,8 +29,22 @@ export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
   // ?device= narrows to the VMs running on one hypervisor host - the device
   // page's "Virtual machines" row links here (#54).
-  validateSearch: (s: Record<string, unknown>) => ({
+  validateSearch: (
+    s: Record<string, unknown>
+  ): {
+    device?: string
+    platform?: string
+    site?: string
+    role?: string
+    software_version?: string
+  } => ({
     device: typeof s.device === "string" ? s.device : undefined,
+    // Lifecycle → Versions (#451): a platform and version's VMs.
+    platform: typeof s.platform === "string" ? s.platform : undefined,
+    site: typeof s.site === "string" ? s.site : undefined,
+    role: typeof s.role === "string" ? s.role : undefined,
+    software_version:
+      typeof s.software_version === "string" ? s.software_version : undefined,
   }),
 })
 

@@ -50,7 +50,15 @@ from .visible_counts import (
 )
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
-from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, software_target, support_coverage
+from . import (
+    capacity,
+    elevation_pdf,
+    floor_plan_pdf,
+    scene_geo,
+    software_target,
+    software_versions,
+    support_coverage,
+)
 from .applications import software_end_annotations
 from .face_ports import FACE_PORT_KINDS
 from .port_state import (
@@ -476,6 +484,23 @@ SOFTWARE_TARGET_PARAMETER = OpenApiParameter(
         "`off` (differs), `unknown` (no version recorded, or no target)."
     ),
 )
+
+# ?software_version= / ?software_version_source= on the device and VM lists (#451).
+SOFTWARE_VERSION_PARAMETERS = [
+    OpenApiParameter(
+        name="software_version",
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        description="The running software version, exactly.",
+    ),
+    OpenApiParameter(
+        name="software_version_source",
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        enum=["manual", "snmp", "virtualization", "oxidized", "import", "none"],
+        description="Where the software version came from; `none` for no source.",
+    ),
+]
 
 # A device's map and the traces: the topology map's opt-in enrichments.
 MAP_INCLUDE_PARAMETER = OpenApiParameter(
@@ -3688,6 +3713,7 @@ ASSIGNED_IP_RELATED = (
             ),
         ),
         SOFTWARE_TARGET_PARAMETER,
+        *SOFTWARE_VERSION_PARAMETERS,
     ]),
 )
 class DeviceViewSet(
@@ -4386,6 +4412,8 @@ class DeviceViewSet(
             qs = support_coverage.apply_device_filter(qs, self.request)
             # ?software_target=on|off|unknown (#395).
             qs = software_target.apply_filter(qs, self.request)
+            # ?software_version= / ?software_version_source= (#451).
+            qs = software_versions.apply_list_filters(qs, self.request)
             contract = _uuid_param(self.request.query_params, "support_contract")
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)
@@ -6333,7 +6361,9 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
         return VirtualMachineGroupSerializer
 
 
-@extend_schema_view(list=extend_schema(parameters=[SOFTWARE_TARGET_PARAMETER]))
+@extend_schema_view(list=extend_schema(
+    parameters=[SOFTWARE_TARGET_PARAMETER, *SOFTWARE_VERSION_PARAMETERS]
+))
 class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
@@ -6472,6 +6502,8 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
             qs = apply_status_filter(qs, self.request, "platform__eol_mapping__")
             # ?software_target=on|off|unknown (#395).
             qs = software_target.apply_filter(qs, self.request)
+            # ?software_version= / ?software_version_source= (#451).
+            qs = software_versions.apply_list_filters(qs, self.request)
         return qs
 
 
@@ -7524,6 +7556,18 @@ class PlatformViewSet(DeviceRoleViewSet):
             clash = clash.exclude(pk=serializer.instance.pk)
         if clash.exists():
             raise ValidationError({"slug": "Name already in use."})
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        if serializer.instance.version_pattern:
+            software_versions.enqueue_reextract(serializer.instance)
+
+    def perform_update(self, serializer):
+        before = serializer.instance.version_pattern
+        super().perform_update(serializer)
+        # A new pattern reads the stored sysDescr again (#451).
+        if serializer.instance.version_pattern != before:
+            software_versions.enqueue_reextract(serializer.instance)
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()

@@ -2,8 +2,9 @@
 scheduled ``poll_snmp`` command (#84, Phase 2).
 
 Stores facts + interfaces on ``DeviceSnmp`` and appends interface counter
-samples for the utilisation series. Never touches the device's source-of-truth
-fields.
+samples for the utilisation series. The one source-of-truth field it writes
+is the running software version read from ``sysDescr`` (#451), and only
+through ``api.software_versions.record`` - never over a value a person typed.
 """
 from __future__ import annotations
 
@@ -176,6 +177,14 @@ def persist_snmp_result(tenant, profile, result, *, device=None, vm=None) -> Dev
             record_mac_tables(state, result)
         except Exception:  # noqa: BLE001
             log.exception("Recording MAC tables failed for %s", state.target)
+        # The running version from sysDescr (#451); a fault there must not
+        # cost the poll either.
+        from api.software_versions import apply_snmp_facts
+
+        try:
+            apply_snmp_facts(vm if vm is not None else device, state.data, state.polled_at)
+        except Exception:  # noqa: BLE001
+            log.exception("Reading the software version failed for %s", state.target)
     return state
 
 

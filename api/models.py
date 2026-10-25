@@ -33,6 +33,7 @@ from .dcim_choices import (
 )
 from .fields import HostAddressField, split_host_mask
 from .natural import natural
+from .software_versions import validate_version_pattern
 from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
@@ -2180,6 +2181,17 @@ def _seat_default_modules(device, pos) -> int:
     return count
 
 
+
+# Where a device's or VM's software_version came from (#451). A manual or
+# imported value is the operator's: no automatic source overwrites it.
+SOFTWARE_VERSION_SOURCES = (
+    ("manual", "Manual"),
+    ("snmp", "SNMP"),
+    ("virtualization", "Virtualization"),
+    ("oxidized", "Oxidized"),
+    ("import", "Import"),
+)
+
 class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A physical device.
 
@@ -2276,8 +2288,13 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The software version running (#395), compared with the platform's
     # target_version. Typed by hand or filled by an integration; seen_at is
     # set only by an integration, so a hand-typed value is never overwritten.
+    # The source says which one wrote it (#451).
     software_version = models.CharField(max_length=64, blank=True, default="", db_default="")
     software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    software_version_source = models.CharField(
+        max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
+        db_default="", editable=False,
+    )
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
     warranty_end = models.DateField(
@@ -5069,8 +5086,13 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     # The software version running (#395), compared with the platform's
     # target_version. Typed by hand or filled by an integration; seen_at is
     # set only by an integration, so a hand-typed value is never overwritten.
+    # The source says which one wrote it (#451).
     software_version = models.CharField(max_length=64, blank=True, default="", db_default="")
     software_version_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    software_version_source = models.CharField(
+        max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
+        db_default="", editable=False,
+    )
     primary_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -5978,6 +6000,12 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
     # The version operators want running (#395); devices and VMs on this
     # platform whose software_version differs are off target.
     target_version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    # A regex that reads the running version out of SNMP sysDescr (#451),
+    # tried before the built-in extractors.
+    version_pattern = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_version_pattern],
+    )
     description = models.TextField(blank=True)
 
     class Meta:

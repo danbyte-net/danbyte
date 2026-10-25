@@ -1,7 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import { LifecycleBar, hasLifetime } from "@/components/cells/lifecycle-cell"
-import { SoftwareVersionText } from "@/components/cells/software-version-cell"
+import {
+  SoftwareVersionSourceText,
+  SoftwareVersionText,
+} from "@/components/cells/software-version-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -348,6 +351,10 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
           <SoftwareVersionText
             version={vm.software_version}
             target={vm.platform?.target_version}
+          />
+          <SoftwareVersionSourceText
+            source={vm.software_version_source}
+            seenAt={vm.software_version_seen_at}
           />
         </span>
       ),

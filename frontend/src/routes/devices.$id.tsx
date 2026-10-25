@@ -1,6 +1,9 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { PlatformCell } from "@/components/cells/platform-cell"
-import { SoftwareVersionText } from "@/components/cells/software-version-cell"
+import {
+  SoftwareVersionSourceText,
+  SoftwareVersionText,
+} from "@/components/cells/software-version-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
@@ -863,6 +866,10 @@ function DeviceOverview({
             version={d.software_version}
             target={d.platform.target_version}
           />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
         </span>
       ) : d.effective_platform ? (
         // No platform of its own - inherited from the device type.
@@ -873,9 +880,19 @@ function DeviceOverview({
             version={d.software_version}
             target={d.effective_platform.target_version}
           />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
         </span>
       ) : d.software_version ? (
-        <SoftwareVersionText version={d.software_version} />
+        <span className="inline-flex items-center gap-2">
+          <SoftwareVersionText version={d.software_version} />
+          <SoftwareVersionSourceText
+            source={d.software_version_source}
+            seenAt={d.software_version_seen_at}
+          />
+        </span>
       ) : (
         dash
       ),

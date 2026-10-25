@@ -103,9 +103,9 @@ target** says which version you want running, and finds what does not run it.
 - **Target version** on a platform (edit form, shown on its overview) - the
   version operators want running, e.g. `17.9.5`. Blank means no target.
 - **Software version** on a device or virtual machine - the version it runs,
-  e.g. `17.9.4a`. Typed in the edit form next to the platform, or filled by an
-  integration: the [vCenter sync](virt-vcenter.md) fills an ESXi host's
-  version.
+  e.g. `17.9.4a`. Typed in the edit form next to the platform, or filled
+  automatically - see [Where the running version comes
+  from](#where-the-running-version-comes-from).
 
 A device is judged against its effective platform: its own, else its device
 type's. The comparison is exact text. Each object is in one of three states:
@@ -119,10 +119,15 @@ type's. The comparison is exact text. Each object is in one of three states:
 Where it shows:
 
 - **Overview** - the Platform row reads `IOS-XE 17.9.4a · target 17.9.5`; just
-  the version when the platform has no target.
+  the version when the platform has no target. The version's source follows
+  it in muted text (*SNMP*, *Manual*, …); hovering it says where the version
+  came from and when an integration last set it.
 - **Lists** - devices and virtual machines have *Software version* and
   *Target* columns, hidden until picked from **Columns**, and a *Software
-  target* facet (On target, Off target, Unknown).
+  target* facet (On target, Off target, Unknown) and a *Software version*
+  facet.
+- **Lifecycle → Versions** - the count of devices and VMs per platform and
+  version; see [Versions view](lifecycle-overview.md#versions-view).
 - **Compliance** - a [Software target check](compliance.md#check-types) turns
   off-target objects into violations, with `Running 17.9.4a, target 17.9.5`
   as the reason.
@@ -130,6 +135,60 @@ Where it shows:
 An integration that fills a version also stamps `software_version_seen_at`.
 A version a person types (in the form or the API) drops the stamp, and no
 sync overwrites it; clear the field to hand it back to the sync.
+
+## Where the running version comes from
+
+Every software version records its **source**:
+
+| Source | Set by |
+|---|---|
+| Manual | A person: the edit form, the API, a planned change |
+| Import | A data import file |
+| SNMP | The SNMP facts poll, read from `sysDescr` |
+| Virtualization | A hypervisor sync - the [vCenter sync](virt-vcenter.md) fills an ESXi host's version |
+| Oxidized | Reserved for versions read from stored configurations |
+
+The rule: **a manual or imported version is never overwritten** by an
+automatic source. SNMP and the virtualization sync fill a blank version, or
+replace one an automatic source wrote, and stamp `software_version_seen_at`
+with when they set it. Clearing the field hands it back to them.
+
+### Reading the version from SNMP
+
+Each time SNMP facts are collected (Poll now, the schedule, an Outpost), the
+version is read out of `sysDescr` and recorded with source *SNMP*. A failed
+poll writes nothing. Built-in readers cover:
+
+| Platform | Example `sysDescr` | Version |
+|---|---|---|
+| Cisco IOS-XE | `Cisco IOS Software [Cupertino], … (CAT9K_IOSXE), Version 17.9.4a, RELEASE SOFTWARE (fc3)` | `17.9.4a` |
+| Cisco IOS | `Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E8, …` | `15.2(7)E8` |
+| Cisco NX-OS | `Cisco NX-OS(tm) n9000, Software (n9000-dk9), Version 9.3(10), RELEASE SOFTWARE` | `9.3(10)` |
+| Juniper Junos | `Juniper Networks, Inc. ex4300-48t Ethernet Switch, kernel JUNOS 21.4R3-S5.4, …` | `21.4R3-S5.4` |
+| Arista EOS | `Arista Networks EOS version 4.28.3M running on an Arista Networks DCS-7050SX3-48YC8` | `4.28.3M` |
+
+The version is kept as the device reports it (`17.09.04a` stays zero-padded).
+A Linux `sysDescr` gives nothing: the kernel release is not the platform's
+version.
+
+### Version pattern
+
+For anything else, set a **Version pattern** on the platform: a regular
+expression with one capture group, or a group named `version`, e.g.
+`FortiGate-\S+ v(\d+\.\d+\.\d+)`. It is tried first, on the first 512
+characters of `sysDescr`; when it does not match the built-in readers still
+apply. A pattern that does not compile, or captures nothing, is refused when
+the platform is saved. A device uses its effective platform's pattern.
+
+Saving a new pattern reads the stored `sysDescr` of that platform's devices
+and VMs again in the background. To read every stored `sysDescr` again, for
+example after an upgrade:
+
+```sh
+manage.py extract_software_versions [--tenant <id>] [--platform <id>] [--enqueue]
+```
+
+`--enqueue` runs it as a job on the `low` queue.
 
 ## API
 
@@ -143,3 +202,13 @@ nested `platform` / `effective_platform` of devices and VMs);
 `software_version` (writable) and `software_version_seen_at` (read-only) on
 `/api/devices/` and `/api/virtual-machines/`. Both lists take
 `?software_target=on|off|unknown`; any other value is a 400.
+
+Version source (#451): `software_version_source` (read-only: `manual`,
+`snmp`, `virtualization`, `oxidized`, `import`, or `""` without a version)
+on devices and VMs; writing `software_version` sets it to `manual`, or
+clears it with the version. `version_pattern` on `/api/platforms/` (a 400
+with a `version_pattern` error when invalid). Device and VM lists take
+`?software_version=<exact version>` and
+`?software_version_source=manual|snmp|virtualization|oxidized|import|none`.
+The per-version counts are `GET /api/lifecycle/versions/` - see
+[Versions view](lifecycle-overview.md#versions-view).

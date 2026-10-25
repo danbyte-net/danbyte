@@ -1638,14 +1638,11 @@ def _apply_host_hardware(dev, hw, source) -> list:
         dev.platform = plat
         changed.append("platform")
 
-    # The running version (#395). A value the sync filled before (seen_at
-    # set) follows the host; one a person typed (no seen_at) is theirs.
-    version = (hw.get("version") or "").strip()[:64]
-    if version and (not dev.software_version or dev.software_version_seen_at):
-        if version != dev.software_version or dev.software_version_seen_at is None:
-            dev.software_version = version
-            dev.software_version_seen_at = timezone.now()
-            changed += ["software_version", "software_version_seen_at"]
+    # The running version (#395). A value an integration filled before
+    # follows the host; one a person typed or imported is theirs (#451).
+    from api.software_versions import record
+
+    changed += record(dev, hw.get("version"), "virtualization")
     return changed
 
 

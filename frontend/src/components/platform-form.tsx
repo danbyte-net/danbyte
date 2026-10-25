@@ -66,6 +66,9 @@ export function PlatformForm({
   const [targetVersion, setTargetVersion] = useState(
     platform?.target_version ?? ""
   )
+  const [versionPattern, setVersionPattern] = useState(
+    platform?.version_pattern ?? ""
+  )
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
   const [tagIds, setTagIds] = useState<number[]>(
@@ -81,6 +84,7 @@ export function PlatformForm({
     setManufacturerId(platform.manufacturer?.id ?? null)
     setConfigTemplateId(platform.config_template?.id ?? null)
     setTargetVersion(platform.target_version ?? "")
+    setVersionPattern(platform.version_pattern ?? "")
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
     setTagIds(platform.tags?.map((t) => t.id) ?? [])
@@ -119,6 +123,7 @@ export function PlatformForm({
         manufacturer_id: manufacturerId,
         config_template_id: configTemplateId,
         target_version: targetVersion.trim(),
+        version_pattern: versionPattern.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
@@ -245,14 +250,32 @@ export function PlatformForm({
           emptyText="No device export templates."
           error={fieldErrors.config_template_id}
         />
-        <FormText
-          label="Target version"
-          value={targetVersion}
-          onChange={setTargetVersion}
-          mono
-          placeholder="17.9.5"
-          error={fieldErrors.target_version}
-        />
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="Target version"
+            value={targetVersion}
+            onChange={setTargetVersion}
+            mono
+            placeholder="17.9.5"
+            error={fieldErrors.target_version}
+          />
+          <FormText
+            label="Version pattern"
+            info={
+              <>
+                A regular expression that reads the running version out of SNMP
+                sysDescr, tried before the built-in Cisco, Juniper and Arista
+                readers. One capture group, or a group named{" "}
+                <code>version</code>.
+              </>
+            }
+            value={versionPattern}
+            onChange={setVersionPattern}
+            mono
+            placeholder="Version (?P<version>\S+),"
+            error={fieldErrors.version_pattern}
+          />
+        </div>
         <FormTextarea
           label="Description"
           value={description}

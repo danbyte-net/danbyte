@@ -1624,6 +1624,8 @@ export interface Device {
   software_version?: string
   /** Set when an integration filled software_version; read-only. */
   software_version_seen_at?: string | null
+  /** Where software_version came from (#451); read-only, "" when blank. */
+  software_version_source?: SoftwareVersionSource
   /** Last day of the unit's hardware warranty (#421). */
   warranty_end?: string | null
   /** Support & warranty coverage (#421), derived server-side. */
@@ -1899,6 +1901,8 @@ export interface Platform extends LifecycleInfo, EffectiveOsDates {
   config_template: { id: string; name: string } | null
   /** The version operators want running (#395); "" = no target. */
   target_version?: string
+  /** Regex that reads the version out of SNMP sysDescr (#451). */
+  version_pattern?: string
   description: string
   tags: Tag[]
   /** End-of-life data (#8); null while the feature is off. */
@@ -2193,6 +2197,7 @@ export interface PlatformWritePayload {
   config_template_id?: string | null
   /** The version operators want running (#395). */
   target_version?: string
+  version_pattern?: string
   description?: string
   release_date?: string | null
   end_of_sale?: string | null
@@ -5410,6 +5415,8 @@ export interface VirtualMachine {
   software_version?: string
   /** Set when an integration filled software_version; read-only. */
   software_version_seen_at?: string | null
+  /** Where software_version came from (#451); read-only, "" when blank. */
+  software_version_source?: SoftwareVersionSource
   /** Hypervisor-reported runtime state - "running" | "stopped" | "suspended".
    * Null for a VM no sync tracks. Distinct from `status`, which is the
    * operator's lifecycle field: a VM can be Active and powered off. */
@@ -10025,6 +10032,41 @@ export interface LifecycleOverview {
   counts: Record<LifecycleWindow, number>
   windows: { eol_warning_days: number; coverage_warning_days: number }
   eol_enabled: boolean
+}
+
+/** Where a device's or VM's software version came from (#451). */
+export type SoftwareVersionSource =
+  "" | "manual" | "snmp" | "virtualization" | "oxidized" | "import"
+
+/** One row of GET /api/lifecycle/versions/ (#451): a platform and version
+ * with its device and VM counts. */
+export interface SoftwareVersionRow {
+  platform: { id: string; name: string; target_version: string } | null
+  /** "" for objects with no version recorded. */
+  version: string
+  devices: number
+  virtual_machines: number
+  /** Null without a version or a platform target. */
+  on_target: boolean | null
+  /** Count per source; "none" for no source. */
+  sources: Partial<Record<Exclude<SoftwareVersionSource, ""> | "none", number>>
+}
+
+export interface SoftwareVersionFacet {
+  id: string | null
+  name: string
+  count: number
+  color?: string
+}
+
+/** GET /api/lifecycle/versions/?site=&platform=&role= */
+export interface SoftwareVersionSummary {
+  results: SoftwareVersionRow[]
+  facets: {
+    site: SoftwareVersionFacet[]
+    platform: SoftwareVersionFacet[]
+    role: SoftwareVersionFacet[]
+  }
 }
 
 /** GET /api/devices/coverage-summary/?site=&manufacturer= */

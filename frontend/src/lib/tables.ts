@@ -145,6 +145,7 @@ const ROWS: Row[] = [
   ["support-contracts", "Support contracts", "DCIM", "/api/support-contracts/", { ioType: "supportcontract" }],
   ["support-contract-devices", "Support contract · Devices", "DCIM", "/api/devices/", sub],
   ["lifecycle", "Lifecycle", "DCIM", null],
+  ["lifecycle-versions", "Lifecycle · Versions", "DCIM", null],
   ["platform-groups", "Platform groups", "DCIM", "/api/platform-groups/"],
   ["module-types", "Module types", "DCIM", "/api/module-types/"],
   ["virtual-chassis", "Virtual chassis", "DCIM", "/api/virtual-chassis/"],

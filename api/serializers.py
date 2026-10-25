@@ -3676,6 +3676,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "config_template", "config_template_id",
                   "status", "status_id",  "serial_number", "asset_tag",
                   "software_version", "software_version_seen_at",
+                  "software_version_source",
                   "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
@@ -3693,7 +3694,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "contact_count", "document_count", "install_count", "permissions",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
-                            "software_version_seen_at", "created_at", "updated_at"]
+                            "software_version_seen_at", "software_version_source",
+                            "created_at", "updated_at"]
 
 
 # ─── Cabling: terminations, ports, cables ──────────────────────────────────
@@ -6485,6 +6487,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "software_version", "software_version_seen_at",
+                  "software_version_source",
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count", "install_count",
                   "primary_ip", "primary_ip_id", "description",
@@ -6492,7 +6495,8 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",
-                            "software_version_seen_at", "created_at", "updated_at"]
+                            "software_version_seen_at", "software_version_source",
+                            "created_at", "updated_at"]
 
 
 class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
@@ -7517,6 +7521,7 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "slug", "group", "group_id",
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id", "target_version",
+                  "version_pattern",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
                   "eol", "effective_release", "effective_end", "effective_source",
                   "device_count", "vm_count", "created_at", "updated_at"]
