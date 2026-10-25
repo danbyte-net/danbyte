@@ -3,12 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type VLANGroup,
-  type VLANGroupWritePayload,
-} from "@/lib/api"
+import { type VLANGroup, type VLANGroupWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -64,7 +60,7 @@ export function VlanGroupForm({
   const sites = useSiteOptions()
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<ClusterPick>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<ClusterPick>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

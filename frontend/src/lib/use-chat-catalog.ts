@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
-import type { Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 
 interface Coloured {
   id: string
@@ -24,19 +23,19 @@ export interface CatalogEntry {
 export function useChatCatalog(): Map<string, CatalogEntry> {
   const statuses = useQuery({
     queryKey: ["chat-catalog", "statuses"],
-    queryFn: () => api<Paginated<Coloured>>("/api/statuses/"),
+    queryFn: () => apiAll<Coloured>("/api/statuses/"),
     staleTime: 30 * 60_000,
     retry: false,
   })
   const roles = useQuery({
     queryKey: ["chat-catalog", "device-roles"],
-    queryFn: () => api<Paginated<Coloured>>("/api/device-roles/"),
+    queryFn: () => apiAll<Coloured>("/api/device-roles/"),
     staleTime: 30 * 60_000,
     retry: false,
   })
   const tags = useQuery({
     queryKey: ["chat-catalog", "tags"],
-    queryFn: () => api<Paginated<Coloured>>("/api/tags/"),
+    queryFn: () => apiAll<Coloured>("/api/tags/"),
     staleTime: 30 * 60_000,
     retry: false,
   })

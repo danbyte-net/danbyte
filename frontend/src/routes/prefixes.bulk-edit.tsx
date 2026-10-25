@@ -6,13 +6,13 @@ import { toast } from "sonner"
 import {
   api,
   type BulkUpdateFields,
-  type Paginated,
   type SiteOption,
   type StatusOption,
   type TagOption,
   type VLANOption,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
@@ -45,28 +45,27 @@ function BulkEditPrefixesPage() {
 
   const statuses = useQuery({
     queryKey: ["prefix-statuses-picker"],
-    queryFn: () =>
-      api<Paginated<StatusOption>>("/api/statuses/?available_to=prefix"),
+    queryFn: () => apiAll<StatusOption>("/api/statuses/?available_to=prefix"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

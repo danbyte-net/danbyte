@@ -12,8 +12,8 @@ import {
   type NotificationMe,
   type NotificationMeRow,
   type NotificationSubscription,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { usePeople, usePeopleGroups } from "@/lib/people"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -312,9 +312,7 @@ function AdminTab() {
   const subsQ = useQuery({
     queryKey: ["subscriptions"],
     queryFn: () =>
-      api<Paginated<NotificationSubscription>>(
-        "/api/monitoring/subscriptions/"
-      ),
+      apiAll<NotificationSubscription>("/api/monitoring/subscriptions/"),
   })
   const delM = useMutation({
     mutationFn: (id: string) =>
@@ -438,8 +436,7 @@ function AddSubscriptionDialog({
 
   const channelsQ = useQuery({
     queryKey: ["channels"],
-    queryFn: () =>
-      api<Paginated<NotificationChannel>>("/api/monitoring/channels/"),
+    queryFn: () => apiAll<NotificationChannel>("/api/monitoring/channels/"),
   })
   // Tenant members, not /api/users/: adding a subscription is not user
   // administration.

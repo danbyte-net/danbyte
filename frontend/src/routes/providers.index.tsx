@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Provider, type Paginated } from "@/lib/api"
+import { type Provider } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -34,7 +35,7 @@ function ProvidersPage() {
   const query = useQuery({
     queryKey: ["providers", q],
     queryFn: () =>
-      api<Paginated<Provider>>(
+      apiAll<Provider>(
         `/api/providers/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Application, type Paginated } from "@/lib/api"
+import { type Application } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -33,7 +34,7 @@ function ApplicationsPage() {
   const query = useQuery({
     queryKey: ["applications", q],
     queryFn: () =>
-      api<Paginated<Application>>(
+      apiAll<Application>(
         `/api/applications/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

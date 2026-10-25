@@ -19,6 +19,7 @@ import {
   type Status,
   type StorageUnit,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
@@ -432,17 +433,14 @@ export function InventoryItemDialog({
 
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     enabled: open,
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=inventoryitem&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=inventoryitem&picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })

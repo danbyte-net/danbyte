@@ -4,7 +4,8 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { InstalledSoftware, Paginated, Service } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { InstalledSoftware, Service } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useSaveObject } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
@@ -69,9 +70,7 @@ export function InstalledSoftwarePane({ parent }: { parent: SoftwareParent }) {
   const q = useQuery({
     queryKey: softwareQueryKey(parent),
     queryFn: () =>
-      api<Paginated<InstalledSoftware>>(
-        `/api/installed-software/?${param(parent)}`
-      ),
+      apiAll<InstalledSoftware>(`/api/installed-software/?${param(parent)}`),
   })
   const rows = q.data?.results ?? []
   const invalidate = useCallback(() => {
@@ -198,7 +197,7 @@ export function InstalledSoftwareDialog({
   const services = useQuery({
     queryKey: ["services", parent.kind, parent.id],
     queryFn: () =>
-      api<Paginated<Service>>(
+      apiAll<Service>(
         `/api/services/?${parent.kind === "device" ? "device" : "vm"}=${parent.id}`
       ),
     enabled: open,

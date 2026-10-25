@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, Script } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Script } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { PEOPLE_ENDPOINT, PEOPLE_GROUPS_ENDPOINT } from "@/lib/people"
 import { SettingsCard } from "@/components/settings/settings-card"
@@ -34,12 +35,12 @@ export function ScriptSharingPanel({
   // administration.
   const people = useQuery({
     queryKey: ["people"],
-    queryFn: () => api<Paginated<Named>>(PEOPLE_ENDPOINT),
+    queryFn: () => apiAll<Named>(PEOPLE_ENDPOINT),
     enabled: visibility === "users",
   })
   const teams = useQuery({
     queryKey: ["people-groups"],
-    queryFn: () => api<Paginated<Named>>(PEOPLE_GROUPS_ENDPOINT),
+    queryFn: () => apiAll<Named>(PEOPLE_GROUPS_ENDPOINT),
     enabled: visibility === "groups",
   })
 

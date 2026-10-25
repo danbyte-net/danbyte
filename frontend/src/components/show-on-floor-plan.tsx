@@ -2,8 +2,8 @@ import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { ChevronDown, LayoutGrid } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { FloorPlanTile, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { FloorPlanTile } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -17,7 +17,7 @@ function usePlacements(kind: "device" | "rack" | "cabinet", id?: string) {
   return useQuery({
     queryKey: ["floor-tile-placement", kind, id],
     queryFn: () =>
-      api<Paginated<FloorPlanTile>>(`/api/floor-plan-tiles/?${kind}=${id}`),
+      apiAll<FloorPlanTile>(`/api/floor-plan-tiles/?${kind}=${id}`),
     enabled: !!id,
   })
 }

@@ -5,11 +5,11 @@ import { RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
   FloorTileTypeOption,
   FloorplanPopoverSettings,
-  Paginated,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -166,11 +166,11 @@ function FloorplanSettingsPage() {
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
-      api<Paginated<FloorTileTypeOption>>("/api/floor-tile-types/?picker=1"),
+      apiAll<FloorTileTypeOption>("/api/floor-tile-types/?picker=1"),
   })
   const roles = useQuery({
     queryKey: ["device-roles"],
-    queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
+    queryFn: () => apiAll<DeviceRole>("/api/device-roles/"),
   })
   // Custom fields are the tenant's own - never enumerated server-side, so the
   // options come from their definitions and ride the generic cf_<key> convention.

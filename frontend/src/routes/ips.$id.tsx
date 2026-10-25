@@ -17,7 +17,8 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 
-import { api, type IPAddress, type IPRange, type Paginated } from "@/lib/api"
+import { api, type IPAddress, type IPRange } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { parseCidr, bigIntToIp, ipToBigInt } from "@/lib/prefix-tree"
 import { DhcpBadge } from "@/components/dhcp-badge"
 import { VlanBadge } from "@/components/cells/vlan-badge"
@@ -104,8 +105,7 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   // client-side over the prefix's few ranges, same as the prefix IPs pane.
   const rangesQuery = useQuery({
     queryKey: ["prefix-ip-ranges", ip.prefix?.id],
-    queryFn: () =>
-      api<Paginated<IPRange>>(`/api/ip-ranges/?prefix=${ip.prefix!.id}`),
+    queryFn: () => apiAll<IPRange>(`/api/ip-ranges/?prefix=${ip.prefix!.id}`),
     enabled: !!ip.prefix,
     staleTime: 60_000,
   })

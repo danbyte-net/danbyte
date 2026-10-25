@@ -11,6 +11,7 @@ import {
   type VLANOption,
   type VMInterface,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -69,7 +70,7 @@ export function L2vpnTerminationDialog({
 
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     enabled: open && kind === "vlan",
     staleTime: 10 * 60_000,
   })
@@ -84,9 +85,7 @@ export function L2vpnTerminationDialog({
   const vms = useQuery({
     queryKey: ["vms-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/virtual-machines/?picker=1"),
     enabled: open && kind === "vm",
     staleTime: 10 * 60_000,
   })

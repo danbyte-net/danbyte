@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type ConfigContext, type Paginated } from "@/lib/api"
+import { type ConfigContext } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Badge } from "@/components/ui/badge"
@@ -38,7 +39,7 @@ function ConfigContextsPage() {
   const query = useQuery({
     queryKey: ["config-contexts", q],
     queryFn: () =>
-      api<Paginated<ConfigContext>>(
+      apiAll<ConfigContext>(
         `/api/config-contexts/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

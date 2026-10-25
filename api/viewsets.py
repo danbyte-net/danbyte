@@ -40,6 +40,7 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
+from .pagination import StandardResultsSetPagination
 from .visible_counts import (
     path_count_expr,
     related_count_expr,
@@ -502,14 +503,9 @@ def _all_n(model, rel_name: str):
     return related_count_expr(None, model, rel_name)
 
 
-class StandardPagination(PageNumberPagination):
-    # The SPA loads the full result set and paginates/filters client-side (the
-    # DataTable pager uses the user's page_size preference), so return everything
-    # by default rather than a 50-row first page that silently hid the rest.
-    # Bounded so a pathological table can't dump unlimited rows; ?page_size= wins.
-    page_size = 10000
-    page_size_query_param = "page_size"
-    max_page_size = 10000  # cap client-requested size at the default (anti-DoS)
+class StandardPagination(StandardResultsSetPagination):
+    """The project's list pagination (api/pagination.py): settings.API_PAGE_SIZE
+    rows by default, ?page_size= up to settings.API_MAX_PAGE_SIZE (#447)."""
 
 
 class TenantScopedReadViewSet(RBACViewSetMixin, viewsets.ReadOnlyModelViewSet):

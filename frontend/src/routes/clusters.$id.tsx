@@ -12,6 +12,7 @@ import {
   type Paginated,
   type VirtualMachine,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { DataTable } from "@/components/data-table"
@@ -165,9 +166,7 @@ function ClusterVmsPane({ clusterId }: { clusterId: string }) {
   const q = useQuery({
     queryKey: ["cluster-vms", clusterId],
     queryFn: () =>
-      api<Paginated<VirtualMachine>>(
-        `/api/virtual-machines/?cluster=${clusterId}`
-      ),
+      apiAll<VirtualMachine>(`/api/virtual-machines/?cluster=${clusterId}`),
   })
   const rows = q.data?.results ?? []
   const columns = useMemo<ColumnDef<VirtualMachine>[]>(

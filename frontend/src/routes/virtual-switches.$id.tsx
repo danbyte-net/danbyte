@@ -8,10 +8,10 @@ import { toast } from "sonner"
 import {
   api,
   type Interface,
-  type Paginated,
   type VirtNetwork,
   type VirtualSwitch,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { isUserInitiated } from "@/lib/user-activation"
 import { useMe } from "@/lib/use-me"
@@ -63,8 +63,7 @@ function Body({ sw }: { sw: VirtualSwitch }) {
   >("overview")
   const networks = useQuery({
     queryKey: ["virt-networks", { vswitch: sw.id }],
-    queryFn: () =>
-      api<Paginated<VirtNetwork>>(`/api/virt-networks/?vswitch=${sw.id}`),
+    queryFn: () => apiAll<VirtNetwork>(`/api/virt-networks/?vswitch=${sw.id}`),
   })
   const nets = networks.data?.results ?? []
   const rows: KvRow[] = [
@@ -159,8 +158,7 @@ function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
 
   const ifaces = useQuery({
     queryKey: ["device-interfaces", device],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/interfaces/?device=${device}`),
+    queryFn: () => apiAll<Interface>(`/api/interfaces/?device=${device}`),
     enabled: !!device,
   })
   const save = useMutation({
@@ -278,8 +276,7 @@ function SwitchVrf({ sw }: { sw: VirtualSwitch }) {
   const canEdit = canDo("virtualswitch", "change")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const save = useMutation({
@@ -346,8 +343,7 @@ function SwitchNetworks({
   const canEdit = canDo("virtnetwork", "change")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const setVrf = useMutation({

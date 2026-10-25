@@ -4,6 +4,7 @@ import { Plus } from "lucide-react"
 import { useState } from "react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BGPSession,
   EIGRPInstance,
@@ -60,23 +61,17 @@ export function InterfaceRoutingCard({
   const ospf = useQuery({
     queryKey: ["ospf-instances", "device", deviceId],
     queryFn: () =>
-      api<Paginated<OSPFInstance>>(
-        `/api/routing/ospf-instances/?device=${deviceId}`
-      ),
+      apiAll<OSPFInstance>(`/api/routing/ospf-instances/?device=${deviceId}`),
   })
   const isis = useQuery({
     queryKey: ["isis-instances", "device", deviceId],
     queryFn: () =>
-      api<Paginated<ISISInstance>>(
-        `/api/routing/isis-instances/?device=${deviceId}`
-      ),
+      apiAll<ISISInstance>(`/api/routing/isis-instances/?device=${deviceId}`),
   })
   const eigrp = useQuery({
     queryKey: ["eigrp-instances", "device", deviceId],
     queryFn: () =>
-      api<Paginated<EIGRPInstance>>(
-        `/api/routing/eigrp-instances/?device=${deviceId}`
-      ),
+      apiAll<EIGRPInstance>(`/api/routing/eigrp-instances/?device=${deviceId}`),
   })
   const bgp = useQuery({
     queryKey: ["bgp-sessions", "iface", interfaceId, deviceId],
@@ -88,7 +83,7 @@ export function InterfaceRoutingCard({
   const segments = useQuery({
     queryKey: ["ethernet-segments", "interface", interfaceId],
     queryFn: () =>
-      api<Paginated<EthernetSegment>>(
+      apiAll<EthernetSegment>(
         `/api/routing/ethernet-segments/?interface=${interfaceId}`
       ),
   })

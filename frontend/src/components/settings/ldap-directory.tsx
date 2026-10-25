@@ -11,10 +11,10 @@ import {
   type LdapGroupMapping,
   type LdapGroupType,
   type LdapSettings,
-  type Paginated,
   type RBACGroup,
   type TenantLdapSettings,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
@@ -451,11 +451,11 @@ function GroupMappings({
   const mappingsKey = [endpoints.cacheKey, "mappings"]
   const mappings = useQuery({
     queryKey: mappingsKey,
-    queryFn: () => api<Paginated<LdapGroupMapping>>(endpoints.mappings),
+    queryFn: () => apiAll<LdapGroupMapping>(endpoints.mappings),
   })
   const groups = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
   })
 
   const browse = useMutation({

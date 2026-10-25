@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { CoolingFeed, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { CoolingFeed } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 import { Button } from "@/components/ui/button"
@@ -32,7 +32,7 @@ function CoolingFeedsPage() {
   const query = useQuery({
     queryKey: ["cooling-feeds", q],
     queryFn: () =>
-      api<Paginated<CoolingFeed>>(
+      apiAll<CoolingFeed>(
         `/api/cooling-feeds/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

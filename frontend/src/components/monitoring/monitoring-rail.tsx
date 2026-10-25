@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CheckStatus,
   FacetBucket,
@@ -124,12 +125,12 @@ export function MonitoringRail({
 
   const regions = useQuery({
     queryKey: ["regions-picker"],
-    queryFn: () => api<Paginated<RegionOption>>("/api/regions/?picker=1"),
+    queryFn: () => apiAll<RegionOption>("/api/regions/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({

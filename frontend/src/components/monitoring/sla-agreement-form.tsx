@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   HolidayCalendar,
   Paginated,
@@ -182,7 +183,7 @@ export function SlaAgreementForm({
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/contacts/?picker=1"),
+      apiAll<{ id: string; name: string }>("/api/contacts/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const channelList = useQuery({
@@ -194,8 +195,7 @@ export function SlaAgreementForm({
   })
   const siteOptions = useQuery({
     queryKey: ["sites", "sla-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/?picker=1"),
     enabled: providedFor === "sites",
     staleTime: 5 * 60_000,
   })

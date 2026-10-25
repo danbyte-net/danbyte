@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type ObjectPermission, type Paginated } from "@/lib/api"
+import { type ObjectPermission } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -29,7 +30,7 @@ function PermissionsPage() {
 
   const query = useQuery({
     queryKey: ["object-permissions"],
-    queryFn: () => api<Paginated<ObjectPermission>>("/api/object-permissions/"),
+    queryFn: () => apiAll<ObjectPermission>("/api/object-permissions/"),
   })
 
   const allRows = query.data?.results ?? []

@@ -5,7 +5,8 @@ import { KeyRound } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type RBACUser, type Paginated } from "@/lib/api"
+import { api, type RBACUser } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Button } from "@/components/ui/button"
@@ -64,7 +65,7 @@ function UsersPage() {
   const query = useQuery({
     queryKey: ["users", q],
     queryFn: () =>
-      api<Paginated<RBACUser>>(
+      apiAll<RBACUser>(
         `/api/users/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

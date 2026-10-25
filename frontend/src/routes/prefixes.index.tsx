@@ -4,12 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
-import {
-  api,
-  type BulkStatusEntry,
-  type Paginated,
-  type Prefix,
-} from "@/lib/api"
+import { type BulkStatusEntry, type Prefix } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { annotateNesting, type NestedPrefix } from "@/lib/prefix-tree"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
@@ -66,7 +62,7 @@ function PrefixesPage() {
   const query = useQuery({
     queryKey: ["prefixes", q],
     queryFn: () =>
-      api<Paginated<Prefix>>(
+      apiAll<Prefix>(
         `/api/prefixes/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

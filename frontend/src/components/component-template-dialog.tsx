@@ -2,7 +2,13 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, bytesToUnit, INVENTORY_KIND_OPTIONS, unitToBytes } from "@/lib/api"
+import {
+  api,
+  bytesToUnit,
+  INVENTORY_KIND_OPTIONS,
+  unitToBytes,
+} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ComponentTemplateBase,
   ComponentTemplateWritePayload,
@@ -10,7 +16,6 @@ import type {
   DcimChoice,
   FrontPortTemplate,
   InterfaceTemplate,
-  Paginated,
   PowerOutletTemplate,
   PowerPortTemplate,
   RearPortTemplate,
@@ -287,7 +292,7 @@ export function ComponentTemplateDialog({
   const powerPorts = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["power-port"], deviceTypeId],
     queryFn: () =>
-      api<Paginated<PowerPortTemplate>>(
+      apiAll<PowerPortTemplate>(
         `/api/power-port-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "power-outlet",
@@ -295,7 +300,7 @@ export function ComponentTemplateDialog({
   const intakeTemplates = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["cooling-intake"], deviceTypeId],
     queryFn: () =>
-      api<Paginated<CoolingIntakeTemplate>>(
+      apiAll<CoolingIntakeTemplate>(
         `/api/cooling-intake-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "cooling-outflow",
@@ -303,16 +308,14 @@ export function ComponentTemplateDialog({
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/manufacturers/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/manufacturers/?picker=1"),
     enabled: open && kind === "inventory-item",
     staleTime: 10 * 60_000,
   })
   const rearPorts = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["rear-port"], deviceTypeId],
     queryFn: () =>
-      api<Paginated<RearPortTemplate>>(
+      apiAll<RearPortTemplate>(
         `/api/rear-port-templates/?device_type=${deviceTypeId}`
       ),
     enabled: open && kind === "front-port",
@@ -321,9 +324,7 @@ export function ComponentTemplateDialog({
   const moduleTypes = useQuery({
     queryKey: ["module-types-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/module-types/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/module-types/?picker=1"),
     enabled: open && kind === "module-bay",
     staleTime: 10 * 60_000,
   })

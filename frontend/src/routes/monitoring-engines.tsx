@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { EngineKindInfo, MonitoringEngine, MonitoringSettings, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { EngineKindInfo, MonitoringEngine, MonitoringSettings } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
@@ -70,7 +71,7 @@ function MonitoringEnginesPage() {
 
   const q = useQuery({
     queryKey: ["monitoring-engines"],
-    queryFn: () => api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    queryFn: () => apiAll<MonitoringEngine>("/api/monitoring/engines/"),
   })
   const engines = q.data?.results ?? []
   const invalidate = () =>

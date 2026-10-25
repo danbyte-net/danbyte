@@ -6,14 +6,13 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 
 import {
-  api,
   type Location,
-  type Paginated,
   type Prefix,
   type PrefixWritePayload,
   type Status,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { VlanPicker } from "@/components/vlan-picker"
 import {
@@ -121,12 +120,12 @@ export function PrefixForm({
   const statuses = useQuery({
     queryKey: ["statuses", "prefix"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=prefix&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=prefix&picker=1"),
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const sites = useSiteOptions()
@@ -139,8 +138,7 @@ export function PrefixForm({
   // Locations belong to a site - only offer ones in the selected site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
-    queryFn: () =>
-      api<Paginated<Location>>(`/api/locations/?site=${siteId ?? ""}`),
+    queryFn: () => apiAll<Location>(`/api/locations/?site=${siteId ?? ""}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })

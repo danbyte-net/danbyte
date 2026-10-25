@@ -5,6 +5,7 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { Paginated, ZabbixAdoptionRule, ZabbixConnection } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
@@ -55,7 +56,7 @@ export function ZabbixAdoptionRules({
   const rules = useQuery({
     queryKey: ["zabbix-adoption-rules", connection.id],
     queryFn: () =>
-      api<Paginated<ZabbixAdoptionRule>>(
+      apiAll<ZabbixAdoptionRule>(
         `/api/zabbix/adoption-rules/?connection=${connection.id}`
       ),
   })

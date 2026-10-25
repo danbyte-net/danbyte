@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Inbox, Plug, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type VirtualizationSource } from "@/lib/api"
+import { api, type VirtualizationSource } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { SyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
@@ -62,7 +63,7 @@ function VirtualizationSourcesPage() {
   const query = useQuery({
     queryKey: ["virtualization-sources", q],
     queryFn: () =>
-      api<Paginated<VirtualizationSource>>(
+      apiAll<VirtualizationSource>(
         `/api/virtualization-sources/?${new URLSearchParams({ search: q })}`
       ),
   })
@@ -538,8 +539,7 @@ export function SourceDialog({
   const [vrfMode, setVrfMode] = useState(source?.vrf_mode ?? "pinned")
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
 

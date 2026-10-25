@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { SlidersHorizontal } from "lucide-react"
 
 import { api, type Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -161,7 +162,7 @@ export function ObjectPicker<
   const compact = useQuery({
     queryKey: [...spec.pickerQueryKey, customFieldId ?? ""],
     queryFn: () =>
-      api<Paginated<O>>(withCustomField(spec.pickerEndpoint, customFieldId)),
+      apiAll<O>(withCustomField(spec.pickerEndpoint, customFieldId)),
     staleTime: 10 * 60_000,
   })
   // Context-relevant subset (e.g. devices with the floor tile's role) - its
@@ -170,9 +171,7 @@ export function ObjectPicker<
   const preferred = useQuery({
     queryKey: [...spec.pickerQueryKey, "prefer", preferQuery ?? ""],
     queryFn: () =>
-      api<Paginated<{ id: string }>>(
-        `${spec.pickerEndpoint}${sep}${preferQuery}`
-      ),
+      apiAll<{ id: string }>(`${spec.pickerEndpoint}${sep}${preferQuery}`),
     enabled: !!preferQuery,
     staleTime: 10 * 60_000,
   })
@@ -327,7 +326,7 @@ function withCustomField(url: string, customFieldId?: string): string {
 function usePickerOptions(key: string, url: string, enabled: boolean) {
   return useQuery({
     queryKey: [key],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>(url),
+    queryFn: () => apiAll<{ id: string; name: string }>(url),
     enabled,
     staleTime: 10 * 60_000,
   })

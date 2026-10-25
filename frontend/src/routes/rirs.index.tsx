@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type RIR } from "@/lib/api"
+import { type RIR } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
@@ -29,7 +30,7 @@ function RirsPage() {
   const query = useQuery({
     queryKey: ["rirs", q],
     queryFn: () =>
-      api<Paginated<RIR>>(
+      apiAll<RIR>(
         `/api/rirs/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

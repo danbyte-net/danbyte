@@ -9,6 +9,7 @@ import { X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CheckListResponse,
   CheckTemplate,
@@ -179,8 +180,7 @@ export function SlaWizard({
   })
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     enabled: kind === "role",
     staleTime: 10 * 60_000,
   })

@@ -4,6 +4,7 @@ import { useQueries, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
 import { api, formatBytes } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { formatMemory } from "@/lib/memory-size"
 import type {
   Device,
@@ -920,8 +921,7 @@ export function DeviceFaceplate({
   // match the interfaces the install stamped onto the device.
   const modulesQ = useQuery({
     queryKey: ["device-modules-faceplate", deviceId],
-    queryFn: () =>
-      api<Paginated<InstalledModule>>(`/api/modules/?device=${deviceId}`),
+    queryFn: () => apiAll<InstalledModule>(`/api/modules/?device=${deviceId}`),
     enabled: !!deviceId && !modules,
     staleTime: 60_000,
   })
@@ -1096,7 +1096,7 @@ export function TypeFaceplate({
   const ifaceTpls = useQuery({
     queryKey: ["dt-interface-templates", deviceTypeId],
     queryFn: () =>
-      api<Paginated<PortComponent>>(
+      apiAll<PortComponent>(
         `/api/interface-templates/?device_type=${deviceTypeId}`
       ),
     staleTime: 5 * 60_000,
@@ -1118,7 +1118,7 @@ export function TypeFaceplate({
     queries: kindsNeeded.map((k) => ({
       queryKey: [`dt-${k}-templates`, deviceTypeId],
       queryFn: () =>
-        api<Paginated<PortComponent>>(
+        apiAll<PortComponent>(
           `/api/${KIND_LIST_ENDPOINT[k].replace(/s$/, "")}-templates/?device_type=${deviceTypeId}`
         ),
       staleTime: 5 * 60_000,

@@ -3763,6 +3763,21 @@ def _choice_label(obj, field: str):
     return labels.get(value, value)
 
 
+class ChoiceLabelField(serializers.CharField):
+    """A model field's choice label, read-only - ``get_<field>_display()``
+    as :func:`_choice_label` reads it. A ``source="get_<field>_display"``
+    field paid DRF's per-row ``inspect.signature`` of the bound method plus
+    Django's rebuild of the choices on every row of a list (#447)."""
+
+    def __init__(self, field: str, **kwargs):
+        self.choice_field = field
+        kwargs["read_only"] = True
+        super().__init__(source="*", **kwargs)
+
+    def to_representation(self, instance):
+        return _choice_label(instance, self.choice_field)
+
+
 def _point_cable(point, context=None):
     # ≤1 due to the per-port unique rule. Read the prefetch directly: .first()
     # clones and re-slices the queryset on every row of a component list.
@@ -3813,7 +3828,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     vlan = VLANMiniSerializer(read_only=True)
     tagged_vlans = VLANMiniSerializer(many=True, read_only=True)
     vrf = VRFMiniSerializer(read_only=True)
-    mode_display = serializers.CharField(source="get_mode_display", read_only=True)
+    mode_display = ChoiceLabelField("mode")
     mac_addresses = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
@@ -3832,9 +3847,7 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     lag = serializers.SerializerMethodField()
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
-    lag_protocol_display = serializers.CharField(
-        source="get_lag_protocol_display", read_only=True
-    )
+    lag_protocol_display = ChoiceLabelField("lag_protocol")
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -5624,7 +5637,7 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
     tags = TagSerializer(many=True, read_only=True)
     # Lenient so legacy free-form values round-trip; UI offers the dropdown.
     type = serializers.CharField(required=False, allow_blank=True)
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
+    type_display = ChoiceLabelField("type")
 
     _POINT_HELP = (
         'end of the cable, as [{"kind": "interface", "id": "<uuid>"}]. kind is one of '

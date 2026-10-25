@@ -15,6 +15,7 @@ import {
   type SiteOption,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -121,13 +122,13 @@ export function AssignIpDialog({
   // Filter option sources (small, tenant-scoped - safe to load whole).
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })

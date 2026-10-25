@@ -16,6 +16,7 @@ import {
   type VirtualMachine,
   type VLAN,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { TagList } from "@/components/cells/tag-list"
 import { StatusBadge } from "@/components/status-badge"
 import { VrfCell } from "@/components/cells/vrf-cell"
@@ -294,7 +295,7 @@ function SiteAccessPanel({
   const [adding, setAdding] = useState(false)
   const q = useQuery({
     queryKey: ["object-permissions"],
-    queryFn: () => api<Paginated<ObjectPermission>>("/api/object-permissions/"),
+    queryFn: () => apiAll<ObjectPermission>("/api/object-permissions/"),
     enabled: !viewerOnly,
   })
   const perms = (q.data?.results ?? []).filter((p) =>

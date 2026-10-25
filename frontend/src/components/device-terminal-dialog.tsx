@@ -11,8 +11,8 @@ import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 
-import { api } from "@/lib/api"
-import type { Device, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Device } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -54,7 +54,7 @@ export function DeviceTerminalDialog({
   const credsQ = useQuery({
     queryKey: ["device-credentials", device.id, "ssh"],
     queryFn: () =>
-      api<Paginated<SshCredentialRow>>(
+      apiAll<SshCredentialRow>(
         `/api/monitoring/device-credentials/?device=${device.id}`
       ),
     enabled: open,

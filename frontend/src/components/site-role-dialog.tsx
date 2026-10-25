@@ -5,10 +5,10 @@ import { toast } from "sonner"
 import {
   api,
   type ObjectPermission,
-  type Paginated,
   type RBACGroup,
   type RBACUser,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -67,20 +67,20 @@ export function SiteRoleDialog({
 
   const sitesQuery = useQuery({
     queryKey: ["sites", "picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/sites/"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/"),
     enabled: open && !lockedSiteId,
   })
   // A delegated site editor is not a user administrator: they pick from the
   // tenant's members, and the server takes no groups from them.
   const usersQuery = useQuery({
     queryKey: ["users", ""],
-    queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
+    queryFn: () => apiAll<RBACUser>("/api/users/"),
     enabled: open && !viewerOnly,
   })
   const peopleQuery = usePeople(open && !!viewerOnly)
   const groupsQuery = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
     enabled: open && !viewerOnly,
   })
 

@@ -6,6 +6,7 @@ import { Download, Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Certificate,
   CertificateAssignment,
@@ -444,7 +445,7 @@ function WatchedBySection({ certificateId }: { certificateId: string }) {
   const q = useQuery({
     queryKey: ["certificate-watchers", certificateId],
     queryFn: () =>
-      api<Paginated<WatchedEndpoint>>(
+      apiAll<WatchedEndpoint>(
         `/api/monitoring/watched-endpoints/?certificate=${certificateId}`
       ),
   })

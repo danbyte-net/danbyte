@@ -2,8 +2,8 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { Paginated, PowerPanelOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { PowerPanelOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { BulkEditDialog } from "@/components/bulk-edit-dialog"
 import type { BulkFieldSpec } from "@/components/forms"
@@ -64,8 +64,7 @@ export function PowerFeedBulkBar({
   const [editing, setEditing] = useState(false)
   const panels = useQuery({
     queryKey: ["power-panels-picker"],
-    queryFn: () =>
-      api<Paginated<PowerPanelOption>>("/api/power-panels/?picker=1"),
+    queryFn: () => apiAll<PowerPanelOption>("/api/power-panels/?picker=1"),
     staleTime: 10 * 60_000,
     enabled: editing,
   })

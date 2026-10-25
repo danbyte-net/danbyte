@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type VRF } from "@/lib/api"
+import { type VRF } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -35,7 +36,7 @@ function VrfsPage() {
   const query = useQuery({
     queryKey: ["vrfs", q],
     queryFn: () =>
-      api<Paginated<VRF>>(
+      apiAll<VRF>(
         `/api/vrfs/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

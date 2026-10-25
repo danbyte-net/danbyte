@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Cabinet,
   CabinetRoleOption,
   CabinetTypeOption,
   CabinetWritePayload,
   LocationOption,
-  Paginated,
   Status,
 } from "@/lib/api"
 import { cabinetTypeLabel, invalidateCabinetViews } from "@/lib/cabinets"
@@ -108,28 +107,26 @@ export function CabinetForm({
 
   const roles = useQuery({
     queryKey: ["cabinet-roles-picker"],
-    queryFn: () =>
-      api<Paginated<CabinetRoleOption>>("/api/cabinet-roles/?picker=1"),
+    queryFn: () => apiAll<CabinetRoleOption>("/api/cabinet-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // The picker shape carries each type's sizes for the client-side prefill.
   const cabinetTypes = useQuery({
     queryKey: ["cabinet-types-picker"],
-    queryFn: () =>
-      api<Paginated<CabinetTypeOption>>("/api/cabinet-types/?picker=1"),
+    queryFn: () => apiAll<CabinetTypeOption>("/api/cabinet-types/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "cabinet"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=cabinet&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=cabinet&picker=1"),
     staleTime: 5 * 60_000,
   })
   // Locations are per-site - the list follows the chosen site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })

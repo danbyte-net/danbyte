@@ -4,7 +4,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { OutpostAvailable, OutpostRelease, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { OutpostAvailable, OutpostRelease } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,8 +46,7 @@ export function OutpostVersions() {
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["outpost-releases"],
-    queryFn: () =>
-      api<Paginated<OutpostRelease>>("/api/monitoring/outpost-releases/"),
+    queryFn: () => apiAll<OutpostRelease>("/api/monitoring/outpost-releases/"),
   })
   const releases = q.data?.results ?? []
   const invalidate = () =>

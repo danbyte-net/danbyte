@@ -259,6 +259,11 @@ can't drift page to page (source of truth:
   over the table says the list is cut off, `FilterRail` says its counts are
   partial, and `DataTable`'s Download names the rows it holds - one context,
   no per-page wiring beyond the prop.
+- A list request without `page_size` answers 100 rows. A table, picker or
+  dropdown that needs every row fetches through `apiAll` (`lib/api-all.ts`),
+  which walks `next` 1,000 rows a request up to 10,000 and hands back one
+  page-shaped answer; anything else names its `page_size`. Never call `api`
+  on a list without one (#447).
 - An **embedded** table on a detail page fetches one capped page (`page_size=500`)
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600

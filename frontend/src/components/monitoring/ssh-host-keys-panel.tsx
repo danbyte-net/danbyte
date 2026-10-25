@@ -4,7 +4,8 @@ import { GitCompareArrows, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, apiStatus } from "@/lib/api"
-import type { Paginated, SSHHostKey } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { SSHHostKey } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -64,17 +65,12 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
   const keys = useQuery({
     queryKey: ["ssh-host-keys", deviceId],
     queryFn: () =>
-      api<Paginated<SSHHostKey>>(
-        `/api/monitoring/ssh-host-keys/?device=${deviceId}`
-      ),
+      apiAll<SSHHostKey>(`/api/monitoring/ssh-host-keys/?device=${deviceId}`),
   })
 
   const alerts = useQuery({
     queryKey: ["ssh-host-key-alerts", deviceId],
-    queryFn: () =>
-      api<Paginated<RawAlert> | RawAlert[]>(
-        "/api/monitoring/alerts/?status=firing"
-      ),
+    queryFn: () => apiAll<RawAlert>("/api/monitoring/alerts/?status=firing"),
   })
   const alertRows = Array.isArray(alerts.data)
     ? alerts.data

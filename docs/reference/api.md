@@ -55,6 +55,48 @@ remaining operational endpoints (monitoring, compliance, import/export, system,
 settings, …) are annotated with `@extend_schema` so they appear with proper
 summaries, request bodies, and responses.
 
+## Pagination
+
+Every list endpoint pages its answer:
+
+```json
+{
+  "count": 41600,
+  "next": "https://danbyte.example/api/interfaces/?page=2",
+  "previous": null,
+  "results": []
+}
+```
+
+- **`page_size`** - rows per page. Without it a list answers **100** rows
+  (the deployment's `API_PAGE_SIZE`, see [Settings](settings.md#drf)). Ask
+  for up to **10,000** with `?page_size=`; a larger number is cut to 10,000,
+  and a value that is not a positive number is ignored.
+- **`page`** - which page, from 1. A page past the end answers `404`.
+- **`count`** - every matching row, not only the rows on this page.
+- **`next`** / **`previous`** - full links to the neighbouring pages, with
+  your filters and `page_size` kept, or `null` at either end. To read a
+  whole list, follow `next` until it is `null`.
+
+```bash
+# Every interface, 1,000 at a time
+url="https://danbyte.example/api/interfaces/?page_size=1000"
+while [ "$url" != "null" ]; do
+  page=$(curl -s -H "Authorization: Token $TOKEN" "$url")
+  echo "$page" | jq -c '.results[]'
+  url=$(echo "$page" | jq -r '.next')
+done
+```
+
+Ask for the rows you need rather than the cap: a 10,000-row page takes
+seconds to build and holds a server worker while it does.
+
+A few lists page differently. Tags, statuses, IP roles and zones answer 500
+rows a page whatever `page_size` says; follow `next` for more. The monitoring check and history lists and
+the MAC lists answer `{count, page, page_size, num_pages, results}` with
+their own default and cap, as their schema entries say. The script SDK's
+`db.list()` follows `next` for you ([Scripts SDK](scripts-sdk.md)).
+
 ## Asking the API what it accepts
 
 These endpoints describe the API's own vocabulary so a client never has to

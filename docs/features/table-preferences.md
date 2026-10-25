@@ -123,8 +123,8 @@ part of a long list says so under the table - *Searching the first 500 of
 
 ## Very long lists
 
-A list page loads its rows in one request: up to 10,000, and 1,000 for IP
-addresses. When the tenant holds more, the page says so:
+A list page loads up to 10,000 rows, 1,000 a request, and 1,000 in all for
+IP addresses. When the tenant holds more, the page says so:
 
 - the count beside the title reads *1,000 of 40,960*, in amber;
 - a notice over the table reads *Showing the first 1,000 of 40,960 - search to

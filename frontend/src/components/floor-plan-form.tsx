@@ -2,13 +2,12 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useSiteOptions } from "@/lib/use-site-options"
 import type {
   FloorPlan,
   FloorPlanWritePayload,
   LocationOption,
-  Paginated,
 } from "@/lib/api"
 import {
   FormCombobox,
@@ -57,7 +56,7 @@ export function FloorPlanForm({
   const locations = useQuery({
     queryKey: ["locations-picker", siteId ?? "all"],
     queryFn: () =>
-      api<Paginated<LocationOption>>(
+      apiAll<LocationOption>(
         siteId
           ? `/api/locations/?picker=1&site=${siteId}`
           : "/api/locations/?picker=1"

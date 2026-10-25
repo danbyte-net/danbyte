@@ -2,8 +2,8 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 
-import { api } from "@/lib/api"
-import type { CoolingIntake, CoolingOutflow, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { CoolingIntake, CoolingOutflow } from "@/lib/api"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import {
@@ -48,14 +48,12 @@ export function DeviceCoolingPane({ deviceId }: { deviceId: string }) {
   const intakes = useQuery({
     queryKey: coolingQueryKey("intake", deviceId),
     queryFn: () =>
-      api<Paginated<CoolingIntake>>(`/api/cooling-intakes/?device=${deviceId}`),
+      apiAll<CoolingIntake>(`/api/cooling-intakes/?device=${deviceId}`),
   })
   const outflows = useQuery({
     queryKey: coolingQueryKey("outflow", deviceId),
     queryFn: () =>
-      api<Paginated<CoolingOutflow>>(
-        `/api/cooling-outflows/?device=${deviceId}`
-      ),
+      apiAll<CoolingOutflow>(`/api/cooling-outflows/?device=${deviceId}`),
   })
 
   const canEditIntake = can("coolingintake", "change")

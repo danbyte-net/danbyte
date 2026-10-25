@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import { Eye, KeyRound, Pencil, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -75,7 +75,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
   const q = useQuery({
     queryKey: ["device-credentials", deviceId],
     queryFn: () =>
-      api<Paginated<DeviceCredential>>(
+      apiAll<DeviceCredential>(
         `/api/monitoring/device-credentials/?device=${deviceId}`
       ),
     enabled: canView,

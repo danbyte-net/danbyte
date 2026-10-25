@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
-import type { Paginated, SiteOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { SiteOption } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 
 /**
@@ -21,7 +21,7 @@ export function useSiteOptions() {
   const { me } = useMe()
   const q = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
   const all = q.data?.results ?? []

@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlarmClock, X } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { Paginated, PlanningOverdueTask, PlanningTask } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { PlanningOverdueTask, PlanningTask } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
@@ -40,7 +41,7 @@ export function useObjectTasks(
   return useQuery({
     queryKey: ["planning-tasks", "for-object", objectType, objectId, open],
     queryFn: () =>
-      api<Paginated<PlanningTask>>(
+      apiAll<PlanningTask>(
         `/api/planning/tasks/?${targetQuery(objectType, objectId)}${open ? "&open=1" : ""}`
       ),
     enabled,

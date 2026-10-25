@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { api, ApiError } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   DeviceConfigSnapshot,
   DeviceConfigState,
   DriftStatus,
-  Paginated,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
@@ -170,9 +170,7 @@ function DriftHistory({ deviceId }: { deviceId: string }) {
   const q = useQuery({
     queryKey: ["device-config-history", deviceId],
     queryFn: () =>
-      api<Paginated<DeviceConfigSnapshot>>(
-        `/api/config-snapshots/?device=${deviceId}`
-      ),
+      apiAll<DeviceConfigSnapshot>(`/api/config-snapshots/?device=${deviceId}`),
     refetchInterval: 30_000,
   })
   const events = (q.data?.results ?? []).slice(0, 8)

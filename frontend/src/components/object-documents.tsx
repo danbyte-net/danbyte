@@ -12,12 +12,8 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Document,
-  type DocumentCategory,
-  type Paginated,
-} from "@/lib/api"
+import { api, type Document, type DocumentCategory } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -94,7 +90,7 @@ export function ObjectDocuments({
   const q = useQuery({
     queryKey: docsKey,
     queryFn: () =>
-      api<Paginated<Document>>(
+      apiAll<Document>(
         `/api/documents/?object_type=${objectType}&object_id=${objectId}`
       ),
   })
@@ -106,7 +102,7 @@ export function ObjectDocuments({
       inheritedFrom?.objectId ?? "",
     ],
     queryFn: () =>
-      api<Paginated<Document>>(
+      apiAll<Document>(
         `/api/documents/?object_type=${inheritedFrom!.objectType}&object_id=${inheritedFrom!.objectId}`
       ),
     enabled: !!inheritedFrom,
@@ -114,8 +110,7 @@ export function ObjectDocuments({
 
   const categories = useQuery({
     queryKey: ["document-categories"],
-    queryFn: () =>
-      api<Paginated<DocumentCategory>>("/api/document-categories/"),
+    queryFn: () => apiAll<DocumentCategory>("/api/document-categories/"),
     staleTime: 5 * 60_000,
   })
 

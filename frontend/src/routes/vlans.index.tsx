@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type VLAN } from "@/lib/api"
+import { type VLAN } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVlanColumns } from "@/components/columns/vlan-columns"
@@ -29,7 +30,7 @@ function VlansPage() {
   const query = useQuery({
     queryKey: ["vlans", q],
     queryFn: () =>
-      api<Paginated<VLAN>>(
+      apiAll<VLAN>(
         `/api/vlans/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

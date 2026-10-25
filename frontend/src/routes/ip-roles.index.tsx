@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type IPRole, type Paginated } from "@/lib/api"
+import { type IPRole } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -42,7 +43,7 @@ function IpRolesPage() {
   const query = useQuery({
     queryKey: ["ip-roles", q],
     queryFn: () =>
-      api<Paginated<IPRole>>(
+      apiAll<IPRole>(
         `/api/ip-roles/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

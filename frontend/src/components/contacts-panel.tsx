@@ -5,6 +5,7 @@ import { Plus, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ContactAssignment,
   ContactMini,
@@ -62,13 +63,12 @@ export function ContactsPanel({
   })
   const contacts = useQuery({
     queryKey: ["contacts-picker"],
-    queryFn: () => api<Paginated<ContactMini>>("/api/contacts/?picker=1"),
+    queryFn: () => apiAll<ContactMini>("/api/contacts/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["contact-roles-picker"],
-    queryFn: () =>
-      api<Paginated<ContactRoleOption>>("/api/contact-roles/?picker=1"),
+    queryFn: () => apiAll<ContactRoleOption>("/api/contact-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

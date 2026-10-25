@@ -5,7 +5,8 @@ import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { FloorPlan, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { FloorPlan } from "@/lib/api"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +45,7 @@ function FloorPlansPage() {
   const query = useQuery({
     queryKey: ["floor-plans", q],
     queryFn: () =>
-      api<Paginated<FloorPlan>>(
+      apiAll<FloorPlan>(
         `/api/floor-plans/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

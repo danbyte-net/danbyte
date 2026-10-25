@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type WirelessLANGroup, type Paginated } from "@/lib/api"
+import { type WirelessLANGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { numidColumn } from "@/components/cells/numid"
 import { Button } from "@/components/ui/button"
@@ -31,8 +32,7 @@ function WlanGroupsPage() {
 
   const query = useQuery({
     queryKey: ["wireless-lan-groups"],
-    queryFn: () =>
-      api<Paginated<WirelessLANGroup>>("/api/wireless-lan-groups/"),
+    queryFn: () => apiAll<WirelessLANGroup>("/api/wireless-lan-groups/"),
   })
 
   const allRows = query.data?.results ?? []

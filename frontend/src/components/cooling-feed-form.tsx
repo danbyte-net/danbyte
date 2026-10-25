@@ -3,13 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CoolingFeed,
   CoolingFeedType,
   CoolingFeedWritePayload,
   CoolingSource,
   CoolingSourceOption,
-  Paginated,
   RackOption,
   Status,
 } from "@/lib/api"
@@ -103,7 +103,7 @@ export function CoolingFeedForm({
   const sources = useQuery({
     queryKey: ["cooling-sources-picker"],
     queryFn: () =>
-      api<Paginated<CoolingSourceOption>>("/api/cooling-sources/?picker=1"),
+      apiAll<CoolingSourceOption>("/api/cooling-sources/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // The chosen source's site: the feed's own while its source is unchanged,
@@ -121,8 +121,7 @@ export function CoolingFeedForm({
 
   const racks = useQuery({
     queryKey: ["racks-picker", "site", siteId],
-    queryFn: () =>
-      api<Paginated<RackOption>>(`/api/racks/?picker=1&site=${siteId}`),
+    queryFn: () => apiAll<RackOption>(`/api/racks/?picker=1&site=${siteId}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })
@@ -136,9 +135,7 @@ export function CoolingFeedForm({
   const statuses = useQuery({
     queryKey: ["statuses", "coolingfeed"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=coolingfeed&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=coolingfeed&picker=1"),
     staleTime: 5 * 60_000,
   })
   // A new feed starts at the catalog's default status for its kind.

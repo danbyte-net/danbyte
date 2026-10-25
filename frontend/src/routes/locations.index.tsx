@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { CornerDownRight } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Location, type Paginated } from "@/lib/api"
+import { type Location } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { nestByParent } from "@/lib/nest"
 import { numidColumn } from "@/components/cells/numid"
@@ -41,7 +42,7 @@ function LocationsPage() {
   const query = useQuery({
     queryKey: ["locations", q],
     queryFn: () =>
-      api<Paginated<Location>>(
+      apiAll<Location>(
         `/api/locations/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

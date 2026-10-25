@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type RBACGroup, type Paginated } from "@/lib/api"
+import { type RBACGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -25,7 +26,7 @@ function GroupsPage() {
 
   const query = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
   })
 
   const allRows = query.data?.results ?? []

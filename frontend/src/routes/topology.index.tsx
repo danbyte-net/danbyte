@@ -29,6 +29,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { api, fetchTopology } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BulkStatusResponse,
   DevicePaletteRow,
@@ -749,8 +750,7 @@ function TopologyPage() {
   // the URL doesn't override.
   const views = useQuery({
     queryKey: ["topology-views", "picker"],
-    queryFn: () =>
-      api<Paginated<TopologyViewSummary>>("/api/topology-views/?picker=1"),
+    queryFn: () => apiAll<TopologyViewSummary>("/api/topology-views/?picker=1"),
   })
   // The tenant's default view: a bare /topology is replaced by it.
   const dv = useDefaultView(urlSearch, canDo("topologyview", "view"))
@@ -1580,14 +1580,13 @@ function TopologyPage() {
   // ── Option lists (shared picker caches) ──
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string; color?: string | null }>>(
+      apiAll<{ id: string; name: string; color?: string | null }>(
         "/api/device-roles/?picker=1"
       ),
     staleTime: 10 * 60_000,
@@ -1595,12 +1594,12 @@ function TopologyPage() {
   const statuses = useQuery({
     queryKey: ["device-statuses-picker"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=device&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=device&picker=1"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   // Locations back the group-by-location breadcrumb: a `?group=location&
@@ -1608,7 +1607,7 @@ function TopologyPage() {
   const locations = useQuery({
     queryKey: ["locations-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/locations/?picker=1"),
+      apiAll<{ id: string; name: string }>("/api/locations/?picker=1"),
     staleTime: 10 * 60_000,
     enabled: groupBy === "location",
   })

@@ -2,12 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ContactGroup,
-  type ContactGroupWritePayload,
-  type Paginated,
-} from "@/lib/api"
+import { type ContactGroup, type ContactGroupWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -51,7 +47,7 @@ export function ContactGroupForm({
 
   const groupsQuery = useQuery({
     queryKey: ["contact-groups-picker"],
-    queryFn: () => api<Paginated<ContactGroup>>("/api/contact-groups/"),
+    queryFn: () => apiAll<ContactGroup>("/api/contact-groups/"),
   })
   // A group can't be its own parent - drop self from the options when editing.
   const parentOptions = (groupsQuery.data?.results ?? [])

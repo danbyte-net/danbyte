@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useSaveObject } from "@/lib/save-object"
 import type {
   DashboardScopeKey,
@@ -37,7 +38,7 @@ function useOptions(key: string, url: string, enabled: boolean) {
   return (
     useQuery({
       queryKey: [key, "dash-scope"],
-      queryFn: () => api<Paginated<Option>>(url),
+      queryFn: () => apiAll<Option>(url),
       enabled,
       staleTime: 5 * 60_000,
     }).data?.results ?? []

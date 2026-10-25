@@ -4,14 +4,13 @@ import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
 import {
-  api,
   type DeviceRoleOption,
-  type Paginated,
   type PlatformOption,
   type Status,
   type VirtualMachine,
   type VirtualMachineWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormColumn,
   FormColumns,
@@ -118,37 +117,32 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
 
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<MiniNamed>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<MiniNamed>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // A group lives below one cluster, so only the chosen cluster's are offered.
   const groups = useQuery({
     queryKey: ["vm-groups-picker", clusterId],
     queryFn: () =>
-      api<Paginated<MiniNamed>>(
-        `/api/vm-groups/?picker=1&cluster=${clusterId}`
-      ),
+      apiAll<MiniNamed>(`/api/vm-groups/?picker=1&cluster=${clusterId}`),
     enabled: !!clusterId,
     staleTime: 60_000,
   })
   const sites = useSiteOptions()
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "virtualmachine"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=virtualmachine&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=virtualmachine&picker=1"),
     staleTime: 5 * 60_000,
   })
 

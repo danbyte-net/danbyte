@@ -3,10 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   LocationOption,
-  Paginated,
   Rack,
   RackRoleOption,
   RackType,
@@ -166,14 +165,14 @@ export function RackForm({
   // (untouched) API type.
   const roles = useQuery({
     queryKey: ["rack-roles-picker"],
-    queryFn: () => api<Paginated<RackRoleOption>>("/api/rack-roles/?picker=1"),
+    queryFn: () => apiAll<RackRoleOption>("/api/rack-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Full shape (not ?picker=1): the accessory list drives the stamping
   // checkbox, and the dims drive the client-side prefill.
   const rackTypes = useQuery({
     queryKey: ["rack-types", "form"],
-    queryFn: () => api<Paginated<RackType>>("/api/rack-types/"),
+    queryFn: () => apiAll<RackType>("/api/rack-types/"),
     staleTime: 5 * 60_000,
   })
   const chosenType =
@@ -212,15 +211,14 @@ export function RackForm({
   }, [isEdit, initialRackTypeId, rackTypes.data, applyTypeProfile])
   const statuses = useQuery({
     queryKey: ["statuses", "rack"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=rack&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=rack&picker=1"),
     staleTime: 5 * 60_000,
   })
   // Locations are per-site - the list follows the chosen site.
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })

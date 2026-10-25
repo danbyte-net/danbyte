@@ -20,8 +20,8 @@ import {
   type IPAddress,
   type IPListResponse,
   type IPRange,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { DhcpState } from "@/components/dhcp-badge"
 import { objCan } from "@/lib/use-me"
 import { ipToBigInt, bigIntToIp, enumerableHostInts } from "@/lib/prefix-tree"
@@ -193,8 +193,7 @@ function PrefixIpsTableImpl({
   // falls in (and that range's role). Containment is tested numerically.
   const rangesQuery = useQuery({
     queryKey: ["prefix-ip-ranges", prefixId],
-    queryFn: () =>
-      api<Paginated<IPRange>>(`/api/ip-ranges/?prefix=${prefixId}`),
+    queryFn: () => apiAll<IPRange>(`/api/ip-ranges/?prefix=${prefixId}`),
   })
   const rangeSpans = useMemo(
     () =>

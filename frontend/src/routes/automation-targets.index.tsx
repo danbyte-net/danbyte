@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Wand2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type AutomationTarget, type Paginated } from "@/lib/api"
+import { type AutomationTarget } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -30,7 +31,7 @@ function AutomationTargetsPage() {
   const query = useQuery({
     queryKey: ["automation-targets", q],
     queryFn: () =>
-      api<Paginated<AutomationTarget>>(
+      apiAll<AutomationTarget>(
         `/api/automation-targets/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

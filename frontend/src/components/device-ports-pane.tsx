@@ -5,8 +5,8 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { CabledFilterChips } from "@/components/cabled-filter"
 import { CABLE_STATES, cableState, cableStateMatches } from "@/lib/cable-state"
 import type { CableState } from "@/lib/cable-state"
-import { api } from "@/lib/api"
-import type { FrontPort, Paginated, RearPort } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { FrontPort, RearPort } from "@/lib/api"
 import { CableTraceDialog } from "@/components/cable-trace-dialog"
 import type { CableTraceTarget } from "@/components/cable-trace-dialog"
 import {
@@ -74,8 +74,7 @@ export function DeviceRearPortsPane({
 
   const q = useQuery({
     queryKey: ["device-rear-ports", deviceId],
-    queryFn: () =>
-      api<Paginated<RearPort>>(`/api/rear-ports/?device=${deviceId}`),
+    queryFn: () => apiAll<RearPort>(`/api/rear-ports/?device=${deviceId}`),
   })
   const all = useMemo(() => q.data?.results ?? [], [q.data])
   const { cabled, setCabled, counts, filtered } = useCabledFilter(
@@ -216,8 +215,7 @@ export function DeviceFrontPortsPane({
 
   const q = useQuery({
     queryKey: ["device-front-ports", deviceId],
-    queryFn: () =>
-      api<Paginated<FrontPort>>(`/api/front-ports/?device=${deviceId}`),
+    queryFn: () => apiAll<FrontPort>(`/api/front-ports/?device=${deviceId}`),
   })
   const all = useMemo(() => q.data?.results ?? [], [q.data])
   const { cabled, setCabled, counts, filtered } = useCabledFilter(

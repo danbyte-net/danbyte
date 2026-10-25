@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 
 import { DrawingExportMenu } from "@/components/drawing-export-menu"
 import type { DrawingRequest } from "@/components/drawing-export-menu"
-import { api } from "@/lib/api"
-import type { Device, Paginated, Rack } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Device, Rack } from "@/lib/api"
 import { exportFileName } from "@/lib/diagram/export-file"
 import type { ElevationShow } from "@/lib/elevation/rack-svg"
 import { downloadPng } from "@/lib/png-export"
@@ -21,7 +21,7 @@ export type RackExportFace = "front" | "rear" | "both"
 function useRackDevices(rackId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["rack-devices", rackId],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
+    queryFn: () => apiAll<Device>(`/api/devices/?rack=${rackId}`),
     enabled,
   })
 }

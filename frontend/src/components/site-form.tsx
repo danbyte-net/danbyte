@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Check, ChevronsUpDown } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   GeocodeCandidate,
   Paginated,
@@ -136,12 +137,12 @@ export function SiteForm({
 
   const regions = useQuery({
     queryKey: ["regions-picker"],
-    queryFn: () => api<Paginated<RegionOption>>("/api/regions/?picker=1"),
+    queryFn: () => apiAll<RegionOption>("/api/regions/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Candidates for the site's default: its own prefixes. (The server also

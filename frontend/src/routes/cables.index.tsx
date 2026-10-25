@@ -5,8 +5,8 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Waypoints } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { Cable, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Cable } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
@@ -35,7 +35,7 @@ function CablesPage() {
   const query = useQuery({
     queryKey: ["cables", q],
     queryFn: () =>
-      api<Paginated<Cable>>(
+      apiAll<Cable>(
         `/api/cables/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -5,9 +5,9 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 
-import { api, ApiError } from "@/lib/api"
+import { ApiError } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   Status,
   VLAN,
   VLANGroupOption,
@@ -102,24 +102,22 @@ export function VlanForm({
   }, [isEdit, sites.lockedId, siteId])
   const groups = useQuery({
     queryKey: ["vlan-groups-picker"],
-    queryFn: () =>
-      api<Paginated<VLANGroupOption>>("/api/vlan-groups/?picker=1"),
+    queryFn: () => apiAll<VLANGroupOption>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const zones = useQuery({
     queryKey: ["zones-picker"],
-    queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
+    queryFn: () => apiAll<ZoneOption>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "vlan"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=vlan&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=vlan&picker=1"),
     staleTime: 5 * 60_000,
   })
   // A new VLAN starts in the tenant's default VLAN status (Active).

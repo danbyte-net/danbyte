@@ -17,12 +17,12 @@ import {
   type DeviceWritePayload,
   type ExportTemplate,
   type LocationOption,
-  type Paginated,
   type PlatformOption,
   type RackOption,
   type Status,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormCombobox,
@@ -297,14 +297,13 @@ export function DeviceForm({
 
   const types = useQuery({
     queryKey: ["device-types-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceTypeOption>>("/api/device-types/?picker=1"),
+    queryFn: () => apiAll<DeviceTypeOption>("/api/device-types/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "device"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=device&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=device&picker=1"),
     staleTime: 5 * 60_000,
   })
   const sites = useSiteOptions()
@@ -316,12 +315,12 @@ export function DeviceForm({
   }, [isEdit, sites.lockedId, siteId])
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const racks = useQuery({
     queryKey: ["racks-picker"],
-    queryFn: () => api<Paginated<RackOption>>("/api/racks/?picker=1"),
+    queryFn: () => apiAll<RackOption>("/api/racks/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Devices already in the selected rack - drives the Position (U) dropdown
@@ -329,7 +328,7 @@ export function DeviceForm({
   // cache is shared.
   const rackDevices = useQuery({
     queryKey: ["rack-devices", rackId],
-    queryFn: () => api<Paginated<Device>>(`/api/devices/?rack=${rackId}`),
+    queryFn: () => apiAll<Device>(`/api/devices/?rack=${rackId}`),
     enabled: !!rackId,
   })
   // The picked cabinet: its rails, and its site - a device in a cabinet is
@@ -351,37 +350,33 @@ export function DeviceForm({
   }, [cabinetSite, siteId])
   const roles = useQuery({
     queryKey: ["device-roles-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceRoleOption>>("/api/device-roles/?picker=1"),
+    queryFn: () => apiAll<DeviceRoleOption>("/api/device-roles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
   const locations = useQuery({
     queryKey: ["locations-picker"],
-    queryFn: () => api<Paginated<LocationOption>>("/api/locations/?picker=1"),
+    queryFn: () => apiAll<LocationOption>("/api/locations/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const clusters = useQuery({
     queryKey: ["clusters-picker"],
-    queryFn: () => api<Paginated<ClusterOption>>("/api/clusters/?picker=1"),
+    queryFn: () => apiAll<ClusterOption>("/api/clusters/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const virtualChassis = useQuery({
     queryKey: ["virtual-chassis-picker"],
-    queryFn: () =>
-      api<Paginated<VirtualChassisOption>>("/api/virtual-chassis/"),
+    queryFn: () => apiAll<VirtualChassisOption>("/api/virtual-chassis/"),
     staleTime: 10 * 60_000,
   })
   // Admin-controlled field visibility. Falls back to the documented defaults

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type RackRole } from "@/lib/api"
+import { type RackRole } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { useUrlTableFilters } from "@/components/table-filters"
@@ -32,7 +33,7 @@ function RackRolesPage() {
   const query = useQuery({
     queryKey: ["rack-roles", q],
     queryFn: () =>
-      api<Paginated<RackRole>>(
+      apiAll<RackRole>(
         `/api/rack-roles/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

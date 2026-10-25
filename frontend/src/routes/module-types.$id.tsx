@@ -6,12 +6,8 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ModuleInterfaceTemplate,
-  type ModuleType,
-  type Paginated,
-} from "@/lib/api"
+import { api, type ModuleInterfaceTemplate, type ModuleType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -196,7 +192,7 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
   const q = useQuery({
     queryKey: ["mt-interface-templates", moduleTypeId],
     queryFn: () =>
-      api<Paginated<ModuleInterfaceTemplate>>(
+      apiAll<ModuleInterfaceTemplate>(
         `/api/module-interface-templates/?module_type=${moduleTypeId}`
       ),
   })

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   EIGRPInstance,
   EIGRPInterface,
@@ -11,7 +11,6 @@ import type {
   OSPFAreaMini,
   OSPFInstance,
   OSPFInterface,
-  Paginated,
   Status,
   VRFOption,
 } from "@/lib/api"
@@ -76,16 +75,14 @@ const triTo = (v: string | null) =>
 function useVrfs() {
   return useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
   })
 }
 function useInstanceStatuses() {
   return useQuery({
     queryKey: ["statuses", "routinginstance"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=routinginstance&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=routinginstance&picker=1"),
     staleTime: 5 * 60_000,
   })
 }

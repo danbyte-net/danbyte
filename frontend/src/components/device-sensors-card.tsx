@@ -7,10 +7,10 @@ import {
   api,
   INVENTORY_KIND_OPTIONS,
   type InventoryItemKind,
-  type Paginated,
   type SnmpSensor,
   type Status,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Section } from "@/components/ui/section"
@@ -73,7 +73,7 @@ export function DeviceSensorsCard({
   const sensors = useQuery({
     queryKey: ["snmp-sensors", deviceTypeId, typeScoped ?? false],
     queryFn: () =>
-      api<Paginated<SnmpSensor>>(
+      apiAll<SnmpSensor>(
         `/api/monitoring/snmp-sensors/${
           deviceTypeId
             ? typeScoped
@@ -321,9 +321,7 @@ export function SensorDialog({
   const statuses = useQuery({
     queryKey: ["statuses", "inventoryitem"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=inventoryitem&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=inventoryitem&picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })

@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   SiteOption,
   StatusOption,
   TagOption,
@@ -57,33 +57,32 @@ function BulkEditVlansPage() {
   const statuses = useQuery({
     queryKey: ["statuses", "vlan"],
     queryFn: () =>
-      api<Paginated<StatusOption>>("/api/statuses/?available_to=vlan&picker=1"),
+      apiAll<StatusOption>("/api/statuses/?available_to=vlan&picker=1"),
     staleTime: 5 * 60_000,
   })
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
   const groups = useQuery({
     queryKey: ["vlan-groups-picker"],
-    queryFn: () =>
-      api<Paginated<VLANGroupOption>>("/api/vlan-groups/?picker=1"),
+    queryFn: () => apiAll<VLANGroupOption>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const zones = useQuery({
     queryKey: ["zones-picker"],
-    queryFn: () => api<Paginated<ZoneOption>>("/api/zones/?picker=1"),
+    queryFn: () => apiAll<ZoneOption>("/api/zones/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const editorOptions = useFieldEditorOptions(DESCRIPTION)

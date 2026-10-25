@@ -7,9 +7,9 @@ import {
   api,
   type JournalEntry,
   type JournalKind,
-  type Paginated,
   type PlanningAssignableUser,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -59,7 +59,7 @@ export function JournalPanel({
   const q = useQuery({
     queryKey: key,
     queryFn: () =>
-      api<Paginated<JournalEntry>>(
+      apiAll<JournalEntry>(
         `/api/journal/?object_type=${objectType}&object_id=${objectId}`
       ),
     staleTime: 0,

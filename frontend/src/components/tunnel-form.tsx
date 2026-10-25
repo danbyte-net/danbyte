@@ -3,15 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type IPSecProfileOption,
-  type Paginated,
   type Status,
   type Tunnel,
   type TunnelEncapsulation,
   type TunnelGroupOption,
   type TunnelWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormColumn,
   FormColumns,
@@ -102,20 +101,18 @@ export function TunnelForm({ tunnel, onSaved, onCancel }: TunnelFormProps) {
 
   const groups = useQuery({
     queryKey: ["tunnel-groups-picker"],
-    queryFn: () =>
-      api<Paginated<TunnelGroupOption>>("/api/tunnel-groups/?picker=1"),
+    queryFn: () => apiAll<TunnelGroupOption>("/api/tunnel-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const profiles = useQuery({
     queryKey: ["ipsec-profiles-picker"],
-    queryFn: () =>
-      api<Paginated<IPSecProfileOption>>("/api/ipsec-profiles/?picker=1"),
+    queryFn: () => apiAll<IPSecProfileOption>("/api/ipsec-profiles/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "tunnel"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=tunnel&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=tunnel&picker=1"),
     staleTime: 5 * 60_000,
   })
 

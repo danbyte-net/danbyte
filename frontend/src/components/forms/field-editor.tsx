@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api, STORAGE_UNITS } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { DcimChoices, Paginated, StorageUnit, TagOption } from "@/lib/api"
 import { useCustomizationMeta } from "@/lib/custom-fields"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
@@ -60,14 +61,14 @@ export function useFieldEditorOptions(
 
   const tagOptions = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     enabled: !!opts?.tags,
     staleTime: 10 * 60_000,
   })
   const vlanOptions = useQuery({
     queryKey: ["vlans-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; vlan_id: number; name: string }>>(
+      apiAll<{ id: string; vlan_id: number; name: string }>(
         "/api/vlans/?picker=1"
       ),
     enabled: specs.some((f) => f.kind === "vlan"),
@@ -75,8 +76,7 @@ export function useFieldEditorOptions(
   })
   const vrfOptions = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/vrfs/?picker=1"),
     enabled: specs.some((f) => f.kind === "vrf"),
     staleTime: 5 * 60_000,
   })
@@ -86,7 +86,7 @@ export function useFieldEditorOptions(
   const statusOptions = useQuery({
     queryKey: ["statuses", statusModel],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string; color?: string | null }>>(
+      apiAll<{ id: string; name: string; color?: string | null }>(
         `/api/statuses/?available_to=${statusModel}&picker=1`
       ),
     enabled: !!statusModel,

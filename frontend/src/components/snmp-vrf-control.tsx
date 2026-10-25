@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, VRFOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { VRFOption } from "@/lib/api"
 import {
   Select,
   SelectContent,
@@ -52,7 +53,7 @@ export function SnmpVrfControl({
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const write = async (vrfId: string | null) => {

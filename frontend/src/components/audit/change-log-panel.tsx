@@ -4,13 +4,8 @@ import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { ChevronRight, Download } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type {
-  ChangeAction,
-  ChangeLogEntry,
-  FieldChange,
-  Paginated,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ChangeAction, ChangeLogEntry, FieldChange } from "@/lib/api"
 import { downloadBlob } from "@/lib/table-export"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -92,7 +87,7 @@ export function ChangeLogPanel({
   const q = useQuery({
     queryKey: ["changelog", objectType, objectId],
     queryFn: () =>
-      api<Paginated<ChangeLogEntry>>(
+      apiAll<ChangeLogEntry>(
         `/api/changelog/?object_type=${objectType}&object_id=${objectId}`
       ),
     // History should always reflect the latest writes - refetch whenever the

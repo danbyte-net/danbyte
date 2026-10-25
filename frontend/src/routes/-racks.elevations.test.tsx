@@ -28,7 +28,7 @@ const { apiMock } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<object>()),

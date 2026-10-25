@@ -10,8 +10,8 @@ import {
   type AutomationTarget,
   type Device,
   type DeployRun,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { PrintLabelButton } from "@/components/print-label-button"
 import { Spinner } from "@/components/ui/spinner"
@@ -103,7 +103,7 @@ function DeployDialog({
 
   const targets = useQuery({
     queryKey: ["automation-targets", "enabled"],
-    queryFn: () => api<Paginated<AutomationTarget>>("/api/automation-targets/"),
+    queryFn: () => apiAll<AutomationTarget>("/api/automation-targets/"),
     staleTime: 60_000,
     enabled: open,
   })

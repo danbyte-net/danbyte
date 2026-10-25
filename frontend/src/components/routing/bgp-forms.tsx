@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   AfiSafi,
   ASN,
@@ -97,7 +98,7 @@ function useStatuses(scope: string) {
   return useQuery({
     queryKey: ["statuses", scope],
     queryFn: () =>
-      api<Paginated<Status>>(`/api/statuses/?available_to=${scope}&picker=1`),
+      apiAll<Status>(`/api/statuses/?available_to=${scope}&picker=1`),
     staleTime: 5 * 60_000,
   })
 }
@@ -603,7 +604,7 @@ export function BGPInstanceForm({
   const asns = useAsns()
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
   })
   const statuses = useStatuses("routinginstance")
   useDefaultStatus(
@@ -1105,7 +1106,7 @@ export function BGPSessionForm({
   const instances = useQuery({
     queryKey: ["bgp-instances", on.kind, deviceId],
     queryFn: () =>
-      api<Paginated<BGPInstance>>(
+      apiAll<BGPInstance>(
         `/api/routing/bgp-instances/?${ownerParam({ ...box!, name: "" })}`
       ),
     enabled: !!box,

@@ -6,7 +6,8 @@ import { ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, ZabbixConnection, ZabbixHostLink } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ZabbixConnection, ZabbixHostLink } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -37,9 +38,7 @@ export function ZabbixLinkedHosts({
   const links = useQuery({
     queryKey: ["zabbix-links", connection.id],
     queryFn: () =>
-      api<Paginated<ZabbixHostLink>>(
-        `/api/zabbix/links/?connection=${connection.id}`
-      ),
+      apiAll<ZabbixHostLink>(`/api/zabbix/links/?connection=${connection.id}`),
   })
 
   const unlink = useMutation({

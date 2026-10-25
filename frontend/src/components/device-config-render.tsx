@@ -3,13 +3,13 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { Download, Play } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ConfigBundle,
   DeviceBundleRenderResult,
   DeviceRenderFile,
   DeviceRenderResult,
   ExportTemplate,
-  Paginated,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -69,14 +69,12 @@ export function DeviceConfigRender({
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
   const bundles = useQuery({
     queryKey: ["config-bundles"],
-    queryFn: () => api<Paginated<ConfigBundle>>("/api/config-bundles/"),
+    queryFn: () => apiAll<ConfigBundle>("/api/config-bundles/"),
     staleTime: 5 * 60_000,
   })
   const options = (templates.data?.results ?? []).map((t) => ({

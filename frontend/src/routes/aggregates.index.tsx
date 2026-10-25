@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Aggregate, type Paginated } from "@/lib/api"
+import { type Aggregate } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildAggregateColumns } from "@/components/columns/aggregate-columns"
@@ -36,7 +37,7 @@ function AggregatesPage() {
   const query = useQuery({
     queryKey: ["aggregates", q],
     queryFn: () =>
-      api<Paginated<Aggregate>>(
+      apiAll<Aggregate>(
         `/api/aggregates/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

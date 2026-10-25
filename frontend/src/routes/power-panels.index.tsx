@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type PowerPanel, type Paginated } from "@/lib/api"
+import { type PowerPanel } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -32,7 +33,7 @@ function PowerPanelsPage() {
   const query = useQuery({
     queryKey: ["power-panels", q],
     queryFn: () =>
-      api<Paginated<PowerPanel>>(
+      apiAll<PowerPanel>(
         `/api/power-panels/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

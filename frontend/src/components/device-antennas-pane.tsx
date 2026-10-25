@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Pencil, Trash2 } from "lucide-react"
 
-import { api, type Antenna, type Paginated } from "@/lib/api"
+import { api, type Antenna } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -46,7 +47,7 @@ import { PlanStaged, useSaveObject } from "@/lib/save-object"
 export function useDeviceAntennas(deviceId: string) {
   return useQuery({
     queryKey: ["device-antennas", deviceId],
-    queryFn: () => api<Paginated<Antenna>>(`/api/antennas/?device=${deviceId}`),
+    queryFn: () => apiAll<Antenna>(`/api/antennas/?device=${deviceId}`),
   })
 }
 
