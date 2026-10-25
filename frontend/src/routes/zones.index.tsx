@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Zone } from "@/lib/api"
+import { type Zone } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -37,7 +38,7 @@ function ZonesPage() {
   const query = useQuery({
     queryKey: ["zones", q],
     queryFn: () =>
-      api<Paginated<Zone>>(
+      apiAll<Zone>(
         `/api/zones/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

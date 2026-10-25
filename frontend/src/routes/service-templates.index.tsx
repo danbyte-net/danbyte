@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type ServiceTemplate } from "@/lib/api"
+import { type ServiceTemplate } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
@@ -33,7 +34,7 @@ function ServiceTemplatesPage() {
   const query = useQuery({
     queryKey: ["service-templates", q],
     queryFn: () =>
-      api<Paginated<ServiceTemplate>>(
+      apiAll<ServiceTemplate>(
         `/api/service-templates/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

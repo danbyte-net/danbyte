@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type VLAN, type Zone } from "@/lib/api"
+import { api, type VLAN, type Zone } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
@@ -204,7 +205,7 @@ function ZoneVlansTable({
   const [assigning, setAssigning] = useState(false)
   const q = useQuery({
     queryKey: ["vlans"],
-    queryFn: () => api<Paginated<VLAN>>("/api/vlans/"),
+    queryFn: () => apiAll<VLAN>("/api/vlans/"),
   })
   const rows = useMemo(
     () => (q.data?.results ?? []).filter((v) => v.zone?.id === zoneId),

@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type IPRange, type Paginated } from "@/lib/api"
+import { type IPRange } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -42,7 +43,7 @@ function IpRangesPage() {
   const query = useQuery({
     queryKey: ["ip-ranges", q],
     queryFn: () =>
-      api<Paginated<IPRange>>(
+      apiAll<IPRange>(
         `/api/ip-ranges/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

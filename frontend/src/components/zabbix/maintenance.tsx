@@ -6,7 +6,8 @@ import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, ZabbixConnection, ZabbixMaintenance } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ZabbixConnection, ZabbixMaintenance } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,7 +39,7 @@ export function ZabbixMaintenanceList({
   const rows_ = useQuery({
     queryKey: ["zabbix-maintenance", connection.id],
     queryFn: () =>
-      api<Paginated<ZabbixMaintenance>>(
+      apiAll<ZabbixMaintenance>(
         `/api/zabbix/maintenance/?connection=${connection.id}`
       ),
   })

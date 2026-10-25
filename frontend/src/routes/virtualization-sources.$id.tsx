@@ -13,6 +13,7 @@ import {
   type VirtualMachine,
   type VirtualizationSource,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -100,9 +101,7 @@ function SourceDetailPage() {
   const ruleCount = useQuery({
     queryKey: ["virt-placement-rules", id],
     queryFn: () =>
-      api<Paginated<VirtPlacementRule>>(
-        `/api/virt-placement-rules/?source=${id}`
-      ),
+      apiAll<VirtPlacementRule>(`/api/virt-placement-rules/?source=${id}`),
   })
   const vms = useQuery({
     queryKey: ["source-vms", id],
@@ -696,14 +695,13 @@ function PlacementRules({ source }: { source: VirtualizationSource }) {
   const rules = useQuery({
     queryKey: ["virt-placement-rules", source.id],
     queryFn: () =>
-      api<Paginated<VirtPlacementRule>>(
+      apiAll<VirtPlacementRule>(
         `/api/virt-placement-rules/?source=${source.id}`
       ),
   })
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/?picker=1"),
     staleTime: 5 * 60_000,
   })
   // Only locations inside the chosen site can be used - one outside it would

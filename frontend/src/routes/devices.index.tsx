@@ -9,8 +9,8 @@ import {
   type BulkStatusEntry,
   type BulkStatusResponse,
   type Device,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
@@ -84,7 +84,7 @@ function DevicesPage() {
   const query = useQuery({
     queryKey: ["devices", q],
     queryFn: () =>
-      api<Paginated<Device>>(
+      apiAll<Device>(
         `/api/devices/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

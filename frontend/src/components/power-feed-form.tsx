@@ -3,8 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type PowerFeed,
   type PowerFeedType,
   type PowerFeedWritePayload,
@@ -14,6 +12,7 @@ import {
   type RackOption,
   type Status,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormColumn,
   FormColumns,
@@ -105,19 +104,18 @@ export function PowerFeedForm({ feed, onSaved, onCancel }: PowerFeedFormProps) {
 
   const panels = useQuery({
     queryKey: ["power-panels-picker"],
-    queryFn: () =>
-      api<Paginated<PowerPanelOption>>("/api/power-panels/?picker=1"),
+    queryFn: () => apiAll<PowerPanelOption>("/api/power-panels/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const racks = useQuery({
     queryKey: ["racks-picker"],
-    queryFn: () => api<Paginated<RackOption>>("/api/racks/?picker=1"),
+    queryFn: () => apiAll<RackOption>("/api/racks/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "powerfeed"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=powerfeed&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=powerfeed&picker=1"),
     staleTime: 5 * 60_000,
   })
 

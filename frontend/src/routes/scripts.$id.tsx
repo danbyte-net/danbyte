@@ -5,7 +5,8 @@ import { Play, ShieldCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, Script, ScriptParam, ScriptRun } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Script, ScriptParam, ScriptRun } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -53,7 +54,7 @@ function ScriptDetailPage() {
   })
   const runs = useQuery({
     queryKey: ["script-runs", id],
-    queryFn: () => api<Paginated<ScriptRun>>(`/api/scripts/runs/?script=${id}`),
+    queryFn: () => apiAll<ScriptRun>(`/api/scripts/runs/?script=${id}`),
     refetchInterval: (q) =>
       q.state.data?.results.some(
         (r) => r.status === "queued" || r.status === "running"

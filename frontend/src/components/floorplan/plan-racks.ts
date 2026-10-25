@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   FloorPlanLiveState,
   FloorPlanTile,
   FloorTileRackState,
-  Paginated,
   Rack,
 } from "@/lib/api"
 
@@ -27,7 +26,7 @@ export function usePlanRacks(planId: string, enabled: boolean) {
   return useQuery({
     queryKey: planRacksKey(planId),
     queryFn: () =>
-      api<Paginated<Rack>>(`/api/racks/?floor_plan=${planId}&include=ports`),
+      apiAll<Rack>(`/api/racks/?floor_plan=${planId}&include=ports`),
     enabled,
   })
 }

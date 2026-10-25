@@ -139,10 +139,10 @@ import {
   auth,
   type Bookmark as BookmarkRow,
   type BookmarkFolder,
-  type Paginated,
   type SystemInfo,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { cn } from "@/lib/utils"
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
@@ -2058,7 +2058,7 @@ function TenantSwitcher() {
   const qc = useQueryClient()
   const list = useQuery({
     queryKey: ["tenants-picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const active = useQuery({

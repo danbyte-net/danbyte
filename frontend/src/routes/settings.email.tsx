@@ -4,12 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type {
-  Paginated,
-  SiteOption,
-  SiteSettingsPayload,
-  TenantSettings,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { SiteOption, SiteSettingsPayload, TenantSettings } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
 import { useUrlEnum } from "@/lib/use-url-state"
@@ -337,7 +333,7 @@ function SiteEmail() {
 
   const sitesQ = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
   const sites = (sitesQ.data?.results ?? []).filter(

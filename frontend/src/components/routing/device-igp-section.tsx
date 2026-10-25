@@ -4,7 +4,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 import type { ReactNode } from "react"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   EIGRPInstance,
   EIGRPInterface,
@@ -12,7 +12,6 @@ import type {
   ISISInterface,
   OSPFInstance,
   OSPFInterface,
-  Paginated,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
@@ -202,9 +201,7 @@ export function OSPFSection({ owner }: { owner: RoutingOwner }) {
   const q = useQuery({
     queryKey: ["ospf-instances", owner.kind, owner.id],
     queryFn: () =>
-      api<Paginated<OSPFInstance>>(
-        `/api/routing/ospf-instances/?${ownerParam(owner)}`
-      ),
+      apiAll<OSPFInstance>(`/api/routing/ospf-instances/?${ownerParam(owner)}`),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ospf-instances"] })
@@ -417,9 +414,7 @@ export function ISISSection({ owner }: { owner: RoutingOwner }) {
   const q = useQuery({
     queryKey: ["isis-instances", owner.kind, owner.id],
     queryFn: () =>
-      api<Paginated<ISISInstance>>(
-        `/api/routing/isis-instances/?${ownerParam(owner)}`
-      ),
+      apiAll<ISISInstance>(`/api/routing/isis-instances/?${ownerParam(owner)}`),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["isis-instances"] })
@@ -625,7 +620,7 @@ export function EIGRPSection({ owner }: { owner: RoutingOwner }) {
   const q = useQuery({
     queryKey: ["eigrp-instances", owner.kind, owner.id],
     queryFn: () =>
-      api<Paginated<EIGRPInstance>>(
+      apiAll<EIGRPInstance>(
         `/api/routing/eigrp-instances/?${ownerParam(owner)}`
       ),
   })

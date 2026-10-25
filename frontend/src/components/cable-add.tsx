@@ -2,7 +2,8 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 
-import { api, type Cable, type Paginated } from "@/lib/api"
+import { type Cable } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -25,7 +26,7 @@ export function CableAdd({
   const query = useQuery({
     queryKey: ["cables-search", q],
     queryFn: () =>
-      api<Paginated<Cable>>(
+      apiAll<Cable>(
         `/api/cables/?${new URLSearchParams({ search: q }).toString()}`
       ),
     enabled: open,

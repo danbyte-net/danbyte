@@ -4,12 +4,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
-import type {
-  MacEntry,
-  MacSightingPage,
-  MacSightingRow,
-  Paginated,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { MacEntry, MacSightingPage, MacSightingRow } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { buildMacColumns, learnedAtKey } from "@/components/columns/mac-columns"
@@ -163,14 +159,13 @@ function LearnedMacs() {
   })
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const devices = useQuery({
     queryKey: ["devices-picker", ...(site ? ["site", site] : [])],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      apiAll<{ id: string; name: string }>(
         `/api/devices/?picker=1${site ? `&site=${site}` : ""}`
       ),
     staleTime: 5 * 60_000,

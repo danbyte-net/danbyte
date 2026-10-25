@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   MaintenanceEvent,
   MaintenanceEventKind,
@@ -132,9 +133,7 @@ export function MaintenanceEventForm({
   const statuses = useQuery({
     queryKey: ["statuses", "maintenanceevent"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=maintenanceevent&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=maintenanceevent&picker=1"),
     staleTime: 5 * 60_000,
   })
   const statusRows = statuses.data?.results ?? []

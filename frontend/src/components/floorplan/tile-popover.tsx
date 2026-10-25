@@ -9,13 +9,13 @@ import {
   type CustomField,
   type Device,
   type Interface,
-  type Paginated,
   type FloorPlanLiveState,
   type FloorPlanTile,
   type FloorTileRackState,
   type Rack,
   type ImagePorts,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { cabinetState } from "@/components/floorplan/cabinet-tile"
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
@@ -138,8 +138,7 @@ function TileFaceplate({
   const [side, setSide] = useState<FaceplateSide>("front")
   const ifaces = useQuery({
     queryKey: ["device-interfaces", deviceId],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
+    queryFn: () => apiAll<Interface>(`/api/devices/${deviceId}/interfaces/`),
     staleTime: 60_000,
   })
   const dt = useQuery({

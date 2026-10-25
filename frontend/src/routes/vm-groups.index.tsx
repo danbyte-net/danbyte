@@ -3,8 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { Paginated, VirtualMachineGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { VirtualMachineGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildVmGroupColumns } from "@/components/columns/vm-group-columns"
@@ -30,7 +30,7 @@ function VmGroupsPage() {
   const query = useQuery({
     queryKey: ["vm-groups", q],
     queryFn: () =>
-      api<Paginated<VirtualMachineGroup>>(
+      apiAll<VirtualMachineGroup>(
         `/api/vm-groups/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

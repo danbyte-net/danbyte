@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Filter, Link as LinkIcon, SlidersHorizontal } from "lucide-react"
 
 import { api } from "@/lib/api"
-import type { LogicalTopology, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { LogicalTopology } from "@/lib/api"
 import { copyWithToast } from "@/lib/clipboard"
 import { railRoles, railsDocument, layoutRails } from "@/lib/diagram/rails"
 import type { RailModel, RailSectionSpec } from "@/lib/diagram/rails"
@@ -164,12 +165,12 @@ export function LogicalFilters() {
   // Same cache keys as the page's own pickers.
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<Row>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<Row>("/api/sites/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const groups = useQuery({
     queryKey: ["vlan-groups-picker"],
-    queryFn: () => api<Paginated<Row>>("/api/vlan-groups/?picker=1"),
+    queryFn: () => apiAll<Row>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const active = [site, vlanGroup].filter((v) => v !== "all").length
@@ -237,12 +238,12 @@ export function LogicalBar() {
   const { me } = useMe()
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<Row>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<Row>("/api/sites/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const groups = useQuery({
     queryKey: ["vlan-groups-picker"],
-    queryFn: () => api<Paginated<Row>>("/api/vlan-groups/?picker=1"),
+    queryFn: () => apiAll<Row>("/api/vlan-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const model = useMemo(() => (q.data ? logicalModel(q.data) : null), [q.data])

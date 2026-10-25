@@ -3,13 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type FrontPort,
   type FrontPortWritePayload,
-  type Paginated,
   type RearPort,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormSection,
   FormCheckbox,
@@ -110,13 +109,12 @@ export function FrontPortForm({
 
   const rearPorts = useQuery({
     queryKey: ["rear-ports-picker", deviceId],
-    queryFn: () =>
-      api<Paginated<RearPort>>(`/api/rear-ports/?device=${deviceId}`),
+    queryFn: () => apiAll<RearPort>(`/api/rear-ports/?device=${deviceId}`),
     staleTime: 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

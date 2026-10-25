@@ -6,9 +6,9 @@ import {
   api,
   type DhcpScopeRange,
   type IPRoleOption,
-  type Paginated,
   type StatusOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cidrHostRange, ipToBigInt } from "@/lib/prefix-tree"
 import { Button } from "@/components/ui/button"
@@ -84,12 +84,12 @@ export function IpPoolDialog({
 
   const statuses = useQuery({
     queryKey: ["statuses", "ipaddress"],
-    queryFn: () => api<Paginated<StatusOption>>("/api/statuses/?available_to=ipaddress"),
+    queryFn: () => apiAll<StatusOption>("/api/statuses/?available_to=ipaddress"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["ip-roles-picker"],
-    queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
+    queryFn: () => apiAll<IPRoleOption>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
   })
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CheckTemplate,
   Paginated,
@@ -39,7 +40,7 @@ function usePicker(key: string, url: string) {
   return (
     useQuery({
       queryKey: [key, "sla-picker"],
-      queryFn: () => api<Paginated<Option>>(url),
+      queryFn: () => apiAll<Option>(url),
       staleTime: 5 * 60_000,
     }).data?.results ?? []
   )

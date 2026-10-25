@@ -2,8 +2,8 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
-import type { NATRule, Paginated, Status } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { NATRule, Status } from "@/lib/api"
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
@@ -100,7 +100,7 @@ export function NATRuleForm({
   const statuses = useQuery({
     queryKey: ["statuses", "natrule"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=natrule&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=natrule&picker=1"),
     staleTime: 5 * 60_000,
   })
 

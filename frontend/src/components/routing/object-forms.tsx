@@ -2,13 +2,12 @@ import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, X } from "lucide-react"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BFDProfile,
   Community,
   EthernetSegment,
   InterfaceOption,
-  Paginated,
   RoutingKeychain,
   StaticRoute,
   Status,
@@ -191,7 +190,7 @@ function SegmentMembersField({
   const interfaces = useQuery({
     queryKey: ["interfaces-picker", device?.id ?? null],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${device!.id}`),
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${device!.id}`),
     enabled: !!device,
   })
   const chosen = new Set(value.map((m) => m.id))
@@ -672,14 +671,12 @@ export function StaticRouteForm({
 
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
   })
   const statuses = useQuery({
     queryKey: ["statuses", "staticroute"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=staticroute&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=staticroute&picker=1"),
     staleTime: 5 * 60_000,
   })
   const interfaces = useOwnerPorts(on.id ? { kind: on.kind, id: on.id } : null)

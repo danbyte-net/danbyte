@@ -42,6 +42,7 @@ import {
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Device,
   DeviceRole,
@@ -329,11 +330,11 @@ function FloorPlanPage() {
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
-      api<Paginated<FloorTileTypeOption>>("/api/floor-tile-types/?picker=1"),
+      apiAll<FloorTileTypeOption>("/api/floor-tile-types/?picker=1"),
   })
   const roles = useQuery({
     queryKey: ["device-roles"],
-    queryFn: () => api<Paginated<DeviceRole>>("/api/device-roles/"),
+    queryFn: () => apiAll<DeviceRole>("/api/device-roles/"),
   })
   // Live per-tile metrics (rack utilization, monitoring rollup) - cheap to
   // poll; monitoring pushes state server-side so 30s keeps tiles honest.
@@ -3347,32 +3348,27 @@ function LinkTargetPicker({
 }) {
   const panels = useQuery({
     queryKey: ["power-panels-picker"],
-    queryFn: () =>
-      api<Paginated<PowerPanelOption>>("/api/power-panels/?picker=1"),
+    queryFn: () => apiAll<PowerPanelOption>("/api/power-panels/?picker=1"),
     enabled: kind === "powerpanel",
   })
   const feeds = useQuery({
     queryKey: ["power-feeds-picker"],
     queryFn: () =>
-      api<
-        Paginated<{ id: string; name: string; power_panel: PowerPanelOption }>
-      >("/api/power-feeds/"),
+      apiAll<{ id: string; name: string; power_panel: PowerPanelOption }>(
+        "/api/power-feeds/"
+      ),
     enabled: kind === "powerfeed",
   })
   const sources = useQuery({
     queryKey: ["cooling-sources-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/cooling-sources/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/cooling-sources/?picker=1"),
     enabled: kind === "coolingsource",
   })
   const plans = useQuery({
     queryKey: ["floor-plans-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/floor-plans/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/floor-plans/?picker=1"),
     enabled: kind === "floorplan",
   })
 

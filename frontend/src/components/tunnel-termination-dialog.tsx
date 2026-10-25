@@ -11,6 +11,7 @@ import {
   type TunnelTerminationWritePayload,
   type VMInterface,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -94,9 +95,7 @@ export function TunnelTerminationDialog({
   const vms = useQuery({
     queryKey: ["vms-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/virtual-machines/?picker=1"),
     enabled: open && kind === "vm",
     staleTime: 10 * 60_000,
   })

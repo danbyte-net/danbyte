@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type ExportTemplate,
   type ManufacturerOption,
-  type Paginated,
   type Platform,
   type PlatformGroupOption,
   type PlatformWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -96,21 +95,18 @@ export function PlatformForm({
   const groups = useQuery({
     queryKey: ["platform-groups-picker"],
     queryFn: () =>
-      api<Paginated<PlatformGroupOption>>("/api/platform-groups/?picker=1"),
+      apiAll<PlatformGroupOption>("/api/platform-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const templates = useQuery({
     queryKey: ["export-templates", "device"],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
-        "/api/export-templates/?object_type=device"
-      ),
+      apiAll<ExportTemplate>("/api/export-templates/?object_type=device"),
     staleTime: 5 * 60_000,
   })
 

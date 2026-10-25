@@ -11,6 +11,7 @@ import {
   type PlanningStatus,
   type PlanningTask,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { OBJECT_DETAIL_ROUTES, objectForPath } from "@/lib/object-routes"
 import { isPlanCapable } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
@@ -64,7 +65,7 @@ export function PlanFromObject() {
 
   const boardsQ = useQuery({
     queryKey: ["planning-boards"],
-    queryFn: () => api<Paginated<PlanningBoard>>("/api/planning/boards/"),
+    queryFn: () => apiAll<PlanningBoard>("/api/planning/boards/"),
     enabled: enabled && creating,
     staleTime: 60_000,
   })

@@ -11,6 +11,7 @@ import {
   type PlanningSemanticGroup,
   type PlanningStatus,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -109,7 +110,7 @@ export function TaskStatusManager() {
 
   const boardsQ = useQuery({
     queryKey: ["planning-boards"],
-    queryFn: () => api<Paginated<PlanningBoard>>("/api/planning/boards/"),
+    queryFn: () => apiAll<PlanningBoard>("/api/planning/boards/"),
   })
   const boards = boardsQ.data?.results ?? []
   const boardName = useMemo(

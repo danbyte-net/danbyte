@@ -33,6 +33,7 @@ import {
   type CheckStatus,
   type CustomField,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   DetailRowList,
   DeviceExtraRows,
@@ -449,30 +450,26 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-all"],
     queryFn: () =>
-      api<
-        Paginated<{
-          id: string
-          name: string
-          color: string
-          icon: string
-          has_fov?: boolean
-        }>
-      >("/api/floor-tile-types/"),
+      apiAll<{
+        id: string
+        name: string
+        color: string
+        icon: string
+        has_fov?: boolean
+      }>("/api/floor-tile-types/"),
     enabled: editing,
     staleTime: 5 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["device-roles-all"],
     queryFn: () =>
-      api<
-        Paginated<{
-          id: string
-          name: string
-          color: string
-          icon: string
-          has_fov?: boolean
-        }>
-      >("/api/device-roles/"),
+      apiAll<{
+        id: string
+        name: string
+        color: string
+        icon: string
+        has_fov?: boolean
+      }>("/api/device-roles/"),
     enabled: editing,
     staleTime: 5 * 60_000,
   })

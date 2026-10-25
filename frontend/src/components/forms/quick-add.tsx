@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -166,7 +167,7 @@ function QuickAddCombobox({
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: [field.queryKey],
-    queryFn: () => api<Paginated<MiniNamed>>(field.endpoint),
+    queryFn: () => apiAll<MiniNamed>(field.endpoint),
   })
   return (
     <FormCombobox

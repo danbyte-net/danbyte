@@ -2,12 +2,11 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CoolingSource,
   CoolingSourceWritePayload,
   LocationOption,
-  Paginated,
   Status,
 } from "@/lib/api"
 import { useSiteOptions } from "@/lib/use-site-options"
@@ -94,16 +93,14 @@ export function CoolingSourceForm({
   const locations = useQuery({
     queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      api<Paginated<LocationOption>>(`/api/locations/?picker=1&site=${siteId}`),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
     enabled: !!siteId,
     staleTime: 5 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "coolingsource"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=coolingsource&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=coolingsource&picker=1"),
     staleTime: 5 * 60_000,
   })
 

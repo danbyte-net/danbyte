@@ -4,7 +4,8 @@ import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
-import type { Application, InstalledSoftware, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Application, InstalledSoftware } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -178,7 +179,7 @@ function InstalledOn({ applicationId }: { applicationId: string }) {
   const q = useQuery({
     queryKey: ["installed-software", "application", applicationId],
     queryFn: () =>
-      api<Paginated<InstalledSoftware>>(
+      apiAll<InstalledSoftware>(
         `/api/installed-software/?application=${applicationId}`
       ),
   })
@@ -214,7 +215,7 @@ function Children({ applicationId }: { applicationId: string }) {
   const q = useQuery({
     queryKey: ["applications", "children", applicationId],
     queryFn: () =>
-      api<Paginated<Application>>(`/api/applications/?parent=${applicationId}`),
+      apiAll<Application>(`/api/applications/?parent=${applicationId}`),
   })
   const columns = useMemo(
     () => buildApplicationColumns<Application>({ humanIds }),

@@ -7,11 +7,11 @@ import {
   type IPRange,
   type IPRangeWritePayload,
   type IPRoleOption,
-  type Paginated,
   type Prefix,
   type Status,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
   FormCombobox,
@@ -74,17 +74,17 @@ export function IpRangeForm({ range, onSaved, onCancel }: IpRangeFormProps) {
   const statuses = useQuery({
     queryKey: ["statuses", "iprange"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=iprange&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=iprange&picker=1"),
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["ip-roles-picker"],
-    queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
+    queryFn: () => apiAll<IPRoleOption>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
   })
 

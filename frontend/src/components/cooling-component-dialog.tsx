@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   CoolingComponentWritePayload,
   CoolingDeviceRef,
   CoolingIntake,
   CoolingOutflow,
-  Paginated,
 } from "@/lib/api"
 import {
   Dialog,
@@ -100,14 +100,14 @@ export function CoolingComponentDialog({
 
   const feeds = useQuery({
     queryKey: ["cooling-feeds", "picker"],
-    queryFn: () => api<Paginated<FeedOption>>("/api/cooling-feeds/?picker=1"),
+    queryFn: () => apiAll<FeedOption>("/api/cooling-feeds/?picker=1"),
     enabled: open && kind === "intake",
   })
   // Outflows on the tenant's other devices - a CDU's secondary ports.
   const outflows = useQuery({
     queryKey: ["cooling-outflows", "picker", deviceId],
     queryFn: () =>
-      api<Paginated<CoolingDeviceRef>>(
+      apiAll<CoolingDeviceRef>(
         `/api/cooling-outflows/?picker=1&exclude_device=${deviceId}`
       ),
     enabled: open && kind === "intake",
@@ -116,7 +116,7 @@ export function CoolingComponentDialog({
   const intakes = useQuery({
     queryKey: ["cooling-intakes", "picker", deviceId],
     queryFn: () =>
-      api<Paginated<CoolingDeviceRef>>(
+      apiAll<CoolingDeviceRef>(
         `/api/cooling-intakes/?picker=1&device=${deviceId}`
       ),
     enabled: open && kind === "outflow",

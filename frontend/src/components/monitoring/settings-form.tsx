@@ -3,10 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   AvailabilityFrame,
   MonitoringSettings,
-  Paginated,
   VRFOption,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -58,12 +58,12 @@ export function MonitoringSettingsForm() {
   })
   const vrfsQ = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const statusesQ = useQuery({
     queryKey: ["statuses-all"],
-    queryFn: () => api<Paginated<IpStatus>>("/api/statuses/"),
+    queryFn: () => apiAll<IpStatus>("/api/statuses/"),
     staleTime: 5 * 60_000,
   })
 

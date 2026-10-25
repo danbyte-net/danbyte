@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type Circuit,
   type CircuitTypeOption,
   type CircuitWritePayload,
-  type Paginated,
   type ProviderOption,
   type Status,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormColumn,
   FormColumns,
@@ -83,19 +82,18 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
 
   const providers = useQuery({
     queryKey: ["providers-picker"],
-    queryFn: () => api<Paginated<ProviderOption>>("/api/providers/?picker=1"),
+    queryFn: () => apiAll<ProviderOption>("/api/providers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const types = useQuery({
     queryKey: ["circuit-types-picker"],
-    queryFn: () =>
-      api<Paginated<CircuitTypeOption>>("/api/circuit-types/?picker=1"),
+    queryFn: () => apiAll<CircuitTypeOption>("/api/circuit-types/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "circuit"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=circuit&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=circuit&picker=1"),
     staleTime: 5 * 60_000,
   })
 

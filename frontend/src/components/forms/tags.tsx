@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type Paginated, type TagOption } from "@/lib/api"
+import { type TagOption } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { Field, type FieldProps } from "./field"
 
@@ -17,7 +18,7 @@ export interface FormTagsProps extends Base {
 export function FormTags({ value, onChange, ...field }: FormTagsProps) {
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   return (

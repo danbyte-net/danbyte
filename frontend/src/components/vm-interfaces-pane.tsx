@@ -12,11 +12,11 @@ import { toast } from "sonner"
 import {
   type VRFOption,
   api,
-  type Paginated,
   type VLANOption,
   type VMInterface,
   type VMInterfaceWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
@@ -91,8 +91,7 @@ export function VMInterfacesPane({
 
   const q = useQuery({
     queryKey: ["vm-interfaces", vmId],
-    queryFn: () =>
-      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    queryFn: () => apiAll<VMInterface>(`/api/vm-interfaces/?vm=${vmId}`),
   })
   // Children render under their parent (wg0 under eth0), indented - the
   // list reads as the VM's real interface tree. Orphans (parent filtered or
@@ -128,7 +127,7 @@ export function VMInterfacesPane({
   const drift = useQuery({
     queryKey: ["vm-drift", vmId],
     queryFn: () =>
-      api<Paginated<{ kind: string; detail: { names?: string[] } }>>(
+      apiAll<{ kind: string; detail: { names?: string[] } }>(
         `/api/virt-changes/?vm=${vmId}`
       ),
     retry: false,
@@ -564,18 +563,17 @@ function VMInterfaceForm({
 
   const siblings = useQuery({
     queryKey: ["vm-interfaces", vmId],
-    queryFn: () =>
-      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    queryFn: () => apiAll<VMInterface>(`/api/vm-interfaces/?vm=${vmId}`),
     staleTime: 30_000,
   })
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

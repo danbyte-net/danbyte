@@ -5,6 +5,7 @@ import { ShieldOff } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type MonitoringDenySubnet, type Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { useTableFilters } from "@/components/table-filters"
@@ -31,7 +32,7 @@ export function DenySubnetsPanel() {
   const deny = useQuery({
     queryKey: ["monitoring-deny-subnets"],
     queryFn: () =>
-      api<Paginated<MonitoringDenySubnet>>("/api/monitoring/deny-subnets/"),
+      apiAll<MonitoringDenySubnet>("/api/monitoring/deny-subnets/"),
   })
   const create = useMutation({
     mutationFn: () =>

@@ -11,8 +11,8 @@ import {
   type ComplianceRule,
   type ComplianceSeverity,
   type ComplianceViolation,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/empty-state"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -461,7 +461,7 @@ function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
   const canDelete = canDo("compliancerule", "delete")
   const q = useQuery({
     queryKey: ["compliance-rules"],
-    queryFn: () => api<Paginated<ComplianceRule>>("/api/compliance-rules/"),
+    queryFn: () => apiAll<ComplianceRule>("/api/compliance-rules/"),
   })
   const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
   const rows = q.data?.results ?? []

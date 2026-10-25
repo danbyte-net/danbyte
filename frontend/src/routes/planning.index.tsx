@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { CalendarDays, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type PlanningBoard } from "@/lib/api"
+import { api, type PlanningBoard } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
@@ -43,7 +44,7 @@ function BoardListPage() {
 
   const query = useQuery({
     queryKey: ["planning-boards"],
-    queryFn: () => api<Paginated<PlanningBoard>>("/api/planning/boards/"),
+    queryFn: () => apiAll<PlanningBoard>("/api/planning/boards/"),
   })
   const allRows = query.data?.results ?? []
 

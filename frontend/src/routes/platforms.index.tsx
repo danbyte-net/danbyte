@@ -3,7 +3,8 @@ import { TableActions } from "@/components/table-actions"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Platform } from "@/lib/api"
+import { type Platform } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildPlatformColumns } from "@/components/columns/platform-columns"
@@ -29,7 +30,7 @@ function PlatformsPage() {
   const query = useQuery({
     queryKey: ["platforms", q],
     queryFn: () =>
-      api<Paginated<Platform>>(
+      apiAll<Platform>(
         `/api/platforms/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

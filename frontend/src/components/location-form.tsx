@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useSiteOptions } from "@/lib/use-site-options"
 import type {
   Location,
   LocationWritePayload,
-  Paginated,
   SiteOption,
   Status,
 } from "@/lib/api"
@@ -90,14 +89,14 @@ export function LocationForm({
   const statuses = useQuery({
     queryKey: ["statuses", "location"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=location&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=location&picker=1"),
     staleTime: 5 * 60_000,
   })
   // Parent options: locations in the chosen site (excluding self).
   const locs = useQuery({
     queryKey: ["locations-bysite", siteId],
     queryFn: () =>
-      api<Paginated<LocPick>>(
+      apiAll<LocPick>(
         `/api/locations/?${new URLSearchParams({ site: siteId ?? "" }).toString()}`
       ),
     enabled: !!siteId,

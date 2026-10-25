@@ -6,9 +6,9 @@ import { useMemo, useState } from "react"
 import {
   api,
   type DeviceConfigStateRow,
-  type Paginated,
   type SnmpDriftRow,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import { deviceColumn } from "@/components/cells/device-cell"
 import {
@@ -100,9 +100,7 @@ function ConfigTab() {
     queryFn: () => {
       const p = new URLSearchParams()
       if (status !== "all") p.set("status", status)
-      return api<Paginated<DeviceConfigStateRow>>(
-        `/api/config-states/?${p.toString()}`
-      )
+      return apiAll<DeviceConfigStateRow>(`/api/config-states/?${p.toString()}`)
     },
     refetchInterval: 30_000,
   })

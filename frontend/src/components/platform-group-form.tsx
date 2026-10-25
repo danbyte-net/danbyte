@@ -3,12 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type PlatformGroup,
   type PlatformGroupOption,
   type PlatformGroupWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -69,7 +68,7 @@ export function PlatformGroupForm({
   const groups = useQuery({
     queryKey: ["platform-groups-picker"],
     queryFn: () =>
-      api<Paginated<PlatformGroupOption>>("/api/platform-groups/?picker=1"),
+      apiAll<PlatformGroupOption>("/api/platform-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

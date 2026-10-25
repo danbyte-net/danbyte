@@ -4,7 +4,7 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
@@ -64,7 +64,7 @@ export function CertificateObjectPicker({
   const spec = TYPES.find((t) => t.value === type)!
   const list = useQuery({
     queryKey: ["cert-assign-objects", type],
-    queryFn: () => api<Paginated<PickRow>>(spec.endpoint),
+    queryFn: () => apiAll<PickRow>(spec.endpoint),
     staleTime: 60_000,
   })
 

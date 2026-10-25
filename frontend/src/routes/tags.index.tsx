@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Paginated, type Tag } from "@/lib/api"
+import { type Tag } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -34,7 +35,7 @@ function TagsPage() {
   const query = useQuery({
     queryKey: ["tags", q],
     queryFn: () =>
-      api<Paginated<Tag>>(
+      apiAll<Tag>(
         `/api/tags/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -8,8 +8,8 @@ import {
   type ModuleBayRow,
   type ModuleTypeOption,
   type ModuleWritePayload,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -56,8 +56,7 @@ export function DeviceModulesPane({ deviceId }: { deviceId: string }) {
 
   const q = useQuery({
     queryKey: ["device-module-bays", deviceId],
-    queryFn: () =>
-      api<Paginated<ModuleBayRow>>(`/api/module-bays/?device=${deviceId}`),
+    queryFn: () => apiAll<ModuleBayRow>(`/api/module-bays/?device=${deviceId}`),
   })
   const bays = q.data?.results ?? []
 
@@ -241,8 +240,7 @@ export function InstallModuleDialog({
 
   const types = useQuery({
     queryKey: ["module-types-picker"],
-    queryFn: () =>
-      api<Paginated<ModuleTypeOption>>("/api/module-types/?picker=1"),
+    queryFn: () => apiAll<ModuleTypeOption>("/api/module-types/?picker=1"),
     enabled: !!bay,
     staleTime: 10 * 60_000,
   })

@@ -1,8 +1,8 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
-import type { Paginated, VirtualChassis } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { VirtualChassis } from "@/lib/api"
 import { ObjectPicker } from "@/components/object-picker"
 import type {
   ObjectPickerProps,
@@ -59,7 +59,7 @@ export function VirtualChassisPicker({
   // The same query ObjectPicker makes for its list, so this costs nothing.
   const all = useQuery({
     queryKey: [...QUERY_KEY, ""],
-    queryFn: () => api<Paginated<VirtualChassis>>(ENDPOINT),
+    queryFn: () => apiAll<VirtualChassis>(ENDPOINT),
     staleTime: 10 * 60_000,
   })
   const hidden = useMemo(

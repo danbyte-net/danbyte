@@ -10,8 +10,8 @@ import type { DragEvent, KeyboardEvent, MouseEvent } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Check, ChevronDown, Filter, Search, X } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { DevicePaletteRow, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { DevicePaletteRow } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
@@ -49,7 +49,7 @@ import { naturalCompare } from "@/lib/natural-sort"
 export const PALETTE_QUERY_KEY = ["devices-palette"] as const
 
 export const fetchPalette = () =>
-  api<Paginated<DevicePaletteRow>>("/api/devices/?picker=palette")
+  apiAll<DevicePaletteRow>("/api/devices/?picker=palette")
 
 /** The palette's query, shared with the page (it names dropped cards). */
 export const paletteQuery = {
@@ -220,7 +220,7 @@ export function DevicePalette({
   const tagQ = useQuery({
     queryKey: [...PALETTE_QUERY_KEY, "tag", tag],
     queryFn: () =>
-      api<Paginated<DevicePaletteRow>>(
+      apiAll<DevicePaletteRow>(
         `/api/devices/?picker=palette&tag=${encodeURIComponent(tag ?? "")}`
       ),
     enabled: !!tag,
@@ -713,7 +713,7 @@ function useFilterOptions(
   const q = useQuery({
     queryKey: [filter?.queryKey ?? filter?.key ?? "none"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string; color?: string | null }>>(
+      apiAll<{ id: string; name: string; color?: string | null }>(
         filter?.endpoint ?? ""
       ),
     enabled: enabled && !!filter?.endpoint,

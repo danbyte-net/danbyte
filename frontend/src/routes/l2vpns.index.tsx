@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type L2VPN, type Paginated } from "@/lib/api"
+import { type L2VPN } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildL2VPNColumns } from "@/components/columns/l2vpn-columns"
@@ -27,7 +28,7 @@ function L2vpnsPage() {
   const query = useQuery({
     queryKey: ["l2vpns", q],
     queryFn: () =>
-      api<Paginated<L2VPN>>(
+      apiAll<L2VPN>(
         `/api/l2vpns/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

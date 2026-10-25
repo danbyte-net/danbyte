@@ -9,9 +9,9 @@ import {
   type DeviceOption,
   type ExportTemplate,
   type ExportTemplateWritePayload,
-  type Paginated,
   type RBACObjectTypes,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormCheckbox,
@@ -114,8 +114,7 @@ export function ExportTemplateForm({
   // Sample-object picker - only for per-object (device / VM) templates.
   const samples = useQuery({
     queryKey: ["export-template-samples", perObjectEndpoint],
-    queryFn: () =>
-      api<Paginated<DeviceOption>>(`/api/${perObjectEndpoint}/?picker=1`),
+    queryFn: () => apiAll<DeviceOption>(`/api/${perObjectEndpoint}/?picker=1`),
     enabled: isEdit && isPerObject,
     staleTime: 10 * 60_000,
   })

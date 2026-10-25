@@ -2,13 +2,12 @@ import { createContext, useContext, useMemo, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import {
-  api,
   type CheckTemplate,
   type MonitoringEngine,
   type MonitoringPolicy,
   type MonitoringProfile,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 
 export interface MonitoringConfigData {
   templates: CheckTemplate[]
@@ -34,21 +33,19 @@ export function MonitoringConfigProvider({
 }) {
   const templates = useQuery({
     queryKey: ["check-templates"],
-    queryFn: () => api<Paginated<CheckTemplate>>("/api/monitoring/templates/"),
+    queryFn: () => apiAll<CheckTemplate>("/api/monitoring/templates/"),
   })
   const profiles = useQuery({
     queryKey: ["monitoring-profiles"],
-    queryFn: () =>
-      api<Paginated<MonitoringProfile>>("/api/monitoring/profiles/"),
+    queryFn: () => apiAll<MonitoringProfile>("/api/monitoring/profiles/"),
   })
   const policies = useQuery({
     queryKey: ["monitoring-policies"],
-    queryFn: () =>
-      api<Paginated<MonitoringPolicy>>("/api/monitoring/policies/"),
+    queryFn: () => apiAll<MonitoringPolicy>("/api/monitoring/policies/"),
   })
   const engines = useQuery({
     queryKey: ["monitoring-engines"],
-    queryFn: () => api<Paginated<MonitoringEngine>>("/api/monitoring/engines/"),
+    queryFn: () => apiAll<MonitoringEngine>("/api/monitoring/engines/"),
     staleTime: 60_000,
   })
 

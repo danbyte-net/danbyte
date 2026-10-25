@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type CustomField, type Paginated } from "@/lib/api"
+import { type CustomField } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { groupCustomFields, useCustomizationMeta } from "@/lib/custom-fields"
 import { asArray } from "@/lib/utils"
 import { CfObjectPicker } from "@/components/cf-object-picker"
@@ -31,8 +32,7 @@ export function CustomFieldInputs({
 }: CustomFieldInputsProps) {
   const q = useQuery({
     queryKey: ["custom-fields-for", model],
-    queryFn: () =>
-      api<Paginated<CustomField>>(`/api/custom-fields/?model=${model}`),
+    queryFn: () => apiAll<CustomField>(`/api/custom-fields/?model=${model}`),
     staleTime: 5 * 60_000,
   })
   const defs = q.data?.results ?? []

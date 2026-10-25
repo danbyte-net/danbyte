@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Cable as CableIcon } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type Interface, type Paginated } from "@/lib/api"
+import { type Interface } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildInterfaceColumns } from "@/components/columns/interface-columns"
@@ -53,7 +54,7 @@ function InterfacesPage() {
   const query = useQuery({
     queryKey: ["interfaces", q],
     queryFn: () =>
-      api<Paginated<Interface>>(
+      apiAll<Interface>(
         `/api/interfaces/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

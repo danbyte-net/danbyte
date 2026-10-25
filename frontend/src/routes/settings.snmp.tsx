@@ -5,9 +5,9 @@ import { toast } from "sonner"
 import { Pencil, Trash2 } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   MacVlanContexts,
-  Paginated,
   SnmpProfileOption,
   SnmpProfileParams,
 } from "@/lib/api"
@@ -57,8 +57,7 @@ function SnmpProfilesPage() {
   const qc = useQueryClient()
   const list = useQuery({
     queryKey: ["snmp-profiles"],
-    queryFn: () =>
-      api<Paginated<SnmpProfileOption>>("/api/monitoring/snmp-profiles/"),
+    queryFn: () => apiAll<SnmpProfileOption>("/api/monitoring/snmp-profiles/"),
   })
 
   const [editingId, setEditingId] = useState<string | null>(null)

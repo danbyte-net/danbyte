@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { ContactGroup, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ContactGroup } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -29,7 +29,7 @@ function ListPage() {
   const query = useQuery({
     queryKey: ["contact-groups", q],
     queryFn: () =>
-      api<Paginated<ContactGroup>>(
+      apiAll<ContactGroup>(
         `/api/contact-groups/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

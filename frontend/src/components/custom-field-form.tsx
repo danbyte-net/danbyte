@@ -5,14 +5,13 @@ import { toast } from "sonner"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 
 import {
-  api,
   type CustomField,
   type CustomFieldGroup,
   type CustomFieldScopeRules,
   type CustomFieldType,
   type CustomFieldWritePayload,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CHOICE_TYPES,
   CUSTOMIZABLE_MODELS,
@@ -84,8 +83,7 @@ export function CustomFieldForm({
 
   const groupsQuery = useQuery({
     queryKey: ["custom-field-groups", "picker"],
-    queryFn: () =>
-      api<Paginated<CustomFieldGroup>>("/api/custom-field-groups/"),
+    queryFn: () => apiAll<CustomFieldGroup>("/api/custom-field-groups/"),
     staleTime: 5 * 60_000,
   })
   const groupOptions = (groupsQuery.data?.results ?? []).map((g) => ({
@@ -433,22 +431,18 @@ function ScopeRulesEditor({
   const deviceTypes = useQuery({
     queryKey: ["device-types-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/device-types/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/device-types/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const deviceRoles = useQuery({
     queryKey: ["device-roles-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/device-roles/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/device-roles/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<{ slug: string; name: string }>>("/api/tags/"),
+    queryFn: () => apiAll<{ slug: string; name: string }>("/api/tags/"),
     staleTime: 5 * 60_000,
   })
 

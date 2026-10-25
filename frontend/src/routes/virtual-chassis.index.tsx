@@ -6,10 +6,10 @@ import { useCallback, useMemo, useState } from "react"
 import { Pencil } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BulkStatusEntry,
   BulkStatusResponse,
-  Paginated,
   StatusMini,
   VirtualChassis,
 } from "@/lib/api"
@@ -52,7 +52,7 @@ function VirtualChassisPage() {
   const query = useQuery({
     queryKey: ["virtual-chassis", q],
     queryFn: () =>
-      api<Paginated<VirtualChassis>>(
+      apiAll<VirtualChassis>(
         `/api/virtual-chassis/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

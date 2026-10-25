@@ -10,7 +10,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated } from "@/lib/api"
+import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -440,7 +441,7 @@ export function DeviceTypeComponentsPane({
     queries: SECTIONS.map((s) => ({
       queryKey: [TEMPLATE_QUERY_KEY[s.kind], deviceTypeId],
       queryFn: () =>
-        api<Paginated<AnyTemplate>>(
+        apiAll<AnyTemplate>(
           `/api/${TEMPLATE_ENDPOINT[s.kind]}/?device_type=${deviceTypeId}`
         ),
     })),
@@ -448,9 +449,7 @@ export function DeviceTypeComponentsPane({
   const serviceCount = useQuery({
     queryKey: ["dt-service-templates", deviceTypeId],
     queryFn: () =>
-      api<Paginated<unknown>>(
-        `/api/device-type-services/?device_type=${deviceTypeId}`
-      ),
+      apiAll<unknown>(`/api/device-type-services/?device_type=${deviceTypeId}`),
   })
 
   const items = [
@@ -570,7 +569,7 @@ function TemplateSection({
   const q = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY[kind], deviceTypeId],
     queryFn: () =>
-      api<Paginated<AnyTemplate>>(
+      apiAll<AnyTemplate>(
         `/api/${TEMPLATE_ENDPOINT[kind]}/?device_type=${deviceTypeId}`
       ),
   })

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   InterfaceOption,
   L2VPN,
@@ -37,7 +38,7 @@ function useDeviceInterfaces(deviceId: string) {
   return useQuery({
     queryKey: ["interfaces-picker", deviceId],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${deviceId}`),
   })
 }
 
@@ -101,8 +102,7 @@ export function VTEPForm({
   const ips = useDeviceIps(device.id)
   const statuses = useQuery({
     queryKey: ["statuses", "vtep"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=vtep&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=vtep&picker=1"),
     staleTime: 5 * 60_000,
   })
   useEffect(() => {
@@ -407,9 +407,7 @@ export function LDPInstanceForm({
   const statuses = useQuery({
     queryKey: ["statuses", "routinginstance"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=routinginstance&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=routinginstance&picker=1"),
     staleTime: 5 * 60_000,
   })
   useEffect(() => {

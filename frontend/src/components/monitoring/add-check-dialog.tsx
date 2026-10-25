@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type CheckTemplate, type Paginated } from "@/lib/api"
+import { api, type CheckTemplate } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Dialog,
   DialogContent,
@@ -59,7 +60,7 @@ export function AddCheckDialog({
 
   const templates = useQuery({
     queryKey: ["check-templates"],
-    queryFn: () => api<Paginated<CheckTemplate>>("/api/monitoring/templates/"),
+    queryFn: () => apiAll<CheckTemplate>("/api/monitoring/templates/"),
     enabled: open,
   })
   const hasTemplates = (templates.data?.results.length ?? 0) > 0

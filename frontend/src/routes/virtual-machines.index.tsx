@@ -5,10 +5,10 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BulkStatusEntry,
   BulkStatusResponse,
-  Paginated,
   VirtualMachine,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -50,7 +50,7 @@ function VirtualMachinesPage() {
   const query = useQuery({
     queryKey: ["virtual-machines", q, device],
     queryFn: () =>
-      api<Paginated<VirtualMachine>>(
+      apiAll<VirtualMachine>(
         `/api/virtual-machines/?${new URLSearchParams({
           search: q,
           ...(device ? { device } : {}),

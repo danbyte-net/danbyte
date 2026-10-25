@@ -6,9 +6,9 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   DeviceTypeOption,
-  Paginated,
   Rack,
   RackMount,
   RackType,
@@ -231,7 +231,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
   const q = useQuery({
     queryKey: ["rack-type-accessories", rackTypeId],
     queryFn: () =>
-      api<Paginated<RackTypeAccessory>>(
+      apiAll<RackTypeAccessory>(
         `/api/rack-type-accessories/?rack_type=${rackTypeId}`
       ),
   })
@@ -388,8 +388,7 @@ function AccessoryDialog({
   // Accessories side-mount, so only 0U device types qualify.
   const deviceTypes = useQuery({
     queryKey: ["device-types-picker"],
-    queryFn: () =>
-      api<Paginated<DeviceTypeOption>>("/api/device-types/?picker=1"),
+    queryFn: () => apiAll<DeviceTypeOption>("/api/device-types/?picker=1"),
     staleTime: 10 * 60_000,
     enabled: open,
   })
@@ -525,7 +524,7 @@ function RacksOfTypePane({ rackTypeId }: { rackTypeId: string }) {
   const { canDo, humanIds } = useMe()
   const q = useQuery({
     queryKey: ["racks", { rack_type: rackTypeId }],
-    queryFn: () => api<Paginated<Rack>>(`/api/racks/?rack_type=${rackTypeId}`),
+    queryFn: () => apiAll<Rack>(`/api/racks/?rack_type=${rackTypeId}`),
   })
   const columns = useMemo(
     () =>

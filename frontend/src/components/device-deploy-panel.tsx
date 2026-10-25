@@ -5,7 +5,8 @@ import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { AutomationTarget, DeployRun, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { AutomationTarget, DeployRun } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
@@ -67,7 +68,7 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
 
   const targets = useQuery({
     queryKey: ["automation-targets", "enabled"],
-    queryFn: () => api<Paginated<AutomationTarget>>("/api/automation-targets/"),
+    queryFn: () => apiAll<AutomationTarget>("/api/automation-targets/"),
     staleTime: 60_000,
   })
   const options = (targets.data?.results ?? [])
@@ -76,8 +77,7 @@ export function DeviceDeployPanel({ deviceId }: { deviceId: string }) {
 
   const runs = useQuery({
     queryKey: ["deploy-runs", "device", deviceId],
-    queryFn: () =>
-      api<Paginated<DeployRun>>(`/api/deploy-runs/?device=${deviceId}`),
+    queryFn: () => apiAll<DeployRun>(`/api/deploy-runs/?device=${deviceId}`),
     refetchInterval: 10_000,
   })
   const recent = (runs.data?.results ?? []).slice(0, 5)

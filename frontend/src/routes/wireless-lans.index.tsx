@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type WirelessLAN, type Paginated } from "@/lib/api"
+import { type WirelessLAN } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -31,7 +32,7 @@ function WirelessLANsPage() {
   const query = useQuery({
     queryKey: ["wireless-lans", q],
     queryFn: () =>
-      api<Paginated<WirelessLAN>>(
+      apiAll<WirelessLAN>(
         `/api/wireless-lans/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

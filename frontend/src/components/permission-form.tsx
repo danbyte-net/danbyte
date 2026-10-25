@@ -6,13 +6,13 @@ import {
   api,
   type ObjectPermission,
   type ObjectPermissionWritePayload,
-  type Paginated,
   type RBACAction,
   type RBACGroup,
   type RBACObjectTypes,
   type RBACUser,
   type TenantPicker,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -140,19 +140,19 @@ export function PermissionForm({
   )
   const groupsQuery = useQuery({
     queryKey: ["groups"],
-    queryFn: () => api<Paginated<RBACGroup>>("/api/groups/"),
+    queryFn: () => apiAll<RBACGroup>("/api/groups/"),
   })
   const usersQuery = useQuery({
     queryKey: ["users", ""],
-    queryFn: () => api<Paginated<RBACUser>>("/api/users/"),
+    queryFn: () => apiAll<RBACUser>("/api/users/"),
   })
   const tenantsQuery = useQuery({
     queryKey: ["tenants", "picker"],
-    queryFn: () => api<Paginated<TenantPicker>>("/api/tenants/?picker=1"),
+    queryFn: () => apiAll<TenantPicker>("/api/tenants/?picker=1"),
   })
   const sitesQuery = useQuery({
     queryKey: ["sites", "picker"],
-    queryFn: () => api<Paginated<{ id: string; name: string }>>("/api/sites/"),
+    queryFn: () => apiAll<{ id: string; name: string }>("/api/sites/"),
   })
 
   const typeOptions = useMemo<CheckOption<string>[]>(

@@ -2,12 +2,8 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type ConfigContext,
-  type ConfigContextWritePayload,
-  type Paginated,
-} from "@/lib/api"
+import { type ConfigContext, type ConfigContextWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CheckList,
   Field,
@@ -29,7 +25,7 @@ interface NamedRow {
 function usePicker(key: string, url: string) {
   return useQuery({
     queryKey: [key],
-    queryFn: () => api<Paginated<NamedRow>>(url),
+    queryFn: () => apiAll<NamedRow>(url),
     staleTime: 10 * 60_000,
   })
 }

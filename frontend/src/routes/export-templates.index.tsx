@@ -6,7 +6,8 @@ import { Download } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type ExportTemplate, type Paginated } from "@/lib/api"
+import { type ExportTemplate } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useMe } from "@/lib/use-me"
 import { downloadBlob } from "@/lib/table-export"
 import { numidColumn } from "@/components/cells/numid"
@@ -78,7 +79,7 @@ function ExportTemplatesPage() {
   const query = useQuery({
     queryKey: ["export-templates", q],
     queryFn: () =>
-      api<Paginated<ExportTemplate>>(
+      apiAll<ExportTemplate>(
         `/api/export-templates/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

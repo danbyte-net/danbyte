@@ -25,7 +25,7 @@ const { apiMock, perms } = vi.hoisted(() => ({
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<typeof Api>()),
-  api: apiMock,
+  api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({

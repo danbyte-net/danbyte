@@ -27,12 +27,8 @@ import { CSS } from "@dnd-kit/utilities"
 import { Boxes, Plus, Trash2, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type DeviceType,
-  type DeviceTypeWritePayload,
-  type Paginated,
-} from "@/lib/api"
+import { api, type DeviceType, type DeviceTypeWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   CONNECTOR_MM,
   PANEL_MM,
@@ -183,7 +179,7 @@ export function DeviceTypeFaceplatePane({
         ? ["mt-interface-templates", deviceType.id]
         : [TEMPLATE_QUERY_KEY[k], deviceType.id],
       queryFn: () =>
-        api<Paginated<PortComponent>>(
+        apiAll<PortComponent>(
           moduleMode
             ? `/api/module-interface-templates/?module_type=${deviceType.id}`
             : `/api/${TEMPLATE_ENDPOINT[k]}/?device_type=${deviceType.id}`
@@ -283,7 +279,7 @@ export function DeviceTypeFaceplatePane({
   const bayTemplatesQ = useQuery({
     queryKey: [TEMPLATE_QUERY_KEY["module-bay"], deviceType.id],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
+      apiAll<{ id: string; name: string }>(
         `/api/module-bay-templates/?device_type=${deviceType.id}`
       ),
     enabled: !moduleMode,

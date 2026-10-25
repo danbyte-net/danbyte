@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   OxidizedConnection,
   OxidizedNodeLink,
@@ -76,8 +77,7 @@ function OxidizedPage() {
 
   const connections = useQuery({
     queryKey: ["oxidized-connections"],
-    queryFn: () =>
-      api<Paginated<OxidizedConnection>>("/api/oxidized/connections/"),
+    queryFn: () => apiAll<OxidizedConnection>("/api/oxidized/connections/"),
   })
   const all = connections.data?.results ?? []
   const conn = all.find((c) => c.id === selectedId) ?? all.at(0)

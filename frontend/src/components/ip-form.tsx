@@ -19,6 +19,7 @@ import {
   type TagOption,
   type VRFOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { addressInRange, ipToBigInt } from "@/lib/prefix-tree"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -230,13 +231,13 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   // the chosen site/VRF, same as AssignIpDialog).
   const sites = useQuery({
     queryKey: ["sites-picker"],
-    queryFn: () => api<Paginated<SiteOption>>("/api/sites/?picker=1"),
+    queryFn: () => apiAll<SiteOption>("/api/sites/?picker=1"),
     enabled: !isEdit,
     staleTime: 5 * 60_000,
   })
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     enabled: !isEdit,
     staleTime: 5 * 60_000,
   })
@@ -280,48 +281,44 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const statuses = useQuery({
     queryKey: ["statuses", "ipaddress"],
     queryFn: () =>
-      api<Paginated<StatusOption>>("/api/statuses/?available_to=ipaddress"),
+      apiAll<StatusOption>("/api/statuses/?available_to=ipaddress"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["ip-roles-picker"],
-    queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
+    queryFn: () => apiAll<IPRoleOption>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
   })
   const vms = useQuery({
     queryKey: ["vms-picker"],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        "/api/virtual-machines/?picker=1"
-      ),
+      apiAll<{ id: string; name: string }>("/api/virtual-machines/?picker=1"),
     staleTime: 5 * 60_000,
   })
   const vmInterfaces = useQuery({
     queryKey: ["vm-interfaces-picker", vmId],
     queryFn: () =>
-      api<Paginated<{ id: string; name: string }>>(
-        `/api/vm-interfaces/?vm=${vmId}`
-      ),
+      apiAll<{ id: string; name: string }>(`/api/vm-interfaces/?vm=${vmId}`),
     enabled: !!vmId,
     staleTime: 60_000,
   })
   const interfaces = useQuery({
     queryKey: ["interfaces-picker", deviceId],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${deviceId}`),
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${deviceId}`),
     enabled: !!deviceId,
     staleTime: 60_000,
   })
   const switchInterfaces = useQuery({
     queryKey: ["interfaces-picker", switchId],
     queryFn: () =>
-      api<Paginated<InterfaceOption>>(`/api/interfaces/?device=${switchId}`),
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${switchId}`),
     enabled: !!switchId,
     staleTime: 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 
@@ -353,7 +350,7 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
   const dhcpResQuery = useQuery({
     queryKey: ["dhcp-reservation", "for-ip", address.trim()],
     queryFn: () =>
-      api<Paginated<DhcpReservation>>(
+      apiAll<DhcpReservation>(
         `/api/dhcp-reservations/?${new URLSearchParams({ search: address.trim() })}`
       ),
     enabled: !!address.trim() && !!dhcpScopes.data,

@@ -18,13 +18,8 @@ import {
 import { type ColumnDef } from "@tanstack/react-table"
 
 import { api } from "@/lib/api"
-import type {
-  Device,
-  Paginated,
-  PortCountRow,
-  Rack,
-  RackPortState,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Device, PortCountRow, Rack, RackPortState } from "@/lib/api"
 import { WITH_PORTS } from "@/lib/port-utilization"
 import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
@@ -235,9 +230,7 @@ function RackDevicesPane({
         ? ["rack-devices", rackId]
         : ["rack-devices", rackId, `cooling-${cooling}`],
     queryFn: () =>
-      api<Paginated<Device>>(
-        `/api/devices/?rack=${rackId}${COOLING_QUERY[cooling]}`
-      ),
+      apiAll<Device>(`/api/devices/?rack=${rackId}${COOLING_QUERY[cooling]}`),
   })
   const rows = q.data?.results ?? []
   const columns = useMemo<ColumnDef<Device>[]>(() => {

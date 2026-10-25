@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type ASN, type Paginated } from "@/lib/api"
+import { type ASN } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -37,7 +38,7 @@ function AsnsPage() {
   const query = useQuery({
     queryKey: ["asns", q],
     queryFn: () =>
-      api<Paginated<ASN>>(
+      apiAll<ASN>(
         `/api/asns/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

@@ -3,12 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type TenantGroup,
-  type TenantGroupWritePayload,
-} from "@/lib/api"
+import { api, type TenantGroup, type TenantGroupWritePayload } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,7 +67,7 @@ export function TenantGroupsSection() {
 
   const query = useQuery({
     queryKey: ["tenant-groups"],
-    queryFn: () => api<Paginated<TenantGroup>>("/api/tenant-groups/"),
+    queryFn: () => apiAll<TenantGroup>("/api/tenant-groups/"),
   })
   const groups = query.data?.results ?? []
 

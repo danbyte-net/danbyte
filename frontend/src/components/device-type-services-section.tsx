@@ -11,6 +11,7 @@ import {
   type Paginated,
   type ServiceTemplate,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useRegisterAddActions } from "@/components/device-add-actions"
@@ -81,7 +82,7 @@ export function DeviceTypeServicesSection({
   const q = useQuery({
     queryKey: [QUERY_KEY, deviceTypeId],
     queryFn: () =>
-      api<Paginated<DeviceTypeService>>(
+      apiAll<DeviceTypeService>(
         `/api/device-type-services/?device_type=${deviceTypeId}`
       ),
   })

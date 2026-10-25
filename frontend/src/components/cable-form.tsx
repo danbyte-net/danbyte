@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type Cable,
   type CableWritePayload,
-  type Paginated,
   type Status,
   type TagOption,
   type TerminationInput,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormColor,
@@ -106,13 +105,12 @@ export function CableForm({
 
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
   const statuses = useQuery({
     queryKey: ["statuses", "cable"],
-    queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=cable&picker=1"),
+    queryFn: () => apiAll<Status>("/api/statuses/?available_to=cable&picker=1"),
     staleTime: 5 * 60_000,
   })
 

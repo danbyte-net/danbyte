@@ -3,14 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type DeviceType,
   type DeviceTypeWritePayload,
   type DinProfile,
   type ManufacturerOption,
-  type Paginated,
   type PlatformOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DIN_PROFILES, PROFILE_LABELS } from "@/lib/din-geometry"
 import {
   Field,
@@ -162,13 +161,12 @@ export function DeviceTypeForm({
 
   const manufacturers = useQuery({
     queryKey: ["manufacturers-picker"],
-    queryFn: () =>
-      api<Paginated<ManufacturerOption>>("/api/manufacturers/?picker=1"),
+    queryFn: () => apiAll<ManufacturerOption>("/api/manufacturers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const platforms = useQuery({
     queryKey: ["platforms-picker"],
-    queryFn: () => api<Paginated<PlatformOption>>("/api/platforms/?picker=1"),
+    queryFn: () => apiAll<PlatformOption>("/api/platforms/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Airflow's options are the model's own list (/api/dcim/choices/).

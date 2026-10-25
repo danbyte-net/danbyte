@@ -12,6 +12,7 @@ import {
   type TagOption,
   type VLANOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { FormColor } from "@/components/forms/color"
 import {
   Field,
@@ -71,7 +72,7 @@ export function InterfaceForm({
   const statuses = useQuery({
     queryKey: ["statuses", "interface"],
     queryFn: () =>
-      api<Paginated<Status>>("/api/statuses/?available_to=interface&picker=1"),
+      apiAll<Status>("/api/statuses/?available_to=interface&picker=1"),
     staleTime: 5 * 60_000,
   })
   const saveObject = useSaveObject()
@@ -238,7 +239,7 @@ export function InterfaceForm({
     }))
   const vlans = useQuery({
     queryKey: ["vlans-picker"],
-    queryFn: () => api<Paginated<VLANOption>>("/api/vlans/"),
+    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
     staleTime: 10 * 60_000,
   })
   const taggedRows = useMemo(() => {
@@ -251,7 +252,7 @@ export function InterfaceForm({
   }, [vlans.data, deviceSiteId])
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
-    queryFn: () => api<Paginated<VRFOption>>("/api/vrfs/?picker=1"),
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Candidate parents / LAGs / bridges: the device's own interfaces - or,
@@ -270,7 +271,7 @@ export function InterfaceForm({
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { api, type Bookmark, type BookmarkFolder, type Paginated } from "@/lib/api"
+import { api, type Bookmark, type BookmarkFolder } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 
 /** Per-user page bookmarks, backed by /api/bookmarks/. */
 export function useBookmarks() {
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["bookmarks"],
-    queryFn: () => api<Paginated<Bookmark>>("/api/bookmarks/"),
+    queryFn: () => apiAll<Bookmark>("/api/bookmarks/"),
     staleTime: 60_000,
   })
   const folders = useQuery({
     queryKey: ["bookmark-folders"],
-    queryFn: () => api<Paginated<BookmarkFolder>>("/api/bookmark-folders/"),
+    queryFn: () => apiAll<BookmarkFolder>("/api/bookmark-folders/"),
     staleTime: 60_000,
   })
   const invalidate = () => qc.invalidateQueries({ queryKey: ["bookmarks"] })

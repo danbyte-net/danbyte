@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { ShieldAlert, ShieldX } from "lucide-react"
 
-import { api, type CertificateAssignment, type Paginated } from "@/lib/api"
+import { type CertificateAssignment } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Badge } from "@/components/ui/badge"
 import {
   CERT_CRITICAL_DAYS,
@@ -85,7 +86,7 @@ export function ObjectCertExpiryBadge({
   const q = useQuery({
     queryKey: ["certificate-assignments", objectType, objectId],
     queryFn: () =>
-      api<Paginated<CertificateAssignment>>(
+      apiAll<CertificateAssignment>(
         `/api/monitoring/certificate-assignments/?${new URLSearchParams({
           object_type: objectType,
           object_id: objectId,

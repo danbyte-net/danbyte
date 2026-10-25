@@ -2,8 +2,8 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Pencil } from "lucide-react"
 
-import { api } from "@/lib/api"
-import type { CoolingSourceOption, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { CoolingSourceOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { BulkEditDialog } from "@/components/bulk-edit-dialog"
 import type { BulkFieldSpec } from "@/components/forms"
@@ -52,7 +52,7 @@ export function CoolingFeedBulkBar({
   const sources = useQuery({
     queryKey: ["cooling-sources-picker"],
     queryFn: () =>
-      api<Paginated<CoolingSourceOption>>("/api/cooling-sources/?picker=1"),
+      apiAll<CoolingSourceOption>("/api/cooling-sources/?picker=1"),
     staleTime: 10 * 60_000,
     enabled: editing,
   })

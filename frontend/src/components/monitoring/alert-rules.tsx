@@ -5,12 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type AlertRule,
-  type AlertSeverity,
-  type Paginated,
-} from "@/lib/api"
+import { api, type AlertRule, type AlertSeverity } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -41,7 +37,7 @@ export function AlertRulesList() {
   const canDelete = canDo("alertrule", "delete")
   const q = useQuery({
     queryKey: ["alert-rules"],
-    queryFn: () => api<Paginated<AlertRule>>("/api/monitoring/alert-rules/"),
+    queryFn: () => apiAll<AlertRule>("/api/monitoring/alert-rules/"),
   })
   const [deleting, setDeleting] = useState<AlertRule | null>(null)
   const rows = q.data?.results ?? []

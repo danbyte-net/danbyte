@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { X } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Circuit,
   Interface,
@@ -164,8 +165,7 @@ export function CableEndpointPicker({
   })
   const ifaces = useQuery({
     queryKey: ["device-interfaces", deviceId],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/devices/${deviceId}/interfaces/`),
+    queryFn: () => apiAll<Interface>(`/api/devices/${deviceId}/interfaces/`),
     enabled: !!deviceId,
   })
   // Circuits carry their ends nested, so one fetch feeds both the circuit

@@ -5,8 +5,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
-  Paginated,
   ZabbixConnection,
   ZabbixSyncResult,
   ZabbixTestResult,
@@ -65,7 +65,7 @@ function ZabbixPage() {
 
   const connections = useQuery({
     queryKey: ["zabbix-connections"],
-    queryFn: () => api<Paginated<ZabbixConnection>>("/api/zabbix/connections/"),
+    queryFn: () => apiAll<ZabbixConnection>("/api/zabbix/connections/"),
   })
   const all = connections.data?.results ?? []
   const conn = all.find((c) => c.id === selectedId) ?? all.at(0)

@@ -5,7 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, type Paginated, type WindowsConnection } from "@/lib/api"
+import { api, type WindowsConnection } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { SyncStatusBadge as ConnSyncStatusBadge } from "@/components/integrations/sync-status-badge"
 import { useMe } from "@/lib/use-me"
@@ -81,7 +82,7 @@ function WindowsServersPage() {
   const query = useQuery({
     queryKey: ["windows-connections", q],
     queryFn: () =>
-      api<Paginated<WindowsConnection>>(
+      apiAll<WindowsConnection>(
         `/api/windows-connections/?${new URLSearchParams({ search: q })}`
       ),
   })

@@ -2,12 +2,8 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 
-import {
-  api,
-  type Paginated,
-  type PowerOutlet,
-  type PowerPort,
-} from "@/lib/api"
+import { type PowerOutlet, type PowerPort } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DataTable, selectionColumn } from "@/components/data-table"
 import { ComponentBulkBar } from "@/components/component-bulk-bar"
 import { buildPowerPortColumns } from "@/components/columns/power-port-columns"
@@ -43,13 +39,12 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
 
   const ports = useQuery({
     queryKey: ["device-power-ports", deviceId],
-    queryFn: () =>
-      api<Paginated<PowerPort>>(`/api/power-ports/?device=${deviceId}`),
+    queryFn: () => apiAll<PowerPort>(`/api/power-ports/?device=${deviceId}`),
   })
   const outlets = useQuery({
     queryKey: ["device-power-outlets", deviceId],
     queryFn: () =>
-      api<Paginated<PowerOutlet>>(`/api/power-outlets/?device=${deviceId}`),
+      apiAll<PowerOutlet>(`/api/power-outlets/?device=${deviceId}`),
   })
 
   const portCols = useMemo<ColumnDef<PowerPort>[]>(

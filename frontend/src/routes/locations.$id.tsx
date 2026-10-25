@@ -5,13 +5,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { Network, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
-import {
-  api,
-  type FloorPlan,
-  type Location,
-  type Prefix,
-  type Paginated,
-} from "@/lib/api"
+import { api, type FloorPlan, type Location, type Prefix } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
@@ -63,12 +58,11 @@ function Body({ location: l }: { location: Location }) {
   const goBack = useCallback(() => nav({ to: "/locations" }), [nav])
   const prefixes = useQuery({
     queryKey: ["location-prefixes", l.id],
-    queryFn: () => api<Paginated<Prefix>>(`/api/prefixes/?location=${l.id}`),
+    queryFn: () => apiAll<Prefix>(`/api/prefixes/?location=${l.id}`),
   })
   const floorPlans = useQuery({
     queryKey: ["floor-plans", { location: l.id }],
-    queryFn: () =>
-      api<Paginated<FloorPlan>>(`/api/floor-plans/?location=${l.id}`),
+    queryFn: () => apiAll<FloorPlan>(`/api/floor-plans/?location=${l.id}`),
   })
   const floorPlan = floorPlans.data?.results[0]
   const rows = prefixes.data?.results ?? []

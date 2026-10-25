@@ -3,7 +3,8 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 
-import { api, type Paginated, type VirtualSwitch } from "@/lib/api"
+import { type VirtualSwitch } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
@@ -20,7 +21,7 @@ function VirtualSwitchesPage() {
   const query = useQuery({
     queryKey: ["virtual-switches", q],
     queryFn: () =>
-      api<Paginated<VirtualSwitch>>(
+      apiAll<VirtualSwitch>(
         `/api/virtual-switches/?${new URLSearchParams({ search: q })}`
       ),
   })

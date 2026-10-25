@@ -3,13 +3,13 @@ import type { CSSProperties, ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   Device,
   DeviceType,
   DinRail,
   FacePorts,
   Interface,
-  Paginated,
 } from "@/lib/api"
 import { deviceBody } from "@/lib/din-geometry"
 import type { PlateBox } from "@/lib/photo-calibration"
@@ -225,8 +225,7 @@ function DeviceFace({
   const images = mode === "images"
   const ifaces = useQuery({
     queryKey: ["device-interfaces", d.id],
-    queryFn: () =>
-      api<Paginated<Interface>>(`/api/devices/${d.id}/interfaces/`),
+    queryFn: () => apiAll<Interface>(`/api/devices/${d.id}/interfaces/`),
     enabled: !images || photoPorts,
   })
   // Images asks SNMP only for a photo that marks interfaces - the device's
@@ -349,9 +348,7 @@ function PlainFace({
   const templates = useQuery({
     queryKey: ["dt-interface-templates", typeId],
     queryFn: () =>
-      api<Paginated<PortComponent>>(
-        `/api/interface-templates/?device_type=${typeId}`
-      ),
+      apiAll<PortComponent>(`/api/interface-templates/?device_type=${typeId}`),
     staleTime: 5 * 60_000,
   })
   const draws = !!saved?.front.length || !!templates.data?.results.length

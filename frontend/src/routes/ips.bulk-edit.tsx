@@ -8,9 +8,9 @@ import {
   type IPBulkUpdateFields,
   type IPRoleOption,
   type StatusOption,
-  type Paginated,
   type TagOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
@@ -43,17 +43,17 @@ function BulkEditIpsPage() {
   const statuses = useQuery({
     queryKey: ["statuses", "ipaddress"],
     queryFn: () =>
-      api<Paginated<StatusOption>>("/api/statuses/?available_to=ipaddress"),
+      apiAll<StatusOption>("/api/statuses/?available_to=ipaddress"),
     staleTime: 10 * 60_000,
   })
   const roles = useQuery({
     queryKey: ["ip-roles-picker"],
-    queryFn: () => api<Paginated<IPRoleOption>>("/api/ip-roles/"),
+    queryFn: () => apiAll<IPRoleOption>("/api/ip-roles/"),
     staleTime: 10 * 60_000,
   })
   const tags = useQuery({
     queryKey: ["tags-picker"],
-    queryFn: () => api<Paginated<TagOption>>("/api/tags/"),
+    queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
   })
 

@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 
-import { api } from "@/lib/api"
-import type { LDPInstance, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { LDPInstance } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,9 +42,7 @@ export function LDPSection({
   const q = useQuery({
     queryKey: ["ldp-instances", "device", device.id],
     queryFn: () =>
-      api<Paginated<LDPInstance>>(
-        `/api/routing/ldp-instances/?device=${device.id}`
-      ),
+      apiAll<LDPInstance>(`/api/routing/ldp-instances/?device=${device.id}`),
   })
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["ldp-instances"] })

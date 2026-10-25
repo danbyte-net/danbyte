@@ -4,7 +4,8 @@ import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type ModuleType, type Paginated } from "@/lib/api"
+import { api, type ModuleType } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -47,7 +48,7 @@ function ModuleTypesPage() {
   const query = useQuery({
     queryKey: ["module-types", q],
     queryFn: () =>
-      api<Paginated<ModuleType>>(
+      apiAll<ModuleType>(
         `/api/module-types/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

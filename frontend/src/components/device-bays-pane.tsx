@@ -3,7 +3,8 @@ import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api, type DeviceBayRow, type Paginated } from "@/lib/api"
+import { api, type DeviceBayRow } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -36,8 +37,7 @@ export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
 
   const q = useQuery({
     queryKey: ["device-device-bays", deviceId],
-    queryFn: () =>
-      api<Paginated<DeviceBayRow>>(`/api/device-bays/?device=${deviceId}`),
+    queryFn: () => apiAll<DeviceBayRow>(`/api/device-bays/?device=${deviceId}`),
   })
   const bays = q.data?.results ?? []
 

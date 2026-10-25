@@ -2,8 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 
-import { api } from "@/lib/api"
-import type { ConfigBundle, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { ConfigBundle } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
@@ -28,7 +28,7 @@ function ConfigBundlesPage() {
   const query = useQuery({
     queryKey: ["config-bundles", q],
     queryFn: () =>
-      api<Paginated<ConfigBundle>>(
+      apiAll<ConfigBundle>(
         `/api/config-bundles/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

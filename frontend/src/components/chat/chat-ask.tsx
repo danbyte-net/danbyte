@@ -179,7 +179,7 @@ function StepInput({
           display?: string
           color?: string
         }>
-      >(`${step.endpoint}?limit=500`),
+      >(`${step.endpoint}?page_size=500`),
     enabled: !!step.endpoint,
     staleTime: 5 * 60_000,
     retry: false,

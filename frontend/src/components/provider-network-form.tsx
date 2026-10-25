@@ -3,12 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
-  type Paginated,
   type ProviderNetwork,
   type ProviderNetworkWritePayload,
   type ProviderOption,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   FormCombobox,
   FormFooter,
@@ -67,7 +66,7 @@ export function ProviderNetworkForm({
 
   const providers = useQuery({
     queryKey: ["providers-picker"],
-    queryFn: () => api<Paginated<ProviderOption>>("/api/providers/?picker=1"),
+    queryFn: () => apiAll<ProviderOption>("/api/providers/?picker=1"),
     staleTime: 10 * 60_000,
   })
   const mutation = useMutation({

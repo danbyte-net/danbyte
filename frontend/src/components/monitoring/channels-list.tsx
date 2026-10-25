@@ -10,8 +10,8 @@ import {
   type ChannelKind,
   type MinSeverity,
   type NotificationChannel,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -57,8 +57,7 @@ export function ChannelsList() {
   const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["channels"],
-    queryFn: () =>
-      api<Paginated<NotificationChannel>>("/api/monitoring/channels/"),
+    queryFn: () => apiAll<NotificationChannel>("/api/monitoring/channels/"),
   })
   const [deleting, setDeleting] = useState<NotificationChannel | null>(null)
   const rows = q.data?.results ?? []

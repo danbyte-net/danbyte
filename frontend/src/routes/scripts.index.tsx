@@ -5,7 +5,8 @@ import { Play } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Paginated, Script } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Script } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -36,7 +37,7 @@ function ScriptsPage() {
   const query = useQuery({
     queryKey: ["scripts", q],
     queryFn: () =>
-      api<Paginated<Script>>(
+      apiAll<Script>(
         `/api/scripts/?${new URLSearchParams(q ? { search: q } : {})}`
       ),
   })

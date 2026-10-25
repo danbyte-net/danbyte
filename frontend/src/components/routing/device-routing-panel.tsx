@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   BGPAddressFamily,
   BGPInstance,
@@ -239,9 +240,7 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
   const instances = useQuery({
     queryKey: ["bgp-instances", owner.kind, owner.id],
     queryFn: () =>
-      api<Paginated<BGPInstance>>(
-        `/api/routing/bgp-instances/?${ownerParam(owner)}`
-      ),
+      apiAll<BGPInstance>(`/api/routing/bgp-instances/?${ownerParam(owner)}`),
   })
   const sessions = useQuery({
     queryKey: ["bgp-sessions", owner.kind, owner.id],

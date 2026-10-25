@@ -2,7 +2,8 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
-import type { Paginated, StatusMini, VMInterface, VirtNetwork } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { StatusMini, VMInterface, VirtNetwork } from "@/lib/api"
 import type { RailModel } from "@/lib/diagram/rails"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
@@ -56,16 +57,14 @@ export function VmTopologyCard({
 }) {
   const ifaces = useQuery({
     queryKey: ["vm-interfaces", vmId],
-    queryFn: () =>
-      api<Paginated<VMInterface>>(`/api/vm-interfaces/?vm=${vmId}`),
+    queryFn: () => apiAll<VMInterface>(`/api/vm-interfaces/?vm=${vmId}`),
   })
   // The sync's direct NIC-to-network links. This is the primary source:
   // vCenter never states a VLAN on a NIC, so inferring through VLANs left
   // every vCenter VM looking unmapped (#46).
   const nets = useQuery({
     queryKey: ["virt-networks", "vm", vmId],
-    queryFn: () =>
-      api<Paginated<VirtNetwork>>(`/api/virt-networks/?vm=${vmId}`),
+    queryFn: () => apiAll<VirtNetwork>(`/api/virt-networks/?vm=${vmId}`),
   })
   const source = useQuery({
     queryKey: ["virt-source", syncedFromId],

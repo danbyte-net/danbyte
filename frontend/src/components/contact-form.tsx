@@ -3,13 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
-  api,
   type BusinessHours,
   type Contact,
   type ContactGroupOption,
   type ContactWritePayload,
-  type Paginated,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { BusinessHoursField } from "@/components/business-hours-field"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
@@ -79,8 +78,7 @@ export function ContactForm({ contact, onSaved, onCancel }: ContactFormProps) {
 
   const groups = useQuery({
     queryKey: ["contact-groups-picker"],
-    queryFn: () =>
-      api<Paginated<ContactGroupOption>>("/api/contact-groups/?picker=1"),
+    queryFn: () => apiAll<ContactGroupOption>("/api/contact-groups/?picker=1"),
     staleTime: 10 * 60_000,
   })
 

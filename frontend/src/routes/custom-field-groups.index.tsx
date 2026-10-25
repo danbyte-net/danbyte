@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
 
-import { api, type CustomFieldGroup, type Paginated } from "@/lib/api"
+import { type CustomFieldGroup } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
@@ -28,7 +29,7 @@ function CustomFieldGroupsPage() {
   const query = useQuery({
     queryKey: ["custom-field-groups", q],
     queryFn: () =>
-      api<Paginated<CustomFieldGroup>>(
+      apiAll<CustomFieldGroup>(
         `/api/custom-field-groups/?${new URLSearchParams({ search: q }).toString()}`
       ),
   })

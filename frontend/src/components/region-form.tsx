@@ -9,11 +9,11 @@ import {
   api,
   type BoundaryCandidate,
   type GeoBoundary,
-  type Paginated,
   type Region,
   type RegionOption,
   type RegionWritePayload,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import {
   Field,
   FormColor,
@@ -130,7 +130,7 @@ export function RegionForm({ region, onSaved, onCancel }: RegionFormProps) {
 
   const regions = useQuery({
     queryKey: ["regions-picker"],
-    queryFn: () => api<Paginated<RegionOption>>("/api/regions/?picker=1"),
+    queryFn: () => apiAll<RegionOption>("/api/regions/?picker=1"),
     staleTime: 10 * 60_000,
   })
   // Can't be its own parent.

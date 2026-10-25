@@ -5,12 +5,8 @@ import { Download, KeyRound, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type {
-  AcmeOrder,
-  CertificateRequest,
-  Issuer,
-  Paginated,
-} from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { AcmeOrder, CertificateRequest, Issuer } from "@/lib/api"
 import { FormSelect, FormCombobox } from "@/components/forms"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
@@ -318,9 +314,7 @@ function AcmeTab({
   const ordersQ = useQuery({
     queryKey: ["acme-orders", req.id],
     queryFn: () =>
-      api<Paginated<AcmeOrder>>(
-        `/api/monitoring/acme-orders/?request=${req.id}`
-      ),
+      apiAll<AcmeOrder>(`/api/monitoring/acme-orders/?request=${req.id}`),
     // Poll while an order is still working so the UI reflects the worker.
     refetchInterval: (query) => {
       const rows = query.state.data?.results ?? []
