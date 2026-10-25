@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from "react"
 import {
   cleanup,
   fireEvent,
@@ -39,6 +40,10 @@ vi.mock("@/components/device-picker", () => ({
     </button>
   ),
 }))
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({ children }: { children?: ReactNode }) => <a>{children}</a>,
+}))
 
 beforeEach(() => {
   apiMock.mockReset()
@@ -48,16 +53,59 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-function renderTab() {
+function renderTab(props: { cycle?: string; onClearCycle?: () => void } = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   render(
     <QueryClientProvider client={qc}>
-      <InstalledOn applicationId="app-1" />
+      <InstalledOn applicationId="app-1" {...props} />
     </QueryClientProvider>
   )
 }
+
+describe("InstalledOn filtered to a cycle", () => {
+  it("asks for the cycle, marks a cycle set by hand and clears", async () => {
+    canDoMock.mockReturnValue(false)
+    apiMock.mockImplementation(async (path: string) =>
+      path.startsWith("/api/installed-software/")
+        ? {
+            count: 1,
+            results: [
+              {
+                id: "sw-1",
+                application: {
+                  id: "app-1",
+                  name: "Java",
+                  slug: "java",
+                  path: "Java",
+                },
+                device: { id: "d1", name: "app01" },
+                virtual_machine: null,
+                version: "8u402",
+                cycle: "8",
+                cycle_manual: true,
+                service: null,
+                eol: null,
+                source: "manual",
+                tags: [],
+                custom_fields: {},
+              },
+            ],
+          }
+        : { count: 0, results: [] }
+    )
+    const clear = vi.fn()
+    renderTab({ cycle: "8", onClearCycle: clear })
+    expect(await screen.findByText("manual")).toBeTruthy()
+    expect(apiMock).toHaveBeenCalledWith(
+      "/api/installed-software/?application=app-1&cycle=8"
+    )
+    expect(screen.getByText("Cycle 8")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Clear cycle" }))
+    expect(clear).toHaveBeenCalled()
+  })
+})
 
 describe("InstalledOn", () => {
   it("hides Add without the add permission", async () => {

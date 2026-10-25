@@ -142,10 +142,34 @@ function ItemCell({ row }: { row: LifecycleRow }) {
   return <span className="text-muted-foreground">{item.name}</span>
 }
 
-function EndCell({ end }: { end: string | null }) {
+/** The application behind a software row, else null. */
+function applicationOf(r: LifecycleRow): { id: string; name: string } | null {
+  const item = r.item
+  if (r.source !== "software" || item?.type !== "application" || !item.id)
+    return null
+  return { id: item.id, name: item.application ?? item.name }
+}
+
+function EndCell({ row }: { row: LifecycleRow }) {
   const { formatDate } = useDateFormat()
-  if (!end) return dash
-  return <span className="num whitespace-nowrap">{formatDate(end)}</span>
+  if (!row.end) return dash
+  const text = (
+    <span className="num whitespace-nowrap">{formatDate(row.end)}</span>
+  )
+  // A software row's end links to its application's End of life card.
+  const app = applicationOf(row)
+  if (!app) return text
+  return (
+    <Link
+      to="/applications/$id"
+      params={{ id: app.id }}
+      search={{ tab: "overview" }}
+      hash="eol"
+      className="link"
+    >
+      {text}
+    </Link>
+  )
 }
 
 export interface LifecycleColumnOpts {
@@ -226,6 +250,36 @@ export function buildLifecycleColumns<T extends LifecycleRow = LifecycleRow>(
       cell: ({ row }) => <ItemCell row={row.original} />,
     },
     {
+      // Software rows: /lifecycle?source=software&application=<id>.
+      id: "application",
+      accessorFn: (r) => applicationOf(r)?.name ?? "",
+      header: ({ column }) => (
+        <SortHeader column={column} label="Application" />
+      ),
+      cell: ({ row }) => {
+        const app = applicationOf(row.original)
+        return app ? (
+          <Link to="/applications/$id" params={{ id: app.id }} className="link">
+            {app.name}
+          </Link>
+        ) : (
+          dash
+        )
+      },
+      meta: {
+        label: "Application",
+        defaultHidden: true,
+        facet: {
+          kind: "enum",
+          label: "Application",
+          get: (r: T) => applicationOf(r)?.id ?? null,
+          formatValue: (_v, sample) => ({
+            label: applicationOf(sample)?.name ?? "",
+          }),
+        },
+      },
+    },
+    {
       id: "status",
       accessorFn: (r) => lifecycleStatusLabel(r),
       header: ({ column }) => <SortHeader column={column} label="Status" />,
@@ -278,7 +332,7 @@ export function buildLifecycleColumns<T extends LifecycleRow = LifecycleRow>(
       id: "end",
       accessorFn: (r) => daysLeftSortValue(r),
       header: ({ column }) => <SortHeader column={column} label="End" />,
-      cell: ({ row }) => <EndCell end={row.original.end} />,
+      cell: ({ row }) => <EndCell row={row.original} />,
       meta: { export: { value: (r: T) => r.end ?? "" } },
     },
     {

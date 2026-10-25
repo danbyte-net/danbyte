@@ -56,7 +56,9 @@ Both **device types** (hardware) and **platforms** (OS) have the same
   ticked in the Columns menu.
 - **Lifecycle overview** - every device's hardware row and every device's
   and VM's OS row, next to its support coverage and installed software,
-  soonest end first. See
+  soonest end first. A software row names its application, filters by it
+  (`/lifecycle?source=software&application=<id>`) and links its end to the
+  application's End of life card. See
   [Lifecycle overview](lifecycle-overview.md).
 
 ### The lifetime bar

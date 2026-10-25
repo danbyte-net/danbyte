@@ -1951,8 +1951,43 @@ export interface ApplicationEol {
   cycles: ApplicationEolCycle[]
 }
 
+/** A cycle on the End of life card: its installs you may view. */
+export interface ApplicationEolDetailCycle extends ApplicationEolCycle {
+  install_count: number
+}
+
+/** GET /api/applications/<id>/eol/ - the End of life card. */
+export interface ApplicationEolDetail extends ApplicationEol {
+  /** The cycles the installs run, the ones with installs first. */
+  cycles: ApplicationEolDetailCycle[]
+  /** The product's other catalog cycles, no installs on them. */
+  other_cycles: ApplicationEolDetailCycle[]
+  /** Installs no cycle took. */
+  unmapped_installs: number
+  /** Null without a product. */
+  in_catalog: boolean | null
+  source_label: string | null
+  product_label: string | null
+  /** The product's page on the source's site. */
+  product_url: string | null
+}
+
+/** An ancestor or child on the application's Hierarchy card. */
+export interface ApplicationTreeNode {
+  id: string
+  name: string
+  install_count: number
+  /** Children only. */
+  child_count?: number
+  children?: ApplicationTreeNode[]
+}
+
 export interface Application extends ApplicationMini {
   parent: { id: string; name: string } | null
+  /** Detail only: root first. Empty on the list. */
+  ancestors?: ApplicationTreeNode[]
+  /** Detail only: three levels deep. Empty on the list. */
+  children?: ApplicationTreeNode[]
   manufacturer: { id: string; name: string } | null
   eol_source: string
   eol_product: string

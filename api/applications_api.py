@@ -4,11 +4,13 @@
   ``?picker=1``, ``?search=``, ``?manufacturer=``, ``?parent=`` (``none`` for
   the roots), ``bulk-delete``. A delete is refused (409) while the
   application has installs, child applications or flows (#163).
-* ``/api/applications/<id>/eol/`` - ``PUT {source?, product}`` names the
-  end-of-life product, ``DELETE`` clears it; 404 while the feature is off.
+* ``/api/applications/<id>/eol/`` - ``GET`` the product, its cycles with
+  install counts and the unmapped installs; ``PUT {source?, product}`` names
+  the end-of-life product, ``DELETE`` clears it; 404 while the feature is off.
 * ``/api/installed-software/`` - one application at one version on a device
   or a virtual machine: CRUD, ``?device=``, ``?virtual_machine=``,
-  ``?application=``, ``?service=``, ``?search=``, ``bulk-delete``.
+  ``?application=``, ``?service=``, ``?cycle=`` (``none``: unmapped),
+  ``?search=``, ``bulk-delete``.
 
 Applications are tenant-wide, like platforms. An install belongs to its
 device's or VM's site (``SITE_PATHS["installedsoftware"]``), so a site editor
@@ -19,7 +21,7 @@ from __future__ import annotations
 
 import uuid
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_field
 from rest_framework import serializers
@@ -44,8 +46,10 @@ from .serializers import (
     TenantScopedPrimaryKeyRelatedField,
     _eol_config,
     _visible_count,
+    detail_only,
 )
 from .viewsets import StandardPagination, TenantScopedViewSet, _visible_n
+from .visible_counts import view_filter
 
 #: How a tree path reads: "Payments › Checkout › checkout-api".
 PATH_SEP = " › "
@@ -97,24 +101,165 @@ def _eol_block(app, cfg) -> dict | None:
     the feature is off."""
     if not cfg.enabled:
         return None
-    from compliance.eol import status_of
-
     if not (app.eol_source and app.eol_product):
         return {"source": None, "product": None, "cycles": []}
     cycles = sorted(app.eol_mappings.all(), key=lambda m: m.cycle, reverse=True)
     return {
         "source": app.eol_source,
         "product": app.eol_product,
-        "cycles": [
-            {
-                "cycle": m.cycle, "status": status_of(m, cfg.warning_days),
-                "release_date": m.release_date, "support_until": m.support_until,
-                "eol_date": m.eol_date, "lts": m.lts, "latest_version": m.latest_version,
-                "synced_at": m.synced_at, "missing": m.missing,
-            }
-            for m in cycles
-        ],
+        "cycles": [_cycle_row(m, cfg) for m in cycles],
     }
+
+
+def _cycle_row(m, cfg) -> dict:
+    from compliance.eol import status_of
+
+    return {
+        "cycle": m.cycle, "status": status_of(m, cfg.warning_days),
+        "release_date": m.release_date, "support_until": m.support_until,
+        "eol_date": m.eol_date, "lts": m.lts, "latest_version": m.latest_version,
+        "synced_at": m.synced_at, "missing": m.missing,
+    }
+
+
+def _iso(value):
+    from datetime import date
+
+    try:
+        return date.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _eol_detail(app, cfg, request) -> dict:
+    """The ``/eol/`` payload: the block with each cycle's ``install_count``
+    (the installs the reader may view, one grouped query), the product's other
+    catalog cycles (``other_cycles``), ``unmapped_installs`` (installs no
+    cycle took), ``in_catalog`` and the source's and product's names and
+    link."""
+    from compliance.eol import date_status
+    from compliance.eol_sources import SOURCES
+    from compliance.models import EolProduct
+
+    block = _eol_block(app, cfg)
+    f = view_filter(request, InstalledSoftware)
+    counts: dict = {}
+    if f is not None:
+        counts = dict(
+            InstalledSoftware.objects.filter(f)
+            .filter(tenant_id=app.tenant_id, application=app)
+            .order_by().values("eol_mapping_id")
+            .annotate(n=Count("pk", distinct=True))
+            .values_list("eol_mapping_id", "n")
+        )
+    mapped = bool(block["product"])
+    mappings = sorted(app.eol_mappings.all(), key=lambda m: m.cycle, reverse=True) \
+        if mapped else []
+    cycles = []
+    for m in mappings:
+        row = _cycle_row(m, cfg)
+        row["install_count"] = counts.get(m.pk, 0)
+        cycles.append(row)
+    # The cycles with installs first; a stable sort keeps newest first.
+    cycles.sort(key=lambda r: r["install_count"] == 0)
+    source = SOURCES.get(app.eol_source) if mapped else None
+    product = EolProduct.objects.filter(
+        source=app.eol_source, name=app.eol_product).first() if mapped else None
+    taken = {m.cycle for m in mappings}
+    other = [
+        {
+            "cycle": r["name"],
+            "status": date_status(_iso(r.get("eol_date")), cfg.warning_days,
+                                  eol_reached=r.get("eol")),
+            "release_date": _iso(r.get("release_date")),
+            "support_until": _iso(r.get("support_until")),
+            "eol_date": _iso(r.get("eol_date")), "lts": bool(r.get("lts")),
+            "latest_version": r.get("latest") or "", "synced_at": None,
+            "missing": False, "install_count": 0,
+        }
+        for r in (product.releases or [] if product else [])
+        if isinstance(r, dict) and r.get("name") and r["name"] not in taken
+    ]
+    return {
+        **block,
+        "cycles": cycles,
+        "other_cycles": other,
+        "unmapped_installs": counts.get(None, 0),
+        "in_catalog": (product is not None) if mapped else None,
+        "source_label": source.label if source else None,
+        "product_label": (product.label or product.name) if product else None,
+        "product_url": (source.product_url(app.eol_product) or None) if source else None,
+    }
+
+
+#: How deep the Hierarchy card's tree of children goes.
+TREE_DEPTH = 3
+
+
+def _tree(context, app) -> dict:
+    """The application's ancestors (root first) and its children
+    ``TREE_DEPTH`` levels deep, each ``{id, name, install_count}`` - children
+    add ``child_count`` and their own ``children``. Only the applications the
+    reader may view, and the installs they may view. Two queries, once per
+    serializer context and application."""
+    memo = context.setdefault("_application_tree", {})
+    if app.pk in memo:
+        return memo[app.pk]
+    request = context.get("request")
+    f = view_filter(request, Application)
+    if f is None:
+        memo[app.pk] = {"ancestors": [], "children": []}
+        return memo[app.pk]
+    rows = {
+        r["id"]: r for r in Application.objects.filter(f)
+        .filter(tenant_id=app.tenant_id).values("id", "name", "parent_id")
+    }
+    kids: dict = {}
+    for r in rows.values():
+        kids.setdefault(r["parent_id"], []).append(r)
+    up, seen = [], {app.pk}
+    node = rows.get(app.parent_id)
+    while node is not None and node["id"] not in seen:
+        seen.add(node["id"])
+        up.append(node)
+        node = rows.get(node["parent_id"])
+    down, frontier = set(), [app.pk]
+    for _ in range(TREE_DEPTH):
+        frontier = [k["id"] for pk in frontier for k in kids.get(pk, [])
+                    if k["id"] not in seen]
+        seen.update(frontier)
+        down.update(frontier)
+    counts: dict = {}
+    fi = view_filter(request, InstalledSoftware)
+    if fi is not None and (up or down):
+        counts = dict(
+            InstalledSoftware.objects.filter(fi)
+            .filter(tenant_id=app.tenant_id,
+                    application_id__in=[n["id"] for n in up] + list(down))
+            .order_by().values("application_id")
+            .annotate(n=Count("pk", distinct=True))
+            .values_list("application_id", "n")
+        )
+
+    def branch(pk, level: int) -> list:
+        out = []
+        for k in sorted(kids.get(pk, []), key=lambda r: r["name"].lower()):
+            if k["id"] not in down:
+                continue
+            out.append({
+                "id": str(k["id"]), "name": k["name"],
+                "install_count": counts.get(k["id"], 0),
+                "child_count": len(kids.get(k["id"], [])),
+                "children": branch(k["id"], level + 1) if level < TREE_DEPTH else [],
+            })
+        return out
+
+    memo[app.pk] = {
+        "ancestors": [{"id": str(n["id"]), "name": n["name"],
+                       "install_count": counts.get(n["id"], 0)} for n in reversed(up)],
+        "children": branch(app.pk, 1),
+    }
+    return memo[app.pk]
 
 
 class ApplicationSerializer(
@@ -144,13 +289,16 @@ class ApplicationSerializer(
     install_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     flow_count = serializers.SerializerMethodField()
+    ancestors = serializers.SerializerMethodField()
+    children = serializers.SerializerMethodField()
 
     class Meta:
         model = Application
         fields = ["id", "name", "slug", "parent", "parent_id", "path", "depth",
                   "manufacturer", "manufacturer_id", "eol_source", "eol_product", "eol",
                   "description", "tags", "tag_ids", "custom_fields",
-                  "install_count", "child_count", "flow_count", "created_at", "updated_at"]
+                  "install_count", "child_count", "flow_count", "ancestors", "children",
+                  "created_at", "updated_at"]
         # The product is set through /eol/, which also redoes the installs.
         read_only_fields = ["id", "eol_source", "eol_product", "install_count",
                             "child_count", "flow_count", "created_at", "updated_at"]
@@ -163,6 +311,19 @@ class ApplicationSerializer(
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_eol(self, obj):
         return _eol_block(obj, _eol_config(self.context))
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_ancestors(self, obj):
+        """Root first: ``[{id, name, install_count}]``. Detail only."""
+        return _tree(self.context, obj)["ancestors"]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_children(self, obj):
+        """Three levels of ``[{id, name, install_count, child_count,
+        children}]``. Detail only."""
+        return _tree(self.context, obj)["children"]
 
     def get_install_count(self, obj) -> int:
         n = getattr(obj, "install_count_annotated", None)
@@ -480,8 +641,11 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     @action(detail=True, methods=["get", "put", "delete"], url_path="eol")
     def eol(self, request, pk=None):
         """``PUT {source?, product}`` names the product; each install's
-        version picks its cycle. ``DELETE`` clears it. 404 while end-of-life
-        data is off."""
+        version picks its cycle. ``DELETE`` clears it. ``GET`` and ``PUT``
+        answer the block with each cycle's ``install_count``,
+        ``other_cycles``, ``unmapped_installs``, ``in_catalog`` and the
+        source's and product's names and link. 404 while end-of-life data is
+        off."""
         from compliance.eol import load_config
         from compliance.eol_sources import SOURCES
         from compliance.models import EolProduct
@@ -507,7 +671,7 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 raise ValidationError({"product": "Not in the catalog - refresh or import it."})
             set_product(app, source, name)
         app = Application.objects.prefetch_related("eol_mappings").get(pk=app.pk)
-        return Response(_eol_block(app, cfg))
+        return Response(_eol_detail(app, cfg, request))
 
 
 class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
@@ -525,7 +689,12 @@ class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     @extend_schema(parameters=[
         OpenApiParameter(k, OpenApiTypes.UUID, OpenApiParameter.QUERY)
         for k in ("device", "virtual_machine", "application", "service", "group")
-    ] + [OpenApiParameter("search", OpenApiTypes.STR, OpenApiParameter.QUERY)])
+    ] + [
+        OpenApiParameter("search", OpenApiTypes.STR, OpenApiParameter.QUERY),
+        OpenApiParameter("cycle", OpenApiTypes.STR, OpenApiParameter.QUERY,
+                         description="A cycle, or `none` for the installs no "
+                                     "end-of-life cycle took."),
+    ])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
@@ -540,6 +709,11 @@ class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             v = _uuid_param(params, key)
             if v:
                 qs = qs.filter(**{field: v})
+        cycle = params.get("cycle", "").strip()
+        if cycle == "none":
+            qs = qs.filter(eol_mapping__isnull=True)
+        elif cycle:
+            qs = qs.filter(cycle=cycle)
         s = params.get("search", "").strip()
         if s:
             qs = qs.filter(Q(application__name__icontains=s) | Q(version__icontains=s)

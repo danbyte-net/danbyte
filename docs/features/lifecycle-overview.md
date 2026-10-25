@@ -80,19 +80,22 @@ unticks it. *No date* also lists the undated rows.
 | Item | The device type, the platform, the contract number (or *Contract* when you may not view it), *Warranty*, or the application and version - linked |
 | Status | The source's own badge |
 | Lifetime | The [lifetime bar](lifecycle.md#the-lifetime-bar): the share used and a countdown, the date in its tooltip - with *Entered* or *endoflife.date* on an OS row. No end but a state is that state's badge (*End of life*, *Open-ended*) |
-| End | The end date |
+| End | The end date; on a software row it links to the application's End of life card |
 | Days left | Negative once past; the default order |
 | Site, Role, Manufacturer | The device's or VM's own |
 
-*Window*, *Tenant* and *Tags* are in the **Columns** menu. The rail has
-facets for Source, Window, Status, Site, Role, Manufacturer, Kind and Tag,
+*Application* (software rows, linked), *Window*, *Tenant* and *Tags* are
+in the **Columns** menu. The rail has facets for Source, Application,
+Window, Status, Site, Role, Manufacturer, Kind and Tag,
 and **Show undated** adds the rows with no date. The search box matches the
 object and the item.
 
 - **Deep links** - the facets live in the URL, so a link lands filtered:
   `/lifecycle?source=coverage&window=90` is the coverage that ends within 90
-  days, `/lifecycle?window=past` everything already past. `undated=1` shows
-  the undated rows.
+  days, `/lifecycle?window=past` everything already past,
+  `/lifecycle?source=software&application=<id>` one application's installs
+  (its page's *Installs* count links there). `undated=1` shows the undated
+  rows.
 - **Export** - the table's **Download** menu (CSV, Excel, HTML, print)
   exports the rows as filtered, or the ticked ones; the Lifetime column
   exports its end date and the Status column its label.

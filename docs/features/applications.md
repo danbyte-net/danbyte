@@ -36,8 +36,8 @@ Payments
 ```
 
 The list shows the path before the name (*Payments › Checkout ›
-checkout-api*) and sorts by it, so children follow their parent; the picker
-reads the same. An application cannot be its own ancestor. Deleting a parent
+checkout-api*), indented one step per level, and sorts by it, so children
+follow their parent; the picker reads the same. An application cannot be its own ancestor. Deleting a parent
 is refused while it has children: move or delete them first.
 
 The list shows each application's installs and
@@ -47,13 +47,20 @@ Manufacturer facets.
 
 ### The application page
 
-**Overview** carries the attributes and, while end-of-life data is on, the
-**End of life** card: the mapped product and every cycle the installs run,
-each with its status and end of life. **Map** picks the product - only the
-product: the cycle comes from each install. **Installed on** lists every
-install, **Flows** and **Diagram** its [flows](application-flows.md) (the Diagram is the [Application map](application-flows.md#application-map)),
+**Overview** carries the attributes, the **Hierarchy** card and, while
+end-of-life data is on, the **End of life** card (see
+[End of life](#end-of-life)). **Hierarchy** shows the path to the root as
+linked crumbs and the children three levels deep, each linked with its
+install count; a deeper branch ends in *+N*, which opens that child's
+**Child applications**. Overview counts the installs - the count opens the
+[Lifecycle overview](lifecycle-overview.md) filtered to this application -
+and the flows.
+
+**Installed on** lists every install, with its *Cycle* and a *manual* chip
+where the cycle was set by hand. `?cycle=8` narrows it to one cycle,
+`?cycle=none` to the installs no cycle took; the chip above the table clears
+it. **Flows** and **Diagram** show its [flows](application-flows.md) (the Diagram is the [Application map](application-flows.md#application-map)),
 **Child applications** the children, then **Journal** and **Change log**.
-Overview counts the installs and the flows.
 
 An application with installs, child applications or flows cannot be deleted
 (409); remove them first. The list's bulk delete skips such rows and says
@@ -98,6 +105,28 @@ cycle and kept current by the daily refresh - see
 [Map an application](end-of-life-data.md#map-an-application). An install's
 end is its own *End of support* when entered, else its cycle's end of life;
 the start the same way.
+
+The **End of life** card on the application's Overview shows:
+
+- **Source** - *endoflife.date*; for a deployment admin it links to
+  Settings → General → End-of-life data.
+- **Product** - its name, linked to the product's page on endoflife.date.
+  A product missing from the cached catalog, or one none of the installs'
+  versions match, says so in a line under the card.
+- **Cycles** - each cycle the installs run, with its status, release date,
+  end of life with the time left, latest version, LTS and the installs on
+  it; the count opens **Installed on** filtered to that cycle. An
+  *Unmapped* row counts the installs whose version matched no cycle.
+  **All cycles** adds the product's other cycles, muted.
+
+**Change product** opens the product picker; **Remove** clears it. A
+deployment admin also gets **Refresh now**, which fetches the catalog as the
+settings card does. To pin one install to another cycle, edit the install
+and set its *Cycle*.
+
+Elsewhere the status links back here: the *End of life* badge on a device's
+or VM's **Software** tab and on **Installed on**, and the *End* date of a
+software row on the Lifecycle overview.
 
 ## Application groups
 
@@ -206,14 +235,17 @@ the installs are written as you.
 | Endpoint | |
 |---|---|
 | `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?picker=1` (`{id, name, slug, path, depth}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
-| `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. |
-| `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?group=`, `?search=`. `POST bulk-delete/`. |
+| `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. `GET` and `PUT` answer `{source, product, cycles, other_cycles, unmapped_installs, in_catalog, source_label, product_label, product_url}`; each cycle carries `install_count`, the installs you may view. |
+| `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?group=`, `?cycle=` (`none` for the installs no cycle took), `?search=`. `POST bulk-delete/`. |
 | `/api/application-groups/` | CRUD. `?search=`, `?application=`, `?device=`, `?virtual_machine=`, `?picker=1` (`{id, name, slug}`). `POST bulk-delete/`. Delete answers `409` while the group is assigned. |
 | `/api/application-group-assignments/` | List, `POST` (assign), `DELETE` (unassign). `?group=`, `?device=`, `?virtual_machine=`. `POST set/` makes a host's groups exactly a list. |
 
 An application carries `parent`, `path`, `depth`, `manufacturer`,
 `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
-the feature is off), `install_count`, `child_count` and `flow_count`. Write `parent_id` and
+the feature is off), `install_count`, `child_count` and `flow_count`. The
+detail adds `ancestors` (root first) and `children` (three levels deep), each
+`{id, name, install_count}`, children with `child_count` and their own
+`children`; the list leaves both empty. Write `parent_id` and
 `manufacturer_id`.
 
 An install carries `application` (`{id, name, slug, path}`), `device` or
