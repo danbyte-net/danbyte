@@ -162,6 +162,7 @@ from routing.viewsets import (
 )
 
 from .application_flows_api import ApplicationFlowViewSet
+from .application_groups_api import ApplicationGroupAssignmentViewSet, ApplicationGroupViewSet
 from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
 from .dashboard_views import dashboard_view
@@ -396,6 +397,9 @@ router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-gro
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
 router.register(r"applications", ApplicationViewSet, basename="application")
 router.register(r"installed-software", InstalledSoftwareViewSet, basename="installed-software")
+router.register(r"application-groups", ApplicationGroupViewSet, basename="application-group")
+router.register(r"application-group-assignments", ApplicationGroupAssignmentViewSet,
+                basename="application-group-assignment")
 router.register(r"application-flows", ApplicationFlowViewSet, basename="application-flow")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 # Routing - on this router (not a mounted app router) so bulk edit, planned

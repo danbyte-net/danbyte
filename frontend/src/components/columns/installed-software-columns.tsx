@@ -21,6 +21,7 @@ export type InstalledSoftwareColumnId =
   | "version"
   | "cycle"
   | "service"
+  | "group"
   | "eol"
   | "lifetime"
   | "source"
@@ -33,6 +34,7 @@ const CANONICAL_ORDER: InstalledSoftwareColumnId[] = [
   "version",
   "cycle",
   "service",
+  "group",
   "eol",
   "lifetime",
   "source",
@@ -44,6 +46,7 @@ export const SOFTWARE_SOURCE_LABELS: Record<InstalledSoftwareSource, string> = {
   manual: "Manual",
   import: "Import",
   discovery: "Discovery",
+  group: "Group",
 }
 
 export interface InstalledSoftwareColumnOpts<
@@ -172,6 +175,33 @@ export function buildInstalledSoftwareColumns<
         ) : (
           dash
         ),
+    }),
+    // The application group whose assignment made the install (#436).
+    group: () => ({
+      id: "group",
+      accessorFn: (r) => r.group?.name ?? "",
+      header: ({ column }) => <SortHeader column={column} label="Group" />,
+      cell: ({ row }) =>
+        row.original.group ? (
+          <Link
+            to="/application-groups/$id"
+            params={{ id: row.original.group.id }}
+            className="link"
+          >
+            {row.original.group.name}
+          </Link>
+        ) : (
+          dash
+        ),
+      meta: {
+        label: "Group",
+        facet: {
+          kind: "enum",
+          label: "Group",
+          get: (r: T) => r.group?.id ?? "__none__",
+          formatValue: (_v, r) => ({ label: r.group?.name ?? "No group" }),
+        },
+      },
     }),
     eol: () => eolColumn<T>({ get: (r) => r.eol }),
     lifetime: () => ({

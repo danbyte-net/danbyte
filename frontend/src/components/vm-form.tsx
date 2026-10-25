@@ -30,6 +30,10 @@ import {
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import {
+  ApplicationGroupsField,
+  useHostGroupsDraft,
+} from "@/components/application-group-assign"
 import { useSaveObject } from "@/lib/save-object"
 
 interface MiniNamed {
@@ -56,6 +60,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  const groupsDraft = useHostGroupsDraft(vm ? { kind: "vm", id: vm.id } : null)
 
   const [name, setName] = useState(vm?.name ?? "")
   const [clusterId, setClusterId] = useState<string | null>(
@@ -166,12 +171,15 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      return saveObject<VirtualMachine>({
+      const saved = await saveObject<VirtualMachine>({
         objectType: "api.virtualmachine",
         endpoint: "/api/virtual-machines/",
         id: isEdit ? vm!.id : undefined,
         payload,
       })
+      // Application groups (#436): written once the VM saved.
+      await groupsDraft.commit({ kind: "vm", id: saved.id })
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["virtual-machines"] })
@@ -441,6 +449,13 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
           </FormSection>
         </FormColumn>
       </FormColumns>
+
+      {groupsDraft.show && (
+        <ApplicationGroupsField
+          value={groupsDraft.ids}
+          onChange={groupsDraft.setIds}
+        />
+      )}
 
       <FormTags
         label="Tags"

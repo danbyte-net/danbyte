@@ -855,6 +855,13 @@ class InstalledSoftwareIOHandler(ModelIOHandler):
         return super().apply(existing, row, tenant, user, request)
 
 
+class ExportOnlyIOHandler(ModelIOHandler):
+    """A type whose writes have side effects only its API performs."""
+
+    def importable(self) -> bool:
+        return False
+
+
 # ── registry ──────────────────────────────────────────────────────────────
 
 _REGISTRY: dict[str, ModelIOHandler] = {}
@@ -962,7 +969,17 @@ def register_builtins() -> None:
         InstalledSoftware, InstalledSoftwareIOHandler,
         natural_key=["application", "device", "virtual_machine", "version"],
         fk_keys={"application": "slug", "device": "name", "virtual_machine": "name",
-                 "service": "name"},
+                 "service": "name", "group": "slug"},
+    ))
+    # Application groups (#436): a group by its slug. Assignments export
+    # only: assigning records installs, which only the API does.
+    from .models import ApplicationGroup, ApplicationGroupAssignment
+
+    register_io(_handler(ApplicationGroup, natural_key=["slug"]))
+    register_io(_handler(
+        ApplicationGroupAssignment, ExportOnlyIOHandler,
+        natural_key=["group", "device", "virtual_machine"],
+        fk_keys={"group": "slug", "device": "name", "virtual_machine": "name"},
     ))
     # Application flows (#163): matched by application slug and flow name;
     # each end by address, CIDR or (ranges) id.

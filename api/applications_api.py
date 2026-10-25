@@ -229,6 +229,7 @@ class InstalledSoftwareSerializer(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    group = serializers.SerializerMethodField()
     eol = serializers.SerializerMethodField()
     effective_release = serializers.SerializerMethodField()
     effective_end = serializers.SerializerMethodField()
@@ -241,9 +242,9 @@ class InstalledSoftwareSerializer(
                   "virtual_machine", "virtual_machine_id", "version", "cycle",
                   "cycle_manual", "service", "service_id", "release_date",
                   "end_of_support", "eol", "effective_release", "effective_end",
-                  "effective_source", "source", "last_seen", "description",
+                  "effective_source", "source", "last_seen", "group", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "cycle_manual", "created_at", "updated_at"]
+        read_only_fields = ["id", "cycle_manual", "group", "created_at", "updated_at"]
         validators = []  # the unique set is checked in validate() as a field error
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -264,6 +265,12 @@ class InstalledSoftwareSerializer(
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_service(self, obj):
         return _ref(obj.service)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_group(self, obj):
+        """The application group that made the install, while it is its."""
+        g = obj.group
+        return {"id": str(g.id), "name": g.name, "slug": g.slug} if g else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_eol(self, obj):
@@ -507,7 +514,7 @@ class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     rbac_action_map = {"bulk_delete": "delete"}
     queryset = (
         InstalledSoftware.objects.select_related(
-            "application", "device", "virtual_machine", "service", "eol_mapping",
+            "application", "device", "virtual_machine", "service", "eol_mapping", "group",
         )
         .prefetch_related(TAGS)
         .order_by(natural("application__name"), "version")
@@ -517,7 +524,7 @@ class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
 
     @extend_schema(parameters=[
         OpenApiParameter(k, OpenApiTypes.UUID, OpenApiParameter.QUERY)
-        for k in ("device", "virtual_machine", "application", "service")
+        for k in ("device", "virtual_machine", "application", "service", "group")
     ] + [OpenApiParameter("search", OpenApiTypes.STR, OpenApiParameter.QUERY)])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -528,7 +535,8 @@ class InstalledSoftwareViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             return qs
         params = self.request.query_params
         for key, field in (("device", "device_id"), ("virtual_machine", "virtual_machine_id"),
-                           ("application", "application_id"), ("service", "service_id")):
+                           ("application", "application_id"), ("service", "service_id"),
+                           ("group", "group_id")):
             v = _uuid_param(params, key)
             if v:
                 qs = qs.filter(**{field: v})

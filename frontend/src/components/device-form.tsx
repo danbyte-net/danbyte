@@ -57,6 +57,10 @@ import { RackPlacement } from "@/components/rack-placement"
 import { fmtUnits, unitBlocker } from "@/lib/rack-placement"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
+import {
+  ApplicationGroupsField,
+  useHostGroupsDraft,
+} from "@/components/application-group-assign"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -129,6 +133,10 @@ export function DeviceForm({
   const saveObject = useSaveObject()
   // The Monitoring section stages its picks; Save writes them (#324).
   const bindingDrafts = useBindingDraftsRoot()
+  // Application groups (#436): written once the device saved.
+  const groupsDraft = useHostGroupsDraft(
+    device ? { kind: "device", id: device.id } : null
+  )
 
   const [name, setName] = useState(device?.name ?? "")
   const [deviceTypeId, setDeviceTypeId] = useState<string | null>(
@@ -590,6 +598,7 @@ export function DeviceForm({
         payload,
       })
       await bindingDrafts.commit()
+      await groupsDraft.commit({ kind: "device", id: saved.id })
       return saved
     },
     onSuccess: (saved) => {
@@ -1167,6 +1176,13 @@ export function DeviceForm({
           )}
         </FormColumn>
       </FormColumns>
+
+      {groupsDraft.show && (
+        <ApplicationGroupsField
+          value={groupsDraft.ids}
+          onChange={groupsDraft.setIds}
+        />
+      )}
 
       <Field label="Tags" error={fieldErrors.tag_ids}>
         {" "}
