@@ -45,6 +45,7 @@ from api.models import (
     RackRole,
     RearPort,
     Region,
+    Site,
     VirtualMachine,
     VirtualMachineGroup,
     VMInterface,
@@ -53,7 +54,7 @@ from api.test_utils import status_for
 from api.tests_site_scope_gaps import _TwoSites
 from auth_api.api import assemble_site_role
 from auth_api.models import ObjectPermission
-from core.models import DeploymentSettings, Tag
+from core.models import DeploymentSettings, Tag, Tenant, TenantGroup
 from customization.models import CustomField, CustomFieldGroup
 from routing.models import VTEP, VTEPMembership
 
@@ -354,3 +355,157 @@ class TagUsageCostTests(_TwoSites):
         self.assertEqual(len(rows), 5)
         self.assertGreaterEqual(self.per_site[self.site_a.pk], 20)
         self.assertEqual({r["usage_count"] for r in rows}, {self.per_site[self.site_a.pk]})
+
+
+class RollupVisibleCountTests(_TwoSites):
+    """The tenant, cluster, tag and prefix counts count what the reader may
+    view too (#448). The issue's setup: site A holds one prefix, IP and VLAN,
+    site B three of each, under a shared 10.0.0.0/8; cluster C1 runs one VM
+    at A and three at B, each tagged "zz"; the user views site A only."""
+
+    def setUp(self):
+        super().setUp()
+        t = self.tenant
+        status = status_for(t)
+        self.container = Prefix.objects.create(tenant=t, cidr="10.0.0.0/8", status=status)
+        ctype = ClusterType.objects.create(tenant=t, name="PVE", slug="pve")
+        self.cluster = Cluster.objects.create(tenant=t, name="C1", type=ctype)
+        self.tag = Tag.objects.create(tenant=t, name="zz", slug="zz")
+        for site, n, octet in ((self.site_a, 1, 1), (self.site_b, 3, 2)):
+            for i in range(n):
+                prefix = Prefix.objects.create(
+                    tenant=t, cidr=f"10.{octet}.{i}.0/24", site=site, status=status
+                )
+                IPAddress.objects.create(
+                    tenant=t, ip_address=f"10.{octet}.{i}.5", prefix=prefix, site=site
+                )
+                VLAN.objects.create(tenant=t, site=site, vlan_id=octet * 10 + i, name=f"v{i}")
+                VirtualMachine.objects.create(
+                    tenant=t, name=f"{site.name}-vm{i}", cluster=self.cluster, site=site,
+                    status=status,
+                ).tags.add(self.tag)
+        assemble_site_role(t, "viewer", [self.site_a], user_ids=[self.user.id])
+        self._login()
+
+    def _get(self, url):
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def _rows(self, url):
+        body = self._get(url)
+        return body["results"] if isinstance(body, dict) and "results" in body else body
+
+    def _expect(self, url, obj, **counts):
+        row = next(r for r in self._rows(url) if str(r["id"]) == str(obj.id))
+        for where, data in (("detail", self._get(f"{url}{obj.id}/")), ("list", row)):
+            for field, n in counts.items():
+                with self.subTest(url=url, where=where, field=field):
+                    self.assertEqual(data[field], n)
+
+    def _as_admin(self):
+        self.user = User.objects.create_superuser("root", "r@example.com", "x")
+        self._login()
+
+    def _separated(self):
+        """Yield with enhanced site separation off, then on."""
+        for on in (False, True):
+            dep = DeploymentSettings.load()
+            dep.enhanced_site_separation = on
+            dep.save()
+            yield on
+
+    def test_tenant_counts_match_the_lists(self):
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect(
+                    "/api/tenants/", self.tenant,
+                    site_count=1, prefix_count=2, vlan_count=1, ip_count=1,
+                )
+                self.assertEqual(len(self._rows("/api/sites/")), 1)
+                self.assertEqual(len(self._rows("/api/prefixes/")), 2)
+                self.assertEqual(len(self._rows("/api/vlans/")), 1)
+                self.assertEqual(len(self._rows("/api/ips/")), 1)
+        self._as_admin()
+        self._expect(
+            "/api/tenants/", self.tenant,
+            site_count=2, prefix_count=5, vlan_count=4, ip_count=4,
+        )
+
+    def test_each_tenant_counts_through_its_own_grants(self):
+        # A second tenant the user reads in full, a third where it holds no
+        # grant: each counts by the user's grants there, not the active one's.
+        org = self.tenant.org
+        wide = Tenant.objects.create(org=org, name="Wide", slug="wide")
+        bare = Tenant.objects.create(org=org, name="Bare", slug="bare")
+        for tenant in (wide, bare):
+            self.user.profile.tenants.add(tenant)
+            for name in ("W1", "W2"):
+                Site.objects.create(tenant=tenant, name=name)
+        perm = ObjectPermission.objects.create(
+            name="wide", object_types=["site"], actions=["view"]
+        )
+        perm.users.add(self.user)
+        perm.tenants.add(wide)
+        rows = {r["slug"]: r for r in self._rows("/api/tenants/")}
+        self.assertEqual(rows["t"]["site_count"], 1)
+        self.assertEqual(rows["wide"]["site_count"], 2)
+        self.assertEqual(rows["bare"]["site_count"], 0)
+        self.assertEqual(self._get(f"/api/tenants/{wide.id}/")["site_count"], 2)
+
+    def test_tenant_list_costs_the_same_for_more_tenants(self):
+        def queries():
+            self.client.get("/api/tenants/")
+            with CaptureQueriesContext(connection) as ctx:
+                r = self.client.get("/api/tenants/")
+            self.assertEqual(r.status_code, 200, r.content)
+            return len(ctx.captured_queries)
+
+        def add_tenant(slug):
+            tenant = Tenant.objects.create(org=self.tenant.org, name=slug, slug=slug)
+            self.user.profile.tenants.add(tenant)
+
+        add_tenant("x0")
+        small = queries()
+        for i in range(1, 4):
+            add_tenant(f"x{i}")
+        self.assertEqual(queries(), small, "each tenant on the page costs more queries")
+
+    def test_tenant_group_counts_the_tenants_the_reader_may_open(self):
+        group = TenantGroup.objects.create(org=self.tenant.org, name="G", slug="g")
+        self.tenant.group = group
+        self.tenant.save()
+        Tenant.objects.create(org=self.tenant.org, name="Other", slug="other", group=group)
+        self._expect("/api/tenant-groups/", group, tenant_count=1)
+        self._as_admin()
+        self._expect("/api/tenant-groups/", group, tenant_count=2)
+
+    def test_cluster_vm_and_tag_counts(self):
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect("/api/clusters/", self.cluster, vm_count=1)
+                self._expect("/api/tags/", self.tag, usage_count=1)
+        self._as_admin()
+        self._expect("/api/clusters/", self.cluster, vm_count=4)
+        self._expect("/api/tags/", self.tag, usage_count=4)
+
+    def test_prefix_child_and_ip_counts(self):
+        # Two addresses straight in the container: a shared one, and one
+        # placed at site B.
+        IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.0.1", prefix=self.container
+        )
+        IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.9.0.2", prefix=self.container,
+            site=self.site_b,
+        )
+        url = f"/api/prefixes/{self.container.id}/"
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect("/api/prefixes/", self.container, child_count=1, ip_count=1)
+                self.assertTrue(self._get(url)["has_descendants"])
+                self.assertEqual(
+                    len(self._rows(f"/api/ips/?prefix={self.container.id}")), 1
+                )
+        self._as_admin()
+        self._expect("/api/prefixes/", self.container, child_count=4, ip_count=2)

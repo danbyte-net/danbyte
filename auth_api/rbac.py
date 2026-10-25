@@ -75,21 +75,52 @@ def applicable_permissions(user, tenant):
     key = (user.pk, tenant.pk if tenant is not None else None)
     if cache is not None and key in cache:
         return list(cache[key])
-    qs = (
+    out = _applying_in(_user_permissions(user), tenant)
+    if cache is not None:
+        cache[key] = tuple(out)
+    return out
+
+
+def _user_permissions(user) -> list:
+    """Every enabled ObjectPermission assigned to ``user`` or a group of
+    theirs, with its tenant and site scope prefetched."""
+    from .models import ObjectPermission
+
+    return list(
         ObjectPermission.objects.filter(enabled=True)
         .filter(Q(users=user) | Q(groups__in=user.groups.all()))
         .prefetch_related("tenants", "sites")
         .distinct()
     )
+
+
+def _applying_in(perms, tenant) -> list:
+    """The ``perms`` that apply in ``tenant``: unscoped, or naming it."""
     out = []
-    for perm in qs:
+    for perm in perms:
         scoped = perm.tenants.all()
         if scoped and (tenant is None or tenant.pk not in {t.pk for t in scoped}):
             continue
         out.append(perm)
-    if cache is not None:
-        cache[key] = tuple(out)
     return out
+
+
+def prime_permissions(user, tenants) -> None:
+    """Memoise :func:`applicable_permissions` for each of ``tenants`` from one
+    read of the user's grants, so a page that checks access per tenant (the
+    Tenants list's counts) costs the same for one tenant as for ten. A no-op
+    outside a request."""
+    cache = _request_cache.get()
+    if cache is None or not getattr(user, "is_authenticated", False):
+        return
+    perms = None
+    for tenant in tenants:
+        key = (user.pk, tenant.pk if tenant is not None else None)
+        if key in cache:
+            continue
+        if perms is None:
+            perms = _user_permissions(user)
+        cache[key] = tuple(_applying_in(perms, tenant))
 
 
 def effective_actions(user, tenant) -> dict[str, set[str]]:

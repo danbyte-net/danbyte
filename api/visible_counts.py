@@ -13,6 +13,9 @@ Both take the reverse relation's query name on the catalog model.
 path back instead, for a count across more than one relation.
 ``tagged_count_expr`` and ``tagged_count`` do the same for a tag's usage,
 which hangs off the generic ``core.TaggedItem`` instead of a foreign key.
+``tenant_count_expr`` and ``tenant_count`` count a tenant's own rows, each
+tenant's through the reader's grants in that tenant rather than in the
+active one (#448).
 """
 from __future__ import annotations
 
@@ -21,11 +24,14 @@ import functools
 from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 
+_ACTIVE = object()
 
-def _view_filter(request, slug: str):
+
+def _view_filter(request, slug: str, tenant=_ACTIVE):
     """``Q`` of the ``slug`` rows the request's user may view: ``Q()`` for
     all, ``None`` for none. No request means an internal serialisation,
-    which counts everything."""
+    which counts everything. The grants are the active tenant's unless
+    ``tenant`` names another."""
     if request is None:
         return Q()
     user = getattr(request, "user", None)
@@ -43,12 +49,15 @@ def _view_filter(request, slug: str):
             request._visible_count_filters = memo
         except AttributeError:
             pass
-    if slug not in memo:
-        from api.views import _get_active_tenant
+    key = slug if tenant is _ACTIVE else (slug, getattr(tenant, "pk", tenant))
+    if key not in memo:
+        if tenant is _ACTIVE:
+            from api.views import _get_active_tenant
 
-        f = rbac.row_filter(user, _get_active_tenant(request), slug, "view")
-        memo[slug] = Q() if f is True else f
-    return memo[slug]
+            tenant = _get_active_tenant(request)
+        f = rbac.row_filter(user, tenant, slug, "view")
+        memo[key] = Q() if f is True else f
+    return memo[key]
 
 
 def _relation(model, rel_name: str):
@@ -60,7 +69,12 @@ def path_count_expr(request, related, path: str):
     """Per-row count of the ``related`` rows the reader may view whose
     ``path`` leads back to the row. For a count that crosses more than one
     relation, such as the circuits that terminate on a provider network."""
-    f = _view_filter(request, related._meta.model_name)
+    return _count_subquery(related, _view_filter(request, related._meta.model_name), path)
+
+
+def _count_subquery(related, f, path: str):
+    """Correlated count of the ``related`` rows matching ``f`` whose ``path``
+    is the outer row; 0 when ``f`` is ``None`` (nothing granted)."""
     if f is None:
         return Value(0, output_field=IntegerField())
     sub = (
@@ -172,3 +186,55 @@ def tagged_count(request, tag) -> int:
         .first()
     )
     return n or 0
+
+
+def _tenants_filter(request, related, fk: str, tenants):
+    """``Q`` of the ``related`` rows the reader may view in any of
+    ``tenants`` - each tenant's rows (``fk`` is the tenant field) through the
+    grants the reader holds in that tenant. ``Q()`` for all, ``None`` for
+    none."""
+    user = getattr(request, "user", None)
+    if request is None or (getattr(user, "is_authenticated", False) and user.is_superuser):
+        return Q()
+    from auth_api import rbac
+
+    tenants = list(tenants)
+    rbac.prime_permissions(user, tenants)  # one read of the grants for all
+    slug = related._meta.model_name
+    out, narrowed = Q(), False
+    for tenant in tenants:
+        f = _view_filter(request, slug, tenant)
+        if f is None:
+            narrowed = True
+            continue
+        if f:
+            narrowed = True
+        out |= Q(**{fk: tenant.pk}) & f
+    if not narrowed:
+        return Q()
+    return out if out else None
+
+
+def tenant_count_expr(request, rel_name: str, tenants):
+    """Per-tenant count of its ``rel_name`` rows the reader may view, for a
+    list of the ``tenants`` it can show."""
+    from core.models import Tenant
+
+    related, fk = _relation(Tenant, rel_name)
+    return _count_subquery(related, _tenants_filter(request, related, fk, tenants), fk)
+
+
+def tenant_count(request, tenant, rel_name: str) -> int:
+    """Count of ``tenant``'s ``rel_name`` rows the reader may view."""
+    related, fk = _relation(type(tenant), rel_name)
+    f = _tenants_filter(request, related, fk, [tenant])
+    if f is None:
+        return 0
+    return related._default_manager.filter(f).filter(**{fk: tenant.pk}).distinct().count()
+
+
+def view_filter(request, model):
+    """``Q`` of the ``model`` rows the reader may view in the active tenant:
+    ``Q()`` for all, ``None`` for none. For a count worked out in Python over
+    rows read from the database, such as a prefix's descendants."""
+    return _view_filter(request, model._meta.model_name)

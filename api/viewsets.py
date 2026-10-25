@@ -40,7 +40,13 @@ from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
-from .visible_counts import path_count_expr, related_count_expr, tagged_count_expr
+from .visible_counts import (
+    path_count_expr,
+    related_count_expr,
+    tagged_count_expr,
+    tenant_count_expr,
+    view_filter,
+)
 from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import capacity, elevation_pdf, floor_plan_pdf, scene_geo, software_target, support_coverage
@@ -1417,6 +1423,14 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             .select_related("status")
             .annotate(dhcp_scope_n=dhcp_scope_n, ip_n=ip_n)
         )
+        # ``ip_n`` is the prefix's fill, every address in it; the IP count
+        # links to the addresses the reader may view. A reader whose view the
+        # scope narrows gets that count as its own subquery (#448).
+        ip_view = view_filter(self.request, IPAddress)
+        if ip_view is None or ip_view:
+            qs = qs.annotate(
+                ip_visible_n=related_count_expr(self.request, Prefix, "ip_addresses")
+            )
         if not self.request:
             return qs
         search = self.request.query_params.get("search", "").strip()
@@ -2647,17 +2661,27 @@ class TenantGroupViewSet(viewsets.ModelViewSet):
         if not self.request:
             return qs
         user = getattr(self.request, "user", None)
+        tenant_n = _all_n(TenantGroup, "tenants")
         if not (user and user.is_superuser):
             from auth_api.permissions import user_tenants
 
             qs = qs.filter(
                 org__in=user_tenants(user).values("org_id")
             )
+            # The tenants the Tenants list shows the reader (#448).
+            tenant_n = Coalesce(
+                Subquery(
+                    Tenant.objects.filter(
+                        group=OuterRef("pk"), pk__in=user_tenants(user).values("pk")
+                    ).order_by().values("group").annotate(c=Count("pk")).values("c")
+                ),
+                0,
+            )
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         return qs.annotate(
-            tenant_n=_all_n(TenantGroup, "tenants"),
+            tenant_n=tenant_n,
             child_n=_all_n(TenantGroup, "children"),
         )
 
@@ -2706,21 +2730,25 @@ class TenantViewSet(viewsets.ModelViewSet):
         # A user may only see/act on tenants they're granted - without this any
         # authed user could GET /api/tenants/<id>/ for any tenant's metadata.
         user = getattr(self.request, "user", None)
+        tenants = ()
         if not (user and user.is_superuser):
             from auth_api.permissions import user_tenants
 
-            qs = qs.filter(pk__in=user_tenants(user).values("pk"))
+            tenants = list(user_tenants(user))
+            qs = qs.filter(pk__in=[t.pk for t in tenants])
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(slug__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         if self.get_serializer_class() is TenantSerializer:
-            # The roll-up counts, one subquery each for the page (#444).
-            qs = qs.annotate(
-                site_n=_all_n(Tenant, "sites"),
-                prefix_n=_all_n(Tenant, "prefixes"),
-                vlan_n=_all_n(Tenant, "vlans"),
-                ip_n=_all_n(Tenant, "ip_addresses"),
-            )
+            # The roll-up counts, one subquery each for the page (#444),
+            # narrowed to the rows the reader may view in each tenant (#448).
+            qs = qs.annotate(**{
+                name: tenant_count_expr(self.request, rel, tenants)
+                for name, rel in (
+                    ("site_n", "sites"), ("prefix_n", "prefixes"),
+                    ("vlan_n", "vlans"), ("ip_n", "ip_addresses"),
+                )
+            })
         return qs
 
     def perform_create(self, serializer):
