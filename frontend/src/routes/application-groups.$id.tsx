@@ -10,6 +10,7 @@ import type {
   ApplicationGroup,
   ApplicationGroupAssignment,
   ApplicationGroupMember,
+  ApplicationMini,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { PlanStaged, useSaveObject } from "@/lib/save-object"
@@ -22,7 +23,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormFooter, FormText, useFieldErrors } from "@/components/forms"
+import {
+  FormCheckbox,
+  FormFooter,
+  FormText,
+  useFieldErrors,
+} from "@/components/forms"
+import { Badge } from "@/components/ui/badge"
 import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
 import { EmptyState } from "@/components/empty-state"
@@ -165,7 +172,11 @@ function Body({ group }: { group: ApplicationGroup }) {
   )
 }
 
-type MemberRow = { application_id: string; version: string }
+type MemberRow = {
+  application_id: string
+  version: string
+  include_children?: boolean
+}
 
 const toRows = (members: ApplicationGroupMember[]): MemberRow[] =>
   members.map((m) => ({ application_id: m.application.id, version: m.version }))
@@ -305,7 +316,7 @@ function Members({ group }: { group: ApplicationGroup }) {
 }
 
 /** Add an application to the group, or change a member's version. */
-function MemberDialog({
+export function MemberDialog({
   group,
   member,
   open,
@@ -322,13 +333,30 @@ function MemberDialog({
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [applicationId, setApplicationId] = useState<string | null>(null)
   const [version, setVersion] = useState("")
+  const [withChildren, setWithChildren] = useState(true)
 
   useEffect(() => {
     if (!open) return
     setApplicationId(member?.application.id ?? null)
     setVersion(member?.version ?? "")
+    setWithChildren(true)
     reset()
   }, [open, member, reset])
+
+  // Everything under the picked application that is not a member yet.
+  const under = useQuery({
+    queryKey: ["applications-picker", "ancestor", applicationId],
+    queryFn: () =>
+      apiAll<ApplicationMini>(
+        `/api/applications/?picker=1&ancestor=${applicationId}`
+      ),
+    enabled: open && !isEdit && !!applicationId,
+  })
+  const memberIds = new Set(group.members.map((m) => m.application.id))
+  const childCount = isEdit
+    ? 0
+    : (under.data?.results ?? []).filter((a) => !memberIds.has(a.id)).length
+  const includeChildren = childCount > 0 && withChildren
 
   const save = useMutation({
     mutationFn: () => {
@@ -340,12 +368,19 @@ function MemberDialog({
         rows.push({
           application_id: applicationId ?? "",
           version: version.trim(),
+          ...(includeChildren ? { include_children: true } : {}),
         })
       }
       return onSave(rows)
     },
     onSuccess: () => {
-      toast.success(isEdit ? "Version saved" : "Application added")
+      toast.success(
+        isEdit
+          ? "Version saved"
+          : includeChildren
+            ? `${childCount + 1} applications added`
+            : "Application added"
+      )
       onOpenChange(false)
     },
     onError: (err) => {
@@ -386,10 +421,30 @@ function MemberDialog({
             placeholder="2022"
             error={isEdit ? fieldErrors.members : undefined}
           />
+          {childCount > 0 && (
+            <FormCheckbox
+              label={
+                <>
+                  Include children
+                  <Badge variant="secondary" className="num">
+                    {childCount}
+                  </Badge>
+                </>
+              }
+              checked={withChildren}
+              onChange={setWithChildren}
+            />
+          )}
           <FormFooter
             onCancel={() => onOpenChange(false)}
             submitting={save.isPending}
-            submitLabel={isEdit ? "Save changes" : "Add application"}
+            submitLabel={
+              isEdit
+                ? "Save changes"
+                : includeChildren
+                  ? `Add ${childCount + 1} applications`
+                  : "Add application"
+            }
           />
         </form>
       </DialogContent>

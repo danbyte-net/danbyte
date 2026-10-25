@@ -16,6 +16,9 @@ export interface ApplicationPickerProps extends Omit<
 
 const ENDPOINT = "/api/applications/"
 
+const childCount = (n: number) =>
+  `${n} ${n === 1 ? "child" : "children"}`
+
 /** The application preset of ObjectPicker (#436). Options read as the tree
  * path, "Payments › Checkout › checkout-api". */
 export function ApplicationPicker({
@@ -28,6 +31,8 @@ export function ApplicationPicker({
       pickerEndpoint: `${ENDPOINT}?picker=1`,
       pickerQueryKey: ["applications-picker"],
       optionLabel: (a) => a.path || a.name,
+      optionState: (a) =>
+        a.child_count > 0 ? { hint: childCount(a.child_count) } : {},
       detailEndpoint: (id) => `${ENDPOINT}${id}/`,
       detailQueryKey: (id) => ["application", id],
       detailLabel: (a) => a.path || a.name,
@@ -50,6 +55,10 @@ export function ApplicationPicker({
               {a.manufacturer?.name ?? "-"}
             </span>
           ),
+        },
+        {
+          header: "Children",
+          cell: (a) => <span className="num">{a.child_count}</span>,
         },
         {
           header: "Installs",
