@@ -251,6 +251,7 @@ export function ComplianceOverview({
               exportName="compliance-top-offenders"
               exportTitle="Compliance top offenders"
               embedded
+              unpaged
             />
           )}
         </CardContent>

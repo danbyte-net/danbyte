@@ -160,6 +160,9 @@ interface DataTableProps<T> {
    * post-expansion rows (group banners interleaved) when a grouped table can
    * hold hundreds of interactive rows - e.g. the monitoring policy tables. */
   pagedWhenGrouped?: boolean
+  /** Never page or show the row-count footer: a fixed short list, like a
+   * top ten, where "10 rows" and a page size are chrome. */
+  unpaged?: boolean
   /** Show a filter box above the table. Embedded panes (device components,
    * detail tabs) suppress the Export/Columns toolbar but still want to find a
    * row in a long list - this is that box, and it filters every shown column.
@@ -232,6 +235,7 @@ export function DataTable<T>({
   onRowClick,
   embedded,
   pagedWhenGrouped,
+  unpaged,
   searchable,
   searchPlaceholder,
   serverPagination,
@@ -279,6 +283,7 @@ export function DataTable<T>({
   const prefPageSize = Number(displayPrefs.page_size) || 25
   const paged =
     !serverPagination &&
+    !unpaged &&
     prefPageSize > 0 &&
     (!groupBy || pagedWhenGrouped === true)
   const [pagination, setPagination] = useState({
