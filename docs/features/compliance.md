@@ -126,9 +126,12 @@ and the decision is still there if it fails again - **Reopen** clears it.
 Deleting a rule drops its triage. Config drift is not triaged here; it clears
 when the device's configuration matches again.
 
-Triage needs the *change* permission on compliance rules, and every object in
-the selection must be one you can view: a site-limited user triages only
-their own sites' objects. Each action is recorded in the
+Triage needs the *change* permission on **Compliance triage**, its own
+permission apart from compliance rules: editing rules does not let you
+triage, and triage does not let you edit rules. The built-in Administrator
+and Operator groups hold it; Read-only can view triage but not change it.
+Every object in the selection must be one you can view: a site-limited user
+triages only their own sites' objects. Each action is recorded in the
 [change log](change-log.md) and as a journal note on the rule and on each
 object.
 
@@ -239,7 +242,7 @@ standard data tables, so they carry the app-wide **Export** menu
 ## API
 
 All compliance endpoints are tenant-scoped and need the *view* permission on
-compliance rules; triage needs *change*.
+compliance rules; triage needs *change* on compliance triage.
 
 | Endpoint | What it returns |
 |---|---|
@@ -252,4 +255,5 @@ compliance rules; triage needs *change*.
 
 Creating, editing, or deleting a rule is recorded, and so is every
 acknowledgement, snooze and reopen, so you can see who changed your policy or
-triaged a violation and when. See the [change log](change-log.md).
+triaged a violation and when. Triage entries show to people with *view* on
+compliance triage. See the [change log](change-log.md).

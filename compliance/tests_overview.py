@@ -57,8 +57,10 @@ class _Base(APITestCase):
             tenant=self.tenant, name="Off", object_type="device",
             check_type="required", field="serial_number", enabled=False,
         )
-        self.user = self.login_as("ops", ["compliancerule", "device", "prefix"],
-                                  ["view", "change"])
+        self.user = self.login_as(
+            "ops", ["compliancerule", "compliancetriage", "device", "prefix"],
+            ["view", "change"],
+        )
 
     def login_as(self, name, types, actions, sites=()):
         user = User.objects.create_user(name, password="x")
@@ -272,8 +274,8 @@ class TriageTests(_Base):
         dev_note = JournalEntry.objects.get(object_type="api.device", object_id=str(self.sw1.id))
         self.assertEqual(dev_note.object_site_id, self.ams.id)
 
-    def test_needs_change_on_compliance_rules(self):
-        self.login_as("viewer", ["compliancerule", "device"], ["view"])
+    def test_needs_change_on_compliance_triage(self):
+        self.login_as("viewer", ["compliancerule", "compliancetriage", "device"], ["view"])
         r = self.post("acknowledge", [self.item(self.serial, self.sw1)])
         self.assertEqual(r.status_code, 403)
         self.assertFalse(ComplianceTriage.objects.exists())
@@ -295,8 +297,8 @@ class TriageTests(_Base):
         self.assertFalse(ComplianceTriage.objects.exists())
 
     def test_object_outside_the_callers_sites_refused(self):
-        self.login_as("ams-ops", ["compliancerule", "device"], ["view", "change"],
-                      sites=[self.ams])
+        self.login_as("ams-ops", ["compliancerule", "compliancetriage", "device"],
+                      ["view", "change"], sites=[self.ams])
         r = self.post("acknowledge", [self.item(self.serial, self.sw1),
                                       self.item(self.serial, self.sw2)])
         self.assertEqual(r.status_code, 400)

@@ -47,6 +47,15 @@ no built-in group holds it, because a config carries secrets), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
+Some jobs on one feature are separate types so they can be granted apart.
+**Compliance triage** - acknowledging, snoozing and reopening
+[compliance violations](compliance.md#triage-acknowledge-and-snooze) - needs
+*change* on Compliance triage, not on Compliance rules: a rule editor does
+not triage, and a triager does not edit rules. *View* on Compliance triage
+shows its entries in the change log. It is tenant-wide; site limits on the
+grant do not narrow it, but a triager still acts only on objects they can
+view.
+
 ### Granting superuser without being one
 
 **grant superuser** on the *user* type lets its holder set or clear the
@@ -74,7 +83,7 @@ hand. They can't be deleted.
 | Group | What members can do |
 |---|---|
 | **Administrator** | View, add, change, and delete everything - including managing users, groups, and permissions (its grant names those types) - and see SLA service credits and contract costs (*view credits*, *view cost*). |
-| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. No Admin pages or tenant settings. |
+| **Operator** | View, add, and change every object except users, groups and permissions - but not delete. Includes compliance triage. No Admin pages or tenant settings. |
 | **Read-only** | View every object except users, groups and permissions; change nothing. |
 
 An all-object grant carries only the verbs it lists. The Administrator grant

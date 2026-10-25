@@ -803,8 +803,8 @@ def compliance_triage(request):
 
     ``acknowledge`` marks them seen, ``snooze`` takes them out of the open
     count until ``until``, and ``clear`` returns them to open. Needs
-    ``compliancerule.change``; each rule must be the tenant's and each object
-    one the caller may view. Every row is written through the model, so the
+    ``compliancetriage.change`` - its own grant, apart from editing rules;
+    each rule must be the tenant's and each object one the caller may view. Every row is written through the model, so the
     change log records it, and each rule and object gets a journal note."""
     from django.db import transaction
     from django.utils import timezone
@@ -817,8 +817,8 @@ def compliance_triage(request):
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "No active tenant selected."}, status=403)
-    if not rbac.has_action(request.user, tenant, "compliancerule", "change"):
-        return Response({"detail": "compliancerule.change required."}, status=403)
+    if not rbac.has_action(request.user, tenant, "compliancetriage", "change"):
+        return Response({"detail": "compliancetriage.change required."}, status=403)
     ser = ComplianceTriageSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
     action = ser.validated_data["action"]
