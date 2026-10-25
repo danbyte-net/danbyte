@@ -15,6 +15,7 @@ describe("app sidebar sections", () => {
       "/floorplans",
       "/topology",
       "/virtual-topology",
+      "/application-map",
     ])
   })
 

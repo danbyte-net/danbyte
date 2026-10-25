@@ -51,7 +51,7 @@ Manufacturer facets.
 **End of life** card: the mapped product and every cycle the installs run,
 each with its status and end of life. **Map** picks the product - only the
 product: the cycle comes from each install. **Installed on** lists every
-install, **Flows** and **Diagram** its [flows](application-flows.md),
+install, **Flows** and **Diagram** its [flows](application-flows.md) (the Diagram is the [Application map](application-flows.md#application-map)),
 **Child applications** the children, then **Journal** and **Change log**.
 Overview counts the installs and the flows.
 

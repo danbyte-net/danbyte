@@ -11,7 +11,7 @@ are documentation, like [NAT rules](ipam-objects.md#nat-rules): nothing is
 pushed to a firewall.
 
 Flows live on their application. Its **Flows** tab lists them, and its
-**Diagram** tab draws them. Devices, virtual machines, IP addresses and
+**Diagram** tab draws them on the [Application map](#application-map). Devices, virtual machines, IP addresses and
 prefixes have a **Flows** tab too, listing the flows that touch them.
 
 Nothing ships pre-filled: no flows. The three statuses below are seeded so
@@ -61,20 +61,71 @@ Adding from an address or prefix starts the flow there as its source.
 
 The **Applications** list has a **Flows** column.
 
-## Diagram and export
+## Application map
 
-The application's **Diagram** tab draws its flows: a card per end, sources
-on the left and destinations to their right (a flow back against that order
-runs right to left), one band for the application, and one line per flow
-with its protocol and ports in the middle (`TCP 443`). A one-way flow has an
-arrowhead at the destination; a flow both ways has one at each end. The
-layout is the same every time for the same flows.
+**Maps → Application map** (`/application-map`) draws your applications
+with the [topology](topology.md) Diagram's cards, row bands, lines and
+export, in the app's light or dark theme. Two views, switched in the
+header:
 
-**Export** writes the drawing as PNG, SVG, PDF or draw.io, or prints it -
-the [topology's export](topology.md#pdf-export-api), with the same paper and
-*Title and legend* choices. The PDF comes from `POST
+- **Tree** (default) - the application tree from **Parent**: one row band
+  per depth, a card per application with its installs and flows
+  (*2 installs · 1 flow*), a solid line from each parent to its children.
+  Three levels are named *Domains*, *Processes* and *Applications*; one
+  level is *Applications*; other depths are *Level 1*, *Level 2*… With
+  **Hosts** on (the second bar), the devices and VMs the applications are
+  installed on sit in a last *Hosts* row, a dashed line to each of their
+  applications. An application has no colour of its own: its card takes
+  the colour of its first coloured tag, else it is neutral. A VM's card is
+  dashed.
+- **Flows** - a row band per application, a card per flow end (an address
+  titled with its device or VM, a range, a prefix, *Any*) laid out as the
+  flows run, sources left of their destinations, and one line per pair of
+  ends carrying the protocols and ports of all its flows (`TCP 443`; past
+  three, a count). A line takes its flows' status colour - neutral when
+  they differ - is dashed while they are all *Planned* and faded once all
+  *Retired*. Arrowheads point the way the traffic runs; a flow *Both ways*
+  has one at each end.
+
+Click a card for its panel: an application's path, parent, counts and tags
+with **Open application** and **Installs**; a host's installs; a flow
+end's flows. Click a line for its flows - each with its status pill, ends,
+service and direction and a **Flows tab** link - or a Flows row's title
+for its application. Right-click a card for **Open**, **Focus**, **Flows
+touching this host** and **Hide** (++h++).
+
+**Filters** (header) take applications (several; the Tree keeps their
+ancestors and children) and a host - the applications installed on it, or
+in Flows the flows touching it, at its addresses or a prefix or range
+holding one - and in Flows a status and a protocol. **Objects** opens the
+maps' sidebar: search (non-matches fade), the cards by group with their
+eyes; hidden cards are remembered per browser.
+
+Cards drag freely. Each view's moved cards, the view, the filters and the
+search are kept in the URL, so **Copy link** shares the map as arranged;
+**Reset layout** puts the cards back. Saved views are the topology's own
+and do not hold application maps yet.
+
+**Export** writes PNG, SVG, PDF or draw.io, or prints - the
+[topology's export](topology.md#pdf-export-api), with the same paper and
+*Title and legend* choices, drawn from the map's data (every card, as
+arranged, in the print theme). The PDF comes from `POST
 /api/diagram/export/pdf/` with `"kind": "application-flows"`, which needs
-`applicationflow.view`.
+`applicationflow.view`. The legend keys the cards, the lines and, in
+Flows, the statuses present.
+
+An empty map says how things get onto it: applications in the
+[Applications](applications.md) list, installs on a device's or VM's
+**Software** tab, flows on an application's **Flows** tab.
+
+### The Diagram tab
+
+An application's **Diagram** tab is the same map, embedded and filtered to
+that application: **Flows** (its flows) or **Tree** (its ancestors,
+children and, with **Hosts**, where it runs), the legend folded, the
+panels, **Reset layout** and **Export** (named after the application's
+slug). **Open in Application map** opens the full page on the same view
+and application.
 
 ## Import & export
 

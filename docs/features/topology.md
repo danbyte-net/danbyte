@@ -53,6 +53,12 @@ icon: lucide/share-2
   [Virtual topology](virtual-switches.md#network-topology) and a VM's
   Topology card.)
 
+The **Maps** menu holds the other maps too: the
+[Site map](site-map.md), [Floor plans](floor-plans.md), the
+[Virtual topology](virtual-switches.md#network-topology) and the
+[Application map](application-flows.md#application-map) - the application
+tree and its flows, drawn with this Diagram's cards, lines and export.
+
 The view choice is remembered per browser and saved with
 [saved views](#saved-views); a map opens on the Diagram, Detailed, until
 you choose otherwise.
@@ -2066,7 +2072,7 @@ after them - see [Photo nodes](#photo-nodes).
 returns the PDF as a download (`Content-Disposition: attachment`). It is
 `POST /api/diagram/export/pdf/` for the topology: that endpoint draws other
 diagrams too, by `kind` - an application's
-[flows](application-flows.md#diagram-and-export) are
+[flows](application-flows.md#application-map) are
 `"kind": "application-flows"`, which needs `applicationflow.view` where the
 topology needs `device.view`; their print links are
 `/api/diagram/export/pdf/<token>/?kind=application-flows`. The body:

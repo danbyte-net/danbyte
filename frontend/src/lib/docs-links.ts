@@ -83,6 +83,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/vm-groups": "features/vm-groups/",
   "/virtual-switches": "features/virtual-switches/",
   "/virtual-topology": "features/virtual-switches/#network-topology",
+  "/application-map": "features/application-flows/#application-map",
   "/circuits": "features/circuits/",
   "/circuit-types": "features/circuits/",
   "/providers": "features/circuits/",
