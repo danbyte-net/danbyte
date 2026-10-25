@@ -8356,17 +8356,104 @@ export interface ComplianceViolation {
   object_repr: string
   /** Why it fails, where the check says (software_target). */
   detail?: string
+  /** The object's site (a site's own id), or null. */
+  site_id?: string | null
+  site_name?: string
+  /** The object's tag slugs. */
+  tags?: string[]
+  /** Triage: open until someone acknowledges or snoozes it. */
+  state?: ComplianceTriageState
+  acknowledged_at?: string | null
+  acknowledged_by?: string
+  /** Set only while the snooze runs. */
+  snoozed_until?: string | null
+  note?: string
+}
+export type ComplianceTriageState = "open" | "acknowledged" | "snoozed"
+/** One rule's result: whole counts, whatever the caller may view. */
+export interface ComplianceRuleResult {
+  id: string
+  name: string
+  object_type: string
+  object_type_label?: string
+  severity: ComplianceSeverity
+  violations: number
+  open?: number
+  acknowledged?: number
+  snoozed?: number
+}
+export interface ComplianceFacet {
+  value: string
+  label: string
+  count: number
+  /** Tags: the tag's id and colours. */
+  id?: number
+  color?: string
+  text_color?: string
 }
 export interface ComplianceEvaluation {
-  rules: {
-    id: string
-    name: string
-    object_type: string
-    severity: ComplianceSeverity
-    violations: number
-  }[]
+  evaluated_at?: string
+  rules: ComplianceRuleResult[]
   violations: ComplianceViolation[]
   total_violations: number
+  objects_in_violation?: number
+  /** Counts over the violations the caller may see, before the URL filters. */
+  facets?: Record<
+    "severity" | "state" | "rule" | "object_type" | "site" | "tag",
+    ComplianceFacet[]
+  >
+}
+
+/** Response of GET /api/compliance/summary/ - the Overview tab. */
+export interface ComplianceSummary {
+  evaluated_at: string
+  totals: {
+    rules: number
+    disabled_rules: number
+    passing: number
+    failing: number
+    violations: number
+    open: number
+    acknowledged: number
+    snoozed: number
+    objects_in_violation: number
+  }
+  by_severity: Record<
+    ComplianceSeverity,
+    { rules: number; failing_rules: number; violations: number; open: number }
+  >
+  /** Enabled rules (and config drift), worst first. */
+  rules: (ComplianceRuleResult &
+    Required<
+      Pick<
+        ComplianceRuleResult,
+        "open" | "acknowledged" | "snoozed" | "object_type_label"
+      >
+    > &
+    Pick<
+      ComplianceRule,
+      | "check_type"
+      | "field"
+      | "pattern"
+      | "tag"
+      | "cf_key"
+      | "eol_fail_on"
+      | "coverage_fail_on"
+      | "fail_on_unknown"
+    >)[]
+  /** The visible objects failing the most rules. */
+  top_offenders: ComplianceOffender[]
+}
+export interface ComplianceOffender {
+  object_type: string
+  object_type_label: string
+  object_id: string
+  object_repr: string
+  site_name: string
+  violations: number
+  open: number
+  worst_severity: ComplianceSeverity
+  rules: string[]
 }
 
 /** Response of GET /api/compliance-rules/<id>/violations/ - the objects one
@@ -8385,6 +8472,9 @@ export interface ComplianceRuleViolations {
    * genuine per-type table on the rule detail page. */
   objects: Record<string, unknown>[]
   total: number
+  /** The rule's whole counts, triage included; null when it is disabled. */
+  result?: ComplianceRuleResult | null
+  evaluated_at?: string
 }
 
 /** One failed rule on the per-device compliance status page. */

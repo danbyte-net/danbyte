@@ -3,7 +3,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { BookOpenText, Pencil, RefreshCw, Trash2 } from "lucide-react"
+import {
+  BookOpenText,
+  ListFilter,
+  Pencil,
+  RefreshCw,
+  Trash2,
+} from "lucide-react"
 
 import {
   api,
@@ -21,6 +27,8 @@ import {
 import { KvCard, dash, mono } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Markdown } from "@/components/markdown"
+import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -28,12 +36,12 @@ import { useEolSettings } from "@/components/cells/eol-cell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
+import { ObjectLink, RuleResult } from "@/components/columns/compliance-columns"
+import { DeleteRule } from "@/components/compliance/delete-rule-dialog"
 import {
-  DeleteRule,
-  OBJ_ROUTE,
-  SEV_VARIANT,
+  SeverityBadge,
   ruleSummary,
-} from "@/routes/compliance"
+} from "@/components/compliance/compliance-shared"
 
 export const Route = createFileRoute("/compliance-rules/$id")({
   component: RuleDetailPage,
@@ -56,8 +64,7 @@ function RuleDetailPage() {
     queryKey: ["compliance-rule", id],
     queryFn: () => api<ComplianceRule>(`/api/compliance-rules/${id}/`),
   })
-  if (q.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (q.isLoading) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
@@ -74,10 +81,12 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
   const canEdit = canDo("compliancerule", "change")
   const canDelete = canDo("compliancerule", "delete")
   const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
-  const [tab, setTab] = useUrlTab<
-    "overview" | "affected" | "journal" | "history"
+  const [rawTab, setTab] = useUrlTab<
+    "overview" | "results" | "affected" | "journal" | "history"
   >("overview")
-  // Fetched up front so the Affected objects tab wears its count; the panel
+  // `affected` was the Results tab's old name; old links still land on it.
+  const tab = rawTab === "affected" ? "results" : rawTab
+  // Fetched up front so the Results tab wears its count; the panel
   // reads the same query rather than running the engine a second time.
   const violations = useRuleViolations(r.id)
 
@@ -113,11 +122,27 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
           title={r.name}
           badges={
             <>
-              <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
-                {r.severity}
-              </Badge>
-              {!r.enabled && <Badge variant="outline">Disabled</Badge>}
+              <SeverityBadge severity={r.severity} />
+              {violations.data ? (
+                <RuleResult
+                  rule={violations.data.result ?? undefined}
+                  enabled={r.enabled}
+                />
+              ) : (
+                !r.enabled && <Badge variant="outline">Disabled</Badge>
+              )}
             </>
+          }
+          subtitle={
+            <span className="text-xs text-muted-foreground">
+              {r.object_type_label} · {ruleSummary(r)}
+              {violations.data?.evaluated_at && (
+                <>
+                  {" "}
+                  · evaluated <TimeCell iso={violations.data.evaluated_at} />
+                </>
+              )}
+            </span>
           }
           description={r.description}
         />
@@ -125,8 +150,8 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       tabs={[
         { value: "overview", label: "Overview" },
         {
-          value: "affected",
-          label: "Affected objects",
+          value: "results",
+          label: "Results",
           count: violations.data?.total,
         },
         { value: "journal", label: "Journal" },
@@ -138,7 +163,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       <DetailTab value="overview">
         <RuleOverview rule={r} />
       </DetailTab>
-      <DetailTab value="affected">
+      <DetailTab value="results">
         {r.remediation && (
           <div className="mb-4 rounded-lg border border-border bg-card px-4 py-3">
             <h2 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-foreground uppercase">
@@ -150,6 +175,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
         )}
         <AffectedObjects
           violations={violations}
+          ruleId={r.id}
           ruleName={r.name}
           objectType={r.object_type}
           enabled={r.enabled}
@@ -182,11 +208,7 @@ function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
     { label: "Enabled", value: r.enabled ? "Yes" : "No" },
     {
       label: "Severity",
-      value: (
-        <Badge variant={SEV_VARIANT[r.severity]} className="capitalize">
-          {r.severity}
-        </Badge>
-      ),
+      value: <SeverityBadge severity={r.severity} />,
     },
   ]
 
@@ -228,11 +250,13 @@ function useRuleViolations(ruleId: string) {
 
 function AffectedObjects({
   violations: q,
+  ruleId,
   ruleName,
   objectType,
   enabled,
 }: {
   violations: ReturnType<typeof useRuleViolations>
+  ruleId: string
   ruleName: string
   objectType: string
   enabled: boolean
@@ -251,22 +275,13 @@ function AffectedObjects({
         id: "object",
         accessorKey: "object_repr",
         header: ({ column }) => <SortHeader column={column} label="Object" />,
-        cell: ({ row }) => {
-          const route = OBJ_ROUTE[row.original.object_type]
-          return route ? (
-            <Link
-              to={route}
-              params={{ id: row.original.object_id }}
-              className="link font-mono font-medium"
-            >
-              {row.original.object_repr}
-            </Link>
-          ) : (
-            <span className="font-mono font-medium">
-              {row.original.object_repr}
-            </span>
-          )
-        },
+        cell: ({ row }) => (
+          <ObjectLink
+            objectType={row.original.object_type}
+            id={row.original.object_id}
+            label={row.original.object_repr}
+          />
+        ),
       },
       {
         id: "type",
@@ -288,35 +303,43 @@ function AffectedObjects({
     <div>
       <div className="mb-3 flex items-center gap-2">
         <h2 className="text-[11px] font-semibold tracking-wide text-foreground uppercase">
-          Affected objects
+          Violating objects
         </h2>
         {q.data && (
           <Badge variant={total > 0 ? "destructive" : "success"}>{total}</Badge>
         )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto"
-          onClick={() => q.refetch()}
-          disabled={q.isFetching}
-        >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`}
-          />
-          Re-evaluate
-        </Button>
+        <div className="ml-auto flex items-center gap-2">
+          {total > 0 && (
+            <Button size="sm" variant="outline" asChild>
+              <Link
+                to="/compliance"
+                search={{ tab: "violations", rule: ruleId }}
+              >
+                <ListFilter className="h-3.5 w-3.5" />
+                Triage
+              </Link>
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => q.refetch()}
+            disabled={q.isFetching}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {q.isFetching ? "Evaluating…" : "Re-evaluate"}
+          </Button>
+        </div>
       </div>
 
       {q.isError && <QueryError error={q.error} />}
-      {q.isLoading && (
-        <p className="text-sm text-muted-foreground">Evaluating…</p>
-      )}
+      {q.isLoading && <Loading />}
       {q.data && total === 0 && (
-        <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-          {enabled
-            ? "Nothing fails this rule. 🎉"
-            : "This rule is disabled - it isn't evaluated."}
-        </div>
+        <EmptyState
+          title={
+            enabled ? "Nothing fails this rule." : "This rule is disabled."
+          }
+        />
       )}
       {q.data && total > 0 && realColumns ? (
         <DataTable

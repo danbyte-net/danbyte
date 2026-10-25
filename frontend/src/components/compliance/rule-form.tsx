@@ -20,6 +20,7 @@ import {
   FormTextarea,
   type SelectOption,
 } from "@/components/forms"
+import { invalidateCompliance } from "@/components/compliance/compliance-shared"
 import { apiErrorToast } from "@/lib/api-toast"
 
 const OBJECT_TYPES = [
@@ -147,7 +148,7 @@ export function ComplianceRuleForm({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["compliance-rules"] })
-      qc.invalidateQueries({ queryKey: ["compliance-eval"] })
+      invalidateCompliance(qc)
       toast.success(isEdit ? `Saved ${name.trim()}` : `Created ${name.trim()}`)
       onSaved()
     },

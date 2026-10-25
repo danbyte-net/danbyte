@@ -1,704 +1,128 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
-import { RefreshCw, X } from "lucide-react"
-import { toast } from "sonner"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { useQuery } from "@tanstack/react-query"
+import { RefreshCw, ShieldCheck } from "lucide-react"
 
-import {
-  api,
-  type ComplianceEvaluation,
-  type ComplianceRule,
-  type ComplianceSeverity,
-  type ComplianceViolation,
-} from "@/lib/api"
-import { apiAll } from "@/lib/api-all"
-import { Badge } from "@/components/ui/badge"
-import { EmptyState } from "@/components/empty-state"
-import { SegmentedTabs } from "@/components/segmented-tabs"
+import { api } from "@/lib/api"
+import type { ComplianceEvaluation, ComplianceSummary } from "@/lib/api"
+import { usePageTitle } from "@/lib/page-title"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
-import { actionsColumn } from "@/components/columns/actions-column"
-import { FacetGroup, FilterRail } from "@/components/filter-rail"
-import { ListPageShell } from "@/components/list-page-shell"
-import { useMe } from "@/lib/use-me"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { apiErrorToast } from "@/lib/api-toast"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { TimeCell } from "@/components/cells/time-ago"
+import { ComplianceOverview } from "@/components/compliance/compliance-overview"
+import { RulesTab } from "@/components/compliance/rules-tab"
+import { ViolationsTab } from "@/components/compliance/violations-tab"
+import { normalizeComplianceSearch } from "@/components/compliance/compliance-search"
+import type {
+  ComplianceSearch,
+  ComplianceTab,
+} from "@/components/compliance/compliance-search"
 
-type Tab = "violations" | "rules"
+// Kept importable from here for the pages that already use them.
+export {
+  OBJ_ROUTE,
+  SEV_VARIANT,
+  ruleSummary,
+} from "@/components/compliance/compliance-shared"
+export { DeleteRule } from "@/components/compliance/delete-rule-dialog"
 
-/** URL-backed state of the Violations tab - filters live in the query string
- * so a filtered view is shareable and survives back/forward. Deep-linkable:
- * `/compliance?tab=violations&device=<id>&rule=<id>&severity=critical`. */
-interface ComplianceSearch {
-  tab: Tab
-  /** Free-text search over object + rule name. */
-  q?: string
-  /** Comma-separated severities (critical,warning,info). */
-  severity?: string
-  /** Comma-separated object types (device,prefix,…). */
-  type?: string
-  /** A single rule id (or `config-drift`). */
-  rule?: string
-  /** A single object id (e.g. one device). */
-  device?: string
-}
-
-const optStr = (v: unknown): string | undefined =>
-  typeof v === "string" && v !== "" ? v : undefined
-
-function normalizeSearch(s: Record<string, unknown>): ComplianceSearch {
-  return {
-    tab: s.tab === "rules" ? "rules" : "violations",
-    q: optStr(s.q),
-    severity: optStr(s.severity),
-    type: optStr(s.type),
-    rule: optStr(s.rule),
-    device: optStr(s.device),
-  }
-}
-
+/** `/compliance` - Overview (default), Violations and Rules. Every filter is
+ * URL state: `/compliance?tab=violations&rule=<id>&state=open`. */
 export const Route = createFileRoute("/compliance")({
   component: CompliancePage,
-  validateSearch: normalizeSearch,
+  validateSearch: normalizeComplianceSearch,
 })
 
-export const SEV_VARIANT: Record<
-  ComplianceSeverity,
-  "destructive" | "warning" | "secondary"
-> = { critical: "destructive", warning: "warning", info: "secondary" }
-
-export const OBJ_ROUTE: Record<string, string> = {
-  prefix: "/prefixes/$id",
-  ipaddress: "/ips/$id",
-  device: "/devices/$id",
-  vlan: "/vlans/$id",
-  vrf: "/vrfs/$id",
-  site: "/sites/$id",
-  virtualmachine: "/virtual-machines/$id",
-}
-
-const SEVERITIES: ComplianceSeverity[] = ["critical", "warning", "info"]
-
 function CompliancePage() {
+  usePageTitle("Compliance")
   const { tab } = Route.useSearch()
   const nav = useNavigate()
-  // Preserve the violation filters in the URL when hopping between tabs.
-  const go = (t: Tab) =>
+  // Filters stay in the URL when hopping between tabs.
+  const go = (t: ComplianceTab) =>
     nav({
       to: "/compliance",
       search: (prev): ComplianceSearch => ({
-        ...normalizeSearch(prev),
+        ...normalizeComplianceSearch(prev),
         tab: t,
       }),
     })
 
-  const evalQ = useQuery({
+  // Overview and Rules read the summary; Violations the full list. Both
+  // run the same live evaluation, so neither refetches on focus.
+  const summary = useQuery({
+    queryKey: ["compliance-summary"],
+    queryFn: () => api<ComplianceSummary>("/api/compliance/summary/"),
+    refetchOnWindowFocus: false,
+  })
+  const evaluation = useQuery({
     queryKey: ["compliance-eval"],
     queryFn: () => api<ComplianceEvaluation>("/api/compliance/evaluate/"),
     refetchOnWindowFocus: false,
+    enabled: tab === "violations",
   })
-  const total = evalQ.data?.total_violations ?? 0
+  const active = tab === "violations" ? evaluation : summary
+  const evaluatedAt = active.data?.evaluated_at
+  const open = summary.data?.totals.open
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center border-b border-border px-4 lg:px-6">
-        <SegmentedTabs
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-muted/30">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-background px-4 py-2 lg:px-6">
+        <h1 className="flex shrink-0 items-center gap-2 text-base font-semibold">
+          <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          Compliance
+        </h1>
+        <SegmentedTabs<ComplianceTab>
+          className="ml-2 min-w-[min(100%,16rem)] flex-1"
+          wrap
           value={tab}
-          onValueChange={(v) => go(v as Tab)}
+          onValueChange={go}
           items={[
-            { value: "violations", label: "Violations" },
-            { value: "rules", label: "Rules" },
+            { value: "overview", label: "Overview" },
+            { value: "violations", label: "Violations", count: open || null },
+            {
+              value: "rules",
+              label: "Rules",
+              count: summary.data
+                ? summary.data.totals.rules + summary.data.totals.disabled_rules
+                : null,
+            },
           ]}
         />
-      </div>
-
-      {tab === "rules" ? (
-        <RulesTab evaluation={evalQ.data} />
-      ) : (
-        <ViolationsTab q={evalQ} total={total} />
-      )}
-    </div>
-  )
-}
-
-// ─── Violations ──────────────────────────────────────────────────────────────
-function ViolationsTab({
-  q,
-  total,
-}: {
-  q: ReturnType<typeof useQuery<ComplianceEvaluation>>
-  /** Server-side violation total, for the header badge. */
-  total: number
-}) {
-  const data = q.data
-  const urlSearch = Route.useSearch()
-  const nav = useNavigate()
-
-  // All filters are URL state (shareable + back/forward-safe). Facet sets are
-  // encoded comma-separated; empty selections drop the param entirely.
-  const patchSearch = (patch: Partial<ComplianceSearch>) =>
-    nav({
-      to: "/compliance",
-      search: (prev): ComplianceSearch => {
-        const cur = normalizeSearch(prev)
-        return {
-          tab: patch.tab ?? cur.tab,
-          q: "q" in patch ? patch.q : cur.q,
-          severity: "severity" in patch ? patch.severity : cur.severity,
-          type: "type" in patch ? patch.type : cur.type,
-          rule: "rule" in patch ? patch.rule : cur.rule,
-          device: "device" in patch ? patch.device : cur.device,
-        }
-      },
-      replace: true,
-    })
-
-  const typeFilter = useMemo(
-    () => new Set((urlSearch.type ?? "").split(",").filter(Boolean)),
-    [urlSearch.type]
-  )
-  const sevFilter = useMemo(
-    () => new Set((urlSearch.severity ?? "").split(",").filter(Boolean)),
-    [urlSearch.severity]
-  )
-  const toggleFacet = (
-    key: "type" | "severity",
-    set: Set<string>,
-    v: string
-  ) => {
-    const next = new Set(set)
-    if (next.has(v)) next.delete(v)
-    else next.add(v)
-    patchSearch({ [key]: next.size ? [...next].join(",") : undefined })
-  }
-
-  // Debounced free-text search → the `q` URL param. Back/forward restores the
-  // box from the URL; typing never gets clobbered by a stale URL echo.
-  const urlQ = urlSearch.q ?? ""
-  const [search, setSearch] = useState(urlQ)
-  const pushedQ = useRef(urlQ)
-  useEffect(() => {
-    if (urlQ !== pushedQ.current) {
-      pushedQ.current = urlQ
-      setSearch(urlQ)
-    }
-  }, [urlQ])
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (search !== urlQ) {
-        pushedQ.current = search
-        patchSearch({ q: search || undefined })
-      }
-    }, 300)
-    return () => clearTimeout(t)
-    // Deliberately keyed on `search` alone: this is a one-way debounce.
-  }, [search])
-
-  const all = useMemo(() => data?.violations ?? [], [data])
-
-  // Deep-link filters (`rule`, `device`) surface as dismissible chips; their
-  // labels resolve from the evaluation itself.
-  const ruleChip = urlSearch.rule
-    ? (all.find((v) => v.rule_id === urlSearch.rule)?.rule_name ??
-      urlSearch.rule)
-    : null
-  const deviceChip = urlSearch.device
-    ? (all.find((v) => v.object_id === urlSearch.device)?.object_repr ??
-      urlSearch.device)
-    : null
-
-  // Object-type facets with counts, from the live evaluation.
-  const typeFacets = useMemo(() => {
-    const m = new Map<string, { label: string; count: number }>()
-    for (const v of all) {
-      const e = m.get(v.object_type)
-      if (e) e.count++
-      else m.set(v.object_type, { label: v.object_type_label, count: 1 })
-    }
-    return [...m.entries()]
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([value, { label, count }]) => ({ value, label, count }))
-  }, [all])
-
-  const sevFacets = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const v of all) counts[v.severity] = (counts[v.severity] ?? 0) + 1
-    return SEVERITIES.filter((s) => counts[s]).map((s) => ({
-      value: s,
-      label: s[0].toUpperCase() + s.slice(1),
-      count: counts[s],
-    }))
-  }, [all])
-
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase()
-    return all.filter((v) => {
-      if (typeFilter.size > 0 && !typeFilter.has(v.object_type)) return false
-      if (sevFilter.size > 0 && !sevFilter.has(v.severity)) return false
-      if (urlSearch.rule && v.rule_id !== urlSearch.rule) return false
-      if (urlSearch.device && v.object_id !== urlSearch.device) return false
-      if (
-        needle &&
-        !v.object_repr.toLowerCase().includes(needle) &&
-        !v.rule_name.toLowerCase().includes(needle)
-      )
-        return false
-      return true
-    })
-  }, [all, search, typeFilter, sevFilter, urlSearch.rule, urlSearch.device])
-
-  const columns = useMemo<ColumnDef<ComplianceViolation>[]>(
-    () => [
-      selectionColumn<ComplianceViolation>(),
-      {
-        id: "severity",
-        accessorKey: "severity",
-        header: ({ column }) => <SortHeader column={column} label="Severity" />,
-        cell: ({ row }) => (
-          <Badge
-            variant={SEV_VARIANT[row.original.severity]}
-            className="capitalize"
-          >
-            {row.original.severity}
-          </Badge>
-        ),
-      },
-      {
-        id: "type",
-        accessorKey: "object_type_label",
-        header: ({ column }) => <SortHeader column={column} label="Type" />,
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.object_type_label}
-          </span>
-        ),
-      },
-      {
-        id: "object",
-        accessorKey: "object_repr",
-        header: ({ column }) => <SortHeader column={column} label="Object" />,
-        cell: ({ row }) => {
-          const route = OBJ_ROUTE[row.original.object_type]
-          const name = route ? (
-            <Link
-              to={route}
-              params={{ id: row.original.object_id }}
-              className="link font-mono font-medium"
-            >
-              {row.original.object_repr}
-            </Link>
-          ) : (
-            <span className="font-mono font-medium">
-              {row.original.object_repr}
+        <div className="ml-auto flex items-center gap-2">
+          {evaluatedAt && (
+            <span className="text-xs whitespace-nowrap text-muted-foreground">
+              Evaluated <TimeCell iso={evaluatedAt} />
             </span>
-          )
-          return row.original.detail ? (
-            <span className="whitespace-nowrap">
-              {name}
-              <span className="ml-2 text-xs text-muted-foreground">
-                {row.original.detail}
-              </span>
-            </span>
-          ) : (
-            name
-          )
-        },
-      },
-      {
-        id: "rule",
-        accessorKey: "rule_name",
-        header: ({ column }) => <SortHeader column={column} label="Rule" />,
-        cell: ({ row }) =>
-          // Synthetic IaC drift "rule" isn't a real ComplianceRule - link it to
-          // the Config-drift page instead of a (404) rule detail.
-          row.original.rule_id === "config-drift" ? (
-            <Link
-              to="/config-drift"
-              className="link text-muted-foreground hover:text-foreground"
-            >
-              {row.original.rule_name}
-            </Link>
-          ) : (
-            <Link
-              to="/compliance-rules/$id"
-              params={{ id: row.original.rule_id }}
-              className="link text-muted-foreground hover:text-foreground"
-            >
-              {row.original.rule_name}
-            </Link>
-          ),
-      },
-    ],
-    []
-  )
-
-  return (
-    <ListPageShell
-      title="Compliance"
-      count={data ? rows.length : undefined}
-      rail={
-        <FilterRail>
-          <FacetGroup
-            label="Object type"
-            options={typeFacets}
-            selected={typeFilter}
-            onToggle={(v) => toggleFacet("type", typeFilter, v)}
-          />
-          <FacetGroup
-            label="Severity"
-            options={sevFacets}
-            selected={sevFilter}
-            onToggle={(v) => toggleFacet("severity", sevFilter, v)}
-          />
-        </FilterRail>
-      }
-      search={{
-        value: search,
-        onChange: setSearch,
-        placeholder: "Search object or rule…",
-      }}
-      actions={
-        <>
-          {/* Deep-link filters (?rule= / ?device=) stay visible + dismissible. */}
-          {ruleChip && (
-            <FilterChip
-              label="Rule"
-              value={ruleChip}
-              onClear={() => patchSearch({ rule: undefined })}
-            />
-          )}
-          {deviceChip && (
-            <FilterChip
-              label="Object"
-              value={deviceChip}
-              onClear={() => patchSearch({ device: undefined })}
-            />
-          )}
-          {total > 0 && (
-            <Badge variant="destructive">
-              {total} violation{total === 1 ? "" : "s"}
-            </Badge>
           )}
           <Button
             size="sm"
             variant="outline"
-            onClick={() => q.refetch()}
-            disabled={q.isFetching}
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`}
-            />
-            Re-evaluate
-          </Button>
-        </>
-      }
-      query={q}
-    >
-      {data && data.rules.length === 0 ? (
-        <EmptyState title="No enabled rules yet.">
-          Add one in <span className="font-medium">Rules</span> to start
-          checking.
-        </EmptyState>
-      ) : data && data.total_violations === 0 ? (
-        <EmptyState title="All rules pass.">
-          Nothing out of compliance right now.
-        </EmptyState>
-      ) : (
-        <DataTable
-          data={rows}
-          columns={columns}
-          flexColumn="object"
-          tableId="compliance-violations"
-          exportName="compliance-violations"
-          exportTitle="Compliance violations"
-        />
-      )}
-    </ListPageShell>
-  )
-}
-
-/** A dismissible pill for a deep-link filter (`rule` / `device` URL params). */
-function FilterChip({
-  label,
-  value,
-  onClear,
-}: {
-  label: string
-  value: string
-  onClear: () => void
-}) {
-  return (
-    <span className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted/40 pr-1 pl-2 text-xs">
-      <span className="text-muted-foreground">{label}:</span>
-      <span className="font-medium">{value}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={`Clear ${label.toLowerCase()} filter`}
-        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </span>
-  )
-}
-
-// ─── Rules ───────────────────────────────────────────────────────────────────
-function RulesTab({ evaluation }: { evaluation?: ComplianceEvaluation }) {
-  const { canDo } = useMe()
-  const canAdd = canDo("compliancerule", "add")
-  const canEdit = canDo("compliancerule", "change")
-  const canDelete = canDo("compliancerule", "delete")
-  const q = useQuery({
-    queryKey: ["compliance-rules"],
-    queryFn: () => apiAll<ComplianceRule>("/api/compliance-rules/"),
-  })
-  const [deleting, setDeleting] = useState<ComplianceRule | null>(null)
-  const rows = q.data?.results ?? []
-
-  // rule id → live violation count (from the page-level evaluation).
-  const counts = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const r of evaluation?.rules ?? []) m.set(r.id, r.violations)
-    return m
-  }, [evaluation])
-
-  const columns = useMemo<ColumnDef<ComplianceRule>[]>(
-    () => [
-      {
-        id: "rule",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Rule" />,
-        cell: ({ row }) => (
-          <>
-            <Link
-              to="/compliance-rules/$id"
-              params={{ id: row.original.id }}
-              className="link font-medium"
-            >
-              {row.original.name}
-            </Link>
-            {!row.original.enabled && (
-              <Badge variant="outline" className="ml-2 h-4 px-1.5 text-[10px]">
-                off
-              </Badge>
-            )}
-          </>
-        ),
-      },
-      {
-        id: "applies",
-        accessorKey: "object_type_label",
-        header: ({ column }) => (
-          <SortHeader column={column} label="Applies to" />
-        ),
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">
-            {row.original.object_type_label}
-          </span>
-        ),
-      },
-      {
-        id: "check",
-        accessorFn: (r) => ruleSummary(r),
-        header: "Check",
-        cell: ({ row }) => (
-          <span className="text-[12px] text-muted-foreground">
-            {ruleSummary(row.original)}
-          </span>
-        ),
-      },
-      {
-        id: "severity",
-        accessorKey: "severity",
-        header: ({ column }) => <SortHeader column={column} label="Severity" />,
-        cell: ({ row }) => (
-          <Badge
-            variant={SEV_VARIANT[row.original.severity]}
-            className="capitalize"
-          >
-            {row.original.severity}
-          </Badge>
-        ),
-      },
-      {
-        id: "violations",
-        accessorFn: (r) => counts.get(r.id) ?? 0,
-        header: () => <div className="text-right">Violations</div>,
-        cell: ({ row }) => {
-          const r = row.original
-          const n = counts.get(r.id)
-          return (
-            <div className="text-right">
-              {!r.enabled ? (
-                <span className="text-muted-foreground">-</span>
-              ) : n && n > 0 ? (
-                <Link
-                  to="/compliance-rules/$id"
-                  params={{ id: r.id }}
-                  className="num link font-medium text-destructive"
-                >
-                  {n}
-                </Link>
-              ) : (
-                <span className="num text-emerald-600 dark:text-emerald-400">
-                  0
-                </span>
-              )}
-            </div>
-          )
-        },
-      },
-      actionsColumn<ComplianceRule>({
-        editTo: "/compliance-rules/$id/edit",
-        editParams: (r) => ({ id: r.id }),
-        canEdit: () => canEdit,
-        onDelete: setDeleting,
-        canDelete: () => canDelete,
-      }),
-    ],
-    [counts, canEdit, canDelete]
-  )
-
-  return (
-    <ListPageShell
-      title="Compliance"
-      count={q.data ? rows.length : undefined}
-      actions={
-        canAdd ? (
-          <Button size="sm" asChild>
-            <Link to="/compliance-rules/new">Add rule</Link>
-          </Button>
-        ) : undefined
-      }
-      query={q}
-    >
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Policies asserted over your data. Empty = nothing is enforced.
-        </p>
-
-        {rows.length === 0 ? (
-          <EmptyState title="No compliance rules yet.">
-            Add one and every matching object is checked against it.
-          </EmptyState>
-        ) : (
-          <DataTable
-            data={rows}
-            total={q.data?.count}
-            columns={columns}
-            flexColumn="check"
-            tableId="compliance-rules"
-            exportName="compliance-rules"
-            exportTitle="Compliance rules"
-          />
-        )}
-      </div>
-
-      <DeleteRule
-        rule={deleting}
-        onOpenChange={(o) => !o && setDeleting(null)}
-      />
-    </ListPageShell>
-  )
-}
-
-export function ruleSummary(
-  r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
-    eol_fail_on?: string
-    coverage_fail_on?: string
-    fail_on_unknown?: boolean
-    check_type: string
-    check_type_display?: string
-  }
-): string {
-  switch (r.check_type) {
-    case "required":
-      return `${r.field} must be set`
-    case "forbidden":
-      return `${r.field} must be empty`
-    case "regex":
-      return `${r.field} ~ /${r.pattern}/`
-    case "required_tag":
-      return `must have tag “${r.tag}”`
-    case "required_cf":
-      return `cf “${r.cf_key}” must be set`
-    case "eol_status":
-      return r.eol_fail_on === "unknown"
-        ? "platform must have end-of-life data"
-        : r.eol_fail_on === "ending"
-          ? "platform support must not be ending"
-          : "platform must not be end of life"
-    case "coverage": {
-      const scope = r.tag ? `devices tagged “${r.tag}”` : "devices"
-      return r.coverage_fail_on === "expiring"
-        ? `${scope} must have coverage beyond the warning window`
-        : `${scope} must have active coverage`
-    }
-    case "software_target":
-      return r.fail_on_unknown
-        ? "version must be the platform target, and known"
-        : "version must be the platform target"
-    default:
-      return r.check_type_display ?? r.check_type
-  }
-}
-
-export function DeleteRule({
-  rule,
-  onOpenChange,
-  onDeleted,
-}: {
-  rule: ComplianceRule | null
-  onOpenChange: (o: boolean) => void
-  onDeleted?: () => void
-}) {
-  const qc = useQueryClient()
-  const m = useMutation({
-    mutationFn: () =>
-      api(`/api/compliance-rules/${rule!.id}/`, { method: "DELETE" }),
-    onSuccess: () => {
-      toast.success(`Deleted ${rule!.name}`)
-      qc.invalidateQueries({ queryKey: ["compliance-rules"] })
-      qc.invalidateQueries({ queryKey: ["compliance-eval"] })
-      onOpenChange(false)
-      onDeleted?.()
-    },
-    onError: (err) => apiErrorToast(err),
-  })
-  return (
-    <AlertDialog open={!!rule} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete {rule?.name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This rule will no longer be evaluated.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={m.isPending}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={m.isPending}
-            onClick={(e) => {
-              e.preventDefault()
-              m.mutate()
+            onClick={() => {
+              void summary.refetch()
+              if (tab === "violations") void evaluation.refetch()
             }}
+            disabled={active.isFetching}
           >
-            {m.isPending ? "Deleting…" : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+            <RefreshCw className="h-3.5 w-3.5" />
+            {active.isFetching ? "Evaluating…" : "Evaluate now"}
+          </Button>
+        </div>
+      </header>
+
+      {tab === "overview" && (
+        <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+          <ComplianceOverview query={summary} />
+        </div>
+      )}
+      {tab === "violations" && (
+        <div className="flex min-h-0 flex-1 flex-col bg-background">
+          <ViolationsTab query={evaluation} />
+        </div>
+      )}
+      {tab === "rules" && (
+        <div className="flex min-h-0 flex-1 flex-col bg-background">
+          <RulesTab summary={summary} />
+        </div>
+      )}
+    </div>
   )
 }

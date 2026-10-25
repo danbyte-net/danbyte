@@ -54,6 +54,7 @@ import {
   useStatusLabels,
 } from "@/components/monitoring/status-palette"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { Kpi } from "@/components/kpi-card"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
 import { HistoryView } from "@/components/monitoring/history-view"
@@ -805,64 +806,6 @@ function MonitoringPage() {
         )}
       </div>
     </div>
-  )
-}
-
-const TONE: Record<string, string> = {
-  up: "text-emerald-600 dark:text-emerald-400",
-  down: "text-red-600 dark:text-red-400",
-  stale: "text-red-700 dark:text-red-400",
-  skipped: "text-muted-foreground",
-  flapping: "text-amber-600 dark:text-amber-400",
-}
-
-function Kpi({
-  label,
-  value,
-  tone,
-  badge,
-  unit,
-}: {
-  label: string
-  value: number
-  tone?: keyof typeof TONE
-  badge?: string
-  /** Rendered after the figure, muted - "%" on an availability. */
-  unit?: string
-}) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-        <CardTitle
-          className={`text-2xl font-semibold tabular-nums ${
-            tone ? TONE[tone] : ""
-          }`}
-        >
-          {value.toLocaleString()}
-          {unit && (
-            <span className="ml-0.5 text-base font-normal text-muted-foreground">
-              {unit}
-            </span>
-          )}
-        </CardTitle>
-        {badge && (
-          <CardAction>
-            <Badge
-              variant={
-                badge === "alert"
-                  ? "destructive"
-                  : tone === "up"
-                    ? "success"
-                    : "secondary"
-              }
-            >
-              {badge === "alert" ? "needs attention" : badge}
-            </Badge>
-          </CardAction>
-        )}
-      </CardHeader>
-    </Card>
   )
 }
 

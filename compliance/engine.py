@@ -202,20 +202,81 @@ def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
     return failed
 
 
-def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
+#: Triage states a violation can be in.
+OPEN, ACKNOWLEDGED, SNOOZED = "open", "acknowledged", "snoozed"
+
+_OPEN_TRIAGE = {
+    "state": OPEN,
+    "acknowledged_at": None,
+    "acknowledged_by": "",
+    "snoozed_until": None,
+    "note": "",
+}
+
+
+def triage_index(tenant, now=None) -> dict[tuple[str, str], dict]:
+    """``{(rule id, object id): triage fields}`` for the tenant, in one query.
+
+    Acknowledged wins over snoozed; a snooze whose time has passed reads as
+    open, though the row (and its note) stays until someone clears it."""
+    from django.utils import timezone
+
+    from .models import ComplianceTriage
+
+    now = now or timezone.now()
+    out = {}
+    rows = ComplianceTriage.objects.filter(tenant=tenant).select_related(
+        "acknowledged_by"
+    )
+    for t in rows:
+        snoozed = t.snoozed_until is not None and t.snoozed_until > now
+        state = ACKNOWLEDGED if t.acknowledged_at else SNOOZED if snoozed else OPEN
+        out[(str(t.rule_id), str(t.object_id))] = {
+            "state": state,
+            "acknowledged_at": t.acknowledged_at.isoformat() if t.acknowledged_at else None,
+            "acknowledged_by": (
+                t.acknowledged_by.get_username() if t.acknowledged_by else ""
+            ),
+            "snoozed_until": t.snoozed_until.isoformat() if snoozed else None,
+            "note": t.note,
+        }
+    return out
+
+
+def _site_of(object_type: str, obj) -> tuple[str | None, str]:
+    """The site a violation's object belongs to, for the Site facet."""
+    if object_type == "site":
+        return str(obj.pk), str(obj)
+    site_id = getattr(obj, "site_id", None)
+    if site_id is None:
+        return None, ""
+    return str(site_id), str(obj.site)
+
+
+def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> dict:
     """Return per-rule violation counts + a flat violation list.
 
     ``scope(object_type, queryset)`` returns the rows of ``queryset`` the
     caller may view, or None for all of them: the flat list then names only
     those. The per-rule counts stay whole - a compliance grant says how many
-    objects fail a rule, not which."""
+    objects fail a rule, not which.
+
+    ``triage`` is a :func:`triage_index`; read here when not given. Each
+    violation carries its state, and each rule how many of its failures are
+    open, acknowledged and snoozed."""
+    from django.utils import timezone
+
     if rules is None:
         rules = list(
             ComplianceRule.objects.filter(tenant=tenant, enabled=True)
         )
+    if triage is None:
+        triage = triage_index(tenant)
     models = _models()
     rule_rows = []
     violations = []
+    tag_info: dict[str, dict] = {}
+    failing_objects: set[tuple[str, str]] = set()
 
     # One scan per object type, every rule of that type applied to each row
     # as it goes by - ten rules on addresses read the addresses once (#200).
@@ -224,6 +285,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
         if rule.object_type in models:
             by_type.setdefault(rule.object_type, []).append(rule)
     counts = {rule.id: 0 for rule in rules}
+    states = {rule.id: {ACKNOWLEDGED: 0, SNOOZED: 0} for rule in rules}
     for object_type, type_rules in by_type.items():
         model = models[object_type]
         qs = model.objects.filter(tenant=tenant)
@@ -232,9 +294,13 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
             viewable = scope(object_type, qs)
             if viewable is not None:
                 shown = set(viewable.values_list("pk", flat=True))
-        needs_tags = any(_needs_tags(r) for r in type_rules)
-        if needs_tags:
-            qs = qs.prefetch_related(TAGS)
+        # Tags ride every row: a required-tag check reads them, and the
+        # Violations tab facets on them.
+        qs = qs.prefetch_related(TAGS)
+        if object_type != "site" and any(
+            f.name == "site" for f in model._meta.get_fields()
+        ):
+            qs = qs.select_related("site")
         coverage_days = None
         if any(r.check_type == "coverage" for r in type_rules):
             from api.support_coverage import annotate_devices
@@ -261,19 +327,29 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
                 *(("device_type__platform",) if object_type == "device" else ()),
             )
         for obj in qs[:cap]:
-            tag_slugs = (
-                {t.slug for t in tags_of(obj)} if needs_tags else set()
-            )
+            tags = tags_of(obj)
+            tag_slugs = {t.slug for t in tags}
+            failed_any = False
             for rule in type_rules:
                 if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
                     continue
+                failed_any = True
                 counts[rule.id] += 1
+                tri = triage.get((str(rule.id), str(obj.pk)), _OPEN_TRIAGE)
+                if tri["state"] != OPEN:
+                    states[rule.id][tri["state"]] += 1
                 if shown is not None and obj.pk not in shown:
                     continue
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.
                 if len(violations) < 5000:
+                    site_id, site_name = _site_of(object_type, obj)
+                    for t in tags:
+                        tag_info.setdefault(
+                            t.slug, {"id": t.pk, "name": t.name, "color": t.color,
+                 "text_color": t.text_color}
+                        )
                     violations.append(
                         {
                             "rule_id": str(rule.id),
@@ -287,25 +363,44 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
                             "object_id": str(obj.pk),
                             "object_repr": str(obj)[:120],
                             "detail": detail_for(rule, obj, eol_cfg),
+                            "site_id": site_id,
+                            "site_name": site_name,
+                            "tags": sorted(tag_slugs),
+                            **tri,
                         }
                     )
+            if failed_any:
+                failing_objects.add((object_type, str(obj.pk)))
     for rule in rules:
         if rule.object_type not in models:
             continue
         count = counts[rule.id]
+        acked = states[rule.id][ACKNOWLEDGED]
+        snoozed = states[rule.id][SNOOZED]
         rule_rows.append(
             {
                 "id": str(rule.id),
                 "name": rule.name,
                 "object_type": rule.object_type,
+                "object_type_label": OBJECT_TYPES.get(
+                    rule.object_type, rule.object_type
+                ),
                 "severity": rule.severity,
                 "violations": count,
+                "open": count - acked - snoozed,
+                "acknowledged": acked,
+                "snoozed": snoozed,
             }
         )
 
     rule_rows.sort(key=lambda r: -r["violations"])
     return {
+        "evaluated_at": timezone.now().isoformat(),
         "rules": rule_rows,
         "violations": violations,
         "total_violations": sum(r["violations"] for r in rule_rows),
+        # Distinct objects failing at least one rule, counted whole like the
+        # per-rule counts. Not serialised: callers pop it.
+        "failing_objects": failing_objects,
+        "tags": tag_info,
     }
