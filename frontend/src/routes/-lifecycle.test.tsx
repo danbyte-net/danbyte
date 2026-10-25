@@ -25,7 +25,11 @@ import {
   vi,
 } from "vitest"
 
-import type { LifecycleOverview, LifecycleRow } from "@/lib/api"
+import type {
+  LifecycleOverview,
+  LifecycleRow,
+  SoftwareVersionSummary,
+} from "@/lib/api"
 import { Route } from "./lifecycle"
 
 // The Lifecycle page (#436): one row per object per source, count chips per
@@ -47,15 +51,18 @@ vi.mock("@/lib/use-me", () => ({
 vi.mock("@/components/list-page-shell", () => ({
   ListPageShell: ({
     rail,
+    actions,
     summary,
     children,
   }: {
     rail?: ReactNode
+    actions?: ReactNode
     summary?: ReactNode
     children: ReactNode
   }) => (
     <div>
       {rail}
+      {actions}
       {summary}
       {children}
     </div>
@@ -124,6 +131,40 @@ const BODY: LifecycleOverview = {
 
 let body: LifecycleOverview = BODY
 
+const VERSIONS: SoftwareVersionSummary = {
+  results: [
+    {
+      platform: { id: "p1", name: "IOS-XE", target_version: "17.9.5" },
+      version: "17.9.4a",
+      devices: 3,
+      virtual_machines: 1,
+      on_target: false,
+      sources: { snmp: 3, manual: 1 },
+    },
+    {
+      platform: { id: "p1", name: "IOS-XE", target_version: "17.9.5" },
+      version: "17.9.5",
+      devices: 2,
+      virtual_machines: 0,
+      on_target: true,
+      sources: { snmp: 2 },
+    },
+    {
+      platform: null,
+      version: "",
+      devices: 1,
+      virtual_machines: 0,
+      on_target: null,
+      sources: { none: 1 },
+    },
+  ],
+  facets: {
+    site: [{ id: "s1", name: "HQ", count: 6 }],
+    platform: [{ id: "p1", name: "IOS-XE", count: 6 }],
+    role: [],
+  },
+}
+
 beforeAll(async () => {
   const lazy = Route.options.component as { preload?: () => Promise<void> }
   await lazy.preload?.()
@@ -132,7 +173,13 @@ beforeEach(() => {
   body = BODY
   apiMock.mockReset()
   apiMock.mockImplementation((path) =>
-    Promise.resolve(path.startsWith("/api/lifecycle/") ? body : {})
+    Promise.resolve(
+      path.startsWith("/api/lifecycle/versions/")
+        ? VERSIONS
+        : path.startsWith("/api/lifecycle/")
+          ? body
+          : {}
+    )
   )
 })
 afterEach(cleanup)
@@ -241,5 +288,44 @@ describe("the Lifecycle page", () => {
     expect(
       screen.getByText("Settings → General → End-of-life data")
     ).toBeTruthy()
+  })
+
+  it("switches to the Versions view", async () => {
+    const router = mount("/lifecycle")
+    await screen.findByText("sw-gone")
+    fireEvent.click(screen.getByRole("button", { name: "Versions" }))
+    await screen.findByText("17.9.4a")
+    expect(apiMock).toHaveBeenCalledWith("/api/lifecycle/versions/")
+    expect((router.state.location.search as Record<string, unknown>).view).toBe(
+      "versions"
+    )
+  })
+})
+
+describe("the Versions view", () => {
+  it("counts devices and VMs per platform and version", async () => {
+    mount("/lifecycle?view=versions")
+    await screen.findByText("17.9.4a")
+    expect(screen.getByText("No version")).toBeTruthy()
+    expect(screen.getByText("No platform")).toBeTruthy()
+    expect(screen.getByText("Off target")).toBeTruthy()
+    expect(screen.getByText("On target")).toBeTruthy()
+    expect(screen.getByText("SNMP 3 · Manual 1")).toBeTruthy()
+    // Each count links to the list narrowed to its platform and version.
+    const link = screen.getByRole("link", { name: "3" })
+    const href = decodeURIComponent(link.getAttribute("href") ?? "")
+    expect(href).toContain("/devices")
+    expect(href).toContain("platform=p1")
+    expect(href).toContain("software_version=17.9.4a")
+  })
+
+  it("sends its filters to the server", async () => {
+    mount("/lifecycle?view=versions&site=s1")
+    await screen.findByText("17.9.4a")
+    expect(apiMock).toHaveBeenCalledWith("/api/lifecycle/versions/?site=s1")
+    const href = decodeURIComponent(
+      screen.getByRole("link", { name: "3" }).getAttribute("href") ?? ""
+    )
+    expect(href).toContain("site=s1")
   })
 })

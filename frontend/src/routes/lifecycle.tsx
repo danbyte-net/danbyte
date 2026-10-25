@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import type { ReactNode } from "react"
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 
@@ -9,13 +10,15 @@ import type {
   LifecycleWindow,
 } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { useSearchWriter, useUrlSearch } from "@/lib/url-filters"
+import { useListSearch, useSearchWriter, useUrlSearch } from "@/lib/url-filters"
 import { useUrlFlag } from "@/lib/use-url-state"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
+import { LifecycleVersions } from "@/components/lifecycle-versions"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useUrlTableFilters } from "@/components/table-filters"
 import {
   WINDOW_LABELS,
@@ -29,7 +32,8 @@ import {
 // matter to it - hardware, OS, support coverage - one row per object per
 // source, soonest first. Laid out like Port utilization: the rows come in one
 // request and the rail narrows them. Deep links set the facets:
-// /lifecycle?source=coverage&window=90.
+// /lifecycle?source=coverage&window=90. The Versions view (#451) counts
+// devices and VMs per platform and running version: /lifecycle?view=versions.
 
 export const Route = createFileRoute("/lifecycle")({
   component: LifecyclePage,
@@ -37,7 +41,34 @@ export const Route = createFileRoute("/lifecycle")({
 
 type Row = LifecycleRow & { id: string }
 
+type LifecycleView = "objects" | "versions"
+
+const VIEWS = [
+  { value: "objects", label: "Objects" },
+  { value: "versions", label: "Versions" },
+] as const
+
 function LifecyclePage() {
+  const search = useListSearch()
+  const write = useSearchWriter()
+  const view: LifecycleView =
+    search.view === "versions" ? "versions" : "objects"
+  // A view's filters mean nothing to the other one: switching starts clean.
+  const viewSwitch = (
+    <SegmentedTabs<LifecycleView>
+      value={view}
+      onValueChange={(v) => write(() => (v === "versions" ? { view: v } : {}))}
+      items={VIEWS}
+    />
+  )
+  return view === "versions" ? (
+    <LifecycleVersions viewSwitch={viewSwitch} />
+  ) : (
+    <LifecycleObjects viewSwitch={viewSwitch} />
+  )
+}
+
+function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
   const [search, setSearch] = useUrlSearch()
   // Rows with no date are counted, and listed only on request.
   const [undated, setUndated] = useUrlFlag("undated", false)
@@ -114,6 +145,7 @@ function LifecyclePage() {
         onChange: setSearch,
         placeholder: "Filter devices and VMs…",
       }}
+      actions={viewSwitch}
       summary={
         q.data && (
           <WindowChips

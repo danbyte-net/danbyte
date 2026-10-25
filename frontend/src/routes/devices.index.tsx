@@ -41,6 +41,9 @@ export const Route = createFileRoute("/devices/")({
     site?: string
     manufacturer?: string
     coverage?: string
+    platform?: string
+    role?: string
+    software_version?: string
   } => {
     const out: {
       type?: string
@@ -48,6 +51,9 @@ export const Route = createFileRoute("/devices/")({
       site?: string
       manufacturer?: string
       coverage?: string
+      platform?: string
+      role?: string
+      software_version?: string
     } = {}
     if (typeof search.type === "string") out.type = search.type
     if (typeof search.status === "string") out.status = search.status
@@ -56,6 +62,11 @@ export const Route = createFileRoute("/devices/")({
       out.manufacturer = search.manufacturer
     // Support coverage status (#421), from the Support coverage widget.
     if (typeof search.coverage === "string") out.coverage = search.coverage
+    // Lifecycle → Versions (#451): a platform and version's devices.
+    if (typeof search.platform === "string") out.platform = search.platform
+    if (typeof search.role === "string") out.role = search.role
+    if (typeof search.software_version === "string")
+      out.software_version = search.software_version
     return out
   },
   component: DevicesPage,

@@ -75,6 +75,14 @@ function Body({ platform: p }: { platform: Platform }) {
         dash
       ),
     },
+    {
+      label: "Version pattern",
+      value: p.version_pattern ? (
+        <span className="font-mono break-all">{p.version_pattern}</span>
+      ) : (
+        dash
+      ),
+    },
   ]
 
   return (
