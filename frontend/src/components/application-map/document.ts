@@ -205,7 +205,7 @@ function unit(p: Pt, q: Pt): Dir {
 
 /** How wide an application's colour bar is, and how far it keeps from
  * the card's rounded corners - as the canvas draws it (app-card.tsx). */
-export const ACCENT = { W: 3, INSET: 6 } as const
+export const ACCENT = { W: 4, INSET: 0 } as const
 
 /** An application's colour bar as a node of its own, over its card's
  * left edge. */
