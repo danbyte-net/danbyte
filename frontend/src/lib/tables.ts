@@ -135,6 +135,7 @@ const ROWS: Row[] = [
   ["platforms", "Platforms", "DCIM", "/api/platforms/", { ioType: "platform" }],
   ["applications", "Applications", "DCIM", "/api/applications/", { ioType: "application" }],
   ["application-installs", "Application · Installed on", "DCIM", "/api/installed-software/", sub],
+  ["application-eol-cycles", "Application · End-of-life cycles", "DCIM", null],
   ["application-children", "Application · Child applications", "DCIM", "/api/applications/", sub],
   ["application-groups", "Application groups", "DCIM", "/api/application-groups/", { ioType: "applicationgroup" }],
   ["application-group-members", "Application group · Applications", "DCIM", "/api/application-groups/", sub],
