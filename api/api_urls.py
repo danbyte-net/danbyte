@@ -70,6 +70,8 @@ from compliance.api import (
     compliance_device_status,
     compliance_evaluate,
     compliance_object_types,
+    compliance_summary,
+    compliance_triage,
 )
 from compliance.eol_api import (
     eol_import,
@@ -547,6 +549,8 @@ urlpatterns = [
     path("presence/leave/", presence_leave, name="presence-leave"),
     path("presence/", presence_list, name="presence-list"),
     path("compliance/evaluate/", compliance_evaluate, name="compliance-evaluate"),
+    path("compliance/summary/", compliance_summary, name="compliance-summary"),
+    path("compliance/triage/", compliance_triage, name="compliance-triage"),
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
     path("compliance/devices/<uuid:device_id>/", compliance_device_status,
          name="compliance-device-status"),

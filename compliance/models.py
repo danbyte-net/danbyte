@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from core.models import TimestampedModel, Tenant
@@ -250,3 +251,48 @@ class EolMapping(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.product} {self.cycle}"
+
+
+# ─── Triage (0.19) ───────────────────────────────────────────────────────────
+# Violations are computed, never stored; what an operator decides about one is.
+# One row per (rule, object): acknowledged, snoozed until a time, or both. The
+# evaluation reads these back and marks each violation open, acknowledged or
+# snoozed. Clearing the row returns the violation to open.
+
+
+class ComplianceTriage(TimestampedModel):
+    """An operator's decision about one rule failing one object."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="compliance_triage"
+    )
+    rule = models.ForeignKey(
+        ComplianceRule, on_delete=models.CASCADE, related_name="triage"
+    )
+    object_type = models.CharField(max_length=20)
+    object_id = models.UUIDField()
+    object_repr = models.CharField(max_length=120, blank=True, default="")
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    snoozed_until = models.DateTimeField(null=True, blank=True)
+    snoozed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    note = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["rule", "object_repr"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["rule", "object_id"], name="uniq_compliancetriage_rule_object"
+            )
+        ]
+        indexes = [models.Index(fields=["tenant", "rule"])]
+
+    def __str__(self) -> str:
+        return f"{self.object_repr or self.object_id} · {self.rule.name}"
