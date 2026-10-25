@@ -1,6 +1,6 @@
-"""Topology diagrams as PDF: ``POST /api/topology/export/pdf/``.
+"""Diagrams as PDF: ``POST /api/diagram/export/pdf/``.
 
-The browser draws the map as an SVG (``frontend/src/lib/diagram/svg.ts``,
+The browser draws a diagram as an SVG (``frontend/src/lib/diagram/svg.ts``,
 the same drawing as the SVG export) and posts it here with the paper and
 the title block's text. ``api/drawing_pdf.py`` - which renders every
 drawing's PDF - sanitizes it and lays it out with WeasyPrint on one sheet of
@@ -9,11 +9,17 @@ with the view, the tenant, the filters, the date, the Danbyte version and the
 page. There, too: what WeasyPrint may read, the caps, the render slots, the
 deadline and the print links.
 
+``kind`` says which diagram it is (:data:`DIAGRAM_KINDS`): ``topology``
+(the default) needs ``device.view``, ``application-flows`` (#163)
+``applicationflow.view``. ``POST /api/topology/export/pdf/`` is the same
+endpoint, kept for the topology.
+
 ``?print=1`` keeps the PDF in the cache for five minutes and answers with a
-link, ``GET /api/topology/export/pdf/<token>/``, that only the same user in
-the same tenant can open - inline, so the browser's viewer prints it; add
-``?download=1`` to save it instead. A user keeps one such PDF per tenant: a
-new one replaces the last, and its link stops working.
+link, ``GET /api/topology/export/pdf/<token>/`` for the topology,
+``/api/diagram/export/pdf/<token>/?kind=<kind>`` for the others, that only
+the same user in the same tenant can open - inline, so the browser's viewer
+prints it; add ``?download=1`` to save it instead. A user keeps one such PDF
+per kind and tenant: a new one replaces the last, and its link stops working.
 """
 
 from __future__ import annotations
@@ -163,7 +169,18 @@ class _MetaSerializer(serializers.Serializer):
     )
 
 
+#: The diagrams this endpoint renders: ``kind`` → (the object type whose
+#: view permission it needs, the file name's stem when the title leaves
+#: none, the title when none is given).
+DIAGRAM_KINDS: dict[str, tuple[str, str, str]] = {
+    "topology": ("device", "topology", "Topology"),
+    # An application's flows (#163).
+    "application-flows": ("applicationflow", "application-flows", "Application flows"),
+}
+
+
 class TopologyPdfRequestSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=list(DIAGRAM_KINDS), default="topology")
     svg = serializers.CharField(trim_whitespace=False, max_length=MAX_SVG_BYTES)
     title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     paper = _PaperSerializer(required=False)
@@ -174,43 +191,64 @@ class TopologyPdfRequestSerializer(serializers.Serializer):
 _detail = detail
 
 
-def _gate(request):
-    """(tenant, None) when the caller may export the map, else (None, 403)."""
+def _kind_of(data) -> str | None:
+    """The request's diagram kind - ``topology`` when it names none, None
+    when it names one this endpoint does not know."""
+    raw = data.get("kind") if hasattr(data, "get") else None
+    kind = str(raw or "topology")
+    return kind if kind in DIAGRAM_KINDS else None
+
+
+def _gate(request, kind: str = "topology"):
+    """(tenant, None) when the caller may export the ``kind`` diagram, else
+    (None, 403): it needs view on the kind's object type."""
     tenant = _get_active_tenant(request)
     if tenant is None:
         return None, _detail("No active tenant.", 403)
-    if rbac.row_filter(request.user, tenant, "device", "view") is None:
-        return None, _detail("device.view required.", 403)
+    perm = DIAGRAM_KINDS[kind][0]
+    if rbac.row_filter(request.user, tenant, perm, "view") is None:
+        return None, _detail(f"{perm}.view required.", 403)
     return tenant, None
 
 
-def _file_slug(title: str) -> str:
+def _file_slug(title: str, kind: str = "topology") -> str:
     """``title`` as a file name's stem, as the map's other exports are named
-    in the browser - :func:`api.drawing_pdf.file_slug`, ``topology`` when
-    nothing is left."""
-    return file_slug(title, "topology")
+    in the browser - :func:`api.drawing_pdf.file_slug`, the kind's stem
+    (``topology``) when nothing is left."""
+    return file_slug(title, DIAGRAM_KINDS[kind][1])
 
 
-def _file_name(title: str, when: dt.datetime) -> str:
-    return file_name(title, when, "topology")
+def _file_name(title: str, when: dt.datetime, kind: str = "topology") -> str:
+    return file_name(title, when, DIAGRAM_KINDS[kind][1])
 
 
-def _print_key(user_id, tenant_id) -> str:
-    """The one print PDF a user keeps per tenant; its token is inside."""
-    return f"topology-pdf-print:{user_id}:{tenant_id}"
+def _print_key(user_id, tenant_id, kind: str = "topology") -> str:
+    """The one print PDF a user keeps per kind and tenant; its token is
+    inside. The topology's key is the one it always had."""
+    if kind == "topology":
+        return f"topology-pdf-print:{user_id}:{tenant_id}"
+    return f"diagram-pdf-print:{kind}:{user_id}:{tenant_id}"
+
+
+def _print_link(kind: str, token: str) -> str:
+    if kind == "topology":
+        return reverse("topology-export-pdf-file", kwargs={"token": token})
+    return reverse("diagram-export-pdf-file", kwargs={"token": token}) + f"?kind={kind}"
 
 
 @extend_schema(
-    summary="Topology diagram as a PDF",
+    summary="A diagram as a PDF",
     description=(
-        "Renders a diagram SVG (as the Diagram's SVG export draws it) on one "
+        "Renders a diagram SVG (as the diagram's SVG export draws it) on one "
         "sheet of A4, A3, Letter or Tabloid, fitted, with a title block "
         "stamped with the server's time. The SVG is sanitized to an "
         "allowlist; at most 8 MB, 60,000 elements and 80,000 characters of "
         "text as rendered (a reused part counts each time it is drawn), the "
         "request at most 10 MB, the render at most 30 seconds. `?print=1` "
         "returns `{url}`: a link to the PDF for five minutes, for the same "
-        "user and tenant; a newer one replaces it."
+        "user and tenant; a newer one replaces it. `kind` picks the diagram: "
+        "`topology` (the default) needs device.view, `application-flows` "
+        "applicationflow.view."
     ),
     tags=["topology"],
     parameters=[
@@ -228,7 +266,7 @@ def _print_key(user_id, tenant_id) -> str:
             name="TopologyPdfLink", fields={"url": serializers.CharField()}
         ),
         400: OpenApiResponse(description="Invalid request or SVG."),
-        403: OpenApiResponse(description="No tenant or no device.view."),
+        403: OpenApiResponse(description="No tenant, or no view on the kind's type."),
         413: OpenApiResponse(description="Over a cap, or too slow to render."),
         429: OpenApiResponse(
             description="A PDF for this user is being made, or as many as the server makes at once."
@@ -239,7 +277,10 @@ def _print_key(user_id, tenant_id) -> str:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def topology_pdf_view(request):
-    tenant, denied = _gate(request)
+    kind = _kind_of(request.data)
+    if kind is None:
+        return _detail("Unknown diagram kind.", 400)
+    tenant, denied = _gate(request, kind)
     if denied:
         return denied
     if body_too_large(request, MAX_BODY_BYTES):
@@ -249,7 +290,7 @@ def topology_pdf_view(request):
     data = ser.validated_data
     paper = data.get("paper") or {}
     meta = data.get("meta") or {}
-    title = (data.get("title") or meta.get("view") or "").strip() or "Topology"
+    title = (data.get("title") or meta.get("view") or "").strip() or DIAGRAM_KINDS[kind][2]
     # The server's clock, never the caller's: the date on paper is when
     # the PDF was made.
     generated = timezone.now()
@@ -269,7 +310,8 @@ def topology_pdf_view(request):
     try:
         pdf = render_guarded(request, data["svg"], sanitize=sanitize_svg, render=render)
     except RenderTimeout:
-        log.warning("Topology PDF for user %s stopped after %ss", request.user.pk, RENDER_TIMEOUT)
+        log.warning("%s PDF for user %s stopped after %ss", DIAGRAM_KINDS[kind][2],
+                    request.user.pk, RENDER_TIMEOUT)
         return _detail(
             "The drawing took too long to render. Export a smaller part of the map.", 413
         )
@@ -278,16 +320,16 @@ def topology_pdf_view(request):
     return deliver(
         request,
         pdf,
-        name=_file_name(title, generated),
-        # One per user and tenant: a new print link replaces the last.
-        key=_print_key(request.user.pk, tenant.pk),
-        link=lambda token: reverse("topology-export-pdf-file", kwargs={"token": token}),
-        label="Topology",
+        name=_file_name(title, generated, kind),
+        # One per user, kind and tenant: a new print link replaces the last.
+        key=_print_key(request.user.pk, tenant.pk, kind),
+        link=lambda token: _print_link(kind, token),
+        label=DIAGRAM_KINDS[kind][2],
     )
 
 
 @extend_schema(
-    summary="A topology PDF made with ?print=1",
+    summary="A diagram PDF made with ?print=1",
     description=(
         "The PDF behind a print link, for five minutes, to the user and tenant "
         "that made it, until they make another; inline, or as a download with "
@@ -301,6 +343,13 @@ def topology_pdf_view(request):
             location=OpenApiParameter.QUERY,
             description="Save the file instead of opening it.",
         ),
+        OpenApiParameter(
+            name="kind",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            enum=list(DIAGRAM_KINDS),
+            description="The diagram the link is for; `topology` when absent.",
+        ),
     ],
     responses={
         (200, "application/pdf"): OpenApiTypes.BINARY,
@@ -311,7 +360,10 @@ def topology_pdf_view(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def topology_pdf_file_view(request, token):
+    kind = _kind_of(request.query_params)
     tenant = _get_active_tenant(request)
-    if tenant is None or rbac.row_filter(request.user, tenant, "device", "view") is None:
+    if kind is None or tenant is None or rbac.row_filter(
+        request.user, tenant, DIAGRAM_KINDS[kind][0], "view"
+    ) is None:
         return _detail("Not found.", 404)
-    return kept_pdf(request, token, key=_print_key(request.user.pk, tenant.pk))
+    return kept_pdf(request, token, key=_print_key(request.user.pk, tenant.pk, kind))

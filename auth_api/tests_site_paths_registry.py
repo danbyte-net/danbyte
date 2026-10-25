@@ -181,6 +181,7 @@ LATER = importlib.import_module("auth_api.migrations.0030_site_roles_support_cov
 COOLING = importlib.import_module("auth_api.migrations.0032_site_roles_cooling")
 APPLICATIONS = importlib.import_module("auth_api.migrations.0033_site_roles_applications")
 COOLING_PARTS = importlib.import_module("auth_api.migrations.0034_site_roles_cooling_components")
+FLOWS = importlib.import_module("auth_api.migrations.0035_site_roles_application_flows")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -281,7 +282,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(LATER.NEW_TYPES)
             | set(COOLING.NEW_TYPES)
             | set(APPLICATIONS.NEW_TYPES)
-            | set(COOLING_PARTS.NEW_TYPES),
+            | set(COOLING_PARTS.NEW_TYPES)
+            | set(FLOWS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -346,7 +348,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
         self.assertEqual(
             sorted(
                 CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS + COOLING.NEW_CATALOGS
-                + APPLICATIONS.NEW_CATALOGS
+                + APPLICATIONS.NEW_CATALOGS + FLOWS.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )

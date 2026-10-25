@@ -6356,6 +6356,122 @@ class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         return self.name
 
 
+# ─── Application flows (#163) ────────────────────────────────────────────────
+
+
+def _flow_one_end(side: str) -> models.Q:
+    """Exactly one of the side's address, range, prefix or "any" is set."""
+    ip, rng, pfx, any_ = (f"{side}_ip", f"{side}_range", f"{side}_prefix", f"{side}_any")
+    return (
+        models.Q(**{f"{ip}__isnull": False, f"{rng}__isnull": True,
+                    f"{pfx}__isnull": True, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": False,
+                      f"{pfx}__isnull": True, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": True,
+                      f"{pfx}__isnull": False, any_: False})
+        | models.Q(**{f"{ip}__isnull": True, f"{rng}__isnull": True,
+                      f"{pfx}__isnull": True, any_: True})
+    )
+
+
+class ApplicationFlow(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """Traffic an application needs: from one end to another, on a protocol
+    and ports (#163). Documentation, like a NAT rule - nothing is pushed.
+
+    Each end is exactly one of an address, a range, a prefix, or "any".
+    Deleting the address, range or prefix an end names deletes the flow: a
+    flow with a missing end describes nothing. ``service`` is the
+    destination's service, when one is recorded."""
+
+    PROTOCOL_CHOICES = NATRule.PROTOCOL_CHOICES
+    DIRECTION_CHOICES = [
+        ("one-way", "One way"),
+        ("both", "Both ways"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="application_flows"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="flows"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    source_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_from",
+    )
+    source_any = models.BooleanField(default=False, db_default=False)
+
+    destination_ip = models.ForeignKey(
+        "IPAddress", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_range = models.ForeignKey(
+        "IPRange", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_prefix = models.ForeignKey(
+        "Prefix", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="flows_to",
+    )
+    destination_any = models.BooleanField(default=False, db_default=False)
+
+    protocol = models.CharField(
+        max_length=8, choices=PROTOCOL_CHOICES, default="tcp", db_default="tcp"
+    )
+    #: Ports and inclusive ranges, comma-separated: "443", "80, 443",
+    #: "8000-8100". Blank for ICMP and "any", or for every port.
+    ports = models.CharField(max_length=128, blank=True, default="", db_default="")
+    direction = models.CharField(
+        max_length=8, choices=DIRECTION_CHOICES, default="one-way", db_default="one-way"
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="application_flows",
+    )
+    service = models.ForeignKey(
+        "Service", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="application_flows",
+    )
+
+    class Meta:
+        ordering = ["application__name", "name"]
+        constraints = [
+            models.CheckConstraint(
+                condition=_flow_one_end("source"), name="applicationflow_one_source",
+            ),
+            models.CheckConstraint(
+                condition=_flow_one_end("destination"),
+                name="applicationflow_one_destination",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "name"], name="uniq_applicationflow_app_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def end(self, side: str):
+        """``(kind, object)`` of one end - ``("ip", IPAddress)`` or
+        ``("any", None)``. ``side`` is ``source`` or ``destination``."""
+        for kind in ("ip", "range", "prefix"):
+            if getattr(self, f"{side}_{kind}_id"):
+                return kind, getattr(self, f"{side}_{kind}")
+        return "any", None
+
+
 class DeviceTypeService(ProtocolPortsMixin, _ComponentTemplate):
     """A service template on a device type - like an interface/port template,
     but for a network service. Materialises a ``Service`` onto every new device

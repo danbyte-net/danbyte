@@ -128,6 +128,17 @@ SITE_PATHS: dict[str, str] = {
     # Installed software follows its device or VM (#436); the application
     # catalog itself is tenant-wide, like platforms.
     "installedsoftware": "device__site|virtual_machine__site",
+    # An application flow belongs to the site of its first end that has one
+    # (#163): the source address (its own site, else its prefix's, as an
+    # address's site reads), then the destination address, then the
+    # prefixes, then the ranges (a range's site is its prefix's). A flow
+    # between two "any" ends is shared.
+    "applicationflow": (
+        "source_ip__site|source_ip__prefix__site"
+        "|destination_ip__site|destination_ip__prefix__site"
+        "|source_prefix__site|destination_prefix__site"
+        "|source_range__prefix__site|destination_range__prefix__site"
+    ),
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.

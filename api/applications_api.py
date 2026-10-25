@@ -3,7 +3,7 @@
 * ``/api/applications/`` - the tenant's application catalog: CRUD,
   ``?picker=1``, ``?search=``, ``?manufacturer=``, ``?parent=`` (``none`` for
   the roots), ``bulk-delete``. A delete is refused (409) while the
-  application has installs or child applications.
+  application has installs, child applications or flows (#163).
 * ``/api/applications/<id>/eol/`` - ``PUT {source?, product}`` names the
   end-of-life product, ``DELETE`` clears it; 404 while the feature is off.
 * ``/api/installed-software/`` - one application at one version on a device
@@ -143,16 +143,17 @@ class ApplicationSerializer(
     eol = serializers.SerializerMethodField()
     install_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
+    flow_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Application
         fields = ["id", "name", "slug", "parent", "parent_id", "path", "depth",
                   "manufacturer", "manufacturer_id", "eol_source", "eol_product", "eol",
                   "description", "tags", "tag_ids", "custom_fields",
-                  "install_count", "child_count", "created_at", "updated_at"]
+                  "install_count", "child_count", "flow_count", "created_at", "updated_at"]
         # The product is set through /eol/, which also redoes the installs.
         read_only_fields = ["id", "eol_source", "eol_product", "install_count",
-                            "child_count", "created_at", "updated_at"]
+                            "child_count", "flow_count", "created_at", "updated_at"]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
@@ -170,6 +171,11 @@ class ApplicationSerializer(
     def get_child_count(self, obj) -> int:
         n = getattr(obj, "child_count_annotated", None)
         return n if n is not None else obj.children.count()
+
+    def get_flow_count(self, obj) -> int:
+        """The application's flows the reader may view (#163)."""
+        n = getattr(obj, "flow_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "flows")
 
     def validate_name(self, value):
         value = (value or "").strip()
@@ -386,6 +392,7 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             ).annotate(
                 install_count_annotated=_visible_n(self, "installs"),
                 child_count_annotated=_visible_n(self, "children"),
+                flow_count_annotated=_visible_n(self, "flows"),
             )
         if not self.request:
             return qs
@@ -414,16 +421,23 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         serializer.save()
 
     @staticmethod
-    def _held(installs: int, children: int) -> str | None:
+    def _held(installs: int, children: int, flows: int = 0) -> str | None:
         parts = []
         if installs:
             parts.append(f"{installs} install{'s' if installs != 1 else ''}")
         if children:
             parts.append(f"{children} child application{'s' if children != 1 else ''}")
-        return "In use: " + " and ".join(parts) + "." if parts else None
+        if flows:
+            parts.append(f"{flows} flow{'s' if flows != 1 else ''}")
+        if not parts:
+            return None
+        head = ", ".join(parts[:-1])
+        return "In use: " + (f"{head} and {parts[-1]}" if head else parts[0]) + "."
 
     def bulk_blockers(self, rows) -> dict:
         from django.db.models import Count
+
+        from .models import ApplicationFlow
 
         ids = [r.pk for r in rows]
         installs = dict(
@@ -434,16 +448,20 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             Application.objects.filter(parent_id__in=ids)
             .values("parent_id").annotate(n=Count("pk")).values_list("parent_id", "n")
         )
+        flows = dict(
+            ApplicationFlow.objects.filter(application_id__in=ids)
+            .values("application_id").annotate(n=Count("pk")).values_list("application_id", "n")
+        )
         out = {}
         for pk in ids:
-            why = self._held(installs.get(pk, 0), children.get(pk, 0))
+            why = self._held(installs.get(pk, 0), children.get(pk, 0), flows.get(pk, 0))
             if why:
                 out[pk] = why
         return out
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
-        why = self._held(obj.installs.count(), obj.children.count())
+        why = self._held(obj.installs.count(), obj.children.count(), obj.flows.count())
         if why:
             return Response({"detail": why}, status=drf_status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)

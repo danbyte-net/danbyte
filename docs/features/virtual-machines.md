@@ -47,6 +47,7 @@ interfaces a VLAN. Then:
 | **Components** | The VM's interfaces (and their IPs), with a count on the tab. |
 | **Services** | Services running on it, from your service templates. |
 | **Software** | Applications installed on it, each at a version. See [Applications & installed software](applications.md). |
+| **Flows** | [Application flows](application-flows.md) with an end at one of its addresses, or at a prefix or range that holds one. |
 | **Routing** | Static routes and BGP, OSPF, IS-IS and EIGRP instances on the VM - a virtual router's routing, the same as a device's. See [Routing on virtual machines](routing.md#routing-on-virtual-machines). |
 | **Monitoring** | Checks against its addresses, same engine as devices. |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |

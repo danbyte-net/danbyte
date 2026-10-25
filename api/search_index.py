@@ -194,6 +194,10 @@ SPECS: dict[str, IndexSpec] = {
                           subtitle="manufacturer.name"),
     "application": IndexSpec("api.Application", "/applications/{id}", weight=5, site=None,
                              subtitle="manufacturer.name", facets=("manufacturer",)),
+    # A flow is read on its application's page (#163).
+    "applicationflow": IndexSpec("api.ApplicationFlow", "/applications/{application_id}",
+                                 weight=4, site=None, subtitle="application.name",
+                                 facets=("status",)),
     "platformgroup": IndexSpec("api.PlatformGroup", "/platform-groups/{id}", weight=4, site=None),
     "rackrole": IndexSpec("api.RackRole", "/rack-roles/{id}", weight=4, site=None),
     "racktype": IndexSpec("api.RackType", "/rack-types/{id}", weight=4, site=None),
@@ -504,6 +508,7 @@ def entry_values(obj, spec: IndexSpec | None = None) -> dict | None:
             # Rows that live on another object's page (a BGP instance on its
             # device's Routing tab) link there.
             device_id=getattr(obj, "device_id", ""),
+            application_id=getattr(obj, "application_id", ""),
             owner_page=_owner_page(obj),
         ),
         "weight": spec.weight,

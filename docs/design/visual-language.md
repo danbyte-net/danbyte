@@ -67,6 +67,13 @@ a lot of data fast - typography and spacing serve that, not decoration.
   toward `--border`, title centred on top unless a cable crosses there -
   side bands on a pastel zone swatch; never a free colour picker, never the
   role colour the cards already carry.
+- **Arrowheads** only on lines that have a direction - an application
+  flow's (#163): a solid head in the line's own colour at the destination,
+  at both ends for a flow both ways, drawn as a polygon (never an SVG
+  `<marker>`, which the PDF sanitizer drops). Cables and sessions stay
+  plain lines.
+- **Flow diagrams** draw one neutral row band per application, titled with
+  its path, and neutral cards: the colour stays with roles and statuses.
 - **Canvas notes** are text in `text-foreground/75` and Lucide icons in
   `--muted-foreground`, no box unless outlined (`border-border` on
   `bg-card`); never coloured.

@@ -185,6 +185,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Applications and installed software (#436).
     ("api.Application", "Applications", "DCIM"),
     ("api.InstalledSoftware", "Installed software", "DCIM"),
+    # Application flows (#163).
+    ("api.ApplicationFlow", "Application flows", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     # Support & warranty coverage (#421).
     ("api.SupportContract", "Support contracts", "DCIM"),

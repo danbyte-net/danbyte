@@ -1,6 +1,7 @@
 import { readableText } from "@/lib/color"
 
 import {
+  arrowHeads,
   cardText,
   fmt,
   labelCorners,
@@ -10,6 +11,7 @@ import {
   linkPath,
   noteLayout,
   pillWidth,
+  trimForArrows,
   NOTE,
 } from "./geometry"
 import type { LabelBlock } from "./geometry"
@@ -263,16 +265,32 @@ function bandTitleSvg(b: DiagramBand, measure: Measure): string {
 
 function linkSvg(l: DiagramLink): string {
   const dash = dashOk(l.dash)
-  return el("path", {
-    d: linkPath(l),
+  const heads = arrowHeads(l)
+  const stroke = col(l.stroke, PRINT.subtle)
+  const line = el("path", {
+    // An arrowed end stops at its head's base; the head carries the tip.
+    d: linkPath(heads.length ? trimForArrows(l) : l),
     fill: "none",
-    stroke: col(l.stroke, PRINT.subtle),
+    stroke,
     "stroke-width": Math.max(0.25, l.width || 1),
     "stroke-dasharray": dash,
     // Round caps stretch every dash; dashed lines keep butt caps.
     "stroke-linecap": dash ? undefined : "round",
     "stroke-linejoin": "round",
   })
+  // Arrowheads are polygons in the line's colour: the PDF sanitizer
+  // allows no <marker>.
+  return (
+    line +
+    heads
+      .map((h) =>
+        el("polygon", {
+          points: h.map((p) => `${fmt(p.x)},${fmt(p.y)}`).join(" "),
+          fill: stroke,
+        })
+      )
+      .join("")
+  )
 }
 
 /** Where the run from `p` (inside `r`) towards `q` leaves `r`. */

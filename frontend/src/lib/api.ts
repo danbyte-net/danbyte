@@ -978,6 +978,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
+  { value: "applicationflow", label: "Application flows" },
   { value: "l2vpn", label: "L2VPNs" },
   { value: "staticroute", label: "Static routes" },
   { value: "bgpsession", label: "BGP sessions" },
@@ -1973,6 +1974,8 @@ export interface Application extends ApplicationMini {
   custom_fields: Record<string, unknown>
   install_count: number
   child_count: number
+  /** Flows the reader may view (#163). */
+  flow_count: number
   created_at: string
   updated_at: string
 }
@@ -1997,6 +2000,66 @@ export interface InstalledSoftware extends EffectiveOsDates {
   source: InstalledSoftwareSource
   last_seen: string | null
   description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// ─── Application flows (#163) ──────────────────────────────────────────
+
+export type FlowProtocol = "tcp" | "udp" | "tcp-udp" | "icmp" | "any"
+export type FlowDirection = "one-way" | "both"
+export type FlowEndKind = "ip" | "range" | "prefix" | "any"
+export type FlowSide = "source" | "destination"
+
+/** One end of a flow, ready to show: the address, range or prefix (or
+ * "Any"), with the device or VM an address is assigned to. */
+export interface FlowEnd {
+  kind: FlowEndKind
+  id: string | null
+  label: string
+  device: { id: string; name: string } | null
+  vm: { id: string; name: string } | null
+}
+
+export interface FlowIpRef {
+  id: string
+  ip_address: string
+  dns_name: string
+}
+
+export interface FlowRangeRef {
+  id: string
+  start_address: string
+  end_address: string
+  label: string
+}
+
+export interface ApplicationFlow {
+  id: string
+  numid: number | null
+  application: { id: string; name: string; slug: string; path: string }
+  name: string
+  description: string
+  source: FlowEnd
+  destination: FlowEnd
+  source_ip: FlowIpRef | null
+  source_range: FlowRangeRef | null
+  source_prefix: { id: string; cidr: string } | null
+  source_any: boolean
+  destination_ip: FlowIpRef | null
+  destination_range: FlowRangeRef | null
+  destination_prefix: { id: string; cidr: string } | null
+  destination_any: boolean
+  protocol: FlowProtocol
+  protocol_display: string
+  /** "443", "80, 443", "8000-8100"; blank = every port. */
+  ports: string
+  direction: FlowDirection
+  direction_display: string
+  status: StatusMini | null
+  service: { id: string; name: string } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string

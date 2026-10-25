@@ -32,6 +32,7 @@ STATUSABLE_MODELS = [
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
+    ("applicationflow", "Application flows"),
     ("staticroute", "Static routes"),
     ("bgpsession", "BGP sessions"),
     # One scope shared by the BGP, OSPF and IS-IS instance models.
@@ -137,6 +138,7 @@ STATUS_MODEL_SEEDS = [
     ("location", "Location", "active"),
     ("inventoryitem", "InventoryItem", "active"),
     ("vlan", "VLAN", "active"),
+    ("applicationflow", "ApplicationFlow", "active"),
 ]
 
 # Built-in status values per object type, mirroring the historical per-model
@@ -171,6 +173,8 @@ STATUS_MODEL_VALUES = {
     # in force. Nothing here means "broken" - a rule that stopped working is
     # a device problem, not a state of the record.
     "natrule": ["active", "planned", "disabled"],
+    # Application flows (#163): in use, on the way, or kept for the record.
+    "applicationflow": ["active", "planned", "retired"],
     # Static routes: in the table, on the way, or written down and off.
     "staticroute": ["active", "planned", "disabled"],
     "bgpsession": ["active", "planned", "disabled"],

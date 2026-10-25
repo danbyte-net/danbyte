@@ -35,6 +35,7 @@ import { ConfigContextPanel } from "@/components/config-context-panel"
 import { VmConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { InstalledSoftwarePane } from "@/components/installed-software-pane"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
@@ -81,6 +82,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "components"
     | "services"
     | "software"
+    | "flows"
     | "routing"
     | "monitoring"
     | "snmp"
@@ -176,6 +178,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         },
         { value: "services", label: "Services", count: vm.service_count },
         { value: "software", label: "Software" },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         {
           value: "routing",
           label: "Routing",
@@ -215,6 +220,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       </DetailTab>
       <DetailTab value="software">
         <InstalledSoftwarePane parent={{ kind: "vm", id: vm.id }} />
+      </DetailTab>
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "vm", id: vm.id }} />
       </DetailTab>
       <DetailTab value="monitoring">
         <div className="mb-6">

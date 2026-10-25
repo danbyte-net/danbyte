@@ -161,6 +161,7 @@ from routing.viewsets import (
     VTEPViewSet,
 )
 
+from .application_flows_api import ApplicationFlowViewSet
 from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
 from .dashboard_views import dashboard_view
@@ -395,6 +396,7 @@ router.register(r"platform-groups", PlatformGroupViewSet, basename="platform-gro
 router.register(r"platforms",     PlatformViewSet,    basename="platform")
 router.register(r"applications", ApplicationViewSet, basename="application")
 router.register(r"installed-software", InstalledSoftwareViewSet, basename="installed-software")
+router.register(r"application-flows", ApplicationFlowViewSet, basename="application-flow")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 # Routing - on this router (not a mounted app router) so bulk edit, planned
 # changes, CSV IO and the assistant's router walk all see the types.
@@ -596,6 +598,11 @@ urlpatterns = [
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
     path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
          name="topology-export-pdf-file"),
+    # Any diagram as a PDF, by kind (#163); the topology paths above are the
+    # same views.
+    path("diagram/export/pdf/", topology_pdf_view, name="diagram-export-pdf"),
+    path("diagram/export/pdf/<str:token>/", topology_pdf_file_view,
+         name="diagram-export-pdf-file"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("oui/status/", oui_status, name="oui-status"),

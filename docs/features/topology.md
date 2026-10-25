@@ -2063,10 +2063,17 @@ after them - see [Photo nodes](#photo-nodes).
 ### PDF export API
 
 `POST /api/topology/export/pdf/` lays a drawing out on one sheet of paper and
-returns the PDF as a download (`Content-Disposition: attachment`). The body:
+returns the PDF as a download (`Content-Disposition: attachment`). It is
+`POST /api/diagram/export/pdf/` for the topology: that endpoint draws other
+diagrams too, by `kind` - an application's
+[flows](application-flows.md#diagram-and-export) are
+`"kind": "application-flows"`, which needs `applicationflow.view` where the
+topology needs `device.view`; their print links are
+`/api/diagram/export/pdf/<token>/?kind=application-flows`. The body:
 
 | Field | Shape |
 |---|---|
+| `kind` | `topology` (the default) or `application-flows` |
 | `svg` | the drawing, as the Diagram's SVG export draws it (required) |
 | `title` | the sheet's title, usually the view name; else `meta.view`, else `Topology` |
 | `paper` | `{size: a4\|a3\|letter\|tabloid, orientation: landscape\|portrait}`; A3 landscape when absent |

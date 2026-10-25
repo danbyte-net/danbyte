@@ -140,6 +140,10 @@ export function ExportMenu({
   shownMode = "detailed",
   legend,
   name,
+  fileStem,
+  pdfUrl = PDF_URL,
+  pdfKind,
+  areas = true,
   disabled,
 }: {
   /** The map as an export document. */
@@ -152,8 +156,19 @@ export function ExportMenu({
   legend?: readonly LegendItem[]
   /** The file name's base: the view's name. */
   name: string
+  /** The file name's base when it is not the name (an application's
+   * flows: "shop-flows"). */
+  fileStem?: string
+  /** Where the PDF is made, with `?print=1`: the topology's by default; a
+   * diagram of another kind posts to `/api/diagram/export/pdf/?print=1`… */
+  pdfUrl?: string
+  /** …with its `kind` (#163), whose view permission the server checks. */
+  pdfKind?: string
+  /** Offer Whole map / Visible area: off for a diagram drawn whole. */
+  areas?: boolean
   disabled?: boolean
 }) {
+  const base = fileStem ?? name
   const [prefs, setPrefs] = useState(readPrefs)
   const [busy, setBusy] = useState(false)
   const checks = useStatusLabels()
@@ -208,9 +223,10 @@ export function ExportMenu({
           legend: prefs.extras,
         })
         const paper = { size: prefs.paper, orientation: prefs.orientation }
-        const { url } = await api<{ url: string }>(PDF_URL, {
+        const { url } = await api<{ url: string }>(pdfUrl, {
           method: "POST",
           body: JSON.stringify({
+            ...(pdfKind ? { kind: pdfKind } : {}),
             svg,
             title: doc.meta.title || name,
             paper,
@@ -225,7 +241,7 @@ export function ExportMenu({
         printing = sendPdf(url, {
           print: format === "print",
           tab,
-          fileName: exportFileName(name, "pdf"),
+          fileName: exportFileName(base, "pdf"),
         })
         const plan = planSheet(svgSize(svg), paper, {
           titleBlock: prefs.extras,
@@ -237,14 +253,14 @@ export function ExportMenu({
       } else if (format === "png") {
         const { diagramToPng } = await import("@/lib/diagram/png")
         const blob = await diagramToPng(doc, { ...extras, scale: 2, onMissing })
-        downloadBlob(exportFileName(name, "png"), "image/png", blob)
+        downloadBlob(exportFileName(base, "png"), "image/png", blob)
       } else if (format === "svg") {
         const [{ toSvg }, { inlinePhotos }] = await Promise.all([
           import("@/lib/diagram/svg"),
           import("@/lib/diagram/png"),
         ])
         downloadBlob(
-          exportFileName(name, "svg"),
+          exportFileName(base, "svg"),
           "image/svg+xml",
           toSvg(await inlinePhotos(doc, { onMissing }), {
             ...extras,
@@ -257,7 +273,7 @@ export function ExportMenu({
         )
         const photos = modes && prefs.photos
         downloadBlob(
-          exportFileName(name, "drawio"),
+          exportFileName(base, "drawio"),
           DRAWIO_MIME,
           toDrawio(
             [
@@ -313,21 +329,25 @@ export function ExportMenu({
         <DropdownMenuItem onSelect={() => void run("print")}>
           <Printer /> Print
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Area</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={prefs.area}
-          onValueChange={(v) =>
-            set({ area: v === "visible" ? "visible" : "all" })
-          }
-        >
-          <DropdownMenuRadioItem value="all" onSelect={keepOpen}>
-            Whole map
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="visible" onSelect={keepOpen}>
-            Visible area
-          </DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
+        {areas && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Area</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={prefs.area}
+              onValueChange={(v) =>
+                set({ area: v === "visible" ? "visible" : "all" })
+              }
+            >
+              <DropdownMenuRadioItem value="all" onSelect={keepOpen}>
+                Whole map
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="visible" onSelect={keepOpen}>
+                Visible area
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </>
+        )}
         {modes && (
           <>
             <DropdownMenuSeparator />
