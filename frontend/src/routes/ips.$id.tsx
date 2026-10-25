@@ -47,6 +47,7 @@ import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -71,7 +72,7 @@ function IPDetail() {
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
   const [tab, setTab] = useUrlTab<
-    "overview" | "monitoring" | "certificates" | "journal" | "history"
+    "overview" | "monitoring" | "certificates" | "flows" | "journal" | "history"
   >("overview")
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
@@ -528,6 +529,9 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           label: "Certificates",
           count: ip.certificate_count,
         },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -600,6 +604,10 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
 
       <DetailTab value="certificates">
         <CertificatesPanel objectType="api.ipaddress" objectId={ip.id} />
+      </DetailTab>
+
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "ip", id: ip.id }} />
       </DetailTab>
 
       <DetailTab value="journal">

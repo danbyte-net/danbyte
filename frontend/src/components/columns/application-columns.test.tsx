@@ -37,6 +37,7 @@ const app = {
   tags: [],
   custom_fields: {},
   install_count: 4,
+  flow_count: 2,
   child_count: 0,
   created_at: "",
   updated_at: "",

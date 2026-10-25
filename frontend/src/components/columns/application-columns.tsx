@@ -19,6 +19,7 @@ export type ApplicationColumnId =
   | "parent"
   | "manufacturer"
   | "installs"
+  | "flows"
   | "children"
   | "eol"
   | "description"
@@ -30,6 +31,7 @@ const CANONICAL_ORDER: ApplicationColumnId[] = [
   "parent",
   "manufacturer",
   "installs",
+  "flows",
   "children",
   "eol",
   "description",
@@ -151,6 +153,12 @@ export function buildApplicationColumns<T extends Application = Application>(
       cell: ({ row }) => (
         <span className="num">{row.original.install_count}</span>
       ),
+    }),
+    flows: () => ({
+      id: "flows",
+      accessorKey: "flow_count",
+      header: ({ column }) => <SortHeader column={column} label="Flows" />,
+      cell: ({ row }) => <span className="num">{row.original.flow_count}</span>,
     }),
     children: () => ({
       id: "children",

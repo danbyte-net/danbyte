@@ -23,6 +23,7 @@ import { useEolSettings } from "@/components/cells/eol-cell"
 import { dash } from "@/components/cells/dash"
 import { buildApplicationColumns } from "@/components/columns/application-columns"
 import { buildInstalledSoftwareColumns } from "@/components/columns/installed-software-columns"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 
 export const Route = createFileRoute("/applications/$id")({
   component: ApplicationDetail,
@@ -47,7 +48,7 @@ function ApplicationDetail() {
 
 function Body({ app }: { app: Application }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "installs" | "children" | "journal" | "history"
+    "overview" | "installs" | "flows" | "children" | "journal" | "history"
   >("overview")
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Application | null>(null)
@@ -82,6 +83,10 @@ function Body({ app }: { app: Application }) {
     {
       label: "Installs",
       value: <span className="num">{app.install_count}</span>,
+    },
+    {
+      label: "Flows",
+      value: <span className="num">{app.flow_count}</span>,
     },
   ]
 
@@ -132,6 +137,9 @@ function Body({ app }: { app: Application }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "installs", label: "Installed on", count: app.install_count },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows", count: app.flow_count }]
+          : []),
         {
           value: "children",
           label: "Child applications",
@@ -154,6 +162,9 @@ function Body({ app }: { app: Application }) {
       </DetailTab>
       <DetailTab value="installs">
         <InstalledOn applicationId={app.id} />
+      </DetailTab>
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "application", id: app.id }} />
       </DetailTab>
       <DetailTab value="children">
         <Children applicationId={app.id} />

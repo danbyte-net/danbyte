@@ -175,6 +175,7 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
 import { InstalledSoftwarePane } from "@/components/installed-software-pane"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
@@ -202,6 +203,7 @@ const DEVICE_TABS = [
   "snmp",
   "services",
   "software",
+  "flows",
   "routing",
   "certificates",
   "contacts",
@@ -425,6 +427,9 @@ function Body({ device: d }: { device: Device }) {
           count: d.service_count || undefined,
         },
         { value: "software", label: "Software" },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         {
           value: "routing",
           label: "Routing",
@@ -539,6 +544,9 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="software">
         <InstalledSoftwarePane parent={{ kind: "device", id: d.id }} />
+      </DetailTab>
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "device", id: d.id }} />
       </DetailTab>
       <DetailTab value="routing">
         <RoutingPanel owner={{ kind: "device", id: d.id, name: d.name }} />

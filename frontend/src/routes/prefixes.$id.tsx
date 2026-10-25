@@ -80,6 +80,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { ApplicationFlowPane } from "@/components/application-flow-pane"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -124,6 +125,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
     | "monitoring"
     | "dns"
     | "static-routes"
+    | "flows"
     | "journal"
     | "history"
   >("overview")
@@ -349,6 +351,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           label: "Static routes",
           count: p.static_route_count,
         },
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -436,6 +441,10 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           omit={["prefix"]}
           emptyText="No static route has this prefix as its destination."
         />
+      </DetailTab>
+
+      <DetailTab value="flows">
+        <ApplicationFlowPane scope={{ kind: "prefix", id: p.id }} />
       </DetailTab>
 
       <DetailTab value="journal">
