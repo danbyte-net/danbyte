@@ -21,3 +21,9 @@ class MonitoringConfig(AppConfig):
             block_internal=getattr(settings, "CHECK_BLOCK_INTERNAL", False),
             allowlist=getattr(settings, "SSRF_ALLOWLIST", None),
         )
+
+        # One handler per workflow signal for every external monitor; the
+        # systems register what they want called (monitoring.external.hooks).
+        from .external import hooks as external_hooks
+
+        external_hooks.connect()
