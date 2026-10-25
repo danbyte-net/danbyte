@@ -257,7 +257,9 @@ class EolMapping(TimestampedModel):
 # Violations are computed, never stored; what an operator decides about one is.
 # One row per (rule, object): acknowledged, snoozed until a time, or both. The
 # evaluation reads these back and marks each violation open, acknowledged or
-# snoozed. Clearing the row returns the violation to open.
+# snoozed. Clearing the row returns the violation to open. An acknowledgement
+# covers one occurrence: an evaluation that finds the object passing clears it
+# (engine.clear_passed_acknowledgements); a snooze keeps to its date.
 
 
 class ComplianceTriage(TimestampedModel):

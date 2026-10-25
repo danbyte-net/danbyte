@@ -116,15 +116,30 @@ rows on the Violations tab and use the bar that appears:
 
 | Action | What it does |
 |---|---|
-| **Acknowledge** | Marks the violations seen. They stay in the list as *Acknowledged*, with who and when, and leave the open counts. |
+| **Acknowledge** | Marks the violations seen. They stay in the list as *Acknowledged*, with who and when, and leave the open counts until the object passes the rule. |
 | **Snooze until…** | Takes them out of the open counts until a time: 1 day, 7 days, 30 days, or a picked date (the start of that day). At that time they read as open again. At most 366 days. |
 | **Reopen** | Clears an acknowledgement or snooze, back to open. Shown when the selection holds triaged rows. |
 
 An optional **Note** goes with the action and shows in the row. Triage is
-kept per rule and object: when the object passes the rule, nothing shows,
-and the decision is still there if it fails again - **Reopen** clears it.
-Deleting a rule drops its triage. Config drift is not triaged here; it clears
-when the device's configuration matches again.
+kept per rule and object, and the two kinds end differently:
+
+- **An acknowledgement covers this occurrence.** When an evaluation finds the
+  object passing the rule, the acknowledgement is cleared, so if it fails
+  again it shows as open. The clearing is recorded in the
+  [change log](change-log.md) and as a journal note on the rule and the
+  object ("Cleared: the object passed …"), by *Compliance* rather than a
+  person.
+- **A snooze lasts until its date**, whether the object passes or not. If it
+  fails again before then, it is still snoozed; after that it is open.
+
+A violation both acknowledged and snoozed keeps its snooze (and its note)
+when the acknowledgement clears. The check runs whenever the Overview,
+the Violations tab or a rule's Results tab is evaluated, for the rules that
+evaluation covers; there is no background job, so a violation that passed
+and failed again between two evaluations stays acknowledged. **Reopen**
+clears either kind by hand. Deleting a rule drops its triage. Config drift
+is not triaged here; it clears when the device's configuration matches
+again.
 
 Triage needs the *change* permission on **Compliance triage**, its own
 permission apart from compliance rules: editing rules does not let you
