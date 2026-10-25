@@ -206,10 +206,35 @@ describe("lifecycle columns", () => {
     expect(source.accessorFn(sw, 0)).toBe("Software")
   })
 
-  it("hide the window, tenant and tags columns until asked", () => {
+  it("hide the application, window, tenant and tags columns until asked", () => {
     const hidden = columns()
       .filter((c) => c.meta?.defaultHidden)
       .map((c) => c.id)
-    expect(hidden).toEqual(["window", "tenant", "tags"])
+    expect(hidden).toEqual(["application", "window", "tenant", "tags"])
+  })
+
+  it("filter software rows by application and link their end", () => {
+    const sw = row({
+      name: "db1",
+      source: "software",
+      item: {
+        type: "application",
+        id: "app-1",
+        name: "PostgreSQL 12",
+        application: "PostgreSQL",
+        version: "12",
+      },
+    })
+    const rows = [...ROWS, sw]
+    const { result } = renderHook(() => useTableFilters(columns(), rows))
+    act(() => result.current.toggleValue("application", "app-1"))
+    expect(result.current.filteredRows.map((r) => r.object.name)).toEqual([
+      "db1",
+    ])
+    cell("end", sw)
+    expect(screen.getByText(/2027/).closest("a")).not.toBeNull()
+    cleanup()
+    cell("end", ROWS[0])
+    expect(screen.getByText(/2027/).closest("a")).toBeNull()
   })
 })
