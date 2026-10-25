@@ -1,0 +1,20 @@
+{
+  "NewMessages": "0",
+  "NewAlarms": "1",
+  "Alarms": "2",
+  "AckAlarms": "1",
+  "NewToDos": "0",
+  "Clock": "25.10.2026 10:14:03",
+  "ActivationStatusMessage": "(Tag aktiviert)",
+  "BackgroundTasks": "0",
+  "CorrelationTasks": "0",
+  "AutoDiscoTasks": "0",
+  "Version": "26.3.124.1727+",
+  "PRTGUpdateAvailable": "no",
+  "IsAdminUser": "false",
+  "IsCluster": "",
+  "ReadOnlyUser": "false",
+  "ReadOnlyAllowAcknowledge": "false",
+  "ReadOnlyPwChangeAllowed": "false",
+  "ReadOnlyEditAllowed": "false"
+}

@@ -799,6 +799,13 @@
       ]
     },
     {
+      "key": "integrations.prtg",
+      "label": "PRTG monitoring",
+      "description": "Read monitoring status from PRTG",
+      "page": "integrations",
+      "keywords": ["prtg", "paessler", "sensors", "monitoring", "api key"]
+    },
+    {
       "key": "integrations.agent",
       "label": "Agent access (MCP)",
       "description": "Let an assistant read this tenant over MCP",
