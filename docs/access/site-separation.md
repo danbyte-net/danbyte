@@ -63,8 +63,13 @@ ergonomics on top:
     group's virtual machines, a location's devices, racks and cabinets, a
     cabinet's devices, a floor plan's tiles, an L2VPN's VTEPs, a module
     type's interface templates, and the sub-groups of regions, platform
-    groups and contact groups. The number on a tab matches the table under
-    it, and says nothing about other sites.
+    groups and contact groups. A tenant's sites, prefixes, VLANs and IP
+    addresses count the same way, each tenant by the grants held in it, and
+    a tenant group counts only the tenants the reader can open. A prefix's
+    child prefixes, IP addresses, static routes and DNS records count only
+    the ones the reader may view; its utilisation still measures every
+    address in it. The number on a tab matches the table under it, and says
+    nothing about other sites.
 
 ## Which rows belong to a site
 

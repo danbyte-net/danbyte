@@ -85,7 +85,7 @@ from .port_state import (
     module_interfaces,
     termination_component as termination_component,
 )
-from .visible_counts import path_count, related_count, tagged_count
+from .visible_counts import path_count, related_count, tagged_count, tenant_count, view_filter
 
 
 def _visible_count(serializer, obj, rel_name: str) -> int:
@@ -615,7 +615,16 @@ class TenantGroupSerializer(serializers.ModelSerializer):
 
     def get_tenant_count(self, obj) -> int:
         n = getattr(obj, "tenant_n", None)
-        return n if n is not None else obj.tenants.count()
+        if n is not None:
+            return n
+        # The tenants the Tenants list shows the reader (#448).
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if request is None or getattr(user, "is_superuser", False):
+            return obj.tenants.count()
+        from auth_api.permissions import user_tenants
+
+        return obj.tenants.filter(pk__in=user_tenants(user).values("pk")).count()
 
     def get_child_count(self, obj) -> int:
         n = getattr(obj, "child_n", None)
@@ -655,21 +664,22 @@ class TenantSerializer(NumIdModelSerializer):
     ip_count = serializers.SerializerMethodField()
 
     # The list annotates the four counts (``*_n``); a single tenant counts.
+    # Either way only the rows the reader may view in that tenant (#448).
+    def _count(self, obj, annotated: str, rel_name: str) -> int:
+        n = getattr(obj, annotated, None)
+        return n if n is not None else tenant_count(self.context.get("request"), obj, rel_name)
+
     def get_site_count(self, obj) -> int:
-        n = getattr(obj, "site_n", None)
-        return n if n is not None else obj.sites.count()
+        return self._count(obj, "site_n", "sites")
 
     def get_prefix_count(self, obj) -> int:
-        n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return self._count(obj, "prefix_n", "prefixes")
 
     def get_vlan_count(self, obj) -> int:
-        n = getattr(obj, "vlan_n", None)
-        return n if n is not None else obj.vlans.count()
+        return self._count(obj, "vlan_n", "vlans")
 
     def get_ip_count(self, obj) -> int:
-        n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        return self._count(obj, "ip_n", "ip_addresses")
 
     class Meta:
         model = Tenant
@@ -1244,10 +1254,11 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-def prefix_descendant_counts(prefixes) -> dict:
+def prefix_descendant_counts(prefixes, request=None) -> dict:
     """``{prefix id: number of other prefixes inside it}`` for ``prefixes``,
     counted within the same tenant and VRF - what Postgres ``cidr::inet <<=``
-    gives, ids other than the prefix's own.
+    gives, ids other than the prefix's own. With a ``request``, only the
+    prefixes its reader may view count (#448); without one, all do.
 
     One query over the tenants' prefixes and a sorted pass per (tenant, VRF,
     family), instead of a correlated scan per row: the scan made a page cost
@@ -1262,13 +1273,17 @@ def prefix_descendant_counts(prefixes) -> dict:
     keys = {(p.tenant_id, p.vrf_id) for p in rows}
     if not keys:
         return {}
+    visible = view_filter(request, Prefix)
+    if visible is None:
+        return {p.id: 0 for p in rows}
     vrf_ids = {v for _, v in keys if v is not None}
     vrf_q = Q(vrf_id__in=vrf_ids)
     if any(v is None for _, v in keys):
         vrf_q |= Q(vrf_id__isnull=True)
     buckets = defaultdict(list)
     for pid, tenant_id, vrf_id, cidr in (
-        Prefix.objects.filter(vrf_q, tenant_id__in={t for t, _ in keys})
+        Prefix.objects.filter(visible)
+        .filter(vrf_q, tenant_id__in={t for t, _ in keys})
         .order_by()
         .values_list("id", "tenant_id", "vrf_id", "cidr")
     ):
@@ -1345,7 +1360,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Detail only, like the DNS count.
         if not isinstance(self.instance, Prefix):
             return 0
-        return obj.static_routes.count()
+        return _visible_count(self, obj, "static_routes")
 
     def validate_cidr(self, value):
         """A prefix must be real CIDR - the model field is a plain CharField,
@@ -1394,8 +1409,17 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return obj.utilisation_with(getattr(obj, "ip_n", None))
 
     def get_ip_count(self, obj) -> int:
+        # The addresses the reader may view (#448). ``ip_n`` - every address,
+        # the fill - is that number only for a reader no scope narrows.
+        n = getattr(obj, "ip_visible_n", None)
+        if n is not None:
+            return n
         n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        if n is not None:
+            f = view_filter(self.context.get("request"), IPAddress)
+            if f is not None and not f:  # Q(): every address
+                return n
+        return _visible_count(self, obj, "ip_addresses")
 
     def get_child_count(self, obj) -> int:
         return self._descendant_count(obj)
@@ -1442,7 +1466,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             return 0
         from integrations.models import DnsRecord
 
-        return DnsRecord.objects.filter(ip_address__prefix=obj).count()
+        return path_count(self.context.get("request"), DnsRecord, "ip_address__prefix", obj.pk)
 
     def _descendant_count(self, obj) -> int:
         # Counted once for every row the serializer renders - the list's page
@@ -1456,7 +1480,9 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             )
             if not any(r is obj for r in rows):
                 rows = [obj]
-            cache = {**(cache or {}), **prefix_descendant_counts(rows)}
+            # Only the prefixes the reader may view count (#448).
+            counts = prefix_descendant_counts(rows, self.context.get("request"))
+            cache = {**(cache or {}), **counts}
             self.root._descendant_cache = cache
         return cache.get(obj.id, 0)
 
