@@ -214,21 +214,25 @@ _OPEN_TRIAGE = {
 }
 
 
-def triage_index(tenant, now=None) -> dict[tuple[str, str], dict]:
-    """``{(rule id, object id): triage fields}`` for the tenant, in one query.
+def _triage_rows(tenant) -> list:
+    from .models import ComplianceTriage
+
+    return list(
+        ComplianceTriage.objects.filter(tenant=tenant).select_related("acknowledged_by")
+    )
+
+
+def triage_index(tenant, now=None, rows=None) -> dict[tuple[str, str], dict]:
+    """``{(rule id, object id): triage fields}`` for the tenant, in one query
+    (none when the ``rows`` are given).
 
     Acknowledged wins over snoozed; a snooze whose time has passed reads as
     open, though the row (and its note) stays until someone clears it."""
     from django.utils import timezone
 
-    from .models import ComplianceTriage
-
     now = now or timezone.now()
     out = {}
-    rows = ComplianceTriage.objects.filter(tenant=tenant).select_related(
-        "acknowledged_by"
-    )
-    for t in rows:
+    for t in _triage_rows(tenant) if rows is None else rows:
         snoozed = t.snoozed_until is not None and t.snoozed_until > now
         state = ACKNOWLEDGED if t.acknowledged_at else SNOOZED if snoozed else OPEN
         out[(str(t.rule_id), str(t.object_id))] = {
@@ -241,6 +245,138 @@ def triage_index(tenant, now=None) -> dict[tuple[str, str], dict]:
             "note": t.note,
         }
     return out
+
+
+#: The name the change log and the journal give an acknowledgement the
+#: evaluation cleared.
+CLEARED_BY = "Compliance"
+
+
+def _snoozed(t, now) -> bool:
+    return t.snoozed_until is not None and t.snoozed_until > now
+
+
+def clear_passed_acknowledgements(tenant, passed: list[tuple]) -> int:
+    """Clear the acknowledgement of each ``(triage row, rule, object)`` whose
+    object no longer fails the rule: an acknowledgement covers one occurrence
+    of a violation, not the next. A row still snoozed keeps its snooze and
+    its note; any other row goes.
+
+    A fixed number of queries however many rows: one locking read, one
+    delete, one update, one change-log write and one journal write, plus one
+    read per object type whose site is more than one hop away. A row changed
+    since it was read, or one another evaluation is clearing, is left alone.
+    Returns how many rows were cleared."""
+    from django.db import transaction
+    from django.db.models import prefetch_related_objects
+    from django.utils import timezone
+
+    from audit.bulk import _entry
+    from audit.context import current_request_id
+    from audit.models import ChangeAction, ChangeLogEntry, JournalEntry, JournalKind
+    from audit.signals import _field_dict, _ser
+    from audit.site_capture import entry_site_id
+    from auth_api.site_paths import alternatives, site_path_for
+
+    from .models import ComplianceTriage
+
+    if not passed:
+        return 0
+    seen = {row.pk: row.acknowledged_at for row, _rule, _obj in passed}
+    now = timezone.now()
+    rid = current_request_id()
+    with transaction.atomic():
+        live = {
+            t.pk: t
+            for t in ComplianceTriage.objects.select_for_update(skip_locked=True).filter(
+                tenant=tenant, pk__in=list(seen), acknowledged_at__isnull=False
+            )
+            if t.acknowledged_at == seen[t.pk]
+        }
+        todo = [(live[row.pk], rule, obj) for row, rule, obj in passed if row.pk in live]
+        if not todo:
+            return 0
+        # The rows' rule and tenant, and the objects' tenant, are in hand: the
+        # reprs and the site lookups below read them without a query per row.
+        for t, rule, obj in todo:
+            t.rule = rule
+            t.tenant = tenant
+            if getattr(obj, "tenant_id", None) == tenant.pk:
+                obj.tenant = tenant
+        drop = [t for t, _r, _o in todo if not _snoozed(t, now)]
+        keep = [t for t, _r, _o in todo if _snoozed(t, now)]
+
+        log = []
+        for t in drop:
+            entry = _entry(t, ChangeAction.DELETE, {}, None, rid)
+            entry.pre_change = _field_dict(t)
+            log.append(entry)
+        for t in keep:
+            pre = _field_dict(t)
+            changes = {
+                "acknowledged_at": {"old": _ser(t.acknowledged_at), "new": None},
+                "acknowledged_by": {"old": _ser(t.acknowledged_by_id), "new": None},
+            }
+            t.acknowledged_at = None
+            t.acknowledged_by_id = None
+            entry = _entry(t, ChangeAction.UPDATE, changes, None, rid)
+            entry.pre_change = pre
+            entry.post_change = _field_dict(t)
+            log.append(entry)
+        for entry in log:
+            entry.user_name = CLEARED_BY
+            entry.via = "system"
+
+        # Logged above as the system's change. The delete is one statement
+        # with no per-row signals: they would log it again under whoever
+        # asked, and look up webhooks once per row. Nothing references a
+        # triage row, so there is no cascade to collect.
+        if drop:
+            ComplianceTriage.objects.filter(pk__in=[t.pk for t in drop])._raw_delete(
+                using=ComplianceTriage.objects.db
+            )
+        if keep:
+            ComplianceTriage.objects.filter(pk__in=[t.pk for t in keep]).update(
+                acknowledged_at=None, acknowledged_by=None, updated_at=now
+            )
+        ChangeLogEntry.objects.bulk_create(log)
+
+        # The objects' sites for their notes: one read per type whose path
+        # walks through another row (an address's prefix), none otherwise.
+        by_model: dict = {}
+        for _t, _r, obj in todo:
+            by_model.setdefault(type(obj), []).append(obj)
+        for model, objs in by_model.items():
+            path = site_path_for(model._meta.model_name, tenant) or ""
+            hops = {"__".join(a.split("__")[:-1]) for a in alternatives(path)} - {""}
+            if path and path != "id" and hops:
+                prefetch_related_objects(objs, *sorted(hops))
+
+        journal = []
+        per_rule: dict = {}
+        for _t, rule, obj in todo:
+            per_rule.setdefault(rule, []).append(str(obj)[:120])
+            journal.append(JournalEntry(
+                tenant=tenant, author_name=CLEARED_BY,
+                object_type=obj._meta.label_lower, object_id=str(obj.pk),
+                object_site_id=entry_site_id(obj), kind=JournalKind.INFO,
+                comments=f"Cleared: the object passed {rule.name}, so its "
+                         "acknowledgement is removed.",
+            ))
+        for rule, names in per_rule.items():
+            shown = ", ".join(names[:20])
+            if len(names) > 20:
+                shown += f" and {len(names) - 20} more"
+            plural = "s" if len(names) != 1 else ""
+            journal.append(JournalEntry(
+                tenant=tenant, author_name=CLEARED_BY,
+                object_type="compliance.compliancerule", object_id=str(rule.pk),
+                kind=JournalKind.INFO,
+                comments=f"Cleared: {len(names)} acknowledged object{plural} passed, "
+                         f"so the acknowledgement is removed: {shown}.",
+            ))
+        JournalEntry.objects.bulk_create(journal)
+    return len(todo)
 
 
 def _site_of(object_type: str, obj) -> tuple[str | None, str]:
@@ -263,15 +399,24 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
 
     ``triage`` is a :func:`triage_index`; read here when not given. Each
     violation carries its state, and each rule how many of its failures are
-    open, acknowledged and snoozed."""
+    open, acknowledged and snoozed.
+
+    When the triage is read here, an acknowledged pair this run finds passing
+    has its acknowledgement cleared (:func:`clear_passed_acknowledgements`):
+    an acknowledgement follows one occurrence of a violation. Only the rules
+    and rows this run judged count - a row past ``cap`` is left as it is."""
     from django.utils import timezone
 
     if rules is None:
         rules = list(
             ComplianceRule.objects.filter(tenant=tenant, enabled=True)
         )
+    acked: dict = {}
     if triage is None:
-        triage = triage_index(tenant)
+        rows = _triage_rows(tenant)
+        triage = triage_index(tenant, rows=rows)
+        acked = {(str(t.rule_id), str(t.object_id)): t for t in rows if t.acknowledged_at}
+    passed: list[tuple] = []
     models = _models()
     rule_rows = []
     violations = []
@@ -332,6 +477,10 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
             failed_any = False
             for rule in type_rules:
                 if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
+                    if acked:
+                        row = acked.get((str(rule.id), str(obj.pk)))
+                        if row is not None:
+                            passed.append((row, rule, obj))
                     continue
                 failed_any = True
                 counts[rule.id] += 1
@@ -393,6 +542,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
             }
         )
 
+    clear_passed_acknowledgements(tenant, passed)
     rule_rows.sort(key=lambda r: -r["violations"])
     return {
         "evaluated_at": timezone.now().isoformat(),

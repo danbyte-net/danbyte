@@ -296,6 +296,11 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("monitoring.MonitoringProfile", "Monitoring profiles", "Monitoring"),
     ("monitoring.MonitoringDenySubnet", "Monitoring deny subnets", "Monitoring"),
     ("compliance.ComplianceRule", "Compliance rules", "Governance"),
+    # Acknowledge, snooze and reopen a rule's violations. Its own grant: rule
+    # editing never implies triage, nor triage rule editing. Tenant-wide - a
+    # row names its object generically, and the triage endpoint checks that
+    # the caller may view each object (see site_paths.SITE_PATHS).
+    ("compliance.ComplianceTriage", "Compliance triage", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
     # CustomField + CustomFieldGroup live in the `customization` app, not `api` -

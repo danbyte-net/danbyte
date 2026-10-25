@@ -190,6 +190,12 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "zabbixconnection": "integration config; adopt_site is a default",
 }
 
+# Compliance triage (``compliancetriage``) is tenant-wide and in neither map:
+# a row names its object as a generic (object_type, object_id) pair with no
+# foreign key to follow, so no ORM path reaches a site. The triage endpoint
+# checks instead that the caller may view every object it touches, under that
+# object's own site scope (auth_api.tests_site_paths_registry pins this).
+
 # Catalog types that can be "local to a site" (owning_site FK, NULL = global
 # to the tenant). Unlike SITE_PATHS these are only site-scoped while the
 # tenant's ENHANCED SITE SEPARATION flag is on - with it off, catalogs behave

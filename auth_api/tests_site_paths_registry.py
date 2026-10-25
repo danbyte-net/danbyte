@@ -101,6 +101,18 @@ class SitePathsRegistryTests(SimpleTestCase):
                         target = target._meta.get_field(part).related_model
                     self.assertIs(target, Site, f"{slug}: {alt}")
 
+    def test_compliance_triage_is_tenant_wide(self):
+        """A triage row names its object generically (object_type, object_id):
+        no foreign key reaches a site, so it is in no site map and site roles
+        do not grant it. The triage endpoint checks each object's own view."""
+        registry = _registry()
+        self.assertIn("compliancetriage", registry)
+        self.assertEqual(_site_links(registry["compliancetriage"]["model"], set(SITE_PATHS)), [])
+        for site_map in (SITE_PATHS, CATALOG_SITE_PATHS, SITE_PATH_EXEMPT):
+            self.assertNotIn("compliancetriage", site_map)
+        self.assertNotIn("compliancetriage", site_role_types())
+        self.assertNotIn("compliancetriage", site_role_catalog_types())
+
     def test_role_exclusions_are_site_paths(self):
         self.assertLessEqual(SITE_ROLE_EXCLUDED, set(SITE_PATHS))
         types = site_role_types()

@@ -84,7 +84,7 @@ export function ViolationsTab({
   const search = useSearch({ from: "/compliance" })
   const nav = useNavigate()
   const { canDo } = useMe()
-  const canTriage = canDo("compliancerule", "change")
+  const canTriage = canDo("compliancetriage", "change")
   const [selected, setSelected] = useState<Row[]>([])
 
   const patch = (p: Partial<ComplianceSearch>) =>
