@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
-import type { Application, ApplicationFlow, Paginated } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
+import type { Application, ApplicationFlow } from "@/lib/api"
 import { buildFlowDocument } from "@/lib/diagram/flow-document"
 import { useMe } from "@/lib/use-me"
 import { EmptyState } from "@/components/empty-state"
@@ -22,9 +22,7 @@ export function ApplicationFlowDiagram({ app }: { app: Application }) {
   const q = useQuery({
     queryKey: ["application-flows", "application", app.id],
     queryFn: () =>
-      api<Paginated<ApplicationFlow>>(
-        `/api/application-flows/?application=${app.id}`
-      ),
+      apiAll<ApplicationFlow>(`/api/application-flows/?application=${app.id}`),
   })
   const flows = useMemo(() => q.data?.results ?? [], [q.data])
   const tenant = me.active_tenant?.name

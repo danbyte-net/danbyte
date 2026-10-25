@@ -4,6 +4,7 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type {
   ApplicationFlow,
   FlowDirection,
@@ -11,7 +12,6 @@ import type {
   FlowProtocol,
   FlowSide,
   IPAddress,
-  Paginated,
   Service,
   Status,
 } from "@/lib/api"
@@ -89,7 +89,7 @@ export function ApplicationFlowPane({ scope }: { scope: FlowScope }) {
   const q = useQuery({
     queryKey: flowsQueryKey(scope),
     queryFn: () =>
-      api<Paginated<ApplicationFlow>>(`${ENDPOINT}?${scope.kind}=${scope.id}`),
+      apiAll<ApplicationFlow>(`${ENDPOINT}?${scope.kind}=${scope.id}`),
   })
   const rows = q.data?.results ?? []
   const invalidate = useCallback(() => {
@@ -313,9 +313,7 @@ export function ApplicationFlowDialog({
   const statuses = useQuery({
     queryKey: ["statuses", "applicationflow"],
     queryFn: () =>
-      api<Paginated<Status>>(
-        "/api/statuses/?available_to=applicationflow&picker=1"
-      ),
+      apiAll<Status>("/api/statuses/?available_to=applicationflow&picker=1"),
     enabled: open,
     staleTime: 5 * 60_000,
   })
@@ -341,7 +339,7 @@ export function ApplicationFlowDialog({
       : null
   const services = useQuery({
     queryKey: ["services", host],
-    queryFn: () => api<Paginated<Service>>(`/api/services/?${host}`),
+    queryFn: () => apiAll<Service>(`/api/services/?${host}`),
     enabled: open && destination.kind === "ip" && !!host,
   })
   const showService = destination.kind === "ip" && !!host
