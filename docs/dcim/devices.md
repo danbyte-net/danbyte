@@ -105,6 +105,8 @@ The default tab lays the device's facts out in cards:
 | **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
+| **Support contracts** | shown once a contract covers the device: each contract with its manufacturer, service level, end and state |
+| **Software**   | the first eight installed applications, each with its version and end-of-life [lifetime bar](../features/lifecycle.md#the-lifetime-bar), then **View all N** to the [Software](#other-tabs) tab; *No software recorded.* when there is none |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
 **copy button** so you can grab them in one click.
@@ -320,7 +322,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | **IPs**        | Every IP address assigned to this device.                                                       |
 | **Components** | Seven sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Cooling** (intakes and outflows - see [Cooling](../features/cooling.md#cooling-intakes-and-outflows)), **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
-| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here. See [Applications & installed software](../features/applications.md). |
+| **Software**   | Applications installed on the device, each at a version - add, edit and remove them here. The tab shows the count (`install_count` on the device, list and detail). See [Applications & installed software](../features/applications.md). |
 | **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |

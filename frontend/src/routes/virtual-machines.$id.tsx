@@ -7,11 +7,9 @@ import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
-import { useCallback, useMemo, useState } from "react"
-import { type ColumnDef } from "@tanstack/react-table"
+import { useCallback, useState } from "react"
 
 import { api, type VirtualDisk, type VirtualMachine } from "@/lib/api"
-import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -38,6 +36,12 @@ import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
+import { OverviewTable } from "@/components/overview-table"
+import type { SimpleColumn } from "@/components/ui/simple-table"
+import {
+  SoftwareSummaryCard,
+  useSoftwareSummary,
+} from "@/components/software-summary-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 
@@ -77,6 +81,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const { canDo } = useMe()
   const canEdit = canDo("virtualmachine", "change")
   const canDelete = canDo("virtualmachine", "delete")
+  const software = useSoftwareSummary({ kind: "vm", id: vm.id })
   const [tab, setTab] = useUrlTab<
     | "overview"
     | "components"
@@ -177,7 +182,13 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.interface_count,
         },
         { value: "services", label: "Services", count: vm.service_count },
-        { value: "software", label: "Software" },
+        {
+          value: "software",
+          label: "Software",
+          // The Overview card's query is live after an edit on the tab; the
+          // payload's figure stands in until it lands.
+          count: software.data?.count ?? vm.install_count,
+        },
         ...(canDo("applicationflow", "view")
           ? [{ value: "flows", label: "Flows" }]
           : []),
@@ -452,11 +463,16 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
   ]
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <KvCard title="Virtual machine" rows={vmRows} />
-        <KvCard title="Resources" rows={resourceRows} />
-        <KvCard title="Placement" rows={placementRows} />
-        <KvCard title="Management" rows={managementRows} />
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div className="min-w-0 space-y-6">
+          <KvCard title="Virtual machine" rows={vmRows} />
+          <KvCard title="Placement" rows={placementRows} />
+        </div>
+        <div className="min-w-0 space-y-6">
+          <KvCard title="Resources" rows={resourceRows} />
+          <SoftwareSummaryCard parent={{ kind: "vm", id: vm.id }} />
+          <KvCard title="Management" rows={managementRows} />
+        </div>
       </div>
       {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
       <VmTopologyCard
@@ -469,64 +485,41 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
   )
 }
 
-/** The VM's virtual disks (synced or operator-added). */
+/** The VM's virtual disks (synced or operator-added), in the Overview's
+ * table chrome. */
+const DISK_COLUMNS: SimpleColumn<VirtualDisk>[] = [
+  {
+    id: "name",
+    header: "Disk",
+    cell: (d) => <span className="font-mono text-xs">{d.name || d.key}</span>,
+  },
+  {
+    id: "size",
+    header: "Size",
+    cell: (d) =>
+      d.size_gb != null ? <span className="num">{d.size_gb} GB</span> : dash,
+  },
+  {
+    id: "storage",
+    header: "Storage",
+    cell: (d) => d.storage || dash,
+  },
+  {
+    id: "controller",
+    header: "Controller",
+    cell: (d) =>
+      d.controller ? <span className="uppercase">{d.controller}</span> : dash,
+  },
+]
+
 function VmDisks({ disks }: { disks: VirtualDisk[] }) {
-  const columns = useMemo<ColumnDef<VirtualDisk>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: "Disk",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.name || row.original.key}
-          </span>
-        ),
-      },
-      {
-        id: "size",
-        accessorKey: "size_gb",
-        header: "Size",
-        cell: ({ row }) =>
-          row.original.size_gb != null ? (
-            <span className="num text-xs">{row.original.size_gb} GB</span>
-          ) : (
-            dash
-          ),
-      },
-      {
-        id: "storage",
-        accessorKey: "storage",
-        header: "Storage",
-        cell: ({ row }) => (
-          <span className="text-xs">{row.original.storage || "-"}</span>
-        ),
-      },
-      {
-        id: "controller",
-        accessorKey: "controller",
-        header: "Controller",
-        cell: ({ row }) => (
-          <span className="text-xs uppercase">
-            {row.original.controller || "-"}
-          </span>
-        ),
-      },
-    ],
-    []
-  )
   return (
-    <section>
-      <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-        Disks
-      </h2>
-      <DataTable
-        data={disks}
-        columns={columns}
-        tableId="vm-disks-embedded"
-        flexColumn="storage"
-        embedded
-      />
-    </section>
+    <OverviewTable
+      title="Disks"
+      count={disks.length}
+      columns={DISK_COLUMNS}
+      data={disks}
+      getRowKey={(d) => d.id}
+    />
   )
 }
