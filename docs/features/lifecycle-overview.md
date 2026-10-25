@@ -105,6 +105,28 @@ object and the item.
 With no dated rows at all, the page says where the dates come from: device
 types, platforms and **Settings → General → End-of-life data**.
 
+## Versions view
+
+**Objects | Versions** in the header switches the page. **Versions** counts
+the devices and virtual machines per platform and running
+[software version](lifecycle.md#where-the-running-version-comes-from) -
+one row per platform and version, sorted by platform, then version in
+natural order (`17.9.4` before `17.9.4a` before `17.10.1`). Objects with no
+version recorded are a *No version* row of their platform.
+
+| Column | Shows |
+|---|---|
+| Platform | The object's own platform, linked; *No platform* without one |
+| Version | The running version |
+| Devices, VMs | How many run it - each count links to the Devices or Virtual machines list filtered to that platform and version (and the view's sites and roles) |
+| Target | *On target* or *Off target* against the platform's target version; empty without a version or a target |
+| Source | How many of them got the version from each source: *SNMP 12 · Manual 2* |
+
+The rail filters by **Site**, **Platform** and **Role**; the counts follow
+it. The search box matches the platform and the version. The view's link is
+`/lifecycle?view=versions`, with `site`, `platform` and `role` ids in the
+URL when filtered.
+
 ## Permissions
 
 The overview shows what you may view and nothing else:
@@ -114,6 +136,8 @@ The overview shows what you may view and nothing else:
   rows; without one on virtual machines no VM rows. Software rows need a
   grant on installed software and on the device or VM they run on.
 - A contract's number and start show only on a contract you may view.
+- The Versions view counts the devices and VMs you may view, site scope
+  included; the rail's options list only their sites, platforms and roles.
 
 ## API
 
@@ -165,3 +189,34 @@ follow the grants above.
 
 The rows are read in a fixed number of queries however large the estate is,
 and worked out when they are read, so a window moves with the calendar.
+
+`GET /api/lifecycle/versions/` - the Versions view.
+
+| Parameter | |
+|---|---|
+| `site`, `platform`, `role` | An id, or several comma-separated; `none` for objects without one. Ids of another tenant match nothing. |
+
+```json
+{
+  "results": [
+    {
+      "platform": {"id": "…", "name": "IOS-XE", "target_version": "17.9.5"},
+      "version": "17.9.4a",
+      "devices": 12,
+      "virtual_machines": 1,
+      "on_target": false,
+      "sources": {"snmp": 11, "manual": 2}
+    }
+  ],
+  "facets": {
+    "site": [{"id": "…", "name": "HQ", "count": 40}],
+    "platform": [{"id": "…", "name": "IOS-XE", "count": 13}],
+    "role": [{"id": null, "name": "", "count": 3}]
+  }
+}
+```
+
+`platform` is `null` for objects without one; `version` is `""` for the
+objects with no version. `on_target` is `null` without a version or a
+target. `sources` keys are the version sources, `none` for no source.
+`facets` count the objects you may view before the filters.

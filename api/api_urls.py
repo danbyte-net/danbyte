@@ -187,6 +187,7 @@ from .presence_views import (
 )
 from .search_views import search as search_view
 from .site_map_views import site_map, site_map_cables, site_map_connections
+from .software_versions_api import software_versions_summary
 from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
 from .terraform_views import vm_render_view
 from .topology_export import topology_pdf_file_view, topology_pdf_view
@@ -575,6 +576,7 @@ urlpatterns = [
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
     # The Lifecycle page (#436): end dates per device and VM, soonest first.
     path("lifecycle/", lifecycle_overview, name="lifecycle-overview"),
+    path("lifecycle/versions/", software_versions_summary, name="lifecycle-versions"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).
     path("io/types/", io_types_view, name="io-types"),
