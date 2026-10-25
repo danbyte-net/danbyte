@@ -1941,6 +1941,8 @@ export interface ApplicationMini {
   slug: string
   path: string
   depth: number
+  /** Direct children the reader may view. */
+  child_count: number
 }
 
 /** One cycle an application's installs run, with its catalog facts. */

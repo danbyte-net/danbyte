@@ -2,7 +2,7 @@
 
 * ``/api/applications/`` - the tenant's application catalog: CRUD,
   ``?picker=1``, ``?search=``, ``?manufacturer=``, ``?parent=`` (``none`` for
-  the roots), ``bulk-delete``. A delete is refused (409) while the
+  the roots), ``?ancestor=`` (everything under it), ``bulk-delete``. A delete is refused (409) while the
   application has installs, child applications or flows (#163).
 * ``/api/applications/<id>/eol/`` - ``GET`` the product, its cycles with
   install counts and the unmapped installs; ``PUT {source?, product}`` names
@@ -86,13 +86,43 @@ class _PathMixin:
         return len(_paths(self.context, obj.tenant_id).get(obj.pk) or [obj.name]) - 1
 
 
+def descendants(request, app) -> list:
+    """Every application under ``app``, all depths, in tree order (each
+    parent before its children, siblings by name). Only the caller's
+    tenant's applications they may view."""
+    f = view_filter(request, Application)
+    if f is None:
+        return []
+    rows = list(Application.objects.filter(f).filter(tenant_id=app.tenant_id))
+    kids: dict = {}
+    for r in rows:
+        kids.setdefault(r.parent_id, []).append(r)
+    out, seen = [], {app.pk}
+
+    def walk(pk):
+        for k in sorted(kids.get(pk, []), key=lambda r: r.name.lower()):
+            if k.pk in seen:
+                continue
+            seen.add(k.pk)
+            out.append(k)
+            walk(k.pk)
+
+    walk(app.pk)
+    return out
+
+
 class ApplicationMiniSerializer(_PathMixin, NumIdModelSerializer):
     path = serializers.SerializerMethodField()
     depth = serializers.SerializerMethodField()
+    child_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Application
-        fields = ["id", "name", "slug", "path", "depth"]
+        fields = ["id", "name", "slug", "path", "depth", "child_count"]
+
+    def get_child_count(self, obj) -> int:
+        n = getattr(obj, "child_count_annotated", None)
+        return n if n is not None else obj.children.count()
 
 
 def _eol_block(app, cfg) -> dict | None:
@@ -548,12 +578,14 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         OpenApiParameter("parent", OpenApiTypes.STR, OpenApiParameter.QUERY,
                          description="An application id, or `none` for the roots."),
         OpenApiParameter("picker", OpenApiTypes.STR, OpenApiParameter.QUERY),
+        OpenApiParameter("ancestor", OpenApiTypes.UUID, OpenApiParameter.QUERY,
+                         description="The applications under this one, at any depth."),
     ])
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = base = super().get_queryset()
         if self.get_serializer_class() is ApplicationSerializer:
             qs = qs.select_related("parent", "manufacturer").prefetch_related(
                 TAGS, "eol_mappings",
@@ -562,6 +594,8 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 child_count_annotated=_visible_n(self, "children"),
                 flow_count_annotated=_visible_n(self, "flows"),
             )
+        else:
+            qs = qs.annotate(child_count_annotated=_visible_n(self, "children"))
         if not self.request:
             return qs
         params = self.request.query_params
@@ -577,6 +611,11 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             qs = qs.filter(parent__isnull=True)
         elif parent:
             qs = qs.filter(parent_id=_uuid_param(params, "parent"))
+        root = _uuid_param(params, "ancestor")
+        if root:
+            app = base.filter(pk=root).first()
+            under = [a.pk for a in descendants(self.request, app)] if app else []
+            qs = qs.filter(pk__in=under)
         return qs
 
     def perform_create(self, serializer):

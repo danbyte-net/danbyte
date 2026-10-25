@@ -146,6 +146,12 @@ change a version), **Hosts** (the devices and VMs it is assigned to, with
 **Assign** and **Unassign**), **Journal** and **Change log**. An application's
 page lists the groups it is in.
 
+Adding an application that has children offers **Include children** (on by
+default): every application under it joins too, right after it in tree
+order, skipping ones already in the group. Each stays its own member with its
+own version - only the picked application gets the version you enter - so
+removing or re-versioning one later leaves the others alone.
+
 ### Assigning a group
 
 Assign a group from the **Software** tab of a device or VM (**Assign
@@ -235,7 +241,7 @@ the installs are written as you.
 
 | Endpoint | |
 |---|---|
-| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?picker=1` (`{id, name, slug, path, depth}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
+| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?ancestor=` (everything under an application, any depth), `?picker=1` (`{id, name, slug, path, depth, child_count}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
 | `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. `GET` and `PUT` answer `{source, product, cycles, other_cycles, unmapped_installs, in_catalog, source_label, product_label, product_url}`; each cycle carries `install_count`, the installs you may view. |
 | `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?group=`, `?cycle=` (`none` for the installs no cycle took), `?search=`. `POST bulk-delete/`. |
 | `/api/application-groups/` | CRUD. `?search=`, `?application=`, `?device=`, `?virtual_machine=`, `?picker=1` (`{id, name, slug}`). `POST bulk-delete/`. Delete answers `409` while the group is assigned. |
@@ -267,7 +273,9 @@ A group carries `members` (`[{id, application, version, position}]`, in
 order), `member_count`, `host_count` and `install_count`. Write `members` as
 the whole ordered list `[{"application_id", "version"}]`: applications left
 out are removed, new ones added, and the installs on every assigned host
-follow. An assignment carries `group`, `device` or `virtual_machine` and
+follow. An entry with `"include_children": true` also adds every application
+under it (all depths, the ones you may view) right after it in tree order,
+each with a blank version, skipping applications already in the list. An assignment carries `group`, `device` or `virtual_machine` and
 `install_count` (the installs the group made there that are still its). Its
 `DELETE` answers what became of them: `{"removed", "kept", "moved"}`.
 
