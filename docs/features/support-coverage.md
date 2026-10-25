@@ -78,8 +78,9 @@ under **Settings → Tenant policy → Support coverage** (1-730 days).
   ("Ends in 40 d", the date in its tooltip) - amber inside the warning
   window, red once coverage has ended. A warranty, or a contract you may not
   view, has no start, so it is the countdown alone; an open-ended contract
-  reads *Open-ended*. Below it, the warranty end and every contract, best
-  first. Contracts you may not view are counted, not named.
+  reads *Open-ended*. Below it, the warranty end and a **Support contracts**
+  card listing every contract, best first, in the same card style as the
+  other Overview cards. Contracts you may not view are counted, not named.
 - **Devices list** - a *Coverage* column with a facet. `/devices?coverage=expired`
   opens the list filtered.
 - **Manufacturer page** - a *Contracts* tab lists the contracts with that

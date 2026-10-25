@@ -65,6 +65,10 @@ import {
 import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import {
+  SoftwareSummaryCard,
+  useSoftwareSummary,
+} from "@/components/software-summary-card"
+import {
   PortUtilizationCard,
   type PortKind,
 } from "@/components/port-utilization-card"
@@ -284,6 +288,9 @@ function Body({ device: d }: { device: Device }) {
   // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
+  // The Overview's Software card query, live after an edit on the tab; the
+  // payload's figure stands in until it lands.
+  const software = useSoftwareSummary({ kind: "device", id: d.id })
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
 
   return (
@@ -426,7 +433,11 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
-        { value: "software", label: "Software" },
+        {
+          value: "software",
+          label: "Software",
+          count: (software.data?.count ?? d.install_count) || undefined,
+        },
         ...(canDo("applicationflow", "view")
           ? [{ value: "flows", label: "Flows" }]
           : []),
@@ -1204,6 +1215,7 @@ function DeviceOverview({
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
       <DeviceCoverageCard deviceId={d.id} />
+      <SoftwareSummaryCard parent={{ kind: "device", id: d.id }} />
       {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues

@@ -30,8 +30,10 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
-**Overview** carries the attribute cards, the disk list and the VM's
-**Topology** card. Under the platform, **OS support** is its
+**Overview** carries the attribute cards, a **Software** card under
+*Resources* (the first eight installs, each with its version and end-of-life
+lifetime bar, then **View all N** to the Software tab), the disk list and the
+VM's **Topology** card. Under the platform, **OS support** is its
 [lifetime bar](lifecycle.md#the-lifetime-bar): the platform's effective dates,
 entered or from its [end-of-life](end-of-life-data.md) cycle; VM tables offer
 it as an optional **Next end of life** column (Columns menu,
@@ -46,7 +48,7 @@ interfaces a VLAN. Then:
 | --- | --- |
 | **Components** | The VM's interfaces (and their IPs), with a count on the tab. |
 | **Services** | Services running on it, from your service templates. |
-| **Software** | Applications installed on it, each at a version. See [Applications & installed software](applications.md). |
+| **Software** | Applications installed on it, each at a version, with a count on the tab (`install_count` in the API). See [Applications & installed software](applications.md). |
 | **Flows** | [Application flows](application-flows.md) with an end at one of its addresses, or at a prefix or range that holds one. |
 | **Routing** | Static routes and BGP, OSPF, IS-IS and EIGRP instances on the VM - a virtual router's routing, the same as a device's. See [Routing on virtual machines](routing.md#routing-on-virtual-machines). |
 | **Monitoring** | Checks against its addresses, same engine as devices. |
@@ -155,8 +157,9 @@ VM. Unticking the box clears it again.
 
 ## Disks
 
-**Virtual disks** are listed on the VM's Overview: name, size, the storage pool
-or datastore they live on, and their controller. They're descriptive - the VM's
+**Virtual disks** are listed on the VM's Overview in a card like the
+attribute cards: name, size, the storage pool or datastore they live on, and
+their controller. They're descriptive - the VM's
 own *Disk* figure is its own field, not a total of these. A sync imports them
 when **Sync disks** is enabled on the source.
 

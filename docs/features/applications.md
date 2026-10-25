@@ -78,7 +78,11 @@ virtual machine. The same version is recorded once per device or VM.
 The **Software** tab on device and VM pages lists the installs with their
 version, service, *End of life* status and lifetime bar (*Cycle*, *Source*
 and *Last seen* are in the Columns menu). **Add software** and the row's edit
-open the same dialog; tick rows to delete several at once.
+open the same dialog; tick rows to delete several at once. The tab label
+carries the count (`install_count` on `/api/devices/` and
+`/api/virtual-machines/`, list and detail), and the page's **Overview** has a
+**Software** card: the first eight installs, each with its version and
+lifetime bar, then **View all N** to the tab.
 
 Installs can also be added from the application: **Add** on its **Installed
 on** tab opens the same dialog with the application fixed, where you choose

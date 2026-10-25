@@ -6,7 +6,7 @@ import type { DeviceCoverage, DeviceCoverageContract } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
-import { SimpleTable } from "@/components/ui/simple-table"
+import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import { QueryError } from "@/components/query-error"
 import { dash } from "@/components/cells/dash"
@@ -69,7 +69,6 @@ export function DeviceCoverageCard({ deviceId }: { deviceId: string }) {
     {
       id: "contract",
       header: "Contract",
-      flex: true,
       cell: (c) => (
         <Link
           to="/support-contracts/$id"
@@ -105,38 +104,42 @@ export function DeviceCoverageCard({ deviceId }: { deviceId: string }) {
     {
       id: "state",
       header: "State",
-      align: "right",
       cell: (c) => <ContractStateBadge state={c.state} />,
     },
   ]
 
-  return (
-    <Section
-      title="Support contracts"
-      count={d.contracts.length + d.hidden_contracts}
-      badge={
-        d.flags.length > 0 ? (
-          <span className="inline-flex flex-wrap gap-1">
-            {d.flags.map((f) => (
-              <Badge key={f.code} variant="warning">
-                {f.label}
-              </Badge>
-            ))}
-          </span>
-        ) : undefined
-      }
-    >
-      <SimpleTable
-        columns={columns}
-        data={d.contracts}
-        getRowKey={(c) => c.id}
-        empty="No contracts you can view."
-      />
-      {d.hidden_contracts > 0 && (
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          +{d.hidden_contracts} hidden
+  const count = d.contracts.length + d.hidden_contracts
+  const badge =
+    d.flags.length > 0 ? (
+      <span className="inline-flex flex-wrap gap-1">
+        {d.flags.map((f) => (
+          <Badge key={f.code} variant="warning">
+            {f.label}
+          </Badge>
+        ))}
+      </span>
+    ) : undefined
+  const hidden = d.hidden_contracts > 0 && (
+    <span className="text-muted-foreground">+{d.hidden_contracts} hidden</span>
+  )
+
+  if (d.contracts.length === 0)
+    return (
+      <Section title="Support contracts" count={count} badge={badge}>
+        <p className="text-sm text-muted-foreground">
+          No contracts you can view. {hidden}
         </p>
-      )}
-    </Section>
+      </Section>
+    )
+  return (
+    <OverviewTable
+      title="Support contracts"
+      count={count}
+      badge={badge}
+      columns={columns}
+      data={d.contracts}
+      getRowKey={(c) => c.id}
+      footer={hidden || undefined}
+    />
   )
 }

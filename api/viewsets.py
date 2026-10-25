@@ -81,7 +81,7 @@ from .models import (
     FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
-    IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
+    InstalledSoftware, IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module,
@@ -3734,8 +3734,10 @@ class DeviceViewSet(
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
             **support_coverage.device_annotations(),
-            # Installed software's soonest end (#436), for Next end of life.
+            # Installed software's soonest end (#436), for Next end of life,
+            # and how many installs there are, for the Software tab.
             **software_end_annotations("device"),
+            install_count_annotated=_count_of(InstalledSoftware, "device"),
         )
         .all().order_by(NATURAL_NAME)
     )
@@ -6415,6 +6417,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
                 # Installed software's soonest end (#436), for Next end of life.
                 **software_end_annotations("virtual_machine"),
+                install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.

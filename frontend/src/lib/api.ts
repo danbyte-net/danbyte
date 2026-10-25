@@ -286,11 +286,7 @@ export interface ConnectProtocolWritePayload {
 // default. /api/me/ carries the RESOLVED values; the raw editable ones live
 // on /api/me/prefs/, /api/tenant-settings/ and /api/deployment/email/.
 export type DateFormat =
-  | "YYYY-MM-DD"
-  | "DD.MM.YYYY"
-  | "DD/MM/YYYY"
-  | "MM/DD/YYYY"
-  | "DD MMM YYYY"
+  "YYYY-MM-DD" | "DD.MM.YYYY" | "DD/MM/YYYY" | "MM/DD/YYYY" | "DD MMM YYYY"
 export type TimeStyle = "24h" | "12h"
 
 export interface DateTimeSettings {
@@ -1102,12 +1098,7 @@ export interface ManufacturerOption {
 }
 
 export type DeviceStatus =
-  | "active"
-  | "planned"
-  | "staged"
-  | "offline"
-  | "inventory"
-  | "decommissioning"
+  "active" | "planned" | "staged" | "offline" | "inventory" | "decommissioning"
 
 // ─── Site map (geographic) ───────────────────────────────────────────────
 export interface SiteMapSite {
@@ -1208,12 +1199,7 @@ export interface SiteMapConnection {
  * to it, a tunnel's own figure (`override`), or the lower end speed of a
  * `cable` link. */
 export type LinkCapacitySource =
-  | "commit"
-  | "port"
-  | "interface"
-  | "override"
-  | "cable"
-  | "mixed"
+  "commit" | "port" | "interface" | "override" | "cable" | "mixed"
 
 /** One link's speed in kbps; `up_kbps` only when the other direction
  * differs. `label` is the short form: `10G`, `500M`, `100/20M`. */
@@ -1688,6 +1674,8 @@ export interface Device {
   front_port_count?: number
   rear_port_count?: number
   service_count: number
+  /** Installed software rows (#436), list and detail - the Software tab. */
+  install_count?: number
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
   image_count?: number
@@ -2162,11 +2150,7 @@ export interface RackRoleOption {
 }
 
 export type RackStatus =
-  | "active"
-  | "planned"
-  | "reserved"
-  | "available"
-  | "deprecated"
+  "active" | "planned" | "reserved" | "available" | "deprecated"
 
 export type RackWidth = 10 | 19 | 21 | 23
 
@@ -2689,11 +2673,7 @@ export interface Antenna {
 
 /** What a faceplate prints inside a port marker; "" prints nothing. */
 export type PortLabelSource =
-  | ""
-  | "interface"
-  | "cable"
-  | "peer_device"
-  | "peer_port"
+  "" | "interface" | "cable" | "peer_device" | "peer_port"
 /** A device's say over the deployment's port-label setting. */
 export type DevicePortLabels = "" | "on" | "off"
 
@@ -3793,12 +3773,7 @@ export interface CableWritePayload {
 // ─── Topology / trace graph (React Flow shape) ──────────────────────────────
 
 export type TopoPortKind =
-  | "interface"
-  | "front"
-  | "rear"
-  | "console"
-  | "power"
-  | "aux"
+  "interface" | "front" | "rear" | "console" | "power" | "aux"
 
 export interface TopoPort {
   name: string
@@ -3850,12 +3825,7 @@ export interface TopoNode {
 /** Where a device's card lines came from, most specific first. `view` =
  * the query's `card_fields` (a saved view's own list). */
 export type TopoCardSource =
-  | "device"
-  | "view"
-  | "role"
-  | "tenant"
-  | "deployment"
-  | "default"
+  "device" | "view" | "role" | "tenant" | "deployment" | "default"
 
 /** An IP on a card line: `address` bare, `cidr` with its prefix length. */
 export interface TopoCardIp {
@@ -4727,12 +4697,7 @@ export interface ZoneOption {
 // ─── FHRP groups ───────────────────────────────────────────────────────────
 
 export type FHRPProtocol =
-  | "vrrp2"
-  | "vrrp3"
-  | "hsrp"
-  | "glbp"
-  | "carp"
-  | "anycast"
+  "vrrp2" | "vrrp3" | "hsrp" | "glbp" | "carp" | "anycast"
 
 export interface FHRPGroupAssignment {
   id: string
@@ -5178,10 +5143,7 @@ export interface RegionWritePayload {
 }
 
 export type LocationStatus =
-  | "active"
-  | "planned"
-  | "decommissioning"
-  | "retired"
+  "active" | "planned" | "decommissioning" | "retired"
 
 export interface LocationOption {
   id: string
@@ -5259,11 +5221,7 @@ export interface ClusterGroupWritePayload {
 }
 
 export type ClusterStatus =
-  | "active"
-  | "planned"
-  | "staging"
-  | "offline"
-  | "decommissioning"
+  "active" | "planned" | "staging" | "offline" | "decommissioning"
 
 export interface Cluster {
   id: string
@@ -5298,11 +5256,7 @@ export interface ClusterWritePayload {
 // ─── Virtual machine (full read+write) ───────────────────────────────────
 
 export type VMStatus =
-  | "active"
-  | "offline"
-  | "planned"
-  | "staged"
-  | "decommissioning"
+  "active" | "offline" | "planned" | "staged" | "decommissioning"
 
 /** A vApp, resource pool or folder - how the hypervisor groups its VMs.
  * The hypervisor owns membership; a group an operator sets by hand is
@@ -5389,6 +5343,8 @@ export interface VirtualMachine {
   service_count?: number
   certificate_count?: number
   routing_count?: number
+  /** Installed software rows (#436), list and detail - the Software tab. */
+  install_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
@@ -5932,12 +5888,7 @@ export type AfiSafi =
 
 export type RemoteAsnMode = "asn" | "external" | "internal"
 export type SendCommunity =
-  | ""
-  | "none"
-  | "standard"
-  | "extended"
-  | "both"
-  | "large"
+  "" | "none" | "standard" | "extended" | "both" | "large"
 
 export interface ASNMini {
   id: string
@@ -6216,11 +6167,7 @@ export interface OSPFInterface {
   area: OSPFAreaMini
   cost: number | null
   network_type:
-    | ""
-    | "broadcast"
-    | "point-to-point"
-    | "nbma"
-    | "point-to-multipoint"
+    "" | "broadcast" | "point-to-point" | "nbma" | "point-to-multipoint"
   /** Null = the instance's passive_by_default. */
   passive: boolean | null
   priority: number | null
@@ -6748,12 +6695,7 @@ export type CheckKind =
   | "exec"
   | "tls_cert"
 export type CheckStatus =
-  | "up"
-  | "down"
-  | "degraded"
-  | "unknown"
-  | "stale"
-  | "skipped"
+  "up" | "down" | "degraded" | "unknown" | "stale" | "skipped"
 export type ScheduleMode = "follow_global" | "custom_on" | "custom_off"
 
 export interface CheckTemplate {
@@ -7862,12 +7804,7 @@ export interface TimelineBatch {
 // certificate is authored solely by uploading a public PEM (never a key).
 
 export type PublicKeyAlgorithm =
-  | "rsa"
-  | "ec"
-  | "ed25519"
-  | "ed448"
-  | "dsa"
-  | "unknown"
+  "rsa" | "ec" | "ed25519" | "ed448" | "dsa" | "unknown"
 
 /** How the row came to exist: seen on the wire, uploaded by an operator, or
  * both (an uploaded cert later observed being served - one row, by fingerprint). */
@@ -7947,12 +7884,7 @@ export interface CertificateAssignment {
 }
 
 export type CertKeySpec =
-  | "rsa-2048"
-  | "rsa-3072"
-  | "rsa-4096"
-  | "ec-p256"
-  | "ec-p384"
-  | "ed25519"
+  "rsa-2048" | "rsa-3072" | "rsa-4096" | "ec-p256" | "ec-p384" | "ed25519"
 export type CertRequestStatus = "generated" | "issued" | "cancelled"
 
 /** A certificate signing request Danbyte generated (key held in the secret store). */
@@ -8008,12 +7940,7 @@ export interface Issuer {
 }
 
 export type AcmeOrderStatus =
-  | "pending"
-  | "ready"
-  | "processing"
-  | "valid"
-  | "invalid"
-  | "errored"
+  "pending" | "ready" | "processing" | "valid" | "invalid" | "errored"
 
 /** One challenge record the order must satisfy (DNS-01 TXT or HTTP-01 token). */
 export interface AcmeChallenge {
@@ -9273,13 +9200,7 @@ export interface SsoGroupMapping {
 }
 
 export type ChannelKind =
-  | "webhook"
-  | "email"
-  | "slack"
-  | "teams"
-  | "discord"
-  | "pagerduty"
-  | "telegram"
+  "webhook" | "email" | "slack" | "teams" | "discord" | "pagerduty" | "telegram"
 
 export type MinSeverity = "info" | "warning" | "critical"
 
@@ -9360,11 +9281,7 @@ export interface PlanningBoard {
 }
 
 export type PlanningSemanticGroup =
-  | "backlog"
-  | "unstarted"
-  | "started"
-  | "completed"
-  | "cancelled"
+  "backlog" | "unstarted" | "started" | "completed" | "cancelled"
 
 export interface PlanningStatus {
   id: string
@@ -9897,7 +9814,8 @@ export interface LifecycleRow {
   /** Device type, platform, contract (`id` null and named "Contract" when
    * you may not view it) or the warranty; null when nothing covers it. */
   item: {
-    type: "devicetype" | "platform" | "supportcontract" | "warranty" | "application"
+    type:
+      "devicetype" | "platform" | "supportcontract" | "warranty" | "application"
     id: string | null
     name: string
     /** OS and software rows: "entered" or the end-of-life source. */
@@ -10184,10 +10102,7 @@ export interface WirelessLANGroupWritePayload {
 }
 
 export type WirelessLANStatus =
-  | "active"
-  | "reserved"
-  | "disabled"
-  | "deprecated"
+  "active" | "reserved" | "disabled" | "deprecated"
 export type WirelessAuthType =
   | ""
   | "open"
@@ -10278,11 +10193,7 @@ export type IPSecEncryption =
   | "aes-256-gcm"
   | "3des-cbc"
 export type IPSecAuth =
-  | "hmac-sha1"
-  | "hmac-sha256"
-  | "hmac-sha384"
-  | "hmac-sha512"
-  | "hmac-md5"
+  "hmac-sha1" | "hmac-sha256" | "hmac-sha384" | "hmac-sha512" | "hmac-md5"
 
 export interface IPSecProfileOption {
   id: string
@@ -10327,11 +10238,7 @@ export interface IPSecProfileWritePayload {
 
 export type TunnelStatus = "planned" | "active" | "disabled"
 export type TunnelEncapsulation =
-  | "ipsec-tunnel"
-  | "ipsec-transport"
-  | "gre"
-  | "ip-ip"
-  | "wireguard"
+  "ipsec-tunnel" | "ipsec-transport" | "gre" | "ip-ip" | "wireguard"
 
 export type TunnelTerminationRole = "peer" | "hub" | "spoke"
 
@@ -10832,12 +10739,7 @@ export interface SnmpBulkStart {
 }
 
 export type SnmpBulkOutcome =
-  | "ok"
-  | "unreachable"
-  | "failed"
-  | "denied"
-  | "busy"
-  | "outpost"
+  "ok" | "unreachable" | "failed" | "denied" | "busy" | "outpost"
 
 /** `GET /api/monitoring/snmp-drift/bulk-runs/<run_id>/`. */
 export interface SnmpBulkRun {
@@ -10880,12 +10782,7 @@ export interface PresentUser {
 // ---- Background jobs (RQ queue admin) -------------------------------------
 
 export type JobState =
-  | "queued"
-  | "started"
-  | "deferred"
-  | "scheduled"
-  | "finished"
-  | "failed"
+  "queued" | "started" | "deferred" | "scheduled" | "finished" | "failed"
 
 // ─── NetBox import (GET/POST /api/netbox-import/) ───────────────────────────
 export interface NetBoxTestResult {
@@ -11275,11 +11172,7 @@ export type FloorPlanLinkKind =
   | "floorplan"
 
 export type FloorTileStatus =
-  | ""
-  | "active"
-  | "planned"
-  | "reserved"
-  | "decommissioning"
+  "" | "active" | "planned" | "reserved" | "decommissioning"
 
 export interface FloorPlanTile {
   id: string
@@ -11401,7 +11294,12 @@ export interface FloorPlanDrawingLayer {
   frozen: boolean
   entity_count: number
   /** Entity counts per kind; kinds with no entities are left out. */
-  kinds: { geometry?: number; hatch?: number; dimension?: number; text?: number }
+  kinds: {
+    geometry?: number
+    hatch?: number
+    dimension?: number
+    text?: number
+  }
 }
 
 export interface FloorPlanDrawingPlacement {
@@ -11680,12 +11578,7 @@ export interface FloorPlanWritePayload {
 
 /** GET /api/floor-plans/<id>/state/ - live per-tile metrics, keyed by tile id. */
 export type FloorTileCheck =
-  | "up"
-  | "down"
-  | "degraded"
-  | "stale"
-  | "unknown"
-  | "skipped"
+  "up" | "down" | "degraded" | "stale" | "unknown" | "skipped"
 
 export interface FloorTileRackState {
   kind: "rack"
@@ -12000,15 +11893,7 @@ export interface DnsRecordIP {
 }
 
 export type DnsRecordType =
-  | "A"
-  | "AAAA"
-  | "CNAME"
-  | "MX"
-  | "TXT"
-  | "NS"
-  | "SRV"
-  | "PTR"
-  | "CAA"
+  "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "NS" | "SRV" | "PTR" | "CAA"
 
 export interface DnsRecordWritePayload {
   zone: string
@@ -12180,20 +12065,9 @@ export interface RestoreRun {
 export type ScriptLanguage = "python"
 export type ScriptVisibility = "owner" | "users" | "groups" | "global"
 export type ScriptRunStatus =
-  | "queued"
-  | "running"
-  | "success"
-  | "failed"
-  | "timeout"
-  | "canceled"
+  "queued" | "running" | "success" | "failed" | "timeout" | "canceled"
 export type ScriptParamType =
-  | "string"
-  | "text"
-  | "integer"
-  | "decimal"
-  | "boolean"
-  | "choice"
-  | "object"
+  "string" | "text" | "integer" | "decimal" | "boolean" | "choice" | "object"
 
 export interface ScriptParam {
   name: string
@@ -12370,12 +12244,7 @@ export interface ChatConnection {
 // ─── Service level agreements ───────────────────────────────────────────────
 
 export type SlaPeriod =
-  | "month"
-  | "quarter"
-  | "year"
-  | "rolling_7"
-  | "rolling_30"
-  | "rolling_90"
+  "month" | "quarter" | "year" | "rolling_7" | "rolling_30" | "rolling_90"
 
 export type SlaState = "ok" | "at_risk" | "breached" | "no_data" | "not_started"
 
@@ -12791,13 +12660,7 @@ export interface SlaPeriodSummary {
 }
 
 export type AvailabilityFrame =
-  | "24h"
-  | "7d"
-  | "30d"
-  | "90d"
-  | "mtd"
-  | "qtd"
-  | "ytd"
+  "24h" | "7d" | "30d" | "90d" | "mtd" | "qtd" | "ytd"
 
 /** One object's figure in one agreement's current period. */
 export interface SlaStatusAgreement {
@@ -12835,12 +12698,7 @@ export interface SlaStatusResponse {
 // ─── Named dashboards ───────────────────────────────────────────────────────
 
 export type DashboardScopeKey =
-  | "site"
-  | "region"
-  | "role"
-  | "device_type"
-  | "tag"
-  | "sla"
+  "site" | "region" | "role" | "device_type" | "tag" | "sla"
 
 export interface NamedDashboard {
   id: string

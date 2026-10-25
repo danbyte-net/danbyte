@@ -3055,6 +3055,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     certificate_count = serializers.SerializerMethodField()
     contact_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
+    install_count = serializers.SerializerMethodField()
     # Support & warranty coverage (#421): {status, end, contracts}, from the
     # list queryset's annotations - no query per row.
     coverage = serializers.SerializerMethodField()
@@ -3557,6 +3558,12 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         v = getattr(obj, "interface_count_annotated", None)
         return v if v is not None else obj.interfaces.count()
 
+    def get_install_count(self, obj) -> int:
+        """Installed software rows (#436), for the Software tab. Served from
+        the viewset's annotation; a query only where the row came without it."""
+        v = getattr(obj, "install_count_annotated", None)
+        return v if v is not None else obj.installed_software.count()
+
     def get_ip_count(self, obj) -> int:
         # The list renders this, so it can't be skipped; served from a queryset
         # annotation when present (DeviceViewSet), else a direct count.
@@ -3683,7 +3690,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
-                  "contact_count", "document_count", "permissions",
+                  "contact_count", "document_count", "install_count", "permissions",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
                             "software_version_seen_at", "created_at", "updated_at"]
@@ -6334,6 +6341,13 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     service_count = serializers.SerializerMethodField()
     certificate_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
+    install_count = serializers.SerializerMethodField()
+
+    def get_install_count(self, obj) -> int:
+        """Installed software rows (#436), for the Software tab. Served from
+        the viewset's annotation; a query only where the row came without it."""
+        v = getattr(obj, "install_count_annotated", None)
+        return v if v is not None else obj.installed_software.count()
 
     @detail_only(0)
     def get_routing_count(self, obj) -> int:
@@ -6472,7 +6486,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "vcpus", "memory_mb", "disk_gb", "disks",
                   "software_version", "software_version_seen_at",
                   "interface_count", "disk_count", "service_count",
-                  "certificate_count", "routing_count",
+                  "certificate_count", "routing_count", "install_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
