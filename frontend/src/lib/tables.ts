@@ -168,6 +168,8 @@ const ROWS: Row[] = [
   ["device-console-server-ports", "Device · Console server ports", "DCIM", "/api/console-server-ports/", sub],
   ["device-power-ports", "Device · Power ports", "DCIM", "/api/power-ports/", sub],
   ["device-power-outlets", "Device · Power outlets", "DCIM", "/api/power-outlets/", sub],
+  ["device-cooling-intakes", "Device · Cooling intakes", "DCIM", "/api/cooling-intakes/", sub],
+  ["device-cooling-outflows", "Device · Cooling outflows", "DCIM", "/api/cooling-outflows/", sub],
   ["device-front-ports", "Device · Front ports", "DCIM", "/api/front-ports/", sub],
   ["device-rear-ports", "Device · Rear ports", "DCIM", "/api/rear-ports/", sub],
   ["device-inventory", "Device · Inventory", "DCIM", "/api/inventory-items/", sub],
