@@ -143,7 +143,7 @@ takes:
       on: a catalog entry local to another site - a device type, status,
       tag, VRF, IP role, manufacturer or custom field - on the rack, its
       devices, their ports and other components such as inventory items,
-      their IP and MAC addresses, their services, NAT rules and port rules,
+      their IP and MAC addresses, their services, NAT rules, installed software and port rules,
       or their static routes, BGP sessions and other routing processes.
 
 Port reservations on the moving ports follow them to the new site. Each moved

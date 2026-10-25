@@ -90,6 +90,7 @@ COMPONENTS = (
 DEVICE_ROWS = (
     ("api.Service", "device", "service {}", "name"),
     ("api.NATRule", "device", "NAT rule {}", "name"),
+    ("api.InstalledSoftware", "device", "installed software {}", "application__name"),
     ("monitoring.PortUtilizationRule", "device", "port rule {}", "name"),
     ("routing.StaticRoute", "device", "static route {}", "prefix"),
     ("routing.BGPInstance", "device", "BGP AS{}", "asn__asn"),
