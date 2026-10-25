@@ -762,6 +762,50 @@ class InterfaceListTests(_Base):
         self.assertNotIn('JOIN "api_interface"', page[0])
 
 
+class ChoiceLabelTests(_Base):
+    """The choice labels on the interface and cable lists read the field's
+    choices once, not through ``get_<field>_display()`` per row (#447). The
+    label must be the same, a value outside the choices included, and a page
+    must not cost more queries for it."""
+
+    def test_labels_match_get_display(self):
+        from .models import Cable, CableTermination, Interface
+
+        site = Site.objects.create(tenant=self.tenant, name="HQ")
+        d = Device.objects.create(tenant=self.tenant, name="sw", site=site)
+        modes = ["access", "tagged", "", "legacy-mode"]
+        protocols = ["lacp", "static", "", "old"]
+        types = ["cat6", "smf-os2", "", "legacy-cable"]
+        ports = []
+        for i, (mode, proto) in enumerate(zip(modes * 2, protocols * 2, strict=True)):
+            ports.append(Interface.objects.create(
+                device=d, name=f"eth{i}", mode=mode, lag_protocol=proto,
+            ))
+        for i, ctype in enumerate(types):
+            c = Cable.objects.create(tenant=self.tenant, label=f"c{i}", type=ctype)
+            CableTermination.objects.create(cable=c, end="A", interface=ports[2 * i])
+            CableTermination.objects.create(cable=c, end="B", interface=ports[2 * i + 1])
+
+        small, _ = self._queries("/api/interfaces/?page_size=2")
+        big, body = self._queries("/api/interfaces/?page_size=8")
+        self.assertEqual(small, big)
+        rows = {r["name"]: r for r in body["results"]}
+        for port in ports:
+            row = rows[port.name]
+            self.assertEqual(row["mode_display"], port.get_mode_display())
+            self.assertEqual(row["lag_protocol_display"], port.get_lag_protocol_display())
+        self.assertEqual(rows["eth3"]["mode_display"], "legacy-mode")
+
+        small, _ = self._queries("/api/cables/?page_size=1")
+        big, body = self._queries("/api/cables/?page_size=4")
+        self.assertEqual(small, big)
+        rows = {r["label"]: r for r in body["results"]}
+        for c in Cable.objects.filter(tenant=self.tenant):
+            self.assertEqual(rows[c.label]["type_display"], c.get_type_display())
+        self.assertEqual(rows["c0"]["type_display"], Cable(type="cat6").get_type_display())
+        self.assertEqual(rows["c3"]["type_display"], "legacy-cable")
+
+
 class CircuitListTests(_Base):
     def test_page_cost_is_flat(self):
         from .models import Circuit, CircuitType, Provider, Status
