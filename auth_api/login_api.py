@@ -39,7 +39,7 @@ MFA_PENDING_TTL = 600  # seconds the half-finished login survives
 SESSION_KEY = "mfa_pending"
 
 # ── Anti-brute-force tunables ────────────────────────────────────────────────
-# Password login: per-IP failure counter in the cache, then lock out.
+# Password login: failure counters in the cache, then lock out (see _login_keys).
 LOGIN_MAX_FAILURES = 10
 LOGIN_WINDOW = 900  # seconds the failure counter + lockout live
 #: Failures for one account from every address together before that account
@@ -106,20 +106,55 @@ def _login_keys(request, username: str) -> tuple[str, str]:
     return (f"login-fail:{_client_ip(request)}:{user}", f"login-fail-user:{user}")
 
 
-def _login_locked(request, username: str) -> bool:
-    pair, account = _login_keys(request, username)
-    return (
-        (cache.get(pair) or 0) >= LOGIN_MAX_FAILURES
-        or (cache.get(account) or 0) >= LOGIN_MAX_ACCOUNT_FAILURES
-    )
+def _count_attempt(key: str, window: int) -> int:
+    """Atomically add one attempt to ``key`` and return the new count.
 
-
-def _record_login_failure(request, username: str) -> None:
-    for key in _login_keys(request, username):
+    ``add`` only creates the key when it is missing and ``incr`` is atomic
+    (both single Redis commands with django-redis), so parallel requests
+    each get their own number and none is lost (#449). The key can expire
+    between the two calls; ``incr`` then raises and we start it again.
+    """
+    for _ in range(3):
+        cache.add(key, 0, window)
         try:
-            cache.incr(key)
+            return cache.incr(key)
         except ValueError:
-            cache.set(key, 1, LOGIN_WINDOW)
+            continue
+    # The cache keeps losing the key: fail closed rather than check a password
+    # uncounted.
+    return LOGIN_MAX_ACCOUNT_FAILURES + LOGIN_MAX_FAILURES + 1
+
+
+def _uncount_attempt(key: str) -> None:
+    try:
+        cache.decr(key)
+    except ValueError:
+        pass  # expired meanwhile - nothing left to give back
+
+
+def _reserve_login_attempt(request, username: str) -> bool:
+    """Count this attempt against both limits before the password is checked.
+
+    False means a limit is already used up: answer 429 without checking. The
+    count comes first so parallel requests cannot all read "under the limit"
+    before any of them records a failure (#449): exactly LOGIN_MAX_FAILURES
+    passwords are checked per client and account in the window, then refused.
+    A refused attempt does not count against the account-wide limit, and an
+    attempt the account limit refuses gives its client slot back.
+    """
+    pair, account = _login_keys(request, username)
+    if _count_attempt(pair, LOGIN_WINDOW) > LOGIN_MAX_FAILURES:
+        return False
+    if _count_attempt(account, LOGIN_WINDOW) > LOGIN_MAX_ACCOUNT_FAILURES:
+        _uncount_attempt(pair)
+        return False
+    return True
+
+
+def _release_login_attempt(request, username: str) -> None:
+    """Give back both slots of an attempt whose password was right."""
+    for key in _login_keys(request, username):
+        _uncount_attempt(key)
 
 
 def _clear_login_failures(request, username: str) -> None:
@@ -331,16 +366,19 @@ def login_api(request):
     password = data.get("password") or ""
     # Lockout after repeated password failures (brute-force guard), per
     # client and account - see _login_keys.
-    if _login_locked(request, username):
+    # The attempt is counted before the password is checked, so parallel
+    # requests cannot slip past the limit; a failure keeps its count.
+    if not _reserve_login_attempt(request, username):
         return JsonResponse(
             {"detail": "Too many failed attempts. Try again later."}, status=429
         )
     user = authenticate(request, username=username, password=password)
     if user is None:
-        _record_login_failure(request, username)
         return JsonResponse(
             {"detail": "Invalid username or password."}, status=400
         )
+    # The right password is not a failure: give its slots back.
+    _release_login_attempt(request, username)
     if not user.is_active:
         return JsonResponse({"detail": "This account is disabled."}, status=400)
 

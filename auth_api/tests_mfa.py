@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from unittest import mock
 
 import pyotp
 from django.contrib.auth.models import User
@@ -436,6 +437,71 @@ class BruteForceGuardTests(TestCase):
             r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
             self.assertEqual(r.status_code, 400)
 
+    def test_exactly_max_wrong_passwords_are_checked(self):
+        """#449: the attempt is counted before the password check - ten wrong
+        passwords are checked, the eleventh is refused unchecked."""
+        from . import login_api
+
+        real = login_api.authenticate
+        with mock.patch.object(login_api, "authenticate", side_effect=real) as auth:
+            for _ in range(LOGIN_MAX_FAILURES):
+                r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
+                self.assertEqual(r.status_code, 400)
+            self.assertEqual(auth.call_count, LOGIN_MAX_FAILURES)
+            r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
+            self.assertEqual(r.status_code, 429)
+            r = _post(self.c, "/api/auth/login/", username="bob", password="pw12345!")
+            self.assertEqual(r.status_code, 429)
+            self.assertEqual(auth.call_count, LOGIN_MAX_FAILURES)
+
+    def test_correct_password_on_last_allowed_attempt_succeeds_and_resets(self):
+        self.profile.require_mfa = False
+        self.profile.save()
+        for _ in range(LOGIN_MAX_FAILURES - 1):
+            _post(self.c, "/api/auth/login/", username="bob", password="wrong")
+        ok = _post(self.c, "/api/auth/login/", username="bob", password="pw12345!")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.c.post("/api/auth/logout/")
+        for _ in range(LOGIN_MAX_FAILURES):
+            r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
+            self.assertEqual(r.status_code, 400)
+        r = _post(self.c, "/api/auth/login/", username="bob", password="wrong")
+        self.assertEqual(r.status_code, 429)
+
+    def test_successful_sign_ins_do_not_count_against_the_account(self):
+        from .login_api import LOGIN_MAX_ACCOUNT_FAILURES
+
+        self.profile.require_mfa = False
+        self.profile.save()
+        for i in range(LOGIN_MAX_ACCOUNT_FAILURES + 5):
+            c = Client()
+            r = c.post("/api/auth/login/", data=json.dumps(
+                {"username": "bob", "password": "pw12345!"}),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"198.51.100.{i}")
+            self.assertEqual(r.status_code, 200, r.content)
+
+    def test_account_limit_checks_exactly_max_then_refuses_unchecked(self):
+        from . import login_api
+        from .login_api import LOGIN_MAX_ACCOUNT_FAILURES
+
+        def attempt(i, password="wrong"):
+            return Client().post("/api/auth/login/", data=json.dumps(
+                {"username": "bob", "password": password}),
+                content_type="application/json",
+                HTTP_X_FORWARDED_FOR=f"198.51.100.{i}")
+
+        real = login_api.authenticate
+        with mock.patch.object(login_api, "authenticate", side_effect=real) as auth:
+            for i in range(LOGIN_MAX_ACCOUNT_FAILURES):
+                self.assertEqual(attempt(i).status_code, 400)
+            self.assertEqual(auth.call_count, LOGIN_MAX_ACCOUNT_FAILURES)
+            self.assertEqual(attempt(200).status_code, 429)
+            self.assertEqual(attempt(201, "pw12345!").status_code, 429)
+            self.assertEqual(auth.call_count, LOGIN_MAX_ACCOUNT_FAILURES)
+        # A refusal by the account limit hands the client slot back.
+        self.assertEqual(cache.get("login-fail:198.51.100.200:bob"), 0)
+
     def test_mfa_verify_attempt_cap(self):
         r = _post(self.c, "/api/auth/login/", username="bob", password="pw12345!")
         self.assertTrue(r.json()["mfa_required"])
@@ -474,3 +540,52 @@ class BruteForceGuardTests(TestCase):
         self.assertEqual(r.status_code, 429)
         self.profile.refresh_from_db()
         self.assertTrue(self.profile.mfa_totp_confirmed)
+
+
+class LoginAttemptCounterConcurrencyTests(TestCase):
+    """#449: parallel first attempts used to overwrite each other's count."""
+
+    THREADS = 8
+    PER_THREAD = 50
+
+    def _hammer(self, backend):
+        import threading
+        import uuid
+
+        from . import login_api
+
+        key = f"login-fail-test:{uuid.uuid4().hex}"
+        seen: list[int] = []
+        lock = threading.Lock()
+        start = threading.Barrier(self.THREADS)
+
+        def worker():
+            start.wait()
+            for _ in range(self.PER_THREAD):
+                n = login_api._count_attempt(key, 60)
+                with lock:
+                    seen.append(n)
+
+        with mock.patch.object(login_api, "cache", backend):
+            threads = [threading.Thread(target=worker) for _ in range(self.THREADS)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        total = self.THREADS * self.PER_THREAD
+        try:
+            self.assertEqual(backend.get(key), total)
+            # Every caller got its own number: none lost, none repeated.
+            self.assertEqual(sorted(seen), list(range(1, total + 1)))
+        finally:
+            backend.delete(key)
+
+    def test_no_count_lost_on_locmem(self):
+        from django.core.cache.backends.locmem import LocMemCache
+
+        self._hammer(LocMemCache("login-concurrency", {}))
+
+    def test_no_count_lost_on_configured_cache(self):
+        from django.core.cache import caches
+
+        self._hammer(caches["default"])
