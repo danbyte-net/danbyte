@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -26,6 +26,7 @@ import { buildApplicationColumns } from "@/components/columns/application-column
 import { buildInstalledSoftwareColumns } from "@/components/columns/installed-software-columns"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { ApplicationFlowDiagram } from "@/components/application-flow-diagram"
+import { InstalledSoftwareDialog } from "@/components/installed-software-pane"
 
 export const Route = createFileRoute("/applications/$id")({
   component: ApplicationDetail,
@@ -198,7 +199,11 @@ function Body({ app }: { app: Application }) {
   )
 }
 
-function InstalledOn({ applicationId }: { applicationId: string }) {
+export function InstalledOn({ applicationId }: { applicationId: string }) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canAdd = canDo("installedsoftware", "add")
+  const [adding, setAdding] = useState(false)
   const eol = useEolSettings()
   const q = useQuery({
     queryKey: ["installed-software", "application", applicationId],
@@ -219,18 +224,43 @@ function InstalledOn({ applicationId }: { applicationId: string }) {
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
   const rows = q.data?.results ?? []
-  if (rows.length === 0)
-    return <EmptyState title="Not installed anywhere yet." />
   return (
-    <DataTable
-      data={rows}
-      columns={columns}
-      flexColumn="description"
-      tableId="application-installs"
-      embedded
-      searchable
-      searchPlaceholder="Search installs…"
-    />
+    <div className="space-y-3">
+      {canAdd && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <EmptyState title="Not installed anywhere yet." />
+      ) : (
+        <DataTable
+          data={rows}
+          columns={columns}
+          flexColumn="description"
+          tableId="application-installs"
+          embedded
+          searchable
+          searchPlaceholder="Search installs…"
+        />
+      )}
+      <InstalledSoftwareDialog
+        application={{ id: applicationId }}
+        install={null}
+        open={adding}
+        onOpenChange={setAdding}
+        onSaved={() => {
+          // Covers ["installed-software", "application", id] and the
+          // device/VM Software tabs.
+          qc.invalidateQueries({ queryKey: ["installed-software"] })
+          qc.invalidateQueries({ queryKey: ["application", applicationId] })
+          qc.invalidateQueries({ queryKey: ["lifecycle"] })
+          setAdding(false)
+        }}
+      />
+    </div>
   )
 }
 

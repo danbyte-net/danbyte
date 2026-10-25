@@ -80,6 +80,10 @@ version, service, *End of life* status and lifetime bar (*Cycle*, *Source*
 and *Last seen* are in the Columns menu). **Add software** and the row's edit
 open the same dialog; tick rows to delete several at once.
 
+Installs can also be added from the application: **Add** on its **Installed
+on** tab opens the same dialog with the application fixed, where you choose
+**Device** or **Virtual machine** and pick one.
+
 ### End of life
 
 The application's product and an install's cycle together pick an
