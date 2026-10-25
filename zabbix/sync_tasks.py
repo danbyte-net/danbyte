@@ -9,6 +9,10 @@ The tenant switch is re-checked **here, at run time**, not only when the job was
 enqueued: a toggle flipped in between has to win, or Danbyte writes hosts into
 a Zabbix somebody just switched off. A deactivated tenant is skipped the same
 way, at both ends.
+
+The loop and the re-check are shared with every external monitor
+(:mod:`monitoring.external.beat`); Zabbix is registered on that beat with its
+own timer, so ``extmon_sync`` never doubles it.
 """
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ import logging
 import django_rq
 from django.utils import timezone
 
-from integrations.toggles import integration_enabled
+from monitoring.external.beat import BeatTask, enqueue_due, skip_reason
 
 from .models import ZabbixConnection
 
@@ -31,13 +35,10 @@ def run_sync(connection_id: str) -> dict:
     conn = ZabbixConnection.objects.filter(pk=connection_id).select_related(
         "tenant"
     ).first()
-    if conn is None:
-        return {"skipped": "gone"}
     # Re-checked at run time on purpose - see the module docstring.
-    if not conn.tenant.is_active:
-        return {"skipped": "tenant inactive"}
-    if not integration_enabled(conn.tenant, "zabbix"):
-        return {"skipped": "integration off"}
+    reason = skip_reason(conn, "zabbix")
+    if reason:
+        return {"skipped": reason}
     if conn.provision_mode == ZabbixConnection.OFF:
         return {"skipped": "provisioning off"}
     try:
@@ -65,20 +66,17 @@ def enqueue_due_syncs(now=None) -> dict:
     from .status import run_status_sync
 
     now = now or timezone.now()
-    queue = django_rq.get_queue("low")
-    queued = maintenance = status = 0
-    for conn in ZabbixConnection.objects.filter(
-        enabled=True, tenant__is_active=True
-    ).select_related("tenant"):
-        if not integration_enabled(conn.tenant, "zabbix"):
-            continue
-        if conn.auto_sync and conn.sync_due(now):
-            queue.enqueue(run_sync, str(conn.id), job_timeout=900)
-            queued += 1
-        if conn.maintenance_due(now):
-            queue.enqueue(run_maintenance_sync, str(conn.id), job_timeout=300)
-            maintenance += 1
-        if conn.status_due(now):
-            queue.enqueue(run_status_sync, str(conn.id), job_timeout=300)
-            status += 1
-    return {"queued": queued, "maintenance": maintenance, "status": status}
+    tasks = (
+        BeatTask("queued", lambda c, at: c.auto_sync and c.sync_due(at), run_sync, 900),
+        BeatTask("maintenance", lambda c, at: c.maintenance_due(at), run_maintenance_sync),
+        BeatTask("status", lambda c, at: c.status_due(at), run_status_sync),
+    )
+    return enqueue_due(
+        ZabbixConnection.objects.filter(
+            enabled=True, tenant__is_active=True
+        ).select_related("tenant"),
+        "zabbix",
+        tasks,
+        queue=django_rq.get_queue("low"),
+        now=now,
+    )

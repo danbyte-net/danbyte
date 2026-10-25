@@ -18,8 +18,8 @@ import django_rq
 from django.db import transaction
 from django.utils import timezone
 
-from integrations.toggles import integration_enabled
-from monitoring.models import MaintenanceEvent
+from monitoring.external.beat import skip_reason
+from monitoring.external.maintenance import desired_for_links
 
 from .client import ZabbixClient, ZabbixError
 from .models import ZabbixConnection, ZabbixHostLink, ZabbixMaintenance
@@ -80,28 +80,13 @@ def desired(conn) -> dict:
     existence is that decision, already made once by the status and the
     impacts; its window is the one Danbyte itself honours, an open outage's
     rolling day included. Devices Zabbix does not know are simply not in the
-    period - there is nothing to quiet.
+    period - there is nothing to quiet. The selection is shared
+    (:func:`monitoring.external.maintenance.desired_for_links`).
     """
     links = dict(
         ZabbixHostLink.objects.filter(connection=conn).values_list("device_id", "hostid")
     )
-    out: dict = {}
-    if not links:
-        return out
-    events = (
-        MaintenanceEvent.objects.filter(tenant=conn.tenant, silence__isnull=False)
-        .select_related("silence", "status")
-        .prefetch_related("silence__match_devices")
-    )
-    for event in events:
-        if event.status.is_closed:
-            continue
-        hostids = sorted(
-            {links[d.id] for d in event.silence.match_devices.all() if d.id in links}
-        )
-        if hostids:
-            out[event.id] = (event, hostids)
-    return out
+    return desired_for_links(conn.tenant, links)
 
 
 def reconcile(conn, *, client=None) -> dict:
@@ -191,12 +176,9 @@ def run_maintenance_sync(connection_id: str) -> dict:
     conn = (
         ZabbixConnection.objects.filter(pk=connection_id).select_related("tenant").first()
     )
-    if conn is None:
-        return {"skipped": "gone"}
-    if not conn.tenant.is_active:
-        return {"skipped": "tenant inactive"}
-    if not integration_enabled(conn.tenant, "zabbix"):
-        return {"skipped": "integration off"}
+    reason = skip_reason(conn, "zabbix")
+    if reason:
+        return {"skipped": reason}
     if not (conn.enabled and conn.sync_maintenance and conn.token_set):
         return {"skipped": "maintenance sync off"}
     try:
