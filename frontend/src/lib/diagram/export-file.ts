@@ -87,6 +87,7 @@ export function sendPdf(
     return true
   }
   if (print) toast.warning("Pop-ups are blocked, so the PDF was downloaded")
-  saveUrl(`${url}?download=1`, fileName)
+  // A link that already has a query (a diagram kind) takes one more param.
+  saveUrl(`${url}${url.includes("?") ? "&" : "?"}download=1`, fileName)
   return false
 }

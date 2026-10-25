@@ -10,7 +10,8 @@ and virtual machine records what is installed on it, at which version, on its
 **Software** tab. With [end-of-life data](end-of-life-data.md) on, each
 install's version finds its release cycle, so software ends show up on the
 [Lifecycle overview](lifecycle-overview.md), in the lists' *Next end of life*
-column and, if you ask for it, in [compliance rules](compliance.md).
+column and, if you ask for it, in [compliance rules](compliance.md). An
+application's [flows](application-flows.md) record the traffic it needs.
 
 Nothing ships pre-filled: no applications, no installs.
 
@@ -39,8 +40,10 @@ checkout-api*) and sorts by it, so children follow their parent; the picker
 reads the same. An application cannot be its own ancestor. Deleting a parent
 is refused while it has children: move or delete them first.
 
-The list's **Columns** menu adds Parent, Manufacturer, Children and the
-End-of-life product; the rail has Parent and Manufacturer facets.
+The list shows each application's installs and
+[flows](application-flows.md). Its **Columns** menu adds Parent,
+Manufacturer, Children and the End-of-life product; the rail has Parent and
+Manufacturer facets.
 
 ### The application page
 
@@ -48,11 +51,13 @@ End-of-life product; the rail has Parent and Manufacturer facets.
 **End of life** card: the mapped product and every cycle the installs run,
 each with its status and end of life. **Map** picks the product - only the
 product: the cycle comes from each install. **Installed on** lists every
-install, **Child applications** the children, then **Journal** and **Change
-log**.
+install, **Flows** and **Diagram** its [flows](application-flows.md),
+**Child applications** the children, then **Journal** and **Change log**.
+Overview counts the installs and the flows.
 
-An application with installs cannot be deleted (409); remove the installs
-first. The list's bulk delete skips such rows and says why.
+An application with installs, child applications or flows cannot be deleted
+(409); remove them first. The list's bulk delete skips such rows and says
+why.
 
 ## Installed software
 
@@ -108,7 +113,8 @@ openjdk,,app-vm-02,17.0.9
 
 ## Permissions
 
-`application` and `installedsoftware` are their own object types. An install
+`application`, `installedsoftware` and `applicationflow` are their own
+object types (flows: [Permissions](application-flows.md#permissions)). An install
 belongs to its device's or VM's site: a site editor records software on the
 devices and VMs of their sites, and a site role reads the applications. The
 Lifecycle overview lists an install only to someone who may view both the
@@ -118,13 +124,13 @@ install and the device or VM it runs on.
 
 | Endpoint | |
 |---|---|
-| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?picker=1` (`{id, name, slug, path, depth}`). `POST bulk-delete/`. Delete answers `409` while installs or children exist. |
+| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?picker=1` (`{id, name, slug, path, depth}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
 | `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. |
 | `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?search=`. `POST bulk-delete/`. |
 
 An application carries `parent`, `path`, `depth`, `manufacturer`,
 `eol_source`, `eol_product`, `eol` (`{source, product, cycles}`, `null` while
-the feature is off), `install_count` and `child_count`. Write `parent_id` and
+the feature is off), `install_count`, `child_count` and `flow_count`. Write `parent_id` and
 `manufacturer_id`.
 
 An install carries `application` (`{id, name, slug, path}`), `device` or

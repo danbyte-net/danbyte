@@ -237,8 +237,10 @@ editor's own local entries under
 
 !!! note "Upgrading to 0.19"
     Site roles created earlier gain installed software (the Software tab on
-    their devices and VMs), and site viewers and silo site editors gain view on
-    applications. A grant edited away from the role's shape is left as it is.
+    their devices and VMs) and application flows (`applicationflow`, the
+    flows of their sites' addresses, prefixes and ranges), and site viewers
+    and silo site editors gain view on applications. A grant edited away from
+    the role's shape is left as it is.
 
 ### Set it up when you create the user
 

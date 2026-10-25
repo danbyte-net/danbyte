@@ -150,6 +150,9 @@ export interface DiagramLink {
   /** The cable this line is part of - a breakout's trunk and legs share
    * it. */
   cable?: string
+  /** Arrowheads: at the target (`end`), at both ends, or none (absent =
+   * none). An application flow's direction (#163). */
+  arrow?: "end" | "both" | "none"
 }
 
 /** Where a breakout cable splits: its trunk ends here and each leg leaves

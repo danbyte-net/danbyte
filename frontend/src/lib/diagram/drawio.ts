@@ -923,8 +923,11 @@ function page(
       ...kind,
       rounded: kind.rounded ?? 0,
       html: 1,
-      endArrow: "none",
-      startArrow: "none",
+      // An application flow's direction (#163); every other line has none.
+      endArrow: l.arrow === "end" || l.arrow === "both" ? "block" : "none",
+      endFill: l.arrow === "end" || l.arrow === "both" ? 1 : undefined,
+      startArrow: l.arrow === "both" ? "block" : "none",
+      startFill: l.arrow === "both" ? 1 : undefined,
       strokeColor: hex6(l.stroke) ?? PRINT.subtle,
       strokeWidth: Math.max(0.25, l.width || 1),
       dashed: dash ? 1 : undefined,

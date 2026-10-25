@@ -1,15 +1,20 @@
 """Application flows (#163): exactly one end on each side, tenant and site
 scope on every reference, the involvement filters with containment, bulk
-writes with their change log, the picker, import/export and the schema."""
+writes with their change log, the picker, import/export, the schema and the
+diagram's PDF."""
 from __future__ import annotations
 
 import csv
 import io
+from unittest import mock
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
+from api import topology_export as tx
 from api.models import (
     VRF,
     Application,
@@ -420,3 +425,70 @@ class SchemaTests(_Base):
         params = {p["name"] for p in paths["/api/application-flows/"]["get"]["parameters"]}
         self.assertLessEqual({"application", "ip", "prefix", "range", "device", "vm",
                               "protocol", "status", "search"}, params)
+        self.assertIn("/api/diagram/export/pdf/", paths)
+
+
+ARROWED = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">'
+    '<path d="M 10,50 L 180,50" fill="none" stroke="#71717b"/>'
+    '<polygon points="190,50 180,55 180,45" fill="#71717b"/></svg>'
+)
+LOCMEM = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
+
+@override_settings(CACHES=LOCMEM)
+class DiagramPdfTests(_Base):
+    """``POST /api/diagram/export/pdf/`` by kind: the flows' diagram needs
+    applicationflow.view, the topology alias keeps device.view."""
+
+    URL = "/api/diagram/export/pdf/"
+    fake = mock.patch.object(tx, "render_with_deadline", return_value=b"%PDF-1.7 fake")
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
+    def _member(self, name, *types):
+        user = User.objects.create_user(name, password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(name=f"{name}-p", object_types=list(types),
+                                               actions=["view"])
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        return user
+
+    def _post(self, url=None, **body):
+        payload = {"svg": ARROWED, "title": "Shop", "kind": "application-flows", **body}
+        return self.client.post((url or self.URL) + "?print=1", payload, format="json")
+
+    def test_arrowheads_survive_the_sanitizer(self):
+        from api.svg_sanitize import sanitize_svg
+
+        self.assertIn(b"<polygon", sanitize_svg(ARROWED))
+
+    def test_the_kind_picks_the_permission(self):
+        self.login(self._member("flows-only", "applicationflow"))
+        with self.fake:
+            r = self._post()
+            self.assertEqual(r.status_code, 200, r.content)
+            self.assertEqual(self._post(kind="topology").status_code, 403)
+        link = r.json()["url"]
+        self.assertRegex(link, r"^/api/diagram/export/pdf/[A-Za-z0-9_-]{24,64}/"
+                               r"\?kind=application-flows$")
+        self.assertEqual(self.client.get(link).content, b"%PDF-1.7 fake")
+        # Not a topology link, and not someone else's.
+        self.assertEqual(self.client.get(link.split("?")[0]).status_code, 404)
+        self.login(self._member("devices-only", "device"))
+        self.assertEqual(self.client.get(link).status_code, 404)
+        with self.fake:
+            self.assertEqual(self._post().status_code, 403)
+            r = self._post(url="/api/topology/export/pdf/", kind="topology")
+        self.assertRegex(r.json()["url"], r"^/api/topology/export/pdf/[A-Za-z0-9_-]+/$")
+
+    def test_unknown_kind_and_file_name(self):
+        self.assertEqual(self._post(kind="racks").status_code, 400)
+        with self.fake:
+            r = self.client.post(self.URL, {"svg": ARROWED, "kind": "application-flows"},
+                                 format="json")
+        self.assertRegex(r["Content-Disposition"],
+                         r'filename="application-flows-\d{4}-\d{2}-\d{2}\.pdf"')

@@ -598,6 +598,11 @@ urlpatterns = [
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
     path("topology/export/pdf/<str:token>/", topology_pdf_file_view,
          name="topology-export-pdf-file"),
+    # Any diagram as a PDF, by kind (#163); the topology paths above are the
+    # same views.
+    path("diagram/export/pdf/", topology_pdf_view, name="diagram-export-pdf"),
+    path("diagram/export/pdf/<str:token>/", topology_pdf_file_view,
+         name="diagram-export-pdf-file"),
     path("customization/meta/", customization_meta, name="customization-meta"),
     path("customization/object-labels/", object_labels, name="customization-object-labels"),
     path("oui/status/", oui_status, name="oui-status"),

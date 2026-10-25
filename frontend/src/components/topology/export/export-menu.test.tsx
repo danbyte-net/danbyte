@@ -253,6 +253,39 @@ describe("ExportMenu PDF and Print", () => {
     expect(download).not.toHaveBeenCalled()
   })
 
+  it("posts another diagram's kind to its URL, named by its stem", async () => {
+    const link = "/api/diagram/export/pdf/abcdefghijklmnopqrstuvwxyz0123/"
+    answer(
+      () =>
+        new Response(
+          JSON.stringify({ url: `${link}?kind=application-flows` }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+    )
+    render(
+      <ExportMenu
+        document={() => fabric}
+        name="Shop"
+        fileStem="shop-flows"
+        pdfUrl="/api/diagram/export/pdf/?print=1"
+        pdfKind="application-flows"
+        areas={false}
+      />
+    )
+    open()
+    expect(screen.queryByText("Whole map")).toBeNull()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "PDF" }))
+    await waitFor(() => expect(clicks).toHaveLength(1))
+    expect(posted[0].url).toBe("/api/diagram/export/pdf/?print=1")
+    expect(posted[0].body.kind).toBe("application-flows")
+    expect(clicks[0].getAttribute("href")).toBe(
+      `${link}?kind=application-flows&download=1`
+    )
+    expect(clicks[0].download).toBe(
+      exportFileName("shop-flows", "x").slice(0, -2) + ".pdf"
+    )
+  })
+
   it("remembers the paper", async () => {
     answer(ok)
     render(<ExportMenu document={() => fabric} name="Map" />)
