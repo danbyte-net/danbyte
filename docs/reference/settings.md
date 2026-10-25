@@ -66,15 +66,26 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
-    "PAGE_SIZE": 10000,
+    "PAGE_SIZE": API_PAGE_SIZE,  # 100
 }
 ```
 
-The SPA loads full result sets and filters client-side, so the page size is
-high by design; it is capped (`max_page_size = 10000`) so `?page_size=` can't
-be used to force an amplified, memory-heavy response. A list page whose tenant
-holds more rows than one request returns says so rather than looking complete
-(see [Very long lists](../features/table-preferences.md#very-long-lists)).
+A list request without `?page_size=` answers one page of `API_PAGE_SIZE`
+rows with a `next` link. A caller that wants more names it with
+`?page_size=`, up to `API_MAX_PAGE_SIZE`; a larger value is cut to the cap,
+so `?page_size=` can't force an amplified, memory-heavy response. The
+default is small because serializing 10,000 rows held a gunicorn worker for
+seconds (see [Pagination](api.md#pagination)).
+
+| Setting | Env var | Default | Purpose |
+|---|---|---|---|
+| `API_PAGE_SIZE` | `API_PAGE_SIZE` | `100` | Rows a list answers when the request names no `page_size`. Kept between 1 and `API_MAX_PAGE_SIZE`. |
+| `API_MAX_PAGE_SIZE` | - | `10000` | The most rows `?page_size=` can ask for in one response. |
+
+The web app asks for what it needs: a table, picker or map that filters
+in the browser walks the pages, 1,000 rows a request up to 10,000, and a
+list page whose tenant holds more says so rather than looking complete (see
+[Very long lists](../features/table-preferences.md#very-long-lists)).
 
 ## DEBUG (default-closed)
 

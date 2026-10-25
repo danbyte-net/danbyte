@@ -226,6 +226,26 @@ class ReadToolTests(_Base):
         self.assertTrue(rows["truncated"])
         self.assertEqual(rows["next_cursor"], 1)
 
+    def test_cursor_reaches_the_next_rows(self):
+        # The list endpoints page by number; the cursor used to go out as an
+        # ignored `offset` and hand back the first rows again (#447).
+        AgentSettings.objects.update_or_create(tenant=self.tenant, defaults={"max_rows": 1})
+        first = self.tool("list", {"type": "device"})
+        second = self.tool("list", {"type": "device", "cursor": first["next_cursor"]})
+        self.assertEqual(second["returned"], 1)
+        self.assertFalse(second["truncated"])
+        self.assertNotEqual(first["rows"][0]["id"], second["rows"][0]["id"])
+
+    def test_lookups_read_past_the_default_page(self):
+        # A by-name lookup reads a page of its own size, not the API's
+        # default page, so a small API_PAGE_SIZE can't hide the row (#447).
+        with self.settings(API_PAGE_SIZE=1):
+            for name in ("aarhus-core-1", "hq-core-1"):
+                one = self.tool("get", {"type": "device", "id": name})
+                self.assertEqual(one["object"]["name"], name)
+            rows = self.tool("list", {"type": "device", "filters": {"site": "HQ"}})
+        self.assertEqual([r["name"] for r in rows["rows"]], ["hq-core-1"])
+
     def test_allowed_types_narrows_everything(self):
         AgentSettings.objects.update_or_create(
             tenant=self.tenant, defaults={"allowed_types": ["site"]}

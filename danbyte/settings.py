@@ -297,6 +297,13 @@ RQ_QUEUES = {
     },
 }
 
+# List pagination (#447). A list request without ?page_size= gets API_PAGE_SIZE
+# rows: serializing 10,000 rows held a sync gunicorn worker for seconds, and a
+# few such requests starved every other request, the health check included.
+# ?page_size= may ask for up to API_MAX_PAGE_SIZE rows in one response.
+API_MAX_PAGE_SIZE = 10000
+API_PAGE_SIZE = max(1, min(int(os.getenv("API_PAGE_SIZE", "100")), API_MAX_PAGE_SIZE))
+
 REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
     # serializer didn't validate) into a 409 instead of a raw 500.
@@ -314,10 +321,11 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-    # High default page size: the SPA loads full result sets and filters
-    # client-side, so a small page silently hides rows. ?limit= still overrides.
+    # A list without ?page_size= answers one small page (API_PAGE_SIZE) with a
+    # `next` link; ?page_size= up to API_MAX_PAGE_SIZE is the caller's opt-in.
+    # The SPA asks for what it needs (lib/api.ts apiAll walks `next`) (#447).
     "DEFAULT_PAGINATION_CLASS": "api.pagination.StandardResultsSetPagination",
-    "PAGE_SIZE": 10000,
+    "PAGE_SIZE": API_PAGE_SIZE,
     # JSON bodies must be objects: a string or list reached views reading
     # request.data.get(...) and crashed (#373). See api/parsers.py.
     "DEFAULT_PARSER_CLASSES": [

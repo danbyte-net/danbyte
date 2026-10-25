@@ -98,7 +98,9 @@ class Client:
         """Every matching object, following pagination. Filters are the same
         query parameters the UI uses: ``db.list("devices", site="aarhus")``."""
         out: list[dict] = []
-        params = {**filters, "limit": min(limit or MAX_PAGE, MAX_PAGE)}
+        # The page size is ours to name: a list without it answers a small
+        # default page, and walking that would take many more requests.
+        params = {**filters, "page_size": min(limit or MAX_PAGE, MAX_PAGE)}
         path = _endpoint(kind) + "/"
         while True:
             page = self.request("GET", path, params=params)
