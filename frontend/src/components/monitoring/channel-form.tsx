@@ -80,8 +80,12 @@ export function ChannelForm({
   const [statuses, setStatuses] = useState<CheckStatus[]>(
     channel?.on_statuses ?? []
   )
-  const [url, setUrl] = useState(String(cfg.url ?? ""))
-  const [routingKey, setRoutingKey] = useState(String(cfg.routing_key ?? ""))
+  // Write-only like the bot token: the webhook URL and the routing key are
+  // credentials, never read back, so blank means "keep the stored one".
+  const [url, setUrl] = useState("")
+  const [routingKey, setRoutingKey] = useState("")
+  const urlStored = channel?.url_set ?? false
+  const keyStored = channel?.routing_key_set ?? false
   const [chatId, setChatId] = useState(String(cfg.chat_id ?? ""))
   const [threadId, setThreadId] = useState(String(cfg.message_thread_id ?? ""))
   // Write-only: a stored token never comes back, so blank means "keep it".
@@ -110,8 +114,9 @@ export function ChannelForm({
   )
 
   const buildConfig = (): Record<string, unknown> => {
-    if (URL_KINDS.includes(kind)) return { url: url.trim() }
-    if (kind === "pagerduty") return { routing_key: routingKey.trim() }
+    if (URL_KINDS.includes(kind)) return url.trim() ? { url: url.trim() } : {}
+    if (kind === "pagerduty")
+      return routingKey.trim() ? { routing_key: routingKey.trim() } : {}
     if (kind === "telegram")
       return {
         chat_id: chatId.trim(),
@@ -206,12 +211,15 @@ export function ChannelForm({
             {URL_KINDS.includes(kind) && (
               <FormText
                 label="Webhook URL"
-                required
-                type="url"
+                required={!urlStored}
+                type="password"
+                autoComplete="new-password"
                 mono
                 value={url}
                 onChange={setUrl}
-                placeholder="https://hooks…"
+                placeholder={
+                  urlStored ? "Stored - type to replace" : "https://hooks…"
+                }
                 hint={
                   kind === "slack"
                     ? "Slack incoming-webhook URL"
@@ -227,11 +235,15 @@ export function ChannelForm({
             {kind === "pagerduty" && (
               <FormText
                 label="Routing key"
-                required
+                required={!keyStored}
+                type="password"
+                autoComplete="new-password"
                 mono
                 value={routingKey}
                 onChange={setRoutingKey}
-                placeholder="R0123456789ABCDEF…"
+                placeholder={
+                  keyStored ? "Stored - type to replace" : "R0123456789ABCDEF…"
+                }
                 hint="PagerDuty Events API v2 integration key"
               />
             )}

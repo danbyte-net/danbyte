@@ -142,3 +142,5 @@ class CertificateBindingAdmin(admin.ModelAdmin):
 class NotificationChannelAdmin(admin.ModelAdmin):
     list_display = ("name", "kind", "tenant", "enabled")
     list_filter = ("kind", "enabled", "tenant")
+    # Credentials are write-only everywhere; the app's form manages them.
+    exclude = ("secrets",)

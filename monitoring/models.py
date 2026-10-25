@@ -1368,9 +1368,25 @@ class NotificationChannel(TimestampedModel):
     ``on_statuses`` optionally filters to transitions *into* the listed statuses
     (e.g. only ``["down", "degraded"]``); empty = every change.
 
-    Credentials never go in ``config`` - that column is returned by the API.
-    They live in ``secrets`` (Fernet-encrypted, write-only in the serializer).
+    Credentials never stay in ``config`` - that column is returned by the API.
+    They live in ``secrets`` (Fernet-encrypted, write-only in the serializer):
+    the webhook URL of a Slack, Teams, Discord or webhook channel, the
+    PagerDuty routing key and the Telegram bot token. ``save()`` moves a
+    credential key found in ``config`` into ``secrets``, so no write path can
+    leave one in the clear; senders read through :meth:`transport_config`.
     """
+
+    #: Credential keys a sender needs, per kind - write-only, kept in ``secrets``.
+    SECRET_KEYS = {
+        "webhook": ("url",),
+        "slack": ("url",),
+        "teams": ("url",),
+        "discord": ("url",),
+        "pagerduty": ("routing_key",),
+        "telegram": ("bot_token",),
+    }
+    #: Keys that are never kept in (or returned from) ``config``, whatever the kind.
+    CONFIG_SECRET_KEYS = ("url", "routing_key")
 
     class Kind(models.TextChoices):
         WEBHOOK = "webhook", "Webhook"
@@ -1389,7 +1405,8 @@ class NotificationChannel(TimestampedModel):
     kind = models.CharField(max_length=12, choices=Kind.choices)
     config = models.JSONField(default=dict, blank=True)
     # Transport credentials - Fernet-encrypted, never serialised back out.
-    # Telegram: {"bot_token": "…"}.
+    # {"url": …} (webhook/Slack/Teams/Discord), {"routing_key": …} (PagerDuty),
+    # {"bot_token": …} (Telegram).
     secrets = EncryptedJSONField(default=dict, blank=True)
     on_statuses = models.JSONField(
         default=list,
@@ -1471,6 +1488,45 @@ class NotificationChannel(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.kind})"
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "config" in update_fields:
+            if self.seal_config_secrets() and update_fields is not None:
+                kwargs["update_fields"] = {*update_fields, "secrets"}
+        super().save(*args, **kwargs)
+
+    def seal_config_secrets(self) -> bool:
+        """Move credential keys out of ``config`` into the encrypted ``secrets``.
+        A blank value is dropped without touching a stored secret. Returns
+        whether ``config`` held any such key."""
+        config = self.config if isinstance(self.config, dict) else {}
+        found = [k for k in self.CONFIG_SECRET_KEYS if k in config]
+        if not found:
+            return False
+        config = dict(config)
+        secrets = dict(self.secrets or {})
+        for key in found:
+            value = config.pop(key)
+            if isinstance(value, str):
+                value = value.strip()
+            if value:
+                secrets[key] = value
+        self.config, self.secrets = config, secrets
+        return True
+
+    def secret_set(self, key: str) -> bool:
+        return bool((self.secrets or {}).get(key))
+
+    def transport_config(self) -> dict:
+        """``config`` plus the decrypted credentials - for senders only, never
+        for anything that leaves the server."""
+        cfg = dict(self.config or {})
+        for key in self.CONFIG_SECRET_KEYS:
+            value = (self.secrets or {}).get(key)
+            if value:
+                cfg[key] = value
+        return cfg
 
 
 class NotificationSubscription(TimestampedModel):
