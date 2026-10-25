@@ -11,8 +11,9 @@ class ApiConfig(AppConfig):
         # by shipping an ``io.py`` that calls ``api.io.register_io``.
         from django.utils.module_loading import autodiscover_modules
 
-        from . import io, signals  # noqa: F401  (signals register on import)
+        from . import applications, io, signals  # noqa: F401  (signals register on import)
 
+        applications.connect_signals()
         io.register_builtins()
         autodiscover_modules("io")
         # The global search index follows every indexed model's saves/deletes.

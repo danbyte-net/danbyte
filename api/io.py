@@ -845,6 +845,16 @@ class DeviceIOHandler(ModelIOHandler):
         return obj
 
 
+class InstalledSoftwareIOHandler(ModelIOHandler):
+    """Installed software (#436): a row an import creates is marked
+    ``source=import`` unless the file says otherwise."""
+
+    def apply(self, existing, row, tenant, user=None, request=None):
+        if existing is None and not str(row.get("source") or "").strip():
+            row = {**row, "source": "import"}
+        return super().apply(existing, row, tenant, user, request)
+
+
 # ── registry ──────────────────────────────────────────────────────────────
 
 _REGISTRY: dict[str, ModelIOHandler] = {}
@@ -939,4 +949,18 @@ def register_builtins() -> None:
     register_io(_handler(
         SupportCoverage, natural_key=["contract", "device"],
         fk_keys={"contract": "contract_number", "device": "name"},
+    ))
+    # Applications and installed software (#436): an application by its
+    # slug, an install by application, device or VM name and version.
+    from .models import Application, InstalledSoftware
+
+    register_io(_handler(
+        Application, natural_key=["slug"],
+        fk_keys={"parent": "slug", "manufacturer": "name"},
+    ))
+    register_io(_handler(
+        InstalledSoftware, InstalledSoftwareIOHandler,
+        natural_key=["application", "device", "virtual_machine", "version"],
+        fk_keys={"application": "slug", "device": "name", "virtual_machine": "name",
+                 "service": "name"},
     ))

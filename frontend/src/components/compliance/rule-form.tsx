@@ -108,6 +108,9 @@ export function ComplianceRuleForm({
   const [coverageFailOn, setCoverageFailOn] = useState<string>(
     rule?.coverage_fail_on || "expired"
   )
+  const [includeSoftware, setIncludeSoftware] = useState(
+    rule?.include_software ?? false
+  )
   const [failOnUnknown, setFailOnUnknown] = useState(
     rule?.fail_on_unknown ?? false
   )
@@ -129,6 +132,8 @@ export function ComplianceRuleForm({
         eol_fail_on: check === "eol_status" ? eolFailOn : "",
         coverage_fail_on: check === "coverage" ? coverageFailOn : "",
         fail_on_unknown: check === "software_target" && failOnUnknown,
+        include_software:
+          check === "eol_status" && eolFailOn !== "unknown" && includeSoftware,
       }
       return isEdit
         ? api(`/api/compliance-rules/${rule!.id}/`, {
@@ -256,14 +261,23 @@ export function ComplianceRuleForm({
               />
             )}
             {check === "eol_status" && (
-              <FormSelect
-                label="Fails on"
-                required
-                value={eolFailOn}
-                onChange={(v) => setEolFailOn(v ?? "eol")}
-                options={EOL_FAIL_ON}
-                hint="The platform's end-of-life status"
-              />
+              <>
+                <FormSelect
+                  label="Fails on"
+                  required
+                  value={eolFailOn}
+                  onChange={(v) => setEolFailOn(v ?? "eol")}
+                  options={EOL_FAIL_ON}
+                  hint="The platform's end-of-life status"
+                />
+                {eolFailOn !== "unknown" && (
+                  <FormCheckbox
+                    label="Include installed software"
+                    checked={includeSoftware}
+                    onChange={setIncludeSoftware}
+                  />
+                )}
+              </>
             )}
             {check === "coverage" && (
               <>

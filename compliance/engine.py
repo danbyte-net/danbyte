@@ -54,13 +54,40 @@ def _eol_violates(rule: ComplianceRule, obj, eol_cfg) -> bool:
     if eol_cfg is None or not eol_cfg.enabled:
         return False
     status = status_of(mapping_of(getattr(obj, "platform", None)), eol_cfg.warning_days)
-    if rule.eol_fail_on == "eol":
-        return status == "eol"
-    if rule.eol_fail_on == "ending":
-        return status in ("ending", "eol")
-    if rule.eol_fail_on == "unknown":
-        return status == "unknown"
+    failing = {"eol": ("eol",), "ending": ("ending", "eol"),
+               "unknown": ("unknown",)}.get(rule.eol_fail_on, ())
+    if status in failing:
+        return True
+    if rule.include_software and rule.eol_fail_on in ("eol", "ending"):
+        return any(s in failing for s in _software_statuses(obj, eol_cfg))
     return False
+
+
+def _software_statuses(obj, eol_cfg) -> list[str]:
+    """The end-of-life status of each application installed on ``obj``
+    (#436): dates entered on the install win, else its mapping. Read from the
+    prefetch when the caller made one."""
+    from .eol import date_status, effective_dates
+
+    out = []
+    for sw in obj.installed_software.all():
+        e = effective_dates(sw.release_date, sw.end_of_support, sw.eol_mapping, True)
+        out.append(date_status(e.end, eol_cfg.warning_days, eol_reached=e.eol_reached))
+    return out
+
+
+def _software_detail(rule: ComplianceRule, obj, cfg=None) -> str:
+    """The installs that fail an ``eol_status`` rule with ``include_software``."""
+    from .eol import date_status, effective_dates, load_config
+
+    cfg = cfg or load_config()
+    failing = ("eol",) if rule.eol_fail_on == "eol" else ("ending", "eol")
+    names = []
+    for sw in obj.installed_software.all():
+        e = effective_dates(sw.release_date, sw.end_of_support, sw.eol_mapping, True)
+        if date_status(e.end, cfg.warning_days, eol_reached=e.eol_reached) in failing:
+            names.append(str(sw))
+    return ", ".join(sorted(names))
 
 
 def _coverage_violates(rule: ComplianceRule, obj, tag_slugs, warning_days) -> bool:
@@ -92,12 +119,15 @@ def _software_target_violates(rule: ComplianceRule, obj) -> bool:
     return version != target_of(obj)
 
 
-def detail_for(rule: ComplianceRule, obj) -> str:
+def detail_for(rule: ComplianceRule, obj, eol_cfg=None) -> str:
     """A one-line reason for a violation, where the check has one."""
     if rule.check_type == "software_target":
         from api.software_target import describe
 
         return describe(obj)
+    if (rule.check_type == "eol_status" and rule.include_software
+            and rule.eol_fail_on in ("eol", "ending")):
+        return _software_detail(rule, obj, eol_cfg)
     return ""
 
 
@@ -220,6 +250,10 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
             eol_cfg = load_config()
             # The platform's mapping rides the row: no query per object.
             qs = qs.select_related("platform__eol_mapping")
+            if any(r.check_type == "eol_status" and r.include_software for r in type_rules):
+                # The installs and their mappings: one query for every row.
+                qs = qs.prefetch_related("installed_software__eol_mapping",
+                                         "installed_software__application")
         if any(r.check_type == "software_target" for r in type_rules):
             # The target rides the row: the platform, and a device's type's.
             qs = qs.select_related(
@@ -252,7 +286,7 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None) -> dict:
                             "object_route": _ROUTES.get(rule.object_type),
                             "object_id": str(obj.pk),
                             "object_repr": str(obj)[:120],
-                            "detail": detail_for(rule, obj),
+                            "detail": detail_for(rule, obj, eol_cfg),
                         }
                     )
     for rule in rules:

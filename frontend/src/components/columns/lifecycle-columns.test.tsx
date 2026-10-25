@@ -184,6 +184,28 @@ describe("lifecycle columns", () => {
     expect(screen.getByText("Contract").tagName).toBe("SPAN")
   })
 
+  it("name installed software by application and version", () => {
+    const sw = row({
+      name: "db1",
+      source: "software",
+      status: "ending",
+      item: {
+        type: "application",
+        id: "a",
+        name: "PostgreSQL 12",
+        application: "PostgreSQL",
+        version: "12",
+        date_source: "endoflife_date",
+      },
+    })
+    cell("item", sw)
+    expect(screen.getByText("PostgreSQL 12").tagName).toBe("A")
+    const source = columns().find((c) => c.id === "source") as {
+      accessorFn: (r: LifecycleRow, i: number) => unknown
+    }
+    expect(source.accessorFn(sw, 0)).toBe("Software")
+  })
+
   it("hide the window, tenant and tags columns until asked", () => {
     const hidden = columns()
       .filter((c) => c.meta?.defaultHidden)

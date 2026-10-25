@@ -113,6 +113,8 @@ for _e in [
                    "/api/device-roles/", route="/device-roles/$id"),
     ReferenceModel("platform", "Platforms", "api.Platform",
                    "/api/platforms/", route="/platforms/$id"),
+    ReferenceModel("application", "Applications", "api.Application",
+                   "/api/applications/", route="/applications/$id"),
     ReferenceModel("manufacturer", "Manufacturers", "api.Manufacturer",
                    "/api/manufacturers/", route="/manufacturers/$id"),
     ReferenceModel("moduletype", "Module types", "api.ModuleType",

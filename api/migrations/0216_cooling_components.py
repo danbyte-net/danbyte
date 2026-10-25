@@ -11,7 +11,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0213_floor_tile_cooling_source'),
+        ('api', '0214_applications'),
         ('core', '0061_tenantsettings_coverage_warning_days'),
     ]
 

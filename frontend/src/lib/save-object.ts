@@ -45,6 +45,7 @@ export class PlanStaged extends Error {
  *  permissions, which the server refuses to plan - they are changed directly. */
 export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.aggregate",
+  "api.application",
   "api.asn",
   "api.cabinet",
   "api.cabinetrole",

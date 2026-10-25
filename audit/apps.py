@@ -114,6 +114,8 @@ AUDITED_MODELS = [
     "api.DeviceRole",
     "api.PlatformGroup",
     "api.Platform",
+    "api.Application",
+    "api.InstalledSoftware",
     "api.NATRule",
     "routing.PrefixList",
     "routing.PrefixListRule",

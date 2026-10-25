@@ -5,7 +5,7 @@ ports and outlets, so a site editor manages the cooling components of their
 sites' devices and a site viewer sees them. A new site role gets both from
 ``site_role_types``; the roles built before them gain them here.
 
-A grant counts as a site role by the rules of 0028 to 0032 (name suffix,
+A grant counts as a site role by the rules of 0028 to 0033 (name suffix,
 exactly the role's actions, limited to sites, only the role's known types). A
 hand-built grant is left alone. A second run changes nothing. Reverse is a
 no-op.
@@ -15,13 +15,13 @@ import importlib
 from django.db import migrations
 
 _0028 = importlib.import_module("auth_api.migrations.0028_site_roles_site_view")
-_0032 = importlib.import_module("auth_api.migrations.0032_site_roles_cooling")
+_0033 = importlib.import_module("auth_api.migrations.0033_site_roles_applications")
 
 NEW_TYPES = ["coolingintake", "coolingoutflow"]
 NEW_CATALOGS: list[str] = []
 # Their device-type templates take the type's locality, as 0028's do.
 CATALOG_TYPES = {"coolingintaketemplate", "coolingoutflowtemplate"}
-KNOWN = _0032.KNOWN | set(NEW_TYPES) | CATALOG_TYPES
+KNOWN = _0033.KNOWN | set(NEW_TYPES) | CATALOG_TYPES
 
 
 def _looks_like_role(perm, suffix, actions) -> bool:
@@ -48,7 +48,7 @@ def forwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("auth_api", "0032_site_roles_cooling"),
+        ("auth_api", "0033_site_roles_applications"),
     ]
 
     operations = [

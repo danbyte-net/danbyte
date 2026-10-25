@@ -182,6 +182,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.DeviceRole", "Device roles", "DCIM"),
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),
+    # Applications and installed software (#436).
+    ("api.Application", "Applications", "DCIM"),
+    ("api.InstalledSoftware", "Installed software", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     # Support & warranty coverage (#421).
     ("api.SupportContract", "Support contracts", "DCIM"),

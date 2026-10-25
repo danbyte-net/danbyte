@@ -47,7 +47,7 @@ is stored - results are always computed fresh from the current data.
 | **Regex** | The field, *if it has a value*, matches your pattern. | The field name and a regular expression |
 | **Required tag** | The object carries a given tag. | The tag |
 | **Required custom field** | A given custom-field key is set. | The custom-field key |
-| **End-of-life status** | The platform's [end-of-life status](end-of-life-data.md#compliance-rules) is not the one picked. Devices and virtual machines only. | What it fails on: *End of life*, *Support ending or ended*, or *No end-of-life data* |
+| **End-of-life status** | The platform's [end-of-life status](end-of-life-data.md#compliance-rules) is not the one picked. Devices and virtual machines only. | What it fails on: *End of life*, *Support ending or ended*, or *No end-of-life data*; **Include installed software** also fails on the [installed software](applications.md#installed-software) (off by default) |
 | **Support coverage** | The device's [support coverage](support-coverage.md#compliance-rules) is not one the check fails on. Devices only. | What it fails on: *Expired or not covered*, or *Expiring, expired or not covered*; optionally a tag, to judge only devices with it |
 | **Software target** | The object's [software version](lifecycle.md#software-target) equals its platform's target version. Passes when the platform has no target. Devices and virtual machines only. | Optionally **Fail without a version**, so a blank software version fails too (otherwise it passes) |
 

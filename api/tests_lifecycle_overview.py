@@ -15,11 +15,13 @@ from rest_framework.test import APITestCase
 
 from api.lifecycle_api import window_of
 from api.models import (
+    Application,
     Cluster,
     ClusterType,
     Device,
     DeviceRole,
     DeviceType,
+    InstalledSoftware,
     Manufacturer,
     Platform,
     Site,
@@ -28,7 +30,7 @@ from api.models import (
     VirtualMachine,
 )
 from auth_api.models import ObjectPermission, UserProfile
-from compliance.models import EolMapping, EolSettings
+from compliance.models import EolMapping, EolProduct, EolSettings
 from core.models import Organization, Tag, Tenant
 
 TODAY = date(2026, 6, 15)
@@ -247,8 +249,8 @@ class OsTests(_Base):
     def test_unknown_sources_and_sites_are_refused(self):
         self.assertEqual(self.client.get(URL, {"source": "os,bogus"}).status_code, 400)
         self.assertEqual(self.client.get(URL, {"site": "nope"}).status_code, 400)
-        # Installed software is still to come: accepted, lists nothing.
-        self.assertEqual(self.get(source="application")["results"], [])
+        # The fourth source is `software`; the placeholder name is gone.
+        self.assertEqual(self.client.get(URL, {"source": "application"}).status_code, 400)
 
 
 class ScopeTests(_Base):
@@ -408,3 +410,99 @@ class QueryCountTests(_Base):
         self.assertEqual(len(body["results"]), 200 * 4)
         self.assertEqual(one, many)
         self.assertEqual(body["results"][0]["tags"][0]["slug"], "prod")
+
+    def test_one_install_costs_what_fifty_cost(self):
+        app = Application.objects.create(tenant=self.tenant, name="PostgreSQL",
+                                          slug="postgresql")
+        dev = self.device("db-000")
+        vm = self.vm("vm-db")
+        InstalledSoftware.objects.create(tenant=self.tenant, application=app, device=dev,
+                                         version="1", end_of_support=d(10))
+        one, body = self._count()
+        self.assertEqual(len(body["results"]), 1)
+        for i in range(2, 51):
+            parent = {"device": dev} if i % 2 else {"virtual_machine": vm}
+            InstalledSoftware.objects.create(tenant=self.tenant, application=app,
+                                             version=str(i), end_of_support=d(i), **parent)
+        many, body = self._count()
+        self.assertEqual(len(body["results"]), 50)
+        self.assertEqual(one, many)
+
+
+class SoftwareSourceTests(_Base):
+    """Installed software is the fourth source (#436): a row per install,
+    entered dates first, else the (application, cycle) mapping."""
+
+    def setUp(self):
+        super().setUp()
+        self.app = Application.objects.create(
+            tenant=self.tenant, name="PostgreSQL", slug="postgresql", manufacturer=self.mfr)
+        self.dev = self.device("db1")
+        self.vmx = self.vm("vm1", site=self.site_b)
+
+    def install(self, version, **kw):
+        kw.setdefault("device", self.dev)
+        return InstalledSoftware.objects.create(
+            tenant=self.tenant, application=self.app, version=version, **kw)
+
+    def test_a_row_per_install_with_the_entered_date(self):
+        self.install("16.4", release_date=d(-400), end_of_support=d(30))
+        self.install("12", virtual_machine=self.vmx, device=None, end_of_support=d(-3))
+        rows = self.rows(source="software")
+        row = rows[("db1", "software")]
+        self.assertEqual(row["item"]["name"], "PostgreSQL 16.4")
+        self.assertEqual(row["item"]["date_source"], "entered")
+        self.assertEqual((row["status"], row["window"], row["start"]),
+                         ("ending", "d90", str(d(-400))))
+        self.assertEqual(row["manufacturer"]["name"], "Cisco")
+        vm_row = rows[("vm1", "software")]
+        self.assertEqual((vm_row["object"]["kind"], vm_row["status"], vm_row["site"]["name"]),
+                         ("virtualmachine", "eol", "B"))
+
+    def test_undated_rows_hide_behind_the_toggle(self):
+        self.install("1.0")
+        self.assertEqual(self.get(source="software")["results"], [])
+        self.assertEqual(self.get(source="software")["counts"]["none"], 1)
+        self.assertEqual(len(self.get(source="software", undated=1)["results"]), 1)
+
+    def test_the_mapping_fills_in_while_eol_data_is_on(self):
+        self.app.eol_source, self.app.eol_product = "endoflife_date", "postgresql"
+        self.app.save()
+        EolProduct.objects.create(source="endoflife_date", name="postgresql", releases=[
+            {"name": "16", "release_date": str(d(-500)), "eol_date": str(d(200))},
+        ])
+        sw = self.install("16.4")
+        self.assertEqual(sw.cycle, "16")
+        self.assertIsNone(self.get(source="software", undated=1)["results"][0]["end"])
+        EolSettings.objects.update_or_create(pk=1, defaults={"enabled": True})
+        row = self.rows(source="software")[("db1", "software")]
+        self.assertEqual((row["end"], row["item"]["date_source"]),
+                         (str(d(200)), "endoflife_date"))
+        # Entered wins.
+        sw.end_of_support = d(5)
+        sw.save()
+        self.assertEqual(self.rows(source="software")[("db1", "software")]["end"], str(d(5)))
+
+    def test_rows_follow_the_grants(self):
+        self.install("1", end_of_support=d(5))
+        user = User.objects.create_user("sw-viewer", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        self.login(user)
+
+        def grant(types):
+            p = ObjectPermission.objects.create(name="-".join(types),
+                                                object_types=types, actions=["view"])
+            p.users.add(user)
+            p.tenants.add(self.tenant)
+
+        grant(["installedsoftware"])
+        # The row names the device: without sight of it there is no row.
+        self.assertEqual(self.get(source="software")["results"], [])
+        grant(["device"])
+        self.assertEqual(len(self.get(source="software")["results"]), 1)
+
+    def test_next_end_of_life_counts_software(self):
+        self.install("1", end_of_support=d(7))
+        rows = {r["name"]: r for r in self.client.get("/api/devices/").json()["results"]}
+        self.assertEqual(rows["db1"]["lifecycle_next"],
+                         {"source": "software", "end": str(d(7)), "start": None})

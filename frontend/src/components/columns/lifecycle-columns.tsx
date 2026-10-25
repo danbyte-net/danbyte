@@ -24,14 +24,14 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 
 // The one source of truth for "a table of lifecycle rows" (#436): one row per
-// device or VM per source - hardware, OS, coverage - each with its end date
-// as the shared time bar. The Lifecycle page builds its columns here.
+// device or VM per source - hardware, OS, coverage, installed software - each
+// with its end date as the shared time bar. The Lifecycle page builds its columns here.
 
 export const SOURCE_LABELS: Record<LifecycleSource, string> = {
   hardware: "Hardware",
   os: "OS",
   coverage: "Coverage",
-  application: "Application",
+  software: "Software",
 }
 
 export const WINDOW_ORDER: LifecycleWindow[] = [
@@ -119,6 +119,12 @@ function ItemCell({ row }: { row: LifecycleRow }) {
   if (item.type === "platform" && item.id)
     return (
       <Link to="/platforms/$id" params={{ id: item.id }} className="link">
+        {item.name}
+      </Link>
+    )
+  if (item.type === "application" && item.id)
+    return (
+      <Link to="/applications/$id" params={{ id: item.id }} className="link">
         {item.name}
       </Link>
     )

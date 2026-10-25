@@ -6,15 +6,17 @@ icon: lucide/calendar-clock
 
 **DCIM → Devices → Lifecycle** lists every device and virtual machine
 against the end dates that matter to it, soonest first: the hardware's end of
-support, the operating system's end of life and the end of the device's
-support coverage. It answers "what goes out of support next, and where?"
+support, the operating system's end of life, the end of the device's
+support coverage and the end of life of the software installed on it. It
+answers "what goes out of support next, and where?"
 across the estate. It is in the sidebar for anyone who may view devices or
 virtual machines.
 
 Nothing ships pre-filled. The dates come from what you enter on
 [device types and platforms](lifecycle.md), the
-[end-of-life data](end-of-life-data.md) you map platforms to, and your
-[support contracts and warranties](support-coverage.md).
+[end-of-life data](end-of-life-data.md) you map platforms and applications
+to, your [support contracts and warranties](support-coverage.md), and the
+[installed software](applications.md) recorded on devices and VMs.
 
 ## Sources
 
@@ -27,9 +29,14 @@ and the chassis keeps its own row.
 | **Hardware** | the device type's *Released* | its *End of support* | the end-of-life warning window (180 days by default) |
 | **OS** | the platform's [effective](lifecycle.md#the-effective-os-date) start | its effective end: *End of support* as entered, else its end-of-life cycle's end of life | the end-of-life warning window |
 | **Coverage** | the start of the contract that sets the coverage end | the coverage end: the latest contract end or the warranty end | the tenant's coverage window (90 days by default) |
+| **Software** | the install's *Released*, else its cycle's release | the install's *End of support*, else its cycle's end of life | the end-of-life warning window |
 
 - Hardware and coverage rows are devices'; OS rows are devices' and virtual
   machines'. The OS is the object's own platform.
+- Software rows are one per [install](applications.md#installed-software):
+  a device running PostgreSQL 16 and Java 17 has two. The cycle comes from
+  the install's version and the application's end-of-life product; dates
+  entered on the install win, as on a platform.
 - An OS cycle's dates count only while end-of-life data is on; what you
   entered on the platform always wins.
 - A coverage row names its contract, or *Warranty* when the warranty reaches
@@ -37,7 +44,7 @@ and the chassis keeps its own row.
   no start.
 
 The **status** is each source's own: *Supported*, *Support ending*, *End of
-life* or *Unknown* for hardware and OS (from the end and the end-of-life
+life* or *Unknown* for hardware, OS and software (from the end and the end-of-life
 warning window), *Covered*, *Expiring*, *Expired* or *Not covered* for
 coverage.
 
@@ -69,8 +76,8 @@ unticks it. *No date* also lists the undated rows.
 |---|---|
 | Object | The device or VM, linked |
 | Kind | Device or VM |
-| Source | Hardware, OS or Coverage |
-| Item | The device type, the platform, the contract number (or *Contract* when you may not view it), or *Warranty* - linked |
+| Source | Hardware, OS, Coverage or Software |
+| Item | The device type, the platform, the contract number (or *Contract* when you may not view it), *Warranty*, or the application and version - linked |
 | Status | The source's own badge |
 | Lifetime | The [lifetime bar](lifecycle.md#the-lifetime-bar): the share used and a countdown, the date in its tooltip - with *Entered* or *endoflife.date* on an OS row. No end but a state is that state's badge (*End of life*, *Open-ended*) |
 | End | The end date |
@@ -101,7 +108,8 @@ The overview shows what you may view and nothing else:
 
 - Devices and virtual machines are cut to your grants, site scope included.
   Without a grant on devices there are no hardware, coverage or device OS
-  rows; without one on virtual machines no VM rows.
+  rows; without one on virtual machines no VM rows. Software rows need a
+  grant on installed software and on the device or VM they run on.
 - A contract's number and start show only on a contract you may view.
 
 ## API
@@ -111,7 +119,7 @@ follow the grants above.
 
 | Parameter | |
 |---|---|
-| `source` | Comma-separated: `hardware`, `os`, `coverage`. Default: all. (`application` is reserved for installed software and lists nothing yet.) |
+| `source` | Comma-separated: `hardware`, `os`, `coverage`, `software`. Default: all. |
 | `site` | A site id: only that site's devices and VMs. |
 | `undated` | `1` also lists the rows with no date. |
 
@@ -142,8 +150,9 @@ follow the grants above.
 ```
 
 - `kind` is `device` or `virtualmachine`; `item.type` is `devicetype`,
-  `platform`, `supportcontract` or `warranty`. `item.date_source` on an OS
-  row is `entered` or the end-of-life source.
+  `platform`, `supportcontract`, `warranty` or `application`. `item.date_source`
+  on an OS or software row is `entered` or the end-of-life source; a software
+  row also carries `application`, `version` and `install` (the install id).
 - `days_left` is negative once the end has passed; `end` and `days_left` are
   `null` without a date. `window` is `past`, `d90`, `d180`, `y1`, `later` or
   `none`.

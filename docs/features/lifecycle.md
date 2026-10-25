@@ -51,11 +51,12 @@ Both **device types** (hardware) and **platforms** (OS) have the same
   Lifecycle facet. Combined with the device counts, "which EoL hardware do we
   still run the most of?" is one filter + one sort.
 - **Next end of life** - an optional column on the Devices and Virtual
-  machines lists: the soonest end across hardware, OS and coverage, as the
-  bar with its source, sorting by days left. Hidden until ticked in the
-  Columns menu.
+  machines lists: the soonest end across hardware, OS, coverage and installed
+  software, as the bar with its source, sorting by days left. Hidden until
+  ticked in the Columns menu.
 - **Lifecycle overview** - every device's hardware row and every device's
-  and VM's OS row, next to its support coverage, soonest end first. See
+  and VM's OS row, next to its support coverage and installed software,
+  soonest end first. See
   [Lifecycle overview](lifecycle-overview.md).
 
 ### The lifetime bar

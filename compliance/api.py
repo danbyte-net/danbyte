@@ -101,7 +101,7 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             "id", "name", "description", "remediation", "enabled", "severity",
             "object_type", "object_type_label", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
-            "eol_fail_on", "coverage_fail_on", "fail_on_unknown",
+            "eol_fail_on", "coverage_fail_on", "fail_on_unknown", "include_software",
             "created_at", "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
@@ -153,6 +153,15 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"eol_fail_on": "Pick what the check fails on."}
                 )
+            if get("include_software") and get("eol_fail_on") == "unknown":
+                raise serializers.ValidationError({
+                    "include_software": "Installed software counts when the check "
+                                        "fails on end of life or support ending."
+                })
+        elif attrs.get("include_software"):
+            raise serializers.ValidationError(
+                {"include_software": "Only an end-of-life check reads installed software."}
+            )
         if ct == "coverage":
             ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
             if ot not in COVERAGE_OBJECT_TYPES:

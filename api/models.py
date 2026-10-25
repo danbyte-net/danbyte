@@ -5992,6 +5992,151 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         return self.name
 
 
+# ─── Applications and installed software (#436) ─────────────────────────────
+
+
+class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """Software a tenant runs - PostgreSQL, nginx, a Java runtime, an in-house
+    app. A catalog like Platform; ``parent`` nests entries into a domain →
+    process → application tree. The optional end-of-life product names the
+    catalog entry; each install's version picks the cycle."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="applications"
+    )
+    name = models.CharField(max_length=128)
+    slug = models.SlugField(max_length=128)
+    parent = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="children",
+    )
+    manufacturer = models.ForeignKey(
+        Manufacturer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="applications",
+    )
+    #: The end-of-life source and product (``compliance.eol_sources``);
+    #: blank = not mapped. The cycles come from the installs' versions.
+    eol_source = models.CharField(max_length=32, blank=True, default="", db_default="")
+    eol_product = models.CharField(max_length=128, blank=True, default="", db_default="")
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_application_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def path_names(self) -> list[str]:
+        """The names from the root down to this application."""
+        names, node, seen = [], self, set()
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            names.append(node.name)
+            node = node.parent
+        return names[::-1]
+
+
+class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """One application at one version on one device or virtual machine.
+
+    ``cycle`` is the end-of-life release cycle of the version: derived from
+    the application's product on save unless someone set it
+    (``cycle_manual``). ``eol_mapping`` is the shared (application, cycle)
+    mapping the Lifecycle page and the ``eol_status`` check read.
+    ``source`` and ``last_seen`` are kept for discovery."""
+
+    SOURCE_CHOICES = [
+        ("manual", "Manual"),
+        ("import", "Import"),
+        ("discovery", "Discovery"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="installed_software"
+    )
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="installs"
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="installed_software",
+    )
+    virtual_machine = models.ForeignKey(
+        "VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="installed_software",
+    )
+    version = models.CharField(max_length=64, blank=True, default="", db_default="")
+    cycle = models.CharField(max_length=64, blank=True, default="", db_default="")
+    cycle_manual = models.BooleanField(default=False, db_default=False)
+    service = models.ForeignKey(
+        "Service", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installed_software",
+    )
+    #: Dates someone entered; each wins over the mapping's.
+    release_date = models.DateField(null=True, blank=True)
+    end_of_support = models.DateField(null=True, blank=True)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default="manual",
+                              db_default="manual")
+    last_seen = models.DateTimeField(null=True, blank=True)
+    eol_mapping = models.ForeignKey(
+        "compliance.EolMapping", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="installs", editable=False,
+    )
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["application__name", "version"]
+        verbose_name_plural = "installed software"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="installedsoftware_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["application", "device", "virtual_machine", "version"],
+                name="uniq_installedsoftware_app_parent_version",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.application} {self.version}".strip()
+
+    @property
+    def parent(self):
+        return self.device if self.device_id else self.virtual_machine
+
+    def save(self, *args, **kwargs):
+        """Derive the cycle and point at the (application, cycle) mapping;
+        a mapping no install uses any more goes."""
+        from .applications import drop_unused_mappings, sync_install
+
+        with transaction.atomic():
+            before = None
+            if not self._state.adding:
+                before = (
+                    type(self).objects.filter(pk=self.pk)
+                    .values_list("eol_mapping_id", flat=True).first()
+                )
+            sync_install(self)
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = {
+                    *kwargs["update_fields"], "cycle", "eol_mapping"}
+            super().save(*args, **kwargs)
+            if before and before != self.eol_mapping_id:
+                drop_unused_mappings([before])
+
+
 class ProtocolPortsMixin(models.Model):
     """A service's ports, per protocol.
 
@@ -6098,6 +6243,11 @@ class ServiceTemplate(ProtocolPortsMixin, NumIdMixin, TimestampedModel, CustomFi
         max_length=4, choices=PROTOCOL_CHOICES, default="tcp"
     )
     ports = models.JSONField(default=list, help_text="List of port numbers.")
+    # The software behind the service (#436).
+    application = models.ForeignKey(
+        "Application", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="service_templates",
+    )
     description = models.TextField(blank=True)
 
     class Meta:

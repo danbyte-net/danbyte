@@ -2,6 +2,7 @@ import * as React from "react"
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import {
   Activity,
+  AppWindow,
   ArrowDownUp,
   BellRing,
   BookOpen,
@@ -814,6 +815,12 @@ export const sections: NavSection[] = [
             url: "/platform-groups",
             icon: Layers,
             objectType: "platformgroup",
+          },
+          {
+            title: "Applications",
+            url: "/applications",
+            icon: AppWindow,
+            objectType: "application",
           },
           {
             title: "Manufacturers",

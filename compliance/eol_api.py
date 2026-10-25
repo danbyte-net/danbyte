@@ -6,10 +6,11 @@ Deployment-wide (``can_manage_deployment``):
 * ``POST /api/eol/refresh/``         fetch now (background job)
 * ``POST /api/eol/import/``          offline: upload the catalog JSON
 
-Per tenant, on the platform permissions:
+Per tenant, on the platform (or, for the catalog, application) permissions:
 
 * ``GET /api/eol/products/``                     search the cached catalog
-                                                 (``?q=``, ``?platform=`` adds
+                                                 (``?q=``, ``?platform=`` or
+                                                 ``?application=`` adds
                                                  suggestions)
 * ``GET /api/eol/products/<source>/<name>/``     one product's cycles
 * ``GET/PUT/DELETE /api/eol/platforms/<id>/``    a platform's mapping
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -205,16 +207,20 @@ def eol_import(request):
 # ─── tenant side ─────────────────────────────────────────────────────────────
 
 
-def _tenant_gate(request, action: str):
-    """(tenant, None) or (None, error response)."""
+def _tenant_gate(request, action: str, slugs=("platform",)):
+    """(tenant, None) or (None, error response). ``slugs``: a grant on any
+    of them will do - the catalog serves platforms and applications."""
     if not eol.load_config().enabled:
         return None, Response(_OFF, status=404)
     tenant = _get_active_tenant(request)
     if tenant is None:
         return None, Response({"detail": "No active tenant selected."}, status=403)
-    if not rbac.has_action(request.user, tenant, "platform", action):
-        return None, Response({"detail": f"platform.{action} required."}, status=403)
+    if not any(rbac.has_action(request.user, tenant, s, action) for s in slugs):
+        return None, Response({"detail": f"{slugs[0]}.{action} required."}, status=403)
     return tenant, None
+
+
+_CATALOG_READERS = ("platform", "application")
 
 
 def _platform(request, tenant, platform_id, action: str = "view"):
@@ -239,7 +245,7 @@ def _product_row(p: EolProduct) -> dict:
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def eol_products(request):
-    tenant, err = _tenant_gate(request, "view")
+    tenant, err = _tenant_gate(request, "view", _CATALOG_READERS)
     if err:
         return err
     from django.db.models import Q
@@ -266,6 +272,22 @@ def eol_products(request):
         catalog = EolProduct.objects.only(
             "source", "name", "label", "aliases", "releases")
         out["suggestions"] = eol.suggest_products(platform, catalog)
+    aid = request.query_params.get("application")
+    if aid:
+        from api.models import Application
+
+        try:
+            app = rbac.restrict_queryset(
+                Application.objects.filter(tenant=tenant).select_related("manufacturer"),
+                request.user, tenant, "application", "view",
+            ).filter(pk=aid).first()
+        except (ValueError, DjangoValidationError):
+            app = None
+        if app is None:
+            return Response({"detail": "Not found."}, status=404)
+        catalog = EolProduct.objects.only(
+            "source", "name", "label", "aliases", "releases")
+        out["suggestions"] = eol.suggest_products(app, catalog)
     return Response(out)
 
 
