@@ -2071,8 +2071,6 @@ def device_flapping_clear_view(request, device_id):
 def alert_ack_view(request, alert_id):
     """Acknowledge / unacknowledge a firing alert. Body: ``{"note": "..."}``;
     ``?action=unack`` clears it."""
-    from django.utils import timezone
-
     tenant = _get_active_tenant(request)
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=403)
@@ -2085,21 +2083,13 @@ def alert_ack_view(request, alert_id):
     if alert is None:
         return Response({"detail": "Not found."}, status=404)
 
-    from .signals import alert_acknowledged
+    from .alerts import set_acknowledged
 
-    acknowledged = request.query_params.get("action") != "unack"
-    if not acknowledged:
-        alert.acknowledged_at = None
-        alert.acknowledged_by = None
-        alert.ack_note = ""
-        alert.save(update_fields=["acknowledged_at", "acknowledged_by", "ack_note"])
-    else:
-        alert.acknowledged_at = timezone.now()
-        alert.acknowledged_by = request.user
-        alert.ack_note = (request.data or {}).get("note", "")[:255]
-        alert.save(update_fields=["acknowledged_at", "acknowledged_by", "ack_note"])
-    alert_acknowledged.send(
-        sender=type(alert), alert=alert, acknowledged=acknowledged, actor=request.user
+    set_acknowledged(
+        alert,
+        request.query_params.get("action") != "unack",
+        actor=request.user,
+        note=(request.data or {}).get("note", ""),
     )
     return Response(AlertSerializer(alert).data)
 
