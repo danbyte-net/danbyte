@@ -323,6 +323,16 @@ row stays in view and the sideways scrollbar sits at the pane's bottom edge
 rather than after the last row. In a pane that grows with its content the
 header does not stick.
 
+A `DataTable` or `OverviewTable` wider than its frame gets a floating
+scrollbar (`components/table-scroll.tsx`): a thin proxy bar, sticky to the
+viewport's bottom edge while the table is on screen, that settles under the
+table once its end scrolls into view and stays in step with the table both
+ways. It replaces the frame's own horizontal bar, and a soft inset shadow
+marks each side with more columns to scroll to. A `stickyHeader` table that
+scrolls in a bounded pane keeps its native bar (already at the pane's
+bottom edge), and printing hides both. Shift-wheel and trackpad sideways
+scrolling work on the table as before.
+
 ## Column factories
 
 **One entity, one column factory** (`frontend/src/components/columns/`), reused

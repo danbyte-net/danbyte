@@ -197,6 +197,47 @@
   table[data-stripes="on"] tbody tr:nth-child(even) {
     background-color: color-mix(in oklab, var(--muted) 45%, transparent);
   }
+
+  /* Wide tables (components/table-scroll.tsx). A table container whose
+     floating proxy scrollbar is showing hides its own horizontal bar, so
+     only one shows. The frame around it draws a soft inset shadow on each
+     side that has more columns to scroll to. No transition: the hint
+     simply appears, which also suits reduced motion. */
+  [data-scroll-proxy] {
+    scrollbar-width: none;
+  }
+  [data-scroll-proxy]::-webkit-scrollbar {
+    display: none;
+  }
+  [data-scroll-left]::before,
+  [data-scroll-right]::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    z-index: 20;
+    width: 14px;
+    pointer-events: none;
+  }
+  [data-scroll-left]::before {
+    left: 0;
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+    box-shadow: inset 10px 0 8px -8px
+      color-mix(in oklab, var(--foreground) 22%, transparent);
+  }
+  [data-scroll-right]::after {
+    right: 0;
+    border-start-end-radius: inherit;
+    border-end-end-radius: inherit;
+    box-shadow: inset -10px 0 8px -8px
+      color-mix(in oklab, var(--foreground) 22%, transparent);
+  }
+  @media print {
+    [data-scroll-left]::before,
+    [data-scroll-right]::after {
+      content: none;
+    }
+  }
 }
 
 /* ─── Site map (Leaflet) ─────────────────────────────────────────────────
