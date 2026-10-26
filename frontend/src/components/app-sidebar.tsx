@@ -619,155 +619,6 @@ export const sections: NavSection[] = [
     ],
   },
   {
-    id: "routing",
-    label: "Routing",
-    icon: RouteIcon,
-    clusters: [
-      {
-        label: "BGP",
-        items: [
-          {
-            title: "Instances",
-            url: "/bgp-instances",
-            icon: Server,
-            objectType: "bgpinstance",
-          },
-          {
-            title: "Sessions",
-            url: "/bgp-sessions",
-            icon: ArrowLeftRight,
-            objectType: "bgpsession",
-          },
-          {
-            title: "Peer groups",
-            url: "/bgp-peer-groups",
-            icon: UsersRound,
-            objectType: "bgppeergroup",
-          },
-        ],
-      },
-      {
-        label: "OSPF",
-        items: [
-          {
-            title: "Instances",
-            url: "/ospf-instances",
-            icon: Workflow,
-            objectType: "ospfinstance",
-          },
-          {
-            title: "Areas",
-            url: "/ospf-areas",
-            icon: Network,
-            objectType: "ospfarea",
-          },
-        ],
-      },
-      {
-        label: "IS-IS",
-        items: [
-          {
-            title: "Instances",
-            url: "/isis-instances",
-            icon: SquareStack,
-            objectType: "isisinstance",
-          },
-        ],
-      },
-      {
-        label: "EIGRP",
-        items: [
-          {
-            title: "Instances",
-            url: "/eigrp-instances",
-            icon: Locate,
-            objectType: "eigrpinstance",
-          },
-        ],
-      },
-      {
-        label: "EVPN / VXLAN",
-        items: [
-          {
-            title: "VTEPs",
-            url: "/vteps",
-            icon: Waypoints,
-            objectType: "vtep",
-          },
-          {
-            title: "Ethernet segments",
-            url: "/ethernet-segments",
-            icon: Split,
-            objectType: "ethernetsegment",
-          },
-        ],
-      },
-      {
-        label: "Static",
-        items: [
-          {
-            title: "Static routes",
-            url: "/static-routes",
-            icon: RouteIcon,
-            objectType: "staticroute",
-          },
-        ],
-      },
-      {
-        label: "Policy",
-        items: [
-          {
-            title: "Routing policies",
-            url: "/routing-policies",
-            icon: Filter,
-            objectType: "routingpolicy",
-          },
-          {
-            title: "Prefix lists",
-            url: "/prefix-lists",
-            icon: ListChecks,
-            objectType: "prefixlist",
-          },
-          {
-            title: "Communities",
-            url: "/communities",
-            icon: Tag,
-            objectType: "community",
-          },
-          {
-            title: "Community lists",
-            url: "/community-lists",
-            icon: ListFilter,
-            objectType: "communitylist",
-          },
-          {
-            title: "AS-path lists",
-            url: "/as-path-lists",
-            icon: GitBranch,
-            objectType: "aspathlist",
-          },
-        ],
-      },
-      {
-        label: "Profiles",
-        items: [
-          {
-            title: "Keychains",
-            url: "/routing-keychains",
-            icon: KeyRound,
-            objectType: "routingkeychain",
-          },
-          {
-            title: "BFD profiles",
-            url: "/bfd-profiles",
-            icon: Zap,
-            objectType: "bfdprofile",
-          },
-        ],
-      },
-    ],
-  },
-  {
     id: "dcim",
     label: "DCIM",
     icon: Server,
@@ -1027,6 +878,155 @@ export const sections: NavSection[] = [
             url: "/cooling-feeds",
             icon: Waves,
             objectType: "coolingfeed",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "routing",
+    label: "Routing",
+    icon: RouteIcon,
+    clusters: [
+      {
+        label: "BGP",
+        items: [
+          {
+            title: "Instances",
+            url: "/bgp-instances",
+            icon: Server,
+            objectType: "bgpinstance",
+          },
+          {
+            title: "Sessions",
+            url: "/bgp-sessions",
+            icon: ArrowLeftRight,
+            objectType: "bgpsession",
+          },
+          {
+            title: "Peer groups",
+            url: "/bgp-peer-groups",
+            icon: UsersRound,
+            objectType: "bgppeergroup",
+          },
+        ],
+      },
+      {
+        label: "OSPF",
+        items: [
+          {
+            title: "Instances",
+            url: "/ospf-instances",
+            icon: Workflow,
+            objectType: "ospfinstance",
+          },
+          {
+            title: "Areas",
+            url: "/ospf-areas",
+            icon: Network,
+            objectType: "ospfarea",
+          },
+        ],
+      },
+      {
+        label: "IS-IS",
+        items: [
+          {
+            title: "Instances",
+            url: "/isis-instances",
+            icon: SquareStack,
+            objectType: "isisinstance",
+          },
+        ],
+      },
+      {
+        label: "EIGRP",
+        items: [
+          {
+            title: "Instances",
+            url: "/eigrp-instances",
+            icon: Locate,
+            objectType: "eigrpinstance",
+          },
+        ],
+      },
+      {
+        label: "EVPN / VXLAN",
+        items: [
+          {
+            title: "VTEPs",
+            url: "/vteps",
+            icon: Waypoints,
+            objectType: "vtep",
+          },
+          {
+            title: "Ethernet segments",
+            url: "/ethernet-segments",
+            icon: Split,
+            objectType: "ethernetsegment",
+          },
+        ],
+      },
+      {
+        label: "Static",
+        items: [
+          {
+            title: "Static routes",
+            url: "/static-routes",
+            icon: RouteIcon,
+            objectType: "staticroute",
+          },
+        ],
+      },
+      {
+        label: "Policy",
+        items: [
+          {
+            title: "Routing policies",
+            url: "/routing-policies",
+            icon: Filter,
+            objectType: "routingpolicy",
+          },
+          {
+            title: "Prefix lists",
+            url: "/prefix-lists",
+            icon: ListChecks,
+            objectType: "prefixlist",
+          },
+          {
+            title: "Communities",
+            url: "/communities",
+            icon: Tag,
+            objectType: "community",
+          },
+          {
+            title: "Community lists",
+            url: "/community-lists",
+            icon: ListFilter,
+            objectType: "communitylist",
+          },
+          {
+            title: "AS-path lists",
+            url: "/as-path-lists",
+            icon: GitBranch,
+            objectType: "aspathlist",
+          },
+        ],
+      },
+      {
+        label: "Profiles",
+        items: [
+          {
+            title: "Keychains",
+            url: "/routing-keychains",
+            icon: KeyRound,
+            objectType: "routingkeychain",
+          },
+          {
+            title: "BFD profiles",
+            url: "/bfd-profiles",
+            icon: Zap,
+            objectType: "bfdprofile",
           },
         ],
       },

@@ -1,5 +1,6 @@
 import * as React from "react"
 
+import { TableScrollProxy, useTableScroll } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import {
@@ -39,9 +40,15 @@ export function OverviewTable<T>({
 }) {
   const last = columns.length - 1
   const width = (i: number) => (i === last ? "w-full" : "whitespace-nowrap")
+  const hscroll = useTableScroll()
   return (
     <Section title={title} count={count} badge={badge}>
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      {/* A wide table scrolls sideways with a floating scrollbar and edge
+          shadows, as DataTable does (table-scroll.tsx). */}
+      <div
+        ref={hscroll.frameRef}
+        className="relative overflow-hidden rounded-lg border border-border bg-card"
+      >
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -84,6 +91,7 @@ export function OverviewTable<T>({
           </TableBody>
         </Table>
       </div>
+      <TableScrollProxy scroll={hscroll} />
       {footer && <div className="mt-1.5 text-xs">{footer}</div>}
     </Section>
   )
