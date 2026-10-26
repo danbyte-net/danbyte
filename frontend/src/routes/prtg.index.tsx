@@ -39,7 +39,11 @@ import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
 import { PrtgGroupPicker } from "@/components/prtg/group-picker"
 import { PrtgPolicies } from "@/components/prtg/policies"
 import { PrtgProfiles } from "@/components/prtg/profiles"
-import { PrtgChanges } from "@/components/prtg/changes"
+import {
+  PrtgChanges,
+  needsPerson,
+  usePrtgQueue,
+} from "@/components/prtg/changes"
 import { PrtgLinks } from "@/components/prtg/links"
 import { PrtgAlarms } from "@/components/prtg/alarms"
 import { PrtgSensors } from "@/components/prtg/sensors"
@@ -122,6 +126,9 @@ function PrtgPage() {
   )
   const summary = summaryQuery.data ?? null
   const alarmCount = summary ? summary.down + summary.degraded : 0
+  // Rows that need a person, from the same query the queue lists.
+  const queue = usePrtgQueue(conn?.id ?? "", !!conn)
+  const reviewCount = needsPerson(queue.data?.results)
 
   const test = useMutation({
     mutationFn: (id: string) =>
@@ -229,7 +236,11 @@ function PrtgPage() {
             onValueChange={setTab}
             items={[
               { value: "overview", label: "Overview" },
-              { value: "review", label: "Review queue" },
+              {
+                value: "review",
+                label: "Review queue",
+                count: reviewCount || undefined,
+              },
               {
                 value: "alarms",
                 label: "Alarms",
@@ -449,6 +460,35 @@ function ConnectionCard({
   const plan = conn.last_plan_summary ?? {}
   const registration: KvRow[] = [
     {
+      label: "Defaults",
+      value:
+        conn.register_profile_name || conn.register_group_path ? (
+          <span className="text-xs">
+            {conn.register_profile_name || "No profile"}
+            {conn.register_group_path ? ` · ${conn.register_group_path}` : ""}
+          </span>
+        ) : (
+          <Badge variant="warning">Not set</Badge>
+        ),
+    },
+    {
+      label: "Auto-apply",
+      value: (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge
+            variant={conn.auto_apply_registration ? "success" : "secondary"}
+          >
+            {conn.auto_apply_registration ? "On" : "Off"}
+          </Badge>
+          {conn.last_apply_at && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              last apply <TimeCell iso={conn.last_apply_at} />
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
       label: "Register all",
       value: conn.register_all ? (
         <span className="inline-flex items-center gap-2">
@@ -471,9 +511,6 @@ function ConnectionCard({
           <Badge variant={WRITE_VARIANT[conn.write_mode] ?? "secondary"}>
             {WRITE_LABEL[conn.write_mode] ?? "Not checked"}
           </Badge>
-          {conn.auto_apply_registration && (
-            <Badge variant="secondary">Auto apply</Badge>
-          )}
           {conn.prune_devices && <Badge variant="secondary">Prune</Badge>}
         </span>
       ),
@@ -835,6 +872,10 @@ function PrtgConnectionForm({
   const [sendCredentials, setSendCredentials] = useState(
     connection?.send_credentials ?? false
   )
+  const [sendTags, setSendTags] = useState(connection?.send_tags ?? true)
+  const [tagSiteRole, setTagSiteRole] = useState(
+    connection?.tag_site_role ?? false
+  )
   const [autoApply, setAutoApply] = useState(
     connection?.auto_apply_registration ?? false
   )
@@ -935,6 +976,8 @@ function PrtgConnectionForm({
                   register_group_path: registerPath,
                   seed_device_objid: seedDevice ?? "",
                   send_credentials: sendCredentials,
+                  send_tags: sendTags,
+                  tag_site_role: tagSiteRole,
                   auto_apply_registration: autoApply,
                   prune_devices: pruneDevices,
                 }
@@ -1111,41 +1154,54 @@ function PrtgConnectionForm({
       </FormColumns>
 
       {connection && (
-        <FormSection title="Registration" card>
+        <FormSection
+          title={
+            connection.write_mode === "none"
+              ? "Registration"
+              : "Registration defaults"
+          }
+          card
+        >
+          {connection.write_mode !== "none" && (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Used for objects set to Monitor in PRTG that no policy matches,
+                and for Register all.
+              </p>
+              <FormColumns>
+                <FormColumn>
+                  <FormCombobox
+                    label="Sensor profile"
+                    value={registerProfile}
+                    onChange={setRegisterProfile}
+                    options={asOptions(profiles.data?.results)}
+                    noneLabel="None"
+                    error={fieldErrors.register_profile}
+                    searchPlaceholder="Search profiles…"
+                    emptyText="No profiles."
+                  />
+                </FormColumn>
+                <FormColumn>
+                  <PrtgGroupPicker
+                    connectionId={connection.id}
+                    value={registerGroup}
+                    path={registerPath}
+                    onChange={(id, path) => {
+                      setRegisterGroup(id)
+                      setRegisterPath(path)
+                    }}
+                    error={fieldErrors.register_group_id}
+                  />
+                </FormColumn>
+              </FormColumns>
+            </>
+          )}
           <FormCheckbox
             label="Register all devices and VMs"
-            info="Every device and VM goes to PRTG with this profile and group. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. The review queue shows the plan; applying it writes to PRTG."
+            info="Every device and VM goes to PRTG with these defaults. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. The review queue shows the plan; applying it writes to PRTG."
             checked={registerAll}
             onChange={setRegisterAll}
           />
-          {registerAll && (
-            <FormColumns>
-              <FormColumn>
-                <FormCombobox
-                  label="Sensor profile"
-                  value={registerProfile}
-                  onChange={setRegisterProfile}
-                  options={asOptions(profiles.data?.results)}
-                  noneLabel="None"
-                  error={fieldErrors.register_profile}
-                  searchPlaceholder="Search profiles…"
-                  emptyText="No profiles."
-                />
-              </FormColumn>
-              <FormColumn>
-                <PrtgGroupPicker
-                  connectionId={connection.id}
-                  value={registerGroup}
-                  path={registerPath}
-                  onChange={(id, path) => {
-                    setRegisterGroup(id)
-                    setRegisterPath(path)
-                  }}
-                  error={fieldErrors.register_group_id}
-                />
-              </FormColumn>
-            </FormColumns>
-          )}
         </FormSection>
       )}
 
@@ -1193,8 +1249,22 @@ function PrtgConnectionForm({
                 onChange={setSendCredentials}
               />
               <FormCheckbox
+                label="Send Danbyte tags"
+                info="A device Danbyte creates in PRTG, and every sensor it adds, gets the object's own Danbyte tags as PRTG tags. Kept in step on each status read: Danbyte adds and removes only the tags it put there, never the ones set in PRTG."
+                checked={sendTags}
+                onChange={setSendTags}
+              />
+              {sendTags && (
+                <FormCheckbox
+                  label="Add site and role tags"
+                  info="Also site-<slug> and role-<slug>."
+                  checked={tagSiteRole}
+                  onChange={setTagSiteRole}
+                />
+              )}
+              <FormCheckbox
                 label="Apply automatically"
-                info="After each planning pass, ready creates, sensors and moves are written without a person. Removals always wait."
+                info="On: planned devices and their sensors are created in PRTG without a person - after each planning pass, and right after a device or VM is set to Monitor in PRTG. Moves to the group a policy names are applied too. It never removes anything: removals always wait in the Review queue. Off: every planned change waits there for Apply."
                 checked={autoApply}
                 onChange={setAutoApply}
               />

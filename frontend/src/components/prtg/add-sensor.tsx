@@ -647,7 +647,7 @@ export function AddSensorDialog({
               />
               <FormText
                 label="Tags"
-                hint="space-separated"
+                info="Added to the PRTG sensor, space-separated. The object's own tags follow when the connection sends tags."
                 value={tags}
                 onChange={setTags}
               />

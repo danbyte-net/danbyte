@@ -56,6 +56,7 @@ import {
   linkedSensorCount,
   usePrtgLinks,
 } from "@/components/prtg/sensors-tab"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
@@ -124,7 +125,10 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   // PRTG's sensors get a tab once PRTG has a device for this VM; the links
   // come back empty while the integration is off.
   const prtgLinks = usePrtgLinks({ virtual_machine: vm.id })
-  const hasPrtg = (prtgLinks.data ?? []).length > 0
+  // With the integration on, the tab also says what PRTG will do: planned,
+  // excluded, or what is missing.
+  const prtgOn = usePrtgEnabled()
+  const hasPrtg = (prtgLinks.data ?? []).length > 0 || prtgOn
   const search = Route.useSearch()
   const openSensor = search.sensor
   const selectSensor = useCallback(

@@ -498,7 +498,7 @@ export function ProfileForm({
                 />
                 <FormText
                   label="Tags"
-                  hint="space-separated"
+                  info="Added to the PRTG sensor, space-separated. The object's own tags follow when the connection sends tags."
                   value={r.tags.join(" ")}
                   onChange={(v) =>
                     update(r._key, { tags: v.split(/\s+/).filter(Boolean) })

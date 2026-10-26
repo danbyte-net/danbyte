@@ -65,7 +65,10 @@ import {
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
-import { PrtgSyncSelect } from "@/components/prtg/prtg-sync-select"
+import {
+  PrtgSyncSelect,
+  prtgSaveToast,
+} from "@/components/prtg/prtg-sync-select"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CardLinesEditor,
@@ -230,6 +233,7 @@ export function DeviceForm({
   const [prtgSync, setPrtgSync] = useState<PrtgSync>(
     device?.prtg_sync ?? "inherit"
   )
+  const [prtgHost, setPrtgHost] = useState(device?.prtg_host ?? "")
   const [locationId, setLocationId] = useState<string | null>(
     seed?.location?.id ?? null
   )
@@ -296,6 +300,7 @@ export function DeviceForm({
     setCustomFields(device.custom_fields ?? {})
     setComments(device.comments ?? "")
     setPrtgSync(device.prtg_sync ?? "inherit")
+    setPrtgHost(device.prtg_host ?? "")
     setLocationId(device.location?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
@@ -599,7 +604,7 @@ export function DeviceForm({
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
         // Only while PRTG is on: the field is not shown otherwise.
-        ...(prtgOn ? { prtg_sync: prtgSync } : {}),
+        ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
       }
       const saved = await saveObject<Device>({
         objectType: "api.device",
@@ -619,6 +624,11 @@ export function DeviceForm({
       invalidatePortCounts(qc)
       if (saved.cabinet || device?.cabinet) invalidateCabinetDeviceViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      const prtg = prtgSaveToast(saved.prtg_plan)
+      if (prtg) {
+        toast.info(prtg)
+        qc.invalidateQueries({ queryKey: ["prtg-plan"] })
+      }
       if (againRef.current) {
         againRef.current = false
         setName("")
@@ -1179,6 +1189,9 @@ export function DeviceForm({
                 value={prtgSync}
                 onChange={setPrtgSync}
                 error={fieldErrors.prtg_sync}
+                host={prtgHost}
+                onHostChange={setPrtgHost}
+                hostError={fieldErrors.prtg_host}
               />
             </FormSection>
           )}

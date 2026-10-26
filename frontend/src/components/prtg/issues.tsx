@@ -135,6 +135,7 @@ export function prtgIssueLinks(
           ]
         : []
     case "no_snmp":
+    case "snmp_scan":
       return target
         ? [
             <ObjectLink
