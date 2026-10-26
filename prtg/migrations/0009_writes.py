@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('prtg', '0007_registration'),
+        ('prtg', '0008_object_links'),
     ]
 
     operations = [

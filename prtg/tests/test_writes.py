@@ -541,11 +541,11 @@ class QueueInboxApiTests(_Writes):
 
 
 class MigrationTests(TestCase):
-    def test_0008_follows_registration_with_database_defaults(self):
+    def test_0009_follows_object_links_with_database_defaults(self):
         from importlib import import_module
 
-        mig = import_module("prtg.migrations.0008_writes").Migration
-        self.assertIn(("prtg", "0007_registration"), mig.dependencies)
+        mig = import_module("prtg.migrations.0009_writes").Migration
+        self.assertIn(("prtg", "0008_object_links"), mig.dependencies)
         for model, name in ((PrtgConnection, "seed_device_objid"),
                             (PrtgConnection, "send_credentials"),
                             (PrtgConnection, "auto_apply_registration"),

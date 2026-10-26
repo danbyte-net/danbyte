@@ -9,7 +9,9 @@ everything else follows from them:
    (``review``); an ambiguity is always a queue row and never a link.
 2. **Sensors.** Each linked device's sensors are written as
    :class:`~prtg.models.PrtgSensor` rows, their state mapped through the
-   connection's map; a sensor PRTG no longer has is deleted.
+   connection's map; a sensor PRTG no longer has is deleted. Each row is
+   then tied to the address, interface or service it watches
+   (:mod:`prtg.objects`).
 3. **Roll-up.** Each link gets its device's worst state and its counts.
 
 The ``prtg`` check (:mod:`prtg.driver`) then answers from those rows - one
@@ -42,6 +44,7 @@ from .matching import (
     shared_addresses,
 )
 from .models import PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
+from .objects import resolve as resolve_objects
 
 log = logging.getLogger("prtg.reader")
 
@@ -338,6 +341,7 @@ def write_sensors(conn, links, sensor_rows, now) -> dict:
             gone = [s.id for o, s in existing.items() if o not in seen]
             if gone:
                 counts["deleted"] += PrtgSensor.objects.filter(id__in=gone).delete()[0]
+            resolve_objects(link, conn.tenant)
             roll_up(link, mapping, now)
     return counts
 

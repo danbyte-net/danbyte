@@ -56,6 +56,9 @@ export function sensor(
     url: `https://prtg.example.com/sensor.htm?id=${objid}`,
     device_url: "https://prtg.example.com/device.htm?id=2081",
     channels_at: null,
+    ip_address: null,
+    interface: null,
+    service: null,
     ...patch,
   }
 }

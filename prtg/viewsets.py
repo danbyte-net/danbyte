@@ -7,13 +7,15 @@ has no session and checks the switch itself.
 """
 from __future__ import annotations
 
+import uuid
+
 from django.db.models import Case, Count, IntegerField, Max, Q, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -386,7 +388,9 @@ _SENSOR_ORDERINGS = {
 class PrtgSensorViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedReadViewSet):
     """Every imported sensor. Read-only: the rows are PRTG's.
 
-    Filters: ``connection``, ``device``, ``virtual_machine``, ``state``
+    Filters: ``connection``, ``device``, ``virtual_machine``, the object a
+    sensor watches (``ip_address``, ``interface`` - a device or VM interface -
+    and ``service``), ``state``
     (comma-separated; ``paused`` names the paused sensors whatever their
     state), ``kind`` (raw or display name), ``probe``, ``group``,
     ``alarms=1`` (down and degraded only, not paused), ``hide_paused=1``,
@@ -399,12 +403,26 @@ class PrtgSensorViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedReadV
 
     integration_keys = ("prtg",)
     queryset = PrtgSensor.objects.select_related(
-        "device", "virtual_machine", "connection", "link"
+        "device", "virtual_machine", "connection", "link",
+        "ip_address", "interface", "vm_interface", "service",
     )
     serializer_class = PrtgSensorSerializer
 
     def filter_sensors(self, qs):
         p = self.request.query_params if self.request else {}
+        for key in ("ip_address", "interface", "service"):
+            if p.get(key):
+                try:
+                    uuid.UUID(str(p[key]))
+                except ValueError:
+                    raise ValidationError({key: "Not an id."}) from None
+        if p.get("ip_address"):
+            qs = qs.filter(ip_address_id=p["ip_address"])
+        if p.get("interface"):
+            # A device interface or a VM interface: the ids never collide.
+            qs = qs.filter(Q(interface_id=p["interface"]) | Q(vm_interface_id=p["interface"]))
+        if p.get("service"):
+            qs = qs.filter(service_id=p["service"])
         if p.get("device"):
             qs = qs.filter(device_id=p["device"])
         if p.get("virtual_machine"):

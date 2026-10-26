@@ -116,6 +116,12 @@ network portion from the prefix CIDR (the fully-fixed leading octets, e.g.
 `10.0.10.0/24` → `10.0.10.`) so the operator types only the host part. See
 `networkPrefill()` in `frontend/src/components/ip-form.tsx`.
 
+## PRTG sensors
+
+With the PRTG integration on, an address PRTG reaches a device on gets a
+**Sensors** tab listing that device's PRTG sensors - see
+[Where sensors show up](../features/prtg.md#where-sensors-show-up).
+
 ## Related
 
 - [Prefix](prefix.md) - parent model
