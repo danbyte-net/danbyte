@@ -304,6 +304,7 @@ const ROWS: Row[] = [
   ["prtg-changes", "PRTG · Review queue", "Integrations", "/api/prtg/changes/"],
   ["prtg-alarms", "PRTG · Alarms", "Integrations", "/api/prtg/sensors/"],
   ["prtg-sensors", "PRTG · Sensors", "Integrations", "/api/prtg/sensors/"],
+  ["prtg-adoption-rules", "PRTG · Adoption rules", "Integrations", "/api/prtg/adoption-rules/"],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
 

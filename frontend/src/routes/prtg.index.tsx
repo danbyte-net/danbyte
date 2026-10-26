@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type {
   MonitoringEngine,
+  Paginated,
   PrtgConnection,
   PrtgDefaults,
   PrtgHookToken,
@@ -33,6 +34,7 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
+import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
 import { PrtgChanges } from "@/components/prtg/changes"
 import { PrtgLinks } from "@/components/prtg/links"
 import { PrtgAlarms } from "@/components/prtg/alarms"
@@ -42,10 +44,12 @@ import {
   usePrtgSensorSummary,
 } from "@/components/prtg/sensor-strip"
 import { PrtgStateMapEditor, editableOnly } from "@/components/prtg/state-map"
+import { DeviceTypePicker } from "@/components/device-type-picker"
 import {
   Field,
   FormCheckbox,
   FormColumn,
+  FormCombobox,
   FormColumns,
   FormFooter,
   FormSection,
@@ -75,7 +79,14 @@ const LINK_MODES = [
 
 // The connection, the decisions waiting on a person, and the pairings the
 // reads have made - looked up when a device reads wrong.
-const TABS = ["overview", "review", "alarms", "sensors", "links"] as const
+const TABS = [
+  "overview",
+  "review",
+  "alarms",
+  "sensors",
+  "links",
+  "adoption",
+] as const
 type PrtgTab = (typeof TABS)[number]
 
 /** The PRTG integration: the connection, its review queue and its links. */
@@ -202,6 +213,7 @@ function PrtgPage() {
               },
               { value: "sensors", label: "Sensors", count: summary?.total },
               { value: "links", label: "Links" },
+              { value: "adoption", label: "Adoption" },
             ]}
           />
           {tab === "overview" && (
@@ -236,7 +248,15 @@ function PrtgPage() {
               )}
             </>
           )}
-          {tab === "review" && <PrtgChanges connection={conn} />}
+          {tab === "review" && (
+            <PrtgChanges
+              connection={conn}
+              onEditConnection={canManage ? () => setEditing(conn) : undefined}
+            />
+          )}
+          {tab === "adoption" && (
+            <PrtgAdoptionRules connection={conn} canManage={canManage} />
+          )}
           {tab === "alarms" && <PrtgAlarms connection={conn} />}
           {tab === "sensors" && <PrtgSensors connection={conn} />}
           {tab === "links" && (
@@ -331,6 +351,62 @@ function ConnectionCard({
       value: conn.engine_names.length
         ? conn.engine_names.map((e) => e.name).join(", ")
         : dash,
+    },
+  ]
+  const onOff = (on: boolean, label: string) =>
+    on ? (
+      <Badge variant="success">{label}</Badge>
+    ) : (
+      <Badge variant="secondary">Off</Badge>
+    )
+  const adoptDefaults = [
+    conn.adopt_names.site,
+    conn.adopt_names.role,
+    conn.adopt_names.device_type,
+  ].filter(Boolean)
+  const twoWay: KvRow[] = [
+    {
+      label: "Acknowledgements",
+      value: onOff(conn.write_acknowledgements, "Both ways"),
+    },
+    {
+      label: "Maintenance",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          {onOff(conn.sync_maintenance, "Pauses devices")}
+          {conn.sync_maintenance && conn.last_maintenance_sync_at && (
+            <TimeCell iso={conn.last_maintenance_sync_at} />
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Inventory",
+      value: (
+        <span className="inline-flex items-center gap-2">
+          {onOff(conn.read_inventory, "Read")}
+          {conn.read_inventory && conn.last_inventory_at && (
+            <TimeCell iso={conn.last_inventory_at} />
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "Adoption",
+      value: conn.adopt_devices ? (
+        <span className="inline-flex items-center gap-2">
+          <Badge variant="success">On</Badge>
+          {adoptDefaults.length > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {adoptDefaults.join(" · ")}
+            </span>
+          ) : (
+            <Badge variant="warning">No defaults</Badge>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
     },
   ]
   const summary = conn.last_status_summary ?? {}
@@ -436,6 +512,7 @@ function ConnectionCard({
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <KvCard title="Connection" rows={connection} />
         <KvCard title="Server" rows={server} />
+        <KvCard title="Two-way" rows={twoWay} />
       </div>
     </section>
   )
@@ -587,6 +664,43 @@ function PrtgConnectionForm({
   const [stateMap, setStateMap] = useState<Record<string, string>>(
     connection?.state_map ?? {}
   )
+  const [writeAcks, setWriteAcks] = useState(
+    connection?.write_acknowledgements ?? true
+  )
+  const [syncMaint, setSyncMaint] = useState(
+    connection?.sync_maintenance ?? false
+  )
+  const [readInventory, setReadInventory] = useState(
+    connection?.read_inventory ?? false
+  )
+  const [adopt, setAdopt] = useState(connection?.adopt_devices ?? false)
+  const [adoptSite, setAdoptSite] = useState<string | null>(
+    connection?.adopt_site ?? null
+  )
+  const [adoptRole, setAdoptRole] = useState<string | null>(
+    connection?.adopt_role ?? null
+  )
+  const [adoptType, setAdoptType] = useState<string | null>(
+    connection?.adopt_device_type ?? null
+  )
+  const sites = useQuery({
+    queryKey: ["prtg-adopt-sites"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>("/api/sites/?page_size=500"),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const roles = useQuery({
+    queryKey: ["prtg-adopt-roles"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        "/api/device-roles/?page_size=500"
+      ),
+    staleTime: 60_000,
+    enabled: adopt,
+  })
+  const asOptions = (rows?: { id: string; name: string }[]) =>
+    (rows ?? []).map((r) => ({ value: r.id, label: r.name }))
 
   // The codes come from the server so PRTG's list is not hard-coded twice.
   const defaults = useQuery({
@@ -629,6 +743,13 @@ function PrtgConnectionForm({
             link_mode: linkMode ?? "auto",
             push_enabled: push,
             state_map: editableOnly(stateMap, defaults.data),
+            write_acknowledgements: writeAcks,
+            sync_maintenance: syncMaint,
+            read_inventory: readInventory,
+            adopt_devices: adopt,
+            adopt_site: adopt ? adoptSite : null,
+            adopt_role: adopt ? adoptRole : null,
+            adopt_device_type: adopt ? adoptType : null,
           }),
         }
       ),
@@ -734,6 +855,68 @@ function PrtgConnectionForm({
               checked={push}
               onChange={setPush}
             />
+          </FormSection>
+        </FormColumn>
+      </FormColumns>
+
+      <FormColumns>
+        <FormColumn>
+          <FormSection title="Two-way" card>
+            <FormCheckbox
+              label="Acknowledgements both ways"
+              info="Acknowledging a Danbyte alert from a PRTG check acknowledges the Down sensors behind it in PRTG, with your name and note. A sensor acknowledged in PRTG acknowledges the Danbyte alert. PRTG cannot un-acknowledge."
+              checked={writeAcks}
+              onChange={setWriteAcks}
+            />
+            <FormCheckbox
+              label="Pause for maintenance windows"
+              info="A confirmed maintenance or outage window pauses each linked PRTG device it covers until the window ends; cancelling it resumes them. A device somebody paused in PRTG is left alone."
+              checked={syncMaint}
+              onChange={setSyncMaint}
+            />
+          </FormSection>
+          <FormSection title="Inventory" card>
+            <FormCheckbox
+              label="Read system information"
+              info="Reads what PRTG knows about each linked device - name, serial, vendor, model, OS - and shows a different name or serial in the device's drift inbox. Danbyte's own SNMP poll wins where both answer."
+              checked={readInventory}
+              onChange={setReadInventory}
+            />
+          </FormSection>
+        </FormColumn>
+        <FormColumn>
+          <FormSection title="Adoption" card>
+            <FormCheckbox
+              label="Adopt devices"
+              info="A PRTG device that no Danbyte device or VM answers to is offered in the review queue; applying makes the device. Adoption rules place it first, then a PRTG group named like a site, then these defaults."
+              checked={adopt}
+              onChange={setAdopt}
+            />
+            {adopt && (
+              <>
+                <FormCombobox
+                  label="Site"
+                  value={adoptSite}
+                  onChange={setAdoptSite}
+                  options={asOptions(sites.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_site}
+                  searchPlaceholder="Search sites…"
+                  emptyText="No sites."
+                />
+                <FormCombobox
+                  label="Role"
+                  value={adoptRole}
+                  onChange={setAdoptRole}
+                  options={asOptions(roles.data?.results)}
+                  noneLabel="None"
+                  error={fieldErrors.adopt_role}
+                  searchPlaceholder="Search roles…"
+                  emptyText="No roles."
+                />
+                <DeviceTypePicker value={adoptType} onChange={setAdoptType} />
+              </>
+            )}
           </FormSection>
         </FormColumn>
       </FormColumns>

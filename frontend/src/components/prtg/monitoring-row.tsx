@@ -1,6 +1,9 @@
 import type { ReactNode } from "react"
 import { ExternalLink } from "lucide-react"
 
+import type { PrtgDeviceLink } from "@/lib/api"
+import { useDateFormat } from "@/lib/datetime"
+import { Badge } from "@/components/ui/badge"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Section } from "@/components/ui/section"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -25,6 +28,7 @@ export function PrtgMonitoringRow({
   sensorsLink: (children: ReactNode) => ReactNode
 }) {
   const links = usePrtgLinks(parent)
+  const { formatDateTime } = useDateFormat()
   const rows = links.data ?? []
   const summary = usePrtgSensorSummary(parent, rows.length > 0)
   if (rows.length === 0) return null
@@ -48,6 +52,11 @@ export function PrtgMonitoringRow({
           >
             <CheckStatusBadge status={link.state || "unknown"} />
             {s && rows.length === 1 && <PrtgStateStrip summary={s} />}
+            {pausedUntil(link) && (
+              <Badge variant="secondary" className="whitespace-nowrap">
+                Paused by maintenance until {formatDateTime(pausedUntil(link))}
+              </Badge>
+            )}
             <a
               href={link.url}
               target="_blank"
@@ -75,4 +84,11 @@ export function PrtgMonitoringRow({
       </div>
     </Section>
   )
+}
+
+/** Until when Danbyte holds the PRTG device paused for a window, or "" when
+ * it does not now. */
+function pausedUntil(link: PrtgDeviceLink): string {
+  const until = link.maintenance_paused_until
+  return until && new Date(until).getTime() > Date.now() ? until : ""
 }
