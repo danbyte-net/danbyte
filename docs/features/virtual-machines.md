@@ -30,7 +30,15 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
-**Overview** carries the attribute cards, a **Software** card under
+The header carries the VM's status, its power state and, when any of its
+addresses is monitored, the same monitoring pill as the VM list: the worst
+state across its addresses' checks, including what PRTG or Zabbix answer for
+them. Hovering it shows the breakdown and any external problems.
+
+**Overview** carries a **Sensors** card on top once a PRTG channel is
+[pinned](prtg.md#pinned-sensors) to the VM (each pinned channel as a small
+tile that opens the sensor's panel, unpinned on hover), the attribute cards,
+a **Software** card under
 *Resources* (the first eight installs, each with its version and end-of-life
 lifetime bar, then **View all N** to the Software tab), the disk list and the
 VM's **Topology** card. Under the platform, **OS support** is its

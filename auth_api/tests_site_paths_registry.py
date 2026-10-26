@@ -196,6 +196,7 @@ COOLING_PARTS = importlib.import_module("auth_api.migrations.0034_site_roles_coo
 FLOWS = importlib.import_module("auth_api.migrations.0035_site_roles_application_flows")
 GROUPS = importlib.import_module("auth_api.migrations.0036_site_roles_application_groups")
 PRTG = importlib.import_module("auth_api.migrations.0037_site_roles_prtg")
+PINS = importlib.import_module("auth_api.migrations.0038_site_roles_prtg_pins")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -299,7 +300,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(COOLING_PARTS.NEW_TYPES)
             | set(FLOWS.NEW_TYPES)
             | set(GROUPS.NEW_TYPES)
-            | set(PRTG.NEW_TYPES),
+            | set(PRTG.NEW_TYPES)
+            | set(PINS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -365,7 +367,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
             sorted(
                 CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS + COOLING.NEW_CATALOGS
                 + APPLICATIONS.NEW_CATALOGS + FLOWS.NEW_CATALOGS + GROUPS.NEW_CATALOGS
-                + PRTG.NEW_CATALOGS
+                + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -406,6 +408,42 @@ class SiteRolePrtgUpgradeTests(SiteRoleUpgradeTests):
         self.assertEqual(sorted(view.object_types), before)
         self.assertEqual(custom.object_types, ["device", "prefix"])
 
+
+
+class SiteRolePrtgPinUpgradeTests(SiteRoleUpgradeTests):
+    """0038 gives the site roles built before it the PRTG sensor pins."""
+
+    def _role(self, name, actions):
+        """A role as 0037 left it."""
+        types = (
+            MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES) | set(LATER.NEW_TYPES)
+            | set(COOLING.NEW_TYPES) | set(APPLICATIONS.NEW_TYPES)
+            | set(COOLING_PARTS.NEW_TYPES) | set(FLOWS.NEW_TYPES) | set(GROUPS.NEW_TYPES)
+            | set(PRTG.NEW_TYPES)
+        )
+        if actions == ["view"]:
+            types = types | {"site"}
+        return self._old(name, actions, types=sorted(types))
+
+    def test_viewer_and_editor_gain_the_pins(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        PINS.forwards(django_apps, None)
+        for perm in (view, edit):
+            perm.refresh_from_db()
+            self.assertIn("prtgsensorpin", perm.object_types, perm.name)
+
+    def test_pins_second_run_and_hand_built(self):
+        view = self._role("A - site view", ["view"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        PINS.forwards(django_apps, None)
+        view.refresh_from_db()
+        before = sorted(view.object_types)
+        PINS.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
 
 def _routed_viewsets():
     """Every DRF viewset class mounted anywhere in the URLconf."""
@@ -474,6 +512,8 @@ class RoutedViewsetsRestrictTests(TestCase):
             if slug not in scoped:
                 continue
             for action, method, verb in self.ACTIONS:
+                # A viewset's declared map is the verb both gates use.
+                verb = getattr(cls, "rbac_action_map", {}).get(action, verb)
                 seen = []
 
                 def record(qs, user, tenant, s, a, _seen=seen):

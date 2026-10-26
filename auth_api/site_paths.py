@@ -118,6 +118,7 @@ SITE_PATHS: dict[str, str] = {
     "prtgdevicelink": "device__site|virtual_machine__site",
     "prtgsensor": "device__site|virtual_machine__site",
     "prtgchange": "device__site|virtual_machine__site",
+    "prtgsensorpin": "device__site|virtual_machine__site",
     "dhcpscope": "prefix__site",
     "dhcpreservation": "scope__prefix__site",
     "dhcplease": "scope__prefix__site",

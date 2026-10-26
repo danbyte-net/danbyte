@@ -129,6 +129,10 @@ export function NamedBoard({
         "dash-explore",
         "dash-latency",
         "maintenance-events",
+        "prtg-widget-sensor",
+        "prtg-widget-alarms",
+        "prtg-channels",
+        "prtg-history",
       ])
         qc.invalidateQueries({ queryKey: [key] })
     }, board.refresh_seconds * 1000)

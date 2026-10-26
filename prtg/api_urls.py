@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .hook import PrtgHookView
+from .pins_api import PrtgSensorPinViewSet
 from .viewsets import (
     PrtgAdoptionRuleViewSet,
     PrtgChangeViewSet,
@@ -19,6 +20,7 @@ router.register(r"links", PrtgDeviceLinkViewSet, basename="prtgdevicelink")
 router.register(r"sensors", PrtgSensorViewSet, basename="prtgsensor")
 router.register(r"changes", PrtgChangeViewSet, basename="prtgchange")
 router.register(r"adoption-rules", PrtgAdoptionRuleViewSet, basename="prtgadoptionrule")
+router.register(r"sensor-pins", PrtgSensorPinViewSet, basename="prtgsensorpin")
 
 urlpatterns = [
     path("device-status/", PrtgDeviceStatusView.as_view(), name="prtg-device-status"),
