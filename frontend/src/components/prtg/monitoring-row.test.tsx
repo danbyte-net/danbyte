@@ -101,7 +101,9 @@ describe("PrtgMonitoringRow without a PRTG device", () => {
       )
     ).toBeTruthy()
     expect(
-      screen.getByText("Planned only: nothing is written to PRTG yet.")
+      screen.getByText(
+        "Planned only: nothing is written to PRTG until applied in the Review queue."
+      )
     ).toBeTruthy()
     expect(apiMock).toHaveBeenCalledWith("/api/prtg/plan/?device=d1")
   })
@@ -162,5 +164,82 @@ describe("PrtgMonitoringRow without a PRTG device", () => {
     expect(
       screen.getByRole("link", { name: "Servers" }).getAttribute("href")
     ).toBe("/prtg?tab=policies&policy=p1")
+  })
+})
+
+describe("PrtgMonitoringRow for a device Danbyte created", () => {
+  it("says so on the row and shows the last apply in the preview", async () => {
+    const link = {
+      id: "l1",
+      connection: "c1",
+      device: { id: "d1", name: "edge" },
+      virtual_machine: null,
+      objid: "2120",
+      name: "edge",
+      host: "10.0.0.90",
+      probe_name: "Local Probe",
+      group_path: "Local Probe",
+      matched_by: "created",
+      created_here: true,
+      tagged: true,
+      status_raw: 3,
+      state: "up",
+      sensor_counts: { total: 1, up: 1 },
+      status_read_at: null,
+      last_seen_at: null,
+      url: "https://prtg.example.com/device.htm?id=2120",
+      maintenance_paused_at: null,
+      maintenance_paused_until: null,
+      maintenance_events: [],
+      maintenance_note: "",
+    }
+    apiMock.mockImplementation((path) => {
+      if (path === "/api/integrations/enabled/")
+        return Promise.resolve({ prtg: true })
+      if (path.startsWith("/api/prtg/plan/"))
+        return Promise.resolve([
+          {
+            ...PLAN[0],
+            linked: {
+              objid: "2120",
+              name: "edge",
+              group: "Local Probe",
+              url: link.url,
+              created_here: true,
+            },
+            last_apply: {
+              at: "2026-10-26T09:00:00Z",
+              kind: "create_device",
+              ok: true,
+              detail: "Created edge in PRTG as device 2120.",
+              result: { device: "2120" },
+              by: "root",
+            },
+          },
+        ])
+      if (path.startsWith("/api/prtg/links/"))
+        return Promise.resolve({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [link],
+        })
+      return Promise.resolve({
+        count: 0,
+        next: null,
+        previous: null,
+        results: [],
+      })
+    })
+    mountWithRouter(() => (
+      <PrtgMonitoringRow parent={{ device: "d1" }} sensorsLink={(c) => c} />
+    ))
+    expect((await screen.findAllByText("Created by Danbyte")).length).toBe(1)
+    fireEvent.click(
+      screen.getByRole("button", { name: "What would PRTG get?" })
+    )
+    expect(
+      (await screen.findByTestId("prtg-last-apply")).textContent
+    ).toContain("Created edge in PRTG as device 2120.")
   })
 })

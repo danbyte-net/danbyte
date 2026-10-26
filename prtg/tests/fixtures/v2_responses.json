@@ -1,0 +1,125 @@
+{
+ "prtg_version": "26.3.124.1727",
+ "responses": {
+  "get_device": {
+   "status": 200,
+   "location": "",
+   "body": "{\"basic\":{\"active\":\"1\",\"host\":\"10.0.0.41\",\"hostv6\":\"\",\"ipversion\":\"0\",\"name\":\"danbyte-probe-scratch\",\"parenttags\":[],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-scratch\"]},\"href\":\"/api/v2/devices/2101\",\"id\":\"2101\",\"kind\":\"device\",\"kind_name\":\"Device\",\"name\":\"danbyte-probe-scratch\",\"parent\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"status\":\"UP\",\"type\":\"osk.device\"}\n"
+  },
+  "create_sensor": {
+   "status": 201,
+   "location": "/api/v2/sensors/2102",
+   "body": ""
+  },
+  "patch_sensor_interval_refused": {
+   "status": 501,
+   "location": "",
+   "body": "{\"code\":\"METHOD_NOT_IMPLEMENTED\",\"message\":\"The requested action is not implemented yet. Cause: section intervalgroup is not yet supported\",\"request_id\":\"ViCRqA\"}\n\n"
+  },
+  "patch_sensor_tags": {
+   "status": 204,
+   "location": "",
+   "body": ""
+  },
+  "classic_sensor_tags": {
+   "status": 200,
+   "location": "",
+   "body": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"sensors\":[{\"objid\":2102,\"objid_raw\":2102,\"name\":\"Ping\",\"name_raw\":\"Ping\",\"tags\":\"danbyte danbyte-def-abc extra danbyte danbyte-scratch\",\"tags_raw\":\"danbyte danbyte-def-abc extra danbyte danbyte-scratch\",\"interval\":\"60 s\",\"interval_raw\":60,\"status\":\"Unknown\",\"status_raw\":1,\"parentid\":2101,\"parentid_raw\":2101}]}"
+  },
+  "create_sensor_interval_refused": {
+   "status": 400,
+   "location": "",
+   "body": "{\"code\":\"BAD_REQUEST\",\"message\":\"The request could not be processed. Check if the format and the data types are correct. Cause: \\\"intervalgroup.interval\\\" is invalid: no lookup validation possible for lookup intervalid, check the schema /schemas/ping for more information\",\"request_id\":\"MnBrPD\"}\n\n"
+  },
+  "patch_device_snmp": {
+   "status": 204,
+   "location": "",
+   "body": ""
+  },
+  "get_device_windows": {
+   "status": 200,
+   "location": "",
+   "body": "{\"basic\":{\"active\":\"1\",\"host\":\"10.0.0.41\",\"hostv6\":\"\",\"ipversion\":\"0\",\"name\":\"danbyte-probe-scratch\",\"parenttags\":[],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-scratch\"]},\"href\":\"/api/v2/devices/2101\",\"id\":\"2101\",\"kind\":\"device\",\"kind_name\":\"Device\",\"name\":\"danbyte-probe-scratch\",\"parent\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"status\":\"UP\",\"type\":\"osk.device\",\"windowsconnection\":{\"_inheritancesource\":{\"id\":\"0\",\"name\":\"Root\",\"type\":\"REFERENCED_ROOT\",\"href\":\"/api/v2/groups/0\"},\"_inherited\":false,\"_shadowed\":{\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\"},\"windowsauthenticationmethod\":\"0\",\"windowslogindomain\":\"DANBYTE\",\"windowsloginpassword\":\"REDACTED\",\"windowsloginusername\":\"svc-prtg\",\"wmiauthenticationinfo\":\"[b]Important[/b]: To use \\\"Kerberos only\\\", you must enable WSMan on the probe system. You can find the setting in the \\\"WMI Protocol\\\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.\",\"wmibackend\":\"WSMAN\"}}\n"
+  },
+  "move_device": {
+   "status": 204,
+   "location": "/api/v2/devices/2101",
+   "body": ""
+  },
+  "get_device_moved": {
+   "status": 200,
+   "location": "",
+   "body": "{\"basic\":{\"active\":\"1\",\"host\":\"10.0.0.41\",\"hostv6\":\"\",\"ipversion\":\"0\",\"name\":\"danbyte-probe-scratch\",\"parenttags\":[],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-scratch\",\"x\"]},\"href\":\"/api/v2/devices/2101\",\"id\":\"2101\",\"kind\":\"device\",\"kind_name\":\"Device\",\"name\":\"danbyte-probe-scratch\",\"parent\":{\"id\":\"53\",\"name\":\"Network Infrastructure\",\"type\":\"REFERENCED_GROUP\",\"href\":\"/api/v2/groups/53\"},\"status\":\"UP\",\"type\":\"osk.device\"}\n"
+  },
+  "metascan_post": {
+   "status": 201,
+   "location": "/api/v2/experimental/devices/2080/metascan?kind=snmptraffic",
+   "body": ""
+  },
+  "classic_discovernow": {
+   "status": 200,
+   "location": "",
+   "body": "<HTML><BODY class=\"no-content\"><B class=\"no-content\">OK</B></BODY></HTML>"
+  },
+  "classic_duplicate_device": {
+   "status": 302,
+   "location": "/device.htm?id=2107",
+   "body": "<HTML><BODY><B>302 Moved Temporarily</B></BODY></HTML>"
+  },
+  "classic_duplicate_paused": {
+   "status": 200,
+   "location": "",
+   "body": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"devices\":[{\"objid\":2107,\"objid_raw\":2107,\"name\":\"danbyte-clone-scratch\",\"name_raw\":\"danbyte-clone-scratch\",\"host\":\"10.0.0.41\",\"host_raw\":\"10.0.0.41\",\"status\":\"Paused  (paused)\",\"status_raw\":7,\"tags\":\"danbyte danbyte-scratch x\",\"tags_raw\":\"danbyte danbyte-scratch x\"}]}"
+  },
+  "classic_duplicate_sensor": {
+   "status": 302,
+   "location": "/sensor.htm?id=2110",
+   "body": "<HTML><BODY><B>302 Moved Temporarily</B></BODY></HTML>"
+  },
+  "delete_sensor": {
+   "status": 204,
+   "location": "",
+   "body": ""
+  },
+  "delete_sensor_gone": {
+   "status": 404,
+   "location": "",
+   "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object.\",\"request_id\":\"yzlxZY\"}\n\n"
+  },
+  "delete_device": {
+   "status": 204,
+   "location": "",
+   "body": ""
+  },
+  "delete_device_gone": {
+   "status": 404,
+   "location": "",
+   "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object.\",\"request_id\":\"yCJGMj\"}\n\n"
+  },
+  "create_device_bad_parent": {
+   "status": 404,
+   "location": "",
+   "body": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object. Cause: could not find parent with ID: 999999\",\"request_id\":\"ApEJhU\"}\n\n"
+  },
+  "classic_moveobjectnow_missing": {
+   "status": 404,
+   "location": "",
+   "body": "<HTML><BODY class=\"no-content\"><B class=\"no-content\">Not Found</B></BODY></HTML>"
+  },
+  "classic_delete_device": {
+   "status": 302,
+   "location": "/probenode.htm?id=1",
+   "body": "<HTML><BODY><B>302 Moved Temporarily</B></BODY></HTML>"
+  },
+  "create_device": {
+   "status": 201,
+   "location": "/api/v2/devices/2101",
+   "body": ""
+  },
+  "metascan_no_answer": {
+   "status": 400,
+   "location": "",
+   "body": "{\"code\": \"BAD_GATEWAY\", \"message\": \"The response received from the PRTG core server was invalid.  Cause: error during meta-scan: 106: The sensor does not get a response from the device you want to monitor.\"}"
+  }
+ }
+}
