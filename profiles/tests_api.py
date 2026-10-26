@@ -193,6 +193,24 @@ class AssignmentApiTests(ProfileBase):
             "profile_ids": [str(other.id), str(other.id)]}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_devices_and_vms_list_their_profiles_in_order(self):
+        other = self.profile("Desk", groups_=[self.desk], color="#112233")
+        self.ok(self.client.post(f"{ASSIGN}set/", {
+            "device_id": str(self.dev.id),
+            "profile_ids": [str(other.id), str(self.p.id)]}, format="json"))
+        rows = {r["name"]: r for r in self.ok(self.client.get("/api/devices/"))["results"]}
+        self.assertEqual(
+            [(p["slug"], p["color"], p["state"]) for p in rows["rds1"]["device_profiles"]],
+            [("desk", "#112233", "ok"), ("rds-hr", "", "ok")])
+        self.assertEqual(rows["rds2"]["device_profiles"], [])
+        detail = self.ok(self.client.get(f"/api/devices/{self.dev.id}/"))
+        self.assertEqual(detail["device_profiles"][1]["id"], str(self.p.id))
+        self.ok(self.client.post(ASSIGN, {"profile_id": str(self.p.id),
+                                          "virtual_machine_id": str(self.vm.id)},
+                                 format="json"), 201)
+        vm = self.ok(self.client.get(f"/api/virtual-machines/{self.vm.id}/"))
+        self.assertEqual([p["name"] for p in vm["device_profiles"]], ["RDS-HR"])
+
     def test_preview_writes_nothing(self):
         body = self.ok(self.client.post(f"{PROFILES}{self.p.id}/preview/", {
             "device_id": str(self.dev.id)}, format="json"))
@@ -340,6 +358,12 @@ class ScopeTests(ProfileBase):
         self.assertEqual(self.client.patch(f"{PROFILES}{self.p.id}/", {"name": "Y"},
                                            format="json").status_code, 403)
         self.ok(self.client.delete(f"{ASSIGN}{body['assignment']['id']}/"))
+
+    def test_profiles_on_a_device_need_view_on_assignments(self):
+        engine.assign(self.p, self.dev)
+        self._site_editor(["device"])
+        body = self.ok(self.client.get(f"/api/devices/{self.dev.id}/"))
+        self.assertEqual(body["device_profiles"], [])
 
     def test_missing_rights_are_named_and_previewed(self):
         self._site_editor(["deviceprofileassignment", "applicationgroupassignment", "device"])

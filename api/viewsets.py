@@ -3741,6 +3741,8 @@ class DeviceViewSet(
         # shows the name.
         .prefetch_related(
             TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail",
+            # Device profiles, in order, for the Profiles column and card.
+            "device_profile_assignments__profile",
             *(
                 Prefetch(
                     f"{path}config_template",
@@ -6443,7 +6445,7 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                             "cluster__status")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
-            .prefetch_related(TAGS, "disks")
+            .prefetch_related(TAGS, "disks", "device_profile_assignments__profile")
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
