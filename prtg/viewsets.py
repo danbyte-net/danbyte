@@ -15,7 +15,7 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -188,10 +188,11 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
 class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedViewSet):
     """Read-only: a link is made by matching. Deleting one says "that pairing
-    is wrong"; the next pass matches the device from scratch."""
+    is wrong"; the next pass matches the device from scratch. ``pause/`` and
+    ``resume/`` pause or resume the PRTG device itself."""
 
     integration_keys = ("prtg",)
-    http_method_names = ["get", "delete", "head", "options"]
+    http_method_names = ["get", "post", "delete", "head", "options"]
     queryset = PrtgDeviceLink.objects.select_related(
         "device", "virtual_machine", "connection"
     ).order_by("name")
@@ -205,6 +206,55 @@ class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedV
         if params.get("virtual_machine"):
             qs = qs.filter(virtual_machine_id=params["virtual_machine"])
         return qs
+
+    def create(self, request, *args, **kwargs):
+        # POST is open for the actions only; links come from matching.
+        raise MethodNotAllowed("POST")
+
+    def _link_for_write(self, request):
+        link = self.get_object()
+        if not _parent_visible(request, _get_active_tenant(request), link):
+            raise NotFound()
+        if not link.connection.enabled or not link.connection.api_key_set:
+            raise ValidationError({"detail": "The PRTG connection is off."})
+        return link
+
+    def _act(self, fn, *args, **kwargs):
+        from .actions import ActionError
+
+        try:
+            link = fn(*args, **kwargs)
+        except ActionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status)
+        return Response(PrtgDeviceLinkSerializer(link, context={"request": self.request}).data)
+
+    @extend_schema(
+        request=inline_serializer("PrtgLinkPause", fields={
+            "minutes": serializers.IntegerField(required=False, allow_null=True),
+            "note": serializers.CharField(required=False, allow_blank=True),
+        }),
+        responses={200: PrtgDeviceLinkSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def pause(self, request, pk=None):
+        """Pause the PRTG device - and with it its sensors - for
+        ``minutes``, or until resumed when ``minutes`` is empty."""
+        from .actions import pause_link
+
+        link = self._link_for_write(request)
+        return self._act(
+            pause_link, link, request.user, request.data.get("minutes"),
+            str(request.data.get("note") or ""),
+        )
+
+    @extend_schema(request=None, responses={200: PrtgDeviceLinkSerializer})
+    @action(detail=True, methods=["post"])
+    def resume(self, request, pk=None):
+        """Resume the PRTG device."""
+        from .actions import resume_link
+
+        link = self._link_for_write(request)
+        return self._act(resume_link, link, request.user)
 
 
 class PrtgChangeViewSet(
@@ -469,6 +519,70 @@ class PrtgSensorViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedReadV
         if not sensor.connection.enabled or not sensor.connection.api_key_set:
             raise NotFound("The PRTG connection is off.")
         return sensor
+
+    def _sensor_for_write(self, request):
+        """The sensor an action is for: ``change`` on PRTG sensors (the
+        queryset is narrowed by it), view on the device or VM, and a
+        connection that can be written."""
+        sensor = self.get_object()
+        if not _parent_visible(request, _get_active_tenant(request), sensor):
+            raise NotFound()
+        if not sensor.connection.enabled or not sensor.connection.api_key_set:
+            raise ValidationError({"detail": "The PRTG connection is off."})
+        return sensor
+
+    def _act(self, fn, *args, **kwargs):
+        from .actions import ActionError
+
+        try:
+            sensor = fn(*args, **kwargs)
+        except ActionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status)
+        sensor = self.get_queryset().get(pk=sensor.pk)
+        return Response(PrtgSensorSerializer(sensor, context={"request": self.request}).data)
+
+    @extend_schema(
+        request=inline_serializer("PrtgAcknowledge", fields={
+            "note": serializers.CharField(required=False, allow_blank=True),
+        }),
+        responses={200: PrtgSensorSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def acknowledge(self, request, pk=None):
+        """Acknowledge a down sensor in PRTG with an optional ``note``. Needs
+        the connection's acknowledgement write-back switch."""
+        from .actions import acknowledge
+
+        sensor = self._sensor_for_write(request)
+        return self._act(acknowledge, sensor, request.user, str(request.data.get("note") or ""))
+
+    @extend_schema(
+        request=inline_serializer("PrtgPause", fields={
+            "minutes": serializers.IntegerField(required=False, allow_null=True),
+            "note": serializers.CharField(required=False, allow_blank=True),
+        }),
+        responses={200: PrtgSensorSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def pause(self, request, pk=None):
+        """Pause the sensor in PRTG for ``minutes``, or until resumed when
+        ``minutes`` is empty."""
+        from .actions import pause
+
+        sensor = self._sensor_for_write(request)
+        return self._act(
+            pause, sensor, request.user, request.data.get("minutes"),
+            str(request.data.get("note") or ""),
+        )
+
+    @extend_schema(request=None, responses={200: PrtgSensorSerializer})
+    @action(detail=True, methods=["post"])
+    def resume(self, request, pk=None):
+        """Resume a paused sensor in PRTG."""
+        from .actions import resume
+
+        sensor = self._sensor_for_write(request)
+        return self._act(resume, sensor, request.user)
 
     @action(detail=False, methods=["get"])
     def summary(self, request):

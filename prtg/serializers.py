@@ -300,6 +300,8 @@ def _ref(obj) -> dict | None:
 
 class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
     device = serializers.SerializerMethodField()
+    #: Paused in PRTG, by anyone.
+    paused = serializers.BooleanField(read_only=True)
     virtual_machine = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
 
@@ -320,7 +322,7 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
             "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
-            "maintenance_note", "last_apply",
+            "maintenance_note", "last_apply", "paused",
         ]
         read_only_fields = fields
 
@@ -388,6 +390,9 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     paused = serializers.BooleanField(read_only=True)
     acknowledged = serializers.BooleanField(read_only=True)
+    #: Whether Danbyte can acknowledge it in PRTG now: down, and the
+    #: connection writes acknowledgements.
+    ackable = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
     device_url = serializers.SerializerMethodField()
     prtg_device = serializers.CharField(source="link.name", read_only=True)
@@ -406,6 +411,11 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
 
     def get_status(self, obj) -> str:
         return st.label(obj.status_raw) if obj.status_raw is not None else ""
+
+    def get_ackable(self, obj) -> bool:
+        from .acks import ACKABLE
+
+        return obj.status_raw in ACKABLE and bool(obj.connection.write_acknowledgements)
 
     def get_url(self, obj) -> str:
         return obj.connection.sensor_url(obj.objid)
@@ -451,7 +461,7 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "connection", "connection_name", "device", "virtual_machine",
             "prtg_device", "objid", "name", "kind", "kind_label", "status_raw", "status",
-            "state", "paused", "acknowledged", "message", "tags", "active",
+            "state", "paused", "acknowledged", "ackable", "message", "tags", "active",
             "last_value", "last_value_raw", "unit", "interval_seconds", "uptime_pct",
             "downtime_pct", "priority", "last_check_at", "last_up_at", "last_down_at",
             "probe_name", "group_path", "last_seen_at", "url", "device_url", "channels_at",
