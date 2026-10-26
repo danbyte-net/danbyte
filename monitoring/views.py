@@ -53,7 +53,7 @@ from .models import (
     StateTransition,
 )
 from .resolver import resolve_effective_checks
-from .rollup import status_counts, worst_status
+from .rollup import status_counts, status_rank, worst_status
 from .runner import check_now
 from .serializers import (
     AlertSerializer,
@@ -83,6 +83,11 @@ GRID_CAP = 1000
 # Prefix ids one bulk-status call takes - the same bound as the SLA status
 # endpoint's, so a list page batches both alike.
 MAX_STATUS_PREFIXES = 5000
+# ``detail`` lists the checks behind a roll-up: for a detail page's monitoring
+# bar, so it is honoured only for a handful of devices or VMs, and each lists
+# its worst checks first, at most this many.
+MAX_DETAIL_OWNERS = 25
+MAX_DETAIL_CHECKS = 50
 
 
 class _HostInet(Func):
@@ -2409,22 +2414,48 @@ def _flap_rollup(flapping_since_values) -> dict:
     return {"flapping": n} if n else {}
 
 
-def _rollup_by_owner(request, tenant, ips_by_owner: dict) -> dict:
+def _check_items(states) -> list[dict]:
+    """The checks behind a roll-up, worst first: name, kind, address, state
+    and when it entered that state. For the monitoring bar's hover."""
+    rows = sorted(
+        states,
+        key=lambda s: (-status_rank(s["status"]), s["template__name"] or "",
+                       str(s["target_ip__ip_address"] or "")),
+    )
+    return [
+        {
+            "id": str(s["id"]),
+            "name": s["template__name"] or "",
+            "kind": s["kind"],
+            "ip_id": str(s["target_ip_id"]),
+            "address": str(s["target_ip__ip_address"] or ""),
+            "status": s["status"],
+            "since": s["since"],
+        }
+        for s in rows[:MAX_DETAIL_CHECKS]
+    ]
+
+
+def _rollup_by_owner(request, tenant, ips_by_owner: dict, detail: bool = False) -> dict:
     """``{owner_id: roll-up}`` across each owner's IPs (a device's, a VM's),
     from one CheckState query for every IP at once - a query per owner cost a
     5,000-device list ~5,000 queries (#416). Owners with no monitored check
     are left out. Excluded addresses and the caller's IP view scope apply as
-    for a single target."""
+    for a single target. ``detail`` adds ``items``, the checks themselves
+    (``_check_items``), from the same query."""
     from .exclusion import monitored
 
     every_ip = [ip_id for ip_ids in ips_by_owner.values() for ip_id in ip_ids]
     if not every_ip:
         return {}
+    fields = ["target_ip_id", "status", "last_detail", "flapping_since"]
+    if detail:
+        fields += ["id", "kind", "since", "template__name", "target_ip__ip_address"]
     states_by_ip: dict = {}
     for row in monitored(_scope_ip_keyed(
         request, tenant,
         CheckState.objects.filter(target_ip_id__in=every_ip),
-    ), tenant.id).values("target_ip_id", "status", "last_detail", "flapping_since"):
+    ), tenant.id).values(*fields):
         states_by_ip.setdefault(row["target_ip_id"], []).append(row)
     out: dict = {}
     for owner_id, ip_ids in ips_by_owner.items():
@@ -2438,6 +2469,7 @@ def _rollup_by_owner(request, tenant, ips_by_owner: dict) -> dict:
             "monitored_ips": len({s["target_ip_id"] for s in states}),
             **_external_detail([s["last_detail"] for s in states]),
             **_flap_rollup(s["flapping_since"] for s in states),
+            **({"items": _check_items(states)} if detail else {}),
         }
     return out
 
@@ -2522,6 +2554,10 @@ def _external_detail(rows) -> dict:
             "devices": serializers.ListField(
                 child=serializers.UUIDField(), required=False
             ),
+            "vms": serializers.ListField(
+                child=serializers.UUIDField(), required=False
+            ),
+            "detail": serializers.BooleanField(required=False),
         },
     ),
     responses=OpenApiResponse(
@@ -2540,6 +2576,9 @@ def bulk_status_view(request):
         - rolled up across every IP assigned to the device (a service's check
         lives on its IP, so service monitoring rolls up here too).
     ``?vms=id,id`` → the same, across every IP assigned to the virtual machine.
+    ``detail`` (``true`` in the body, ``?detail=1``) adds ``items`` to each
+    device or VM roll-up: its checks, worst first (at most 50), for up to 25
+    devices or VMs per call - a detail page's monitoring bar, not a list.
 
     Also accepts POST with ``{"ips": [...]}`` / ``{"prefixes": [...]}`` /
     ``{"devices": [...]}``. A page of ~110 prefix UUIDs makes a ~4.2 KB URL,
@@ -2562,6 +2601,11 @@ def bulk_status_view(request):
                 return ",".join(str(x) for x in v)
             return v or None
         return request.query_params.get(name)
+
+    def _detail() -> bool:
+        if request.method == "POST":
+            return (request.data or {}).get("detail") is True
+        return request.query_params.get("detail") in ("1", "true")
 
     ip_param = _ids("ips")
     if ip_param:
@@ -2645,7 +2689,10 @@ def bulk_status_view(request):
         ips_by_vm: dict = {}
         for vm_id, ip_id in ip_rows:
             ips_by_vm.setdefault(str(vm_id), []).append(ip_id)
-        out.update(_rollup_by_owner(request, tenant, ips_by_vm))
+        out.update(_rollup_by_owner(
+            request, tenant, ips_by_vm,
+            detail=_detail() and len(ids) <= MAX_DETAIL_OWNERS,
+        ))
         return Response({"statuses": out})
 
     device_param = _ids("devices")
@@ -2668,7 +2715,10 @@ def bulk_status_view(request):
         ips_by_device: dict = {}
         for dev_id, ip_id in ip_rows:
             ips_by_device.setdefault(str(dev_id), []).append(ip_id)
-        out.update(_rollup_by_owner(request, tenant, ips_by_device))
+        out.update(_rollup_by_owner(
+            request, tenant, ips_by_device,
+            detail=_detail() and len(ids) <= MAX_DETAIL_OWNERS,
+        ))
         return Response({"statuses": out})
 
     return Response({"statuses": {}})

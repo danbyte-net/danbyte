@@ -276,3 +276,60 @@ class PrefixBulkStatusTests(_BulkStatusBase):
         states = [s for s in sqls if 'FROM "monitoring_checkstate"' in s and "host(" in s]
         self.assertEqual(len(states), 1, sqls)
         self.assertRegex(states[0], r'host\(U\d+\."ip_address"\)::inet BETWEEN')
+
+
+class BulkStatusDetailTests(_BulkStatusBase):
+    """``detail`` lists the checks behind a device's or VM's roll-up for the
+    monitoring bar on its page, worst first, from the same query."""
+
+    def _detail(self, key, objs) -> tuple[int, dict]:
+        body = {key: [str(o.id) for o in objs], "detail": True}
+        self.client.post("/api/monitoring/status/", body, format="json")
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.post("/api/monitoring/status/", body, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        return len(ctx.captured_queries), r.json()["statuses"]
+
+    def test_device_items_worst_first(self):
+        plain, _ = self._post("devices", self.devices[:1])
+        cost, out = self._detail("devices", self.devices[:1])
+        self.assertEqual(plain, cost, "detail must not cost another query")
+        items = out[str(self.devices[0].id)]["items"]
+        self.assertEqual(
+            [(i["name"], i["address"], i["status"]) for i in items],
+            [("ping", "10.7.2.1", "down"), ("ping", "10.7.1.1", "up"),
+             ("ssh", "10.7.1.1", "up")],
+        )
+        self.assertTrue(all(i["since"] and i["ip_id"] and i["kind"] for i in items))
+
+    def test_vm_items(self):
+        _, out = self._detail("vms", self.vms[:1])
+        items = out[str(self.vms[0].id)]["items"]
+        self.assertEqual([(i["name"], i["status"]) for i in items], [("ping", "up")])
+
+    def test_no_items_without_detail_or_for_a_list(self):
+        _, out = self._post("devices", self.devices[:1])
+        self.assertNotIn("items", out[str(self.devices[0].id)])
+        many = [*self.devices, *self.devices[:1] * 20]
+        body = {"devices": [str(d.id) for d in many], "detail": True}
+        r = self.client.post("/api/monitoring/status/", body, format="json")
+        self.assertNotIn("items", r.json()["statuses"][str(self.devices[0].id)])
+
+    def test_site_scoped_member_sees_only_their_addresses(self):
+        user = User.objects.create_user("member-d", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        devices = ObjectPermission.objects.create(
+            name="devices", object_types=["device"], actions=["view"],
+        )
+        ips = ObjectPermission.objects.create(
+            name="site-b-ips", object_types=["ipaddress"], actions=["view"],
+        )
+        for perm in (devices, ips):
+            perm.users.add(user)
+            perm.tenants.add(self.tenant)
+        ips.sites.add(self.site_b)
+        self._login(user)
+        _, out = self._detail("devices", self.devices[:2])
+        self.assertNotIn(str(self.devices[0].id), out)
+        items = out[str(self.devices[1].id)]["items"]
+        self.assertTrue(all(i["address"].endswith(".2") for i in items))

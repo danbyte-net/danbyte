@@ -228,9 +228,13 @@ number as a **Ports** bar column (like the prefix utilization bar), and
 device's fill crosses a threshold - see
 [Monitoring](../features/monitoring.md#alert-rules).
 
-Any **custom fields** you've defined for devices appear below the cards. If any of the device's IPs are
-monitored, a **Monitoring** summary (roll-up badge + per-IP grid) appears at the
-**top** of the tab - see [Monitoring](../features/monitoring.md#on-a-device).
+Any **custom fields** you've defined for devices appear below the cards. When
+anything monitors the device - its own checks, Zabbix or PRTG - the
+**monitoring bar** sits at the **top** of the tab: the overall state, then one
+row per source with its counts, a hover listing what is behind each pill and
+count, and a click into the Monitoring or Sensors tab filtered to it. The
+header's monitoring pill is the same overall state with the same hover - see
+[The monitoring bar](../features/monitoring.md#the-monitoring-bar).
 The Devices list also has a **Monitoring** column rolling that status up per
 device. Where the device physically sits - its **rack elevation** with this
 device highlighted - is drawn compactly (front **and** rear side by side) in the

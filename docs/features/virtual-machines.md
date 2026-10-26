@@ -31,10 +31,16 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
-The header carries the VM's status, its power state and, when any of its
-addresses is monitored, the same monitoring pill as the VM list: the worst
-state across its addresses' checks, including what PRTG or Zabbix answer for
-them. Hovering it shows the breakdown and any external problems.
+The header carries the VM's status, its power state and, when anything
+monitors it, the same monitoring pill as a device's header: the worst state
+across its addresses' checks and PRTG. Hovering it shows each source's state
+and counts.
+
+**Overview** opens with the same **monitoring bar** as a device's: the overall
+state, one row per source (checks, PRTG) with its counts and a hover listing
+what is behind each, a click into the Monitoring or Sensors tab filtered to it,
+and **Notify me** for the primary address - see
+[The monitoring bar](monitoring.md#the-monitoring-bar).
 
 **Overview** carries a **Sensors** card on top once a PRTG sensor or
 channel is [pinned](prtg.md#pinned-sensors) to the VM (a pinned sensor as a
@@ -62,7 +68,7 @@ interfaces a VLAN. Then:
 | **Software** | Applications installed on it, each at a version, with a count on the tab (`install_count` in the API), and its [application groups](applications.md#application-groups). See [Applications & installed software](applications.md). |
 | **Flows** | [Application flows](application-flows.md) with an end at one of its addresses, or at a prefix or range that holds one. |
 | **Routing** | Static routes and BGP, OSPF, IS-IS and EIGRP instances on the VM - a virtual router's routing, the same as a device's. See [Routing on virtual machines](routing.md#routing-on-virtual-machines). |
-| **Monitoring** | Checks against its addresses, same engine as devices, and one **PRTG** row when PRTG watches the VM. |
+| **Monitoring** | Checks against its primary address, same engine as devices (`?state=` filters them, as the monitoring bar does), and one **PRTG** row when PRTG watches the VM. |
 | **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on and PRTG has a device for this VM, with the sensor count: the same status strip, sensor cards and sensor panel as a device's. |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
 | **Certificates** | TLS certificates seen on its endpoints. |
