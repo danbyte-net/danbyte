@@ -16,8 +16,8 @@ what a server *is*; an [application group](applications.md#application-groups)
 says what it *runs*, and a profile can carry several groups.
 
 !!! note "In progress"
-    This page covers the catalog, assignments and the API. The screens,
-    services, Danbyte monitoring, PRTG and Zabbix sections, config contexts,
+    This page covers the catalog, its screens, assignments and the API.
+    Services, Danbyte monitoring, PRTG and Zabbix sections, config contexts,
     compliance and automatic propagation of profile edits follow. Until then
     an edited profile reaches its objects on **Re-apply**.
 
@@ -52,6 +52,69 @@ parent's groups and tags, then the child's) and single values come from the
 nearest profile that sets them (the child's platform or custom field value
 over the parent's). The profile's detail shows the result as `effective`,
 each item naming the profile it comes from.
+
+## The screens
+
+**DCIM → Devices → Device profiles**, after Application groups, lists the
+profiles: the name as the profile's colour badge, the **Parent** (the chain
+above it, the parent itself a link), **Applies to**, the number of
+**Application groups**, how many objects it is **Assigned** to, and tags.
+*Children* and the slug are in the Columns menu. The rail filters by parent
+and by what a profile applies to. **Add profile** opens the editor; a
+selection can be deleted in bulk (a profile still assigned or with children
+is skipped and named).
+
+### The profile page
+
+| Tab | |
+|---|---|
+| **Overview** | A **Device profile** card (slug, parent, applies to, assigned count, runbook link, tags), the notes, then one card per section - **Application groups**, **Tags to add**, **Custom field values**, **Platform** - listing the *effective* items: the parents' applied. An item that comes from a parent carries a *from &lt;parent&gt;* chip. |
+| **Assigned objects** | Every device and VM with the profile: its kind, its state pill (**OK**, **Missing**, **Edited**, **Pending**), the missing and edited counts, and when it was assigned. The totals of missing and edited items sit above the table. Each row has **Re-apply** and **Unassign**; tick rows to do either to all of them. |
+| **Children** | The profiles whose parent this is. |
+| **Journal**, **Change log** | As on every object. |
+
+### Editing a profile
+
+The editor opens with the facts - **Name**, **Slug**, **Parent**,
+**Color**, **Applies to** (a switch each for devices and virtual machines)
+and **Description**. The parent list leaves out the profile itself and every
+profile under it, so a chain cannot loop. Then one card per section:
+
+| Card | |
+|---|---|
+| **Application groups** | The groups, in order - the order they are picked in. |
+| **Tags to add** | The tags an object gets. |
+| **Custom field values** | **Add field** offers the custom fields of every kind the profile applies to (devices, VMs or both); each picked field is a row with its own typed input and a remove button. |
+| **Platform** | Set on an object that has none. |
+| **Runbook and notes** | A runbook link and free notes. |
+
+The profile's own custom fields and tags follow, as on any catalog object.
+
+## On devices and VMs
+
+- **Form field.** The device and VM forms have a **Profiles** field under
+  *Application groups*: the profiles in order, as their badges. The first
+  profile in the list wins a single value. A new device or VM gets its
+  profiles with its first save; on an existing one, saving makes its profiles
+  exactly the list (`set/`). The field shows only to someone who may assign
+  and unassign profiles.
+- **Profiles card.** The Overview of a device or VM has a **Profiles** card
+  beside *Software*: each profile as its badge with its state pill,
+  **Re-apply** (restores what someone removed) and **×** (unassign, which
+  says how many rows were removed, kept or moved to another profile).
+- **Apply profile.** The card's **Apply profile** opens a dialog: pick a
+  profile (those already on the object are left out) and the dialog shows the
+  [preview](#api) section by section - **Will create**, **Will change**,
+  **Already there** and **Skipped**, each skip with its reason - and first,
+  in red, any permission you are missing. **Apply** is offered only when
+  nothing is missing and the profile fits the object.
+- **Profiles column.** Device and VM tables offer a **Profiles** column in
+  the Columns menu (hidden by default): the profiles as badges, with the state
+  pill beside one that is not in step.
+- **In bulk.** Tick devices or VMs on their list and pick **Apply profile** in
+  the selection bar. Up to 25 objects answer at once with each outcome
+  (*Applied*, *Already had it*, *Not allowed*, *Refused*) and the totals; more
+  run as a background job, and the dialog links to it on **Jobs**.
 
 ## Assigning
 
@@ -109,7 +172,9 @@ A profile carries `parent`, `path` (names from the root), `platform`,
 and `child_count`; the detail adds `effective`. Write `parent_id`,
 `platform_id`, `application_group_ids` (the whole ordered list),
 `add_tag_ids` and `cf_values` (`{key: value}`, checked against the custom
-field definitions). An assignment carries `profile`, `device` or
+field definitions). Devices and VMs carry `device_profiles` on list and
+detail - `[{id, assignment_id, name, slug, color, state}]`, in order - for a
+reader who may view profile assignments (empty otherwise). An assignment carries `profile`, `device` or
 `virtual_machine`, `position`, `state`, `missing_count`, `edited_count`,
 `reconciled_at` and `created_by`.
 
