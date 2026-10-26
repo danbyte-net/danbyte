@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react"
+import type { ReactNode, SyntheticEvent } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLink } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { EthernetPort, ExternalLink, Globe, Network } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import { ApiError } from "@/lib/api"
@@ -58,10 +60,22 @@ import { PrtgStateStrip } from "./sensor-strip"
 /** The device or VM whose PRTG sensors a surface shows. */
 export type PrtgParent = { device: string } | { virtual_machine: string }
 
-function parentQuery(parent: PrtgParent): string {
-  return "device" in parent
-    ? `device=${parent.device}`
-    : `virtual_machine=${parent.virtual_machine}`
+/** What a sensors section is narrowed to: a device or VM (its Sensors tab),
+ * or one object the sensors watch - an address, an interface (device or
+ * VM) or a service. */
+export type PrtgScope =
+  | PrtgParent
+  | { ip_address: string }
+  | { interface: string }
+  | { service: string }
+
+function parentQuery(scope: PrtgScope): string {
+  const [key, value] = Object.entries(scope)[0]
+  return `${key}=${encodeURIComponent(value)}`
+}
+
+function isParent(scope: PrtgScope): scope is PrtgParent {
+  return "device" in scope || "virtual_machine" in scope
 }
 
 /** A 404 (integration off) or 403 (no grant on PRTG rows) is "nothing to
@@ -78,9 +92,10 @@ async function quiet<T>(fetcher: () => Promise<T>, empty: T): Promise<T> {
 
 /** The PRTG devices linked to this device or VM. Empty while the
  * integration is off, which is what hides the Sensors tab. */
-export function usePrtgLinks(parent: PrtgParent) {
+export function usePrtgLinks(parent: PrtgParent, enabled = true) {
   const qs = parentQuery(parent)
   return useQuery({
+    enabled,
     queryKey: ["prtg-links", qs],
     queryFn: () =>
       quiet(
@@ -102,8 +117,10 @@ export function linkedSensorCount(links: PrtgDeviceLink[] | undefined) {
   return (links ?? []).reduce((n, l) => n + sensorTotal(l), 0)
 }
 
-export function usePrtgSensors(parent: PrtgParent, enabled = true) {
-  const qs = parentQuery(parent)
+/** The sensors of a device or VM, or the ones watching one object. Empty
+ * while the integration is off, which is what hides a Sensors tab. */
+export function usePrtgSensors(scope: PrtgScope, enabled = true) {
+  const qs = parentQuery(scope)
   return useQuery({
     queryKey: ["prtg-sensors", qs],
     queryFn: () =>
@@ -148,16 +165,47 @@ export function PrtgSensorsTab({
   selected?: string
   onSelect: (id: string | null) => void
 }) {
-  const links = usePrtgLinks(parent)
-  const sensors = usePrtgSensors(parent)
-  if (links.isLoading || sensors.isLoading) return <Loading />
+  return (
+    <PrtgSensorsSection
+      scope={parent}
+      selected={selected}
+      onSelect={onSelect}
+    />
+  )
+}
+
+/**
+ * PRTG's sensors for one scope, in the same shape everywhere: a strip, a
+ * card per sensor, the sensor panel. On a device or VM the strip is the
+ * PRTG device; on an address, interface or service it says which device the
+ * sensors come from ("via db-dev01 in PRTG") and links to its Sensors tab.
+ * Without `onSelect` the open panel is the section's own state.
+ */
+export function PrtgSensorsSection({
+  scope,
+  selected,
+  onSelect,
+}: {
+  scope: PrtgScope
+  selected?: string
+  onSelect?: (id: string | null) => void
+}) {
+  const [own, setOwn] = useState<string | null>(null)
+  const parent = isParent(scope)
+  // Only a device or VM lists its PRTG devices.
+  const links = usePrtgLinks(parent ? scope : { device: "" }, parent)
+  const sensors = usePrtgSensors(scope)
+  const current = onSelect ? selected : own
+  const select = onSelect ?? setOwn
+  if ((parent && links.isLoading) || sensors.isLoading) return <Loading />
   if (sensors.isError) return <QueryError error={sensors.error} />
   const rows = sensors.data ?? []
-  const open = rows.find((s) => s.id === selected) ?? null
+  const open = rows.find((s) => s.id === current) ?? null
 
   return (
     <div className="space-y-4">
-      {(links.data ?? []).map((link) => (
+      {!parent && <ViaStrips sensors={rows} />}
+      {(parent ? (links.data ?? []) : []).map((link) => (
         <div
           key={link.id}
           className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-3 py-2 text-[13px]"
@@ -185,17 +233,189 @@ export function PrtgSensorsTab({
       ))}
       {rows.length === 0 ? (
         <EmptyState title="No sensors.">
-          PRTG has no sensors on this device yet.
+          {parent
+            ? "PRTG has no sensors on this device yet."
+            : "No PRTG sensor watches this."}
         </EmptyState>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((s) => (
-            <SensorCard key={s.id} sensor={s} onOpen={() => onSelect(s.id)} />
+            <SensorCard key={s.id} sensor={s} onOpen={() => select(s.id)} />
           ))}
         </div>
       )}
-      <SensorPanel sensor={open} onClose={() => onSelect(null)} />
+      <SensorPanel sensor={open} onClose={() => select(null)} />
     </div>
+  )
+}
+
+/** The device or VM a sensor sits on. */
+function sensorOwner(s: PrtgSensor) {
+  if (s.virtual_machine)
+    return { key: `vm:${s.virtual_machine.id}`, ...s.virtual_machine, vm: true }
+  if (s.device) return { key: `d:${s.device.id}`, ...s.device, vm: false }
+  return null
+}
+
+/** A link to the Sensors tab of the device or VM a sensor sits on. */
+export function OwnerSensorsLink({
+  sensor,
+  className,
+  children,
+}: {
+  sensor: PrtgSensor
+  className?: string
+  children: ReactNode
+}) {
+  const owner = sensorOwner(sensor)
+  if (!owner) return <>{children}</>
+  return owner.vm ? (
+    <Link
+      to="/virtual-machines/$id"
+      params={{ id: owner.id }}
+      search={{ tab: "sensors" }}
+      className={className}
+    >
+      {children}
+    </Link>
+  ) : (
+    <Link
+      to="/devices/$id"
+      params={{ id: owner.id }}
+      search={{ tab: "sensors" }}
+      className={className}
+    >
+      {children}
+    </Link>
+  )
+}
+
+/**
+ * Where an object's sensors come from: one strip per device or VM with its
+ * state counts, "via db-dev01 in PRTG" linking to its Sensors tab, the PRTG
+ * device in PRTG, and when it was read.
+ */
+function ViaStrips({ sensors }: { sensors: PrtgSensor[] }) {
+  const groups = new Map<string, PrtgSensor[]>()
+  for (const s of sensors) {
+    const key = sensorOwner(s)?.key ?? s.connection
+    groups.set(key, [...(groups.get(key) ?? []), s])
+  }
+  return (
+    <>
+      {[...groups.entries()].map(([key, rows]) => {
+        const first = rows[0]
+        const owner = sensorOwner(first)
+        const readAt = rows
+          .map((s) => s.last_seen_at)
+          .filter((t): t is string => !!t)
+          .sort()
+          .at(-1)
+        return (
+          <div
+            key={key}
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-3 py-2 text-[13px]"
+            data-testid="prtg-via"
+          >
+            <PrtgStateStrip summary={countSensors(rows)} />
+            <span className="whitespace-nowrap text-muted-foreground">
+              via{" "}
+              <OwnerSensorsLink sensor={first} className="link font-medium">
+                {owner?.name ?? first.prtg_device}
+              </OwnerSensorsLink>{" "}
+              in PRTG
+            </span>
+            <a
+              href={first.device_url}
+              target="_blank"
+              rel="noreferrer"
+              className="link inline-flex items-center gap-1 font-mono text-xs"
+            >
+              {first.prtg_device}
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            {readAt && (
+              <span className="ml-auto inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
+                read <TimeCell iso={readAt} />
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+/**
+ * What a sensor watches, as small chips that link to it: the address PRTG
+ * reaches the device on, the interface a traffic sensor measures, the
+ * service an HTTP or SSL sensor checks.
+ */
+export function SensorWatches({ sensor: s }: { sensor: PrtgSensor }) {
+  if (!s.ip_address && !s.interface && !s.service) return null
+  const stop = (e: SyntheticEvent) => e.stopPropagation()
+  const chip = "max-w-full min-w-0 gap-1 hover:bg-muted"
+  return (
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-1"
+      data-testid="prtg-sensor-watches"
+      onClick={stop}
+      onKeyDown={stop}
+    >
+      {s.ip_address && (
+        <WatchTip label="Address">
+          <Badge variant="outline" className={chip} asChild>
+            <Link to="/ips/$id" params={{ id: s.ip_address.id }}>
+              <Network className="h-3 w-3 shrink-0" />
+              <span className="truncate font-mono">{s.ip_address.address}</span>
+            </Link>
+          </Badge>
+        </WatchTip>
+      )}
+      {s.interface && (
+        <WatchTip label="Interface">
+          <Badge variant="outline" className={chip} asChild>
+            {s.interface.kind === "interface" ? (
+              <Link to="/interfaces/$id" params={{ id: s.interface.id }}>
+                <EthernetPort className="h-3 w-3 shrink-0" />
+                <span className="truncate">{s.interface.name}</span>
+              </Link>
+            ) : (
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: s.interface.parent }}
+                search={{ tab: "components" }}
+              >
+                <EthernetPort className="h-3 w-3 shrink-0" />
+                <span className="truncate">{s.interface.name}</span>
+              </Link>
+            )}
+          </Badge>
+        </WatchTip>
+      )}
+      {s.service && (
+        <WatchTip label="Service">
+          <Badge variant="outline" className={chip} asChild>
+            <Link to="/services/$id" params={{ id: s.service.id }}>
+              <Globe className="h-3 w-3 shrink-0" />
+              <span className="truncate">{s.service.name}</span>
+              {s.service.ports && (
+                <span className="text-muted-foreground">{s.service.ports}</span>
+              )}
+            </Link>
+          </Badge>
+        </WatchTip>
+      )}
+    </div>
+  )
+}
+
+function WatchTip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent variant="default">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -299,6 +519,7 @@ function SensorCard({
         )}
       </p>
       {notUp && s.message && <SensorMessage message={s.message} />}
+      <SensorWatches sensor={s} />
       <div className="mt-auto flex items-center gap-3 text-[11px] whitespace-nowrap text-muted-foreground">
         {s.last_check_at && (
           <span className="inline-flex items-center gap-1">
