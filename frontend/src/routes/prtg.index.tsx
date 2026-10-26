@@ -466,6 +466,40 @@ function ConnectionCard({
       ),
     },
     {
+      label: "Writes",
+      value: (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Badge variant={WRITE_VARIANT[conn.write_mode] ?? "secondary"}>
+            {WRITE_LABEL[conn.write_mode] ?? "Not checked"}
+          </Badge>
+          {conn.auto_apply_registration && (
+            <Badge variant="secondary">Auto apply</Badge>
+          )}
+          {conn.prune_devices && <Badge variant="secondary">Prune</Badge>}
+        </span>
+      ),
+    },
+    ...(conn.last_apply_at
+      ? [
+          {
+            label: "Last apply",
+            value: (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <TimeCell iso={conn.last_apply_at} />
+                <Badge variant="secondary" className="num">
+                  {Number(conn.last_apply_summary?.applied ?? 0)} applied
+                </Badge>
+                {Number(conn.last_apply_summary?.failed ?? 0) > 0 && (
+                  <Badge variant="destructive" className="num">
+                    {Number(conn.last_apply_summary?.failed)} failed
+                  </Badge>
+                )}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    {
       label: "Last plan",
       value: conn.last_plan_at ? (
         <span className="inline-flex flex-wrap items-center gap-2">
@@ -692,6 +726,17 @@ function PushSetup({
   )
 }
 
+const WRITE_LABEL: Record<string, string> = {
+  v2: "API v2",
+  seed: "Seed copies",
+  none: "Cannot create",
+}
+const WRITE_VARIANT: Record<string, "success" | "warning" | "secondary"> = {
+  v2: "success",
+  seed: "warning",
+  none: "secondary",
+}
+
 function ConnectionDialog({
   connection,
   open,
@@ -783,6 +828,27 @@ function PrtgConnectionForm({
   const [registerPath, setRegisterPath] = useState(
     connection?.register_group_path ?? ""
   )
+  const [seedDevice, setSeedDevice] = useState<string | null>(
+    connection?.seed_device_objid || null
+  )
+  const [sendCredentials, setSendCredentials] = useState(
+    connection?.send_credentials ?? false
+  )
+  const [autoApply, setAutoApply] = useState(
+    connection?.auto_apply_registration ?? false
+  )
+  const [pruneDevices, setPruneDevices] = useState(
+    connection?.prune_devices ?? false
+  )
+  const prtgDevices = useQuery({
+    queryKey: ["prtg-devices", connection?.id],
+    queryFn: () =>
+      api<{ objid: string; name: string; host: string; paused: boolean }[]>(
+        `/api/prtg/connections/${connection?.id}/prtg-devices/`
+      ),
+    enabled: !!connection?.api_key_set,
+    staleTime: 60_000,
+  })
   const profiles = useQuery({
     queryKey: ["prtg-profiles", connection?.id],
     queryFn: () =>
@@ -866,6 +932,10 @@ function PrtgConnectionForm({
                   register_profile: registerProfile,
                   register_group_id: registerGroup ?? "",
                   register_group_path: registerPath,
+                  seed_device_objid: seedDevice ?? "",
+                  send_credentials: sendCredentials,
+                  auto_apply_registration: autoApply,
+                  prune_devices: pruneDevices,
                 }
               : {}),
           }),
@@ -1043,7 +1113,7 @@ function PrtgConnectionForm({
         <FormSection title="Registration" card>
           <FormCheckbox
             label="Register all devices and VMs"
-            info="Every device and VM goes to PRTG with this profile and group. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. Nothing is written to PRTG yet: the review queue shows the plan."
+            info="Every device and VM goes to PRTG with this profile and group. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. The review queue shows the plan; applying it writes to PRTG."
             checked={registerAll}
             onChange={setRegisterAll}
           />
@@ -1076,6 +1146,66 @@ function PrtgConnectionForm({
               </FormColumn>
             </FormColumns>
           )}
+        </FormSection>
+      )}
+
+      {connection && (
+        <FormSection title="Writes" card>
+          <Field
+            label="Can create"
+            info="Checked against PRTG: API v2 creates devices and sensors from PRTG 26.2.120 on. Without it, new devices and sensors are copies of the seed device. Test connection checks again."
+          >
+            <span className="inline-flex flex-wrap items-center gap-2 text-[13px]">
+              <Badge
+                variant={WRITE_VARIANT[connection.write_mode] ?? "secondary"}
+              >
+                {WRITE_LABEL[connection.write_mode] ?? "Not checked"}
+              </Badge>
+              {connection.write_detail && (
+                <span className="text-muted-foreground">
+                  {connection.write_detail}
+                </span>
+              )}
+            </span>
+          </Field>
+          <FormColumns>
+            <FormColumn>
+              <FormCombobox
+                label="Seed device"
+                info="An empty, paused PRTG device with one sensor of each kind to copy. Used only where API v2 cannot create objects."
+                value={seedDevice}
+                onChange={setSeedDevice}
+                options={(prtgDevices.data ?? []).map((d) => ({
+                  value: d.objid,
+                  label: `${d.name} (${d.objid})`,
+                }))}
+                noneLabel="None"
+                error={fieldErrors.seed_device_objid}
+                searchPlaceholder="Search PRTG devices…"
+                emptyText="No PRTG devices."
+              />
+            </FormColumn>
+            <FormColumn>
+              <FormCheckbox
+                label="Send credentials"
+                info="A device Danbyte creates gets the SNMP profile and Windows login Danbyte holds for it, as device settings with inheritance off. PRTG never returns them."
+                checked={sendCredentials}
+                onChange={setSendCredentials}
+              />
+              <FormCheckbox
+                label="Apply automatically"
+                info="After each planning pass, ready creates, sensors and moves are written without a person. Removals always wait."
+                checked={autoApply}
+                onChange={setAutoApply}
+              />
+              <FormCheckbox
+                label="Propose removing devices"
+                info="A PRTG device Danbyte created whose object leaves PRTG's plan is proposed for removal. Devices Danbyte did not create are never touched."
+                checked={pruneDevices}
+                onChange={setPruneDevices}
+              />
+            </FormColumn>
+          </FormColumns>
         </FormSection>
       )}
 

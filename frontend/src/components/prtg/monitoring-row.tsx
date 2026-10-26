@@ -83,6 +83,11 @@ export function PrtgMonitoringRow({
               <CheckStatusBadge status={link.state || "unknown"} />
               {s && rows.length === 1 && <PrtgStateStrip summary={s} />}
               {excluded}
+              {link.created_here && (
+                <Badge variant="secondary" className="whitespace-nowrap">
+                  Created by Danbyte
+                </Badge>
+              )}
               {pausedUntil(link) && (
                 <Badge variant="secondary" className="whitespace-nowrap">
                   Paused by maintenance until{" "}
@@ -173,7 +178,7 @@ export function PrtgPlanPreview({ parent }: { parent: PrtgParent }) {
         <PlanEntry key={e.connection.id} entry={e} many={entries.length > 1} />
       ))}
       <p className="text-[11px] text-muted-foreground">
-        Planned only: nothing is written to PRTG yet.
+        Computed from what Danbyte holds; the review queue writes it to PRTG.
       </p>
     </div>
   )
@@ -205,15 +210,38 @@ function PlanEntry({
     rows.push({
       label: "PRTG device",
       value: (
-        <a
-          href={e.linked.url}
-          target="_blank"
-          rel="noreferrer"
-          className="link inline-flex items-center gap-1 font-mono text-xs"
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <a
+            href={e.linked.url}
+            target="_blank"
+            rel="noreferrer"
+            className="link inline-flex items-center gap-1 font-mono text-xs"
+          >
+            {e.linked.name || e.linked.objid}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+          {e.linked.created_here && (
+            <Badge variant="secondary">Created by Danbyte</Badge>
+          )}
+        </span>
+      ),
+    })
+  if (e.last_apply && e.last_apply.at)
+    rows.push({
+      label: "Last apply",
+      value: (
+        <span
+          className="inline-flex flex-wrap items-center gap-2"
+          data-testid="prtg-last-apply"
         >
-          {e.linked.name || e.linked.objid}
-          <ExternalLink className="h-3 w-3" />
-        </a>
+          <Badge variant={e.last_apply.ok ? "success" : "destructive"}>
+            {e.last_apply.ok ? "Applied" : "Failed"}
+          </Badge>
+          <TimeCell iso={e.last_apply.at} />
+          <span className="text-xs text-muted-foreground">
+            {e.last_apply.detail}
+          </span>
+        </span>
       ),
     })
   if (e.managed) {
