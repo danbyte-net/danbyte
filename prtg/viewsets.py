@@ -403,6 +403,92 @@ class PrtgChangeViewSet(
     serializer_class = PrtgChangeSerializer
     change_model = PrtgChange
     connection_model = PrtgConnection
+    rbac_action_map = {"apply_object": "change", "decide": "change"}
+
+    @action(detail=True, methods=["post"])
+    def decide(self, request, pk=None):
+        """Settle a decision row at once: ``{"link": {kind, id}}`` links the
+        row's PRTG device to that candidate, ``{"remote": objid}`` links the
+        row's object to that PRTG device, ``{"create": true}`` creates a
+        separate PRTG device for the row's object. The row stays as Applied
+        with the result."""
+        from .client import PrtgError
+        from .reader import decide_ambiguous
+        from .writer import change_status
+
+        change = self.get_object()
+        try:
+            detail = decide_ambiguous(change, request.data or {}, user=request.user)
+        except ValueError as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=400)
+        except PrtgError as exc:
+            return Response({"ok": False, "detail": str(exc)}, status=502)
+        change.refresh_from_db()
+        return Response({"ok": True, "detail": detail, "status": change_status(change),
+                         "result": (change.detail or {}).get("result") or {}})
+
+    def get_queryset(self):
+        """``?device=``, ``?virtual_machine=`` or ``?object=`` (either)
+        narrow the queue to one object's rows."""
+        qs = super().get_queryset()
+        params = self.request.query_params if self.request else {}
+        for key in ("device", "virtual_machine"):
+            if params.get(key):
+                qs = qs.filter(**{f"{key}_id": _uuid(params[key], key)})
+        if params.get("object"):
+            oid = _uuid(params["object"], "object")
+            qs = qs.filter(Q(device_id=oid) | Q(virtual_machine_id=oid))
+        return qs
+
+    @action(detail=False, methods=["post"], url_path="apply-object")
+    def apply_object(self, request):
+        """Add one device or VM to PRTG now - ``{device}`` or
+        ``{virtual_machine}``, optionally ``{connection}``: plans it, then
+        writes its ready planned rows, the device before its sensors.
+        Removals are never applied here. Answers per connection
+        ``{connection, applied, failed, results: [{id, kind, ok, detail,
+        status}], link}``. Needs change on the review queue and view on the
+        object."""
+        from .client import PrtgError
+        from .writer import _lock, _unlock, apply_object
+
+        tenant = _get_active_tenant(request)
+        data = request.data or {}
+        if data.get("device"):
+            obj = rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant), request.user, tenant, "device", "view",
+            ).filter(id=_uuid(data["device"], "device")).first()
+        elif data.get("virtual_machine"):
+            obj = rbac.restrict_queryset(
+                VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
+                "virtualmachine", "view",
+            ).filter(id=_uuid(data["virtual_machine"], "virtual_machine")).first()
+        else:
+            return Response({"detail": "device or virtual_machine is required."}, status=400)
+        if obj is None:
+            raise NotFound()
+        conns = PrtgConnection.objects.filter(tenant=tenant, enabled=True).order_by("name")
+        if data.get("connection"):
+            conns = conns.filter(pk=_uuid(data["connection"], "connection"))
+        out = []
+        for conn in conns:
+            if not conn.api_key_set:
+                continue
+            if not _lock(conn):
+                return Response(
+                    {"detail": "Danbyte is writing to PRTG now. Try again in a moment."},
+                    status=409,
+                )
+            try:
+                r = apply_object(conn, obj, user=request.user)
+            except PrtgError as exc:
+                return Response({"detail": str(exc)}, status=502)
+            finally:
+                _unlock(conn)
+            out.append({"connection": {"id": str(conn.id), "name": conn.name}, **r})
+        if not out:
+            return Response({"detail": "No PRTG connection can write."}, status=400)
+        return Response(out)
 
     def apply_change(self, change) -> str:
         from .adopt import apply_adoption
@@ -438,7 +524,7 @@ class PrtgChangeViewSet(
         try:
             return {"id": str(change.id), "ok": True, "detail": self.apply_change(change)}
         except (ValueError, PrtgError) as exc:
-            return {"id": str(change.id), "ok": False, "detail": str(exc)[:400]}
+            return {"id": str(change.id), "ok": False, "detail": str(exc)[:4000]}
 
     def _skip(self, change) -> bool:
         from monitoring.external.adoption import applicable

@@ -144,6 +144,11 @@ class PrtgConnection(TimestampedModel):
     #: Write the SNMP and Windows credentials Danbyte holds onto a device it
     #: creates in PRTG, as device properties with inheritance off.
     send_credentials = models.BooleanField(default=False, db_default=False)
+    #: Give a device and the sensors Danbyte creates in PRTG the Danbyte
+    #: object's own tags as PRTG tags, and keep them in step.
+    send_tags = models.BooleanField(default=True, db_default=True)
+    #: Also ``site-<slug>`` and ``role-<slug>`` when tags are sent.
+    tag_site_role = models.BooleanField(default=False, db_default=False)
     #: Let the beat apply planned creates, sensors and moves itself.
     #: Removals always wait for a person.
     auto_apply_registration = models.BooleanField(default=False, db_default=False)
@@ -388,6 +393,11 @@ class PrtgDeviceLink(ExternalLinkBase):
     #: result}``.
     last_apply = models.JSONField(
         default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: The Danbyte tags last written onto the PRTG device - the only tags
+    #: Danbyte adds or removes there; an operator's own tags stay.
+    sent_tags = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
     )
     #: A keyed hash of the credentials last written to the PRTG device -
     #: never the credentials.

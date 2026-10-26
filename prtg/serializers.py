@@ -100,7 +100,8 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "register_all", "register_profile", "register_profile_name",
             "register_group_id", "register_group_path", "groups_read_at",
             "last_plan_at", "last_plan_summary",
-            "seed_device_objid", "send_credentials", "auto_apply_registration",
+            "seed_device_objid", "send_credentials", "send_tags", "tag_site_role",
+            "auto_apply_registration",
             "prune_devices", "write_mode", "write_detail", "write_checked_at",
             "last_apply_at", "last_apply_summary",
             "version", "supported", "v2_available", "last_checked_at", "last_error",
@@ -325,7 +326,7 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
             "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
-            "maintenance_note", "last_apply", "paused", "write_mode",
+            "maintenance_note", "last_apply", "paused", "write_mode", "sent_tags",
         ]
         read_only_fields = fields
 
@@ -371,12 +372,22 @@ class PrtgChangeSerializer(serializers.ModelSerializer):
     def get_destructive(self, obj) -> bool:
         return obj.kind in PrtgChange.DESTRUCTIVE
 
+    #: A decision row's choices beyond its candidates: ``{can_create}``.
+    decision = serializers.SerializerMethodField()
+
+    def get_decision(self, obj) -> dict | None:
+        if obj.kind != PrtgChange.AMBIGUOUS or (obj.detail or {}).get("applied"):
+            return None
+        from .reader import can_create_separately
+
+        return {"can_create": can_create_separately(obj)}
+
     class Meta:
         model = PrtgChange
         fields = [
             "id", "kind", "kind_display", "device", "virtual_machine", "key", "detail",
             "ignored",
-            "applicable", "planned", "status", "destructive", "created_at", "updated_at",
+            "applicable", "planned", "status", "destructive", "decision", "created_at", "updated_at",
         ]
         read_only_fields = fields
 

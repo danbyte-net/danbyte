@@ -766,7 +766,7 @@ class PlanApiTests(_Api):
         self.assertEqual(entry["registration"]["mode"], "none")
         self.assertEqual(entry["planned"], {
             "create_device": False, "sensors": [], "move": None, "remove": [],
-            "reasons": [], "queued": 0,
+            "reasons": [], "queued": 0, "ready": 0, "statuses": [], "applying": False,
         })
         codes = [i["code"] for i in entry["issues"]]
         self.assertNotIn("no_match", codes)

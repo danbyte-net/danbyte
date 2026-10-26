@@ -3023,6 +3023,26 @@ class TopologyCardField(serializers.JSONField):
         return topology_card_list(value)
 
 
+_HOSTNAME = re.compile(
+    r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$",
+    re.I,
+)
+
+
+def clean_prtg_host(value: str) -> str:
+    """The PRTG host override: an IP address or a DNS name, or blank."""
+    value = (value or "").strip().rstrip(".")
+    if not value:
+        return ""
+    try:
+        return str(ipaddress.ip_address(value.strip("[]")))
+    except ValueError:
+        pass
+    if not _HOSTNAME.match(value):
+        raise serializers.ValidationError("An IP address or a DNS name.")
+    return value.lower()
+
+
 class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "device"
     # Render settings and write-back plumbing: real fields, but not columns
@@ -3035,7 +3055,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         # Its own column, Next end of life (device-columns.tsx).
         "lifecycle_next",
         # Set in the form; the PRTG column shows what PRTG has.
-        "prtg_sync",
+        "prtg_sync", "prtg_plan", "prtg_host",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3255,6 +3275,17 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             v for v in super().get_unique_together_validators()
             if "vc_position" not in getattr(v, "fields", ())
         ]
+
+    prtg_plan = serializers.SerializerMethodField()
+
+    def validate_prtg_host(self, value):
+        return clean_prtg_host(value)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_prtg_plan(self, obj):
+        # Set by the viewset when a save changed prtg_sync: what the PRTG
+        # plan made of it (prtg.provision.plan_after_save); null otherwise.
+        return getattr(obj, "_prtg_plan", None)
 
     @extend_schema_field(serializers.ListField())
     def get_vc_renamed_interfaces(self, obj):
@@ -3688,7 +3719,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "primary_ip", "primary_ip_id",
                   "secondary_ip", "secondary_ip_id",
                   "oob_ip", "oob_ip_id",
-                  "tags", "tag_ids", "custom_fields", "prtg_sync",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
@@ -6335,8 +6366,18 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     # Its own column, Next end of life (vm-columns.tsx).
-    list_columns_exclude = ("lifecycle_next", "prtg_sync")
+    list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host")
     cluster = ClusterMiniSerializer(read_only=True)
+    #: What the PRTG plan made of a save that changed prtg_sync; else null.
+    prtg_plan = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_prtg_plan(self, obj):
+        return getattr(obj, "_prtg_plan", None)
+
+    def validate_prtg_host(self, value):
+        return clean_prtg_host(value)
+
     disks = VirtualDiskSerializer(many=True, read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
     # a table of VMs doesn't fire a COUNT per row.
@@ -6493,7 +6534,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count", "install_count",
                   "primary_ip", "primary_ip_id", "description",
-                  "tags", "tag_ids", "custom_fields", "prtg_sync",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",
