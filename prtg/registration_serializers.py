@@ -27,26 +27,73 @@ def _object_id(value: str) -> str:
     return value
 
 
+#: A PRTG kind id as its sensor list names one.
+_KINDID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$")
+_SCALAR = (str, int, float, bool)
+
+
+def _generic_shape(params) -> dict:
+    """A PRTG-only kind's ``section.field`` params, shape-checked; the
+    profile types them against PRTG's schema."""
+    if params in (None, ""):
+        return {}
+    if not isinstance(params, dict):
+        raise serializers.ValidationError({"params": "Expected an object."})
+    out = {}
+    for key, value in params.items():
+        section, _, name = str(key).partition(".")
+        if not (section and name) or len(str(key)) > 120:
+            raise serializers.ValidationError({"params": f"'{key}' is not a PRTG setting."})
+        if value is None or isinstance(value, _SCALAR) or (
+            isinstance(value, list) and all(isinstance(v, _SCALAR) for v in value)
+        ):
+            out[str(key)] = value
+        else:
+            raise serializers.ValidationError({"params": f"{key}: a value or a list."})
+    return out
+
+
 class PrtgSensorDefinitionSerializer(serializers.ModelSerializer):
-    """One sensor of a profile. ``params`` are checked against the kind and
-    stored typed, with the kind's defaults filled in."""
+    """One sensor of a profile. A Danbyte kind's ``params`` are checked
+    against the kind and stored typed, with the kind's defaults filled in;
+    any other kind is a PRTG kind id whose params the profile checks
+    against PRTG's schema (:meth:`PrtgSensorProfileSerializer.validate`)."""
 
     id = serializers.UUIDField(required=False)
     kind_label = serializers.SerializerMethodField()
+    #: ``danbyte`` (Danbyte's own form) or ``generic`` (PRTG's schema).
+    form = serializers.SerializerMethodField()
 
     def get_kind_label(self, obj) -> str:
-        return sk.label(obj.kind)
+        if obj.kind in sk.BY_VALUE:
+            return sk.label(obj.kind)
+        from .manual import cached_kind
+
+        conn = obj.profile.connection if obj.profile_id else None
+        row = cached_kind(conn, obj.kind) if conn is not None else None
+        return str((row or {}).get("name") or obj.kind)
+
+    def get_form(self, obj) -> str:
+        return "danbyte" if obj.kind in sk.BY_VALUE else "generic"
 
     class Meta:
         model = PrtgSensorDefinition
         fields = [
-            "id", "position", "kind", "kind_label", "name", "params",
+            "id", "position", "kind", "kind_label", "form", "name", "params",
             "interval_seconds", "required", "tags",
         ]
-        read_only_fields = ["kind_label", "position"]
+        read_only_fields = ["kind_label", "form", "position"]
 
     def validate_kind(self, value):
-        if value not in sk.BY_VALUE:
+        from .manual import BY_KINDID
+
+        value = (value or "").strip()
+        if value in sk.BY_VALUE:
+            return value
+        # PRTG's id for a kind Danbyte has a form for is that kind.
+        if value in BY_KINDID:
+            return BY_KINDID[value]
+        if not _KINDID.match(value):
             raise serializers.ValidationError(f"'{value}' is not a sensor kind.")
         return value
 
@@ -80,6 +127,9 @@ class PrtgSensorDefinitionSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         kind = attrs.get("kind", getattr(self.instance, "kind", None))
         params = attrs.get("params", getattr(self.instance, "params", {}))
+        if kind not in sk.BY_VALUE:
+            attrs["params"] = _generic_shape(params)
+            return attrs
         try:
             attrs["params"] = sk.clean_params(kind, params)
         except ValueError as exc:
@@ -127,7 +177,46 @@ class PrtgSensorProfileSerializer(serializers.ModelSerializer):
         if clash.exists():
             raise serializers.ValidationError({"name": "A profile with this name exists."})
         attrs["name"] = name
+        if conn is not None and attrs.get("definitions"):
+            self._check_generic(conn, attrs["definitions"])
         return attrs
+
+    @staticmethod
+    def _check_generic(conn, rows) -> None:
+        """A PRTG-only kind must be in the connection's sensor list, and its
+        params fit PRTG's form for it, typed as the Add sensor dialog types
+        them (:func:`prtg.manual.clean_generic`) and kept as ``section.field``
+        keys."""
+        from .actions import ActionError
+        from .manual import (
+            cached_kind,
+            clean_generic,
+            connection_schema,
+            flat_params,
+            has_catalog,
+        )
+
+        errors: list = []
+        for row in rows:
+            kind = row.get("kind")
+            error: dict = {}
+            if kind in sk.BY_VALUE:
+                pass
+            elif not has_catalog(conn):
+                error = {"kind": "Read PRTG's sensor list first: test the connection."}
+            elif cached_kind(conn, kind) is None:
+                error = {"kind": f"PRTG's sensor list has no '{kind}'."}
+            else:
+                try:
+                    form = connection_schema(conn, kind)
+                    row["params"] = flat_params(
+                        clean_generic(form["fields"], row.get("params"))
+                    )
+                except ActionError as exc:
+                    error = {"params": getattr(exc, "fields", None) or exc.detail}
+            errors.append(error)
+        if any(errors):
+            raise serializers.ValidationError({"definitions": errors})
 
     @staticmethod
     def _write_definitions(profile, rows):

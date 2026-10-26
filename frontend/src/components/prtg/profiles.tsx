@@ -10,8 +10,8 @@ import type {
   PrtgConnection,
   PrtgSensorDefinition,
   PrtgSensorKind,
-  PrtgSensorKinds,
   PrtgSensorProfile,
+  PrtgSensorSchema,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Field,
   FormCheckbox,
   FormFooter,
   FormSelect,
@@ -34,19 +35,16 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
 import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
+import { SchemaFields } from "./add-sensor"
+import { SensorKindPicker, usePrtgSensorKinds } from "./sensor-kind-picker"
 
 const INTERVAL_LABEL = (s: number) =>
   s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`
 
-export function usePrtgSensorKinds() {
-  return useQuery({
-    queryKey: ["prtg-sensor-kinds"],
-    queryFn: () => api<PrtgSensorKinds>("/api/prtg/profiles/kinds/"),
-    staleTime: 60 * 60_000,
-  })
-}
+export { usePrtgSensorKinds }
 
 /** Named lists of the sensors a device or VM should carry in PRTG. */
 export function PrtgProfiles({
@@ -301,6 +299,45 @@ export function KindParamFields({
 
 export { defaultsFor as kindDefaults, INTERVAL_LABEL }
 
+/** A PRTG-only kind's parameters: PRTG's create form for it, read through
+ * the connection, as `section.field` values. */
+function GenericParams({
+  connectionId,
+  kind,
+  params,
+  onChange,
+}: {
+  connectionId: string
+  kind: string
+  params: Record<string, unknown>
+  onChange: (params: Record<string, unknown>) => void
+}) {
+  const schema = useQuery({
+    queryKey: ["prtg-connection-schema", connectionId, kind],
+    queryFn: () =>
+      api<PrtgSensorSchema>(
+        `/api/prtg/connections/${connectionId}/sensor-schema/?kind=${encodeURIComponent(kind)}`
+      ),
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+  if (schema.isLoading) return <Loading />
+  if (schema.isError) return <QueryError error={schema.error} />
+  const fields = schema.data?.fields ?? []
+  return (
+    <>
+      {fields.length > 0 && (
+        <SchemaFields fields={fields} values={params} onChange={onChange} />
+      )}
+      {schema.data?.scan && (
+        <p className="text-xs text-muted-foreground">
+          Every row PRTG&apos;s scan finds becomes a sensor.
+        </p>
+      )}
+    </>
+  )
+}
+
 export function ProfileForm({
   connection,
   profile,
@@ -418,24 +455,26 @@ export function ProfileForm({
             >
               <div className="flex items-end gap-2">
                 <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
-                  <FormSelect
-                    label="Sensor"
-                    value={r.kind}
-                    onChange={(v) => {
-                      const k = byKind.get(v ?? "")
-                      update(r._key, {
-                        kind: v ?? "ping",
-                        params: defaultsFor(k),
-                      })
-                    }}
-                    options={(kinds.data?.kinds ?? []).map((k) => ({
-                      value: k.value,
-                      label: k.label,
-                    }))}
-                  />
+                  <Field label="Sensor">
+                    <SensorKindPicker
+                      connectionId={connection.id}
+                      value={r.kind}
+                      fallbackLabel={r.kind_label}
+                      onChange={(o) =>
+                        update(r._key, {
+                          kind: o.id,
+                          kind_label: o.name,
+                          form: o.form,
+                          params: o.spec ? defaultsFor(o.spec) : {},
+                        })
+                      }
+                    />
+                  </Field>
                   <FormText
                     label="Name"
-                    hint={kind?.default_name || undefined}
+                    hint={
+                      (kind ? kind.default_name : r.kind_label) || undefined
+                    }
                     value={r.name}
                     onChange={(v) => update(r._key, { name: v })}
                   />
@@ -472,12 +511,21 @@ export function ProfileForm({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              {kind && (
+              {kind ? (
                 <KindParamFields
                   kind={kind}
                   params={r.params}
                   onChange={(params) => update(r._key, { params })}
                 />
+              ) : (
+                kinds.data && (
+                  <GenericParams
+                    connectionId={connection.id}
+                    kind={r.kind}
+                    params={r.params}
+                    onChange={(params) => update(r._key, { params })}
+                  />
+                )
               )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <FormSelect

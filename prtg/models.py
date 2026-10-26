@@ -773,7 +773,10 @@ class PrtgSensorDefinition(TimestampedModel):
     """One sensor a profile asks for: its kind, the kind's parameters, the
     scanning interval, the tags to set and whether its absence is drift.
 
-    ``kind`` and ``params`` are validated by :mod:`prtg.sensor_kinds`. A
+    ``kind`` is one of Danbyte's kinds (:mod:`prtg.sensor_kinds`, its
+    ``params`` typed there) or any PRTG kind id from the connection's
+    sensor list, whose ``params`` are PRTG's create form as
+    ``section.field`` keys, checked against PRTG's schema for the kind. A
     per-interface kind expands to one sensor per matching interface.
     """
 
@@ -782,7 +785,7 @@ class PrtgSensorDefinition(TimestampedModel):
         PrtgSensorProfile, on_delete=models.CASCADE, related_name="definitions"
     )
     position = models.PositiveSmallIntegerField(default=0, db_default=0)
-    kind = models.CharField(max_length=24)
+    kind = models.CharField(max_length=120)
     #: Blank names the sensor after its kind; ``{interface}`` is replaced by
     #: the interface name for a per-interface kind.
     name = models.CharField(max_length=120, blank=True, default="", db_default="")

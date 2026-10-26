@@ -609,7 +609,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `connections/<id>/plan-now/` | `POST`. Runs the planning pass now; returns `scoped`, `create`, `add_sensor`, `remove_sensor`, `move`, `not_applicable`, `no_address`, `awaiting_link`, 502 with PRTG's sentence when its groups cannot be read. Writes nothing to PRTG. The connection keeps `last_plan_at` and `last_plan_summary`; a status read's counts carry the same under `plan`. Registration fields on the connection: `register_all`, `register_profile` (a profile of this connection), `register_group_id` and `register_group_path`. |
 | `policies/` | CRUD (`?connection=`): `name`, `enabled`, `priority` (lower first), `scope` (`global`, `region`, `site`, `location`, `platform`, `device_type`, `device_role`) with its target (`region`, `target_site`, `location`, `platform`, `device_type`, `device_role` - only the scope's own is kept), `match_tags`, `match_name`, `match_hardware`, `applies_to_devices`, `applies_to_vms`, `profile` (required, this connection's), `group_id` (required) and `group_path`. Every target must be the active tenant's. `policies/<id>/` also carries `match_count`. |
 | `policies/<id>/matches/` | Every device and VM the policy matches now, by the planning pass's own matching, limited to the objects the caller may view, paged (`page_size` honoured): `{kind, id, name, site, role, platform, prtg_sync, linked, link: {objid, name, url}, managed, via, reason, group_policy: {id, name}, wins_group, policies}`. `group_policy` is the policy that decides the object's group (null when the connection does), `policies` every enabled policy that matches it. `?prtg_sync=` (`inherit`, `always`, `never`, comma-separated) and `?linked=1\|0` narrow it. Needs view on PRTG policies. |
-| `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `params` are checked against the kind and stored with its defaults. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
+| `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, kind_label, form, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `kind` is a Danbyte kind or any PRTG kind id in the connection's sensor list (`form` `danbyte` or `generic`; PRTG's id of a kind with a Danbyte form is stored as the Danbyte kind). A Danbyte kind's `params` are checked against it and stored with its defaults; a PRTG-only kind's are `section.field` keys checked against PRTG's create form. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
 | `plan/?device=` or `?virtual_machine=` | What PRTG has and would get for one object, per enabled connection: `{connection, prtg_sync, linked: {objid, name, host, group, matched_by, created_here, created_at, url} | null, managed, registers, registration: {mode, policies, group}, planned: {create_device, sensors: [{key, name, kind, kind_label, interface}], move: {from, to} | null, remove: [{objid, name, kind}], reasons, queued, ready, statuses, applying}, via, reason, reason_issue, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues, last_apply}`. `linked` is whether it is in PRTG (the stored link); `managed` whether Danbyte created that PRTG device; `registers` whether anything registers it, and `registration.mode` what: `always`, `policies`, `register_all`, `never` (excluded) or `none`. `planned.reasons` say why nothing is planned; `queued` counts its planned rows in the review queue, `ready` those **Add to PRTG now** would write, `statuses` how they stand, and `applying` whether an apply of them is queued or running. `connection` carries `auto_apply` and `write_mode`. `last_apply` is what Danbyte last wrote for it, `{at, kind, ok, detail, result, by}` or null (a pending create's last attempt when there is no link yet). `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape, empty for a linked object nothing registers. Needs view on the object; asks PRTG nothing. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `sent_tags` (the Danbyte tags written onto the PRTG device); `paused`; `write_mode`, the connection's (whether sensors can be added by hand). The `sensors/`, `scan/`, `discover/` and `sensor-schema/` actions below need `change` on PRTG sensors and view on the device or VM. |
@@ -618,8 +618,9 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `sensors/<id>/pause/` | `POST {minutes, note}`. Pauses the sensor in PRTG for `minutes` (1 to 527040), or until resumed when `minutes` is null or absent; answers the sensor, now paused. |
 | `sensors/<id>/resume/` | `POST`. Resumes the sensor, reads the device's sensors again, and answers the sensor. |
 | `links/<id>/pause/`, `links/<id>/resume/` | `POST {minutes, note}` and `POST`. The same for the PRTG device behind a link - PRTG pauses its sensors with it; answers the link, whose `paused` says whether PRTG holds it paused. |
-| `connections/<id>/sensor-kinds/` | `GET` (`?link=` the device to ask about, `?refresh=1`). The kinds that can be [added by hand](#adding-sensors-by-hand): `{mode, source, read_at, danbyte_forms, detail, kinds: [{id, name, description, help, category, form, danbyte_kind, scan, credentials, manual, copy_from_seed}]}`. `source` is `prtg` (API v2, kept a day) or `danbyte` (seed copies or no writes); `form` is `danbyte` or `generic`. |
+| `connections/<id>/sensor-kinds/` | `GET` (`?link=` the device to ask about, else the first linked device; `?refresh=1`). The kinds that can be [added by hand](#adding-sensors-by-hand) or put in a [profile](#sensor-profiles): `{mode, source, read_at, danbyte_forms, detail, kinds: [{id, name, description, help, category, form, danbyte_form, danbyte_kind, scan, needs_scan, credentials, credential_group, manual, copy_from_seed}]}`. `source` is `prtg` (API v2, kept a day) or `danbyte` (seed copies or no writes); `form` is `danbyte` or `generic`. |
 | `connections/<id>/device-templates/` | `GET` (`?refresh=1`). PRTG's device templates, kept a day: `{source, read_at, templates: [{file_name, name, id}]}`; `source` `defaults` lists PRTG's stock generic ones when the list cannot be read. |
+| `connections/<id>/sensor-schema/?kind=` | `GET` (`?link=`, `?refresh=1`). PRTG's create form for a kind at connection level, as `links/<id>/sensor-schema/` answers it, kept on the connection for a day; the profile editor's form for PRTG-only kinds. |
 | `links/<id>/sensor-schema/?kind=` | `GET`. PRTG's create form for a kind as fields: `{kind, fields: [{key, section, section_title, name, label, type, default, required, options, minimum, maximum, help}], scan: {section, field} \| null}`; `type` is `text`, `password`, `number`, `select`, `multi` or `checkbox`. |
 | `links/<id>/scan/` | `POST {kind}`. PRTG's metascan of the device: `{kind, rows: [{value, name, status, connected, info}]}`. Needs API v2 writes; 502 with PRTG's sentence. |
 | `links/<id>/sensors/` | `POST {kind, name?, params, interval_seconds?, tags?, interfaces?, request_id?}`. Adds a sensor now: `kind` is a Danbyte kind or a PRTG kind id; `params` are the kind's parameters, or `{"<section>.<field>": value}` for a generic kind; `interfaces` the picked scan rows (`[{value, name}]`, one sensor each, at most 50); `request_id` makes a retry find what an earlier attempt made. Answers 201 `{detail, objids, failed, sensors}` with the new rows as the re-read imported them; 400 with a sentence when it cannot be written, 409 while another write to the connection runs, 502 when PRTG refused. |
@@ -738,7 +739,21 @@ on connected interfaces, and HTTPS where the object has a service on port
 443. Nothing is created until you press it.
 
 Each sensor has a kind, its parameters, an optional name, an interval (one
-of PRTG's, or inherit PRTG's), the tags to set in PRTG and **Required**:
+of PRTG's, or inherit PRTG's), the tags to set in PRTG and **Required**.
+
+The **Sensor** button opens the sensor-kind picker, the same one the [Add
+sensor](#adding-sensors-by-hand) dialog uses: a search box (name,
+description, PRTG kind id), a category rail, and a sortable list - **Name**,
+**Category**, **Form** (*Danbyte* or *PRTG*), **Needs scan**,
+**Credentials**. The kinds with Danbyte's own form are pinned under
+**Standard**, and stay first while searching; the rest is PRTG's whole list
+for the connection (read through any linked device, kept a day; **Refresh
+from PRTG** reads it again). Arrow keys move through the list and Enter
+picks. On a phone the columns fold into each row. Until PRTG's list has been
+read - no API key, nothing linked yet, or a seed-copy server - only the
+Standard kinds are there, with a link to test the connection.
+
+Danbyte's own kinds:
 
 | Kind | Parameters | Needs |
 |---|---|---|
@@ -757,6 +772,21 @@ interfaces count as connected when enabled). A blank name takes the kind's,
 and `{interface}` in a name is the interface's. SNMP credentials come from
 the object's SNMP profile. Danbyte holds no Windows logins for devices or
 VMs yet, so a WMI sensor is planned but marked as not ready.
+
+Any other kind PRTG lists can be a profile sensor too. Its parameters are
+PRTG's own create form for that kind (the generic form of the Add sensor
+dialog), read through the connection
+(`connections/<id>/sensor-schema/?kind=`) and kept a day. On save they are
+checked and typed against that form and stored as `section.field` keys
+(`{"portspecific.port": 8443}`); a kind missing from the connection's list
+is refused. The planning pass proposes it like any other sensor, and the
+writer creates it through API v2 the way a hand-added sensor is: those
+settings sections, the name and Danbyte's tags. A kind PRTG fills from a
+scan gets every row the scan finds. An existing PRTG sensor counts as one
+when it carries the definition's tag or is of exactly that PRTG type. A
+kind whose credential group is SNMP or Windows is planned with the same
+credential checks as Danbyte's own. On a seed-copy server PRTG-only kinds
+cannot be created.
 
 A **device template** hands the device to one of PRTG's own templates. The
 template files live on the PRTG core server and the API cannot read them,
@@ -999,14 +1029,15 @@ device's row has **Add sensor** and **Discover**, shown to anyone with
 or *Seed copies*). The /prtg **Sensors** tab shows the same two buttons
 above the table once its filters narrow it to one PRTG device.
 
-**Add sensor** opens a searchable list of the sensor kinds PRTG offers,
-grouped (SNMP, Windows, Web, Ping, Flow, Network services, vendors, …),
-each with PRTG's description and a chip:
+**Add sensor** opens the [sensor-kind picker](#sensor-profiles) over the
+kinds PRTG offers that device, by category (SNMP, Windows, Web, Ping, Flow,
+Network services, vendors, …), each with PRTG's description and a form
+chip:
 
 | Chip | The form |
 |---|---|
-| **Danbyte form** | A kind Danbyte knows (Ping, SNMP uptime / CPU / memory / traffic, HTTP, SSL certificate, SSL security check, WMI CPU / memory / disk, Windows service): the same parameter fields as a profile's definition. |
-| **Generic form** | Any other kind: the fields of PRTG's own create form for it, read from `GET /api/v2/experimental/schemas/{device}/post?kind=` - text, number, choice and checkbox fields. Inherited sections (access, schedule, interval) and read-only fields are left to PRTG; PRTG checks the values. |
+| **Danbyte** | A kind Danbyte knows (Ping, SNMP uptime / CPU / memory / traffic, HTTP, SSL certificate, SSL security check, WMI CPU / memory / disk, Windows service): the same parameter fields as a profile's definition. |
+| **PRTG** | Any other kind: the fields of PRTG's own create form for it, read from `GET /api/v2/experimental/schemas/{device}/post?kind=` - text, number, choice and checkbox fields. Inherited sections (access, schedule, interval) and read-only fields are left to PRTG; PRTG checks the values. |
 
 The list is read from PRTG (`GET /api/v2/experimental/schemas/{device}`,
 354 kinds on PRTG 26.3.124, 12 of them with a Danbyte form) and kept on the

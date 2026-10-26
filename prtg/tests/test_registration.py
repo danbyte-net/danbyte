@@ -16,6 +16,7 @@ from unittest import mock
 from django.contrib.auth import get_user_model
 from django.db.models import NOT_PROVIDED
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from api.models import (
@@ -678,6 +679,82 @@ class ProfileApiTests(_Api):
         self.assertEqual(r.status_code, 404)
         kinds = self.client.get("/api/prtg/profiles/kinds/").json()["kinds"]
         self.assertIn("device_template", {k["value"] for k in kinds})
+
+    def _catalog(self):
+        from prtg.manual import _from_prtg, parse_schema
+
+        rows = _from_prtg(load_fixture("v2_sensor_kinds_2081.json"))
+        form = parse_schema(
+            load_fixture("v2_post_schema_port.json")["components"]["schemas"]["modifyItemSchema"]
+        )
+        now = "2999-01-01T00:00:00+00:00"
+        self.conn.sensor_catalog = {
+            "kinds": {"read_at": now, "rows": rows},
+            "schemas": {"port": {"read_at": now, "fields": form["fields"], "scan": None}},
+        }
+        self.conn.save(update_fields=["sensor_catalog"])
+
+    def test_any_prtg_kind_with_its_schema_params(self):
+        body = {"connection": str(self.conn.id), "name": "Ports", "definitions": [
+            {"kind": "port", "params": {"portspecific.port": "8443"}},
+        ]}
+        r = self.client.post("/api/prtg/profiles/", body, format="json")
+        self.assertEqual(r.status_code, 400, r.content)  # no sensor list yet
+        self._catalog()
+        r = self.client.post("/api/prtg/profiles/", body, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        [d] = r.json()["definitions"]
+        self.assertEqual(d["kind"], "port")
+        self.assertEqual(d["form"], "generic")
+        self.assertEqual(d["kind_label"], "Port")
+        self.assertEqual(d["params"], {"portspecific.port": 8443})
+        for bad in ({"kind": "nope.kind"},
+                    {"kind": "port", "params": {"portspecific.port": 70000}},
+                    {"kind": "port", "params": {"nosuch.field": 1}}):
+            with self.subTest(bad=bad):
+                r = self.client.post("/api/prtg/profiles/", {
+                    "connection": str(self.conn.id), "name": "y", "definitions": [bad],
+                }, format="json")
+                self.assertEqual(r.status_code, 400, r.content)
+        # PRTG's id for a kind Danbyte has a form for is Danbyte's kind.
+        r = self.client.post("/api/prtg/profiles/", {
+            "connection": str(self.conn.id), "name": "z",
+            "definitions": [{"kind": "snmpuptime"}],
+        }, format="json")
+        self.assertEqual(r.json()["definitions"][0]["kind"], "snmp_uptime")
+
+    def test_a_generic_definition_expands_for_the_writer(self):
+        from prtg.provision import _sensor_detail
+
+        self._catalog()
+        prof = PrtgSensorProfile.objects.create(
+            tenant=self.tenant, connection=self.conn, name="Ports")
+        defn = PrtgSensorDefinition.objects.create(
+            profile=prof, kind="port", params={"portspecific.port": 8443}, tags=["web"])
+        # Nothing of the object is read for a PRTG-only kind.
+        [inst] = expand(defn, None)
+        self.assertEqual(inst["kindid"], "port")
+        self.assertEqual(inst["kind_label"], "Port")
+        self.assertEqual(inst["sections"], {"portspecific": {"port": 8443}})
+        self.assertEqual(inst["key"], instance_tag(defn.id))
+        detail = _sensor_detail({**inst})
+        self.assertEqual(detail["kindid"], "port")
+        self.assertEqual(detail["sections"], inst["sections"])
+
+    def test_connection_kinds_without_a_link(self):
+        self._catalog()
+        self.conn.write_mode = PrtgConnection.WRITE_V2
+        self.conn.write_checked_at = timezone.now()
+        self.conn.save(update_fields=["write_mode", "write_checked_at"])
+        r = self.client.get(f"/api/prtg/connections/{self.conn.id}/sensor-kinds/")
+        self.assertEqual(r.status_code, 200, r.content)
+        port = next(k for k in r.json()["kinds"] if k["id"] == "port")
+        self.assertFalse(port["danbyte_form"])
+        self.assertIn("needs_scan", port)
+        self.assertIn("credential_group", port)
+        r = self.client.get(f"/api/prtg/connections/{self.conn.id}/sensor-schema/?kind=port")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn("portspecific.port", {f["key"] for f in r.json()["fields"]})
 
     def test_a_profile_in_use_is_not_deleted(self):
         self.assertEqual(self.post_policy().status_code, 201)
