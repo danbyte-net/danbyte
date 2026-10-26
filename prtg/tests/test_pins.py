@@ -181,6 +181,71 @@ class PinCrudTests(_Pins):
         self.assertEqual(self.client.get(URL).status_code, 404)
 
 
+class WholeSensorPinTests(_Pins):
+    def pin_sensor(self, sensor, **extra):
+        return self.client.post(URL, {"sensor": str(sensor.id), **extra}, format="json")
+
+    def test_pin_list_unpin_a_whole_sensor(self):
+        self.login()
+        self.ping.last_value = "12 msec"
+        self.ping.save(update_fields=["last_value"])
+        resp = self.pin_sensor(self.ping, display="gauge")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["channel_id"], "")
+        # A sensor tile draws its primary value; the display is not a choice.
+        self.assertEqual(body["display"], "auto")
+        self.assertEqual(body["sensor_info"]["last_value"], "12 msec")
+        self.assertIn("last_check_at", body["sensor_info"])
+        listed = self.client.get(f"{URL}?device={self.dev.id}").json()["results"]
+        self.assertEqual([(p["id"], p["channel_id"]) for p in listed], [(body["id"], "")])
+        self.assertEqual(self.client.delete(f"{URL}{body['id']}/").status_code, 204)
+        self.assertFalse(PrtgSensorPin.objects.exists())
+
+    def test_a_blank_channel_pins_the_sensor(self):
+        self.login()
+        resp = self.pin(self.ping, "")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertTrue(PrtgSensorPin.objects.get(id=resp.json()["id"]).whole_sensor)
+
+    def test_a_sensor_pins_whole_once_beside_its_channels(self):
+        self.login()
+        self.assertEqual(self.pin(self.ping, "0").status_code, 201)
+        self.assertEqual(self.pin_sensor(self.ping).status_code, 201)
+        self.assertEqual(self.pin(self.ping, "1").status_code, 201)
+        dup = self.pin_sensor(self.ping)
+        self.assertEqual(dup.status_code, 400)
+        self.assertEqual(dup.json()["channel_id"], ["This sensor is already pinned."])
+        self.assertEqual(
+            sorted(PrtgSensorPin.objects.values_list("channel_id", flat=True)), ["", "0", "1"],
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PrtgSensorPin.objects.create(
+                tenant=self.tenant, device=self.dev, sensor=self.ping, channel_id="",
+            )
+
+    def test_whole_sensor_pins_count_toward_the_cap(self):
+        from prtg.pins import MAX_PINS
+
+        self.login()
+        for i in range(MAX_PINS - 1):
+            self.assertEqual(self.pin(self.ssl, str(i)).status_code, 201)
+        self.assertEqual(self.pin_sensor(self.ping).status_code, 201)
+        over = self.pin_sensor(self.ssl)
+        self.assertEqual(over.status_code, 400)
+        self.assertIn("sensor", over.json())
+
+    def test_vm_sensor_pins_whole(self):
+        self.login()
+        resp = self.pin_sensor(self.vm_ping)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["virtual_machine"]["id"], str(self.vm.id))
+
+    def test_another_tenants_sensor_cannot_be_pinned_whole(self):
+        self.login()
+        self.assertEqual(self.pin_sensor(self.foreign).status_code, 400)
+
+
 class PinScopeTests(_Pins):
     def test_another_tenants_sensor_cannot_be_pinned(self):
         self.login()

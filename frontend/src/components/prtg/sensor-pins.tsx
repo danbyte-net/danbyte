@@ -10,7 +10,13 @@ import { Pin, PinOff, X } from "lucide-react"
 import { ApiError, api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
-import type { PrtgChannels, PrtgSensor, PrtgSensorPin } from "@/lib/api"
+import type {
+  PrtgChannel,
+  PrtgChannels,
+  PrtgHistory,
+  PrtgSensor,
+  PrtgSensorPin,
+} from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -19,13 +25,25 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
+import { TimeCell } from "@/components/cells/time-ago"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { formatGaugeValue } from "@/components/gauge"
 import { Loading } from "@/components/loading"
-import { ChannelReading, pickChannel } from "./channel-view"
+import { Sparkline } from "@/components/sparkline"
+import {
+  ChannelReading,
+  channelText,
+  isNumeric,
+  pickChannel,
+  seriesFor,
+  trendOf,
+} from "./channel-view"
 import type { PrtgParent } from "./sensors-tab"
 
-// Channels pinned to a device's or VM's Overview: the toggle on a channel
-// card in the sensor panel, and the Overview's Sensors card that draws them.
+// Sensors and channels pinned to a device's or VM's Overview: the toggles on
+// a sensor card, the sensor panel's header and a channel card, and the
+// Overview's Sensors card that draws them.
 
 function parentQuery(parent: PrtgParent): string {
   return "device" in parent
@@ -66,31 +84,33 @@ function usePinMutations(parent: PrtgParent | null) {
   const key = ["prtg-pins", parent ? parentQuery(parent) : ""]
   const done = () => qc.invalidateQueries({ queryKey: key })
   const pin = useMutation({
-    mutationFn: (body: { sensor: string; channel_id: string }) =>
+    mutationFn: (body: { sensor: string; channel_id?: string }) =>
       api<PrtgSensorPin>("/api/prtg/sensor-pins/", {
         method: "POST",
         body: JSON.stringify(body),
       }),
     onSuccess: done,
-    onError: (e) => apiErrorToast(e, "Could not pin the channel"),
+    onError: (e) => apiErrorToast(e, "Could not pin to the Overview"),
   })
   const unpin = useMutation({
     mutationFn: (id: string) =>
       api(`/api/prtg/sensor-pins/${id}/`, { method: "DELETE" }),
     onSuccess: done,
-    onError: (e) => apiErrorToast(e, "Could not unpin the channel"),
+    onError: (e) => apiErrorToast(e, "Could not unpin from the Overview"),
   })
   return { pin, unpin }
 }
 
-/** "Pin to Overview" on a channel card in the sensor panel. Hidden without
- * the grant; the server checks it again. */
+/** "Pin to Overview" on a channel card in the sensor panel, or - without a
+ * channel - on a sensor card and the panel's header, for the whole sensor.
+ * Hidden without the grant; the server checks it again. */
 export function PinToggle({
   sensor,
-  channelId,
+  channelId = "",
 }: {
   sensor: PrtgSensor
-  channelId: string
+  /** The channel's PRTG id; blank for the whole sensor. */
+  channelId?: string
 }) {
   const { canDo } = useMe()
   const parent = sensorParent(sensor)
@@ -111,13 +131,20 @@ export function PinToggle({
           aria-label={label}
           aria-pressed={!!mine}
           disabled={busy}
-          data-testid="prtg-pin-toggle"
+          data-testid={channelId ? "prtg-pin-toggle" : "prtg-sensor-pin-toggle"}
           className={cn(!mine && "text-muted-foreground")}
-          onClick={() =>
-            mine
-              ? unpin.mutate(mine.id)
-              : pin.mutate({ sensor: sensor.id, channel_id: channelId })
-          }
+          onClick={(e) => {
+            // On a sensor card: toggle the pin, do not open the panel.
+            e.stopPropagation()
+            if (mine) unpin.mutate(mine.id)
+            else
+              pin.mutate(
+                channelId
+                  ? { sensor: sensor.id, channel_id: channelId }
+                  : { sensor: sensor.id }
+              )
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           {mine ? <PinOff /> : <Pin />}
         </Button>
@@ -127,11 +154,103 @@ export function PinToggle({
   )
 }
 
+/** The primary channel's value as the tile's big number: the number and
+ * its unit apart, a lookup's label, a text's text. */
+function PrimaryValue({
+  channel: c,
+  fallback,
+}: {
+  channel: PrtgChannel | undefined
+  fallback: string
+}) {
+  if (c && isNumeric(c) && c.value_raw != null)
+    return (
+      <p className="truncate leading-none" data-testid="prtg-sensor-tile-value">
+        <span className="num text-2xl font-semibold tracking-tight">
+          {formatGaugeValue(c.value_raw)}
+        </span>
+        {c.unit && (
+          <span className="ml-1 text-sm text-muted-foreground">{c.unit}</span>
+        )}
+      </p>
+    )
+  const text = c ? channelText(c) : fallback
+  return text ? (
+    <p
+      className="truncate text-lg leading-tight font-semibold"
+      data-testid="prtg-sensor-tile-value"
+    >
+      {text}
+    </p>
+  ) : (
+    <p className="text-sm text-muted-foreground">No value</p>
+  )
+}
+
 /**
- * The Overview's Sensors card: every pinned channel as a small tile - the
- * channel's reading, its name and its sensor - in a responsive grid of
- * equal-height tiles. A tile opens the sensor's panel; unpin sits in its
- * corner on hover. Absent when nothing is pinned.
+ * A whole sensor on the Overview: its name and kind, the state pill, the
+ * primary channel's value as the big number with the hour's sparkline under
+ * it (none when the value held still), and the last check.
+ */
+function SensorTile({
+  pin: p,
+  channels,
+  history,
+  inset,
+}: {
+  pin: PrtgSensorPin
+  channels: PrtgChannels | undefined
+  history: PrtgHistory | undefined
+  /** Room for the unpin button in the corner. */
+  inset: boolean
+}) {
+  const info = p.sensor_info
+  const c = pickChannel(channels?.rows, "")
+  const trend = c ? trendOf(c, seriesFor(history, c.id)) : null
+  return (
+    <div
+      className="flex h-full flex-col gap-1 rounded-md border border-border p-2 transition-colors hover:bg-muted/40"
+      data-testid="prtg-sensor-tile"
+    >
+      <div className={cn("flex min-w-0 items-start gap-1", inset && "pr-5")}>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium">{info.name}</p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {info.kind_label}
+          </p>
+        </div>
+        {info.paused ? (
+          <Badge variant="outline">Paused</Badge>
+        ) : (
+          <CheckStatusBadge status={info.state} />
+        )}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-1">
+        <PrimaryValue channel={c} fallback={info.last_value} />
+        {trend?.kind === "line" && (
+          <Sparkline
+            values={trend.values}
+            label={`${c!.name}, last 1h`}
+            fill
+            height={20}
+          />
+        )}
+      </div>
+      {info.last_check_at && (
+        <p className="truncate text-[11px] whitespace-nowrap text-muted-foreground">
+          checked <TimeCell iso={info.last_check_at} />
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Overview's Sensors card: every pinned sensor and channel as a small
+ * tile in one responsive grid of equal-height tiles. A sensor tile shows the
+ * sensor at a glance (see `SensorTile`); a channel tile the channel's
+ * reading, its name and its sensor. A tile opens the sensor's panel; unpin
+ * sits in its corner on hover. Absent when nothing is pinned.
  */
 export function PinnedSensorsCard({
   parent,
@@ -146,6 +265,20 @@ export function PinnedSensorsCard({
   const { unpin } = usePinMutations(parent)
   const rows = pins.data ?? []
   const sensorIds = [...new Set(rows.map((p) => p.sensor))]
+  const wholeIds = [
+    ...new Set(rows.filter((p) => !p.channel_id).map((p) => p.sensor)),
+  ]
+  // The hour's history, for the sparkline on a whole sensor's tile.
+  const histories = useQueries({
+    queries: wholeIds.map((id) => ({
+      queryKey: ["prtg-history", id, "1h"],
+      queryFn: () =>
+        api<PrtgHistory>(`/api/prtg/sensors/${id}/history/?range=1h`),
+      staleTime: 60_000,
+      refetchInterval: 2 * 60_000,
+      retry: false,
+    })),
+  })
   const channels = useQueries({
     queries: sensorIds.map((id) => ({
       queryKey: ["prtg-channels", id],
@@ -157,6 +290,7 @@ export function PinnedSensorsCard({
   })
   if (rows.length === 0) return null
   const bySensor = new Map(sensorIds.map((id, i) => [id, channels[i]]))
+  const historyOf = new Map(wholeIds.map((id, i) => [id, histories[i]]))
   const canUnpin = canDo("prtgsensorpin", "change")
   return (
     <section
@@ -175,38 +309,52 @@ export function PinnedSensorsCard({
               key={p.id}
               className="group relative h-[136px] min-w-0"
               data-testid="prtg-pin-tile"
+              data-whole={p.channel_id ? undefined : ""}
             >
               {sensorLink(
                 p.sensor,
-                <div className="flex h-full flex-col gap-1 rounded-md border border-border p-2 transition-colors hover:bg-muted/40">
-                  <div
-                    className={cn(
-                      "flex min-w-0 items-start gap-1",
-                      canUnpin && "pr-5"
-                    )}
-                  >
-                    <p className="min-w-0 flex-1 truncate text-xs font-medium">
-                      {c?.name ?? p.sensor_info.name}
+                !p.channel_id ? (
+                  <SensorTile
+                    pin={p}
+                    channels={q?.data}
+                    history={historyOf.get(p.sensor)?.data}
+                    inset={canUnpin}
+                  />
+                ) : (
+                  <div className="flex h-full flex-col gap-1 rounded-md border border-border p-2 transition-colors hover:bg-muted/40">
+                    <div
+                      className={cn(
+                        "flex min-w-0 items-start gap-1",
+                        canUnpin && "pr-5"
+                      )}
+                    >
+                      <p className="min-w-0 flex-1 truncate text-xs font-medium">
+                        {c?.name ?? p.sensor_info.name}
+                      </p>
+                      {p.sensor_info.state !== "up" && (
+                        <CheckStatusBadge status={p.sensor_info.state} />
+                      )}
+                    </div>
+                    <div className="flex min-h-0 flex-1 items-center justify-center">
+                      {q?.isLoading ? (
+                        <Loading className="min-h-0" />
+                      ) : c ? (
+                        <ChannelReading
+                          channel={c}
+                          display={p.display}
+                          compact
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          No data
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate text-[11px] text-muted-foreground">
+                      {p.sensor_info.name}
                     </p>
-                    {p.sensor_info.state !== "up" && (
-                      <CheckStatusBadge status={p.sensor_info.state} />
-                    )}
                   </div>
-                  <div className="flex min-h-0 flex-1 items-center justify-center">
-                    {q?.isLoading ? (
-                      <Loading className="min-h-0" />
-                    ) : c ? (
-                      <ChannelReading channel={c} display={p.display} compact />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        No data
-                      </span>
-                    )}
-                  </div>
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    {p.sensor_info.name}
-                  </p>
-                </div>
+                )
               )}
               {canUnpin && (
                 <Tooltip>

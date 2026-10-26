@@ -1,8 +1,10 @@
-"""``/api/prtg/sensor-pins/``: channels pinned to a device's or VM's Overview.
+"""``/api/prtg/sensor-pins/``: sensors and channels pinned to a device's or
+VM's Overview.
 
 ``GET ?device=<id>`` or ``?virtual_machine=<id>`` lists an object's pins in
 order, each with its sensor's summary; ``POST {sensor, channel_id, display}``
-pins a channel (the device or VM is the sensor's own); ``DELETE <id>/``
+pins a channel, ``POST {sensor}`` without a channel pins the whole sensor
+(the device or VM is the sensor's own); ``DELETE <id>/``
 unpins; ``POST reorder/ {device | virtual_machine, order: [pin ids]}`` sets
 the order.
 
@@ -33,8 +35,16 @@ from .viewsets import _visible_devices, _visible_vms
 _CHANNEL_ID = re.compile(r"^-?\d{1,15}$")
 
 
+def _already(channel: str) -> str:
+    return "This channel is already pinned." if channel else "This sensor is already pinned."
+
+
 class PrtgSensorPinSerializer(serializers.ModelSerializer):
     sensor = serializers.PrimaryKeyRelatedField(queryset=PrtgSensor.objects.none())
+    #: Blank (or left out) pins the whole sensor.
+    channel_id = serializers.CharField(
+        max_length=16, required=False, allow_blank=True, default="",
+    )
     device = serializers.SerializerMethodField()
     virtual_machine = serializers.SerializerMethodField()
     #: Enough of the sensor to draw the tile's header without another call.
@@ -74,11 +84,14 @@ class PrtgSensorPinSerializer(serializers.ModelSerializer):
             "status": st.label(s.status_raw) if s.status_raw is not None else "",
             "paused": s.paused,
             "url": s.connection.sensor_url(s.objid),
+            # What a whole-sensor tile shows before the channels are read.
+            "last_value": s.last_value,
+            "last_check_at": s.last_check_at.isoformat() if s.last_check_at else None,
         }
 
     def validate_channel_id(self, value):
         value = (value or "").strip()
-        if not _CHANNEL_ID.match(value):
+        if value and not _CHANNEL_ID.match(value):
             raise ValidationError("A PRTG channel id, like 0, 2 or -4.")
         return value
 
@@ -100,11 +113,16 @@ class PrtgSensorPinSerializer(serializers.ModelSerializer):
                 raise ValidationError({field: "The sensor belongs to another object."})
         parent = {"device_id": sensor.device_id, "virtual_machine_id": sensor.virtual_machine_id}
         pins = PrtgSensorPin.objects.filter(tenant=tenant, **parent)
-        if pins.filter(sensor=sensor, channel_id=attrs["channel_id"]).exists():
-            raise ValidationError({"channel_id": "This channel is already pinned."})
+        channel = attrs.get("channel_id", "")
+        if pins.filter(sensor=sensor, channel_id=channel).exists():
+            raise ValidationError({"channel_id": _already(channel)})
         if pins.count() >= MAX_PINS:
             raise ValidationError({"sensor": f"At most {MAX_PINS} pins on one object."})
         attrs.update(parent)
+        attrs["channel_id"] = channel
+        if not channel:
+            # A sensor tile draws its primary value; there is nothing to choose.
+            attrs["display"] = PrtgSensorPin.AUTO
         return attrs
 
 
@@ -142,7 +160,9 @@ class PrtgSensorPinViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             try:
                 response = super(TenantScopedViewSet, self).create(request, *args, **kwargs)
             except IntegrityError:
-                raise ValidationError({"channel_id": "This channel is already pinned."}) from None
+                channel = (request.data.get("channel_id") or "").strip() if hasattr(
+                    request.data, "get") else ""
+                raise ValidationError({"channel_id": _already(channel)}) from None
             self._assert_write_in_site_scope(response, "change")
         return response
 

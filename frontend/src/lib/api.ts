@@ -13399,11 +13399,12 @@ export interface PrtgHistory {
  * a number, the lookup bar for a lookup, the text for text). */
 export type PrtgPinDisplay = "auto" | "gauge" | "lookup" | "value"
 
-/** GET /api/prtg/sensor-pins/?device=|virtual_machine= - a channel pinned
+/** GET /api/prtg/sensor-pins/?device=|virtual_machine= - a sensor or channel pinned
  * to a device's or VM's Overview. */
 export interface PrtgSensorPin {
   id: string
   sensor: string
+  /** Blank: the whole sensor is pinned. */
   channel_id: string
   display: PrtgPinDisplay
   position: number
@@ -13416,6 +13417,8 @@ export interface PrtgSensorPin {
     status: string
     paused: boolean
     url: string
+    last_value: string
+    last_check_at: string | null
   }
   created_at: string
 }
