@@ -116,6 +116,26 @@ network portion from the prefix CIDR (the fully-fixed leading octets, e.g.
 `10.0.10.0/24` → `10.0.10.`) so the operator types only the host part. See
 `networkPrefill()` in `frontend/src/components/ip-form.tsx`.
 
+## Addresses a device or VM uses
+
+`GET /api/ips/?device=<id>` lists every address the device uses:
+
+- assigned to the device,
+- assigned to one of its interfaces,
+- its primary, OOB or secondary address, even when that address is assigned
+  to another object.
+
+`?virtual_machine=<id>` does the same for a VM: assigned to the VM, to one of
+its interfaces, or its primary address. Each address is listed once. A device
+or VM outside the active tenant lists nothing.
+
+`?assigned_vm=` and `?assigned_interface=` keep their narrower meaning: the
+address's own assignment only.
+
+The device and VM `ip_count`, the **IPs** tab and the Overview's **IP
+addresses** count use the same set (`api/ip_usage.py`).
+`GET /api/devices/<id>/ips/` returns it too.
+
 ## PRTG sensors
 
 With the PRTG integration on, an address PRTG reaches a device on gets a

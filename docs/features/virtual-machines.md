@@ -63,6 +63,7 @@ interfaces a VLAN. Then:
 
 | Tab | What's on it |
 | --- | --- |
+| **IPs** | Every address the VM uses: assigned to it, to one of its interfaces, or set as its primary address while assigned elsewhere, with **Assign IP** and **+ Add IP**. **Designation** marks the primary; **Assigned to** shows *This VM*, the interface (a link to Components) or the other object. The tab count and the Overview's **IP addresses** count the same set (`ip_count`, `?virtual_machine=` on [the IP list](../models/ip-address.md#addresses-a-device-or-vm-uses)). |
 | **Components** | The VM's interfaces (and their IPs), with a count on the tab. |
 | **Services** | Services running on it, from your service templates. |
 | **Software** | Applications installed on it, each at a version, with a count on the tab (`install_count` in the API), and its [application groups](applications.md#application-groups). See [Applications & installed software](applications.md). |

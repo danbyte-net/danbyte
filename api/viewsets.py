@@ -54,6 +54,7 @@ from . import (
     capacity,
     elevation_pdf,
     floor_plan_pdf,
+    ip_usage,
     scene_geo,
     software_target,
     software_versions,
@@ -1990,6 +1991,21 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
             qs = qs.filter(assigned_interface_id=iface)
         if vm := p.get("assigned_vm"):
             qs = qs.filter(assigned_vm_id=vm)
+        # Everything a device / VM uses - assigned to it, to one of its
+        # interfaces, or in its primary/OOB/secondary slot (api/ip_usage.py).
+        for param, kind, model in (
+            ("device", "device", Device), ("virtual_machine", "vm", VirtualMachine),
+        ):
+            if ref := p.get(param):
+                try:
+                    owner = model.objects.filter(
+                        pk=ref, tenant=_get_active_tenant(self.request)
+                    ).first()
+                except (ValueError, DjangoValidationError):
+                    owner = None
+                if owner is None:
+                    return qs.none()
+                qs = qs.filter(ip_usage.addresses_q(kind, owner))
         if role := p.get("role"):
             qs = qs.filter(role_id=role)
         if status := p.get("status"):
@@ -3755,7 +3771,8 @@ class DeviceViewSet(
         # grouping - a 48-port switch with ten addresses was 480 rows - and a
         # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            ip_count_annotated=_count_of(IPAddress, "assigned_device"),
+            # Every address the device uses, not only those assigned to it.
+            ip_count_annotated=ip_usage.address_count("device"),
             interface_count_annotated=_count_of(Interface, "device"),
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
@@ -4587,7 +4604,7 @@ class DeviceViewSet(
 
         device = self.get_object()
         qs = annotate_dhcp(
-            IPAddress.objects.filter(assigned_device=device, tenant=device.tenant)
+            ip_usage.addresses_of("device", device)
             .select_related(*ASSIGNED_IP_RELATED)
             .prefetch_related(TAGS)
         )
@@ -6452,6 +6469,8 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
                 # Installed software's soonest end (#436), for Next end of life.
                 **software_end_annotations("virtual_machine"),
                 install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
+                # Every address the VM uses, for its IPs tab (api/ip_usage.py).
+                ip_count_annotated=ip_usage.address_count("vm"),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.

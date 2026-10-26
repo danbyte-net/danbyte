@@ -29,6 +29,7 @@ import { useMe } from "@/lib/use-me"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { VMInterfacesPane } from "@/components/vm-interfaces-pane"
+import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import { VmSnmpCard } from "@/components/vm-snmp-card"
 import { VmTopologyCard } from "@/components/vm-topology-card"
 import { CertificatesPanel } from "@/components/monitoring/certificates-panel"
@@ -105,6 +106,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const software = useSoftwareSummary({ kind: "vm", id: vm.id })
   const [tab, setTab] = useUrlTab<
     | "overview"
+    | "ips"
     | "components"
     | "services"
     | "software"
@@ -217,6 +219,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "ips", label: "IPs", count: vm.ip_count },
         {
           value: "components",
           // Same amber dot devices use for component drift - this is the same
@@ -270,7 +273,20 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <VmOverview vm={vm} />
+        <VmOverview vm={vm} onTab={setTab} />
+      </DetailTab>
+      <DetailTab value="ips">
+        <AssignedIpsPane
+          scope={{
+            kind: "vm",
+            vmId: vm.id,
+            vmName: vm.name,
+            slots: { primary: vm.primary_ip?.id },
+          }}
+          canAddIp={canDo("ipaddress", "add")}
+          canAssignIp={canDo("ipaddress", "change")}
+          canChangeDevice={false}
+        />
       </DetailTab>
       <DetailTab value="components">
         <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
@@ -368,7 +384,13 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
 
 // The default "Overview" tab - VM facts in labelled cards with copy
 // buttons on the technical strings, then custom fields.
-function VmOverview({ vm }: { vm: VirtualMachine }) {
+function VmOverview({
+  vm,
+  onTab,
+}: {
+  vm: VirtualMachine
+  onTab: (tab: "ips") => void
+}) {
   const { humanIds } = useMe()
   const vmRows: KvRow[] = [
     ...(humanIds && vm.numid != null
@@ -548,6 +570,14 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       label: "DNS name",
       value: <DnsNameLink name={vm.primary_ip?.dns_name} />,
       copy: vm.primary_ip?.dns_name || undefined,
+    },
+    {
+      label: "IP addresses",
+      value: (
+        <button type="button" onClick={() => onTab("ips")} className="num link">
+          {vm.ip_count ?? 0}
+        </button>
+      ),
     },
   ]
   const notify = vm.primary_ip ? { ip: vm.primary_ip.id } : undefined
