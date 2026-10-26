@@ -37,10 +37,10 @@ monitors it, the same monitoring pill as a device's header: the worst state
 across its addresses' checks and PRTG. Hovering it shows each source's state
 and counts.
 
-**Overview** opens with the same **monitoring bar** as a device's: the overall
-state, one row per source (checks, PRTG) with its counts and a hover listing
-what is behind each, a click into the Monitoring or Sensors tab filtered to it,
-and **Notify me** for the primary address - see
+**Overview** carries the same **monitoring card** as a device's: with
+problems, full width on top with the worst three (each a link to the check or
+the PRTG sensor's panel) and a bar per source (checks, PRTG); all clear, one
+line beside the first card. **Notify me** watches the primary address - see
 [The monitoring bar](monitoring.md#the-monitoring-bar).
 
 **Overview** carries a **Sensors** card on top once a PRTG sensor or

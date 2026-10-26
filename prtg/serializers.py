@@ -100,6 +100,9 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "register_all", "register_profile", "register_profile_name",
             "register_group_id", "register_group_path", "groups_read_at",
             "last_plan_at", "last_plan_summary",
+            "seed_device_objid", "send_credentials", "auto_apply_registration",
+            "prune_devices", "write_mode", "write_detail", "write_checked_at",
+            "last_apply_at", "last_apply_summary",
             "version", "supported", "v2_available", "last_checked_at", "last_error",
             "last_status_at", "last_status_summary",
             "created_at", "updated_at",
@@ -110,7 +113,8 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "last_status_at", "last_status_summary", "created_at", "updated_at",
             "last_maintenance_sync_at", "last_inventory_at", "adopt_names",
             "register_profile_name", "groups_read_at", "last_plan_at",
-            "last_plan_summary",
+            "last_plan_summary", "write_mode", "write_detail", "write_checked_at",
+            "last_apply_at", "last_apply_summary",
         ]
 
     def _own(self, value, what):
@@ -138,6 +142,12 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
         self._own(value, "profile")
         if self.instance is None or value.connection_id != self.instance.id:
             raise serializers.ValidationError("Pick a profile of this connection.")
+        return value
+
+    def validate_seed_device_objid(self, value):
+        value = (value or "").strip()
+        if value and not value.isdigit():
+            raise serializers.ValidationError("A PRTG object id is a number.")
         return value
 
     def validate_register_group_id(self, value):
@@ -310,7 +320,7 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
             "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
-            "maintenance_note",
+            "maintenance_note", "last_apply",
         ]
         read_only_fields = fields
 
@@ -334,20 +344,34 @@ class PrtgChangeSerializer(serializers.ModelSerializer):
 
             return applicable(obj.detail or {})
         if obj.planned:
-            # Whether it could be written once writes exist: a group to
-            # create it in and the credentials its sensors need.
-            return bool((obj.detail or {}).get("applicable", True))
+            # Whether it can be written as it stands: a group to create it
+            # in, the credentials its sensors need, a PRTG that writes - and
+            # not written already.
+            d = obj.detail or {}
+            return bool(d.get("applicable", True)) and not d.get("applied")
         return obj.kind != PrtgChange.AMBIGUOUS
 
-    #: A planned write to PRTG: shown, never applied in this release.
+    #: A write to PRTG, from the planning pass.
     planned = serializers.BooleanField(read_only=True)
+    #: ``ready``, ``attention``, ``applied``, ``failed`` or ``decision``.
+    status = serializers.SerializerMethodField()
+    #: Deletes something in PRTG: confirmed row by row, never "apply all".
+    destructive = serializers.SerializerMethodField()
+
+    def get_status(self, obj) -> str:
+        from .writer import change_status
+
+        return change_status(obj)
+
+    def get_destructive(self, obj) -> bool:
+        return obj.kind in PrtgChange.DESTRUCTIVE
 
     class Meta:
         model = PrtgChange
         fields = [
             "id", "kind", "kind_display", "device", "virtual_machine", "key", "detail",
             "ignored",
-            "applicable", "planned", "created_at",
+            "applicable", "planned", "status", "destructive", "created_at", "updated_at",
         ]
         read_only_fields = fields
 
@@ -369,6 +393,10 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
     prtg_device = serializers.CharField(source="link.name", read_only=True)
     #: When the channels were last read, or null - they are read on demand.
     channels_at = serializers.SerializerMethodField()
+    #: What the sensor watches, resolved by every read (:mod:`prtg.objects`).
+    ip_address = serializers.SerializerMethodField()
+    interface = serializers.SerializerMethodField()
+    service = serializers.SerializerMethodField()
 
     def get_device(self, obj) -> dict | None:
         return _ref(obj.device)
@@ -388,6 +416,36 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
     def get_channels_at(self, obj) -> str | None:
         return (obj.channels or {}).get("fetched_at")
 
+    def get_ip_address(self, obj) -> dict | None:
+        a = obj.ip_address
+        if a is None:
+            return None
+        return {"id": str(a.id), "address": str(a.ip_address), "dns_name": a.dns_name or ""}
+
+    def get_interface(self, obj) -> dict | None:
+        """A device interface (``kind: interface``, its page is
+        ``/interfaces/<id>``) or a VM interface (``kind: vm_interface``, on
+        its VM's page)."""
+        if obj.interface is not None:
+            i = obj.interface
+            return {"id": str(i.id), "name": i.name, "kind": "interface",
+                    "parent": str(i.device_id)}
+        if obj.vm_interface is not None:
+            i = obj.vm_interface
+            return {"id": str(i.id), "name": i.name, "kind": "vm_interface",
+                    "parent": str(i.vm_id)}
+        return None
+
+    def get_service(self, obj) -> dict | None:
+        svc = obj.service
+        if svc is None:
+            return None
+        ports = ", ".join(
+            f"{proto}/{','.join(str(p) for p in ports)}"
+            for proto, ports in svc.port_map().items()
+        )
+        return {"id": str(svc.id), "name": svc.name, "ports": ports}
+
     class Meta:
         model = PrtgSensor
         fields = [
@@ -397,6 +455,7 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
             "last_value", "last_value_raw", "unit", "interval_seconds", "uptime_pct",
             "downtime_pct", "priority", "last_check_at", "last_up_at", "last_down_at",
             "probe_name", "group_path", "last_seen_at", "url", "device_url", "channels_at",
+            "ip_address", "interface", "service",
         ]
         read_only_fields = fields
 

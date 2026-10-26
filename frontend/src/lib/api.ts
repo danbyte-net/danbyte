@@ -7194,6 +7194,8 @@ export interface MonitoringCheckItem {
   status: CheckStatus
   /** When it entered this state. */
   since: string | null
+  /** The last run's error, when it was not up. */
+  error?: string
 }
 
 /** An engine kind a driver registered - configured on its own page rather
@@ -13333,6 +13335,18 @@ export interface PrtgConnection {
   groups_read_at: string | null
   last_plan_at: string | null
   last_plan_summary: Record<string, number | string>
+  /** Writing to PRTG. */
+  seed_device_objid: string
+  send_credentials: boolean
+  auto_apply_registration: boolean
+  prune_devices: boolean
+  /** What this PRTG can create: v2, seed (copies), none, or "" before a
+   * check. */
+  write_mode: "" | "v2" | "seed" | "none"
+  write_detail: string
+  write_checked_at: string | null
+  last_apply_at: string | null
+  last_apply_summary: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -13463,6 +13477,8 @@ export interface PrtgIssue {
     | "no_windows_vm"
     | "no_address"
     | "unwanted_sensor"
+    | "not_created_sensor"
+    | "no_writes"
   text: string
   /** The policy that decides the group, for no_group / group_gone. */
   policy?: string
@@ -13497,7 +13513,13 @@ export interface PrtgPlanEntry {
   managed: boolean
   via: "" | "never" | "always" | "policy" | "register_all"
   reason: string
-  linked: { objid: string; name: string; group: string; url: string } | null
+  linked: {
+    objid: string
+    name: string
+    group: string
+    url: string
+    created_here?: boolean
+  } | null
   group: {
     objid: string
     path: string
@@ -13526,6 +13548,7 @@ export interface PrtgPlanEntry {
   }[]
   credentials: { kind: string; name: string; version?: string }[]
   problems: string[]
+  last_apply?: PrtgLastApply | null
   /** The reason as an issue, when the object is left out. */
   reason_issue?: PrtgIssue | null
   /** The problems as issues, with their link targets. */
@@ -13571,6 +13594,8 @@ export interface PrtgDeviceLink {
   maintenance_paused_until: string | null
   maintenance_events: { id: string; name: string }[]
   maintenance_note: string
+  /** What Danbyte last wrote to PRTG for this device. */
+  last_apply?: PrtgLastApply | Record<string, never>
 }
 
 /** Where an adopted PRTG device lands, by what it looks like. */
@@ -13604,6 +13629,7 @@ export interface PrtgChange {
     | "add_sensor"
     | "remove_sensor"
     | "move_device"
+    | "remove_device"
   kind_display: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
@@ -13611,9 +13637,43 @@ export interface PrtgChange {
   detail: Record<string, unknown>
   ignored: boolean
   applicable: boolean
-  /** A planned write to PRTG: shown, not applied yet. */
+  /** A write to PRTG from the planning pass. */
   planned: boolean
+  /** Where the row stands in the inbox. */
+  status: PrtgChangeStatus
+  /** Deletes something in PRTG: applied row by row, never by Apply all. */
+  destructive: boolean
   created_at: string
+  updated_at: string
+}
+
+export type PrtgChangeStatus =
+  "ready" | "attention" | "applied" | "failed" | "decision"
+
+/** One entry of a planned row's apply log (`detail.log`). */
+export interface PrtgApplyLogEntry {
+  at: string
+  by: string
+  ok: boolean
+  detail: string
+  steps: string[]
+}
+
+/** What Danbyte last wrote to PRTG for an object. */
+export interface PrtgLastApply {
+  at: string
+  kind: string
+  ok: boolean
+  detail: string
+  result: Record<string, unknown>
+  by: string
+}
+
+/** POST /api/prtg/changes/apply-selected/ and apply-all/. */
+export interface PrtgApplyResults {
+  applied: number
+  failed: { id: string; detail: string }[]
+  results: { id: string; ok: boolean; detail: string; status?: string }[]
 }
 
 /** GET /api/prtg/device-states/ - one entry per linked device. */
@@ -13670,6 +13730,18 @@ export interface PrtgSensor {
   /** The PRTG device's page. */
   device_url: string
   channels_at: string | null
+  /** The address PRTG reaches the device on (the link's host). */
+  ip_address: { id: string; address: string; dns_name: string } | null
+  /** The port an SNMP traffic sensor measures: a device interface or, with
+   * `kind: "vm_interface"`, a VM's; `parent` is the device or VM. */
+  interface: {
+    id: string
+    name: string
+    kind: "interface" | "vm_interface"
+    parent: string
+  } | null
+  /** The service an HTTP or SSL sensor checks, by its port. */
+  service: { id: string; name: string; ports: string } | null
 }
 
 /** GET /api/prtg/sensors/summary/ - counts for a status strip. The four

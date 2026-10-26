@@ -551,11 +551,13 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
       copy: vm.primary_ip?.dns_name || undefined,
     },
   ]
+  const notify = vm.primary_ip ? { ip: vm.primary_ip.id } : undefined
   return (
     <div className="space-y-6">
       <MonitoringBar
         target={{ virtual_machine: vm.id }}
-        notify={vm.primary_ip ? { ip: vm.primary_ip.id } : undefined}
+        notify={notify}
+        slot="banner"
       />
       <PinnedSensorsCard
         parent={{ virtual_machine: vm.id }}
@@ -576,6 +578,12 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
           <KvCard title="Placement" rows={placementRows} />
         </div>
         <div className="min-w-0 space-y-6">
+          {/* All clear: one line beside the first card. */}
+          <MonitoringBar
+            target={{ virtual_machine: vm.id }}
+            notify={notify}
+            slot="compact"
+          />
           <KvCard title="Resources" rows={resourceRows} />
           <SoftwareSummaryCard parent={{ kind: "vm", id: vm.id }} />
           <DeviceProfilesCard host={{ kind: "vm", id: vm.id }} />

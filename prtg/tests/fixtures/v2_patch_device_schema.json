@@ -1,0 +1,1066 @@
+{
+ "modifyItemSchema": {
+  "basic": {
+   "properties": {
+    "active": {
+     "default": "1",
+     "enum": [
+      "1",
+      "0"
+     ],
+     "title": "Monitoring Status",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 1,
+      "options": {
+       "0": "Paused",
+       "1": "Started (default)"
+      }
+     }
+    },
+    "host": {
+     "default": "",
+     "title": "IPv4 Address/DNS Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "required": true,
+      "masterSetting": "ipversion",
+      "masterValues": [
+       "0"
+      ],
+      "sortIndex": 3,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "hostv6": {
+     "default": "",
+     "title": "IPv6 Address/DNS Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "required": true,
+      "masterSetting": "ipversion",
+      "masterValues": [
+       "1"
+      ],
+      "sortIndex": 4,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "ipversion": {
+     "default": "0",
+     "enum": [
+      "0",
+      "1"
+     ],
+     "title": "IP Version",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 2,
+      "options": {
+       "0": "IPv4 (default)",
+       "1": "IPv6"
+      }
+     }
+    },
+    "name": {
+     "default": "Device",
+     "title": "Device Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "required": true,
+      "sortIndex": 0,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "parenttags": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "nullable": true,
+     "readOnly": true,
+     "title": "Parent Tags",
+     "type": "array",
+     "x-prtg-meta": {
+      "class": "tags",
+      "notInRoot": true,
+      "sortIndex": 5
+     }
+    },
+    "priority": {
+     "default": "3",
+     "enum": [
+      "5",
+      "4",
+      "3",
+      "2",
+      "1"
+     ],
+     "title": "Priority",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "combo",
+      "notInRoot": true,
+      "sortIndex": 7,
+      "options": {
+       "1": "* (lowest)",
+       "2": "**",
+       "3": "*** (default)",
+       "4": "****",
+       "5": "***** (highest)"
+      }
+     }
+    },
+    "tags": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "nullable": true,
+     "title": "Tags",
+     "type": "array",
+     "x-prtg-meta": {
+      "class": "tags",
+      "sortIndex": 6
+     }
+    }
+   },
+   "title": "Basic Device Settings",
+   "type": "object",
+   "x-prtg-meta": {
+    "class": "section",
+    "sortIndex": 0
+   }
+  },
+  "snmpversiongroup": {
+   "properties": {
+    "_inheritancesource": {
+     "properties": {
+      "href": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "id": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "name": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "type": {
+       "enum": [
+        "REFERENCED_ROOT",
+        "REFERENCED_GROUP",
+        "REFERENCED_PROBE",
+        "REFERENCED_DEVICE",
+        "REFERENCED_UNKNOWN_TYPE"
+       ],
+       "readOnly": true,
+       "type": "string"
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "_inherited": {
+     "default": true,
+     "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+     "type": "boolean"
+    },
+    "_shadowed": {
+     "properties": {
+      "infobox": {
+       "default": "SNMP v3 has performance limitations because of the use of encryption. Keep in mind that SNMP v3, unlike SNMP v1 and v2c, does not scale with more CPU power. Because of this limitation, you can monitor only a limited number of sensors per second using SNMP v3.[br][br]If you experience an increased [b]Interval Delay[/b] or [b]Open Requests[/b] reading of the Probe Health sensor, you need to distribute the load over multiple probes. SNMP v1 and v2c do not have this limitation.",
+       "title": "infobox",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "information",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 11,
+        "semantichint": "content"
+       }
+      },
+      "snmpauthmode": {
+       "default": "authpHMACMD596",
+       "enum": [
+        "authpHMACMD596",
+        "authpHMACSHA96",
+        "authpHMACSHA224",
+        "authpHMACSHA256",
+        "authpHMACSHA384",
+        "authpHMACSHA512"
+       ],
+       "title": "Authentication Method",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 3,
+        "options": {
+         "authpHMACMD596": "MD5 (default)",
+         "authpHMACSHA224": "SHA-224",
+         "authpHMACSHA256": "SHA-256",
+         "authpHMACSHA384": "SHA-384",
+         "authpHMACSHA512": "SHA-512",
+         "authpHMACSHA96": "SHA"
+        }
+       }
+      },
+      "snmpauthpass": {
+       "default": "",
+       "title": "Password",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "password",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 5
+       }
+      },
+      "snmpcommv1": {
+       "default": "public",
+       "title": "Community String (SNMP v1)",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notForReadOnlyUser": true,
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V1"
+        ],
+        "sortIndex": 1,
+        "security": "storeencryptednodisplay",
+        "contenttype": "raw"
+       }
+      },
+      "snmpcommv2": {
+       "default": "public",
+       "title": "Community String (SNMP v2c)",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notForReadOnlyUser": true,
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V2"
+        ],
+        "sortIndex": 2,
+        "security": "storeencryptednodisplay",
+        "contenttype": "raw"
+       }
+      },
+      "snmpcontext": {
+       "default": "",
+       "title": "Context Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 8,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "snmpencmode": {
+       "default": "DESPrivProtocol",
+       "enum": [
+        "NoPrivProtocol",
+        "DESPrivProtocol",
+        "AESPrivProtocol",
+        "AES192PrivProtocol",
+        "AES256PrivProtocol"
+       ],
+       "title": "Encryption Type",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 6,
+        "options": {
+         "AES192PrivProtocol": "AES-192",
+         "AES256PrivProtocol": "AES-256",
+         "AESPrivProtocol": "AES",
+         "DESPrivProtocol": "DES (default)",
+         "NoPrivProtocol": "None"
+        }
+       }
+      },
+      "snmpencpass": {
+       "default": "",
+       "title": "Encryption Key",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "password",
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 7
+       }
+      },
+      "snmpport": {
+       "default": 161,
+       "maximum": 65535,
+       "minimum": 1,
+       "title": "SNMP Port",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "sortIndex": 9
+       }
+      },
+      "snmptimeout": {
+       "default": 5,
+       "maximum": 300,
+       "minimum": 1,
+       "title": "Timeout (Sec.)",
+       "type": "integer",
+       "x-prtg-meta": {
+        "class": "integer",
+        "required": true,
+        "sortIndex": 10,
+        "extra": "sec"
+       }
+      },
+      "snmpuser": {
+       "default": "",
+       "title": "User Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notForReadOnlyUser": true,
+        "masterSetting": "snmpversion",
+        "masterValues": [
+         "V3"
+        ],
+        "sortIndex": 4,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "snmpversion": {
+       "default": "V2",
+       "enum": [
+        "V1",
+        "V2",
+        "V3"
+       ],
+       "title": "SNMP Version",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 0,
+        "options": {
+         "V1": "SNMP v1",
+         "V2": "SNMP v2c (default)",
+         "V3": "SNMP v3"
+        }
+       }
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "infobox": {
+     "default": "SNMP v3 has performance limitations because of the use of encryption. Keep in mind that SNMP v3, unlike SNMP v1 and v2c, does not scale with more CPU power. Because of this limitation, you can monitor only a limited number of sensors per second using SNMP v3.[br][br]If you experience an increased [b]Interval Delay[/b] or [b]Open Requests[/b] reading of the Probe Health sensor, you need to distribute the load over multiple probes. SNMP v1 and v2c do not have this limitation.",
+     "title": "infobox",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "information",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 11,
+      "semantichint": "content"
+     }
+    },
+    "snmpauthmode": {
+     "default": "authpHMACMD596",
+     "enum": [
+      "authpHMACMD596",
+      "authpHMACSHA96",
+      "authpHMACSHA224",
+      "authpHMACSHA256",
+      "authpHMACSHA384",
+      "authpHMACSHA512"
+     ],
+     "title": "Authentication Method",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 3,
+      "options": {
+       "authpHMACMD596": "MD5 (default)",
+       "authpHMACSHA224": "SHA-224",
+       "authpHMACSHA256": "SHA-256",
+       "authpHMACSHA384": "SHA-384",
+       "authpHMACSHA512": "SHA-512",
+       "authpHMACSHA96": "SHA"
+      }
+     }
+    },
+    "snmpauthpass": {
+     "default": "",
+     "title": "Password",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "password",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 5
+     }
+    },
+    "snmpcommv1": {
+     "default": "public",
+     "title": "Community String (SNMP v1)",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "notForReadOnlyUser": true,
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V1"
+      ],
+      "sortIndex": 1,
+      "security": "storeencryptednodisplay",
+      "contenttype": "raw"
+     }
+    },
+    "snmpcommv2": {
+     "default": "public",
+     "title": "Community String (SNMP v2c)",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "notForReadOnlyUser": true,
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V2"
+      ],
+      "sortIndex": 2,
+      "security": "storeencryptednodisplay",
+      "contenttype": "raw"
+     }
+    },
+    "snmpcontext": {
+     "default": "",
+     "title": "Context Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 8,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "snmpencmode": {
+     "default": "DESPrivProtocol",
+     "enum": [
+      "NoPrivProtocol",
+      "DESPrivProtocol",
+      "AESPrivProtocol",
+      "AES192PrivProtocol",
+      "AES256PrivProtocol"
+     ],
+     "title": "Encryption Type",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 6,
+      "options": {
+       "AES192PrivProtocol": "AES-192",
+       "AES256PrivProtocol": "AES-256",
+       "AESPrivProtocol": "AES",
+       "DESPrivProtocol": "DES (default)",
+       "NoPrivProtocol": "None"
+      }
+     }
+    },
+    "snmpencpass": {
+     "default": "",
+     "title": "Encryption Key",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "password",
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 7
+     }
+    },
+    "snmpport": {
+     "default": 161,
+     "maximum": 65535,
+     "minimum": 1,
+     "title": "SNMP Port",
+     "type": "integer",
+     "x-prtg-meta": {
+      "class": "integer",
+      "required": true,
+      "sortIndex": 9
+     }
+    },
+    "snmptimeout": {
+     "default": 5,
+     "maximum": 300,
+     "minimum": 1,
+     "title": "Timeout (Sec.)",
+     "type": "integer",
+     "x-prtg-meta": {
+      "class": "integer",
+      "required": true,
+      "sortIndex": 10,
+      "extra": "sec"
+     }
+    },
+    "snmpuser": {
+     "default": "",
+     "title": "User Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "notForReadOnlyUser": true,
+      "masterSetting": "snmpversion",
+      "masterValues": [
+       "V3"
+      ],
+      "sortIndex": 4,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "snmpversion": {
+     "default": "V2",
+     "enum": [
+      "V1",
+      "V2",
+      "V3"
+     ],
+     "title": "SNMP Version",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 0,
+      "options": {
+       "V1": "SNMP v1",
+       "V2": "SNMP v2c (default)",
+       "V3": "SNMP v3"
+      }
+     }
+    }
+   },
+   "title": "Credentials for SNMP Devices",
+   "type": "object",
+   "x-prtg-meta": {
+    "class": "section",
+    "inheritable": true,
+    "sortIndex": 8
+   }
+  },
+  "windowsconnection": {
+   "properties": {
+    "_inheritancesource": {
+     "properties": {
+      "href": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "id": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "name": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "type": {
+       "enum": [
+        "REFERENCED_ROOT",
+        "REFERENCED_GROUP",
+        "REFERENCED_PROBE",
+        "REFERENCED_DEVICE",
+        "REFERENCED_UNKNOWN_TYPE"
+       ],
+       "readOnly": true,
+       "type": "string"
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "_inherited": {
+     "default": true,
+     "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+     "type": "boolean"
+    },
+    "_shadowed": {
+     "properties": {
+      "windowsauthenticationmethod": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "WMI Authentication Method",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 5,
+        "options": {
+         "0": "Negotiate (try Kerberos first, use NTLM as fallback)",
+         "1": "Kerberos only"
+        }
+       }
+      },
+      "windowslogindomain": {
+       "default": "",
+       "title": "Domain or Computer Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notForReadOnlyUser": true,
+        "sortIndex": 0,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "windowsloginpassword": {
+       "default": "",
+       "title": "Password",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "password",
+        "sortIndex": 2
+       }
+      },
+      "windowsloginusername": {
+       "default": "",
+       "title": "User Name",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "edit",
+        "notForReadOnlyUser": true,
+        "sortIndex": 1,
+        "security": "none",
+        "contenttype": "raw"
+       }
+      },
+      "wmiauthenticationinfo": {
+       "default": "[b]Important[/b]: To use \"Kerberos only\", you must enable WSMan on the probe system. You can find the setting in the \"WMI Protocol\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.",
+       "title": "wmiauthenticationinfo",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "information",
+        "sortIndex": 3,
+        "semantichint": "content"
+       }
+      },
+      "wmibackend": {
+       "default": "Unknown. The probe is not connected to the PRTG core server.",
+       "title": "WMI Protocol Used by the Classic Remote Probe",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "information",
+        "notInRoot": true,
+        "sortIndex": 4,
+        "semantichint": "content"
+       }
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "windowsauthenticationmethod": {
+     "default": "0",
+     "enum": [
+      "0",
+      "1"
+     ],
+     "title": "WMI Authentication Method",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 5,
+      "options": {
+       "0": "Negotiate (try Kerberos first, use NTLM as fallback)",
+       "1": "Kerberos only"
+      }
+     }
+    },
+    "windowslogindomain": {
+     "default": "",
+     "title": "Domain or Computer Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "notForReadOnlyUser": true,
+      "sortIndex": 0,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "windowsloginpassword": {
+     "default": "",
+     "title": "Password",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "password",
+      "sortIndex": 2
+     }
+    },
+    "windowsloginusername": {
+     "default": "",
+     "title": "User Name",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "edit",
+      "notForReadOnlyUser": true,
+      "sortIndex": 1,
+      "security": "none",
+      "contenttype": "raw"
+     }
+    },
+    "wmiauthenticationinfo": {
+     "default": "[b]Important[/b]: To use \"Kerberos only\", you must enable WSMan on the probe system. You can find the setting in the \"WMI Protocol\" section on the Probe Settings for Monitoring tab in the PRTG Administration Tool.",
+     "title": "wmiauthenticationinfo",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "information",
+      "sortIndex": 3,
+      "semantichint": "content"
+     }
+    },
+    "wmibackend": {
+     "default": "Unknown. The probe is not connected to the PRTG core server.",
+     "title": "WMI Protocol Used by the Classic Remote Probe",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "information",
+      "notInRoot": true,
+      "sortIndex": 4,
+      "semantichint": "content"
+     }
+    }
+   },
+   "title": "Credentials for Windows Systems",
+   "type": "object",
+   "x-prtg-meta": {
+    "class": "section",
+    "inheritable": true,
+    "sortIndex": 5
+   }
+  },
+  "intervalgroup": {
+   "properties": {
+    "_inheritancesource": {
+     "properties": {
+      "href": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "id": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "name": {
+       "readOnly": true,
+       "type": "string"
+      },
+      "type": {
+       "enum": [
+        "REFERENCED_ROOT",
+        "REFERENCED_GROUP",
+        "REFERENCED_PROBE",
+        "REFERENCED_DEVICE",
+        "REFERENCED_UNKNOWN_TYPE"
+       ],
+       "readOnly": true,
+       "type": "string"
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "_inherited": {
+     "default": true,
+     "description": "When an object inherits its values, PRTG looks for the closest parent, which does not inherit its values and uses those. Otherwise the objects own values are used.",
+     "type": "boolean"
+    },
+    "_shadowed": {
+     "properties": {
+      "autoacknowledge": {
+       "default": "0",
+       "enum": [
+        "0",
+        "1"
+       ],
+       "title": "Acknowledge Automatically",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "sortIndex": 2,
+        "options": {
+         "0": "Show down status on error (default)",
+         "1": "Show down (acknowledged) status on error"
+        }
+       }
+      },
+      "errorintervalsdown": {
+       "default": "1",
+       "enum": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+       ],
+       "title": "If a Sensor Scan Fails",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "combo",
+        "sortIndex": 1,
+        "options": {
+         "0": "Set sensor to [b]down[/b] status immediately",
+         "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+         "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+         "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+         "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+         "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+        }
+       }
+      },
+      "inherittriggers": {
+       "default": "1",
+       "enum": [
+        "1",
+        "0"
+       ],
+       "title": "Notification Trigger Inheritance",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "radio",
+        "notInRoot": true,
+        "notOnBasicPage": true,
+        "sortIndex": 3,
+        "options": {
+         "0": "Only use the notification triggers defined above",
+         "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+        }
+       }
+      },
+      "interval": {
+       "default": "60",
+       "title": "Scanning Interval",
+       "type": "string",
+       "x-prtg-meta": {
+        "class": "lookuplist",
+        "sortIndex": 0,
+        "lookupkey": "intervalid",
+        "href": "/api/v2/setting-lookups/intervalid"
+       }
+      }
+     },
+     "readOnly": true,
+     "type": "object"
+    },
+    "autoacknowledge": {
+     "default": "0",
+     "enum": [
+      "0",
+      "1"
+     ],
+     "title": "Acknowledge Automatically",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 2,
+      "options": {
+       "0": "Show down status on error (default)",
+       "1": "Show down (acknowledged) status on error"
+      }
+     }
+    },
+    "errorintervalsdown": {
+     "default": "1",
+     "enum": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "title": "If a Sensor Scan Fails",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "combo",
+      "sortIndex": 1,
+      "options": {
+       "0": "Set sensor to [b]down[/b] status immediately",
+       "1": "Set sensor to [b]warning[/b] status for 1 interval, then set to [b]down[/b] status (default)",
+       "2": "Set sensor to [b]warning[/b] status for 2 intervals, then set to [b]down[/b] status",
+       "3": "Set sensor to [b]warning[/b] status for 3 intervals, then set to [b]down[/b] status",
+       "4": "Set sensor to [b]warning[/b] status for 4 intervals, then set to [b]down[/b] status",
+       "5": "Set sensor to [b]warning[/b] status for 5 intervals, then set to [b]down[/b] status"
+      }
+     }
+    },
+    "inherittriggers": {
+     "default": "1",
+     "enum": [
+      "1",
+      "0"
+     ],
+     "title": "Notification Trigger Inheritance",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "notInRoot": true,
+      "notOnBasicPage": true,
+      "sortIndex": 3,
+      "options": {
+       "0": "Only use the notification triggers defined above",
+       "1": "Inherit all notification triggers from parent objects and use the notification triggers defined above (default)"
+      }
+     }
+    },
+    "interval": {
+     "default": "60",
+     "title": "Scanning Interval",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "lookuplist",
+      "sortIndex": 0,
+      "lookupkey": "intervalid",
+      "href": "/api/v2/setting-lookups/intervalid"
+     }
+    }
+   },
+   "title": "Scanning Interval",
+   "type": "object",
+   "x-prtg-meta": {
+    "class": "section",
+    "inheritable": true,
+    "sortIndex": 38
+   }
+  },
+  "discoverytypegroup": {
+   "properties": {
+    "devicetemplate": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "nullable": true,
+     "title": "Device Templates",
+     "type": "array",
+     "x-prtg-meta": {
+      "class": "filechecklist",
+      "required": true,
+      "masterSetting": "discoverytype",
+      "masterValues": [
+       "2"
+      ],
+      "sortIndex": 1,
+      "href": "/api/v2/experimental/devices/templates"
+     }
+    },
+    "discoveryschedule": {
+     "default": "0",
+     "enum": [
+      "0",
+      "1",
+      "2",
+      "3"
+     ],
+     "title": "Auto-Discovery Schedule",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "combo",
+      "masterSetting": "discoverytype",
+      "masterValues": [
+       "1",
+       "2",
+       "3"
+      ],
+      "sortIndex": 2,
+      "options": {
+       "0": "Once (default)",
+       "1": "Hourly",
+       "2": "Daily",
+       "3": "Weekly"
+      }
+     }
+    },
+    "discoverytype": {
+     "default": "0",
+     "enum": [
+      "0",
+      "1",
+      "3",
+      "2"
+     ],
+     "title": "Auto-Discovery Level",
+     "type": "string",
+     "x-prtg-meta": {
+      "class": "radio",
+      "sortIndex": 0,
+      "options": {
+       "0": "No auto-discovery (default)",
+       "1": "Default auto-discovery (recommended)",
+       "2": "Auto-discovery with specific device templates",
+       "3": "Detailed auto-discovery"
+      }
+     }
+    }
+   },
+   "title": "Auto-Discovery Settings",
+   "type": "object",
+   "x-prtg-meta": {
+    "class": "section",
+    "sortIndex": 2
+   }
+  }
+ }
+}

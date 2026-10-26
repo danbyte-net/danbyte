@@ -79,7 +79,9 @@ that were waiting for one.
 - **Service detail page.** **Monitor** resolves the target IP and starts
   watching, **Edit** opens the same form the Services tab uses (there is no
   separate edit route - the dialog *is* the editor), and **Delete** removes the
-  service and cascades its checks.
+  service and cascades its checks. A service a PRTG HTTP or SSL sensor checks
+  gets a **Sensors** tab - see
+  [Where sensors show up](../features/prtg.md#where-sensors-show-up).
 - The old `POST /api/services/{id}/monitor/` action still exists (sets
   `monitored=True` + reconciles) for backward compatibility.
 

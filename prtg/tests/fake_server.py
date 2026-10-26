@@ -2,9 +2,13 @@
 
 It answers the classic endpoints the client uses - ``table.json`` (sensors,
 devices, probes and a sensor's channels), ``getstatus.htm``,
-``getsensordetails.json``, ``historicdata.xml``, ``getobjectproperty.htm``
-and the simple writes - plus the API v2 probe, from fixtures in ``fixtures/``
-shaped like PRTG 26.x responses. Tests reach it over real HTTP on 127.0.0.1,
+``getsensordetails.json``, ``historicdata.xml``, ``getobjectproperty.htm``,
+the simple writes, ``duplicateobject.htm`` and ``discovernow.htm`` - and the
+API v2 routes Danbyte writes through (``/version``, probes, schemas, device
+and sensor create, patch, move, delete, metascan), from fixtures in
+``fixtures/`` shaped like PRTG 26.x responses (``v2_*.json`` were recorded
+from PRTG 26.3.124: a create answers 201 with an empty body and the new id in
+``Location``; the interval section is refused with 501). Tests reach it over real HTTP on 127.0.0.1,
 so the client, the outbound guard (with 127.0.0.1 allow-listed), headers and
 query strings are exercised end to end rather than mocked.
 
@@ -37,7 +41,10 @@ def load_fixture(name: str, *, raw: bool = False):
 
 # ── recording ───────────────────────────────────────────────────────────────
 
-_SECRET_KEYS = r"password|passhash|apitoken|api_key|apikey|secret|community|authkey|privkey"
+_SECRET_KEYS = (
+    r"password|passhash|apitoken|api_key|apikey|secret|community|authkey|privkey"
+    r"|snmpcomm|snmpauthpass|snmpencpass"
+)
 _QUERY_SECRET = re.compile(rf"(?i)\b({_SECRET_KEYS})=([^&\"'\s<]+)")
 _JSON_SECRET = re.compile(rf'(?i)("[^"]*(?:{_SECRET_KEYS})[^"]*"\s*:\s*)"(?:[^"\\]|\\.)*"')
 _XML_SECRET = re.compile(rf"(?i)(<({_SECRET_KEYS})[^>]*>)[^<]*(</)")
@@ -98,6 +105,21 @@ def sensor_row(objid: int, name: str = "Ping", *, device: str = "dev", status: i
     }
 
 
+def device_row(objid: int, name: str, *, host: str = "", parent: int = 1,
+               tags=(), status: int = 3) -> dict:
+    """A device row in the shape ``table_devices.json`` uses."""
+    label = st.label(status)
+    tags = " ".join(tags)
+    return {
+        "objid": objid, "objid_raw": objid, "name": name, "name_raw": name,
+        "host": host, "host_raw": host, "probe": "Local Probe", "probe_raw": "Local Probe",
+        "group": "Local Probe", "group_raw": "Local Probe", "status": label,
+        "status_raw": status, "message": "OK", "message_raw": "OK",
+        "tags": tags, "tags_raw": tags, "parentid": parent, "parentid_raw": parent,
+        "active": True, "active_raw": -1,
+    }
+
+
 class FakePrtg:
     """One fake PRTG core server. ``start()`` it once per test class and
     ``reset()`` it per test."""
@@ -148,6 +170,21 @@ class FakePrtg:
         self.raw_tables: dict[str, str] = {}
         self.properties: dict[tuple[int, str], str] = {}
         self.v2 = True
+        #: Whether the experimental write endpoints answer (False: 404, as on
+        #: a server without them).
+        self.v2_writes = True
+        self.next_id = 5000
+        #: Sensor creates answered "could not find parent" first, as PRTG
+        #: 26.3 does right after a device was created.
+        self.parent_misses = 0
+        #: kindid -> metascan rows (``{"headers": {...}, "rows": [...]}``).
+        self.metascans: dict[str, dict] = {}
+        #: kindid -> (status, body) a sensor create answers with instead.
+        self.refuse_kinds: dict[str, tuple[int, dict]] = {}
+        #: Every v2 call: {"method", "path", "params", "body"}.
+        self.v2_calls: list[dict] = []
+        #: device objid -> the sections PATCHed onto it.
+        self.device_settings: dict[int, dict] = {}
         #: (status, body) every classic call answers with, to force errors.
         self.fail: tuple[int, str] | None = None
         #: Every request: {"path", "params", "auth"} - auth is how the key came.
@@ -244,14 +281,7 @@ class _Handler(BaseHTTPRequestHandler):
         if auth == "unsupported":
             return self._error(401, "Unsupported authorization scheme.")
         if url.path.startswith("/api/v2/"):
-            if not self.fake.v2:
-                return self._send(404, "<h1>Not Found</h1>")
-            if auth is None:
-                return self._send(401, json.dumps({"code": "Unauthorized"}), "application/json")
-            limit = int(q.get("limit", 100))
-            rows = [{"id": str(r["objid"]), "name": r["name"]}
-                    for r in self.fake.tables["sensors"]][:limit]
-            return self._json(rows)
+            return self._v2("GET", url.path.removeprefix("/api/v2"), q, auth)
         if auth is None:
             return self._error(401, "Unauthorized")
         if self.fake.fail:
@@ -309,11 +339,202 @@ class _Handler(BaseHTTPRequestHandler):
             page.append(copy.deepcopy(row))
         return self._json({"prtg-version": VERSION, "treesize": len(rows), content: page})
 
-    def _write(self, path: str, q: dict):
+    # ── API v2 ───────────────────────────────────────────────────────
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b""
+        try:
+            return json.loads(raw or b"{}")
+        except ValueError:
+            return {}
+
+    def do_POST(self):
+        self._v2_entry("POST")
+
+    def do_PATCH(self):
+        self._v2_entry("PATCH")
+
+    def do_DELETE(self):
+        self._v2_entry("DELETE")
+
+    def _v2_entry(self, method: str):
+        url = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(url.query, keep_blank_values=True).items()}
+        auth = self._auth(q, v2=True)
+        self.fake.requests.append({"path": url.path, "params": q, "auth": auth})
+        if not url.path.startswith("/api/v2/"):
+            return self._send(405, "")
+        return self._v2(method, url.path.removeprefix("/api/v2"), q, auth)
+
+    def _v2_error(self, code: int, kind: str, message: str):
+        self._send(code, json.dumps({"code": kind, "message": message,
+                                     "request_id": "fake"}), "application/json")
+
+    def _new_id(self) -> int:
+        self.fake.next_id += 1
+        return self.fake.next_id
+
+    def _v2(self, method: str, path: str, q: dict, auth):  # noqa: C901
+        fake = self.fake
+        if not fake.v2:
+            return self._send(404, "<h1>Not Found</h1>")
+        if auth is None:
+            return self._send(401, json.dumps({"code": "Unauthorized"}), "application/json")
+        body = self._body() if method in ("POST", "PATCH") else None
+        fake.v2_calls.append({"method": method, "path": path, "params": q, "body": body})
+        missing = ("NOT_FOUND",
+                   "The resource could not be found in this endpoint. Check the ID of the object.")
+        if path == "/version":
+            return self._json({"application_server_version": "0.362.0",
+                               "prtg_version": f"{fake.status.get('Version', VERSION)}",
+                               "prtg_release_channel": "Stable"})
+        if path.startswith("/experimental/") and not fake.v2_writes:
+            return self._send(404, "<h1>Not Found</h1>")
+        if method == "GET" and path == "/experimental/sensors":
+            limit = int(q.get("limit", 100) or 100) or 3000
+            rows = [{"id": str(r["objid"]), "name": r["name"]}
+                    for r in fake.tables["sensors"]][:limit]
+            return self._json(rows)
+        if method == "GET" and path == "/experimental/probes":
+            return self._json([{"id": str(r["objid"]), "name": r["name"], "kind": "probenode"}
+                               for r in fake.tables["probenode"]
+                               if str(r.get("type_raw", "probenode")) == "probenode"
+                               and r["objid"] != 0])
+        m = re.fullmatch(r"/experimental/schemas/(\d+)", path)
+        if method == "GET" and m:
+            parent = int(m.group(1))
+            if fake.device(parent) is not None:
+                return self._json(load_fixture("v2_schemas_device.json"))
+            return self._json([{"creatable": True, "kind": "device[1]", "name": "Device"},
+                               {"creatable": True, "kind": "group[1]", "name": "Group"}])
+        m = re.fullmatch(r"/experimental/(groups|probes)/(\d+)/device", path)
+        if method == "POST" and m:
+            parent = int(m.group(2))
+            known = {r["objid"] for r in fake.tables["groups"]} | {
+                r["objid"] for r in fake.tables["probenode"]}
+            if parent not in known:
+                return self._v2_error(404, "NOT_FOUND", f"{missing[1]} Cause: could not find "
+                                      f"parent with ID: {parent}")
+            basic = (body or {}).get("basic") or {}
+            objid = self._new_id()
+            fake.tables["devices"].append(device_row(
+                objid, basic.get("name", "Device"), host=basic.get("host", ""),
+                parent=parent, tags=basic.get("tags") or [],
+            ))
+            return self._send(201, "", "application/json",
+                              {"Location": f"/api/v2/devices/{objid}"})
+        m = re.fullmatch(r"/experimental/devices/(\d+)/sensor", path)
+        if method == "POST" and m:
+            objid = int(m.group(1))
+            device = fake.device(objid)
+            if device is None:
+                return self._v2_error(404, *missing)
+            kind = q.get("kindid", "")
+            if fake.parent_misses > 0:
+                fake.parent_misses -= 1
+                return self._v2_error(404, "NOT_FOUND", f"{missing[1]} Cause: could not find "
+                                      f"parent with ID: {objid}")
+            if kind in fake.refuse_kinds:
+                code, err = fake.refuse_kinds[kind]
+                return self._send(code, json.dumps(err), "application/json")
+            if "intervalgroup" in (body or {}):
+                return self._v2_error(400, "BAD_REQUEST", '"intervalgroup.interval" is invalid: '
+                                      "no lookup validation possible for lookup intervalid")
+            basic = (body or {}).get("basic") or {}
+            sid = self._new_id()
+            row = sensor_row(sid, basic.get("name") or kind, device=device["name"],
+                             parent=objid, status=st.UNKNOWN)
+            row["type_raw"] = kind
+            row["type"] = kind
+            tags = " ".join(basic.get("tags") or [])
+            row["tags"] = row["tags_raw"] = tags
+            row["_settings"] = body
+            fake.tables["sensors"].append(row)
+            return self._send(201, "", "application/json",
+                              {"Location": f"/api/v2/sensors/{sid}"})
+        m = re.fullmatch(r"/experimental/devices/(\d+)/metascan", path)
+        if m:
+            kind = q.get("kind", "")
+            if method == "POST":
+                return self._send(201, "", "application/json", {
+                    "Location": f"/api/v2/experimental/devices/{m.group(1)}/metascan?kind={kind}"})
+            if kind not in fake.metascans:
+                return self._v2_error(400, "BAD_GATEWAY", "error during meta-scan: 106: The "
+                                      "sensor does not get a response from the device.")
+            return self._json(fake.metascans[kind])
+        m = re.fullmatch(r"/devices/(\d+)", path)
+        if m:
+            device = fake.device(int(m.group(1)))
+            if device is None:
+                return self._v2_error(404, *missing)
+            if method == "GET":
+                return self._json({"id": m.group(1), "name": device["name"],
+                                   "basic": {"host": device.get("host_raw", "")}})
+            if method == "PATCH":
+                sections = fake.device_settings.setdefault(int(m.group(1)), {})
+                for name, values in (body or {}).items():
+                    sections.setdefault(name, {}).update(values)
+                basic = (body or {}).get("basic") or {}
+                if "host" in basic:
+                    device["host"] = device["host_raw"] = basic["host"]
+                if "tags" in basic:
+                    device["tags"] = device["tags_raw"] = " ".join(basic["tags"])
+                return self._send(204, "")
+        m = re.fullmatch(r"/experimental/sensors/(\d+)", path)
+        if m:
+            row = fake.sensor(int(m.group(1)))
+            if row is None:
+                return self._v2_error(404, *missing)
+            if method == "DELETE":
+                fake.tables["sensors"].remove(row)
+                return self._send(204, "")
+            if method == "PATCH":
+                if set(body or {}) - {"basic", "channelgroup"}:
+                    return self._v2_error(501, "METHOD_NOT_IMPLEMENTED",
+                                          "The requested action is not implemented yet. Cause: "
+                                          "section intervalgroup is not yet supported")
+                basic = (body or {}).get("basic") or {}
+                if "name" in basic:
+                    row["name"] = row["name_raw"] = basic["name"]
+                if "tags" in basic:
+                    row["tags"] = row["tags_raw"] = " ".join(basic["tags"])
+                return self._send(204, "")
+        m = re.fullmatch(r"/experimental/devices/(\d+)", path)
+        if m and method == "DELETE":
+            objid = int(m.group(1))
+            device = fake.device(objid)
+            if device is None:
+                return self._v2_error(404, *missing)
+            fake.tables["devices"].remove(device)
+            fake.tables["sensors"] = [r for r in fake.tables["sensors"]
+                                      if r.get("parentid") != objid]
+            return self._send(204, "")
+        m = re.fullmatch(r"/objects/(\d+)/move", path)
+        if m and method == "POST":
+            device = fake.device(int(m.group(1)))
+            parent = str((body or {}).get("parent") or "")
+            if device is None or not parent.isdigit():
+                return self._v2_error(404, *missing)
+            device["parentid"] = device["parentid_raw"] = int(parent)
+            return self._send(204, "", "application/json",
+                              {"Location": f"/api/v2/devices/{m.group(1)}"})
+        if method == "GET":
+            # The probe of API v2 and anything else read-only.
+            limit = int(q.get("limit", 100) or 100)
+            rows = [{"id": str(r["objid"]), "name": r["name"]}
+                    for r in fake.tables["sensors"]][:limit]
+            return self._json(rows)
+        return self._v2_error(404, *missing)
+
+    # ── classic writes ───────────────────────────────────────────────
+
+    def _write(self, path: str, q: dict):  # noqa: C901
         name = path.removeprefix("/api/")
         if name not in {"acknowledgealarm.htm", "pause.htm", "pauseobjectfor.htm",
-                        "setobjectproperty.htm", "deleteobject.htm", "scannow.htm"}:
-            return self._send(404, "<h1>Not Found</h1>")
+                        "setobjectproperty.htm", "deleteobject.htm", "scannow.htm",
+                        "duplicateobject.htm", "discovernow.htm"}:
+            return self._send(404, "<HTML><BODY>Not Found</BODY></HTML>")
         try:
             objid = int(q.get("id", ""))
         except ValueError:
@@ -322,7 +543,16 @@ class _Handler(BaseHTTPRequestHandler):
         row = self.fake.sensor(objid)
         if name == "setobjectproperty.htm":
             self.fake.properties[(objid, q.get("name", ""))] = q.get("value", "")
+            target = row or self.fake.device(objid)
+            if target is not None and q.get("name") == "tags":
+                target["tags"] = target["tags_raw"] = q.get("value", "")
             return self._send(200, "<html><body>OK</body></html>")
+        if name == "duplicateobject.htm":
+            return self._duplicate(objid, q)
+        if name == "discovernow.htm":
+            if self.fake.device(objid) is None:
+                return self._error(400, "Sorry, the selected object cannot be used here.")
+            return self._send(200, "<HTML><BODY>OK</BODY></HTML>")
         device = self.fake.device(objid) if row is None else None
         if row is None and device is None:
             return self._error(400, "Sorry, the selected object cannot be used here.")
@@ -353,6 +583,41 @@ class _Handler(BaseHTTPRequestHandler):
             self.fake.tables["sensors"].remove(row)
         return self._send(200, "<html><body>OK</body></html>")
 
+    def _duplicate(self, objid: int, q: dict):
+        """As PRTG 26.3: a 302 to the copy, which arrives paused; a device's
+        sensors are copied with it."""
+        fake = self.fake
+        target = int(q.get("targetid", 0) or 0)
+        source = fake.sensor(objid)
+        if source is not None:
+            device = fake.device(target)
+            if device is None:
+                return self._error(400, "Sorry, the selected object cannot be used here.")
+            new = copy.deepcopy(source)
+            sid = self._new_id()
+            new.update(objid=sid, objid_raw=sid, parentid=target, parentid_raw=target,
+                       name=q.get("name", source["name"]), name_raw=q.get("name", ""))
+            fake.tables["sensors"].append(new)
+            fake.set_status(sid, st.PAUSED_USER)
+            return self._send(302, "", headers={"Location": f"/sensor.htm?id={sid}"})
+        source = fake.device(objid)
+        if source is None:
+            return self._error(400, "Sorry, the selected object cannot be used here.")
+        did = self._new_id()
+        new = copy.deepcopy(source)
+        new.update(objid=did, objid_raw=did, parentid=target, parentid_raw=target,
+                   name=q.get("name", source["name"]), name_raw=q.get("name", ""))
+        if q.get("host"):
+            new["host"] = new["host_raw"] = q["host"]
+        fake.tables["devices"].append(new)
+        fake.set_status(did, st.PAUSED_USER)
+        for s in [r for r in fake.tables["sensors"] if r.get("parentid") == objid]:
+            c = copy.deepcopy(s)
+            sid = self._new_id()
+            c.update(objid=sid, objid_raw=sid, parentid=did, parentid_raw=did)
+            fake.tables["sensors"].append(c)
+        return self._send(302, "", headers={"Location": f"/device.htm?id={did}"})
+
     def _device_write(self, name: str, objid: int, q: dict):
         """Pausing a device pauses its sensors ("paused by parent"), and the
         pause message leads the device's message, as PRTG 26.3 does it."""
@@ -370,4 +635,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self.fake.set_status(s["objid"], s.pop("_before", st.UP), "OK")
         elif name == "acknowledgealarm.htm":
             return self._send(302, "", headers={"Location": "/alarms.htm"})
+        elif name == "deleteobject.htm":
+            device = self.fake.device(objid)
+            self.fake.tables["devices"].remove(device)
+            self.fake.tables["sensors"] = [r for r in self.fake.tables["sensors"]
+                                           if r.get("parentid") != objid]
+            return self._send(302, "", headers={"Location": "/probenode.htm?id=1"})
         return self._send(200, "<html><body>OK</body></html>")

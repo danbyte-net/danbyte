@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Section } from "@/components/ui/section"
+import { TimeCell } from "@/components/cells/time-ago"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -93,6 +94,14 @@ export function PrtgMonitoringRow({
                   extra: (
                     <>
                       {excluded}
+                      {link.created_here && (
+                        <Badge
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                        >
+                          Created by Danbyte
+                        </Badge>
+                      )}
                       {pausedUntil(link) && (
                         <Badge
                           variant="secondary"
@@ -245,15 +254,38 @@ function PlanEntry({
     rows.push({
       label: "PRTG device",
       value: (
-        <a
-          href={e.linked.url}
-          target="_blank"
-          rel="noreferrer"
-          className="link inline-flex items-center gap-1 font-mono text-xs"
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <a
+            href={e.linked.url}
+            target="_blank"
+            rel="noreferrer"
+            className="link inline-flex items-center gap-1 font-mono text-xs"
+          >
+            {e.linked.name || e.linked.objid}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+          {e.linked.created_here && (
+            <Badge variant="secondary">Created by Danbyte</Badge>
+          )}
+        </span>
+      ),
+    })
+  if (e.last_apply && e.last_apply.at)
+    rows.push({
+      label: "Last apply",
+      value: (
+        <span
+          className="inline-flex flex-wrap items-center gap-2"
+          data-testid="prtg-last-apply"
         >
-          {e.linked.name || e.linked.objid}
-          <ExternalLink className="h-3 w-3" />
-        </a>
+          <Badge variant={e.last_apply.ok ? "success" : "destructive"}>
+            {e.last_apply.ok ? "Applied" : "Failed"}
+          </Badge>
+          <TimeCell iso={e.last_apply.at} />
+          <span className="text-xs text-muted-foreground">
+            {e.last_apply.detail}
+          </span>
+        </span>
       ),
     })
   if (e.managed) {
