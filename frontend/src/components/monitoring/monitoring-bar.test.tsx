@@ -228,7 +228,7 @@ describe("MonitoringBar", () => {
     expect(https.textContent).toContain("Degraded")
     expect(https.textContent).toContain("10.0.0.41")
     expect(https.textContent).toContain("Danbyte check")
-    expect(https.textContent).toMatch(/degraded \d+[smhd]/)
+    expect(https.textContent).toMatch(/\d+[smhd]/)
     expect(https.textContent).toContain("connect timeout")
     // Four in all: the fourth is behind View all.
     const all = screen.getByTestId("monitoring-view-all")
@@ -242,18 +242,15 @@ describe("MonitoringBar", () => {
     ).toBeTruthy()
   })
 
-  it("says the state as a pill once, in the header", async () => {
+  it("says each state as a pill, never a count beside it", async () => {
     mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
     await waitFor(() => expect(problems()).toHaveLength(3))
-    await waitFor(() =>
-      expect(
-        document.querySelector("[data-source=prtg] a[data-state=degraded]")
-      ).toBeTruthy()
-    )
-    expect(pills()).toHaveLength(1)
-    expect(screen.getByTestId("monitoring-overall").contains(pills()[0])).toBe(
-      true
-    )
+    // Each problem row: exactly one state pill.
+    for (const row of problems())
+      expect(row.querySelectorAll("[data-check-status]")).toHaveLength(1)
+    // No "1 up"-style count on the card itself.
+    expect(card().textContent).not.toMatch(/\d+ (up|degraded|down)/)
+    expect(pills().length).toBeGreaterThan(0)
   })
 
   it("opens each problem where it lives", async () => {
@@ -294,42 +291,30 @@ describe("MonitoringBar", () => {
     )
   })
 
-  it("draws a bar per source with its states in proportion", async () => {
+  it("gives each source the shared mixed badge in the header line", async () => {
     mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
     await waitFor(() => expect(sources()).toEqual(["checks", "zabbix", "prtg"]))
-    const [checks, zabbix, prtg] = screen.getAllByTestId("monitoring-source")
-    const widths = (row: HTMLElement) =>
-      Array.from(
-        row.querySelectorAll<HTMLElement>(
-          "[data-testid=monitoring-source-bar] [data-state]"
-        )
-      ).map((x) => [x.dataset.state, Math.round(parseFloat(x.style.width))])
-    expect(widths(checks)).toEqual([
-      ["degraded", 33],
-      ["up", 67],
-    ])
-    expect(checks.textContent).toContain("1 degraded · 2 up")
-    expect(widths(zabbix)).toEqual([["down", 100]])
-    expect(zabbix.textContent).toContain("1 problem · SNMP unreachable")
+    const badge = (src: string) =>
+      card().querySelector<HTMLElement>(
+        `[data-testid=monitoring-source-badge][data-source=${src}]`
+      )!
+    // Checks are degraded and up: the racing flag.
+    expect(badge("checks").querySelector("[data-mixed]")).toBeTruthy()
+    // Zabbix has its problems in one state: just that pill.
+    expect(badge("zabbix").textContent).toBe("Down")
     await waitFor(() =>
-      expect(widths(prtg)).toEqual([
-        ["degraded", 50],
-        ["up", 50],
-      ])
+      expect(badge("prtg").querySelector("[data-mixed]")).toBeTruthy()
     )
-    const href = (row: HTMLElement, sel: string) =>
-      row.querySelector(sel)!.closest("a")!.getAttribute("href")
-    expect(href(checks, "[data-testid=monitoring-source-bar]")).toBe(
+    const href = (el: HTMLElement) => el.closest("a")!.getAttribute("href")
+    expect(href(badge("checks"))).toBe(
       "/devices/d1?tab=monitoring&state=problem"
     )
-    expect(href(checks, "a[data-state=degraded]")).toBe(
-      "/devices/d1?tab=monitoring&state=degraded"
-    )
-    expect(href(zabbix, "[data-testid=monitoring-source-bar]")).toBe(
-      "/devices/d1?tab=monitoring#zabbix"
-    )
-    expect(href(prtg, "a[data-state=up]")).toBe(
-      "/devices/d1?tab=sensors&state=up"
+    expect(href(badge("zabbix"))).toBe("/devices/d1?tab=monitoring#zabbix")
+    expect(href(badge("prtg"))).toBe("/devices/d1?tab=sensors&state=problem")
+    // The counts are in the shared tooltip.
+    fireEvent.focus(badge("checks").closest("a")!)
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "1 degraded · 2 up"
     )
   })
 
@@ -344,17 +329,23 @@ describe("MonitoringBar", () => {
     mountWithRouter(() => (
       <MonitoringBar target={{ device: "d1" }} notify={{ device: "d1" }} />
     ))
-    const line = await screen.findByTestId("monitoring-all-clear")
-    expect(line.textContent).toBe(
-      "All 3 checks up · Zabbix up · PRTG 1 sensor up · "
-    )
+    await waitFor(() => expect(sources()).toEqual(["checks", "zabbix", "prtg"]))
     expect(card().hasAttribute("data-compact")).toBe(true)
     expect(card().textContent).toMatch(/read \d+[smhd] ago/)
     expect(problems()).toHaveLength(0)
-    expect(screen.queryByTestId("monitoring-source")).toBeNull()
-    expect(pills()).toHaveLength(1)
+    // No overall pill: each source says Up once, with no count.
+    expect(screen.queryByTestId("monitoring-overall")).toBeNull()
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId("monitoring-source-badge")
+          .map((b) => b.textContent)
+      ).toEqual(["Up", "Up", "Up"])
+    )
     const link = (src: string) =>
-      line.querySelector(`a[data-source=${src}]`)!.getAttribute("href")
+      card()
+        .querySelector(`[data-testid=monitoring-source][data-source=${src}] a`)!
+        .getAttribute("href")
     expect(link("checks")).toBe("/devices/d1?tab=monitoring")
     expect(link("zabbix")).toBe("/devices/d1?tab=monitoring#zabbix")
     expect(link("prtg")).toBe("/devices/d1?tab=sensors")
@@ -383,7 +374,7 @@ describe("MonitoringBar", () => {
     cleanup()
     answer({ checks: UP_CHECKS, zabbix: [], links: [] })
     mountWithRouter(both)
-    await screen.findByTestId("monitoring-all-clear")
+    await waitFor(() => expect(inside("compact")).toBeTruthy())
     expect(inside("banner")).toBeNull()
     expect(inside("compact")?.hasAttribute("data-compact")).toBe(true)
   })

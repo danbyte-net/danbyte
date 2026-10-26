@@ -38,7 +38,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import {
   ChartContainer,
   ChartLegend,
@@ -54,6 +53,12 @@ import {
   useStatusLabels,
 } from "@/components/monitoring/status-palette"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import {
+  MixedStatusBadge,
+  StatePill,
+  mixedEntries,
+} from "@/components/monitoring/mixed-status-badge"
+import { StateTip } from "@/components/monitoring/monitoring-bar"
 import { Kpi } from "@/components/kpi-card"
 import { MonitoringSettingsForm } from "@/components/monitoring/settings-form"
 import { ChecksList } from "@/components/monitoring/checks-list"
@@ -337,10 +342,18 @@ function MonitoringPage() {
             ...(canManage ? [{ value: "settings", label: "Settings" }] : []),
           ]}
         />
-        {d && (
-          <Badge variant="secondary" className="ml-auto">
-            {pct(d.by_status.up ?? 0)}% reachable
-          </Badge>
+        {d && total > 0 && (
+          <span className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <StatusSummary
+              counts={d.by_status}
+              onOpen={(status) =>
+                nav({ to: "/monitoring", search: { view: "checks", status } })
+              }
+            />
+            <span className="num whitespace-nowrap">
+              {pct(d.by_status.up ?? 0)}% reachable
+            </span>
+          </span>
         )}
       </header>
 
@@ -806,6 +819,43 @@ function MonitoringPage() {
         )}
       </div>
     </div>
+  )
+}
+
+/** Every check's state as the shared mixed badge, with the shared hover (a
+ * pill and a count per state, worst first) and a click to the Checks tab -
+ * filtered to the worst state when something is wrong. */
+function StatusSummary({
+  counts,
+  onOpen,
+}: {
+  counts: Partial<Record<CheckStatus, number>>
+  onOpen: (status: CheckStatus | "all") => void
+}) {
+  const entries = mixedEntries(counts).reverse()
+  const worst = entries.find(([s]) => s !== "up" && s !== "skipped")?.[0]
+  return (
+    <StateTip
+      content={
+        <ul className="flex flex-col gap-1 text-[12px]">
+          {entries.map(([s, n]) => (
+            <li key={s} className="flex items-center gap-3">
+              <StatePill state={s} />
+              <span className="num ml-auto">{n}</span>
+            </li>
+          ))}
+        </ul>
+      }
+    >
+      <button
+        type="button"
+        className="inline-flex rounded-[5px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        data-testid="monitoring-status-summary"
+        onClick={() => onOpen((worst as CheckStatus | undefined) ?? "all")}
+      >
+        <MixedStatusBadge counts={counts} />
+      </button>
+    </StateTip>
   )
 }
 
