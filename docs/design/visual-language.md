@@ -109,6 +109,7 @@ browser's own widget, ignores the theme, and drifts the moment tokens change.
 | Searchable picker in a popover | `Popover` + `Command` (see `ui/combobox.tsx`) | a hand-built input + `<button>` list |
 | Free text with common values | `FormText` with `suggestions` (or `SuggestInput` directly) | `<datalist>`, or a `<select>` that locks out other values |
 | Object reference | `ObjectPicker` or an existing domain picker preset (`onPickMany` when a list collects several at once) | a bespoke fetch + list |
+| PRTG sensor kind | `SensorKindPicker` (button + dialog) or `SensorKindBrowser` (inline) from `components/prtg/sensor-kind-picker.tsx`: search, category rail, sortable columns, Standard kinds pinned | a `FormSelect` of kinds, or another kind list |
 
 **Labels name their control.** `Field` (and every `Form*` built on it) gives
 its `<label>` an id and hands it to the control through context: `Input`,

@@ -13291,6 +13291,10 @@ export interface PrtgAddableKind {
   credentials: string
   manual: string
   copy_from_seed: boolean
+  /** The same facts under the picker's names (the server sends both). */
+  danbyte_form?: boolean
+  needs_scan?: boolean
+  credential_group?: string
 }
 
 export interface PrtgAddableKinds {
@@ -13356,6 +13360,9 @@ export interface PrtgSensorDefinition {
   position?: number
   kind: string
   kind_label?: string
+  /** `danbyte`: Danbyte's own kind and form; `generic`: a PRTG kind id with
+   * PRTG's create form as `section.field` params. */
+  form?: "danbyte" | "generic"
   name: string
   params: Record<string, unknown>
   interval_seconds: number | null

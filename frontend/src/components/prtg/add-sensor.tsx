@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Plus, Radar, RefreshCw } from "lucide-react"
+import { ArrowLeft, Plus, Radar } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type {
   PrtgAddSensorResult,
   PrtgAddableKind,
-  PrtgAddableKinds,
   PrtgDeviceTemplates,
   PrtgScanRow,
   PrtgSchemaField,
@@ -15,8 +14,6 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
-import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -27,12 +24,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
@@ -43,6 +34,7 @@ import {
   kindDefaults,
   usePrtgSensorKinds,
 } from "./profiles"
+import { SensorKindBrowser } from "./sensor-kind-picker"
 
 // Adding a sensor to a linked PRTG device by hand (prtg/manual.py): pick one
 // of the kinds PRTG offers, fill in its settings - Danbyte's own form for
@@ -144,141 +136,6 @@ export function AddSensorButtons({
 
 // ── the kinds ──────────────────────────────────────────────────────────
 
-function useAddableKinds(target: AddTarget) {
-  return useQuery({
-    queryKey: ["prtg-addable-kinds", target.connectionId],
-    queryFn: () =>
-      api<PrtgAddableKinds>(
-        `/api/prtg/connections/${target.connectionId}/sensor-kinds/?link=${target.linkId}`
-      ),
-    staleTime: 10 * 60_000,
-  })
-}
-
-function KindPicker({
-  target,
-  onPick,
-}: {
-  target: AddTarget
-  onPick: (kind: PrtgAddableKind) => void
-}) {
-  const qc = useQueryClient()
-  const kinds = useAddableKinds(target)
-  const [term, setTerm] = useState("")
-  const reread = useMutation({
-    mutationFn: () =>
-      api<PrtgAddableKinds>(
-        `/api/prtg/connections/${target.connectionId}/sensor-kinds/?link=${target.linkId}&refresh=1`
-      ),
-    onSuccess: (data) =>
-      qc.setQueryData(["prtg-addable-kinds", target.connectionId], data),
-    onError: (e) => apiErrorToast(e, "PRTG did not list its sensor kinds"),
-  })
-  const groups = useMemo(() => {
-    const q = term.trim().toLowerCase()
-    const out = new Map<string, PrtgAddableKind[]>()
-    for (const k of kinds.data?.kinds ?? []) {
-      if (
-        q &&
-        !`${k.name} ${k.description} ${k.id} ${k.category}`
-          .toLowerCase()
-          .includes(q)
-      )
-        continue
-      const list = out.get(k.category) ?? []
-      list.push(k)
-      out.set(k.category, list)
-    }
-    return [...out.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [kinds.data, term])
-
-  if (kinds.isLoading) return <Loading />
-  if (kinds.isError) return <QueryError error={kinds.error} />
-  const data = kinds.data
-  return (
-    <div className="grid min-w-0 gap-3">
-      <div className="flex items-center gap-2">
-        <Input
-          autoFocus
-          value={term}
-          onChange={(e) => setTerm(e.target.value)}
-          placeholder="Search sensor kinds…"
-          aria-label="Search sensor kinds"
-        />
-        {data?.source === "prtg" && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label="Read the list from PRTG again"
-                disabled={reread.isPending}
-                onClick={() => reread.mutate()}
-              >
-                <RefreshCw
-                  className={cn(
-                    "h-3.5 w-3.5",
-                    reread.isPending && "animate-spin"
-                  )}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent variant="default">
-              Read the list from PRTG again
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-      {data?.source === "danbyte" && (
-        <p className="text-xs text-muted-foreground">
-          Copied from the seed device&apos;s sensors.
-        </p>
-      )}
-      <div
-        className="max-h-[50vh] min-w-0 overflow-y-auto rounded-md border border-border"
-        data-testid="prtg-kind-list"
-      >
-        {groups.length === 0 ? (
-          <EmptyState title="No sensor kind matches." />
-        ) : (
-          groups.map(([category, list]) => (
-            <div key={category}>
-              <p className="sticky top-0 z-10 border-b border-border bg-muted px-3 py-1 text-[11px] font-medium text-muted-foreground uppercase">
-                {category}
-              </p>
-              {list.map((k) => (
-                <button
-                  key={k.id}
-                  type="button"
-                  onClick={() => onPick(k)}
-                  className="flex w-full min-w-0 items-start gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
-                  data-testid="prtg-kind-option"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{k.name}</p>
-                    {k.description && (
-                      <p className="line-clamp-2 text-xs text-muted-foreground">
-                        {k.description}
-                      </p>
-                    )}
-                  </div>
-                  <Badge
-                    variant={k.form === "danbyte" ? "secondary" : "outline"}
-                    className="shrink-0"
-                  >
-                    {k.form === "danbyte" ? "Danbyte form" : "Generic form"}
-                  </Badge>
-                </button>
-              ))}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── PRTG's form ────────────────────────────────────────────────────────
 
 function useSensorSchema(target: AddTarget, kind: PrtgAddableKind | null) {
@@ -299,7 +156,9 @@ function schemaDefaults(fields: PrtgSchemaField[]): Record<string, unknown> {
   return out
 }
 
-function SchemaFields({
+/** PRTG's create form for a kind, as fields keyed `section.field`: the Add
+ * sensor dialog and a profile's PRTG-only definitions share it. */
+export function SchemaFields({
   fields,
   values,
   onChange,
@@ -596,7 +455,14 @@ export function AddSensorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {step === "pick" && <KindPicker target={target} onPick={pick} />}
+        {step === "pick" && (
+          <SensorKindBrowser
+            connectionId={target.connectionId}
+            linkId={target.linkId}
+            mode="add"
+            onPick={(o) => o.prtg && pick(o.prtg)}
+          />
+        )}
 
         {step === "form" && kind && (
           <form

@@ -190,9 +190,10 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     def sensor_kinds(self, request, pk=None):
         """The sensor kinds this PRTG offers to add by hand, cached for a
         day (``?refresh=1`` reads again; ``?link=`` names the device to ask
-        about): ``{mode, source, read_at, kinds: [{id, name, description,
-        category, form, danbyte_kind, scan, copy_from_seed}],
-        danbyte_forms}``."""
+        about; without it the first linked device is): ``{mode, source,
+        read_at, kinds: [{id, name, description, category, form,
+        danbyte_form, danbyte_kind, scan, needs_scan, credential_group,
+        copy_from_seed}], danbyte_forms}``."""
         from .actions import ActionError
         from .manual import catalog
 
@@ -205,6 +206,31 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         try:
             return Response(catalog(conn, link=link,
                                     refresh=request.query_params.get("refresh") in ("1", "true")))
+        except ActionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status)
+
+    @action(detail=True, methods=["get"], url_path="sensor-schema")
+    def sensor_schema(self, request, pk=None):
+        """PRTG's create form for one sensor kind (``?kind=``) at connection
+        level, for the profile editor: ``{kind, fields, scan}``, kept a day
+        (``?refresh=1`` reads again; ``?link=`` names the device to ask)."""
+        from .actions import ActionError
+        from .manual import connection_schema
+
+        conn = self.get_object()
+        kind = (request.query_params.get("kind") or "").strip()
+        if not kind:
+            raise ValidationError({"kind": "Which sensor kind?"})
+        link = None
+        if request.query_params.get("link"):
+            link = PrtgDeviceLink.objects.filter(
+                connection=conn, pk=_uuid(request.query_params["link"], "link"),
+            ).first()
+        try:
+            return Response(connection_schema(
+                conn, kind, link=link,
+                refresh=request.query_params.get("refresh") in ("1", "true"),
+            ))
         except ActionError as exc:
             return Response({"detail": exc.detail}, status=exc.status)
 
