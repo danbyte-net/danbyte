@@ -323,6 +323,58 @@ describe("focus on hover and selection", () => {
     expect(focusSet(g, "nope")).toBeNull()
   })
 
+  describe("down and up the hierarchy", () => {
+    // Platform > (Web > Cache, Worker); only the leaves are installed.
+    const platform = app("platform", "Platform")
+    const under = (id: string, name: string, parent: Application) =>
+      app(id, name, {
+        parent: { id: parent.id, name: parent.name } as Application["parent"],
+      })
+    const web = under("web", "Web", platform)
+    const cache = under("cache", "Cache", web)
+    const worker = under("worker", "Worker", platform)
+    const h = treeGraph(
+      [platform, web, cache, worker],
+      [install("i1", cache, "h1"), install("i2", worker, "h2")],
+      { measure }
+    )
+
+    it("brings a parent forward with its subtree, host lines and hosts", () => {
+      const f = focusSet(h, "app:platform")!
+      expect([...f.nodes].sort()).toEqual(
+        [
+          "app:cache",
+          "app:platform",
+          "app:web",
+          "app:worker",
+          "host:device:h1",
+          "host:device:h2",
+        ].sort()
+      )
+      expect(f.edges.size).toBe(5)
+      expect(f.trail.size).toBe(0)
+    })
+
+    it("brings a child's ancestors forward as a trail", () => {
+      const f = focusSet(h, "app:web")!
+      expect(f.nodes.has("app:worker")).toBe(false)
+      expect(f.nodes.has("host:device:h2")).toBe(false)
+      expect([...f.trail]).toEqual(["child:web"])
+      const drawn = toFlow(h, null, null, null, "app:web")
+      const up = drawn.edges.find((e) => e.id === "child:web")!
+      expect(up.className).toBeUndefined()
+      expect(up.style?.opacity).toBeUndefined()
+    })
+
+    it("brings a host forward with its applications' ancestors", () => {
+      const f = focusSet(h, "host:device:h1")!
+      expect([...f.nodes].sort()).toEqual(
+        ["app:cache", "app:platform", "app:web", "host:device:h1"].sort()
+      )
+      expect([...f.trail].sort()).toEqual(["child:cache", "child:web"])
+    })
+  })
+
   it("fades everything else on the canvas", () => {
     const drawn = toFlow(g, null, null, null, "app:vault")
     const dimmed = (id: string) =>
