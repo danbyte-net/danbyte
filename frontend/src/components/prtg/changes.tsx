@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
@@ -16,6 +15,8 @@ import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+
+import { PrtgParentLink, prtgParentName } from "./parent-link"
 
 /**
  * The PRTG review queue: link proposals (review mode) and the ambiguities a
@@ -91,20 +92,14 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
       },
       {
         id: "device",
-        accessorFn: (r) => r.device?.name ?? "",
+        accessorFn: (r) => prtgParentName(r),
         header: ({ column }) => <SortHeader column={column} label="Device" />,
-        cell: ({ row }) =>
-          row.original.device ? (
-            <Link
-              to="/devices/$id"
-              params={{ id: row.original.device.id }}
-              className="link font-medium"
-            >
-              {row.original.device.name}
-            </Link>
-          ) : (
-            <span className="text-muted-foreground">-</span>
-          ),
+        cell: ({ row }) => (
+          <PrtgParentLink
+            device={row.original.device}
+            virtual_machine={row.original.virtual_machine}
+          />
+        ),
       },
       {
         id: "detail",

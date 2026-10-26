@@ -46,14 +46,25 @@ import {
   useSoftwareSummary,
 } from "@/components/software-summary-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
+import {
+  PrtgSensorsTab,
+  linkedSensorCount,
+  usePrtgLinks,
+} from "@/components/prtg/sensors-tab"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
   // Typed so other pages can deep-link a tab (the MAC pages point at
   // Components); useUrlTab validates the value itself.
-  validateSearch: (s: Record<string, unknown>): { tab?: string } =>
-    typeof s.tab === "string" ? { tab: s.tab } : {},
+  // `?sensor=` opens that PRTG sensor's panel on the Sensors tab.
+  validateSearch: (
+    s: Record<string, unknown>
+  ): { tab?: string; sensor?: string } => ({
+    ...(typeof s.tab === "string" ? { tab: s.tab } : {}),
+    ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
+  }),
 })
 
 /** Memory in MB → "x GB" when an even multiple of 1024, else "x MB". */
@@ -93,6 +104,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "flows"
     | "routing"
     | "monitoring"
+    | "sensors"
     | "snmp"
     | "certificates"
     | "config"
@@ -102,6 +114,22 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
+  // PRTG's sensors get a tab once PRTG has a device for this VM; the links
+  // come back empty while the integration is off.
+  const prtgLinks = usePrtgLinks({ virtual_machine: vm.id })
+  const hasPrtg = (prtgLinks.data ?? []).length > 0
+  const search = Route.useSearch()
+  const openSensor = search.sensor
+  const selectSensor = useCallback(
+    (sensor: string | null) =>
+      nav({
+        to: "/virtual-machines/$id",
+        params: { id: vm.id },
+        search: { ...search, sensor: sensor ?? undefined },
+        replace: true,
+      }),
+    [nav, search, vm.id]
+  )
   const goBack = useCallback(
     () => nav({ to: "/virtual-machines", search: { device: undefined } }),
     [nav]
@@ -201,6 +229,15 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.routing_count || undefined,
         },
         { value: "monitoring", label: "Monitoring" },
+        ...(hasPrtg
+          ? [
+              {
+                value: "sensors",
+                label: "Sensors",
+                count: linkedSensorCount(prtgLinks.data) || undefined,
+              },
+            ]
+          : []),
         { value: "snmp", label: "SNMP" },
         {
           value: "certificates",
@@ -261,6 +298,28 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             </Link>
           </p>
         )}
+        <div className="mt-6 empty:hidden">
+          <PrtgMonitoringRow
+            parent={{ virtual_machine: vm.id }}
+            sensorsLink={(children) => (
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: vm.id }}
+                search={{ tab: "sensors" }}
+                className="link"
+              >
+                {children}
+              </Link>
+            )}
+          />
+        </div>
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsTab
+          parent={{ virtual_machine: vm.id }}
+          selected={openSensor}
+          onSelect={selectSensor}
+        />
       </DetailTab>
       <DetailTab value="snmp">
         <VmSnmpCard vmId={vm.id} />

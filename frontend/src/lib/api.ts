@@ -2010,10 +2010,7 @@ export interface Application extends ApplicationMini {
 }
 
 export type InstalledSoftwareSource =
-  | "manual"
-  | "import"
-  | "discovery"
-  | "group"
+  "manual" | "import" | "discovery" | "group"
 
 export interface InstalledSoftware extends EffectiveOsDates {
   id: string
@@ -13187,6 +13184,7 @@ export interface PrtgDeviceLink {
   id: string
   connection: string
   device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
   objid: string
   name: string
   host: string
@@ -13210,6 +13208,7 @@ export interface PrtgChange {
   kind: "link_device" | "ambiguous"
   kind_display: string
   device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
   key: string
   detail: Record<string, unknown>
   ignored: boolean
@@ -13224,6 +13223,131 @@ export interface PrtgDeviceState {
   warning: number
   name: string
   url: string
+}
+
+/** One imported PRTG sensor (GET /api/prtg/sensors/). Read-only: the row is
+ * PRTG's, rewritten by every status read. Belongs to a device or a VM. */
+export interface PrtgSensor {
+  id: string
+  connection: string
+  connection_name: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  /** The PRTG device the sensor sits on. */
+  prtg_device: string
+  objid: string
+  name: string
+  /** PRTG's raw type ("ping", "paessler.http.http_sensor.51"). */
+  kind: string
+  /** Its display name ("Ping v2"). */
+  kind_label: string
+  status_raw: number | null
+  /** PRTG's own word ("Paused by Dependency"). */
+  status: string
+  /** The Danbyte state the connection's map gives it. */
+  state: CheckStatus | ""
+  paused: boolean
+  /** Down (Acknowledged) in PRTG. */
+  acknowledged: boolean
+  message: string
+  tags: string[]
+  active: boolean
+  last_value: string
+  last_value_raw: number | null
+  unit: string
+  interval_seconds: number | null
+  uptime_pct: number | null
+  downtime_pct: number | null
+  priority: number | null
+  last_check_at: string | null
+  last_up_at: string | null
+  last_down_at: string | null
+  probe_name: string
+  group_path: string
+  last_seen_at: string | null
+  /** The sensor's page in PRTG. */
+  url: string
+  /** The PRTG device's page. */
+  device_url: string
+  channels_at: string | null
+}
+
+/** GET /api/prtg/sensors/summary/ - counts for a status strip. The four
+ * states count sensors that are not paused; `paused` counts the rest. */
+export interface PrtgSensorSummary {
+  total: number
+  down: number
+  degraded: number
+  up: number
+  unknown: number
+  paused: number
+  acknowledged: number
+  read_at: string | null
+}
+
+/** PRTG's lookup vocabulary for one lookup value. */
+export type PrtgLookupState = "ok" | "warning" | "error" | "none" | "unknown"
+
+export interface PrtgChannel {
+  id: string
+  name: string
+  /** PRTG's display string ("0.03 Mbit/s", "No"). */
+  value: string
+  /** The number in the displayed unit, or a lookup channel's key. */
+  value_raw: number | null
+  unit: string
+  kind: "number" | "percent" | "lookup" | "text"
+  state: CheckStatus
+  /** PRTG's word for the channel's status. */
+  status: string
+  lookup_label: string
+  limits: {
+    warn_min: number | null
+    warn_max: number | null
+    error_min: number | null
+    error_max: number | null
+  }
+  /** Every value the lookup knows; `to` is set for a range. */
+  lookup_states: {
+    value: number
+    to: number | null
+    label: string
+    state: PrtgLookupState
+  }[]
+  min: number | null
+  max: number | null
+  primary: boolean
+}
+
+/** GET /api/prtg/sensors/<id>/channels/ - read on demand, cached for one
+ * status interval. `stale` when PRTG failed and the last read is served. */
+export interface PrtgChannels {
+  fetched_at: string
+  stale?: boolean
+  summary: {
+    message?: string
+    status?: string
+    last_value?: string
+    uptime_for?: string
+    downtime_for?: string
+  }
+  rows: PrtgChannel[]
+}
+
+export type PrtgHistoryRange = "1h" | "24h" | "7d"
+
+/** GET /api/prtg/sensors/<id>/history/?range=&channel= */
+export interface PrtgHistory {
+  range: PrtgHistoryRange
+  avg: number | null
+  fetched_at: string | null
+  stale: boolean
+  channels: {
+    id: string
+    name: string
+    unit: string
+    points: { t: string; v: number | null }[]
+  }[]
 }
 
 export interface PrtgHookToken {

@@ -16,6 +16,7 @@ import { ExcludedPill } from "./excluded-pill"
 import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
+import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
 
 /**
  * A device's Monitoring tab: the roll-up across its addresses with seven days
@@ -74,6 +75,8 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
         {/* A host Zabbix watches is worth showing even before Danbyte
             monitors any of its addresses itself. */}
         <ZabbixHostPanel scope={{ device: deviceId }} />
+        <DevicePrtgRow deviceId={deviceId} />
+        <DevicePrtgRow deviceId={deviceId} />
       </div>
     )
 
@@ -172,5 +175,24 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
       <ZabbixHostPanel scope={{ device: deviceId }} />
       <HistoryPanel scope={{ device: deviceId }} />
     </div>
+  )
+}
+
+/** The PRTG row, linking to the device's Sensors tab. */
+function DevicePrtgRow({ deviceId }: { deviceId: string }) {
+  return (
+    <PrtgMonitoringRow
+      parent={{ device: deviceId }}
+      sensorsLink={(children) => (
+        <Link
+          to="/devices/$id"
+          params={{ id: deviceId }}
+          search={{ tab: "sensors" }}
+          className="link"
+        >
+          {children}
+        </Link>
+      )}
+    />
   )
 }
