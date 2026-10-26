@@ -120,7 +120,9 @@ network portion from the prefix CIDR (the fully-fixed leading octets, e.g.
 
 With the PRTG integration on, an address PRTG reaches a device on gets a
 **Sensors** tab listing that device's PRTG sensors - see
-[Where sensors show up](../features/prtg.md#where-sensors-show-up).
+[Where sensors show up](../features/prtg.md#where-sensors-show-up). Its
+sensors and channels can be pinned to the address's Overview
+([Pinned sensors](../features/prtg.md#pinned-sensors)).
 
 ## Related
 

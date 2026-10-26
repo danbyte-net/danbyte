@@ -67,6 +67,7 @@ import {
   PrtgSensorsSection,
   usePrtgSensors,
 } from "@/components/prtg/sensors-tab"
+import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/interfaces/$id")({
   // `?tab=macs` opens the MACs tab - an uplink's MAC count links there.
@@ -110,6 +111,9 @@ function Body({ iface: i }: { iface: Interface }) {
   // one (none while the integration is off).
   const prtgSensors = usePrtgSensors({ interface: i.id })
   const sensorCount = prtgSensors.data?.length ?? 0
+  // The sensor whose panel is open on the Sensors tab; a pinned tile on the
+  // Overview opens it there.
+  const [sensor, setSensor] = useState<string | null>(null)
   const isLag = i.type === "lag"
   // MAC tracking (#284): the port's uplink state and MAC counts - the tab and
   // the Switching card read them; the tab pages through the MACs itself.
@@ -289,6 +293,15 @@ function Body({ iface: i }: { iface: Interface }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
+        <div className="mb-6 empty:hidden">
+          <ObjectPinnedSensors
+            parent={{ interface: i.id }}
+            onOpen={(id) => {
+              setSensor(id)
+              setTab("sensors")
+            }}
+          />
+        </div>
         <InterfaceOverview
           iface={i}
           ips={ips.data?.results ?? []}
@@ -317,7 +330,11 @@ function Body({ iface: i }: { iface: Interface }) {
         />
       </DetailTab>
       <DetailTab value="sensors">
-        <PrtgSensorsSection scope={{ interface: i.id }} />
+        <PrtgSensorsSection
+          scope={{ interface: i.id }}
+          selected={sensor ?? undefined}
+          onSelect={setSensor}
+        />
       </DetailTab>
       <DetailTab value="trace">
         <div className="space-y-6">

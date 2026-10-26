@@ -54,7 +54,7 @@ import {
   useChannels,
   useHistory,
 } from "./channel-view"
-import { PinToggle, sensorParent } from "./sensor-pins"
+import { PinScopeProvider, PinToggle, sensorParent } from "./sensor-pins"
 import { LinkActionsMenu, SensorActionsMenu } from "./sensor-actions"
 import { SensorStatePill, TileCorner } from "./tile-corner"
 import { useMe } from "@/lib/use-me"
@@ -243,40 +243,46 @@ export function PrtgSensorsSection({
   )
 
   return (
-    <div className="space-y-4">
-      {!parent && <ViaStrips sensors={rows} />}
-      {(parent ? (links.data ?? []) : []).map((link) => (
-        <MonitoringSourceRow
-          key={link.id}
-          source={prtgSource(link, rows, labels)}
-          link={toggle}
-          active={state}
-          actions={<LinkActionsMenu link={link} />}
-          className="min-h-10 rounded-lg border border-border bg-card px-3 py-1.5"
-        />
-      ))}
-      {rows.length === 0 ? (
-        <EmptyState title="No sensors.">
-          {parent
-            ? "PRTG has no sensors on this device yet."
-            : "No PRTG sensor watches this."}
-        </EmptyState>
-      ) : (
-        <>
-          <StateFilterNote state={state} onClear={() => onState?.(null)} />
-          {shown.length === 0 ? (
-            <EmptyState title="No sensor matches." />
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {shown.map((s) => (
-                <SensorCard key={s.id} sensor={s} onOpen={() => select(s.id)} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-      <SensorPanel sensor={open} onClose={() => select(null)} />
-    </div>
+    <PinScopeProvider scope={parent ? null : scope}>
+      <div className="space-y-4">
+        {!parent && <ViaStrips sensors={rows} />}
+        {(parent ? (links.data ?? []) : []).map((link) => (
+          <MonitoringSourceRow
+            key={link.id}
+            source={prtgSource(link, rows, labels)}
+            link={toggle}
+            active={state}
+            actions={<LinkActionsMenu link={link} />}
+            className="min-h-10 rounded-lg border border-border bg-card px-3 py-1.5"
+          />
+        ))}
+        {rows.length === 0 ? (
+          <EmptyState title="No sensors.">
+            {parent
+              ? "PRTG has no sensors on this device yet."
+              : "No PRTG sensor watches this."}
+          </EmptyState>
+        ) : (
+          <>
+            <StateFilterNote state={state} onClear={() => onState?.(null)} />
+            {shown.length === 0 ? (
+              <EmptyState title="No sensor matches." />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {shown.map((s) => (
+                  <SensorCard
+                    key={s.id}
+                    sensor={s}
+                    onOpen={() => select(s.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <SensorPanel sensor={open} onClose={() => select(null)} />
+      </div>
+    </PinScopeProvider>
   )
 }
 
@@ -463,9 +469,7 @@ export function PrtgSensorState({ sensor }: { sensor: PrtgSensor }) {
 function useSensorControls(s: PrtgSensor): ReactNode[] {
   const { canDo } = useMe()
   return [
-    sensorParent(s) && canDo("prtgsensorpin", "change") ? (
-      <PinToggle sensor={s} />
-    ) : null,
+    canDo("prtgsensorpin", "change") ? <PinToggle sensor={s} /> : null,
     canDo("prtgsensor", "change") ? <SensorActionsMenu sensor={s} /> : null,
   ]
 }

@@ -1121,16 +1121,15 @@ function PrtgConnectionForm({
           {registerAll && (
             <FormColumns>
               <FormColumn>
-                <FormSelect
+                <FormCombobox
                   label="Sensor profile"
                   value={registerProfile}
                   onChange={setRegisterProfile}
-                  options={(profiles.data?.results ?? []).map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  }))}
+                  options={asOptions(profiles.data?.results)}
                   noneLabel="None"
                   error={fieldErrors.register_profile}
+                  searchPlaceholder="Search profiles…"
+                  emptyText="No profiles."
                 />
               </FormColumn>
               <FormColumn>

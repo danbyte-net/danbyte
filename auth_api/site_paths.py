@@ -119,7 +119,14 @@ SITE_PATHS: dict[str, str] = {
     "prtgsensor": "device__site|virtual_machine__site",
     "prtgchange": "device__site|virtual_machine__site",
     "prtghostfacts": "device__site|virtual_machine__site",
-    "prtgsensorpin": "device__site|virtual_machine__site",
+    # A pin follows the object it sits on: the sensor's device or VM, or the
+    # address, interface or service the sensor watches.
+    "prtgsensorpin": (
+        "device__site|virtual_machine__site|ip_address__site|ip_address__prefix__site"
+        "|interface__device__site|vm_interface__vm__site|service__device__site"
+        "|service__virtual_machine__site|service__ip_address__site"
+        "|service__ip_address__prefix__site"
+    ),
     "dhcpscope": "prefix__site",
     "dhcpreservation": "scope__prefix__site",
     "dhcplease": "scope__prefix__site",
