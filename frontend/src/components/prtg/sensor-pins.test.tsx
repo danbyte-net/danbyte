@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { PrtgChannels, PrtgSensorPin } from "@/lib/api"
+import type { PrtgChannels, PrtgHistory, PrtgSensorPin } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { mountWithRouter } from "./prtg-test-utils"
 import { PinnedSensorsCard } from "./sensor-pins"
@@ -38,6 +38,8 @@ function pin(id: string, channel: string, display = "auto"): PrtgSensorPin {
       status: "Warning",
       paused: false,
       url: "https://prtg.example.com/sensor.htm?id=2091",
+      last_value: "781 #",
+      last_check_at: "2026-10-26T08:00:00Z",
     },
     created_at: "2026-10-26T08:00:00Z",
   }
@@ -95,11 +97,31 @@ const CHANNELS: PrtgChannels = {
   ],
 }
 
+const HOUR: PrtgHistory = {
+  range: "1h",
+  avg: 300,
+  fetched_at: "2026-10-26T08:00:00Z",
+  stale: false,
+  channels: [
+    {
+      id: "2",
+      name: "Days to Expiration",
+      unit: "#",
+      points: [781, null, 780, null, 779].map((v, i) => ({
+        t: `2026-10-26T07:${String(i * 5).padStart(2, "0")}:00Z`,
+        v,
+      })),
+    },
+  ],
+}
+
 let pins: PrtgSensorPin[] = []
+let hour: PrtgHistory = HOUR
 
 beforeEach(() => {
   canDo.mockReturnValue(true)
   pins = [pin("p1", "2"), pin("p2", "3"), pin("p3", "2", "value")]
+  hour = HOUR
   apiMock.mockReset()
   apiMock.mockImplementation((path, init) => {
     if (path.startsWith("/api/prtg/sensor-pins/")) {
@@ -112,6 +134,7 @@ beforeEach(() => {
       })
     }
     if (path.includes("/channels/")) return Promise.resolve(CHANNELS)
+    if (path.includes("/history/")) return Promise.resolve(hour)
     return Promise.resolve({})
   })
 })
@@ -151,6 +174,72 @@ describe("PinnedSensorsCard", () => {
     expect(
       apiMock.mock.calls.filter(([p]) => p.includes("/channels/"))
     ).toHaveLength(1)
+  })
+
+  it("draws a whole-sensor pin as a sensor tile", async () => {
+    pins = [pin("p0", ""), pin("p1", "2")]
+    mount()
+    const card = await screen.findByTestId("prtg-pinned-sensors")
+    const tiles = card.querySelectorAll("[data-testid=prtg-pin-tile]")
+    expect(tiles).toHaveLength(2)
+    const tile = tiles[0].querySelector<HTMLElement>(
+      "[data-testid=prtg-sensor-tile]"
+    )!
+    expect(tile).toBeTruthy()
+    // The same height as a channel tile, in the same grid.
+    expect(tiles[0].className).toBe(tiles[1].className)
+    expect(tile.textContent).toContain("SSL Certificate")
+    expect(tile.textContent).toContain("Degraded")
+    expect(tile.textContent).toContain("checked")
+    // The primary channel's value as the big number, with its unit...
+    await waitFor(() =>
+      expect(
+        tile.querySelector("[data-testid=prtg-sensor-tile-value]")?.textContent
+      ).toBe("781#")
+    )
+    // ...and the hour as one line under it, through PRTG's empty points.
+    await waitFor(() =>
+      expect(tile.querySelectorAll("polyline")).toHaveLength(1)
+    )
+    expect(tiles[0].querySelector("a")?.getAttribute("href")).toBe(
+      "/devices/d1?tab=sensors&sensor=s1"
+    )
+    // One channels read and one history read for the sensor.
+    expect(
+      apiMock.mock.calls.filter(([p]) => p.includes("/channels/"))
+    ).toHaveLength(1)
+    expect(
+      apiMock.mock.calls.filter(([p]) => p.includes("/history/?range=1h"))
+    ).toHaveLength(1)
+  })
+
+  it("shows no sparkline when the primary value held still", async () => {
+    hour = {
+      ...HOUR,
+      channels: [
+        {
+          ...HOUR.channels[0],
+          points: HOUR.channels[0].points.map((p) => ({
+            ...p,
+            v: p.v == null ? null : 781,
+          })),
+        },
+      ],
+    }
+    pins = [pin("p0", "")]
+    mount()
+    const tile = await screen.findByTestId("prtg-sensor-tile")
+    await waitFor(() =>
+      expect(
+        tile.querySelector("[data-testid=prtg-sensor-tile-value]")?.textContent
+      ).toBe("781#")
+    )
+    await waitFor(() =>
+      expect(apiMock.mock.calls.some(([p]) => p.includes("/history/"))).toBe(
+        true
+      )
+    )
+    expect(tile.querySelector("svg[role=img]")).toBeNull()
   })
 
   it("unpins from a tile", async () => {

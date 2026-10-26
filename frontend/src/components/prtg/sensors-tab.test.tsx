@@ -378,7 +378,7 @@ describe("channel cards", () => {
     const byName = await cards()
     const trusted = byName("Root Authority Trusted")
     const tl = trusted.querySelector("[data-testid=prtg-lookup-timeline]")!
-    expect(tl.querySelector("[data-state=No]")).toBeTruthy()
+    expect(tl.querySelector("[data-run=No]")).toBeTruthy()
     expect(trusted.textContent).not.toContain("%")
     expect(trusted.querySelector("[data-testid=prtg-history-chart]")).toBeNull()
   })
@@ -414,6 +414,50 @@ describe("channel cards", () => {
       sensor: "s2092",
       channel_id: "2",
     })
+  })
+
+  it("pins the whole sensor from the panel's header", async () => {
+    await cards()
+    const panel = screen.getByTestId("prtg-sensor-panel")
+    const toggle = panel.querySelector<HTMLElement>(
+      "[data-testid=prtg-sensor-pin-toggle]"
+    )!
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+        )
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(
+      ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+    )!
+    expect(JSON.parse(String(init?.body))).toEqual({ sensor: "s2092" })
+  })
+})
+
+describe("sensor card pin", () => {
+  it("pins the sensor without opening its panel", async () => {
+    const onSelect = mountTab()
+    const cardsEls = await screen.findAllByTestId("prtg-sensor-card")
+    const toggle = await waitFor(() => {
+      const t = cardsEls[0].querySelector<HTMLElement>(
+        "[data-testid=prtg-sensor-pin-toggle]"
+      )
+      expect(t).toBeTruthy()
+      return t!
+    })
+    expect(toggle.getAttribute("aria-label")).toBe("Pin to Overview")
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+        )
+      ).toBe(true)
+    )
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })
 

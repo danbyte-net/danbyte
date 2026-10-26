@@ -7,6 +7,8 @@ import {
   ChannelReading,
   ChannelTrend,
   LookupTimeline,
+  bridgedPoints,
+  lookupRuns,
   lookupStatesAt,
   pickChannel,
   trendOf,
@@ -132,12 +134,100 @@ describe("lookup history", () => {
     })
     render(<LookupTimeline channel={TRUSTED} series={s} range="24h" />)
     const tl = screen.getByTestId("prtg-lookup-timeline")
-    const segs = [...tl.querySelectorAll("[data-state]")]
-    expect(segs.map((x) => x.getAttribute("data-state"))).toEqual(["No", "Yes"])
+    const segs = [...tl.querySelectorAll("[data-run]")]
+    expect(segs.map((x) => x.getAttribute("data-run"))).toEqual(["No", "Yes"])
     expect(segs[0].getAttribute("data-tone")).toBe("warning")
-    expect((segs[0] as HTMLElement).style.flexGrow).toBe("2")
+    // Sized by how long each lasted, in minutes: 10 then 5.
+    expect((segs[0] as HTMLElement).style.flexGrow).toBe("10")
+    expect((segs[1] as HTMLElement).style.flexGrow).toBe("5")
     expect(tl.textContent).not.toContain("%")
     expect(tl.textContent).toContain("24h ago")
+  })
+})
+
+describe("timeline runs", () => {
+  const raw = (values: (number | null)[]) =>
+    series(values, { id: "3", name: "Root Authority Trusted", unit: "" })
+  const shape = (values: (number | null)[]) =>
+    lookupRuns(TRUSTED, raw(values)).map((r) => [
+      r.entry?.label ?? null,
+      (r.end - r.start) / 300_000,
+    ])
+
+  it("merges repeated states into one run each", () => {
+    // Twelve samples, three stretches of state: three runs, no stripes.
+    expect(shape([0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0])).toEqual([
+      ["Yes", 4],
+      ["No", 5],
+      ["Yes", 3],
+    ])
+  })
+
+  it("carries a sparse sensor's state across the empty points between checks", () => {
+    // Checked every 15 minutes, averaged per 5: two empty points between
+    // samples are its rhythm, so one continuous run.
+    expect(shape([0, null, null, 0, null, null, 0, null, null, 0])).toEqual([
+      ["Yes", 10],
+    ])
+  })
+
+  it("leaves a gap only where PRTG has no data", () => {
+    // No data before the first sample, and a stretch twice the rhythm.
+    expect(shape([null, 1, 1, null, null, null, 1, 1])).toEqual([
+      [null, 1],
+      ["No", 2],
+      [null, 3],
+      ["No", 2],
+    ])
+  })
+
+  it("draws one segment per run with the state and span on hover", () => {
+    render(
+      <LookupTimeline
+        channel={TRUSTED}
+        series={raw([0, null, null, 0, null, null, 1, null, null, 1])}
+        range="1h"
+      />
+    )
+    const segs = [
+      ...screen
+        .getByTestId("prtg-lookup-timeline")
+        .querySelectorAll("[data-run]"),
+    ]
+    expect(segs.map((x) => x.getAttribute("data-run"))).toEqual(["Yes", "No"])
+  })
+})
+
+describe("bridgedPoints", () => {
+  it("drops the empty points between a sparse sensor's samples", () => {
+    const pts = series([5, null, null, 7, null, null, 6]).points
+    expect(bridgedPoints(pts).map((p) => p.v)).toEqual([5, 7, 6])
+  })
+
+  it("keeps a real gap, which still breaks the line", () => {
+    const pts = series([5, 6, null, null, null, 7, 8]).points
+    expect(bridgedPoints(pts).map((p) => p.v)).toEqual([
+      5,
+      6,
+      null,
+      null,
+      null,
+      7,
+      8,
+    ])
+  })
+
+  it("gives a sparse number a single line", () => {
+    const t = trendOf(channel(), series([5, null, null, 7, null, null, 6]))
+    expect(t).toEqual({ kind: "line", values: [5, 7, 6] })
+    const { container } = render(
+      <ChannelTrend
+        channel={channel()}
+        series={series([5, null, null, 7, null, null, 6])}
+        range="1h"
+      />
+    )
+    expect(container.querySelectorAll("polyline")).toHaveLength(1)
   })
 })
 

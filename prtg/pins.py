@@ -1,7 +1,8 @@
-"""Sensor channels pinned to a device's or VM's Overview.
+"""Sensors and sensor channels pinned to a device's or VM's Overview.
 
-A pin says "show this channel of this sensor on the object's Overview": the
-sensor, the channel's PRTG id and how to draw it. It stores no reading - the
+A pin says "show this channel of this sensor on the object's Overview" - or,
+with a blank channel, "show this sensor": the sensor, the channel's PRTG id
+(blank for the whole sensor) and how to draw it. It stores no reading - the
 Overview reads the channel live, as the sensor panel does - so a pin never
 goes stale, it only goes away with its sensor (a sensor gone from PRTG is
 deleted, and its pins with it).
@@ -24,7 +25,7 @@ MAX_PINS = 24
 
 
 class PrtgSensorPin(TimestampedModel):
-    """One pinned channel on a device's or VM's Overview."""
+    """One pinned channel, or a whole sensor, on a device's or VM's Overview."""
 
     AUTO, GAUGE, LOOKUP, VALUE = "auto", "gauge", "lookup", "value"
     DISPLAY_CHOICES = [
@@ -47,8 +48,10 @@ class PrtgSensorPin(TimestampedModel):
         null=True, blank=True,
     )
     sensor = models.ForeignKey(PrtgSensor, on_delete=models.CASCADE, related_name="pins")
-    #: PRTG's channel id within the sensor ("0", "2", "-4").
-    channel_id = models.CharField(max_length=16)
+    #: PRTG's channel id within the sensor ("0", "2", "-4"); blank pins the
+    #: whole sensor. The unique constraints below hold blank as a value of its
+    #: own, so a sensor pins once whole and each of its channels once more.
+    channel_id = models.CharField(max_length=16, blank=True, default="", db_default="")
     display = models.CharField(
         max_length=8, choices=DISPLAY_CHOICES, default=AUTO, db_default=AUTO,
     )
@@ -78,7 +81,11 @@ class PrtgSensorPin(TimestampedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.sensor_id}:{self.channel_id}"
+        return f"{self.sensor_id}:{self.channel_id or '*'}"
+
+    @property
+    def whole_sensor(self) -> bool:
+        return not self.channel_id
 
     @property
     def parent(self):
