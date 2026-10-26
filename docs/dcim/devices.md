@@ -107,7 +107,7 @@ The default tab lays the device's facts out in cards:
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 | **Support contracts** | shown once a contract covers the device: each contract with its manufacturer, service level, end and state |
 | **Software**   | the first eight installed applications, each with its version and end-of-life [lifetime bar](../features/lifecycle.md#the-lifetime-bar), then **View all N** to the [Software](#other-tabs) tab; *No software recorded.* when there is none |
-| **Sensors**    | shown once a PRTG channel is [pinned](../features/prtg.md#pinned-sensors) to the device, under the monitoring strip: each pinned channel as a small gauge, lookup bar or value tile, opening the sensor's panel; hover a tile to unpin it |
+| **Sensors**    | shown once a PRTG sensor or channel is [pinned](../features/prtg.md#pinned-sensors) to the device, under the monitoring strip: a pinned sensor as a tile with its state, primary value and the hour's sparkline, a pinned channel as a small gauge, lookup bar or value tile; a tile opens the sensor's panel, hover it to unpin |
 
 Technical values (name, serial, asset tag, primary IP, DNS name) have a small
 **copy button** so you can grab them in one click.

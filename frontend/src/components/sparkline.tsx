@@ -12,10 +12,13 @@ export function Sparkline({
   height = 24,
   className,
   label,
+  fill = false,
 }: {
   values: (number | null)[]
   width?: number
   height?: number
+  /** Stretch to the container's width (the line keeps its stroke). */
+  fill?: boolean
   className?: string
   /** What the line shows, for assistive tech. */
   label?: string
@@ -25,7 +28,7 @@ export function Sparkline({
     return (
       <span
         className={cn("inline-block", className)}
-        style={{ width, height }}
+        style={{ width: fill ? "100%" : width, height }}
         aria-hidden="true"
       />
     )
@@ -47,10 +50,11 @@ export function Sparkline({
   })
   return (
     <svg
-      width={width}
+      width={fill ? "100%" : width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className={cn("text-muted-foreground", className)}
+      preserveAspectRatio={fill ? "none" : undefined}
+      className={cn("block text-muted-foreground", className)}
       role="img"
       aria-label={label}
     >
@@ -64,6 +68,7 @@ export function Sparkline({
             stroke="currentColor"
             strokeWidth={1.25}
             strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
           />
         ))}
     </svg>

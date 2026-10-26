@@ -282,6 +282,7 @@ function SensorCard({
           </p>
         </div>
         <PrtgSensorState sensor={s} />
+        <PinToggle sensor={s} />
       </div>
       <p className="truncate leading-none">
         {num ? (
@@ -348,6 +349,7 @@ export function SensorPanel({
               <DialogTitle className="flex flex-wrap items-center gap-2">
                 {sensor.name}
                 <PrtgSensorState sensor={sensor} />
+                <PinToggle sensor={sensor} />
               </DialogTitle>
               <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>{sensor.kind_label || sensor.kind}</span>
