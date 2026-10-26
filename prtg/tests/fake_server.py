@@ -1,7 +1,7 @@
 """A small PRTG in this process, for tests.
 
 It answers the classic endpoints the client uses - ``table.json``,
-``getstatus.json``, ``getsensordetails.json``, ``getobjectproperty.htm`` and
+``getstatus.htm``, ``getsensordetails.json``, ``getobjectproperty.htm`` and
 the simple writes - plus the API v2 probe, from fixtures in ``fixtures/``
 shaped like PRTG 26.x responses. Tests reach it over real HTTP on 127.0.0.1,
 so the client, the outbound guard (with 127.0.0.1 allow-listed), headers and
@@ -162,7 +162,7 @@ class FakePrtg:
 def _matches(row: dict, filters: dict[str, list[str]]) -> bool:
     for name, wanted in filters.items():
         if name == "tags":
-            tags = set(str(row.get("tags_raw", "")).split())
+            tags = set(re.split(r"[,\s]+", str(row.get("tags_raw", ""))))
             names = [re.sub(r"^@tag\((.*)\)$", r"\1", w) for w in wanted]
             if not tags.intersection(names):
                 return False
@@ -197,10 +197,19 @@ class _Handler(BaseHTTPRequestHandler):
     def _error(self, code: int, sentence: str):
         self._send(code, _xml(f"<error>{sentence}</error>"), "text/xml")
 
-    def _auth(self, q: dict) -> str | None:
+    def _auth(self, q: dict, *, v2: bool) -> str | None:
+        """How the key came, when it is the right key in the right place.
+
+        As PRTG 26.3 does it: the classic API reads only ``apitoken=`` and
+        answers any Bearer header with 401; API v2 reads only the header.
+        """
         header = self.headers.get("Authorization", "")
-        if header.startswith("Bearer "):
-            return "bearer" if header[7:] == self.fake.api_key else None
+        if v2:
+            if header.startswith("Bearer ") and header[7:] == self.fake.api_key:
+                return "bearer"
+            return None
+        if header:
+            return "unsupported"
         if "apitoken" in q:
             return "query" if q["apitoken"] == self.fake.api_key else None
         return None
@@ -209,8 +218,10 @@ class _Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         multi = parse_qs(url.query, keep_blank_values=True)
         q = {k: v[0] for k, v in multi.items()}
-        auth = self._auth(q)
+        auth = self._auth(q, v2=url.path.startswith("/api/v2/"))
         self.fake.requests.append({"path": url.path, "params": q, "auth": auth})
+        if auth == "unsupported":
+            return self._error(401, "Unsupported authorization scheme.")
         if url.path.startswith("/api/v2/"):
             if not self.fake.v2:
                 return self._send(404, "<h1>Not Found</h1>")
@@ -226,7 +237,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(*self.fake.fail)
 
         path = url.path
-        if path == "/api/getstatus.json":
+        if path == "/api/getstatus.htm":
             return self._json(self.fake.status)
         if path == "/api/table.json":
             return self._table(q, multi)

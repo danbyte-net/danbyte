@@ -1,18 +1,1 @@
-{
-  "prtg-version": "26.3.124.1727",
-  "treesize": 1,
-  "probenode": [
-    {
-      "objid": 1,
-      "objid_raw": 1,
-      "name": "Local Probe",
-      "name_raw": "Local Probe",
-      "status": "Up",
-      "status_raw": 3,
-      "parentid": 0,
-      "parentid_raw": 0,
-      "active": true,
-      "active_raw": -1
-    }
-  ]
-}
+{"prtg-version":"26.3.124.1727","treesize":2,"probenode":[{"objid":1,"objid_raw":1,"name":"Local Probe","name_raw":"Local Probe","type":"Probe","type_raw":"probenode","status":"Up","status_raw":3,"active":true,"active_raw":-1,"parentid":0,"parentid_raw":0},{"objid":1028,"objid_raw":1028,"name":"PRTG Core Server","name_raw":"PRTG Core Server","type":"Autonomous Device","type_raw":"autonomousdevice","status":"Up","status_raw":3,"active":true,"active_raw":-1,"parentid":0,"parentid_raw":0}]}

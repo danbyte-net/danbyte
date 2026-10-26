@@ -117,17 +117,30 @@ class _Live(TestCase):
 
 
 class AuthTests(_Live):
-    def test_the_key_goes_in_a_bearer_header(self):
+    def test_the_classic_key_goes_in_apitoken_and_no_header(self):
+        # PRTG 26.3 answers a Bearer header on the classic API with 401
+        # "Unsupported authorization scheme."
         self.assertEqual(self.client_for().version(), "26.3.124.1727")
-        call = self.fake.calls("/api/getstatus.json")[-1]
+        call = self.fake.calls("/api/getstatus.htm")[-1]
+        self.assertEqual(call["auth"], "query")
+        self.assertEqual(call["params"]["apitoken"], self.fake.api_key)
+
+    def test_v2_takes_a_bearer_header_and_no_apitoken(self):
+        self.client_for().probe_v2()
+        call = [r for r in self.fake.requests if r["path"].startswith("/api/v2/")][-1]
         self.assertEqual(call["auth"], "bearer")
         self.assertNotIn("apitoken", call["params"])
 
-    def test_the_query_fallback_sends_apitoken_and_no_header(self):
-        self.client_for(token_in_query=True).version()
-        call = self.fake.calls("/api/getstatus.json")[-1]
-        self.assertEqual(call["auth"], "query")
-        self.assertEqual(call["params"]["apitoken"], self.fake.api_key)
+    def test_errors_never_carry_the_key(self):
+        client = PrtgClient("http://127.0.0.1:1", "s3cret-key", timeout=2)
+        with self.assertRaises(PrtgUnreachable) as ctx:
+            client.version()
+        self.assertNotIn("s3cret-key", str(ctx.exception))
+        self.assertIsNone(ctx.exception.__cause__)
+        self.assertEqual(
+            client.redact("GET /api/x?id=1&apitoken=other&b=2"),
+            "GET /api/x?id=1&apitoken=REDACTED&b=2",
+        )
 
     def test_a_wrong_key_is_unauthorized(self):
         with self.assertRaises(PrtgUnauthorized) as ctx:
@@ -159,32 +172,51 @@ class ReadTests(_Live):
     def test_sensors_are_normalised(self):
         table = self.client_for().sensors()
         self.assertEqual(table.version, "26.3.124.1727")
-        self.assertEqual(table.total, 6)
+        # Recorded from the PRTG 26.3 lab: 17 sensors on the local probe.
+        self.assertEqual(table.total, 17)
         self.assertEqual(table.skipped, 0)
         rows = {r["objid"]: r for r in table.rows}
-        ping = rows[2101]
-        self.assertEqual(ping["kind"], "ping")
-        self.assertEqual(ping["type"], "Ping")
+        ping = rows[2089]
+        # A v2 sensor kind, and its tags comma-separated.
+        self.assertEqual(ping["kind"], "paessler.icmp.ping_sensor.48")
+        self.assertEqual(ping["type"], "Ping v2")
         self.assertEqual(ping["status_raw"], st.UP)
         self.assertEqual(ping["message"], "OK")
-        self.assertEqual(ping["last_value"], "1 msec")
-        self.assertEqual((ping["last_value_raw"], ping["unit"]), (1.0, "msec"))
-        self.assertEqual(ping["tags"], ["pingsensor"])
-        self.assertEqual(ping["last_check_at"], datetime(2026, 10, 25, 10, 13, 58, tzinfo=UTC))
-        self.assertEqual(ping["uptime_pct"], 99.9871)
-        self.assertEqual(ping["parent_id"], 2100)
+        self.assertEqual(ping["last_value"], "0 msec")
+        self.assertEqual((ping["last_value_raw"], ping["unit"]), (0.0, "msec"))
+        self.assertEqual(ping["tags"], ["icmp", "ping", "pingsensor"])
+        self.assertEqual(
+            ping["last_check_at"], ole_to_datetime(self.fake.sensor(2089)["lastcheck_raw"]))
+        self.assertEqual(ping["uptime_pct"], 100.0)
+        self.assertEqual(ping["parent_id"], 2081)
+        self.assertEqual(ping["interval_seconds"], 30)
         self.assertTrue(ping["active"])
 
-        traffic = rows[2102]
-        self.assertEqual(traffic["message"], "Traffic Total above 80 % (Warning)")
-        self.assertEqual(traffic["unit"], "kbit/s")
-        self.assertIsNone(traffic["last_down_at"])
-        # The quoted _raw string is unquoted.
-        self.assertEqual(rows[2201]["message"], "Connection refused (code: PE104)")
-        self.assertIsNone(rows[2201]["last_value_raw"])
-        self.assertFalse(rows[2202]["active"])
-        self.assertEqual(rows[2302]["status_raw"], st.NOT_LICENSED)
-        self.assertEqual(st.default_state(rows[2302]["status_raw"]), "unknown")
+        cert = rows[2091]
+        self.assertEqual(cert["status_raw"], st.WARNING)
+        self.assertTrue(cert["message"].startswith(
+            "Warning caused by lookup value 'No' in channel 'Root Authority Trusted'"))
+        self.assertEqual((cert["last_value_raw"], cert["unit"]), (781.0, "#"))
+        self.assertIsNone(cert["last_down_at"])
+        # The raw value is in the base unit, not the display one.
+        nic = rows[1005]
+        self.assertEqual((nic["last_value"], nic["unit"]), ("0.04 Mbit/s", "Mbit/s"))
+        self.assertEqual(nic["last_value_raw"], 5048.4414)
+        self.assertEqual(rows[2100]["uptime_pct"], 82.2506)
+        self.assertEqual(rows[2096]["tags"], ["icmp", "ping", "pingsensor"])
+
+    def test_quoted_raw_and_unrecorded_states(self):
+        row = sensor_row(9001, status=st.NOT_LICENSED, value="No data")
+        row["message_raw"] = '"Connection refused (code: PE104)"'
+        row["active_raw"] = 0
+        row["lastvalue_raw"] = ""
+        self.fake.tables["sensors"] = [row]
+        read = self.client_for().sensors().rows[0]
+        self.assertEqual(read["message"], "Connection refused (code: PE104)")
+        self.assertIsNone(read["last_value_raw"])
+        self.assertFalse(read["active"])
+        self.assertEqual(read["status_raw"], st.NOT_LICENSED)
+        self.assertEqual(st.default_state(read["status_raw"]), "unknown")
 
     def test_only_the_requested_columns_are_asked_for(self):
         self.client_for().sensors()
@@ -208,10 +240,14 @@ class ReadTests(_Live):
         self.assertEqual(table.pages, 2)
 
     def test_filters_are_passed_as_filter_params(self):
+        self.fake.set_status(2093, st.DOWN)
+        self.fake.set_status(2094, st.DOWN_PARTIAL)
         table = self.client_for().sensors(filters={"status": [5, 14]})
-        self.assertEqual([r["objid"] for r in table.rows], [2201])
-        table = self.client_for().sensors(filters={"tags": "@tag(danbyte)"})
-        self.assertEqual([r["objid"] for r in table.rows], [2301])
+        self.assertEqual([r["objid"] for r in table.rows], [2093, 2094])
+        table = self.client_for().sensors(filters={"tags": "@tag(pingsensor)"})
+        self.assertEqual([r["objid"] for r in table.rows], [2089, 2092, 2096])
+        table = self.client_for().sensors(filters={"parentid": 2082})
+        self.assertEqual([r["objid"] for r in table.rows], [2092, 2100])
 
     def test_quirky_json_skips_only_the_bad_row(self):
         self.fake.raw_tables["sensors"] = load_fixture("table_sensors_quirks.txt", raw=True)
@@ -228,16 +264,24 @@ class ReadTests(_Live):
 
     def test_devices_and_counts(self):
         client = self.client_for()
-        self.assertEqual([d["name"] for d in client.devices().rows],
-                         ["sw-core-01", "db-dev01", "db-zabbix"])
-        self.assertEqual(client.count("sensors"), 6)
-        self.assertEqual(client.count("probenode"), 1)
+        self.assertEqual(
+            [d["name"] for d in client.devices().rows],
+            ["Probe Device", "Internet", "PRTG Core Server", "sw-01", "db-dev01",
+             "db-zabbix", "gw 10.0.0.0"],
+        )
+        self.assertEqual(client.count("sensors"), 17)
+        # Unfiltered, probenode lists more than probes (here the autonomous
+        # core device); the type filter narrows it to the probes.
+        self.assertEqual(client.count("probenode"), 2)
+        self.assertEqual(client.count("probenode", {"type": "probenode"}), 1)
         self.assertEqual(self.fake.calls("/api/table.json")[-1]["params"]["count"], "1")
 
     def test_sensor_details(self):
-        details = self.client_for().sensor_details(2201)
-        self.assertEqual(details["status_raw"], st.DOWN)
-        self.assertEqual(details["lastmessage"], "Down Connection refused (code: PE104)")
+        details = self.client_for().sensor_details(2091)
+        self.assertEqual(details["status_raw"], st.WARNING)
+        # Entities escaped twice in the recording come out as plain text.
+        self.assertTrue(details["lastmessage"].startswith(
+            "Warning caused by lookup value 'No' in channel"))
         self.assertEqual(details["parentdevicename"], "db-dev01")
         with self.assertRaises(PrtgError):
             self.client_for().sensor_details(1)
@@ -262,27 +306,28 @@ class ReadTests(_Live):
 
 class WriteTests(_Live):
     def test_acknowledge_a_down_sensor(self):
-        self.client_for().acknowledge(2201, "[Danbyte] on it")
-        row = self.fake.sensor(2201)
+        self.fake.set_status(2093, st.DOWN)
+        self.client_for().acknowledge(2093, "[Danbyte] on it")
+        row = self.fake.sensor(2093)
         self.assertEqual(row["status_raw"], st.DOWN_ACKNOWLEDGED)
         self.assertEqual(row["message_raw"], "[Danbyte] on it")
 
     def test_acknowledging_an_up_sensor_reports_prtgs_refusal(self):
         with self.assertRaises(PrtgError) as ctx:
-            self.client_for().acknowledge(2101, "x")
+            self.client_for().acknowledge(2089, "x")
         self.assertIn("cannot be acknowledged", str(ctx.exception))
 
     def test_pause_resume_and_pause_for(self):
         client = self.client_for()
-        client.pause(2101, "maintenance")
-        self.assertEqual(self.fake.sensor(2101)["status_raw"], st.PAUSED_USER)
+        client.pause(2089, "maintenance")
+        self.assertEqual(self.fake.sensor(2089)["status_raw"], st.PAUSED_USER)
         self.assertEqual(self.fake.writes[-1][1]["action"], "0")
-        client.resume(2101)
-        self.assertEqual(self.fake.sensor(2101)["status_raw"], st.UP)
-        client.pause(2101, "an hour", minutes=60)
+        client.resume(2089)
+        self.assertEqual(self.fake.sensor(2089)["status_raw"], st.UP)
+        client.pause(2089, "an hour", minutes=60)
         self.assertEqual(self.fake.writes[-1][0], "pauseobjectfor.htm")
         self.assertEqual(self.fake.writes[-1][1]["duration"], "60")
-        self.assertEqual(self.fake.sensor(2101)["status_raw"], st.PAUSED_UNTIL)
+        self.assertEqual(self.fake.sensor(2089)["status_raw"], st.PAUSED_UNTIL)
 
     def test_properties_round_trip(self):
         client = self.client_for()
@@ -293,11 +338,11 @@ class WriteTests(_Live):
 
     def test_delete_and_scan_now(self):
         client = self.client_for()
-        client.scan_now(2101)
+        client.scan_now(2093)
         self.assertEqual(self.fake.writes[-1][0], "scannow.htm")
-        client.delete(2101)
+        client.delete(2093)
         self.assertEqual(self.fake.writes[-1][1]["approve"], "1")
-        self.assertIsNone(self.fake.sensor(2101))
+        self.assertIsNone(self.fake.sensor(2093))
 
     def test_an_unknown_object_is_refused(self):
         with self.assertRaises(PrtgError):
@@ -335,7 +380,7 @@ class RecordingTests(_Live):
                             "passhash": "12345"}
         with tempfile.TemporaryDirectory() as tmp:
             path = record_fixture(
-                self.client_for(), "/api/getstatus.json", {"id": 0}, "status.json",
+                self.client_for(), "/api/getstatus.htm", {"id": 0}, "status.json",
                 directory=Path(tmp),
             )
             text = path.read_text()
