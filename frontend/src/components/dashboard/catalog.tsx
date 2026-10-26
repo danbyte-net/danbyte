@@ -114,6 +114,8 @@ export interface WidgetDef {
   /** A per-instance title from the widget's config (a title override);
    * undefined keeps `title`. */
   titleOf?: (config: Record<string, unknown> | undefined) => string | undefined
+  /** Hide the catalog description on the tile when the content says it all. */
+  hideDescription?: boolean
   render: (d: DashboardData, ctx?: WidgetCtx) => ReactNode
 }
 
@@ -670,6 +672,7 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "prtg-sensor",
+    hideDescription: true,
     fit: "scroll",
     multi: true,
     title: "Sensor",
@@ -685,6 +688,7 @@ export const CATALOG: WidgetDef[] = [
   },
   {
     id: "prtg-alarms",
+    hideDescription: true,
     fit: "scroll",
     multi: true,
     title: "Sensor alarms",

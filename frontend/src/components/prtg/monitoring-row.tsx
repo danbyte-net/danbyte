@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { ExternalLink } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -27,6 +28,7 @@ import {
 } from "@/components/monitoring/monitoring-bar"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { usePrtgEnabled } from "./group-picker"
+import { PRTG_PLAN_FOOTNOTE, PrtgIssueLine } from "./issues"
 import { sensorTotal, usePrtgLinks, usePrtgSensors } from "./sensors-tab"
 import type { PrtgParent } from "./sensors-tab"
 
@@ -172,11 +174,14 @@ export function PrtgPlanPreview({ parent }: { parent: PrtgParent }) {
   return (
     <div className="grid gap-4">
       {entries.map((e) => (
-        <PlanEntry key={e.connection.id} entry={e} many={entries.length > 1} />
+        <PlanEntry
+          key={e.connection.id}
+          entry={e}
+          many={entries.length > 1}
+          parent={parent}
+        />
       ))}
-      <p className="text-[11px] text-muted-foreground">
-        Planned only: nothing is written to PRTG yet.
-      </p>
+      <p className="text-[11px] text-muted-foreground">{PRTG_PLAN_FOOTNOTE}</p>
     </div>
   )
 }
@@ -184,10 +189,17 @@ export function PrtgPlanPreview({ parent }: { parent: PrtgParent }) {
 function PlanEntry({
   entry: e,
   many,
+  parent,
 }: {
   entry: PrtgPlanEntry
   many: boolean
+  parent: PrtgParent
 }) {
+  const object =
+    "device" in parent
+      ? { kind: "device" as const, id: parent.device }
+      : { kind: "virtual_machine" as const, id: parent.virtual_machine }
+  const issues = e.issues ?? e.problems.map((text) => ({ text }))
   const rows: KvRow[] = [
     {
       label: "In PRTG",
@@ -196,13 +208,39 @@ function PlanEntry({
       ) : (
         <span className="inline-flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{VIA[e.via] ?? "No"}</Badge>
-          {e.reason && (
-            <span className="text-xs text-muted-foreground">{e.reason}</span>
+          {e.reason_issue ? (
+            <PrtgIssueLine
+              issue={e.reason_issue}
+              object={object}
+              className="text-xs text-muted-foreground"
+            />
+          ) : (
+            e.reason && (
+              <span className="text-xs text-muted-foreground">{e.reason}</span>
+            )
           )}
         </span>
       ),
     },
   ]
+  if (e.policies.length)
+    rows.push({
+      label: "Policies",
+      value: (
+        <span className="inline-flex flex-wrap gap-x-2">
+          {e.policies.map((p) => (
+            <Link
+              key={p.id}
+              to="/prtg"
+              search={{ tab: "policies", policy: p.id }}
+              className="link"
+            >
+              {p.name}
+            </Link>
+          ))}
+        </span>
+      ),
+    })
   if (e.linked)
     rows.push({
       label: "PRTG device",
@@ -227,11 +265,6 @@ function PlanEntry({
         <Badge variant="warning">None</Badge>
       ),
     })
-    if (e.policies.length)
-      rows.push({
-        label: "Policies",
-        value: e.policies.map((p) => p.name).join(", "),
-      })
     if (e.profiles.length)
       rows.push({ label: "Profiles", value: e.profiles.join(", ") })
     if (e.credentials.length)
@@ -277,10 +310,8 @@ function PlanEntry({
           ))}
         </div>
       )}
-      {e.problems.map((p) => (
-        <p key={p} className="text-xs text-amber-600 dark:text-amber-400">
-          {p}
-        </p>
+      {issues.map((i) => (
+        <PrtgIssueLine key={i.text} issue={i} object={object} />
       ))}
     </div>
   )

@@ -180,7 +180,7 @@ export function DashboardGrid({
               <div key={it.id}>
                 <WidgetTile
                   title={w.titleOf?.(it.config) ?? w.title}
-                  description={w.description}
+                  description={w.hideDescription ? "" : w.description}
                   fit={w.fit ?? "scroll"}
                   editing={editing}
                   interacting={interacting}
@@ -241,9 +241,11 @@ function WidgetTile({
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{title}</div>
-          <div className="truncate text-[11px] text-muted-foreground">
-            {description}
-          </div>
+          {description && (
+            <div className="truncate text-[11px] text-muted-foreground">
+              {description}
+            </div>
+          )}
         </div>
         {editing && (
           <div className="flex shrink-0 items-center gap-0.5">

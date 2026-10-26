@@ -519,10 +519,11 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `connections/<id>/maintenance-now/` | `POST`. Reconciles the maintenance pauses now; returns `paused`, `extended`, `resumed`, `left`, `failed`. 400 while `sync_maintenance` is off, 502 when PRTG cannot be read. |
 | `connections/<id>/rotate-hook-token/` | `POST`. A new push token: `{token, path}`, shown this once. |
 | `connections/<id>/plan-now/` | `POST`. Runs the planning pass now; returns `scoped`, `create`, `add_sensor`, `remove_sensor`, `move`, `not_applicable`, `no_address`, `awaiting_link`, 502 with PRTG's sentence when its groups cannot be read. Writes nothing to PRTG. The connection keeps `last_plan_at` and `last_plan_summary`; a status read's counts carry the same under `plan`. Registration fields on the connection: `register_all`, `register_profile` (a profile of this connection), `register_group_id` and `register_group_path`. |
-| `policies/` | CRUD (`?connection=`): `name`, `enabled`, `priority` (lower first), `scope` (`global`, `region`, `site`, `location`, `platform`, `device_type`, `device_role`) with its target (`region`, `target_site`, `location`, `platform`, `device_type`, `device_role` - only the scope's own is kept), `match_tags`, `match_name`, `match_hardware`, `applies_to_devices`, `applies_to_vms`, `profile` (required, this connection's), `group_id` (required) and `group_path`. Every target must be the active tenant's. |
+| `policies/` | CRUD (`?connection=`): `name`, `enabled`, `priority` (lower first), `scope` (`global`, `region`, `site`, `location`, `platform`, `device_type`, `device_role`) with its target (`region`, `target_site`, `location`, `platform`, `device_type`, `device_role` - only the scope's own is kept), `match_tags`, `match_name`, `match_hardware`, `applies_to_devices`, `applies_to_vms`, `profile` (required, this connection's), `group_id` (required) and `group_path`. Every target must be the active tenant's. `policies/<id>/` also carries `match_count`. |
+| `policies/<id>/matches/` | Every device and VM the policy matches now, by the planning pass's own matching, limited to the objects the caller may view, paged (`page_size` honoured): `{kind, id, name, site, role, platform, prtg_sync, linked, link: {objid, name, url}, managed, via, reason, group_policy: {id, name}, wins_group, policies}`. `group_policy` is the policy that decides the object's group (null when the connection does), `policies` every enabled policy that matches it. `?prtg_sync=` (`inherit`, `always`, `never`, comma-separated) and `?linked=1\|0` narrow it. Needs view on PRTG policies. |
 | `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `params` are checked against the kind and stored with its defaults. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
-| `plan/?device=` or `?virtual_machine=` | What PRTG would get for one object, per enabled connection: `{connection, prtg_sync, managed, via, reason, linked, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems}`. Needs view on the object; asks PRTG nothing. |
+| `plan/?device=` or `?virtual_machine=` | What PRTG would get for one object, per enabled connection: `{connection, prtg_sync, managed, via, reason, reason_issue, linked, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues}`. `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape. Needs view on the object; asks PRTG nothing. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`. |
 | `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
@@ -583,6 +584,24 @@ priority decides the group. An object picked only by *Monitor in PRTG* or
 *Register all* gets the connection's **registration profile** and **group**,
 set beside the *Register all* switch.
 
+In the policy editor, the **+** beside **Sensor profile** makes a new profile
+without leaving the policy; once saved it is picked. When Danbyte has never
+read PRTG's groups, the group picker says so and links to the connection:
+test it, or use the picker's refresh, to read them.
+
+**Who a policy hits.** A policy's name on the **Policies** tab opens its
+detail (`/prtg?tab=policies&policy=<id>`): the policy's facts and a
+**Matches** table of every device and VM it matches now, headed with the
+count and how many are linked in PRTG. Each row has the object, its site,
+role and platform, its PRTG setting (*Follow policies*, *Monitor in PRTG*,
+*Exclude from PRTG*), the PRTG device when linked, and which policy decides
+its group: *This policy*, another policy (linked to its detail), the
+connection, or *Not in plan* when the object is left out (excluded, retired,
+an excluded address, or no PRTG check under the checks scope). The matching
+is the planning pass's own, so the table is what the next plan sees. A
+disabled policy still lists who it would hit. The detail's **Edit** opens
+the editor, as does `/prtg?tab=policies&edit=<id>`.
+
 ## Sensor profiles
 
 A profile (the **Profiles** tab) is an ordered list of sensors. **Starter
@@ -642,8 +661,8 @@ is waiting in the queue, gets no **Create in PRTG** row; the pass counts
 both.
 
 Every planned row is marked **Planned**. A row says why it could not be
-written as it stands - *PRTG has no group … any more*, no group named, no
-SNMP profile, no Windows login - and `applicable` is false. **Apply**
+written as it stands - the group is gone, no group chosen, no SNMP profile,
+no Windows login, in the sentences below - and `applicable` is false. **Apply**
 answers *Writing to PRTG arrives in the next release.* and **Apply all**
 skips planned rows. Dismiss and Restore work as for any row. A row that is no
 longer true goes away with the next pass. A pass whose group read fails
@@ -651,9 +670,24 @@ proposes and drops nothing.
 
 The device's and VM's **Monitoring** tab has **What would PRTG get?** on its
 PRTG row: per connection, whether the object is in the plan and why, the
-group, the policies and profiles, each sensor marked present or planned,
-the credentials by name, and anything in the way. It is computed from what
-Danbyte holds; PRTG is not asked.
+group, the policies that match it (each linked to its detail), the profiles,
+each sensor marked present or planned, the credentials by name, and anything
+in the way. It is computed from what Danbyte holds; PRTG is not asked.
+
+Every reason says what is missing and where to fix it, with a link there:
+
+| Reason | Links to |
+|---|---|
+| *Nothing registers this object. Add a policy that matches it, set Monitor in PRTG on the object, or turn on Register all.* | Policies, the object's edit form, Register all on the connection |
+| *No PRTG group chosen. Set one on the matching policy or under Register all on the connection.* | The policy's editor, Register all on the connection |
+| *The PRTG group … is gone. Pick another on the matching policy or under Register all on the connection.* | The same |
+| *No SNMP profile applies to …. Set one on its Access tab.* (a VM: *its SNMP tab*) | The device's Access tab, the VM's SNMP tab |
+| *Danbyte holds no Windows login for …. Add one on its Access tab.* | The device's Access tab |
+| *It has no primary address. Set one so PRTG can reach it.* | The object's edit form |
+| *Its status … is left out of PRTG.*, *Its primary address is excluded from monitoring.*, *It has no PRTG check …*, *Exclude from PRTG is set on this object.*, *It is already in PRTG. Register all only adds new devices.* | The object's edit form, where it applies |
+
+Planned rows in the review queue carry the same sentences in `reason`, and
+the same as `issues` (`[{code, text, policy, object}]`).
 
 ---
 

@@ -246,10 +246,13 @@ export function ProfileForm({
   connection,
   profile,
   onDone,
+  onSaved,
 }: {
   connection: PrtgConnection
   profile: PrtgSensorProfile | null
   onDone: () => void
+  /** The saved profile, e.g. to pick it in the policy editor. */
+  onSaved?: (profile: PrtgSensorProfile) => void
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError } = useFieldErrors()
@@ -310,9 +313,10 @@ export function ProfileForm({
           }),
         }
       ),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast.success(profile ? "Profile saved" : "Profile added")
       void qc.invalidateQueries({ queryKey: ["prtg-profiles"] })
+      onSaved?.(saved)
       onDone()
     },
     onError: (err) => {
