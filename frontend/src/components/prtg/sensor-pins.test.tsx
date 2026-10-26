@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PrtgChannels, PrtgHistory, PrtgSensorPin } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { mountWithRouter } from "./prtg-test-utils"
-import { PinnedSensorsCard } from "./sensor-pins"
+import { ObjectPinnedSensors, PinnedSensorsCard, pinLabel } from "./sensor-pins"
 
 // The Overview's Sensors card: one tile per pinned channel, linking to the
 // sensor's panel, an unpin on each, and nothing at all without pins.
@@ -31,6 +31,10 @@ function pin(id: string, channel: string, display = "auto"): PrtgSensorPin {
     position: 0,
     device: { id: "d1", name: "db-dev01" },
     virtual_machine: null,
+    ip_address: null,
+    interface: null,
+    vm_interface: null,
+    service: null,
     sensor_info: {
       name: "SSL Certificate",
       kind_label: "SSL Certificate",
@@ -268,6 +272,24 @@ describe("PinnedSensorsCard", () => {
     ).toHaveLength(0)
   })
 
+  it("draws an address's pins on its Overview and opens the panel", async () => {
+    const onOpen = vi.fn()
+    mountWithRouter(() => (
+      <TooltipProvider>
+        <ObjectPinnedSensors parent={{ ip_address: "ip1" }} onOpen={onOpen} />
+      </TooltipProvider>
+    ))
+    const card = await screen.findByTestId("prtg-pinned-sensors")
+    expect(card.querySelectorAll("[data-testid=prtg-pin-tile]")).toHaveLength(3)
+    expect(
+      apiMock.mock.calls.some(([p]) =>
+        p.startsWith("/api/prtg/sensor-pins/?ip_address=ip1&")
+      )
+    ).toBe(true)
+    fireEvent.click(card.querySelector("[role=button]")!)
+    expect(onOpen).toHaveBeenCalledWith("s1")
+  })
+
   it("is absent without pins", async () => {
     pins = []
     const { container } = mount()
@@ -275,5 +297,26 @@ describe("PinnedSensorsCard", () => {
     expect(
       container.querySelector("[data-testid=prtg-pinned-sensors]")
     ).toBeNull()
+  })
+})
+
+describe("pinLabel", () => {
+  it("names the object the pin goes on", () => {
+    expect(pinLabel({ device: "d1" }, false)).toBe("Pin to Overview")
+    expect(pinLabel({ virtual_machine: "v1" }, true)).toBe(
+      "Unpin from Overview"
+    )
+    expect(pinLabel({ ip_address: "ip1" }, false)).toBe(
+      "Pin to this address's Overview"
+    )
+    expect(pinLabel({ interface: "if1" }, true)).toBe(
+      "Unpin from this interface's Overview"
+    )
+    expect(pinLabel({ vm_interface: "vif1" }, false)).toBe(
+      "Pin to this interface's Overview"
+    )
+    expect(pinLabel({ service: "svc1" }, false)).toBe(
+      "Pin to this service's Overview"
+    )
   })
 })

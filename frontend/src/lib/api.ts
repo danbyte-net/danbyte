@@ -13716,6 +13716,11 @@ export interface PrtgSensorPin {
   position: number
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
+  /** Exactly one of the six names the pin's object. */
+  ip_address: { id: string; name: string } | null
+  interface: { id: string; name: string } | null
+  vm_interface: { id: string; name: string } | null
+  service: { id: string; name: string } | null
   sensor_info: {
     name: string
     kind_label: string

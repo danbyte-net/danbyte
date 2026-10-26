@@ -136,6 +136,45 @@ describe("PrtgSensorsSection on an object", () => {
     expect(panel.textContent).toContain("SSL Security Check (Port 443)")
   })
 
+  it.each([
+    [{ ip_address: "ip1" }, "ip_address", "ip1", "this address's Overview"],
+    [{ interface: "if1" }, "interface", "if1", "this interface's Overview"],
+    [{ service: "svc1" }, "service", "svc1", "this service's Overview"],
+  ] as const)(
+    "pins to the object it is on: %o",
+    async (scope, key, id, where) => {
+      mount(scope)
+      await waitFor(() =>
+        expect(
+          screen.getAllByTestId("prtg-sensor-pin-toggle").length
+        ).toBeGreaterThan(0)
+      )
+      const [toggle] = screen.getAllByTestId("prtg-sensor-pin-toggle")
+      expect(toggle.getAttribute("aria-label")).toBe(`Pin to ${where}`)
+      await waitFor(() => expect(toggle.hasAttribute("disabled")).toBe(false))
+      // The object's pins, not the sensor's device's.
+      expect(
+        apiMock.mock.calls.some(([p]) =>
+          p.startsWith(`/api/prtg/sensor-pins/?${key}=${id}&`)
+        )
+      ).toBe(true)
+      fireEvent.click(toggle)
+      await waitFor(() =>
+        expect(
+          apiMock.mock.calls.some(
+            ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+          )
+        ).toBe(true)
+      )
+      const [, init] = apiMock.mock.calls.find(
+        ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+      )!
+      const body = JSON.parse(String(init!.body))
+      expect(body[key]).toBe(id)
+      expect(body.device).toBeUndefined()
+    }
+  )
+
   it("says so when nothing watches it", async () => {
     mount({ service: "none" })
     expect(await screen.findByText("No PRTG sensor watches this.")).toBeTruthy()
