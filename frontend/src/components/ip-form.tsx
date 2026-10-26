@@ -455,8 +455,9 @@ export function IpForm({ ip, initial, clone, onSaved, onCancel }: IpFormProps) {
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["prefix-ips"] })
       qc.invalidateQueries({ queryKey: ["prefix-space-map"] })
-      // The device and interface IP tabs - Add IP returns to them.
+      // The device, VM and interface IP tabs - Add IP returns to them.
       qc.invalidateQueries({ queryKey: ["device-ips"] })
+      qc.invalidateQueries({ queryKey: ["vm-ips"] })
       qc.invalidateQueries({ queryKey: ["interface-ips"] })
       qc.invalidateQueries({ queryKey: ["ip", saved.id] })
       toast.success(

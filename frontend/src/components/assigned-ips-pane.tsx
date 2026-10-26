@@ -28,53 +28,191 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
-// The IPs tab of a device or of one of its interfaces: the shared IP table
-// (buildIpColumns) plus the two columns only an assigned-IPs list has -
-// Designation (the device's primary / secondary / management slot) and
-// Monitoring - and the Assign IP / + Add IP buttons.
+// The IPs tab of a device, a VM or one of a device's interfaces: the shared
+// IP table (buildIpColumns) plus the columns only this list has -
+// Designation (the object's primary / secondary / management slot), Assigned
+// to (device and VM) and Monitoring (device) - and the Assign IP / + Add IP
+// buttons.
 
-/** Whose IPs the pane lists. An interface's IPs always sit on its device, so
- * both scopes carry the device - designation and monitoring are the
- * device's. */
+/** The object's address slots, by IP id. */
+export interface IpSlots {
+  primary?: string | null
+  secondary?: string | null
+  oob?: string | null
+}
+
+/** Whose IPs the pane lists. A device or VM lists every address it uses
+ * (`?device=` / `?virtual_machine=`: assigned to it, to one of its
+ * interfaces, or in one of its slots). An interface's IPs always sit on its
+ * device, so the interface scope carries the device - designation and
+ * monitoring are the device's. */
 export type AssignedIpsScope =
-  | { kind: "device"; deviceId: string; deviceName: string }
+  | { kind: "device"; deviceId: string; deviceName: string; slots?: IpSlots }
   | {
       kind: "interface"
       deviceId: string
       interfaceId: string
       interfaceName: string
     }
+  | { kind: "vm"; vmId: string; vmName: string; slots?: IpSlots }
+
+type OwnerScope = Extract<AssignedIpsScope, { kind: "device" | "vm" }>
 
 interface ListResp<T> {
   count: number
   results: T[]
 }
 
+// One page holds every address an object uses.
+const PAGE = 1000
+
 /** The pane's rows query. A page that shows the count in its tab strip runs
  * the same query, so the two share one request. */
 export function assignedIpsQuery(scope: AssignedIpsScope) {
-  const url =
-    scope.kind === "device"
-      ? `/api/devices/${scope.deviceId}/ips/`
-      : `/api/interfaces/${scope.interfaceId}/ips/`
+  // ["device-ips", id], ["vm-ips", id] and ["interface-ips", id] are the
+  // keys AssignIpDialog and the IP form refresh.
+  if (scope.kind === "device")
+    return {
+      queryKey: ["device-ips", scope.deviceId],
+      queryFn: () =>
+        api<ListResp<IPAddress>>(
+          `/api/ips/?device=${scope.deviceId}&page_size=${PAGE}`
+        ),
+    }
+  if (scope.kind === "vm")
+    return {
+      queryKey: ["vm-ips", scope.vmId, "used"],
+      queryFn: () =>
+        api<ListResp<IPAddress>>(
+          `/api/ips/?virtual_machine=${scope.vmId}&page_size=${PAGE}`
+        ),
+    }
   return {
-    // ["interface-ips", id] is the key AssignIpDialog refreshes.
-    queryKey:
-      scope.kind === "device"
-        ? ["device-ips", scope.deviceId]
-        : ["interface-ips", scope.interfaceId],
-    queryFn: () => api<ListResp<IPAddress>>(url),
+    queryKey: ["interface-ips", scope.interfaceId],
+    queryFn: () =>
+      api<ListResp<IPAddress>>(`/api/interfaces/${scope.interfaceId}/ips/`),
   }
 }
 
 const SPEC = {
-  device: { tableId: "device-ips", empty: "No IPs assigned to this device." },
+  device: { tableId: "device-ips", empty: "No IPs on this device." },
+  vm: { tableId: "vm-ips", empty: "No IPs on this VM." },
   interface: {
     tableId: "interface-ips",
     empty: "No IPs assigned to this interface.",
   },
 } as const
+
+type Slot = "primary" | "oob" | "secondary"
+
+const SLOT_LABEL: Record<Slot, string> = {
+  primary: "primary",
+  oob: "management",
+  secondary: "secondary",
+}
+
+// Designation sorts primary first, unslotted last.
+const SLOT_ORDER: Record<Slot | "none", number> = {
+  primary: 0,
+  oob: 1,
+  secondary: 2,
+  none: 3,
+}
+
+/** Which of the object's slots holds `ip`. A device or VM reads its own
+ * slots - the address may be assigned elsewhere; an interface's rows carry
+ * their device's flags. */
+function slotOf(ip: IPAddress, scope: AssignedIpsScope): Slot | null {
+  if (scope.kind === "interface") {
+    if (ip.is_primary_for_device) return "primary"
+    if (ip.is_oob_for_device) return "oob"
+    if (ip.is_secondary_for_device) return "secondary"
+    return null
+  }
+  const s = scope.slots ?? {}
+  if (s.primary === ip.id) return "primary"
+  if (s.oob === ip.id) return "oob"
+  if (s.secondary === ip.id) return "secondary"
+  return null
+}
+
+/** The row's assignment as this object sees it: on the object, on one of its
+ * interfaces (a link to Components), or elsewhere - then the row is here
+ * through one of the object's slots, and a hover says so. */
+function AssignedTo({ ip, scope }: { ip: IPAddress; scope: OwnerScope }) {
+  if (scope.kind === "device") {
+    const iface = ip.assigned_interface
+    if (iface && iface.device.id === scope.deviceId)
+      return (
+        <Link
+          to="/devices/$id"
+          params={{ id: scope.deviceId }}
+          search={{ tab: "components" }}
+          className="link text-xs"
+        >
+          {iface.name}
+        </Link>
+      )
+    if (ip.assigned_device?.id === scope.deviceId)
+      return <span className="text-xs">This device</span>
+  } else {
+    const iface = ip.assigned_vm_interface
+    if (iface && iface.vm.id === scope.vmId)
+      return (
+        <Link
+          to="/virtual-machines/$id"
+          params={{ id: scope.vmId }}
+          search={{ tab: "components" }}
+          className="link text-xs"
+        >
+          {iface.name}
+        </Link>
+      )
+    if (ip.assigned_vm?.id === scope.vmId)
+      return <span className="text-xs">This VM</span>
+  }
+  const owner = ip.assigned_device ?? ip.assigned_vm ?? null
+  const elsewhere = ip.assigned_device ? (
+    <Link
+      to="/devices/$id"
+      params={{ id: ip.assigned_device.id }}
+      className="link text-xs"
+    >
+      {ip.assigned_device.name}
+    </Link>
+  ) : ip.assigned_vm ? (
+    <Link
+      to="/virtual-machines/$id"
+      params={{ id: ip.assigned_vm.id }}
+      className="link text-xs"
+    >
+      {ip.assigned_vm.name}
+    </Link>
+  ) : null
+  const slot = slotOf(ip, scope)
+  if (!slot)
+    return elsewhere ?? <span className="text-muted-foreground">-</span>
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-xs text-muted-foreground">
+          {elsewhere ?? "Unassigned"}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent variant="default">
+        {owner
+          ? `Used as ${SLOT_LABEL[slot]} address here, assigned to ${owner.name}`
+          : `Used as ${SLOT_LABEL[slot]} address here, not assigned`}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function AssignedIpsPane({
   scope,
@@ -87,7 +225,8 @@ export function AssignedIpsPane({
   canAssignIp: boolean
   canChangeDevice: boolean
 }) {
-  const { deviceId } = scope
+  // Monitoring and the designation menu are a device's.
+  const deviceId = scope.kind === "vm" ? null : scope.deviceId
   const spec = SPEC[scope.kind]
   const qc = useQueryClient()
   const here = useCurrentHref()
@@ -101,6 +240,7 @@ export function AssignedIpsPane({
     queryKey: ["device-checks", deviceId],
     queryFn: () =>
       api<DeviceChecksResponse>(`/api/monitoring/devices/${deviceId}/checks/`),
+    enabled: deviceId != null,
   })
   const monByIp = useMemo(() => {
     const m: Record<string, PrefixIpStatus | undefined> = {}
@@ -112,6 +252,7 @@ export function AssignedIpsPane({
   // IP lists (designation badges) and the device header.
   const patchDesignation = useCallback(
     async (body: Record<string, string | null>, successMsg: string) => {
+      if (deviceId == null) return
       try {
         await api(`/api/devices/${deviceId}/`, {
           method: "PATCH",
@@ -156,16 +297,30 @@ export function AssignedIpsPane({
     insertAfter("ip", {
       id: "designation",
       header: "Designation",
+      accessorFn: (ip) => SLOT_ORDER[slotOf(ip, scope) ?? "none"],
       cell: ({ row }) => {
-        const ip = row.original
-        if (ip.is_primary_for_device)
+        const slot = slotOf(row.original, scope)
+        if (slot === "primary")
           return <Badge variant="success">★ Primary</Badge>
-        if (ip.is_oob_for_device) return <Badge variant="secondary">Mgmt</Badge>
-        if (ip.is_secondary_for_device)
-          return <Badge variant="secondary">2nd</Badge>
+        if (slot === "oob") return <Badge variant="secondary">Mgmt</Badge>
+        if (slot === "secondary") return <Badge variant="secondary">2nd</Badge>
         return <span className="text-muted-foreground">-</span>
       },
     })
+    if (scope.kind !== "interface") {
+      insertAfter("designation", {
+        id: "assigned_to",
+        header: "Assigned to",
+        accessorFn: (ip) =>
+          ip.assigned_interface?.name ??
+          ip.assigned_vm_interface?.name ??
+          ip.assigned_device?.name ??
+          ip.assigned_vm?.name ??
+          "",
+        cell: ({ row }) => <AssignedTo ip={row.original} scope={scope} />,
+      })
+    }
+    if (deviceId == null) return cols
     insertAfter("status", {
       id: "monitoring",
       header: "Monitoring",
@@ -183,12 +338,18 @@ export function AssignedIpsPane({
     if (canChangeDevice) {
       cols.push(
         actionsColumn<IPAddress>({
-          extra: (ip) => <DesignationMenu ip={ip} onPatch={patchDesignation} />,
+          extra: (ip) => (
+            <DesignationMenu
+              ip={ip}
+              slot={slotOf(ip, scope)}
+              onPatch={patchDesignation}
+            />
+          ),
         })
       )
     }
     return cols
-  }, [canChangeDevice, patchDesignation, monByIp])
+  }, [scope, deviceId, canChangeDevice, patchDesignation, monByIp])
 
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
@@ -203,12 +364,14 @@ export function AssignedIpsPane({
               onClick={() =>
                 setAssignTarget(
                   scope.kind === "device"
-                    ? { deviceId, deviceName: scope.deviceName }
-                    : {
-                        deviceId,
-                        interfaceId: scope.interfaceId,
-                        interfaceName: scope.interfaceName,
-                      }
+                    ? { deviceId: scope.deviceId, deviceName: scope.deviceName }
+                    : scope.kind === "vm"
+                      ? { vmId: scope.vmId, vmName: scope.vmName }
+                      : {
+                          deviceId: scope.deviceId,
+                          interfaceId: scope.interfaceId,
+                          interfaceName: scope.interfaceName,
+                        }
                 )
               }
             >
@@ -221,13 +384,15 @@ export function AssignedIpsPane({
                 to="/ips/new"
                 search={
                   scope.kind === "device"
-                    ? { device: deviceId }
+                    ? { device: scope.deviceId }
                     : // Save and Cancel come back to this tab.
-                      {
-                        device: deviceId,
-                        interface: scope.interfaceId,
-                        from: here,
-                      }
+                      scope.kind === "vm"
+                      ? { vm: scope.vmId, from: here }
+                      : {
+                          device: scope.deviceId,
+                          interface: scope.interfaceId,
+                          from: here,
+                        }
                 }
               >
                 + Add IP
@@ -269,15 +434,13 @@ export function AssignedIpsPane({
 // designation slots. Rendered in the RowActions extra slot.
 function DesignationMenu({
   ip,
+  slot,
   onPatch,
 }: {
   ip: IPAddress
+  slot: Slot | null
   onPatch: (body: Record<string, string | null>, successMsg: string) => void
 }) {
-  const hasDesignation =
-    ip.is_primary_for_device ||
-    ip.is_secondary_for_device ||
-    ip.is_oob_for_device
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -288,7 +451,7 @@ function DesignationMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem
-          disabled={ip.is_primary_for_device}
+          disabled={slot === "primary"}
           onSelect={() =>
             onPatch(
               { primary_ip_id: ip.id },
@@ -299,7 +462,7 @@ function DesignationMenu({
           Set as primary
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={ip.is_secondary_for_device}
+          disabled={slot === "secondary"}
           onSelect={() =>
             onPatch(
               { secondary_ip_id: ip.id },
@@ -310,7 +473,7 @@ function DesignationMenu({
           Set as secondary
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={ip.is_oob_for_device}
+          disabled={slot === "oob"}
           onSelect={() =>
             onPatch(
               { oob_ip_id: ip.id },
@@ -320,15 +483,15 @@ function DesignationMenu({
         >
           Set as management
         </DropdownMenuItem>
-        {hasDesignation && (
+        {slot != null && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={() => {
                 const body: Record<string, string | null> = {}
-                if (ip.is_primary_for_device) body.primary_ip_id = null
-                if (ip.is_secondary_for_device) body.secondary_ip_id = null
-                if (ip.is_oob_for_device) body.oob_ip_id = null
+                if (slot === "primary") body.primary_ip_id = null
+                if (slot === "secondary") body.secondary_ip_id = null
+                if (slot === "oob") body.oob_ip_id = null
                 onPatch(body, `Cleared designation for ${ip.ip_address}`)
               }}
             >
