@@ -7058,6 +7058,21 @@ export interface BulkStatusEntry extends ExternalRollup {
   monitored_ips?: number
   /** An address excluded from monitoring (IP rows only). */
   excluded?: boolean
+  /** The checks behind a device's or VM's roll-up, worst first - only when
+   * the request asked for `detail` (a detail page's monitoring bar). */
+  items?: MonitoringCheckItem[]
+}
+
+/** One check behind a roll-up, for the monitoring bar's hover. */
+export interface MonitoringCheckItem {
+  id: string
+  name: string
+  kind: string
+  ip_id: string
+  address: string
+  status: CheckStatus
+  /** When it entered this state. */
+  since: string | null
 }
 
 /** An engine kind a driver registered - configured on its own page rather

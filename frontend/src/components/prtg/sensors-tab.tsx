@@ -53,7 +53,14 @@ import {
   useHistory,
 } from "./channel-view"
 import { PinToggle } from "./sensor-pins"
-import { PrtgStateStrip } from "./sensor-strip"
+import {
+  MonitoringSourceRow,
+  StateFilterNote,
+  matchesState,
+  prtgSource,
+} from "@/components/monitoring/monitoring-bar"
+import type { SourceLink } from "@/components/monitoring/monitoring-bar"
+import { useStatusLabels } from "@/components/monitoring/status-palette"
 
 /** The device or VM whose PRTG sensors a surface shows. */
 export type PrtgParent = { device: string } | { virtual_machine: string }
@@ -89,6 +96,7 @@ export function usePrtgLinks(parent: PrtgParent) {
         [] as PrtgDeviceLink[]
       ),
     staleTime: 60_000,
+    refetchInterval: 2 * 60_000,
   })
 }
 
@@ -143,56 +151,70 @@ export function PrtgSensorsTab({
   parent,
   selected,
   onSelect,
+  state,
+  onState,
 }: {
   parent: PrtgParent
   selected?: string
   onSelect: (id: string | null) => void
+  /** The strip's filter (`?state=`): `problem`, a state, or `paused`. */
+  state?: string
+  onState?: (state: string | null) => void
 }) {
+  const labels = useStatusLabels()
   const links = usePrtgLinks(parent)
   const sensors = usePrtgSensors(parent)
   if (links.isLoading || sensors.isLoading) return <Loading />
   if (sensors.isError) return <QueryError error={sensors.error} />
   const rows = sensors.data ?? []
   const open = rows.find((s) => s.id === selected) ?? null
+  const shown = rows.filter((s) =>
+    matchesState(state, s.paused ? "paused" : s.state || "unknown")
+  )
+  // A count toggles its filter; the name and the pill toggle "problem".
+  const toggle: SourceLink = (children, filter) => (
+    <button
+      type="button"
+      className="inline-flex rounded-[5px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      aria-pressed={!!filter && state === filter}
+      onClick={() => onState?.(!filter || state === filter ? null : filter)}
+    >
+      {children}
+    </button>
+  )
 
   return (
     <div className="space-y-4">
       {(links.data ?? []).map((link) => (
-        <div
+        <MonitoringSourceRow
           key={link.id}
-          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-3 py-2 text-[13px]"
-        >
-          <PrtgStateStrip
-            summary={countSensors(
-              rows.filter((s) => s.connection === link.connection)
-            )}
-          />
-          <a
-            href={link.url}
-            target="_blank"
-            rel="noreferrer"
-            className="link inline-flex items-center gap-1 font-mono text-xs"
-          >
-            {link.name || link.objid}
-            <ExternalLink className="h-3 w-3" />
-          </a>
-          {link.status_read_at && (
-            <span className="ml-auto inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
-              read <TimeCell iso={link.status_read_at} />
-            </span>
-          )}
-        </div>
+          source={prtgSource(link, rows, labels)}
+          link={toggle}
+          active={state}
+          className="rounded-lg border border-border bg-card px-3 py-2"
+        />
       ))}
       {rows.length === 0 ? (
         <EmptyState title="No sensors.">
           PRTG has no sensors on this device yet.
         </EmptyState>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((s) => (
-            <SensorCard key={s.id} sensor={s} onOpen={() => onSelect(s.id)} />
-          ))}
-        </div>
+        <>
+          <StateFilterNote state={state} onClear={() => onState?.(null)} />
+          {shown.length === 0 ? (
+            <EmptyState title="No sensor matches." />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shown.map((s) => (
+                <SensorCard
+                  key={s.id}
+                  sensor={s}
+                  onOpen={() => onSelect(s.id)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
       <SensorPanel sensor={open} onClose={() => onSelect(null)} />
     </div>

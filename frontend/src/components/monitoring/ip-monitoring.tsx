@@ -51,6 +51,7 @@ import { LatencyChart } from "./latency-chart"
 import { RecentProbes } from "./recent-probes"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
+import { StateFilterNote, matchesState } from "./monitoring-bar"
 import { InfoTip } from "@/components/ui/info-tip"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useDateFormat } from "@/lib/datetime"
@@ -91,8 +92,13 @@ function invalidateMonitoring(qc: QueryClient, ipId: string) {
 export function IpMonitoring({
   ip,
   canChange = false,
+  state,
+  onState,
 }: {
   ip: { id: string; ip_address: string; flap_exclude?: boolean }
+  /** A monitoring bar's filter (`?state=` on a VM): `problem` or one state. */
+  state?: string
+  onState?: (state: string | null) => void
   /** May exclude the address and reset its availability (ipaddress.change;
    * the server also asks for the SLA grant when an agreement counts it). */
   canChange?: boolean
@@ -204,6 +210,9 @@ export function IpMonitoring({
   })
 
   const checks = q.data?.checks ?? []
+  const shownChecks = checks.filter((c) =>
+    matchesState(state, c.state?.status ?? "unknown")
+  )
   const counts = checks.reduce<Partial<Record<CheckStatus, number>>>(
     (acc, c) => {
       const s = c.state?.status ?? "unknown"
@@ -330,8 +339,16 @@ export function IpMonitoring({
           </EmptyState>
         )}
         {checks.length > 0 && (
+          <StateFilterNote state={state} onClear={() => onState?.(null)} />
+        )}
+        {checks.length > 0 && (
           <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-            {checks.map((c) => (
+            {shownChecks.length === 0 && (
+              <p className="px-3 py-2 text-[13px] text-muted-foreground">
+                No check matches.
+              </p>
+            )}
+            {shownChecks.map((c) => (
               <CheckRow
                 key={c.template_id}
                 ipId={ip.id}
