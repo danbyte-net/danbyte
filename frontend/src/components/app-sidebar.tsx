@@ -183,7 +183,7 @@ type NavItem = {
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
   integration?: Array<
-    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "oxidized"
+    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "prtg" | "oxidized"
   >
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
@@ -1342,6 +1342,13 @@ export const sections: NavSection[] = [
             icon: Activity,
             objectType: "zabbixconnection",
             integration: ["zabbix"],
+          },
+          {
+            title: "PRTG",
+            url: "/prtg",
+            icon: Activity,
+            objectType: "prtgconnection",
+            integration: ["prtg"],
           },
           {
             title: "Oxidized",

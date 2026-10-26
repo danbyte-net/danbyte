@@ -34,6 +34,8 @@ export interface Vendor {
   logoDark?: string
   /** Owner, for the attribution line. Empty when none is claimed. */
   owner?: string
+  /** The mark line in the owner's wording, for a page about this product. */
+  notice?: string
 }
 
 /** Keyed by the same string the backend stores as a source `kind`, so an
@@ -76,6 +78,13 @@ export const VENDORS: Record<string, Vendor | undefined> = {
     display: "Zabbix®",
     short: "Zabbix",
     owner: "Zabbix LLC",
+  },
+  prtg: {
+    key: "prtg",
+    display: "PRTG",
+    short: "PRTG",
+    owner: "Paessler GmbH",
+    notice: "PRTG is a trademark of Paessler GmbH.",
   },
 }
 

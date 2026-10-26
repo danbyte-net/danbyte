@@ -171,6 +171,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("zabbix.ZabbixProvisionRule", "Zabbix provisioning rules", "Monitoring"),
     ("zabbix.ZabbixMaintenance", "Zabbix maintenance windows", "Monitoring"),
     ("zabbix.ZabbixAdoptionRule", "Zabbix adoption rules", "Monitoring"),
+    ("prtg.PrtgConnection", "PRTG connections", "Monitoring"),
     ("oxidized.OxidizedConnection", "Oxidized connections", "Integrations"),
     ("oxidized.OxidizedNodeLink", "Oxidized node links", "Integrations"),
     ("api.Service", "Services", "IPAM"),
