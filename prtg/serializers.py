@@ -369,6 +369,10 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
     prtg_device = serializers.CharField(source="link.name", read_only=True)
     #: When the channels were last read, or null - they are read on demand.
     channels_at = serializers.SerializerMethodField()
+    #: What the sensor watches, resolved by every read (:mod:`prtg.objects`).
+    ip_address = serializers.SerializerMethodField()
+    interface = serializers.SerializerMethodField()
+    service = serializers.SerializerMethodField()
 
     def get_device(self, obj) -> dict | None:
         return _ref(obj.device)
@@ -388,6 +392,36 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
     def get_channels_at(self, obj) -> str | None:
         return (obj.channels or {}).get("fetched_at")
 
+    def get_ip_address(self, obj) -> dict | None:
+        a = obj.ip_address
+        if a is None:
+            return None
+        return {"id": str(a.id), "address": str(a.ip_address), "dns_name": a.dns_name or ""}
+
+    def get_interface(self, obj) -> dict | None:
+        """A device interface (``kind: interface``, its page is
+        ``/interfaces/<id>``) or a VM interface (``kind: vm_interface``, on
+        its VM's page)."""
+        if obj.interface is not None:
+            i = obj.interface
+            return {"id": str(i.id), "name": i.name, "kind": "interface",
+                    "parent": str(i.device_id)}
+        if obj.vm_interface is not None:
+            i = obj.vm_interface
+            return {"id": str(i.id), "name": i.name, "kind": "vm_interface",
+                    "parent": str(i.vm_id)}
+        return None
+
+    def get_service(self, obj) -> dict | None:
+        svc = obj.service
+        if svc is None:
+            return None
+        ports = ", ".join(
+            f"{proto}/{','.join(str(p) for p in ports)}"
+            for proto, ports in svc.port_map().items()
+        )
+        return {"id": str(svc.id), "name": svc.name, "ports": ports}
+
     class Meta:
         model = PrtgSensor
         fields = [
@@ -397,6 +431,7 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
             "last_value", "last_value_raw", "unit", "interval_seconds", "uptime_pct",
             "downtime_pct", "priority", "last_check_at", "last_up_at", "last_down_at",
             "probe_name", "group_path", "last_seen_at", "url", "device_url", "channels_at",
+            "ip_address", "interface", "service",
         ]
         read_only_fields = fields
 

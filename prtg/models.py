@@ -446,6 +446,29 @@ class PrtgSensor(TimestampedModel):
         default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
     )
 
+    # ── what the sensor watches, resolved by every read (prtg.objects) ──
+    #: The address PRTG reaches the device on: the link's host, matched to
+    #: one of the device's or VM's addresses.
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="prtg_sensors",
+    )
+    #: The port an SNMP traffic sensor measures: a device interface or a VM
+    #: interface, never both.
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="prtg_sensors",
+    )
+    vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="prtg_sensors",
+    )
+    #: The service an HTTP or SSL sensor checks, by its port.
+    service = models.ForeignKey(
+        "api.Service", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="prtg_sensors",
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -453,6 +476,10 @@ class PrtgSensor(TimestampedModel):
                 fields=["connection", "objid"], name="uniq_prtg_sensor_conn_objid"
             ),
             _one_parent("prtg_sensor_one_parent"),
+            models.CheckConstraint(
+                condition=models.Q(interface__isnull=True) | models.Q(vm_interface__isnull=True),
+                name="prtg_sensor_one_interface",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant", "device"], name="prtg_sensor_tenant_device"),

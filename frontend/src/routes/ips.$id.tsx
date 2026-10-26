@@ -49,6 +49,10 @@ import { useMe, objCan } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
+import {
+  PrtgSensorsSection,
+  usePrtgSensors,
+} from "@/components/prtg/sensors-tab"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -73,8 +77,18 @@ function IPDetail() {
 function IPDetailBody({ ip }: { ip: IPAddress }) {
   const [deleteOpen, setDeleteOpen] = useState<IPAddress | null>(null)
   const [tab, setTab] = useUrlTab<
-    "overview" | "monitoring" | "certificates" | "flows" | "journal" | "history"
+    | "overview"
+    | "monitoring"
+    | "sensors"
+    | "certificates"
+    | "flows"
+    | "journal"
+    | "history"
   >("overview")
+  // PRTG sensors that reach their device on this address; the tab shows once
+  // there is one (none while the integration is off).
+  const prtgSensors = usePrtgSensors({ ip_address: ip.id })
+  const sensorCount = prtgSensors.data?.length ?? 0
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
 
@@ -524,6 +538,9 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       tabs={[
         { value: "overview", label: "Overview" },
         { value: "monitoring", label: "Monitoring" },
+        ...(sensorCount > 0
+          ? [{ value: "sensors", label: "Sensors", count: sensorCount }]
+          : []),
         {
           value: "certificates",
           label: "Certificates",
@@ -600,6 +617,10 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           }}
           canChange={objCan(ip, "change", canDo("ipaddress", "change"))}
         />
+      </DetailTab>
+
+      <DetailTab value="sensors">
+        <PrtgSensorsSection scope={{ ip_address: ip.id }} />
       </DetailTab>
 
       <DetailTab value="certificates">
