@@ -54,13 +54,17 @@ import {
   useChannels,
   useHistory,
 } from "./channel-view"
-import { PinScopeProvider, PinToggle } from "./sensor-pins"
-import { PrtgStateStrip } from "./sensor-strip"
+import { PinScopeProvider, PinToggle, sensorParent } from "./sensor-pins"
+import { LinkActionsMenu, SensorActionsMenu } from "./sensor-actions"
+import { SensorStatePill, TileCorner } from "./tile-corner"
+import { useMe } from "@/lib/use-me"
 import {
   MonitoringSourceRow,
+  SourceStateBadge,
   StateFilterNote,
   matchesState,
   prtgSource,
+  sensorListSource,
 } from "@/components/monitoring/monitoring-bar"
 import type { SourceLink } from "@/components/monitoring/monitoring-bar"
 import { useStatusLabels } from "@/components/monitoring/status-palette"
@@ -226,13 +230,13 @@ export function PrtgSensorsSection({
   const shown = rows.filter((s) =>
     matchesState(state, s.paused ? "paused" : s.state || "unknown")
   )
-  // A count toggles its filter; the name and the pill toggle "problem".
+  // The name and the badge show the problems; with a filter on, they clear it.
   const toggle: SourceLink = (children, filter) => (
     <button
       type="button"
       className="inline-flex rounded-[5px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-      aria-pressed={!!filter && state === filter}
-      onClick={() => onState?.(!filter || state === filter ? null : filter)}
+      aria-pressed={!!state}
+      onClick={() => onState?.(state || !filter ? null : filter)}
     >
       {children}
     </button>
@@ -248,7 +252,8 @@ export function PrtgSensorsSection({
             source={prtgSource(link, rows, labels)}
             link={toggle}
             active={state}
-            className="rounded-lg border border-border bg-card px-3 py-2"
+            actions={<LinkActionsMenu link={link} />}
+            className="min-h-10 rounded-lg border border-border bg-card px-3 py-1.5"
           />
         ))}
         {rows.length === 0 ? (
@@ -328,6 +333,7 @@ export function OwnerSensorsLink({
  * device in PRTG, and when it was read.
  */
 function ViaStrips({ sensors }: { sensors: PrtgSensor[] }) {
+  const labels = useStatusLabels()
   const groups = new Map<string, PrtgSensor[]>()
   for (const s of sensors) {
     const key = sensorOwner(s)?.key ?? s.connection
@@ -346,10 +352,10 @@ function ViaStrips({ sensors }: { sensors: PrtgSensor[] }) {
         return (
           <div
             key={key}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-3 py-2 text-[13px]"
+            className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[13px] sm:flex-nowrap"
             data-testid="prtg-via"
           >
-            <PrtgStateStrip summary={countSensors(rows)} />
+            <SourceStateBadge source={sensorListSource(rows, labels, key)} />
             <span className="whitespace-nowrap text-muted-foreground">
               via{" "}
               <OwnerSensorsLink sensor={first} className="link font-medium">
@@ -451,24 +457,21 @@ function WatchTip({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** The shared state pill, PRTG's own word for it in the tooltip. */
+/** The shared state pill - one pill, Paused when paused - with PRTG's own
+ * word and message in the tooltip. */
 export function PrtgSensorState({ sensor }: { sensor: PrtgSensor }) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span>
-            <CheckStatusBadge status={sensor.state || "unknown"} />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent variant="default">
-          {sensor.status || "Unknown"} in PRTG
-        </TooltipContent>
-      </Tooltip>
-      {sensor.paused && <Badge variant="outline">Paused</Badge>}
-      {sensor.acknowledged && <Badge variant="secondary">Acknowledged</Badge>}
-    </span>
-  )
+  return <SensorStatePill sensor={sensor} />
+}
+
+/** The corner controls this viewer may use on a sensor: pin, then the
+ * actions menu. Left out without the grant, so the corner keeps only the
+ * room it needs. */
+function useSensorControls(s: PrtgSensor): ReactNode[] {
+  const { canDo } = useMe()
+  return [
+    canDo("prtgsensorpin", "change") ? <PinToggle sensor={s} /> : null,
+    canDo("prtgsensor", "change") ? <SensorActionsMenu sensor={s} /> : null,
+  ]
 }
 
 /** "12.3 msec" -> ["12.3", "msec"]; a word ("Only Strong Protocols
@@ -512,18 +515,20 @@ function SensorCard({
 }) {
   const [num, unit] = splitValue(s)
   const notUp = s.state !== "up" || s.paused
+  const controls = useSensorControls(s)
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault()
           onOpen()
         }
       }}
-      className="flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="group/tile flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       data-testid="prtg-sensor-card"
     >
       <div className="flex min-w-0 items-start gap-2">
@@ -533,8 +538,11 @@ function SensorCard({
             {s.kind_label || s.kind}
           </p>
         </div>
-        <PrtgSensorState sensor={s} />
-        <PinToggle sensor={s} />
+        <TileCorner
+          className="-mt-1 -mr-1"
+          state={<SensorStatePill sensor={s} />}
+          controls={controls}
+        />
       </div>
       <p className="truncate leading-none">
         {num ? (
@@ -559,8 +567,9 @@ function SensorCard({
           </span>
         )}
         {s.uptime_pct != null && (
-          <span className="num">{s.uptime_pct.toFixed(2)}% up</span>
+          <span className="num">{s.uptime_pct.toFixed(2)}% uptime</span>
         )}
+        {s.acknowledged && <Badge variant="secondary">Acknowledged</Badge>}
         <a
           href={s.url}
           target="_blank"
@@ -599,10 +608,16 @@ export function SensorPanel({
         {sensor && (
           <>
             <DialogHeader>
-              <DialogTitle className="flex flex-wrap items-center gap-2">
+              <DialogTitle className="flex flex-wrap items-center gap-2 pr-8">
                 {sensor.name}
-                <PrtgSensorState sensor={sensor} />
-                <PinToggle sensor={sensor} />
+                <SensorStatePill sensor={sensor} />
+                {sensor.acknowledged && (
+                  <Badge variant="secondary">Acknowledged</Badge>
+                )}
+                <span className="inline-flex items-center gap-0.5">
+                  <PinToggle sensor={sensor} />
+                  <SensorActionsMenu sensor={sensor} />
+                </span>
               </DialogTitle>
               <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span>{sensor.kind_label || sensor.kind}</span>
@@ -614,7 +629,7 @@ export function SensorPanel({
                 )}
                 {sensor.uptime_pct != null && (
                   <span className="num">
-                    {sensor.uptime_pct.toFixed(2)}% up
+                    {sensor.uptime_pct.toFixed(2)}% uptime
                   </span>
                 )}
                 <a
@@ -697,9 +712,11 @@ function ChannelCard({
   const timelineRange: PrtgHistoryRange = range || "1h"
   const ranged = useHistory(lookup && range ? sensor.id : null, range || null)
   const showSwitch = lookup || trend.kind === "line" || trend.kind === "steady"
+  const { canDo } = useMe()
+  const pinnable = !!sensorParent(sensor) && canDo("prtgsensorpin", "change")
   return (
     <div
-      className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3"
+      className="group/tile flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3"
       data-testid="prtg-channel-card"
       data-kind={c.kind}
     >
@@ -707,8 +724,13 @@ function ChannelCard({
         <p className="min-w-0 flex-1 truncate text-[13px] font-medium">
           {c.name}
         </p>
-        {c.state !== "up" && c.status && <CheckStatusBadge status={c.state} />}
-        <PinToggle sensor={sensor} channelId={c.id} />
+        <TileCorner
+          className="-mt-1 -mr-1"
+          state={c.status ? <CheckStatusBadge status={c.state} /> : undefined}
+          controls={
+            pinnable ? [<PinToggle sensor={sensor} channelId={c.id} />] : []
+          }
+        />
       </div>
       <div className="flex min-h-[84px] items-center justify-center">
         <ChannelReading channel={c} />

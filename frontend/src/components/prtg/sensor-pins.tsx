@@ -26,8 +26,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Badge } from "@/components/ui/badge"
 import { TimeCell } from "@/components/cells/time-ago"
+import { StatePill } from "@/components/monitoring/mixed-status-badge"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { formatGaugeValue } from "@/components/gauge"
 import { Loading } from "@/components/loading"
@@ -41,6 +41,7 @@ import {
   trendOf,
 } from "./channel-view"
 import type { PrtgParent } from "./sensors-tab"
+import { TileCorner } from "./tile-corner"
 
 // Sensors and channels pinned to an object's Overview - the sensor's device
 // or VM, or the address, interface or service it watches: the toggles on a
@@ -245,6 +246,28 @@ function PrimaryValue({
  * primary channel's value as the big number with the hour's sparkline under
  * it (none when the value held still), and the last check.
  */
+/** A pinned sensor's one state, PRTG's own word in the shared tooltip. */
+function PinState({ pin: p }: { pin: PrtgSensorPin }) {
+  const info = p.sensor_info
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex" data-testid="prtg-sensor-state">
+          <StatePill state={info.paused ? "paused" : info.state} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent variant="default">
+        {info.status || "Unknown"} in PRTG
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** The room the unpin button needs in a tile's corner: an empty 24px slot
+ * the pill slides away from. The button itself sits over it, outside the
+ * tile's link. */
+const UNPIN_SLOT = <span aria-hidden className="size-6" />
+
 function SensorTile({
   pin: p,
   channels,
@@ -265,18 +288,18 @@ function SensorTile({
       className="flex h-full flex-col gap-1 rounded-md border border-border p-2 transition-colors hover:bg-muted/40"
       data-testid="prtg-sensor-tile"
     >
-      <div className={cn("flex min-w-0 items-start gap-1", inset && "pr-5")}>
+      <div className="flex min-w-0 items-start gap-1">
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium">{info.name}</p>
           <p className="truncate text-[11px] text-muted-foreground">
             {info.kind_label}
           </p>
         </div>
-        {info.paused ? (
-          <Badge variant="outline">Paused</Badge>
-        ) : (
-          <CheckStatusBadge status={info.state} />
-        )}
+        <TileCorner
+          className="-mt-1 -mr-1"
+          state={<PinState pin={p} />}
+          controls={inset ? [UNPIN_SLOT] : []}
+        />
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-1">
         <PrimaryValue channel={c} fallback={info.last_value} />
@@ -360,7 +383,7 @@ export function PinnedSensorsCard({
           return (
             <div
               key={p.id}
-              className="group relative h-[136px] min-w-0"
+              className="group/tile relative h-[136px] min-w-0"
               data-testid="prtg-pin-tile"
               data-whole={p.channel_id ? undefined : ""}
             >
@@ -375,18 +398,21 @@ export function PinnedSensorsCard({
                   />
                 ) : (
                   <div className="flex h-full flex-col gap-1 rounded-md border border-border p-2 transition-colors hover:bg-muted/40">
-                    <div
-                      className={cn(
-                        "flex min-w-0 items-start gap-1",
-                        canUnpin && "pr-5"
-                      )}
-                    >
+                    <div className="flex min-w-0 items-start gap-1">
                       <p className="min-w-0 flex-1 truncate text-xs font-medium">
                         {c?.name ?? p.sensor_info.name}
                       </p>
-                      {p.sensor_info.state !== "up" && (
-                        <CheckStatusBadge status={p.sensor_info.state} />
-                      )}
+                      <TileCorner
+                        className="-mt-1 -mr-1"
+                        state={
+                          c?.status ? (
+                            <CheckStatusBadge status={c.state} />
+                          ) : (
+                            <PinState pin={p} />
+                          )
+                        }
+                        controls={canUnpin ? [UNPIN_SLOT] : []}
+                      />
                     </div>
                     <div className="flex min-h-0 flex-1 items-center justify-center">
                       {q?.isLoading ? (
@@ -416,7 +442,7 @@ export function PinnedSensorsCard({
                       variant="ghost"
                       size="icon-xs"
                       aria-label="Unpin from Overview"
-                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      className="absolute top-1 right-1 opacity-0 transition-opacity duration-150 group-focus-within/tile:opacity-100 group-hover/tile:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100"
                       disabled={unpin.isPending}
                       onClick={() => unpin.mutate(p.id)}
                     >

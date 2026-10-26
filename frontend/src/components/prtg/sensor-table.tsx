@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { apiAll } from "@/lib/api-all"
@@ -9,12 +9,15 @@ import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { useTableFilters } from "@/components/table-filters"
 import { buildPrtgSensorColumns } from "@/components/columns/prtg-sensor-columns"
+import { useMe } from "@/lib/use-me"
+import { SensorBulkBar } from "./sensor-actions"
 
 /** Every imported sensor of a connection, or only its alarms (down and
  * degraded, not paused) worst and newest first - the server's order. */
 export function usePrtgSensors(
   connection: PrtgConnection,
-  variant: "alarms" | "sensors"
+  variant: "alarms" | "sensors",
+  enabled = true
 ) {
   const path =
     variant === "alarms"
@@ -23,6 +26,7 @@ export function usePrtgSensors(
   return useQuery({
     queryKey: ["prtg-sensors", connection.id, variant],
     queryFn: () => apiAll<PrtgSensor>(path),
+    enabled,
     staleTime: 60_000,
     refetchInterval: 2 * 60_000,
   })
@@ -47,7 +51,18 @@ export function PrtgSensorTable({
   empty: React.ReactNode
 }) {
   const q = usePrtgSensors(connection, variant)
-  const columns = useMemo(() => buildPrtgSensorColumns({ variant }), [variant])
+  const { canDo } = useMe()
+  const canAct = canDo("prtgsensor", "change")
+  const [selected, setSelected] = useState<PrtgSensor[]>([])
+  const columns = useMemo(
+    () =>
+      buildPrtgSensorColumns({
+        variant,
+        selection: canAct,
+        actions: canAct,
+      }),
+    [variant, canAct]
+  )
   const all = q.data?.results
   const rows = useMemo(
     () => (rowFilter ? (all ?? []).filter(rowFilter) : (all ?? [])),
@@ -78,6 +93,8 @@ export function PrtgSensorTable({
           searchable
           searchPlaceholder="Search sensors…"
           exportName={tableId}
+          onSelectedRowsChange={canAct ? setSelected : undefined}
+          selectedRows={selected}
           exportTitle={
             variant === "alarms"
               ? `PRTG alarms · ${connection.name}`
@@ -85,6 +102,7 @@ export function PrtgSensorTable({
           }
         />
       </div>
+      <SensorBulkBar selected={selected} onCleared={() => setSelected([])} />
     </div>
   )
 }

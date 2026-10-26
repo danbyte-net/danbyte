@@ -17,6 +17,7 @@ import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { MixedStatusBadge } from "@/components/monitoring/mixed-status-badge"
+import { ExternalStatusHover } from "@/components/monitoring/external-status"
 import { QueryError } from "@/components/query-error"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -27,11 +28,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 
 // The IPs tab of a device or of one of its interfaces: the shared IP table
 // (buildIpColumns) plus the two columns only an assigned-IPs list has -
@@ -178,16 +174,9 @@ export function AssignedIpsPane({
         if (!e || !e.status)
           return <span className="text-muted-foreground">-</span>
         return (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">
-                <MixedStatusBadge counts={e.counts} status={e.status} />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              {e.checks} check{e.checks === 1 ? "" : "s"}
-            </TooltipContent>
-          </Tooltip>
+          <ExternalStatusHover entry={e}>
+            <MixedStatusBadge counts={e.counts} status={e.status} />
+          </ExternalStatusHover>
         )
       },
     })

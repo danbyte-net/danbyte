@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import {
   api,
   type AssignmentOverrides,
-  type CheckStatus,
   type PrefixCheckAssignment,
   type PrefixChecksResponse,
   type PrefixIpStatus,
@@ -16,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -24,10 +24,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { CheckStatusBadge } from "./status-badge"
-import { MixedStatusBadge } from "./mixed-status-badge"
+import { MixedStatusBadge, StatePill, mixedEntries } from "./mixed-status-badge"
 import { ExcludedPill } from "./excluded-pill"
-import { statusColor, statusLabel } from "./status-palette"
+import { StateTip } from "./monitoring-bar"
 import { AddCheckDialog } from "./add-check-dialog"
 import { DiscoverNowButton } from "./auto-discover-button"
 import { NotifyMeButton } from "./notify-me-button"
@@ -160,9 +159,6 @@ export function PrefixMonitoring({
   )
 }
 
-// Always-visible up / down / degraded / stale / skipped breakdown chips.
-const BREAKDOWN: CheckStatus[] = ["up", "down", "degraded", "stale", "skipped"]
-
 function DiscoveryToggle({
   prefixId,
   initial,
@@ -188,10 +184,7 @@ function DiscoveryToggle({
     },
   })
   return (
-    <label
-      className="ml-auto flex items-center gap-2 text-[12px] text-muted-foreground"
-      title="Periodically ICMP-sweep this prefix and auto-create IPs for new responders (requires discovery enabled in monitoring settings)."
-    >
+    <label className="ml-auto flex items-center gap-2 text-[12px] text-muted-foreground">
       <Checkbox
         checked={on}
         onCheckedChange={(v) => {
@@ -200,6 +193,10 @@ function DiscoveryToggle({
         }}
       />
       Auto-discover
+      <InfoTip>
+        Periodically ICMP-sweep this prefix and create IPs for new responders.
+        Needs discovery on in the monitoring settings.
+      </InfoTip>
     </label>
   )
 }
@@ -211,26 +208,29 @@ function RollupSummary({ rollup }: { rollup: PrefixChecksResponse["rollup"] }) {
         no monitored IPs
       </span>
     )
+  // The shared mixed badge and hover: the pill is the state, the count is
+  // in the tooltip, never a coloured square beside a word.
+  const entries = mixedEntries(rollup.counts).reverse()
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      {rollup.status && <CheckStatusBadge status={rollup.status} />}
-      <div className="flex items-center gap-3">
-        {BREAKDOWN.map((s) => (
-          <span
-            key={s}
-            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-            title={statusLabel(s)}
-          >
-            <span
-              className="h-2 w-2 rounded-[3px]"
-              style={{ backgroundColor: statusColor(s) }}
-            />
-            <span className="num text-foreground">{rollup.counts[s] ?? 0}</span>
-            <span>{statusLabel(s).toLowerCase()}</span>
-          </span>
-        ))}
-      </div>
-    </div>
+    <span className="inline-flex items-center gap-2 text-[11px] text-muted-foreground">
+      <StateTip
+        content={
+          <ul className="flex flex-col gap-1 text-[12px]">
+            {entries.map(([st, n]) => (
+              <li key={st} className="flex items-center gap-3">
+                <StatePill state={st} />
+                <span className="num ml-auto">{n}</span>
+              </li>
+            ))}
+          </ul>
+        }
+      >
+        <span className="inline-flex" tabIndex={0}>
+          <MixedStatusBadge counts={rollup.counts} status={rollup.status} />
+        </span>
+      </StateTip>
+      <span className="num">{rollup.monitored_ips} monitored</span>
+    </span>
   )
 }
 

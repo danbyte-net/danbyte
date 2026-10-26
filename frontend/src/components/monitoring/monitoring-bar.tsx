@@ -29,6 +29,8 @@ import {
 } from "@/components/prtg/sensors-tab"
 import { SeverityPill, zabbixHostUrl } from "./external-status"
 import { FlappingPill } from "./flapping-pill"
+import { MixedStatusBadge, StatePill, mixedEntries } from "./mixed-status-badge"
+import type { MixedState } from "./mixed-status-badge"
 import { NotifyMeButton } from "./notify-me-button"
 import { statusLabel, useStatusLabels } from "./status-palette"
 import { CheckStatusBadge } from "./status-badge"
@@ -36,12 +38,15 @@ import { useZabbixHostStatus } from "./zabbix-host-panel"
 
 /**
  * The monitoring card on a device's and a VM's Overview, and the pill in
- * their headers. The header pill is the simple version: the overall state
- * (worst wins across Danbyte's checks, Zabbix and PRTG) with the shared
- * tooltip. The card is the detailed one: the problems first, each a link to
- * where it lives, then one bar per source; all clear, one line. The Sensors
- * tab strip and the Monitoring tab's PRTG row draw their row with
- * `MonitoringSourceRow`.
+ * their headers. Every state on them is the shared pill, and a source with
+ * several states is the shared mixed badge - never a bar, never the same
+ * word twice. Every badge has the same hover (the shared tooltip: counts,
+ * then the items worst first, ten at most) and the same click (the tab the
+ * items live on, filtered). The header pill is the simple version: the
+ * overall state (worst wins across Danbyte's checks, Zabbix and PRTG). The
+ * card is the detailed one: one header line with the overall pill and each
+ * source's badge, then only the problem rows. The Sensors tab strip and the
+ * Monitoring tab's PRTG row draw their line with `MonitoringSourceRow`.
  */
 
 /** The device or VM a bar is about. */
@@ -305,6 +310,37 @@ export function prtgSource(
   }
 }
 
+/** A plain list of PRTG sensors as a source - the strip on an address,
+ * interface or service, where no PRTG device is the subject. */
+export function sensorListSource(
+  sensors: PrtgSensor[],
+  labels: Labels,
+  key = "prtg"
+): MonitoringSource {
+  const items = sensors.map(sensorItem).sort(byWorst)
+  const tally = countSensors(sensors)
+  const counts = PRTG_ORDER.filter((k) => tally[k] > 0).map((k) => ({
+    key: k,
+    n: tally[k],
+    label: lower(k, labels),
+    variant: VARIANT[k],
+    items: items.filter((i) => i.status === k),
+  }))
+  const live = sensors
+    .filter((s) => !s.paused)
+    .map((s): CheckStatus => s.state || "unknown")
+  return {
+    key,
+    kind: "prtg",
+    label: "PRTG",
+    status: worstOf(live.length ? live : ["unknown"]),
+    counts,
+    items,
+    total: sensors.length,
+    filter: tally.down + tally.degraded > 0 ? "problem" : undefined,
+  }
+}
+
 function parentOf(target: MonitoringTarget) {
   return "device" in target
     ? { kind: "devices" as const, id: target.device }
@@ -359,13 +395,32 @@ export function useMonitoringSources(
 
 const TIP_LIMIT = 10
 
-function ItemPill({ item }: { item: SourceItem }) {
-  if (item.pill) return <>{item.pill}</>
-  if (item.status === "paused") return <Badge variant="outline">Paused</Badge>
-  return <CheckStatusBadge status={item.status} />
+/** A source's states with their numbers, for its mixed badge. Zabbix counts
+ * problems, not items, so it tallies what it has; with nothing to tally it
+ * is its own state. */
+export function stateCounts(
+  s: MonitoringSource
+): Partial<Record<MixedState, number>> {
+  const out: Partial<Record<MixedState, number>> = {}
+  if (s.kind === "zabbix") {
+    for (const i of s.items) out[i.status] = (out[i.status] ?? 0) + 1
+    if (s.items.length === 0 && s.status) out[s.status] = 1
+    return out
+  }
+  for (const c of s.counts) if (c.n) out[c.key as MixedState] = c.n
+  if (s.counts.length === 0 && s.status) out[s.status] = 1
+  return out
 }
 
-/** The list behind a pill or a count, worst first, ten at most. */
+/** "1 degraded · 2 up", "1 problem · SNMP unreachable", "no problems". */
+export function countsText(s: MonitoringSource): string {
+  if (s.counts.length === 0) return s.kind === "zabbix" ? "no problems" : ""
+  return s.counts
+    .map((c) => (c.n != null ? `${c.n} ${c.label}` : c.label))
+    .join(" · ")
+}
+
+/** The list behind a badge, worst first, ten at most. */
 export function SourceItemsList({
   items,
   total,
@@ -382,13 +437,13 @@ export function SourceItemsList({
       className="flex min-w-0 flex-col gap-1.5 text-[12px]"
       data-testid="monitoring-tip"
     >
-      {heading && <p className="font-medium">{heading}</p>}
+      {heading && <div className="font-medium">{heading}</div>}
       {shown.length > 0 && (
         <ul className="flex flex-col gap-1">
           {shown.map((i) => (
             <li key={i.key} className="flex min-w-0 items-start gap-2">
               <span className="shrink-0">
-                <ItemPill item={i} />
+                {i.pill ?? <StatePill state={i.status} />}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="break-words">{i.name}</span>
@@ -419,7 +474,8 @@ export function SourceItemsList({
   )
 }
 
-function Tip({
+/** The shared hover every state element on these surfaces uses. */
+export function StateTip({
   content,
   children,
 }: {
@@ -438,88 +494,107 @@ function Tip({
   )
 }
 
+/** A source's hover: its name and counts, then its items worst first. */
+function SourceTip({ source: s }: { source: MonitoringSource }) {
+  const text = countsText(s)
+  return (
+    <SourceItemsList
+      items={[...s.items].sort(byWorst)}
+      total={s.kind === "zabbix" ? s.items.length : s.total}
+      heading={
+        <span>
+          {s.label}
+          {s.object && (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              {s.object.name}
+            </span>
+          )}
+          {text && (
+            <span className="num font-normal text-muted-foreground">
+              {" · "}
+              {text}
+            </span>
+          )}
+        </span>
+      }
+    />
+  )
+}
+
 /**
- * One source as a row: its name, its state pill, its counts as badges, its
- * object over there with the external link, and when it was read. The name,
- * the pill and each count are wrapped by `link`: a route link on the
- * Overview, a filter button on the Sensors tab.
+ * A source's state as the shared mixed badge: one pill when everything is
+ * in one state ("Up"), the racing flag when it is mixed. The hover lists the
+ * counts and the items; a click goes where `link` sends it.
+ */
+export function SourceStateBadge({
+  source: s,
+  link = (c) => c,
+  active,
+}: {
+  source: MonitoringSource
+  link?: SourceLink
+  active?: string
+}) {
+  return (
+    <StateTip content={<SourceTip source={s} />}>
+      {link(
+        <span
+          className={cn(
+            "inline-flex rounded-[5px]",
+            active && "ring-2 ring-ring/60 ring-offset-1 ring-offset-card"
+          )}
+          data-testid="monitoring-source-badge"
+          data-source={s.kind}
+          data-active={active || undefined}
+        >
+          <MixedStatusBadge counts={stateCounts(s)} status={s.status} />
+        </span>,
+        s.filter
+      )}
+    </StateTip>
+  )
+}
+
+/**
+ * One source as a line: its name, its mixed badge, the source's own extras,
+ * its object over there with the external link, and when it was read. The
+ * name and the badge are wrapped by `link`: a route link on the Overview, a
+ * filter toggle on the Sensors tab. One line; the object name truncates.
  */
 export function MonitoringSourceRow({
   source: s,
   link = (c) => c,
   showPill = true,
   active,
+  actions,
   className,
 }: {
   source: MonitoringSource
   link?: SourceLink
-  /** Off on a bar with one source: the overall pill says the same. */
+  /** Off where the overall pill beside it already says the same. */
   showPill?: boolean
-  /** The filter in force, marked on its count. */
+  /** The filter in force, marked on the badge. */
   active?: string
+  /** An actions menu at the line's end. */
+  actions?: ReactNode
   className?: string
 }) {
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]",
+        "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] sm:flex-nowrap",
         className
       )}
       data-testid="monitoring-source"
       data-source={s.kind}
     >
       {link(
-        <span className="w-14 shrink-0 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground">
-          {s.label}
-        </span>,
+        <span className="shrink-0 font-medium hover:underline">{s.label}</span>,
         s.filter
       )}
       {showPill && s.status && (
-        <Tip
-          content={
-            <SourceItemsList
-              items={s.items}
-              total={s.total}
-              heading={`${s.label}: ${s.total ?? s.items.length} in all`}
-            />
-          }
-        >
-          {link(<CheckStatusBadge status={s.status} />, s.filter)}
-        </Tip>
-      )}
-      {s.counts.length > 0 && (
-        <span
-          className="inline-flex flex-wrap items-center gap-1.5"
-          data-testid="monitoring-source-counts"
-        >
-          {s.counts.map((c) => (
-            <Tip
-              key={c.key}
-              content={
-                <SourceItemsList
-                  items={c.items}
-                  total={c.n}
-                  heading={c.n != null ? `${c.n} ${c.label}` : c.label}
-                />
-              }
-            >
-              {link(
-                <Badge
-                  variant={c.variant}
-                  className={cn(
-                    "num cursor-pointer",
-                    active === c.key && "ring-1 ring-foreground/40"
-                  )}
-                  data-state={c.key}
-                  data-active={active === c.key || undefined}
-                >
-                  {c.n != null ? `${c.n} ${c.label}` : c.label}
-                </Badge>,
-                c.key
-              )}
-            </Tip>
-          ))}
-        </span>
+        <SourceStateBadge source={s} link={link} active={active} />
       )}
       {s.extra}
       {s.object && (
@@ -534,8 +609,13 @@ export function MonitoringSourceRow({
         </a>
       )}
       {s.readAt && (
-        <span className="ml-auto inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
+        <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
           read <TimeCell iso={s.readAt} />
+        </span>
+      )}
+      {actions && (
+        <span className={cn("shrink-0", !s.readAt && "ml-auto")}>
+          {actions}
         </span>
       )}
     </div>
@@ -597,7 +677,7 @@ function TargetLink({
   )
 }
 
-/** Where a source, or one of its counts, opens on the target's page. */
+/** Where a source, or one of its states, opens on the target's page. */
 export function sourcePlace(
   source: MonitoringSource,
   filter?: string
@@ -609,7 +689,7 @@ export function sourcePlace(
   }
 }
 
-/** Where each source's row and counts open on the target's page. */
+/** Where each source's name and badge open on the target's page. */
 export function sourceLink(
   target: MonitoringTarget,
   source: MonitoringSource
@@ -621,41 +701,70 @@ export function sourceLink(
   )
 }
 
-/** The overall pill's hover: one line per source. */
+/** The worst source: where the overall pill opens. */
+function worstSource(sources: MonitoringSource[]): MonitoringSource | null {
+  let out: MonitoringSource | null = null
+  for (const s of sources)
+    if (!out || rankOf(s.status) > rankOf(out.status)) out = s
+  return out
+}
+
+/** The overall pill's hover: one line per source with its badge and
+ * counts, then whatever is in a problem state, worst first. */
 function OverallTip({ sources }: { sources: MonitoringSource[] }) {
+  const problems = sources
+    .flatMap((s) => s.items.filter((i) => isProblem(i.status)))
+    .sort(byWorst)
   return (
-    <div
-      className="flex flex-col gap-1.5 text-[12px]"
-      data-testid="monitoring-tip"
-    >
-      {sources.map((s) => (
-        <div key={s.key} className="flex flex-wrap items-center gap-1.5">
-          <span className="w-14 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-            {s.label}
-          </span>
-          {s.status && <CheckStatusBadge status={s.status} />}
-          {s.counts.map((c) => (
-            <Badge key={c.key} variant={c.variant} className="num">
-              {c.n != null ? `${c.n} ${c.label}` : c.label}
-            </Badge>
-          ))}
+    <div className="flex flex-col gap-2 text-[12px]">
+      <div className="flex flex-col gap-1">
+        {sources.map((s) => (
+          <div key={s.key} className="flex min-w-0 items-center gap-2">
+            <span className="w-12 shrink-0 font-medium">{s.label}</span>
+            {s.status && (
+              <MixedStatusBadge counts={stateCounts(s)} status={s.status} />
+            )}
+            <span className="num min-w-0 truncate text-[11px] text-muted-foreground">
+              {countsText(s)}
+            </span>
+          </div>
+        ))}
+      </div>
+      {problems.length > 0 && (
+        <div className="border-t border-border pt-2">
+          <SourceItemsList items={problems} />
         </div>
-      ))}
+      )}
     </div>
   )
 }
 
-// ─── the health card ─────────────────────────────────────────────────────
-
-/** A state's semantic colour, for a problem's edge and a bar's segment. */
-const TONE: Record<string, string> = {
-  down: "bg-destructive",
-  stale: "bg-destructive",
-  degraded: "bg-amber-500 dark:bg-amber-400",
-  up: "bg-emerald-500 dark:bg-emerald-400",
+/** The overall pill with its hover, opening the worst source's tab. */
+function OverallPill({
+  target,
+  sources,
+  overall,
+  testId,
+}: {
+  target: MonitoringTarget
+  sources: MonitoringSource[]
+  overall: CheckStatus
+  testId: string
+}) {
+  const worst = worstSource(sources)
+  const place = worst
+    ? sourcePlace(worst, worst.filter)
+    : { tab: "monitoring" as const }
+  return (
+    <StateTip content={<OverallTip sources={sources} />}>
+      <TargetLink target={target} place={place} data-testid={testId}>
+        <CheckStatusBadge status={overall} />
+      </TargetLink>
+    </StateTip>
+  )
 }
-const toneOf = (s: string | null | undefined) =>
-  (s && TONE[s]) || "bg-muted-foreground/30"
+
+// ─── the health card ─────────────────────────────────────────────────────
 
 const SOURCE_NAME: Record<MonitoringSource["kind"], string> = {
   checks: "Danbyte check",
@@ -728,37 +837,29 @@ function earliest(isos: (string | null | undefined)[]): string | null {
 
 const PROBLEM_LIMIT = 3
 
-/** A problem as a row: the state as the edge and a word, the thing, its
- * source, how long, and what the source says. */
+/** A problem as one 32px row: its state pill, the thing, its source, how
+ * long, and what the source says (the full text in the tooltip). On a
+ * phone the source and the message give way. */
 function ProblemLine({
   target,
   row,
-  labels,
 }: {
   target: MonitoringTarget
   row: ProblemRow
-  labels: Labels
 }) {
-  const word =
-    row.status === "paused" ? "Paused" : statusLabel(row.status, labels)
-  const since = row.since ? `${row.status} ${lasted(row.since)}` : null
   return (
     <TargetLink
       target={target}
       place={row.place}
-      className="relative flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 rounded-none py-1.5 pr-3 pl-4 text-[13px] hover:bg-muted/40"
+      className="flex h-8 min-w-0 items-center gap-3 rounded-none px-3 text-[13px] hover:bg-muted/40"
       data-testid="monitoring-problem"
       data-source={row.kind}
       data-state={row.status}
     >
-      <span
-        aria-hidden
-        className={cn("absolute inset-y-0 left-0 w-1", toneOf(row.status))}
-      />
-      <span className="w-16 shrink-0 font-medium whitespace-nowrap">
-        {word}
+      <span className="w-[4.5rem] shrink-0">
+        <StatePill state={row.status} />
       </span>
-      <span className="min-w-0 truncate sm:w-72 sm:shrink-0">
+      <span className="min-w-0 truncate sm:max-w-[45%] sm:shrink-0">
         {row.name}
         {row.address && (
           <span className="ml-1.5 font-mono text-xs text-muted-foreground">
@@ -766,117 +867,76 @@ function ProblemLine({
           </span>
         )}
       </span>
-      <span className="shrink-0 rounded-md border border-border px-1.5 text-[11px] leading-5 whitespace-nowrap text-muted-foreground">
+      <Badge
+        variant="outline"
+        className="hidden text-muted-foreground sm:inline-flex"
+      >
         {SOURCE_NAME[row.kind]}
-      </span>
-      <span className="flex min-w-0 basis-full items-baseline gap-1.5 text-xs text-muted-foreground sm:flex-1 sm:basis-0">
-        {since && <span className="num shrink-0">{since}</span>}
-        {since && row.message && <span aria-hidden>·</span>}
-        {row.message && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="min-w-0 truncate" data-testid="problem-message">
-                {row.message}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent variant="panel" className="max-w-sm">
+      </Badge>
+      {row.since && (
+        <span className="num ml-auto shrink-0 text-xs text-muted-foreground sm:order-last">
+          {lasted(row.since)}
+        </span>
+      )}
+      {row.message && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline"
+              data-testid="problem-message"
+            >
               {row.message}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent variant="panel" className="max-w-sm">
+            {row.message}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </TargetLink>
   )
 }
 
-/** A source's bar: a share per state, or for Zabbix (which counts problems,
- * not items) one full segment in its state. */
-export function segmentsOf(s: MonitoringSource): { key: string; n: number }[] {
-  const counted = s.counts.filter((c) => (c.n ?? 0) > 0)
-  if (s.kind === "zabbix" || counted.length === 0)
-    return [{ key: s.status ?? "unknown", n: 1 }]
-  return counted.map((c) => ({ key: c.key, n: c.n! }))
-}
-
-/** One source on the card's foot: its name, a stacked bar of its states and
- * the counts as muted text, each opening the source's tab. No pills. */
-function SourceSegment({
+/** The sources on the card's header line: "Checks [Up] · PRTG [mixed]",
+ * each name and badge opening its tab. `bare` drops the badge where the
+ * overall pill beside it already says exactly the same. */
+function SourceBadges({
   target,
-  source: s,
+  sources,
+  bare,
 }: {
   target: MonitoringTarget
-  source: MonitoringSource
+  sources: MonitoringSource[]
+  bare: boolean
 }) {
-  const segs = segmentsOf(s)
-  const total = segs.reduce((a, x) => a + x.n, 0)
-  const place = sourcePlace(s, s.filter)
   return (
-    <div
-      className="flex min-w-0 items-center gap-2 text-xs"
-      data-testid="monitoring-source"
-      data-source={s.kind}
-    >
-      <TargetLink
-        target={target}
-        place={place}
-        className="inline-flex font-medium text-foreground hover:underline"
-      >
-        {s.label}
-      </TargetLink>
-      <TargetLink
-        target={target}
-        place={place}
-        className="flex h-1.5 w-20 shrink-0 overflow-hidden rounded-md bg-muted"
-        data-testid="monitoring-source-bar"
-      >
-        {segs.map((x) => (
+    <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
+      {sources.map((s, i) => {
+        const link = sourceLink(target, s)
+        return (
           <span
-            key={x.key}
-            data-state={x.key}
-            className={cn("h-full", toneOf(x.key))}
-            style={{ width: `${(x.n / total) * 100}%` }}
-          />
-        ))}
-      </TargetLink>
-      <span className="num text-muted-foreground">
-        {s.counts.length === 0
-          ? "no problems"
-          : s.counts.map((c, i) => (
-              <span key={c.key}>
-                {i > 0 && " · "}
-                <TargetLink
-                  target={target}
-                  place={sourcePlace(s, c.key)}
-                  className="inline hover:text-foreground hover:underline"
-                  data-state={c.key}
-                >
-                  {c.n != null ? `${c.n} ${c.label}` : c.label}
-                </TargetLink>
+            key={s.key}
+            className="inline-flex items-center gap-1.5"
+            data-testid="monitoring-source"
+            data-source={s.kind}
+          >
+            {i > 0 && (
+              <span aria-hidden className="text-muted-foreground">
+                ·
               </span>
-            ))}
-      </span>
-    </div>
+            )}
+            {link(
+              <span className="text-muted-foreground hover:text-foreground hover:underline">
+                {s.label}
+              </span>,
+              s.filter
+            )}
+            {!bare && s.status && <SourceStateBadge source={s} link={link} />}
+          </span>
+        )
+      })}
+    </span>
   )
-}
-
-/** A source's all-clear words: "All 3 checks up", "Zabbix up",
- * "PRTG 5 sensors up". The first part is the link. */
-function allClear(s: MonitoringSource): { name: string; rest: string } {
-  const up = s.counts.find((c) => c.key === "up")?.n ?? 0
-  const extra = s.counts
-    .filter((c) => c.key !== "up" && c.n)
-    .map((c) => `${c.n} ${c.label}`)
-  const tail = extra.length ? ` (${extra.join(", ")})` : ""
-  if (s.kind === "checks")
-    return {
-      name: up === 1 ? "1 check" : `All ${up} checks`,
-      rest: ` up${tail}`,
-    }
-  if (s.kind === "zabbix") return { name: "Zabbix", rest: " up" }
-  return {
-    name: "PRTG",
-    rest: ` ${up} ${up === 1 ? "sensor" : "sensors"} up${tail}`,
-  }
 }
 
 function CardTitle() {
@@ -884,18 +944,6 @@ function CardTitle() {
     <h2 className="shrink-0 text-[11px] font-semibold tracking-wide text-foreground uppercase">
       Monitoring
     </h2>
-  )
-}
-
-function Notify({ notify }: { notify?: { device: string } | { ip: string } }) {
-  if (!notify) return null
-  return (
-    <div className="ml-auto shrink-0">
-      <NotifyMeButton
-        device={"device" in notify ? notify.device : undefined}
-        ip={"ip" in notify ? notify.ip : undefined}
-      />
-    </div>
   )
 }
 
@@ -909,11 +957,12 @@ function ReadAgo({ iso }: { iso: string | null }) {
 }
 
 /**
- * The monitoring card on a device's or VM's Overview: the problems first,
- * then each source as a bar. With nothing in a problem state it is one
- * compact line. Absent when nothing monitors the object. The state word is
- * a pill once, in the header; problems carry it as an edge and a word.
- * `notify` is the Notify me scope: the device, or a VM's primary address.
+ * The monitoring card on a device's or VM's Overview. One header line: the
+ * overall pill and how long while something is wrong, then each source with
+ * its mixed badge, when it was read and Notify me. With problems, the body
+ * is the problem rows and nothing else. Absent when nothing monitors the
+ * object. `notify` is the Notify me scope: the device, or a VM's primary
+ * address.
  *
  * `slot` places it: `banner` renders only with problems (full width above
  * the Overview's cards), `compact` only when all is clear (in the grid,
@@ -928,7 +977,6 @@ export function MonitoringBar({
   notify?: { device: string } | { ip: string }
   slot?: "banner" | "compact"
 }) {
-  const labels = useStatusLabels()
   const { sources, overall, isLoading } = useMonitoringSources(target)
   if (isLoading)
     return slot === "banner" ? null : (
@@ -944,103 +992,72 @@ export function MonitoringBar({
   if ((slot === "banner" && compact) || (slot === "compact" && !compact))
     return null
   const read = earliest(sources.map((s) => s.readAt))
-  const pill = (
-    <Tip content={<OverallTip sources={sources} />}>
-      <span
-        data-testid="monitoring-overall"
-        className="inline-flex"
-        tabIndex={0}
-      >
-        <CheckStatusBadge status={overall} />
-      </span>
-    </Tip>
-  )
-
-  if (compact)
-    return (
-      <section
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border border-border bg-card px-3 py-2"
-        data-testid="monitoring-bar"
-        data-compact=""
-      >
-        <CardTitle />
-        {pill}
-        <span
-          className="min-w-0 text-[13px] text-muted-foreground"
-          data-testid="monitoring-all-clear"
-        >
-          {sources.map((s, i) => {
-            const w = allClear(s)
-            return (
-              <span key={s.key}>
-                {i > 0 && " · "}
-                <TargetLink
-                  target={target}
-                  place={sourcePlace(s)}
-                  className="inline text-foreground hover:underline"
-                  data-source={s.kind}
-                >
-                  {w.name}
-                </TargetLink>
-                {w.rest}
-              </span>
-            )
-          })}
-          {read && " · "}
-        </span>
-        <ReadAgo iso={read} />
-        <Notify notify={notify} />
-      </section>
-    )
-
-  const since = earliest(rows.map((r) => r.since))
+  const since = compact ? null : earliest(rows.map((r) => r.since))
   const shown = rows.slice(0, PROBLEM_LIMIT)
+  // One source in one state: the overall pill is its badge, said once.
+  const bare =
+    !compact &&
+    sources.length === 1 &&
+    mixedEntries(stateCounts(sources[0])).length <= 1
+
   return (
     <section
       className="overflow-hidden rounded-lg border border-border bg-card"
       data-testid="monitoring-bar"
+      data-compact={compact ? "" : undefined}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border px-3 py-2">
+      <div
+        className={cn(
+          "flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5",
+          shown.length > 0 && "border-b border-border"
+        )}
+      >
         <CardTitle />
-        {pill}
-        {since && (
-          <span className="num text-xs text-muted-foreground">
-            since {lasted(since)}
+        {!compact && (
+          <span className="inline-flex items-center gap-1.5">
+            <OverallPill
+              target={target}
+              sources={sources}
+              overall={overall}
+              testId="monitoring-overall"
+            />
+            {since && (
+              <span className="num text-xs whitespace-nowrap text-muted-foreground">
+                since {lasted(since)}
+              </span>
+            )}
+            <span aria-hidden className="ml-1.5 h-4 w-px bg-border" />
           </span>
         )}
-        {since && read && (
-          <span aria-hidden className="text-xs text-muted-foreground">
-            ·
-          </span>
-        )}
-        <ReadAgo iso={read} />
-        <Notify notify={notify} />
+        <SourceBadges target={target} sources={sources} bare={bare} />
+        <span className="ml-auto inline-flex shrink-0 items-center gap-2">
+          <ReadAgo iso={read} />
+          {notify && (
+            <NotifyMeButton
+              device={"device" in notify ? notify.device : undefined}
+              ip={"ip" in notify ? notify.ip : undefined}
+            />
+          )}
+        </span>
       </div>
       {shown.length > 0 && (
         <div className="flex flex-col divide-y divide-border/60">
           {shown.map((r) => (
-            <ProblemLine key={r.key} target={target} row={r} labels={labels} />
+            <ProblemLine key={r.key} target={target} row={r} />
           ))}
+          {total > shown.length && (
+            <TargetLink
+              target={target}
+              place={{ tab: "monitoring", state: "problem" }}
+              className="link flex h-8 items-center gap-1 rounded-none px-3 text-xs"
+              data-testid="monitoring-view-all"
+            >
+              View all {total}
+              <ArrowRight className="h-3 w-3" />
+            </TargetLink>
+          )}
         </div>
       )}
-      {total > shown.length && (
-        <div className="px-4 py-1.5 text-xs">
-          <TargetLink
-            target={target}
-            place={{ tab: "monitoring", state: "problem" }}
-            className="link inline-flex items-center gap-1"
-            data-testid="monitoring-view-all"
-          >
-            View all {total}
-            <ArrowRight className="h-3 w-3" />
-          </TargetLink>
-        </div>
-      )}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-border px-3 py-2">
-        {sources.map((s) => (
-          <SourceSegment key={s.key} target={target} source={s} />
-        ))}
-      </div>
     </section>
   )
 }
@@ -1097,7 +1114,7 @@ export function StateFilterNote({
   )
 }
 
-/** The same overall pill and hover for the device and VM headers. */
+/** The same overall pill, hover and click for the device and VM headers. */
 export function MonitoringHeaderBadge({
   target,
 }: {
@@ -1106,14 +1123,11 @@ export function MonitoringHeaderBadge({
   const { sources, overall } = useMonitoringSources(target, { items: false })
   if (sources.length === 0 || !overall) return null
   return (
-    <Tip content={<OverallTip sources={sources} />}>
-      <span
-        className="inline-flex"
-        data-testid="monitoring-header-badge"
-        tabIndex={0}
-      >
-        <CheckStatusBadge status={overall} />
-      </span>
-    </Tip>
+    <OverallPill
+      target={target}
+      sources={sources}
+      overall={overall}
+      testId="monitoring-header-badge"
+    />
   )
 }

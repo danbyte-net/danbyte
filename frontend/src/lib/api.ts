@@ -13509,6 +13509,8 @@ export interface PrtgDeviceLink {
    * window: when it paused it, until when, and for which windows. */
   maintenance_paused_at: string | null
   maintenance_paused_until: string | null
+  /** Paused in PRTG, by anyone. */
+  paused?: boolean
   maintenance_events: { id: string; name: string }[]
   maintenance_note: string
   /** What Danbyte last wrote to PRTG for this device. */
@@ -13626,6 +13628,9 @@ export interface PrtgSensor {
   paused: boolean
   /** Down (Acknowledged) in PRTG. */
   acknowledged: boolean
+  /** Danbyte can acknowledge it in PRTG now: down, and the connection
+   * writes acknowledgements. */
+  ackable?: boolean
   message: string
   tags: string[]
   active: boolean
