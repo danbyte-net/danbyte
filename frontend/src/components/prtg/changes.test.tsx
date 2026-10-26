@@ -242,7 +242,7 @@ describe("PrtgChanges planned rows", () => {
     expect(screen.getByText("PRTG has no group Gone any more.")).toBeTruthy()
     expect(screen.getByRole("link", { name: "Edit policy" })).toBeTruthy()
     expect(screen.getAllByText("Applied").length).toBeGreaterThan(0)
-    expect(screen.getByText("2081, 2120")).toBeTruthy()
+    expect(screen.queryByText("2081, 2120")).toBeNull()
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)
     expect(screen.getByText("HTTP 500: busy")).toBeTruthy()
     // Ready gets Apply, failed gets Retry, the attention row neither.

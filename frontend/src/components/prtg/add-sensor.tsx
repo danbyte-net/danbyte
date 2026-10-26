@@ -24,7 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  FormCheckbox,
+  FormCombobox,
+  FormSelect,
+  FormText,
+} from "@/components/forms"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
@@ -626,13 +631,16 @@ export function DiscoverDialog({
             run.mutate()
           }}
         >
-          <FormText
+          <FormCombobox
             label="Device template"
-            hint="empty: the device's own"
             value={template}
-            onChange={setTemplate}
-            suggestions={names}
-            placeholder="Device Generic SNMP.odt"
+            onChange={(v) => setTemplate(v ?? "")}
+            options={[...names]
+              .sort((a, b) => a.localeCompare(b))
+              .map((n) => ({ value: n, label: n }))}
+            noneLabel="The device's own"
+            searchPlaceholder="Search templates…"
+            emptyText="No templates read from PRTG yet."
           />
         </form>
         <DialogFooter>

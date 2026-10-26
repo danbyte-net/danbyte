@@ -624,16 +624,10 @@ export function StatusCell({
   const status = rowStatus(c)
   const d = c.detail
   if (status === "applied") {
-    const ids = createdIds(c)
     const deviceId = (d.result as { device?: string } | undefined)?.device
     return (
-      <span className="inline-flex flex-wrap items-center gap-1.5 text-[12px]">
+      <span className="inline-flex items-center gap-1.5 text-[12px] whitespace-nowrap">
         <Badge variant="success">Applied</Badge>
-        {ids.length > 0 && (
-          <span className="font-mono text-xs text-muted-foreground">
-            {ids.join(", ")}
-          </span>
-        )}
         {deviceId && (
           <a
             href={`${connection.url.replace(/\/$/, "")}/device.htm?id=${deviceId}`}
@@ -702,15 +696,6 @@ export function StatusCell({
   if (status === "dismissed")
     return <Badge variant="secondary">Dismissed</Badge>
   return <Badge variant="info">Ready</Badge>
-}
-
-function createdIds(c: PrtgChange): string[] {
-  const r = (c.detail.result as Record<string, unknown> | undefined) ?? {}
-  const out: string[] = []
-  if (typeof r.device === "string") out.push(r.device)
-  const sensors = (r.sensors as Record<string, string> | undefined) ?? {}
-  out.push(...Object.values(sensors))
-  return out
 }
 
 function ChangeDetail({ change }: { change: PrtgChange }) {
