@@ -559,13 +559,13 @@ The prefix Monitoring tab shows:
 ### On a device
 
 Checks attach to IPs, not to devices - but the device page rolls them up for
-you in these places (a virtual machine's page has the same bar and pill):
+you in these places (a virtual machine's page has the same card and pill):
 
 - A **monitoring pill** in the header, next to the status badge: the worst
   state across every source (Danbyte's checks, Zabbix and PRTG). Hovering it
   shows each source's state and counts.
 - The **IPs tab** has a **Monitoring** column showing each IP's status badge.
-- The **Overview** opens with the **monitoring bar** (see
+- The **Overview** carries the **monitoring card** (see
   [The monitoring bar](#the-monitoring-bar) below).
 - The **Monitoring** tab: the roll-up with seven days of status to scale, one
   row per monitored address with its own strip and chips, a **Zabbix** panel
@@ -581,27 +581,63 @@ up here too. Manage the actual checks on each IP's Monitoring section.
 
 ### The monitoring bar
 
-The Overview of a device or a virtual machine opens with one quiet bar: the
-overall state as a pill on the left (worst wins across the sources), then one
-row per source the object has, and **Notify me** on the right (on a VM it
-watches the primary address). A source the object does not have is left out,
-and the bar is absent when nothing monitors the object. With one source the
-overall pill is the only state pill.
+Monitoring shows on a device's and a virtual machine's page twice: a simple
+version and a detailed one. Both are left out when nothing monitors the
+object.
 
-| Source | Row | Hover | Click |
-| --- | --- | --- | --- |
-| **Checks** | Danbyte's checks across the object's addresses: state and a count per state (*1 degraded*, *4 up*) | Each check's name and address, its state and when it last changed | The **Monitoring** tab, filtered to problems; a count filters to its state (`?tab=monitoring&state=degraded`) |
-| **Zabbix** | Devices only: the host's state, its open problems and the protocols Zabbix cannot reach it on, the host with a link into Zabbix and when it was read | The triggers with their severity and since when, and Zabbix's own reachability error | The **Zabbix** section of the Monitoring tab (`#zabbix`) |
-| **PRTG** | One row per PRTG device: its state, a count per sensor state, the PRTG device with a link into PRTG and when it was read | The sensors in that state with PRTG's message | The **Sensors** tab, filtered to down and degraded; a count filters to its state (`?tab=sensors&state=up`) |
+**In the header**, beside the status and the other badges, is the overall
+state as one pill: worst wins across Danbyte's checks, Zabbix and PRTG.
+Hovering it lists each source's state and counts.
 
-Each hover lists at most ten, worst first, and says how many more there are.
+**On the Overview** is the monitoring card. It leads with the problems:
+
+```
+MONITORING  [Down]  since 2h · read 45s ago                        Notify me
+▌ Down      HTTPS 10.0.0.41             Danbyte check   down 2h · timeout
+▌ Down      Ping 10.0.0.41              Danbyte check   down 2h
+▌ Degraded  SSL Certificate (Port 443)  PRTG            Root authority not trusted
+  View all 8 →
+Checks ▬▬▬▬▬▬ 2 down · 1 up     Zabbix ▬▬▬▬▬▬ no problems     PRTG ▬▬▬▬▬▬ 1 degraded · 4 up
+```
+
+- **The header line**: the overall state, the one pill on the card; *since*
+  how long the longest-standing problem has been so; when the sources were
+  last read; and **Notify me** (on a VM it watches the primary address).
+- **The problems**: up to three, worst first, across all the sources. Each
+  row carries its state as a coloured left edge and the state's name, the
+  item (a check with its address, a PRTG sensor, a Zabbix host or the
+  protocol Zabbix cannot reach it on), the source, how long it has been so,
+  and the source's own words: a check's last error, PRTG's message, the
+  Zabbix trigger. The full message is in the tooltip. **View all N** opens the
+  Monitoring tab filtered to problems.
+- **The sources**: one segment per source the object has: its name, a bar
+  of its states in proportion and the counts. Zabbix counts problems, not
+  items, so its bar is one colour: its state.
+
+When nothing is in a problem state the card shrinks to one line in the
+Overview's grid, beside the first attribute card: *All 3 checks up · Zabbix
+up · PRTG 5 sensors up · read 45s ago*, with Notify me. With problems it is
+full width above the cards.
+
+Everything on the card is a link into the page:
+
+| Click | Opens |
+| --- | --- |
+| A check, or a check count | The **Monitoring** tab filtered to that state (`?tab=monitoring&state=down`) |
+| A PRTG sensor | The **Sensors** tab with that sensor's panel open (`?tab=sensors&sensor=…`) |
+| A PRTG count | The **Sensors** tab filtered to that state (`?tab=sensors&state=up`) |
+| Anything from Zabbix | The **Zabbix** section of the Monitoring tab (`#zabbix`) |
+| A source's name or bar | Its tab, filtered to problems when it has any |
+| **View all N** | The **Monitoring** tab filtered to problems (`?state=problem`) |
+
 The `state` filter on the Monitoring tab and the Sensors tab takes `problem`
 (anything not up, skipped or paused) or one state; *Show all* clears it.
 
-The bar reads `POST /api/monitoring/status/` with `detail: true` (the checks
-behind the roll-up, worst first, at most 50, for up to 25 devices or VMs per
-call), `/api/zabbix/host-status/` and `/api/prtg/links/` with the object's
-PRTG sensors - the same requests the page's tabs make, so they share one fetch.
+The card reads `POST /api/monitoring/status/` with `detail: true` (the checks
+behind the roll-up, worst first, at most 50, each with the last run's `error`
+when it is not up, for up to 25 devices or VMs per call),
+`/api/zabbix/host-status/` and `/api/prtg/links/` with the object's PRTG
+sensors - the same requests the page's tabs make, so they share one fetch.
 It refreshes every minute.
 
 ### In list pages

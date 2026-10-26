@@ -302,6 +302,16 @@ class BulkStatusDetailTests(_BulkStatusBase):
         )
         self.assertTrue(all(i["since"] and i["ip_id"] and i["kind"] for i in items))
 
+    def test_items_carry_the_last_error_when_not_up(self):
+        CheckState.objects.filter(
+            target_ip__assigned_device=self.devices[0],
+        ).update(last_detail={"error": "timed\n out"})
+        _, out = self._detail("devices", self.devices[:1])
+        items = out[str(self.devices[0].id)]["items"]
+        self.assertEqual(items[0]["status"], "down")
+        self.assertEqual(items[0]["error"], "timed out")
+        self.assertTrue(all("error" not in i for i in items[1:]))
+
     def test_vm_items(self):
         _, out = self._detail("vms", self.vms[:1])
         items = out[str(self.vms[0].id)]["items"]

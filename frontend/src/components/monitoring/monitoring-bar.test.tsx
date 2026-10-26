@@ -15,9 +15,9 @@ import {
   worstOf,
 } from "./monitoring-bar"
 
-// The monitoring bar on a device's and a VM's Overview and the pill in their
-// headers: one row per source, worst wins, the list behind every pill and
-// count in the shared tooltip, and each row opening its tab.
+// The monitoring card on a device's and a VM's Overview and the pill in
+// their headers: the problems first, worst first, each opening where it
+// lives; a bar per source; one line when all is clear; one pill per card.
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -43,6 +43,7 @@ const CHECKS: BulkStatusEntry = {
       address: "10.0.0.41",
       status: "degraded",
       since: "2026-10-26T08:00:00Z",
+      error: "connect timeout",
     },
     {
       id: "c2",
@@ -166,17 +167,44 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-const rows = () =>
+const UP_CHECKS: BulkStatusEntry = {
+  status: "up",
+  counts: { up: 3 },
+  items: CHECKS.items!.map((i) => ({ ...i, status: "up" as const })),
+}
+const UP_ZABBIX: ZabbixHostStatus = {
+  ...ZABBIX,
+  status: {
+    ...ZABBIX.status,
+    problems: [],
+    problem_count: 0,
+
+    worst_status: "up",
+    availability: { snmp: { state: "up", error: "" } },
+  },
+}
+const UP_LINK: PrtgDeviceLink = {
+  ...LINK,
+  state: "up",
+  sensor_counts: { total: 1, up: 1 },
+}
+
+const card = () => screen.getByTestId("monitoring-bar")
+const problems = () => screen.queryAllByTestId("monitoring-problem")
+const sources = () =>
   screen
     .getAllByTestId("monitoring-source")
     .map((r) => r.getAttribute("data-source"))
+/** Every pill on the card: a status pill or a Badge. */
+const pills = () =>
+  card().querySelectorAll("[data-check-status], [data-slot=badge]")
 
 describe("MonitoringBar", () => {
-  it("draws one row per source, worst wins on the overall pill", async () => {
+  it("leads with the problems, worst first, across the sources", async () => {
     mountWithRouter(() => (
       <MonitoringBar target={{ device: "d1" }} notify={{ device: "d1" }} />
     ))
-    await waitFor(() => expect(rows()).toEqual(["checks", "zabbix", "prtg"]))
+    await waitFor(() => expect(problems()).toHaveLength(3))
     expect(screen.getByTestId("monitoring-overall").textContent).toBe("Down")
     // One request for the checks, with their detail.
     const bulk = apiMock.mock.calls.filter(
@@ -187,25 +215,177 @@ describe("MonitoringBar", () => {
       devices: ["d1"],
       detail: true,
     })
-    const checks = screen.getAllByTestId("monitoring-source")[0]
-    expect(checks.textContent).toContain("1 degraded")
-    expect(checks.textContent).toContain("2 up")
-    // No raw address as a pill on the bar.
-    expect(checks.textContent).not.toContain("10.0.0.41")
+    const [cpu, snmp, https] = problems()
+    expect(cpu.dataset.source).toBe("zabbix")
+    expect(cpu.dataset.state).toBe("down")
+    // A trigger reads as the host, with the trigger as its message.
+    expect(cpu.textContent).toContain("db-dev01")
+    expect(cpu.textContent).toContain("High CPU utilization")
+    expect(cpu.textContent).toContain("Zabbix")
+    expect(snmp.textContent).toContain("SNMP unreachable")
+    expect(snmp.textContent).toContain("Timeout on 1.3.6.1")
+    expect(https.dataset.source).toBe("checks")
+    expect(https.textContent).toContain("Degraded")
+    expect(https.textContent).toContain("10.0.0.41")
+    expect(https.textContent).toContain("Danbyte check")
+    expect(https.textContent).toMatch(/degraded \d+[smhd]/)
+    expect(https.textContent).toContain("connect timeout")
+    // Four in all: the fourth is behind View all.
+    const all = screen.getByTestId("monitoring-view-all")
+    expect(all.textContent).toBe("View all 4")
+    expect(all.getAttribute("href")).toBe(
+      "/devices/d1?tab=monitoring&state=problem"
+    )
+    expect(card().textContent).toMatch(/since \d+[smhd]/)
     expect(
       await screen.findByRole("button", { name: /Notify me/ })
     ).toBeTruthy()
   })
 
-  it("leaves out the sources the object does not have", async () => {
-    answer({ zabbix: [], links: [] })
+  it("says the state as a pill once, in the header", async () => {
     mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    await waitFor(() => expect(rows()).toEqual(["checks"]))
-    // One source: the overall pill is the only state pill.
-    expect(screen.getByTestId("monitoring-overall").textContent).toBe(
-      "Degraded"
+    await waitFor(() => expect(problems()).toHaveLength(3))
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-source=prtg] a[data-state=degraded]")
+      ).toBeTruthy()
     )
-    expect(screen.getAllByText("Degraded")).toHaveLength(1)
+    expect(pills()).toHaveLength(1)
+    expect(screen.getByTestId("monitoring-overall").contains(pills()[0])).toBe(
+      true
+    )
+  })
+
+  it("opens each problem where it lives", async () => {
+    answer({ zabbix: [] })
+    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
+    await waitFor(() =>
+      expect(problems().map((p) => p.dataset.source)).toEqual([
+        "checks",
+        "prtg",
+      ])
+    )
+    const [https, disk] = problems()
+    expect(https.getAttribute("href")).toBe(
+      "/devices/d1?tab=monitoring&state=degraded"
+    )
+    // The sensor's panel, opened on the Sensors tab.
+    expect(disk.getAttribute("href")).toBe("/devices/d1?tab=sensors&sensor=s1")
+    expect(disk.textContent).toContain("Below 10 %")
+    // Two problems, both shown: no View all.
+    expect(screen.queryByTestId("monitoring-view-all")).toBeNull()
+    cleanup()
+    answer()
+    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
+    await waitFor(() => expect(problems()).toHaveLength(3))
+    expect(problems()[0].getAttribute("href")).toBe(
+      "/devices/d1?tab=monitoring#zabbix"
+    )
+  })
+
+  it("puts the full message in the shared tooltip", async () => {
+    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
+    await waitFor(() => expect(problems()).toHaveLength(3))
+    const msg = problems()[2].querySelector("[data-testid=problem-message]")!
+    expect(msg.closest("[title]")).toBeNull()
+    fireEvent.focus(msg)
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "connect timeout"
+    )
+  })
+
+  it("draws a bar per source with its states in proportion", async () => {
+    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
+    await waitFor(() => expect(sources()).toEqual(["checks", "zabbix", "prtg"]))
+    const [checks, zabbix, prtg] = screen.getAllByTestId("monitoring-source")
+    const widths = (row: HTMLElement) =>
+      Array.from(
+        row.querySelectorAll<HTMLElement>(
+          "[data-testid=monitoring-source-bar] [data-state]"
+        )
+      ).map((x) => [x.dataset.state, Math.round(parseFloat(x.style.width))])
+    expect(widths(checks)).toEqual([
+      ["degraded", 33],
+      ["up", 67],
+    ])
+    expect(checks.textContent).toContain("1 degraded · 2 up")
+    expect(widths(zabbix)).toEqual([["down", 100]])
+    expect(zabbix.textContent).toContain("1 problem · SNMP unreachable")
+    await waitFor(() =>
+      expect(widths(prtg)).toEqual([
+        ["degraded", 50],
+        ["up", 50],
+      ])
+    )
+    const href = (row: HTMLElement, sel: string) =>
+      row.querySelector(sel)!.closest("a")!.getAttribute("href")
+    expect(href(checks, "[data-testid=monitoring-source-bar]")).toBe(
+      "/devices/d1?tab=monitoring&state=problem"
+    )
+    expect(href(checks, "a[data-state=degraded]")).toBe(
+      "/devices/d1?tab=monitoring&state=degraded"
+    )
+    expect(href(zabbix, "[data-testid=monitoring-source-bar]")).toBe(
+      "/devices/d1?tab=monitoring#zabbix"
+    )
+    expect(href(prtg, "a[data-state=up]")).toBe(
+      "/devices/d1?tab=sensors&state=up"
+    )
+  })
+
+  it("collapses to one line when all is clear", async () => {
+    answer({ checks: UP_CHECKS, zabbix: [UP_ZABBIX], links: [UP_LINK] })
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path.startsWith("/api/prtg/sensors/")
+        ? page([sensor("2", { name: "Ping" })])
+        : base(path, init)
+    )
+    mountWithRouter(() => (
+      <MonitoringBar target={{ device: "d1" }} notify={{ device: "d1" }} />
+    ))
+    const line = await screen.findByTestId("monitoring-all-clear")
+    expect(line.textContent).toBe(
+      "All 3 checks up · Zabbix up · PRTG 1 sensor up · "
+    )
+    expect(card().hasAttribute("data-compact")).toBe(true)
+    expect(card().textContent).toMatch(/read \d+[smhd] ago/)
+    expect(problems()).toHaveLength(0)
+    expect(screen.queryByTestId("monitoring-source")).toBeNull()
+    expect(pills()).toHaveLength(1)
+    const link = (src: string) =>
+      line.querySelector(`a[data-source=${src}]`)!.getAttribute("href")
+    expect(link("checks")).toBe("/devices/d1?tab=monitoring")
+    expect(link("zabbix")).toBe("/devices/d1?tab=monitoring#zabbix")
+    expect(link("prtg")).toBe("/devices/d1?tab=sensors")
+    expect(
+      await screen.findByRole("button", { name: /Notify me/ })
+    ).toBeTruthy()
+  })
+
+  it("renders in its slot: banner with problems, compact when clear", async () => {
+    const both = () => (
+      <>
+        <div data-testid="banner">
+          <MonitoringBar target={{ device: "d1" }} slot="banner" />
+        </div>
+        <div data-testid="compact">
+          <MonitoringBar target={{ device: "d1" }} slot="compact" />
+        </div>
+      </>
+    )
+    const inside = (id: string) =>
+      screen.getByTestId(id).querySelector("[data-testid=monitoring-bar]")
+    mountWithRouter(both)
+    await waitFor(() => expect(problems()).toHaveLength(3))
+    expect(inside("banner")).toBeTruthy()
+    expect(inside("compact")).toBeNull()
+    cleanup()
+    answer({ checks: UP_CHECKS, zabbix: [], links: [] })
+    mountWithRouter(both)
+    await screen.findByTestId("monitoring-all-clear")
+    expect(inside("banner")).toBeNull()
+    expect(inside("compact")?.hasAttribute("data-compact")).toBe(true)
   })
 
   it("renders nothing when nothing monitors the object", async () => {
@@ -214,101 +394,14 @@ describe("MonitoringBar", () => {
       <MonitoringBar target={{ device: "d1" }} />
     ))
     await waitFor(() => expect(apiMock).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull())
     expect(container.querySelector("[data-testid=monitoring-bar]")).toBeNull()
   })
 
-  it("opens each source's place on the page", async () => {
-    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    await waitFor(() => expect(rows()).toHaveLength(3))
-    const [checks, zabbix, prtg] = screen.getAllByTestId("monitoring-source")
-    const href = (row: HTMLElement, text: string) =>
-      Array.from(row.querySelectorAll("a"))
-        .find((a) => a.textContent === text)
-        ?.getAttribute("href")
-    expect(href(checks, "Checks")).toBe(
-      "/devices/d1?tab=monitoring&state=problem"
-    )
-    expect(href(checks, "1 degraded")).toBe(
-      "/devices/d1?tab=monitoring&state=degraded"
-    )
-    expect(href(zabbix, "Zabbix")).toBe("/devices/d1?tab=monitoring#zabbix")
-    expect(href(prtg, "PRTG")).toBe("/devices/d1?tab=sensors&state=problem")
-    expect(href(prtg, "1 up")).toBe("/devices/d1?tab=sensors&state=up")
-    // The object over there, in a new tab.
-    expect(href(prtg, "db-dev01")).toBe(LINK.url)
-    expect(href(zabbix, "db-dev01")).toContain("hostids%5B%5D=10501")
-  })
-
-  it("lists what is behind a count in the shared tooltip", async () => {
-    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    const checks = await waitFor(
-      () => screen.getAllByTestId("monitoring-source")[0]
-    )
-    const degraded = checks.querySelector("[data-state=degraded]")!
-    expect(degraded.closest("[title]")).toBeNull()
-    fireEvent.focus(degraded.closest("a")!)
-    const tip = await screen.findByRole("tooltip")
-    expect(tip.textContent).toContain("https")
-    expect(tip.textContent).toContain("10.0.0.41")
-    expect(tip.textContent).not.toContain("ping")
-  })
-
-  it("shows Zabbix's triggers and PRTG's sensor messages", async () => {
-    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    await waitFor(() => expect(rows()).toHaveLength(3))
-    const zabbix = screen.getAllByTestId("monitoring-source")[1]
-    expect(zabbix.textContent).toContain("1 problem")
-    expect(zabbix.textContent).toContain("SNMP unreachable")
-    fireEvent.focus(
-      zabbix.querySelector("[data-state=problems]")!.closest("a")!
-    )
-    expect((await screen.findByRole("tooltip")).textContent).toContain(
-      "High CPU utilization"
-    )
-    cleanup()
-    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    await waitFor(() => expect(rows()).toHaveLength(3))
-    const prtg2 = screen.getAllByTestId("monitoring-source")[2]
-    await waitFor(() =>
-      expect(prtg2.querySelector("[data-state=degraded]")).toBeTruthy()
-    )
-    fireEvent.focus(prtg2.querySelector("[data-state=degraded]")!.closest("a")!)
-    const tip = await screen.findByRole("tooltip")
-    expect(tip.textContent).toContain("Disk Free")
-    expect(tip.textContent).toContain("Below 10 %")
-  })
-
-  it("caps a tooltip at ten with +N more", async () => {
-    const many = Array.from({ length: 14 }, (_, i) => ({
-      id: `c${i}`,
-      name: `check ${i}`,
-      kind: "tcp",
-      ip_id: "ip1",
-      address: "10.0.0.41",
-      status: "down" as const,
-      since: null,
-    }))
-    answer({
-      checks: { status: "down", counts: { down: 14 }, items: many },
-      zabbix: [],
-      links: [],
-    })
-    mountWithRouter(() => <MonitoringBar target={{ device: "d1" }} />)
-    const count = await waitFor(() => {
-      const el = document.querySelector("[data-state=down]")
-      expect(el).toBeTruthy()
-      return el!
-    })
-    fireEvent.focus(count.closest("a")!)
-    const tip = await screen.findByRole("tooltip")
-    expect(tip.querySelectorAll("li")).toHaveLength(10)
-    expect(tip.textContent).toContain("+4 more")
-  })
-
-  it("is the same bar on a VM, without Zabbix", async () => {
+  it("is the same card on a VM, without Zabbix", async () => {
     answer({ id: "vm1" })
     mountWithRouter(() => <MonitoringBar target={{ virtual_machine: "vm1" }} />)
-    await waitFor(() => expect(rows()).toEqual(["checks", "prtg"]))
+    await waitFor(() => expect(sources()).toEqual(["checks", "prtg"]))
     const bulk = apiMock.mock.calls.find(
       ([p]) => p === "/api/monitoring/status/"
     )!
@@ -319,12 +412,10 @@ describe("MonitoringBar", () => {
     expect(apiMock.mock.calls.some(([p]) => p.startsWith("/api/zabbix/"))).toBe(
       false
     )
-    const checks = screen.getAllByTestId("monitoring-source")[0]
-    expect(
-      Array.from(checks.querySelectorAll("a"))
-        .find((a) => a.textContent === "Checks")
-        ?.getAttribute("href")
-    ).toBe("/virtual-machines/vm1?tab=monitoring&state=problem")
+    await waitFor(() => expect(problems()).toHaveLength(2))
+    expect(problems()[1].getAttribute("href")).toBe(
+      "/virtual-machines/vm1?tab=sensors&sensor=s1"
+    )
   })
 })
 
