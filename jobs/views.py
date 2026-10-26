@@ -108,6 +108,7 @@ SCHEDULED_TASKS = [
     {"name": "alert-maintenance", "label": "Alert maintenance", "cadence": "every minute"},
     {"name": "external-sync", "label": "External sync (DHCP/DNS)", "cadence": "every minute"},
     {"name": "zabbix-sync", "label": "Zabbix sync", "cadence": "every minute"},
+    {"name": "extmon-sync", "label": "External monitoring sync", "cadence": "every minute"},
     {"name": "oxidized-sync", "label": "Oxidized node sync", "cadence": "every minute"},
     {"name": "scripts", "label": "Scheduled scripts", "cadence": "every minute"},
     {"name": "materialise", "label": "Materialise checks", "cadence": "every 5 min"},

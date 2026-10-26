@@ -6,7 +6,8 @@ from django.utils import timezone
 from .client import PrtgClient, PrtgError, PrtgUnauthorized, PrtgUnreachable
 from .models import PrtgConnection
 
-#: ``table.json`` content name for probes.
+#: ``table.json`` content name for probes. Unfiltered it lists every object
+#: (188 rows on a fresh 26.3), so counts filter on ``type=probenode`` too.
 PROBES = "probenode"
 
 
@@ -37,7 +38,7 @@ def test_connection(conn: PrtgConnection, *, client: PrtgClient | None = None) -
                     f"floor ({floor})."
                 )
             else:
-                result["probes"] = client.count(PROBES)
+                result["probes"] = client.count(PROBES, {"type": PROBES})
                 result["sensors"] = client.count("sensors")
                 result["ok"] = True
                 result["detail"] = (

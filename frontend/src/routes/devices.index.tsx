@@ -14,6 +14,7 @@ import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { useDriftMap } from "@/components/monitoring/device-drift-badge"
+import { usePrtgDeviceStates } from "@/components/columns/prtg-columns"
 import { usePlannedChangeMap } from "@/components/planning/planned-change-badge"
 import { buildDeviceColumns } from "@/components/columns/device-columns"
 import { useEolSettings } from "@/components/cells/eol-cell"
@@ -118,6 +119,7 @@ function DevicesPage() {
   })
   const monitoring = monQuery.data?.statuses ?? EMPTY_MON
   const sla = useSlaStatus("device", deviceIds)
+  const prtg = usePrtgDeviceStates()
 
   const handleDelete = useCallback((d: Device) => setDeleting(d), [])
   const driftMap = useDriftMap()
@@ -149,6 +151,7 @@ function DevicesPage() {
         drift: driftMap,
         planned: plannedMap,
         monitoring,
+        prtg,
         sla: { entries: sla.entries, frame: sla.frame },
         portUtil,
         actions: {
@@ -164,6 +167,7 @@ function DevicesPage() {
       canEdit,
       canDelete,
       monitoring,
+      prtg,
       humanIds,
       eolOn,
       portUtil,

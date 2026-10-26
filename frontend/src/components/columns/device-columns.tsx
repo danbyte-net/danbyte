@@ -2,7 +2,12 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 import { UtilCell } from "@/components/cells/util-cell"
 
-import type { BulkStatusEntry, ComplianceViolation, Device } from "@/lib/api"
+import type {
+  BulkStatusEntry,
+  ComplianceViolation,
+  Device,
+  PrtgDeviceState,
+} from "@/lib/api"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import {
   monitoringBucket,
@@ -14,6 +19,7 @@ import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
 import type { SlaColumnOpts } from "@/components/columns/sla-column"
 import { ExternalChips } from "@/components/monitoring/external-chips"
 import { ExternalStatusHover } from "@/components/monitoring/external-status"
+import { prtgColumn } from "@/components/columns/prtg-columns"
 import { ViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftMarker,
@@ -78,6 +84,7 @@ export type DeviceColumnId =
   | "ips"
   | "ports"
   | "monitoring"
+  | "prtg"
   | "sla"
   | "availability"
   | "primary_ip"
@@ -108,6 +115,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "ips",
   "ports",
   "monitoring",
+  "prtg",
   "sla",
   "availability",
   "primary_ip",
@@ -139,6 +147,9 @@ export interface DeviceColumnOpts<T extends Device = Device> {
   planned?: Map<string, PlannedTargetRow>
   /** Monitoring status per device id - enables the "Monitoring" column. */
   monitoring?: Record<string, BulkStatusEntry>
+  /** PRTG roll-up per device id, from `usePrtgDeviceStates()` - enables the
+   * "PRTG" column (hidden until ticked). */
+  prtg?: Record<string, PrtgDeviceState>
   /** From `useSlaStatus` - enables the "SLA" and "Availability" columns. */
   sla?: SlaColumnOpts
   /** Port utilization % per device id (null = has ports table entry but no
@@ -181,6 +192,7 @@ export function buildDeviceColumns<T extends Device = Device>(
   // Monitoring column only where the page fetched bulk status.
   if (!opts.humanIds) omit.add("numid")
   if (!opts.monitoring) omit.add("monitoring")
+  if (!opts.prtg) omit.add("prtg")
   if (!opts.sla) {
     omit.add("sla")
     omit.add("availability")
@@ -475,6 +487,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         facet: monitoringFacet<T>((r) => opts.monitoring?.[r.id]),
       },
     }),
+    prtg: () => prtgColumn<T>(opts.prtg!),
     sla: () => slaColumn<T>(opts.sla!, (r) => r.id),
     availability: () => availabilityColumn<T>(opts.sla!, (r) => r.id),
     primary_ip: () =>

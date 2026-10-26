@@ -2477,6 +2477,14 @@ def _external_detail(rows) -> dict:
                 "hostid": str(detail.get("hostid") or ""),
                 "url": str(detail.get("zabbix_url") or ""),
             }
+        elif detail.get("prtg_device") and "host" not in external:
+            # A PRTG check: the device's page is the link back.
+            external = {
+                "system": "prtg",
+                "host": str(detail.get("prtg_device"))[:120],
+                "hostid": str(detail.get("prtg_objid") or ""),
+                "url": str(detail.get("prtg_url") or ""),
+            }
         # `last_detail` is whatever a checker or a plugin wrote, so nothing
         # about its shape can be assumed. A status column that 500s on an
         # unexpected payload takes the whole list page with it.

@@ -13148,14 +13148,87 @@ export interface PrtgConnection {
   enabled: boolean
   status_interval_seconds: number
   provision_scope: "checks" | "policies"
+  /** The PRTG monitoring engines whose `prtg` checks this answers. */
+  engines: string[]
+  engine_names: { id: string; name: string }[]
+  /** PRTG status code -> Danbyte state; stored cleaned, so every code is in
+   * it once saved. Empty = the defaults. */
+  state_map: Record<string, string>
+  link_mode: "auto" | "review"
+  push_enabled: boolean
+  /** Whether a push token exists. The token is shown once, by
+   * rotate-hook-token. */
+  hook_token_set: boolean
   version: string
   supported: boolean
   /** Whether API v2 answered the last test; null until one has run. */
   v2_available: boolean | null
   last_checked_at: string | null
   last_error: string
+  last_status_at: string | null
+  last_status_summary: Record<string, number | string>
   created_at: string
   updated_at: string
+}
+
+/** GET /api/prtg/connections/defaults/ - what the state map editor needs. */
+export interface PrtgDefaults {
+  codes: { value: string; label: string; fixed: boolean; reason: string }[]
+  default_map: Record<string, string>
+  statuses: {
+    value: string
+    label: string
+    color: string
+    text_color: string
+  }[]
+}
+
+export interface PrtgDeviceLink {
+  id: string
+  connection: string
+  device: { id: string; name: string } | null
+  objid: string
+  name: string
+  host: string
+  probe_name: string
+  group_path: string
+  matched_by: string
+  created_here: boolean
+  tagged: boolean
+  status_raw: number | null
+  /** The roll-up of the device's sensors; "" until a read has seen it. */
+  state: CheckStatus | ""
+  sensor_counts: Record<string, number>
+  status_read_at: string | null
+  last_seen_at: string | null
+  /** The device's page in PRTG. */
+  url: string
+}
+
+export interface PrtgChange {
+  id: string
+  kind: "link_device" | "ambiguous"
+  kind_display: string
+  device: { id: string; name: string } | null
+  key: string
+  detail: Record<string, unknown>
+  ignored: boolean
+  applicable: boolean
+  created_at: string
+}
+
+/** GET /api/prtg/device-states/ - one entry per linked device. */
+export interface PrtgDeviceState {
+  state: CheckStatus | null
+  down: number
+  warning: number
+  name: string
+  url: string
+}
+
+export interface PrtgHookToken {
+  token: string
+  path: string
 }
 
 export interface PrtgTestResult {

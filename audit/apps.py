@@ -153,6 +153,7 @@ AUDITED_MODELS = [
     "zabbix.ZabbixProvisionRule",
     "zabbix.ZabbixAdoptionRule",
     "prtg.PrtgConnection",
+    "prtg.PrtgAdoptionRule",
     "oxidized.OxidizedConnection",
     "api.Service",
     "api.ServiceTemplate",

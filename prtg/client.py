@@ -6,10 +6,12 @@ header. Reads use ``/api/table.json`` and friends; the simple state writes
 ``*.htm`` calls. API v2 is only probed here - whether it answers is recorded
 on the connection, and creation through it comes later.
 
-Authentication is an API key in an ``Authorization: Bearer`` header, which
-PRTG prefers over query parameters. ``token_in_query`` sends it as
-``apitoken=`` instead, for a proxy in front of PRTG that strips the header;
-it is off because a query string ends up in access logs.
+Authentication is an API key. The classic API takes it only as the
+``apitoken=`` query parameter - PRTG 26.3 answers a Bearer header there with
+401 "Unsupported authorization scheme." - while API v2 takes it only as an
+``Authorization: Bearer`` header. Because the classic key rides in the query
+string, the client never lets it into an error: anything it raises has the key
+redacted.
 
 Everything goes through :func:`core.ssrf.safe_request`, so a tenant-configured
 URL is never a way to reach an internal service. A PRTG on RFC1918 - most of
@@ -81,6 +83,7 @@ class PrtgUnreachable(PrtgError):
 #: escaped backslash followed by a letter intact.
 _ESCAPE = re.compile(r'\\(["\\/bfnrt]|u[0-9a-fA-F]{4})?')
 _TAG = re.compile(r"<[^>]+>")
+_APITOKEN = re.compile(r"(?i)(apitoken=)[^&\s'\"]+")
 _NUMBER = re.compile(r"^\s*([<>]?\s*-?[\d.,\s]*\d)\s*(.*?)\s*$")
 
 
@@ -105,7 +108,8 @@ def clean_text(value) -> str:
     """A message as an operator should read it: entities decoded, markup gone."""
     if value is None:
         return ""
-    text = html.unescape(str(unquote_raw(value)))
+    # Twice: getsensordetails escapes entities a second time ("&amp;#39;").
+    text = html.unescape(html.unescape(str(unquote_raw(value))))
     return re.sub(r" {2,}", " ", _TAG.sub(" ", text)).strip()
 
 
@@ -214,7 +218,9 @@ def normalise_row(row: dict) -> dict:
     if "active" in row or "active_raw" in row:
         out["active"] = str(_raw(row, "active")).lower() in ("true", "1", "-1")
     if "tags" in row or "tags_raw" in row:
-        out["tags"] = [t for t in clean_text(_raw(row, "tags")).split() if t]
+        # Space-separated for classic sensors, comma-separated for the v2
+        # kinds (PRTG 26.3: "icmp,ping,pingsensor").
+        out["tags"] = [t for t in re.split(r"[,\s]+", clean_text(_raw(row, "tags"))) if t]
     for col, key in (("lastcheck", "last_check_at"), ("lastup", "last_up_at"),
                      ("lastdown", "last_down_at")):
         if col in row or f"{col}_raw" in row:
@@ -267,7 +273,6 @@ class PrtgClient:
         v2_url: str = "",
         verify_tls: bool = True,
         timeout: float = 20,
-        token_in_query: bool = False,
         page_size: int = PAGE_SIZE,
         page_gap: float = PAGE_GAP_SECONDS,
     ):
@@ -276,7 +281,6 @@ class PrtgClient:
         self.api_key = api_key or ""
         self.verify_tls = verify_tls
         self.timeout = timeout
-        self.token_in_query = token_in_query
         self.page_size = max(1, min(int(page_size), 50000))
         self.page_gap = page_gap
 
@@ -289,28 +293,41 @@ class PrtgClient:
 
     # ── transport ────────────────────────────────────────────────────
 
-    def _auth(self, params: dict) -> dict:
+    def _auth(self, params: dict, *, v2: bool) -> dict:
+        """The key where each API wants it: a query parameter for the classic
+        API, a Bearer header for API v2. Never both."""
         headers = {"Accept": "application/json, text/xml;q=0.9, */*;q=0.5"}
         if self.api_key:
-            if self.token_in_query:
-                params["apitoken"] = self.api_key
-            else:
+            if v2:
                 headers["Authorization"] = f"Bearer {self.api_key}"
+            else:
+                params["apitoken"] = self.api_key
         return headers
 
-    def _request(self, path: str, params: dict | None = None, *, base: str | None = None):
+    def redact(self, text) -> str:
+        """``text`` with the API key replaced. Transport errors quote the URL,
+        and the classic key is in its query string."""
+        text = str(text or "")
+        if self.api_key:
+            text = text.replace(self.api_key, "REDACTED")
+        return _APITOKEN.sub(r"\1REDACTED", text)
+
+    def _request(self, path: str, params: dict | None = None, *,
+                 base: str | None = None, v2: bool = False):
         params = {k: v for k, v in (params or {}).items() if v is not None}
-        headers = self._auth(params)
+        headers = self._auth(params, v2=v2)
         url = f"{base if base is not None else self.base}{path}"
         try:
             return safe_request(
                 "GET", url, params=params, headers=headers,
                 timeout=self.timeout, verify=self.verify_tls,
             )
+        # ``from None``: the original exception's text carries the URL, and
+        # with it the key - a chained traceback would log it.
         except SSRFError as exc:
-            raise PrtgUnreachable(str(exc)) from exc
+            raise PrtgUnreachable(self.redact(exc)) from None
         except Exception as exc:  # noqa: BLE001 - every transport failure is one kind
-            raise PrtgUnreachable(str(exc) or type(exc).__name__) from exc
+            raise PrtgUnreachable(self.redact(exc) or type(exc).__name__) from None
 
     def _check(self, resp, *, write: bool = False):
         code = resp.status_code
@@ -324,10 +341,10 @@ class PrtgClient:
             if "login" in location.lower() or "/index.htm" in location.lower():
                 raise PrtgUnauthorized("PRTG refused the API key (redirected to sign-in)")
             if "error" in location.lower():
-                raise PrtgError(f"PRTG refused the call ({location[:200]})")
+                raise PrtgError(f"PRTG refused the call ({self.redact(location[:200])})")
             if write:
                 return resp
-            raise PrtgError(f"PRTG answered with a redirect to {location[:200]}")
+            raise PrtgError(f"PRTG answered with a redirect to {self.redact(location[:200])}")
         if code != 200:
             raise PrtgError(f"HTTP {code}: {_error_sentence(resp.text)}")
         return resp
@@ -404,8 +421,10 @@ class PrtgClient:
         return table.total or len(table.rows)
 
     def status(self) -> dict:
-        """``getstatus.json``: version, alarm counts, cluster and licence state."""
-        payload = self.get_json("/api/getstatus.json", {"id": 0})
+        """``getstatus.htm``: version, alarm counts, cluster and licence state.
+
+        JSON despite the name; PRTG 26.3 has no ``getstatus.json`` (404)."""
+        payload = self.get_json("/api/getstatus.htm", {"id": 0})
         if not isinstance(payload, dict):
             raise PrtgError("PRTG returned its status in an unexpected shape.")
         return payload
@@ -482,7 +501,7 @@ class PrtgClient:
             return False, "No API v2 address."
         try:
             resp = self._request(
-                "/experimental/sensors", {"limit": 1}, base=self.v2_base
+                "/experimental/sensors", {"limit": 1}, base=self.v2_base, v2=True
             )
         except PrtgUnreachable as exc:
             return False, f"API v2 did not answer: {exc}"
