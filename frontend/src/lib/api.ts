@@ -13323,6 +13323,52 @@ export interface PrtgPolicy {
   group_path: string
   created_at: string
   updated_at: string
+  /** Only on GET /api/prtg/policies/<id>/: how many objects it matches. */
+  match_count?: number
+}
+
+/** Why an object is left out of PRTG's plan or a planned row cannot be
+ * written: the sentence, and what the SPA links it to. */
+export interface PrtgIssue {
+  code:
+    | "excluded"
+    | "retired"
+    | "address_excluded"
+    | "no_check"
+    | "no_match"
+    | "already_linked"
+    | "no_group"
+    | "group_gone"
+    | "no_snmp"
+    | "no_windows"
+    | "no_windows_vm"
+    | "no_address"
+    | "unwanted_sensor"
+  text: string
+  /** The policy that decides the group, for no_group / group_gone. */
+  policy?: string
+  /** The object whose tab fixes it. */
+  object?: { kind: "device" | "virtual_machine"; id: string }
+}
+
+/** GET /api/prtg/policies/<id>/matches/ - one device or VM a policy hits. */
+export interface PrtgPolicyMatch {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  site: { id: string; name: string } | null
+  role: { id: string; name: string } | null
+  platform: { id: string; name: string } | null
+  prtg_sync: PrtgSync
+  linked: boolean
+  link: { objid: string; name: string; url: string } | null
+  managed: boolean
+  via: "" | "never" | "always" | "policy" | "register_all"
+  reason: string
+  /** The policy that decides the object's group, when a policy does. */
+  group_policy: { id: string; name: string } | null
+  wins_group: boolean
+  policies: { id: string; name: string }[]
 }
 
 /** GET /api/prtg/plan/?device=|virtual_machine= - one per connection. */
@@ -13339,6 +13385,7 @@ export interface PrtgPlanEntry {
     kind?: string
     source: string
     policy?: string
+    policy_id?: string
   } | null
   policies: { id: string; name: string }[]
   profiles: string[]
@@ -13360,6 +13407,10 @@ export interface PrtgPlanEntry {
   }[]
   credentials: { kind: string; name: string; version?: string }[]
   problems: string[]
+  /** The reason as an issue, when the object is left out. */
+  reason_issue?: PrtgIssue | null
+  /** The problems as issues, with their link targets. */
+  issues?: PrtgIssue[]
 }
 
 /** GET /api/prtg/connections/defaults/ - what the state map editor needs. */
