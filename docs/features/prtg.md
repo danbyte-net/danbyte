@@ -355,7 +355,7 @@ unit, the interval, uptime and downtime, priority, the last check, last up and
 last down, and the probe and group. A device or VM that PRTG has a device for
 gets a **Sensors** tab, with the sensor count, while the integration is on.
 
-**The tab.** A status strip on top, the monitoring bar's PRTG row: the state
+**The tab.** A status strip on top, the PRTG row of the Monitoring tab: the state
 pill, one badge per state with its count - down, degraded, up, unknown, and
 paused apart - named as the tenant names its states, then the PRTG device with
 a link to it in PRTG and when it was last read. Hovering a count lists its
@@ -451,7 +451,7 @@ The same channels can go on a dashboard: see
 [Sensor widgets](dashboard.md#sensor-widgets).
 
 **The Monitoring tab** gets one **PRTG** row per linked device or VM - the
-same row as the strip and the Overview's monitoring bar - and a link to the
+same row as the strip - and a link to the
 Sensors tab; a count opens the tab filtered to its state. Its chevron opens
 the [registration details](#planned-changes) in place.
 The rest of the tab is unchanged; like the Zabbix section, the row never
@@ -463,6 +463,30 @@ sensors. Site roles include PRTG device links, sensors, system information
 and the review queue for their sites (an `auth_api` migration gives roles made before 0.19 the same,
 see [Permissions](permissions.md#site-roles-local-it-in-one-click)); PRTG
 connections stay with administrators.
+
+### Where sensors show up
+
+A sensor is the device's or VM's, and it is also about something on it. Every
+status read ties each sensor to the address, interface and service it
+watches, and those pages get a **Sensors** tab of their own, with the count,
+whenever a sensor watches them:
+
+| Page | Its sensors | Matched by |
+|---|---|---|
+| **IP address** | Every sensor of the PRTG device that reaches its device or VM on this address. | The PRTG device's host, compared with the addresses assigned to the linked device or VM. A host that is a name matches the address whose DNS name it is. |
+| **Interface** | The SNMP traffic sensor measuring the port. | PRTG names traffic sensors `(001) GigabitEthernet0/1 Traffic`: the number in brackets is the ifIndex, looked up in the device's last [SNMP poll](snmp-discovery.md); without it, or when the poll does not know it, the rest of the name is matched to the interface's name, label or SNMP name, or to a polled ifName, ifDescr or ifAlias. The index wins when both say something. |
+| **Service** | The HTTP, HTTPS and SSL sensors checking its port. | The port in the sensor's name (`SSL Security Check (Port 443)`, `api:8443`), else 443 for SSL sensors and for a name that says HTTPS, else 80; then the device's or VM's service on that TCP port. Two services on the port are told apart by the address each answers on. |
+
+Only the linked device's or VM's own objects in the connection's tenant are
+candidates, and a sensor that could mean two of them is tied to none. VM
+interfaces are matched the same way, from the VM's SNMP poll.
+
+The tab is the Sensors tab's shape: a strip that reads **via db-dev01 in
+PRTG**, linking to the device's Sensors tab, with the PRTG device in PRTG
+beside it; then the cards; a card opens the same sensor panel. On every
+card, the device's Sensors tab included, small chips name what the sensor
+watches - the address, the interface, the service - and each opens that
+object's page.
 
 ## The PRTG page
 
@@ -502,7 +526,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
 | `plan/?device=` or `?virtual_machine=` | What PRTG has and would get for one object, per enabled connection: `{connection, prtg_sync, linked: {objid, name, host, group, matched_by, created_here, created_at, url} | null, managed, registers, registration: {mode, policies, group}, planned: {create_device, sensors: [{key, name, kind, kind_label, interface}], move: {from, to} | null, remove: [{objid, name, kind}], reasons, queued}, via, reason, reason_issue, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues}`. `linked` is whether it is in PRTG (the stored link); `managed` whether Danbyte created that PRTG device; `registers` whether anything registers it, and `registration.mode` what: `always`, `policies`, `register_all`, `never` (excluded) or `none`. `planned.reasons` say why nothing is planned; `queued` counts its planned rows in the review queue. `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape, empty for a linked object nothing registers. Needs view on the object; asks PRTG nothing. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`. |
-| `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG) and `device_url`. |
+| `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
 | `sensors/<id>/channels/` | The sensor's channels, read from PRTG at most once per status interval: `{fetched_at, summary, rows}`, each row `{id, name, value, value_raw, unit, kind, state, status, lookup_label, limits: {warn_min, warn_max, error_min, error_max}, lookup_states: [{value, to, label, state}], min, max, primary}`. `kind` is `number`, `percent`, `lookup` or `text`; a lookup `state` is `ok`, `warning`, `error`, `none` or `unknown`. Needs view on the device or VM. 502 with PRTG's sentence when PRTG cannot be read and nothing is cached; `stale: true` when the last read is served instead. |
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |

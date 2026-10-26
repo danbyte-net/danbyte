@@ -7073,6 +7073,8 @@ export interface MonitoringCheckItem {
   status: CheckStatus
   /** When it entered this state. */
   since: string | null
+  /** The last run's error, when it was not up. */
+  error?: string
 }
 
 /** An engine kind a driver registered - configured on its own page rather
@@ -13593,6 +13595,18 @@ export interface PrtgSensor {
   /** The PRTG device's page. */
   device_url: string
   channels_at: string | null
+  /** The address PRTG reaches the device on (the link's host). */
+  ip_address: { id: string; address: string; dns_name: string } | null
+  /** The port an SNMP traffic sensor measures: a device interface or, with
+   * `kind: "vm_interface"`, a VM's; `parent` is the device or VM. */
+  interface: {
+    id: string
+    name: string
+    kind: "interface" | "vm_interface"
+    parent: string
+  } | null
+  /** The service an HTTP or SSL sensor checks, by its port. */
+  service: { id: string; name: string; ports: string } | null
 }
 
 /** GET /api/prtg/sensors/summary/ - counts for a status strip. The four

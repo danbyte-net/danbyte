@@ -63,6 +63,10 @@ import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns
 import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
 import { uplinkModeOf, uplinkWhy } from "@/lib/mac-tracking"
 import type { LearnedMacColumnId } from "@/components/columns/learned-mac-columns"
+import {
+  PrtgSensorsSection,
+  usePrtgSensors,
+} from "@/components/prtg/sensors-tab"
 
 export const Route = createFileRoute("/interfaces/$id")({
   // `?tab=macs` opens the MACs tab - an uplink's MAC count links there.
@@ -93,8 +97,19 @@ function InterfaceDetail() {
 
 function Body({ iface: i }: { iface: Interface }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "ips" | "members" | "macs" | "trace" | "journal" | "history"
+    | "overview"
+    | "ips"
+    | "members"
+    | "macs"
+    | "sensors"
+    | "trace"
+    | "journal"
+    | "history"
   >("overview")
+  // The PRTG traffic sensor measuring this port; the tab shows once there is
+  // one (none while the integration is off).
+  const prtgSensors = usePrtgSensors({ interface: i.id })
+  const sensorCount = prtgSensors.data?.length ?? 0
   const isLag = i.type === "lag"
   // MAC tracking (#284): the port's uplink state and MAC counts - the tab and
   // the Switching card read them; the tab pages through the MACs itself.
@@ -263,6 +278,9 @@ function Body({ iface: i }: { iface: Interface }) {
         ...(hasMacs
           ? [{ value: "macs", label: "MACs", count: macs.data.counts.present }]
           : []),
+        ...(sensorCount > 0
+          ? [{ value: "sensors", label: "Sensors", count: sensorCount }]
+          : []),
         { value: "trace", label: "Trace" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -297,6 +315,9 @@ function Body({ iface: i }: { iface: Interface }) {
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}
         />
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsSection scope={{ interface: i.id }} />
       </DetailTab>
       <DetailTab value="trace">
         <div className="space-y-6">

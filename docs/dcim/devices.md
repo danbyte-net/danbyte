@@ -230,10 +230,11 @@ device's fill crosses a threshold - see
 
 Any **custom fields** you've defined for devices appear below the cards. When
 anything monitors the device - its own checks, Zabbix or PRTG - the
-**monitoring bar** sits at the **top** of the tab: the overall state, then one
-row per source with its counts, a hover listing what is behind each pill and
-count, and a click into the Monitoring or Sensors tab filtered to it. The
-header's monitoring pill is the same overall state with the same hover - see
+**monitoring card** leads the tab: with problems it sits full width on top and
+lists the worst three, each a link to the check, the Zabbix section or the
+PRTG sensor's panel, then a bar per source; with none it is one line beside
+the first card (*All 3 checks up · Zabbix up · read 45s ago*). The header's
+monitoring pill is the overall state, with the sources on hover - see
 [The monitoring bar](../features/monitoring.md#the-monitoring-bar).
 The Devices list also has a **Monitoring** column rolling that status up per
 device. Where the device physically sits - its **rack elevation** with this

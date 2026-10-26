@@ -165,7 +165,9 @@ rest while the interface names stay readable.
 
 Click an interface name to open its page. It shows the device, type, speed, MTU,
 VLAN, MAC, description, any parent/LAG/bridge relationships, the IPs assigned to
-it, and a cable trace.
+it, and a cable trace. A port a PRTG traffic sensor measures gets a
+**Sensors** tab - see
+[Where sensors show up](../features/prtg.md#where-sensors-show-up).
 
 On the Overview, the **Switching** card has an **Uplink** row: the
 interface's setting and, for Automatic, what the

@@ -2415,8 +2415,9 @@ def _flap_rollup(flapping_since_values) -> dict:
 
 
 def _check_items(states) -> list[dict]:
-    """The checks behind a roll-up, worst first: name, kind, address, state
-    and when it entered that state. For the monitoring bar's hover."""
+    """The checks behind a roll-up, worst first: name, kind, address, state,
+    when it entered that state and, when not up, the last run's error. For
+    the monitoring card's problem rows and hovers."""
     rows = sorted(
         states,
         key=lambda s: (-status_rank(s["status"]), s["template__name"] or "",
@@ -2431,9 +2432,20 @@ def _check_items(states) -> list[dict]:
             "address": str(s["target_ip__ip_address"] or ""),
             "status": s["status"],
             "since": s["since"],
+            **({"error": err} if (err := _last_error(s)) else {}),
         }
         for s in rows[:MAX_DETAIL_CHECKS]
     ]
+
+
+def _last_error(state: dict) -> str:
+    """The last run's error for a check that is not up, one line, for the
+    monitoring card's problem rows. Empty when there is none."""
+    detail = state.get("last_detail")
+    if state["status"] == "up" or not isinstance(detail, dict):
+        return ""
+    err = detail.get("error")
+    return " ".join(err.split())[:200] if isinstance(err, str) else ""
 
 
 def _rollup_by_owner(request, tenant, ips_by_owner: dict, detail: bool = False) -> dict:
