@@ -300,6 +300,8 @@ const ROWS: Row[] = [
   ["zabbix-adoption-rules", "Zabbix · Adoption rules", "Integrations", "/api/zabbix/adoption-rules/"],
   ["zabbix-provision-rules", "Zabbix · Template rules", "Integrations", "/api/zabbix/template-rules/"],
   ["zabbix-scope", "Zabbix · Scope", "Integrations", null],
+  ["prtg-links", "PRTG · Linked devices", "Integrations", "/api/prtg/links/"],
+  ["prtg-changes", "PRTG · Review queue", "Integrations", "/api/prtg/changes/"],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
 

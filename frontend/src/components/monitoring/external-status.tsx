@@ -8,6 +8,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import { statusLabel, useStatusLabels } from "./status-palette"
+import { CheckStatusBadge } from "./status-badge"
 
 /**
  * One hover for a monitoring roll-up, everywhere a roll-up appears.
@@ -52,6 +53,12 @@ export function zabbixHostUrl(base: string, hostid: string): string {
   return `${base.replace(/\/+$/, "")}/zabbix.php?action=problem.view&hostids%5B%5D=${encodeURIComponent(hostid)}`
 }
 
+/** A device's page in PRTG. */
+export function prtgDeviceUrl(base: string, objid: string): string {
+  if (!base || !objid) return ""
+  return `${base.replace(/\/+$/, "")}/device.htm?id=${encodeURIComponent(objid)}`
+}
+
 /** The host's latest data - every item's last value. */
 export function zabbixLatestUrl(base: string, hostid: string): string {
   if (!base || !hostid) return ""
@@ -71,7 +78,12 @@ export function ExternalStatusHover({
   const unreachable = entry.unreachable ?? []
   const errors = entry.unreachable_errors ?? {}
   const ext = entry.external
-  const link = ext ? zabbixHostUrl(ext.url, ext.hostid) : ""
+  const isPrtg = ext?.system === "prtg"
+  const link = ext
+    ? isPrtg
+      ? prtgDeviceUrl(ext.url, ext.hostid)
+      : zabbixHostUrl(ext.url, ext.hostid)
+    : ""
 
   return (
     <HoverCard openDelay={150}>
@@ -100,7 +112,7 @@ export function ExternalStatusHover({
               rel="noreferrer"
               className="link inline-flex items-center gap-1"
             >
-              Open in Zabbix
+              {isPrtg ? "Open in PRTG" : "Open in Zabbix"}
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
@@ -141,7 +153,13 @@ export function ExternalStatusHover({
           <ul className="space-y-1">
             {problems.map((p, i) => (
               <li key={`${p.name}-${i}`} className="flex items-start gap-2">
-                <SeverityPill severity={p.severity} />
+                {isPrtg ? (
+                  // A PRTG problem carries the Danbyte state its status
+                  // maps onto, so it is that state's own pill.
+                  <CheckStatusBadge status={p.severity as CheckStatus} />
+                ) : (
+                  <SeverityPill severity={p.severity} />
+                )}
                 <span className="min-w-0 flex-1">{p.name}</span>
               </li>
             ))}
