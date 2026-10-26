@@ -26,6 +26,7 @@ import {
 import { ListPageShell } from "@/components/list-page-shell"
 import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceBulkBar } from "@/components/device-bulk-bar"
+import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -92,6 +93,7 @@ function DevicesPage() {
   // Bulk deploy hands devices to an automation target - gate on being able to
   // see targets (the backend re-checks on the target itself).
   const canDeploy = canDo("automationtarget", "view")
+  const canProfiles = useCanApplyProfiles()
 
   const query = useQuery({
     queryKey: ["devices", q],
@@ -222,14 +224,22 @@ function DevicesPage() {
           secondary_ip: false,
           oob_ip: false,
         }}
-        onSelectedRowsChange={canDeploy ? setSelected : undefined}
+        onSelectedRowsChange={
+          canDeploy || canProfiles ? setSelected : undefined
+        }
+        selectedRows={selected}
       />
       <DeviceDeleteDialog
         device={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-      {canDeploy && (
-        <DeviceBulkBar selected={selected} onCleared={() => setSelected([])} />
+      {(canDeploy || canProfiles) && (
+        <DeviceBulkBar
+          selected={selected}
+          onCleared={() => setSelected([])}
+          deploy={canDeploy}
+          profiles={canProfiles}
+        />
       )}
     </ListPageShell>
   )

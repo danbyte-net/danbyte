@@ -45,6 +45,7 @@ import {
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
+import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
   useSoftwareSummary,
@@ -577,6 +578,7 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
         <div className="min-w-0 space-y-6">
           <KvCard title="Resources" rows={resourceRows} />
           <SoftwareSummaryCard parent={{ kind: "vm", id: vm.id }} />
+          <DeviceProfilesCard host={{ kind: "vm", id: vm.id }} />
           <KvCard title="Management" rows={managementRows} />
         </div>
       </div>

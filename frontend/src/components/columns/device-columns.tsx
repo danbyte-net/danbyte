@@ -50,6 +50,7 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { deviceProfilesColumn } from "@/components/columns/device-profile-columns"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
 // The one source of truth for "a table of devices". Every surface that lists
@@ -91,6 +92,7 @@ export type DeviceColumnId =
   | "secondary_ip"
   | "oob_ip"
   | "description"
+  | "profiles"
   | "tags"
   | "updated"
 
@@ -122,6 +124,7 @@ const CANONICAL_ORDER: DeviceColumnId[] = [
   "secondary_ip",
   "oob_ip",
   "description",
+  "profiles",
   "tags",
   "updated",
 ]
@@ -505,6 +508,7 @@ export function buildDeviceColumns<T extends Device = Device>(
         </span>
       ),
     }),
+    profiles: () => deviceProfilesColumn<T>(),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

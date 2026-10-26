@@ -67,6 +67,7 @@ import {
 } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
+import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
   useSoftwareSummary,
@@ -1300,6 +1301,7 @@ function DeviceOverview({
       <KvCard title="Hardware" rows={hardwareRows} />
       <DeviceCoverageCard deviceId={d.id} />
       <SoftwareSummaryCard parent={{ kind: "device", id: d.id }} />
+      <DeviceProfilesCard host={{ kind: "device", id: d.id }} />
       {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
       <KvCard title="Location" rows={locationRows} />
       <CustomFieldValues

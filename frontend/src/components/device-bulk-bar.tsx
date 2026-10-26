@@ -25,16 +25,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { ApplyProfileBulkButton } from "@/components/device-profile-bulk"
 
-// Floating action bar for /devices - appears when rows are selected. Today it
-// offers a single bulk action: deploy the selection to an automation target.
-// Danbyte hands off to the runner; it never touches the devices directly.
+// Floating action bar for /devices - appears when rows are selected: deploy
+// the selection to an automation target (Danbyte hands off to the runner; it
+// never touches the devices directly), apply a device profile, print, export.
 export interface DeviceBulkBarProps {
   selected: Device[]
   onCleared: () => void
+  /** Offer Deploy (the reader can see automation targets). */
+  deploy?: boolean
+  /** Offer Apply profile. */
+  profiles?: boolean
 }
 
-export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
+export function DeviceBulkBar({
+  selected,
+  onCleared,
+  deploy = true,
+  profiles = false,
+}: DeviceBulkBarProps) {
   const [open, setOpen] = useState(false)
   if (selected.length === 0) return null
   return (
@@ -45,14 +55,23 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
             {selected.length} selected
           </span>
           <span className="h-4 w-px bg-border" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setOpen(true)}
-          >
-            <Rocket className="mr-1 h-3 w-3" /> Deploy
-          </Button>
+          {deploy && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setOpen(true)}
+            >
+              <Rocket className="mr-1 h-3 w-3" /> Deploy
+            </Button>
+          )}
+          {profiles && (
+            <ApplyProfileBulkButton
+              kind="device"
+              ids={selected.map((d) => d.id)}
+              onDone={onCleared}
+            />
+          )}
           <PrintLabelButton
             objectType="device"
             ids={selected.map((d) => d.id)}

@@ -24,6 +24,7 @@ import { siteColumn } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
 import { timeAgoColumn } from "@/components/cells/time-ago"
 import { actionsColumn } from "@/components/columns/actions-column"
+import { deviceProfilesColumn } from "@/components/columns/device-profile-columns"
 import {
   monitoringBucket,
   monitoringFacet,
@@ -74,6 +75,7 @@ export type VmColumnId =
   | "software_version"
   | "software_target"
   | "synced_from"
+  | "profiles"
   | "tags"
   | "updated"
 
@@ -100,6 +102,7 @@ const CANONICAL_ORDER: VmColumnId[] = [
   "software_version",
   "software_target",
   "synced_from",
+  "profiles",
   "tags",
   "updated",
 ]
@@ -412,6 +415,7 @@ export function buildVmColumns<T extends VirtualMachine = VirtualMachine>(
         target: (r) => r.platform?.target_version,
         version: (r) => r.software_version,
       }),
+    profiles: () => deviceProfilesColumn<T>(),
     tags: () =>
       tagsColumn<T>({
         getTags: (r) => r.tags,

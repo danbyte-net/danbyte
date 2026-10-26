@@ -59,6 +59,10 @@ import { fmtUnits, unitBlocker } from "@/lib/rack-placement"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import {
+  DeviceProfilesField,
+  useHostProfilesDraft,
+} from "@/components/device-profile-assign"
+import {
   ApplicationGroupsField,
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
@@ -138,6 +142,10 @@ export function DeviceForm({
   const bindingDrafts = useBindingDraftsRoot()
   // Application groups (#436): written once the device saved.
   const groupsDraft = useHostGroupsDraft(
+    device ? { kind: "device", id: device.id } : null
+  )
+  // Device profiles: likewise written once the device saved.
+  const profilesDraft = useHostProfilesDraft(
     device ? { kind: "device", id: device.id } : null
   )
 
@@ -609,6 +617,7 @@ export function DeviceForm({
       })
       await bindingDrafts.commit()
       await groupsDraft.commit({ kind: "device", id: saved.id })
+      await profilesDraft.commit({ kind: "device", id: saved.id })
       return saved
     },
     onSuccess: (saved) => {
@@ -1201,6 +1210,12 @@ export function DeviceForm({
         <ApplicationGroupsField
           value={groupsDraft.ids}
           onChange={groupsDraft.setIds}
+        />
+      )}
+      {profilesDraft.show && (
+        <DeviceProfilesField
+          value={profilesDraft.ids}
+          onChange={profilesDraft.setIds}
         />
       )}
 
