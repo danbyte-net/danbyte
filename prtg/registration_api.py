@@ -17,6 +17,7 @@ from integrations.toggles import IntegrationToggleMixin, integration_enabled
 
 from . import sensor_kinds as sk
 from .models import PrtgConnection, PrtgPolicy, PrtgSensorProfile
+from .policy_api import PolicyMatchesMixin
 from .registration_serializers import PrtgPolicySerializer, PrtgSensorProfileSerializer
 
 
@@ -27,10 +28,14 @@ class _ByConnection:
         return qs.filter(connection_id=conn) if conn else qs
 
 
-class PrtgPolicyViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedViewSet):
-    """Which devices and VMs PRTG should have. Lower priority first."""
+class PrtgPolicyViewSet(
+    PolicyMatchesMixin, IntegrationToggleMixin, _ByConnection, TenantScopedViewSet
+):
+    """Which devices and VMs PRTG should have. Lower priority first.
+    ``<id>/matches/`` lists who a policy hits; ``<id>/`` adds ``match_count``."""
 
     integration_keys = ("prtg",)
+    rbac_action_map = {"matches": "view"}
     queryset = PrtgPolicy.objects.select_related(
         "profile", "region", "target_site", "location", "platform", "device_type",
         "device_role",
