@@ -9,7 +9,18 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from rest_framework.test import APITestCase
 
-from api.models import Cluster, ClusterType, Device, Site, VirtualMachine
+from api.models import (
+    Cluster,
+    ClusterType,
+    Device,
+    Interface,
+    IPAddress,
+    Prefix,
+    Service,
+    Site,
+    VirtualMachine,
+    VMInterface,
+)
 from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tenant
 from integrations.models import IntegrationSettings
@@ -303,3 +314,199 @@ class PinScopeTests(_Pins):
         # A sensor at another site is not theirs to pin.
         self.assertEqual(self.pin(self.ping, "0").status_code, 400)
         self.assertEqual(self.pin(self.ping_b, "1").status_code, 201)
+
+
+class ObjectPinTests(_Pins):
+    """Pins on an address, interface (device or VM) or service: only for a
+    sensor linked to that object, the cap per object, tenant and site scope."""
+
+    def setUp(self):
+        super().setUp()
+        prefix = Prefix.objects.create(tenant=self.tenant, cidr="10.0.0.0/24", site=self.site)
+        self.ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.41/24", prefix=prefix,
+        )
+        self.gi1 = Interface.objects.create(device=self.dev, name="Gi1/0/1")
+        self.eth0 = VMInterface.objects.create(vm=self.vm, name="ens18")
+        self.https = Service.objects.create(
+            tenant=self.tenant, name="HTTPS", protocol="tcp", ports=[443], device=self.dev,
+        )
+        self.ping.ip_address = self.ip
+        self.ping.save(update_fields=["ip_address"])
+        self.traffic = self._sensor(self.dev, "2094", "Traffic Gi1/0/1")
+        self.traffic.interface = self.gi1
+        self.traffic.save(update_fields=["interface"])
+        self.vm_traffic = self._sensor(self.vm, "2095", "Traffic ens18")
+        self.vm_traffic.vm_interface = self.eth0
+        self.vm_traffic.save(update_fields=["vm_interface"])
+        self.ssl.service = self.https
+        self.ssl.save(update_fields=["service"])
+
+    def cases(self):
+        return [
+            ("ip_address", self.ip, self.ping),
+            ("interface", self.gi1, self.traffic),
+            ("vm_interface", self.eth0, self.vm_traffic),
+            ("service", self.https, self.ssl),
+        ]
+
+    def test_pin_list_unpin_on_each_kind(self):
+        self.login()
+        for field, obj, sensor in self.cases():
+            with self.subTest(field=field):
+                resp = self.pin(sensor, "0", **{field: str(obj.id)})
+                self.assertEqual(resp.status_code, 201, resp.content)
+                body = resp.json()
+                self.assertEqual(body[field]["id"], str(obj.id))
+                self.assertIsNone(body["device"])
+                self.assertIsNone(body["virtual_machine"])
+                listed = self.client.get(f"{URL}?{field}={obj.id}").json()["results"]
+                self.assertEqual([p["id"] for p in listed], [body["id"]])
+                # Not on the sensor's device or VM.
+                owner = "device" if sensor.device_id else "virtual_machine"
+                owner_id = sensor.device_id or sensor.virtual_machine_id
+                self.assertEqual(
+                    self.client.get(f"{URL}?{owner}={owner_id}").json()["results"], [],
+                )
+                self.assertEqual(self.client.delete(f"{URL}{body['id']}/").status_code, 204)
+        self.assertFalse(PrtgSensorPin.objects.exists())
+
+    def test_the_parent_shape_and_whole_sensor(self):
+        self.login()
+        resp = self.client.post(URL, {
+            "sensor": str(self.ping.id), "parent": {"kind": "ip_address", "id": str(self.ip.id)},
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["ip_address"]["id"], str(self.ip.id))
+        self.assertEqual(resp.json()["channel_id"], "")
+        bad = self.client.post(URL, {
+            "sensor": str(self.ping.id), "parent": {"kind": "rack", "id": str(self.ip.id)},
+        }, format="json")
+        self.assertEqual(bad.status_code, 400)
+        two = self.pin(self.ping, "1", ip_address=str(self.ip.id), device=str(self.dev.id))
+        self.assertEqual(two.status_code, 400)
+        self.assertEqual(self.pin(self.ping, "1", ip_address="nope").status_code, 400)
+
+    def test_the_same_sensor_pins_on_the_device_and_the_address(self):
+        self.login()
+        self.assertEqual(self.pin(self.ping, "0").status_code, 201)
+        self.assertEqual(self.pin(self.ping, "0", ip_address=str(self.ip.id)).status_code, 201)
+        dup = self.pin(self.ping, "0", ip_address=str(self.ip.id))
+        self.assertEqual(dup.status_code, 400)
+        self.assertIn("channel_id", dup.json())
+
+    def test_only_a_linked_sensor_pins_on_an_object(self):
+        self.login()
+        for field, obj, _sensor in self.cases():
+            with self.subTest(field=field):
+                resp = self.pin(self.ping_b, "0", **{field: str(obj.id)})
+                self.assertEqual(resp.status_code, 400)
+                self.assertIn("does not watch", resp.json()[field][0])
+        resp = self.pin(self.traffic, "0", ip_address=str(self.ip.id))
+        self.assertEqual(
+            resp.json()["ip_address"],
+            ["This sensor does not watch this address; pin it on the device or VM instead."],
+        )
+
+    def test_the_cap_is_per_object(self):
+        from prtg.pins import MAX_PINS
+
+        self.login()
+        for i in range(MAX_PINS):
+            self.assertEqual(
+                self.pin(self.ping, str(i), ip_address=str(self.ip.id)).status_code, 201,
+            )
+        over = self.pin(self.ping, "99", ip_address=str(self.ip.id))
+        self.assertEqual(over.status_code, 400)
+        self.assertIn("sensor", over.json())
+        # The device has room of its own.
+        self.assertEqual(self.pin(self.ping, "99").status_code, 201)
+
+    def test_reorder_per_object(self):
+        self.login()
+        a = self.pin(self.ssl, "0", service=str(self.https.id)).json()["id"]
+        b = self.pin(self.ssl, "1", service=str(self.https.id)).json()["id"]
+        self.pin(self.ssl, "0")
+        resp = self.client.post(f"{URL}reorder/", {"service": str(self.https.id),
+                                                   "order": [b, a]}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        listed = self.client.get(f"{URL}?service={self.https.id}").json()["results"]
+        self.assertEqual([p["id"] for p in listed], [b, a])
+
+    def test_one_parent_and_unique_per_object(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PrtgSensorPin.objects.create(
+                tenant=self.tenant, ip_address=self.ip, service=self.https,
+                sensor=self.ping, channel_id="0",
+            )
+        PrtgSensorPin.objects.create(
+            tenant=self.tenant, ip_address=self.ip, sensor=self.ping, channel_id="0",
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            PrtgSensorPin.objects.create(
+                tenant=self.tenant, ip_address=self.ip, sensor=self.ping, channel_id="0",
+            )
+
+    def test_a_gone_object_takes_its_pins(self):
+        self.login()
+        self.pin(self.ping, "0", ip_address=str(self.ip.id))
+        self.pin(self.traffic, "0", interface=str(self.gi1.id))
+        self.ip.delete()
+        self.gi1.delete()
+        self.assertFalse(PrtgSensorPin.objects.exists())
+
+    def test_another_tenants_object_is_refused(self):
+        o_site = Site.objects.create(tenant=self.other, name="Y")
+        o_prefix = Prefix.objects.create(tenant=self.other, cidr="10.9.0.0/24", site=o_site)
+        o_ip = IPAddress.objects.create(
+            tenant=self.other, ip_address="10.9.0.1/24", prefix=o_prefix,
+        )
+        self.login()
+        resp = self.pin(self.ping, "0", ip_address=str(o_ip.id))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("ip_address", resp.json())
+        pid = self.pin(self.ping, "0", ip_address=str(self.ip.id)).json()["id"]
+        other_admin = self._user([])
+        UserProfile.objects.get(user=other_admin).tenants.add(self.other)
+        other_admin.is_superuser = True
+        other_admin.save()
+        self.login(other_admin, tenant=self.other)
+        self.assertEqual(self.client.get(f"{URL}?ip_address={self.ip.id}").json()["results"], [])
+        self.assertEqual(self.client.delete(f"{URL}{pid}/").status_code, 404)
+
+    def test_writes_need_view_on_the_object(self):
+        # Change on pins and view on the device, but nothing on addresses.
+        user = self._user([(["prtgsensorpin", "device"], ["view", "change"])])
+        self.login(user)
+        resp = self.pin(self.ping, "0", ip_address=str(self.ip.id))
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["ip_address"], ["Not found."])
+        user = self._user([(["prtgsensorpin", "device", "ipaddress"], ["view", "change"])])
+        self.login(user)
+        self.assertEqual(self.pin(self.ping, "0", ip_address=str(self.ip.id)).status_code, 201)
+        viewer = self._user([(["prtgsensorpin", "device", "ipaddress"], ["view"])])
+        self.login(viewer)
+        listed = self.client.get(f"{URL}?ip_address={self.ip.id}").json()["results"]
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(self.pin(self.ping, "1", ip_address=str(self.ip.id)).status_code, 403)
+
+    def test_site_scope_follows_the_object(self):
+        prefix_b = Prefix.objects.create(tenant=self.tenant, cidr="10.1.0.0/24", site=self.site_b)
+        ip_b = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.1.0.5/24", prefix=prefix_b,
+        )
+        self.ping_b.ip_address = ip_b
+        self.ping_b.save(update_fields=["ip_address"])
+        self.login()
+        a = self.pin(self.ping, "0", ip_address=str(self.ip.id)).json()["id"]
+        b = self.pin(self.ping_b, "0", ip_address=str(ip_b.id)).json()["id"]
+        user = self._user(
+            [(["prtgsensorpin", "device", "ipaddress"], ["view", "change"])],
+            sites=[self.site_b],
+        )
+        self.login(user)
+        listed = [p["id"] for p in self.client.get(URL).json()["results"]]
+        self.assertEqual(listed, [b])
+        self.assertEqual(self.client.delete(f"{URL}{a}/").status_code, 404)
+        self.assertEqual(self.pin(self.ping, "1", ip_address=str(self.ip.id)).status_code, 400)
+        self.assertEqual(self.pin(self.ping_b, "1", ip_address=str(ip_b.id)).status_code, 201)
