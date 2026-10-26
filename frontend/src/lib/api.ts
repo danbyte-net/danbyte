@@ -13271,6 +13271,78 @@ export interface PrtgSensorKind {
   params: PrtgSensorKindParam[]
 }
 
+/** A sensor kind PRTG offers to add by hand
+ * (`/api/prtg/connections/<id>/sensor-kinds/`). */
+export interface PrtgAddableKind {
+  /** PRTG's kind id ("ping", "paessler.snmp.traffic_sensor"), or Danbyte's
+   * kind when the list is Danbyte's own (seed copies). */
+  id: string
+  name: string
+  description: string
+  help: string
+  category: string
+  /** `danbyte`: Danbyte's parameter form; `generic`: PRTG's schema. */
+  form: "danbyte" | "generic"
+  danbyte_kind: string | null
+  /** Picks rows from PRTG's metascan first (one sensor per row). */
+  scan: boolean
+  credentials: string
+  manual: string
+  copy_from_seed: boolean
+}
+
+export interface PrtgAddableKinds {
+  mode: "" | "v2" | "seed" | "none"
+  source: "prtg" | "danbyte"
+  read_at: string | null
+  kinds: PrtgAddableKind[]
+  danbyte_forms: number
+  detail: string
+}
+
+/** One field of PRTG's create form for a kind. */
+export interface PrtgSchemaField {
+  key: string
+  section: string
+  section_title: string
+  name: string
+  label: string
+  type: "text" | "password" | "number" | "select" | "multi" | "checkbox"
+  default: unknown
+  required: boolean
+  options: { value: string; label: string }[]
+  minimum: number | null
+  maximum: number | null
+  help: string
+}
+
+export interface PrtgSensorSchema {
+  kind: string
+  fields: PrtgSchemaField[]
+  scan: { section: string; field: string } | null
+}
+
+export interface PrtgScanRow {
+  value: string
+  name: string
+  status: string
+  connected: boolean | null
+  info: Record<string, unknown>
+}
+
+export interface PrtgDeviceTemplates {
+  source: "prtg" | "defaults"
+  read_at: string | null
+  templates: { file_name: string; name: string; id: string }[]
+}
+
+export interface PrtgAddSensorResult {
+  detail: string
+  objids: string[]
+  failed: string[]
+  sensors: PrtgSensor[]
+}
+
 /** GET /api/prtg/profiles/kinds/ */
 export interface PrtgSensorKinds {
   kinds: PrtgSensorKind[]
@@ -13515,6 +13587,9 @@ export interface PrtgDeviceLink {
   maintenance_note: string
   /** What Danbyte last wrote to PRTG for this device. */
   last_apply?: PrtgLastApply | Record<string, never>
+  /** How the connection creates objects in PRTG: sensors can be added by
+   * hand under `v2` and `seed`. */
+  write_mode?: "" | "v2" | "seed" | "none"
 }
 
 /** Where an adopted PRTG device lands, by what it looks like. */
@@ -13612,6 +13687,8 @@ export interface PrtgSensor {
   connection_name: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
+  /** The link (PRTG device) the sensor sits on. */
+  link?: string
   /** The PRTG device the sensor sits on. */
   prtg_device: string
   objid: string
