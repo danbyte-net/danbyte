@@ -307,6 +307,7 @@ const ROWS: Row[] = [
   ["prtg-adoption-rules", "PRTG · Adoption rules", "Integrations", "/api/prtg/adoption-rules/"],
   ["prtg-policies", "PRTG · Policies", "Integrations", "/api/prtg/policies/"],
   ["prtg-profiles", "PRTG · Sensor profiles", "Integrations", "/api/prtg/profiles/"],
+  ["prtg-policy-matches", "PRTG · Policy matches", "Integrations", null, sub],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
 

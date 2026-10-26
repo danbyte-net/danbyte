@@ -66,6 +66,42 @@ DEF_TAG = "danbyte-def-"
 NOT_YET = "Writing to PRTG arrives in the next release."
 
 
+#: Why an object is left out or a planned row cannot be written, as plain
+#: sentences that say what is missing and where to fix it. Each issue also
+#: carries a ``code`` so the SPA can link to the place it names.
+TEXT = {
+    "excluded": "Exclude from PRTG is set on this object.",
+    "retired": "Its status {status} is left out of PRTG. Set Monitor in PRTG on the "
+               "object to keep it.",
+    "address_excluded": "Its primary address is excluded from monitoring. Include the "
+                        "address again or set Monitor in PRTG on the object.",
+    "no_check": "It has no PRTG check, and this connection only registers objects "
+                "with one. Add a PRTG check to its primary address.",
+    "no_match": "Nothing registers this object. Add a policy that matches it, set "
+                "Monitor in PRTG on the object, or turn on Register all.",
+    "already_linked": "It is already in PRTG. Register all only adds new devices.",
+    "no_group": "No PRTG group chosen. Set one on the matching policy or under "
+                "Register all on the connection.",
+    "group_gone": "The PRTG group {path} is gone. Pick another on the matching policy "
+                  "or under Register all on the connection.",
+    "no_snmp": "No SNMP profile applies to {label}. Set one on its {tab} tab.",
+    "no_windows": "Danbyte holds no Windows login for {label}. Add one on its Access tab.",
+    "no_windows_vm": "Danbyte holds no Windows logins for VMs yet, so WMI sensors on "
+                     "{label} cannot be set up.",
+    "no_address": "It has no primary address. Set one so PRTG can reach it.",
+    "unwanted_sensor": "Danbyte made this sensor and no profile wants it any more.",
+}
+_TEXT_ONLY = ("status", "label", "tab")
+
+
+def issue(code: str, **values) -> dict:
+    """One reason as ``{code, text}`` plus what the SPA needs for its link:
+    ``policy`` (a policy to edit) or ``object`` (``{kind, id}``)."""
+    out = {"code": code, "text": TEXT[code].format(**values)}
+    out.update({k: v for k, v in values.items() if k not in _TEXT_ONLY and k != "path"})
+    return out
+
+
 def instance_tag(definition_id, part: str = "") -> str:
     digest = hashlib.sha1(f"{definition_id}:{part}".encode()).hexdigest()[:12]
     return f"{DEF_TAG}{digest}"
@@ -199,8 +235,9 @@ class Want:
     obj: object
     #: never | always | policy | register_all - or "" when out of scope.
     via: str = ""
-    #: Why an object is left out, for the preview.
+    #: Why an object is left out, for the preview, and the same as an issue.
     reason: str = ""
+    reason_issue: dict | None = None
     policies: list = field(default_factory=list)
     profiles: list = field(default_factory=list)
     group: dict | None = None
@@ -232,33 +269,32 @@ def decide(conn: PrtgConnection, obj, ctx: Context, *, linked: bool,
     """Whether PRTG should have this object and why: the precedence in the
     module docstring, one object at a time."""
     want = Want(obj)
+
+    def out(code, **values):
+        want.reason_issue = issue(code, **values)
+        want.reason = want.reason_issue["text"]
+        return want
+
     sync = getattr(obj, "prtg_sync", "inherit") or "inherit"
     if sync == "never":
-        want.via, want.reason = "never", "Set to Exclude from PRTG."
-        return want
+        want.via = "never"
+        return out("excluded")
     matched = [p for p in ctx.policies if policy_matches(p, obj, ctx)]
     want.policies = matched
     if sync == "always":
         want.via = "always"
     elif _retired(obj):
-        want.reason = f"Status {obj.status.name} is left out."
-        return want
+        return out("retired", status=obj.status.name)
     elif _address_excluded(obj):
-        want.reason = "Its primary address is excluded from monitoring."
-        return want
+        return out("address_excluded")
     elif checked is not None and obj.id not in checked:
-        want.reason = "No PRTG check on this connection's engines."
-        return want
+        return out("no_check")
     elif matched:
         want.via = "policy"
     elif conn.register_all and not linked:
         want.via = "register_all"
     else:
-        want.reason = (
-            "No policy matches." if not conn.register_all
-            else "Already in PRTG; Register all only adds devices."
-        )
-        return want
+        return out("no_match" if not conn.register_all else "already_linked")
     if matched:
         seen = set()
         for policy in matched:
@@ -268,7 +304,8 @@ def decide(conn: PrtgConnection, obj, ctx: Context, *, linked: bool,
         lead = next((p for p in matched if p.group_id), None)
         if lead is not None:
             want.group = {"objid": lead.group_id, "path": lead.group_path,
-                          "source": "policy", "policy": lead.name}
+                          "source": "policy", "policy": lead.name,
+                          "policy_id": str(lead.id)}
     if not want.profiles and ctx.register_profile is not None:
         want.profiles.append(ctx.register_profile)
     if want.group is None:
@@ -434,26 +471,38 @@ def windows_credentials(obj) -> list[dict]:
     ]
 
 
-def credentials_for(obj, tenant, sensors: list[dict]) -> tuple[list, list]:
-    """What would be sent with the device, by name only, and a sentence per
+def _target(obj) -> dict:
+    return {"kind": "virtual_machine" if _is_vm(obj) else "device", "id": str(obj.id)}
+
+
+def credential_issues(obj, tenant, sensors: list[dict]) -> tuple[list, list]:
+    """What would be sent with the device, by name only, and an issue per
     credential a sensor needs that Danbyte does not have."""
     needs = {s.get("needs") for s in sensors} - {None}
     creds, missing = [], []
+    vm = _is_vm(obj)
     if sk.SNMP in needs:
         snmp = snmp_credential(obj, tenant)
         if snmp:
             creds.append(snmp)
         else:
-            missing.append(f"SNMP sensors need an SNMP profile; none applies to {_label(obj)}.")
+            missing.append(issue("no_snmp", label=_label(obj),
+                                 tab="SNMP" if vm else "Access", object=_target(obj)))
     if sk.WINDOWS in needs:
         win = windows_credentials(obj)
         if win:
             creds.extend(win)
+        elif vm:
+            missing.append(issue("no_windows_vm", label=_label(obj)))
         else:
-            missing.append(
-                f"WMI sensors need a Windows login; Danbyte holds none for {_label(obj)}."
-            )
+            missing.append(issue("no_windows", label=_label(obj), object=_target(obj)))
     return creds, missing
+
+
+def credentials_for(obj, tenant, sensors: list[dict]) -> tuple[list, list]:
+    """:func:`credential_issues` with each issue as its sentence."""
+    creds, missing = credential_issues(obj, tenant, sensors)
+    return creds, [m["text"] for m in missing]
 
 
 # ── recognising existing sensors ────────────────────────────────────────────
@@ -500,13 +549,24 @@ def read_groups(conn, client=None, now=None) -> list[dict]:
     return groups
 
 
-def group_problem(want: Want, groups_by_id: dict) -> str:
+def group_issue(want: Want, groups_by_id: dict) -> dict | None:
+    """Why the object has no usable group: none chosen, or one PRTG no
+    longer lists. Names the policy that decides the group, when one does."""
+    lead = (want.group or {}).get("policy_id") or (
+        str(want.policies[0].id) if want.policies else None
+    )
+    extra = {"policy": lead} if lead else {}
     if want.group is None:
-        return "No PRTG group to create it in: give the policy or Register all one."
+        return issue("no_group", **extra)
     if want.group["objid"] not in groups_by_id:
         path = want.group.get("path") or want.group["objid"]
-        return f"PRTG has no group {path} any more."
-    return ""
+        return issue("group_gone", path=path, **extra)
+    return None
+
+
+def group_problem(want: Want, groups_by_id: dict) -> str:
+    found = group_issue(want, groups_by_id)
+    return found["text"] if found else ""
 
 
 # ── the pass ────────────────────────────────────────────────────────────────
@@ -642,12 +702,13 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
             if not host:
                 counts["no_address"] += 1
                 continue
-            reasons = []
-            problem = group_problem(want, groups_by_id)
+            issues = []
+            problem = group_issue(want, groups_by_id)
             if problem:
-                reasons.append(problem)
-            creds, missing = credentials_for(obj, conn.tenant, wanted)
-            reasons.extend(missing)
+                issues.append(problem)
+            creds, missing = credential_issues(obj, conn.tenant, wanted)
+            issues.extend(missing)
+            reasons = [i["text"] for i in issues]
             group = dict(want.group or {})
             if group.get("objid") in groups_by_id:
                 found = groups_by_id[group["objid"]]
@@ -662,6 +723,7 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
                 "credentials": creds,
                 "tags": ["danbyte", f"danbyte-{obj.id}"],
                 "applicable": not reasons, "reason": " ".join(reasons),
+                "issues": issues,
             }
             if reasons:
                 counts["not_applicable"] += 1
@@ -701,10 +763,10 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         if inst["required"]:
             missing.append(inst)
     for inst in missing:
-        reasons = []
+        issues = []
         if inst.get("needs"):
-            _, gaps = credentials_for(obj, conn.tenant, [inst])
-            reasons.extend(gaps)
+            _, issues = credential_issues(obj, conn.tenant, [inst])
+        reasons = [i["text"] for i in issues]
         counts["add_sensor"] += 1
         if reasons:
             counts["not_applicable"] += 1
@@ -714,7 +776,7 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
                            "kind": inst["kind"], "kind_label": inst["kind_label"]},
             "sensor": _sensor_detail(inst),
             "interface": inst.get("interface"),
-            "applicable": not reasons, "reason": " ".join(reasons),
+            "applicable": not reasons, "reason": " ".join(reasons), "issues": issues,
         }, **_parent(obj), kind=PrtgChange.ADD_SENSOR, key=inst["key"])
 
     keys = {i["key"] for i in wanted}
@@ -727,7 +789,7 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
             "objid": link.objid, "device_name": link.name,
             "sensor": {"objid": s.objid, "name": s.name, "kind": s.kind_label or s.kind},
             "tag": ours[0],
-            "reason": "Danbyte made this sensor and no profile wants it any more.",
+            "reason": TEXT["unwanted_sensor"],
             "applicable": True,
         }, **_parent(obj), kind=PrtgChange.REMOVE_SENSOR, key=s.objid)
 
@@ -738,10 +800,12 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
     if not current or current == target:
         return
     if target not in groups_by_id:
-        problem = group_problem(want, groups_by_id)
+        found = group_issue(want, groups_by_id)
+        issues = [found] if found else []
+        problem = found["text"] if found else ""
         to = {"objid": target, "path": want.group.get("path", ""), "kind": ""}
     else:
-        problem = ""
+        problem, issues = "", []
         to = {"objid": target, "path": groups_by_id[target]["path"],
               "kind": groups_by_id[target]["kind"]}
     frm = groups_by_id.get(current)
@@ -752,7 +816,7 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         "objid": link.objid, "name": link.name,
         "from": {"objid": current, "path": frm["path"] if frm else link.group_path},
         "to": to,
-        "applicable": not problem, "reason": problem,
+        "applicable": not problem, "reason": problem, "issues": issues,
     }, **_parent(obj), kind=PrtgChange.MOVE_DEVICE, key="")
 
 
@@ -780,24 +844,24 @@ def preview(conn: PrtgConnection, obj) -> dict:
             "present": found is not None,
             "sensor": {"objid": found.objid, "name": found.name} if found else None,
         })
-    creds, missing = credentials_for(obj, conn.tenant, wanted)
+    creds, issues = credential_issues(obj, conn.tenant, wanted)
     group = dict(want.group or {}) or None
     if group and group["objid"] in groups_by_id:
         group.update(path=groups_by_id[group["objid"]]["path"],
                      kind=groups_by_id[group["objid"]]["kind"])
-    problems = list(missing)
     if want.managed and link is None:
-        problem = group_problem(want, groups_by_id) if groups_by_id else (
-            "" if want.group else group_problem(want, {})
+        problem = group_issue(want, groups_by_id) if groups_by_id else (
+            None if want.group else group_issue(want, {})
         )
         if problem:
-            problems.append(problem)
+            issues.append(problem)
         if not host_address(obj):
-            problems.append("It has no primary address for PRTG to reach.")
+            issues.append(issue("no_address", object=_target(obj)))
     return {
         "connection": {"id": str(conn.id), "name": conn.name},
         "prtg_sync": getattr(obj, "prtg_sync", "inherit"),
         "managed": want.managed, "via": want.via, "reason": want.reason,
+        "reason_issue": want.reason_issue,
         "linked": (
             {"objid": link.objid, "name": link.name, "group": link.group_path,
              "url": conn.device_url(link.objid)} if link else None
@@ -807,7 +871,8 @@ def preview(conn: PrtgConnection, obj) -> dict:
         "profiles": [p.name for p in want.profiles],
         "sensors": rows,
         "credentials": creds,
-        "problems": problems,
+        "problems": [i["text"] for i in issues],
+        "issues": issues,
     }
 
 

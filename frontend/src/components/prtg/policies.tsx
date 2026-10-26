@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
@@ -9,6 +10,7 @@ import { apiAll } from "@/lib/api-all"
 import type {
   Paginated,
   PrtgConnection,
+  PrtgGroups,
   PrtgPolicy,
   PrtgPolicyScope,
   PrtgSensorProfile,
@@ -32,6 +34,11 @@ import {
   FormText,
   useFieldErrors,
 } from "@/components/forms"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
@@ -41,6 +48,8 @@ import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 
 import { PrtgGroupPicker } from "./group-picker"
+import { PrtgPolicyDetail } from "./policy-detail"
+import { ProfileForm } from "./profiles"
 
 export const POLICY_SCOPES: { value: PrtgPolicyScope; label: string }[] = [
   { value: "global", label: "Every device and VM" },
@@ -83,6 +92,21 @@ export function PrtgPolicies({
   canManage: boolean
 }) {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  // ?policy=<id> opens a policy's detail, ?edit=<id> its editor: the plan
+  // preview and its guidance link here.
+  const search: { policy?: string; edit?: string } = useSearch({
+    strict: false,
+  })
+  const clearParam = (key: "policy" | "edit") =>
+    void navigate({
+      to: ".",
+      replace: true,
+      search: (prev: Record<string, unknown>) => ({
+        ...prev,
+        [key]: undefined,
+      }),
+    })
   const [editing, setEditing] = useState<PrtgPolicy | null>(null)
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<PrtgPolicy | null>(null)
@@ -104,6 +128,16 @@ export function PrtgPolicies({
     onError: apiErrorToast,
   })
   const rows = policies.data?.results ?? []
+  const urlEditing =
+    canManage && search.edit
+      ? (rows.find((r) => r.id === search.edit) ?? null)
+      : null
+  const current = editing ?? urlEditing
+  const closeEditor = () => {
+    setAdding(false)
+    setEditing(null)
+    if (search.edit) clearParam("edit")
+  }
 
   const columns = useMemo<ColumnDef<PrtgPolicy>[]>(
     () => [
@@ -122,7 +156,13 @@ export function PrtgPolicies({
         accessorKey: "name",
         header: ({ column }) => <SortHeader column={column} label="Name" />,
         cell: ({ row }) => (
-          <span className="font-medium">{row.original.name}</span>
+          <Link
+            to="/prtg"
+            search={{ tab: "policies", policy: row.original.id }}
+            className="link font-medium"
+          >
+            {row.original.name}
+          </Link>
         ),
       },
       {
@@ -233,30 +273,37 @@ export function PrtgPolicies({
       )}
 
       <Dialog
-        open={adding || !!editing}
+        open={adding || !!current}
         onOpenChange={(o) => {
-          if (!o) {
-            setAdding(false)
-            setEditing(null)
-          }
+          if (!o) closeEditor()
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit policy" : "Add policy"}</DialogTitle>
+            <DialogTitle>{current ? "Edit policy" : "Add policy"}</DialogTitle>
           </DialogHeader>
-          {(adding || !!editing) && (
+          {(adding || !!current) && (
             <PolicyForm
+              key={current?.id ?? "new"}
               connection={connection}
-              policy={editing}
-              onDone={() => {
-                setAdding(false)
-                setEditing(null)
-              }}
+              policy={current}
+              onDone={closeEditor}
             />
           )}
         </DialogContent>
       </Dialog>
+      <PrtgPolicyDetail
+        policyId={search.policy ?? null}
+        onClose={() => clearParam("policy")}
+        onEdit={
+          canManage
+            ? (p) => {
+                clearParam("policy")
+                setEditing(p)
+              }
+            : undefined
+        }
+      />
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
@@ -280,6 +327,7 @@ export function PolicyForm({
 }) {
   const qc = useQueryClient()
   const { fieldErrors, handleApiError } = useFieldErrors()
+  const [newProfile, setNewProfile] = useState(false)
   const initialScope = policy?.scope ?? "global"
   const [name, setName] = useState(policy?.name ?? "")
   const [scope, setScope] = useState<PrtgPolicyScope>(initialScope)
@@ -318,6 +366,15 @@ export function PolicyForm({
         `/api/prtg/profiles/?connection=${connection.id}`
       ),
   })
+  // The group picker's own list (shared cache): empty means PRTG was never
+  // read, which the hint under the picker says.
+  const groups = useQuery({
+    queryKey: ["prtg-groups", connection.id],
+    queryFn: () =>
+      api<PrtgGroups>(`/api/prtg/groups/?connection=${connection.id}`),
+    staleTime: 60_000,
+  })
+  const noGroups = !!groups.data && groups.data.groups.length === 0
   const tagQuery = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => apiAll<TagOption>("/api/tags/"),
@@ -374,122 +431,171 @@ export function PolicyForm({
     scope === "global" ? undefined : fieldErrors[TARGETS[scope].field as string]
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        save.mutate()
-      }}
-      className="grid gap-4"
-    >
-      <FormText
-        label="Name"
-        required
-        value={name}
-        onChange={setName}
-        placeholder="Core switches"
-        error={fieldErrors.name}
-      />
-      <FormSelect
-        label="Applies to"
-        value={scope}
-        onChange={(v) => {
-          setScope((v ?? "global") as PrtgPolicyScope)
-          setTarget(null)
+    <>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate()
         }}
-        options={POLICY_SCOPES}
-        error={fieldErrors.scope}
-      />
-      {scope !== "global" && (
-        <FormCombobox
-          label={targetLabel}
-          required
-          value={target}
-          onChange={setTarget}
-          options={(options.data?.results ?? []).map((o) => ({
-            value: o.id,
-            label: o.model || o.name || o.id,
-          }))}
-          searchPlaceholder="Search…"
-          emptyText="Nothing found."
-          error={targetError}
-        />
-      )}
-      <div className="flex flex-wrap gap-4">
-        <FormCheckbox label="Devices" checked={devices} onChange={setDevices} />
-        <FormCheckbox label="VMs" checked={vms} onChange={setVms} />
-      </div>
-      {fieldErrors.applies_to_devices && (
-        <p className="text-xs text-destructive">
-          {fieldErrors.applies_to_devices}
-        </p>
-      )}
-      <FormText
-        label="Name filter"
-        hint="glob, e.g. core-*"
-        value={matchName}
-        onChange={setMatchName}
-        placeholder="core-*"
-        error={fieldErrors.match_name}
-      />
-      <Field
-        label="Tags"
-        hint="all of them"
-        info="Every tag must be on the device or VM. Filters narrow what the scope matched; they never widen it."
-        error={fieldErrors.match_tags}
+        className="grid gap-4"
       >
-        <TagMultiSelect
-          options={tagRows}
-          value={pickedIds}
-          onChange={onTags}
-          placeholder="Add a tag…"
+        <FormText
+          label="Name"
+          required
+          value={name}
+          onChange={setName}
+          placeholder="Core switches"
+          error={fieldErrors.name}
         />
-      </Field>
-      <FormText
-        label="Hardware"
-        hint="glob, devices only"
-        info="One of the device's inventory items or modules must match by name or part number. A VM has no hardware, so a hardware filter leaves VMs out."
-        value={hardware}
-        onChange={setHardware}
-        placeholder="*PSU*"
-        error={fieldErrors.match_hardware}
-      />
-      <FormSelect
-        label="Sensor profile"
-        required
-        value={profile}
-        onChange={setProfile}
-        options={(profiles.data?.results ?? []).map((p) => ({
-          value: p.id,
-          label: p.name,
-        }))}
-        placeholder="Pick a profile"
-        error={fieldErrors.profile}
-      />
-      <PrtgGroupPicker
-        connectionId={connection.id}
-        value={groupId}
-        path={groupPath}
-        required
-        onChange={(id, path) => {
-          setGroupId(id)
-          setGroupPath(path)
-        }}
-        error={fieldErrors.group_id}
-      />
-      <FormText
-        label="Priority"
-        type="number"
-        hint="lower first; the first match picks the group"
-        value={priority}
-        onChange={setPriority}
-        error={fieldErrors.priority}
-      />
-      <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
-      <FormFooter
-        onCancel={onDone}
-        submitting={save.isPending}
-        submitLabel={policy ? "Save policy" : "Add policy"}
-      />
-    </form>
+        <FormSelect
+          label="Applies to"
+          value={scope}
+          onChange={(v) => {
+            setScope((v ?? "global") as PrtgPolicyScope)
+            setTarget(null)
+          }}
+          options={POLICY_SCOPES}
+          error={fieldErrors.scope}
+        />
+        {scope !== "global" && (
+          <FormCombobox
+            label={targetLabel}
+            required
+            value={target}
+            onChange={setTarget}
+            options={(options.data?.results ?? []).map((o) => ({
+              value: o.id,
+              label: o.model || o.name || o.id,
+            }))}
+            searchPlaceholder="Search…"
+            emptyText="Nothing found."
+            error={targetError}
+          />
+        )}
+        <div className="flex flex-wrap gap-4">
+          <FormCheckbox
+            label="Devices"
+            checked={devices}
+            onChange={setDevices}
+          />
+          <FormCheckbox label="VMs" checked={vms} onChange={setVms} />
+        </div>
+        {fieldErrors.applies_to_devices && (
+          <p className="text-xs text-destructive">
+            {fieldErrors.applies_to_devices}
+          </p>
+        )}
+        <FormText
+          label="Name filter"
+          hint="glob, e.g. core-*"
+          value={matchName}
+          onChange={setMatchName}
+          placeholder="core-*"
+          error={fieldErrors.match_name}
+        />
+        <Field
+          label="Tags"
+          hint="all of them"
+          info="Every tag must be on the device or VM. Filters narrow what the scope matched; they never widen it."
+          error={fieldErrors.match_tags}
+        >
+          <TagMultiSelect
+            options={tagRows}
+            value={pickedIds}
+            onChange={onTags}
+            placeholder="Add a tag…"
+          />
+        </Field>
+        <FormText
+          label="Hardware"
+          hint="glob, devices only"
+          info="One of the device's inventory items or modules must match by name or part number. A VM has no hardware, so a hardware filter leaves VMs out."
+          value={hardware}
+          onChange={setHardware}
+          placeholder="*PSU*"
+          error={fieldErrors.match_hardware}
+        />
+        <FormCombobox
+          label="Sensor profile"
+          required
+          value={profile}
+          onChange={setProfile}
+          options={(profiles.data?.results ?? []).map((p) => ({
+            value: p.id,
+            label: p.name,
+          }))}
+          placeholder="Pick a profile"
+          searchPlaceholder="Search profiles…"
+          emptyText="No profiles."
+          error={fieldErrors.profile}
+          quickAdd={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label="New profile"
+                  onClick={() => setNewProfile(true)}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent variant="panel">New profile</TooltipContent>
+            </Tooltip>
+          }
+        />
+        <div className="grid gap-1">
+          <PrtgGroupPicker
+            connectionId={connection.id}
+            value={groupId}
+            path={groupPath}
+            required
+            onChange={(id, path) => {
+              setGroupId(id)
+              setGroupPath(path)
+            }}
+            error={fieldErrors.group_id}
+          />
+          {noGroups && (
+            <p className="text-xs text-muted-foreground">
+              No groups read yet. Test the connection first.{" "}
+              <Link to="/prtg" search={{ tab: "overview" }} className="link">
+                Connection
+              </Link>
+            </p>
+          )}
+        </div>
+        <FormText
+          label="Priority"
+          type="number"
+          hint="lower first; the first match picks the group"
+          value={priority}
+          onChange={setPriority}
+          error={fieldErrors.priority}
+        />
+        <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
+        <FormFooter
+          onCancel={onDone}
+          submitting={save.isPending}
+          submitLabel={policy ? "Save policy" : "Add policy"}
+        />
+      </form>
+      <Dialog open={newProfile} onOpenChange={setNewProfile}>
+        <DialogContent size="3xl" className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>New profile</DialogTitle>
+          </DialogHeader>
+          {newProfile && (
+            <ProfileForm
+              connection={connection}
+              profile={null}
+              onDone={() => setNewProfile(false)}
+              onSaved={(p) => setProfile(p.id)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
