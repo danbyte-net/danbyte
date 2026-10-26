@@ -24,6 +24,7 @@ import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError
+from django.db.models import ProtectedError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.serializers import as_serializer_error
@@ -58,12 +59,34 @@ def _column(exc: BaseException) -> str | None:
     return getattr(diag, "column_name", None)
 
 
+def _protected_names(exc) -> str | None:
+    """A refused delete whose holders can name themselves (a row with a
+    ``protected_label``, such as a device profile's section row): "In use by
+    device profile RDS-HR." None when any holder cannot, which keeps the
+    generic answer below."""
+    labels = []
+    for obj in exc.protected_objects:
+        label = getattr(obj, "protected_label", None)
+        if not label:
+            return None
+        labels.append(label)
+    if not labels:
+        return None
+    names = sorted(set(labels))
+    more = f" and {len(names) - 5} more" if len(names) > 5 else ""
+    return f"In use by {', '.join(names[:5])}{more}. Nothing was deleted."
+
+
 def exception_handler(exc, context):
     response = drf_default(exc, context)
     if response is not None:
         return response
     if isinstance(exc, DjangoValidationError):
         return Response(as_serializer_error(exc), status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, ProtectedError):
+        named = _protected_names(exc)
+        if named:
+            return Response({"detail": named}, status=status.HTTP_409_CONFLICT)
     if isinstance(exc, IntegrityError):
         view = context.get("view")
         log.warning(

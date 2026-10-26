@@ -198,6 +198,7 @@ GROUPS = importlib.import_module("auth_api.migrations.0036_site_roles_applicatio
 PRTG = importlib.import_module("auth_api.migrations.0037_site_roles_prtg")
 PINS = importlib.import_module("auth_api.migrations.0038_site_roles_prtg_pins")
 PRTG_FACTS = importlib.import_module("auth_api.migrations.0039_site_roles_prtg_facts")
+PROFILES = importlib.import_module("auth_api.migrations.0040_site_roles_device_profiles")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -303,7 +304,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(GROUPS.NEW_TYPES)
             | set(PRTG.NEW_TYPES)
             | set(PINS.NEW_TYPES)
-            | set(PRTG_FACTS.NEW_TYPES),
+            | set(PRTG_FACTS.NEW_TYPES)
+            | set(PROFILES.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -370,6 +372,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS + COOLING.NEW_CATALOGS
                 + APPLICATIONS.NEW_CATALOGS + FLOWS.NEW_CATALOGS + GROUPS.NEW_CATALOGS
                 + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS + PRTG_FACTS.NEW_CATALOGS
+                + PROFILES.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -457,6 +460,54 @@ class SiteRolePrtgPinUpgradeTests(SiteRoleUpgradeTests):
             self.assertIn("prtghostfacts", perm.object_types, perm.name)
         before = sorted(view.object_types)
         PRTG_FACTS.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleDeviceProfileUpgradeTests(SiteRoleUpgradeTests):
+    """0040 gives the site roles built before it the device profile
+    assignments, and their catalog view the profiles."""
+
+    def _role(self, name, actions):
+        """A role as 0039 left it."""
+        types = (
+            MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES) | set(LATER.NEW_TYPES)
+            | set(COOLING.NEW_TYPES) | set(APPLICATIONS.NEW_TYPES)
+            | set(COOLING_PARTS.NEW_TYPES) | set(FLOWS.NEW_TYPES) | set(GROUPS.NEW_TYPES)
+            | set(PRTG.NEW_TYPES) | set(PINS.NEW_TYPES) | set(PRTG_FACTS.NEW_TYPES)
+        )
+        if actions == ["view"]:
+            types = types | {"site"} | set(CATALOG_MIGRATION.ROLE_CATALOGS) | {
+                "supportcontract", "application", "applicationgroup"}
+        return self._old(name, actions, types=sorted(types))
+
+    def test_viewer_editor_and_catalog_view_gain_the_profiles(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + ["applicationgroup"]),
+        )
+        catalog.sites.set([self.site_a])
+        PROFILES.forwards(django_apps, None)
+        view.refresh_from_db()
+        edit.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertLessEqual({"deviceprofileassignment", "deviceprofile"},
+                             set(view.object_types))
+        self.assertIn("deviceprofileassignment", edit.object_types)
+        self.assertNotIn("deviceprofile", edit.object_types)
+        self.assertIn("deviceprofile", catalog.object_types)
+
+    def test_profiles_second_run_and_hand_built(self):
+        view = self._role("A - site view", ["view"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        PROFILES.forwards(django_apps, None)
+        view.refresh_from_db()
+        before = sorted(view.object_types)
+        PROFILES.forwards(django_apps, None)
         view.refresh_from_db()
         custom.refresh_from_db()
         self.assertEqual(sorted(view.object_types), before)
