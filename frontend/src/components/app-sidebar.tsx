@@ -41,6 +41,7 @@ import {
   KeyRound,
   Landmark,
   Layers,
+  Layers3,
   LayoutDashboard,
   LayoutGrid,
   LayoutPanelTop,
@@ -828,6 +829,12 @@ export const sections: NavSection[] = [
             url: "/application-groups",
             icon: LayoutGrid,
             objectType: "applicationgroup",
+          },
+          {
+            title: "Device profiles",
+            url: "/device-profiles",
+            icon: Layers3,
+            objectType: "deviceprofile",
           },
           {
             title: "Manufacturers",

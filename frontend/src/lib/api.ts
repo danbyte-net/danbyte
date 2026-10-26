@@ -1680,6 +1680,8 @@ export interface Device {
   service_count: number
   /** Installed software rows (#436), list and detail - the Software tab. */
   install_count?: number
+  /** Device profiles in order, with their assignment state. */
+  device_profiles?: HostDeviceProfile[]
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
   image_count?: number
@@ -2086,6 +2088,123 @@ export interface ApplicationGroupRelease {
   kept: number
   moved: number
 }
+
+// ─── Device profiles ───────────────────────────────────────────────────
+
+export type DeviceProfileState = "ok" | "missing" | "edited" | "pending"
+
+/** A profile as a device or VM lists it. */
+export interface HostDeviceProfile {
+  id: string
+  assignment_id: string
+  name: string
+  slug: string
+  color: string
+  state: DeviceProfileState
+}
+
+export interface DeviceProfileMini {
+  id: string
+  numid?: number | null
+  name: string
+  slug: string
+  color: string
+  /** Names from the root, " / " between them. */
+  path: string
+}
+
+export type DeviceProfileSectionKind =
+  "application_group" | "tag" | "custom_field" | "platform"
+
+export interface DeviceProfileEffectiveItem {
+  label: string
+  /** The profile in the chain the item comes from. */
+  from: string
+  inherited: boolean
+  /** Custom fields: the value. */
+  value?: unknown
+}
+
+export interface DeviceProfile extends DeviceProfileMini {
+  description: string
+  parent: { id: string; name: string; slug: string; color: string } | null
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  platform: { id: string; name: string; slug: string } | null
+  runbook_url: string
+  notes: string
+  application_groups: { id: string; name: string; slug: string }[]
+  add_tags: Tag[]
+  cf_values: Record<string, unknown>
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  /** Devices and VMs the reader may view. */
+  assignment_count: number
+  child_count: number
+  /** Detail only: the sections with the parents applied. */
+  effective: Record<
+    DeviceProfileSectionKind,
+    DeviceProfileEffectiveItem[]
+  > | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DeviceProfileAssignment {
+  id: string
+  profile: { id: string; name: string; slug: string; color: string }
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  position: number
+  state: DeviceProfileState
+  missing_count: number
+  edited_count: number
+  reconciled_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** What an unassign did with the rows the profile wrote. */
+export interface DeviceProfileRelease {
+  removed: number
+  kept: number
+  moved: number
+}
+
+export interface DeviceProfilePreviewItem {
+  key: string
+  label: string
+  from: string
+  value?: unknown
+  reason?: string
+}
+
+export interface DeviceProfilePreview {
+  profile: { id: string; name: string; slug: string }
+  object: { id: string; name: string }
+  already_assigned: boolean
+  /** Why the profile cannot go on this object at all, or "". */
+  refused: string
+  sections: {
+    kind: DeviceProfileSectionKind
+    label: string
+    create: DeviceProfilePreviewItem[]
+    change: DeviceProfilePreviewItem[]
+    present: DeviceProfilePreviewItem[]
+    skip: DeviceProfilePreviewItem[]
+  }[]
+  missing_permissions: { type: string; action: string; label: string }[]
+}
+
+export type DeviceProfileBulkOutcome =
+  "assigned" | "unassigned" | "unchanged" | "denied" | "refused"
+
+export type DeviceProfileBulkResult =
+  | {
+      results: { id: string; name: string; outcome: DeviceProfileBulkOutcome }[]
+      counts: Partial<Record<DeviceProfileBulkOutcome, number>>
+    }
+  | { job_id: string; count: number }
 
 // ─── Application flows (#163) ──────────────────────────────────────────
 
@@ -5443,6 +5562,8 @@ export interface VirtualMachine {
   routing_count?: number
   /** Installed software rows (#436), list and detail - the Software tab. */
   install_count?: number
+  /** Device profiles in order, with their assignment state. */
+  device_profiles?: HostDeviceProfile[]
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
