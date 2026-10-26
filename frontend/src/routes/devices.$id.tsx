@@ -595,7 +595,16 @@ function Body({ device: d }: { device: Device }) {
       </DetailTab>
       <DetailTab value="ips">
         <AssignedIpsPane
-          scope={{ kind: "device", deviceId: d.id, deviceName: d.name }}
+          scope={{
+            kind: "device",
+            deviceId: d.id,
+            deviceName: d.name,
+            slots: {
+              primary: d.primary_ip?.id,
+              secondary: d.secondary_ip?.id,
+              oob: d.oob_ip?.id,
+            },
+          }}
           canAddIp={canDo("ipaddress", "add")}
           canAssignIp={canDo("ipaddress", "change")}
           canChangeDevice={canDo("device", "change")}

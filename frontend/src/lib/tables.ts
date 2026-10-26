@@ -66,6 +66,7 @@ const ROWS: Row[] = [
   ["macs", "MAC addresses", "IPAM", null],
   ["device-ips", "Device · IPs", "IPAM", "/api/ips/", sub],
   ["interface-ips", "Interface · IPs", "IPAM", "/api/ips/", sub],
+  ["vm-ips", "VM · IPs", "IPAM", "/api/ips/", sub],
   ["location-prefixes", "Location · Prefixes", "IPAM", "/api/prefixes/", sub],
   ["vlan-embedded", "VRF · VLANs", "IPAM", "/api/vlans/", sub],
   ["zone-vlans", "Zone · VLANs", "IPAM", "/api/vlans/", sub],

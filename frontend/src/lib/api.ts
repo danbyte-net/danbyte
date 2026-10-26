@@ -5443,6 +5443,8 @@ export interface VirtualMachine {
   routing_count?: number
   /** Installed software rows (#436), list and detail - the Software tab. */
   install_count?: number
+  /** Every address the VM uses - on it, on its interfaces, or its primary. */
+  ip_count?: number
   primary_ip: { id: string; ip_address: string; dns_name: string } | null
   description: string
   tags: Tag[]
