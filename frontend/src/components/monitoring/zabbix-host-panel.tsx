@@ -15,7 +15,8 @@ import { CheckStatusBadge } from "./status-badge"
  * the page; an empty answer means "not in Zabbix" and the panel is absent. A
  * 404 means the integration is off, which is the same absence. */
 export function useZabbixHostStatus(
-  scope: { device: string } | { ip: string }
+  scope: { device: string } | { ip: string },
+  enabled = true
 ) {
   const key = "device" in scope ? `device=${scope.device}` : `ip=${scope.ip}`
   return useQuery({
@@ -28,6 +29,7 @@ export function useZabbixHostStatus(
         throw e
       }
     },
+    enabled,
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
   })
@@ -59,22 +61,25 @@ export function ZabbixHostPanel({
       </span>
     )
   }
+  // `#zabbix` is where the monitoring bar's Zabbix row lands.
   return (
-    <Section
-      title="Zabbix"
-      badge={
-        <InfoTip>
-          What Zabbix reports about this host. It does not change Danbyte&apos;s
-          status.
-        </InfoTip>
-      }
-    >
-      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-        {rows.map((r) => (
-          <HostRow key={r.connection.id + r.host.hostid} row={r} />
-        ))}
-      </div>
-    </Section>
+    <div id="zabbix" className="scroll-mt-4">
+      <Section
+        title="Zabbix"
+        badge={
+          <InfoTip>
+            What Zabbix reports about this host. It does not change
+            Danbyte&apos;s status.
+          </InfoTip>
+        }
+      >
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          {rows.map((r) => (
+            <HostRow key={r.connection.id + r.host.hostid} row={r} />
+          ))}
+        </div>
+      </Section>
+    </div>
   )
 }
 
