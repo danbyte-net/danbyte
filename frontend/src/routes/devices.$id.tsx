@@ -524,7 +524,7 @@ function Body({ device: d }: { device: Device }) {
       <DetailTab value="monitoring">
         <div className="space-y-6">
           <ObjectSlaPanel objectType="api.device" objectId={d.id} />
-          <DeviceChecksPanel deviceId={d.id} />
+          <DeviceChecksPanel deviceId={d.id} prtgSync={d.prtg_sync} />
         </div>
       </DetailTab>
       <DetailTab value="sensors">

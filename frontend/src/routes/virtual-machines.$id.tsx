@@ -304,6 +304,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <div className="mt-6 empty:hidden">
           <PrtgMonitoringRow
             parent={{ virtual_machine: vm.id }}
+            prtgSync={vm.prtg_sync}
             sensorsLink={(children) => (
               <Link
                 to="/virtual-machines/$id"

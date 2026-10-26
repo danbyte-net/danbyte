@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import {
   type DeviceRoleOption,
   type PlatformOption,
+  type PrtgSync,
   type Status,
   type VirtualMachine,
   type VirtualMachineWritePayload,
@@ -35,6 +36,8 @@ import {
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
 import { useSaveObject } from "@/lib/save-object"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
+import { PrtgSyncSelect } from "@/components/prtg/prtg-sync-select"
 
 interface MiniNamed {
   id: string
@@ -98,6 +101,8 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     vm?.custom_fields ?? {}
   )
+  const prtgOn = usePrtgEnabled()
+  const [prtgSync, setPrtgSync] = useState<PrtgSync>(vm?.prtg_sync ?? "inherit")
 
   useEffect(() => {
     if (!vm) return
@@ -117,6 +122,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setDescription(vm.description)
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
+    setPrtgSync(vm.prtg_sync ?? "inherit")
     reset()
   }, [vm, reset])
 
@@ -170,6 +176,8 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
+        // Only while PRTG is on: the field is not shown otherwise.
+        ...(prtgOn ? { prtg_sync: prtgSync } : {}),
       }
       const saved = await saveObject<VirtualMachine>({
         objectType: "api.virtualmachine",
@@ -447,6 +455,15 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
               />
             </div>
           </FormSection>
+          {prtgOn && (
+            <FormSection title="PRTG" card>
+              <PrtgSyncSelect
+                value={prtgSync}
+                onChange={setPrtgSync}
+                error={fieldErrors.prtg_sync}
+              />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

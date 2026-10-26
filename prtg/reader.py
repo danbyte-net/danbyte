@@ -199,10 +199,11 @@ def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
                  "replaces": link.objid if link is not None else ""},
                 **parent, kind=PrtgChange.LINK, key=remote["objid"],
             )
-        # Adoption proposals have a pass of their own (prtg.adopt).
-        PrtgChange.pending(conn).exclude(kind=PrtgChange.ADOPT).exclude(
-            id__in=fresh
-        ).delete()
+        # Adoption proposals and planned writes have passes of their own
+        # (prtg.adopt, prtg.provision).
+        PrtgChange.pending(conn).filter(
+            kind__in=(PrtgChange.LINK, PrtgChange.AMBIGUOUS)
+        ).exclude(id__in=fresh).delete()
     return counts
 
 
@@ -444,6 +445,21 @@ def read_status(conn: PrtgConnection, now=None, *, client: PrtgClient | None = N
     from .acks import read_acks
 
     counts["acknowledged"] = read_acks(conn)
+    counts["plan"] = plan_pass(conn, devices.rows, client, now)
+    return counts
+
+
+def plan_pass(conn, device_rows, client, now) -> dict:
+    """The planning pass after linking: what PRTG should have, proposed in
+    the queue. Its own failure (the group list could not be read) leaves the
+    planned proposals as they were and does not fail the status read."""
+    from .provision import plan, stamp
+
+    try:
+        counts = plan(conn, device_rows, client=client, now=now)
+    except PrtgError as exc:
+        counts = {"error": str(exc)[:300]}
+    stamp(conn, now, counts)
     return counts
 
 

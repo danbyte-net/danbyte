@@ -35,9 +35,51 @@ function change(
     detail,
     ignored: false,
     applicable,
+    planned: false,
     created_at: "2026-10-26T08:00:00Z",
   } satisfies PrtgChange
 }
+
+const PLANNED: PrtgChange[] = [
+  {
+    id: "p1",
+    kind: "create_device",
+    kind_display: "Create in PRTG",
+    device: { id: "d1", name: "edge" },
+    virtual_machine: null,
+    key: "",
+    detail: {
+      host: "10.0.0.90",
+      group: { objid: "64", path: "Local Probe / Servers" },
+      sensors: [{ name: "Ping", kind_label: "Ping" }],
+      templates: [],
+      credentials: [{ kind: "snmp", name: "lab-v2c" }],
+      applicable: true,
+    },
+    ignored: false,
+    applicable: true,
+    planned: true,
+    created_at: "2026-10-26T08:00:00Z",
+  },
+  {
+    id: "p2",
+    kind: "move_device",
+    kind_display: "Move in PRTG",
+    device: { id: "d2", name: "db-zabbix" },
+    virtual_machine: null,
+    key: "",
+    detail: {
+      from: { objid: "1", path: "Local Probe" },
+      to: { objid: "999", path: "Gone" },
+      applicable: false,
+      reason: "PRTG has no group Gone any more.",
+    },
+    ignored: false,
+    applicable: false,
+    planned: true,
+    created_at: "2026-10-26T08:00:00Z",
+  },
+]
 
 const ROWS = [
   change(
@@ -65,12 +107,15 @@ const ROWS = [
   ),
 ]
 
+let rows: PrtgChange[] = ROWS
+
 beforeEach(() => {
+  rows = ROWS
   apiMock.mockReset()
   apiMock.mockImplementation((path) =>
     Promise.resolve(
       path.startsWith("/api/prtg/changes/")
-        ? { count: ROWS.length, next: null, previous: null, results: ROWS }
+        ? { count: rows.length, next: null, previous: null, results: rows }
         : {}
     )
   )
@@ -96,5 +141,20 @@ describe("PrtgChanges adoption rows", () => {
     expect(await screen.findByText(/No site to adopt into/)).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: "Set defaults" }))
     expect(edit).toHaveBeenCalled()
+  })
+})
+
+describe("PrtgChanges planned rows", () => {
+  it("shows what PRTG would get, marked planned, with no apply", async () => {
+    rows = PLANNED
+    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    expect(await screen.findByText("10.0.0.90")).toBeTruthy()
+    expect(screen.getByText("in Local Probe / Servers")).toBeTruthy()
+    expect(screen.getByText("SNMP lab-v2c")).toBeTruthy()
+    expect(screen.getAllByText("Planned")).toHaveLength(2)
+    expect(screen.getByText("PRTG has no group Gone any more.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Link" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^Apply/ })).toBeNull()
+    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2)
   })
 })

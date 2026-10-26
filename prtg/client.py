@@ -64,6 +64,10 @@ DEVICE_COLUMNS = (
     "objid", "name", "host", "probe", "group", "status", "message", "tags",
     "parentid", "active",
 )
+#: ``content=groups`` and ``content=probenode``: where a device can live.
+GROUP_COLUMNS = ("objid", "name", "probe", "parentid", "type", "active")
+#: PRTG's root group: probes hang off it, devices never do.
+ROOT_GROUP = 0
 
 #: ``content=sysinfo&category=system``, in the order rows are read back.
 SYSINFO_COLUMNS = (
@@ -469,6 +473,39 @@ class PrtgClient:
 
     def version(self) -> str:
         return _clean_version(self.status().get("Version"))
+
+    def groups_tree(self) -> list[dict]:
+        """Every probe and group a device could be put under, as
+        ``{objid, name, kind, path, probe, parent_id}``, in path order.
+
+        Two calls: probes (``content=probenode`` filtered to probes - the
+        unfiltered content lists other objects too) and groups. The root
+        group is left out; devices never live directly under it.
+        """
+        probes = self.table("probenode", GROUP_COLUMNS, {"type": "probenode"}).rows
+        groups = self.table("groups", GROUP_COLUMNS).rows
+        nodes: dict[int, dict] = {}
+        for kind, rows in (("probe", probes), ("group", groups)):
+            for row in rows:
+                if row["objid"] == ROOT_GROUP:
+                    continue
+                nodes[row["objid"]] = {
+                    "objid": str(row["objid"]), "name": row.get("name", ""),
+                    "kind": kind, "probe": row.get("probe", "") or row.get("name", ""),
+                    "parent_id": row.get("parent_id"),
+                }
+
+        def path(objid, seen=()) -> str:
+            node = nodes.get(objid)
+            if node is None or objid in seen or len(seen) > 32:
+                return ""
+            parent = path(node["parent_id"], (*seen, objid))
+            return f"{parent} / {node['name']}" if parent else node["name"]
+
+        out = [{**n, "path": path(objid)} for objid, n in nodes.items()]
+        for n in out:
+            n["parent_id"] = str(n["parent_id"]) if n["parent_id"] is not None else ""
+        return sorted(out, key=lambda n: n["path"].lower())
 
     def sensor_details(self, objid: int) -> dict:
         """``getsensordetails.json``: one sensor's summary, as PRTG words it."""

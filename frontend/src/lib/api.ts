@@ -1581,6 +1581,8 @@ export interface Device {
   id: string
   numid: number | null
   name: string
+  /** PRTG registration: follow policies, always, or never. */
+  prtg_sync?: PrtgSync
   /** Per-device photo-port override; null = inherit the type's layout. */
   image_ports?: DeviceType["image_ports"] | null
   /** Topology card lines for this device; null inherits the view, role
@@ -1725,6 +1727,7 @@ export interface Device {
 
 export interface DeviceWritePayload {
   name: string
+  prtg_sync?: PrtgSync
   device_type_id?: string | null
   site_id?: string | null
   role_id?: string | null
@@ -5382,6 +5385,8 @@ export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
+  /** PRTG registration: follow policies, always, or never. */
+  prtg_sync?: PrtgSync
   cluster: { id: string; name: string; status: StatusMini | null }
   group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
@@ -5513,6 +5518,7 @@ export interface VirtualSwitch {
 
 export interface VirtualMachineWritePayload {
   name: string
+  prtg_sync?: PrtgSync
   cluster_id: string
   /** A VM group on the same cluster, or null for none. */
   group_id?: string | null
@@ -13182,8 +13188,161 @@ export interface PrtgConnection {
   last_error: string
   last_status_at: string | null
   last_status_summary: Record<string, number | string>
+  /** Register every device and VM (less the usual exclusions). */
+  register_all: boolean
+  register_profile: string | null
+  register_profile_name: string
+  register_group_id: string
+  register_group_path: string
+  groups_read_at: string | null
+  last_plan_at: string | null
+  last_plan_summary: Record<string, number | string>
   created_at: string
   updated_at: string
+}
+
+/** Whether PRTG should monitor a device or VM, set on the object. */
+export type PrtgSync = "inherit" | "always" | "never"
+
+/** A probe or group a PRTG device can live under. */
+export interface PrtgGroup {
+  objid: string
+  name: string
+  kind: "probe" | "group"
+  path: string
+  probe: string
+  parent_id: string
+}
+
+/** GET /api/prtg/groups/?connection= */
+export interface PrtgGroups {
+  connection: string
+  read_at: string | null
+  groups: PrtgGroup[]
+  error: string
+}
+
+export interface PrtgSensorKindParam {
+  name: string
+  type: "str" | "int" | "bool" | "choice"
+  label: string
+  default: string | number | boolean | null
+  required: boolean
+  choices: string[]
+  minimum: number | null
+  maximum: number | null
+}
+
+export interface PrtgSensorKind {
+  value: string
+  label: string
+  needs: "snmp" | "windows" | null
+  per: "device" | "interface"
+  default_name: string
+  params: PrtgSensorKindParam[]
+}
+
+/** GET /api/prtg/profiles/kinds/ */
+export interface PrtgSensorKinds {
+  kinds: PrtgSensorKind[]
+  intervals: number[]
+}
+
+export interface PrtgSensorDefinition {
+  id?: string
+  position?: number
+  kind: string
+  kind_label?: string
+  name: string
+  params: Record<string, unknown>
+  interval_seconds: number | null
+  required: boolean
+  tags: string[]
+}
+
+export interface PrtgSensorProfile {
+  id: string
+  connection: string
+  name: string
+  description: string
+  definitions: PrtgSensorDefinition[]
+  policy_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type PrtgPolicyScope =
+  | "global"
+  | "region"
+  | "site"
+  | "location"
+  | "platform"
+  | "device_type"
+  | "device_role"
+
+export interface PrtgPolicy {
+  id: string
+  connection: string
+  name: string
+  enabled: boolean
+  priority: number
+  scope: PrtgPolicyScope
+  scope_display: string
+  region: string | null
+  target_site: string | null
+  location: string | null
+  platform: string | null
+  device_type: string | null
+  device_role: string | null
+  target_name: string
+  match_tags: string[]
+  match_name: string
+  match_hardware: string
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  profile: string | null
+  profile_name: string
+  group_id: string
+  group_path: string
+  created_at: string
+  updated_at: string
+}
+
+/** GET /api/prtg/plan/?device=|virtual_machine= - one per connection. */
+export interface PrtgPlanEntry {
+  connection: { id: string; name: string }
+  prtg_sync: PrtgSync
+  managed: boolean
+  via: "" | "never" | "always" | "policy" | "register_all"
+  reason: string
+  linked: { objid: string; name: string; group: string; url: string } | null
+  group: {
+    objid: string
+    path: string
+    kind?: string
+    source: string
+    policy?: string
+  } | null
+  policies: { id: string; name: string }[]
+  profiles: string[]
+  sensors: {
+    key: string
+    definition: string
+    profile: string
+    kind: string
+    kind_label: string
+    name: string
+    params: Record<string, unknown>
+    interval_seconds: number | null
+    tags: string[]
+    required: boolean
+    interface: { id: string; name: string } | null
+    template: string
+    present: boolean
+    sensor: { objid: string; name: string } | null
+  }[]
+  credentials: { kind: string; name: string; version?: string }[]
+  problems: string[]
 }
 
 /** GET /api/prtg/connections/defaults/ - what the state map editor needs. */
@@ -13250,7 +13409,14 @@ export interface PrtgAdoptionRule {
 
 export interface PrtgChange {
   id: string
-  kind: "link_device" | "adopt" | "ambiguous"
+  kind:
+    | "link_device"
+    | "adopt"
+    | "ambiguous"
+    | "create_device"
+    | "add_sensor"
+    | "remove_sensor"
+    | "move_device"
   kind_display: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
@@ -13258,6 +13424,8 @@ export interface PrtgChange {
   detail: Record<string, unknown>
   ignored: boolean
   applicable: boolean
+  /** A planned write to PRTG: shown, not applied yet. */
+  planned: boolean
   created_at: string
 }
 

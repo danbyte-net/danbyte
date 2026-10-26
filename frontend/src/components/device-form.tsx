@@ -18,6 +18,7 @@ import {
   type ExportTemplate,
   type LocationOption,
   type PlatformOption,
+  type PrtgSync,
   type RackOption,
   type Status,
   type TagOption,
@@ -63,6 +64,8 @@ import {
 } from "@/components/application-group-assign"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
+import { PrtgSyncSelect } from "@/components/prtg/prtg-sync-select"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
   CardLinesEditor,
@@ -223,6 +226,10 @@ export function DeviceForm({
   )
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   const [comments, setComments] = useState(seed?.comments ?? "")
+  const prtgOn = usePrtgEnabled()
+  const [prtgSync, setPrtgSync] = useState<PrtgSync>(
+    device?.prtg_sync ?? "inherit"
+  )
   const [locationId, setLocationId] = useState<string | null>(
     seed?.location?.id ?? null
   )
@@ -288,6 +295,7 @@ export function DeviceForm({
     setTagIds(device.tags.map((t) => t.id))
     setCustomFields(device.custom_fields ?? {})
     setComments(device.comments ?? "")
+    setPrtgSync(device.prtg_sync ?? "inherit")
     setLocationId(device.location?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
@@ -590,6 +598,8 @@ export function DeviceForm({
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
+        // Only while PRTG is on: the field is not shown otherwise.
+        ...(prtgOn ? { prtg_sync: prtgSync } : {}),
       }
       const saved = await saveObject<Device>({
         objectType: "api.device",
@@ -1162,6 +1172,16 @@ export function DeviceForm({
               />
             </div>
           </FormSection>
+
+          {prtgOn && (
+            <FormSection title="PRTG" card>
+              <PrtgSyncSelect
+                value={prtgSync}
+                onChange={setPrtgSync}
+                error={fieldErrors.prtg_sync}
+              />
+            </FormSection>
+          )}
 
           {device?.id && (
             <BindingDraftsProvider value={bindingDrafts}>

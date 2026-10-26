@@ -125,6 +125,7 @@ class FakePrtg:
             "sensors": load_fixture("table_sensors.json")["sensors"],
             "devices": load_fixture("table_devices.json")["devices"],
             "probenode": load_fixture("table_probenode.json")["probenode"],
+            "groups": load_fixture("table_groups.json")["groups"],
         }
         self.details = load_fixture("getsensordetails.json")
         #: sensor objid -> channel rows (``content=channels&id=``).
