@@ -68,12 +68,12 @@ if (!("ResizeObserver" in globalThis)) {
   }
 }
 
-/** Render ``node`` inside a router and a query client. */
-export function mountWithRouter(node: () => ReactNode) {
+/** Render ``node`` inside a router and a query client, at ``entries``. */
+export function mountWithRouter(node: () => ReactNode, entries = ["/"]) {
   const root = createRootRoute({ component: () => <>{node()}</> })
   const router = createRouter({
     routeTree: root,
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: entries }),
   })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(

@@ -138,4 +138,88 @@ describe("PrtgPolicies", () => {
       priority: 10,
     })
   })
+
+  it("makes a profile inline and picks it", async () => {
+    const profiles = [{ id: "pr1", name: "Ping", definitions: [] }]
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) => {
+      if (path === "/api/prtg/profiles/" && init?.method === "POST") {
+        const made = { id: "pr2", name: "Uplinks", definitions: [] }
+        profiles.push(made)
+        return Promise.resolve(made)
+      }
+      if (path.startsWith("/api/prtg/profiles/?")) return page(profiles)
+      return base(path, init)
+    })
+    mountWithRouter(() => <PrtgPolicies connection={CONN} canManage />)
+    await screen.findByText("Core switches")
+    fireEvent.click(screen.getByRole("button", { name: "Add policy" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(within(dialog).getByRole("button", { name: "New profile" }))
+    const inner = (await screen.findAllByRole("dialog")).at(-1)!
+    expect(within(inner).getByText("New profile")).toBeTruthy()
+    fireEvent.change(within(inner).getByRole("textbox", { name: /Name/ }), {
+      target: { value: "Uplinks" },
+    })
+    fireEvent.click(within(inner).getByRole("button", { name: "Add profile" }))
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1))
+    const policyDialog = screen.getByRole("dialog")
+    fireEvent.change(
+      within(policyDialog).getByPlaceholderText("Core switches"),
+      {
+        target: { value: "Uplinks" },
+      }
+    )
+    fireEvent.click(
+      within(policyDialog).getByRole("button", { name: "Add policy" })
+    )
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p, i]) => p === "/api/prtg/policies/" && i?.method === "POST"
+        )
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(
+      ([p, i]) => p === "/api/prtg/policies/" && i?.method === "POST"
+    )!
+    expect(JSON.parse(String(init?.body))).toMatchObject({ profile: "pr2" })
+  })
+
+  it("says how to get groups when PRTG was never read", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path.startsWith("/api/prtg/groups/")
+        ? Promise.resolve({
+            connection: "c1",
+            read_at: null,
+            error: "",
+            groups: [],
+          })
+        : base(path, init)
+    )
+    mountWithRouter(() => <PrtgPolicies connection={CONN} canManage />)
+    await screen.findByText("Core switches")
+    fireEvent.click(screen.getByRole("button", { name: "Add policy" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(
+      await within(dialog).findByText(
+        /No groups read yet\. Test the connection first\./
+      )
+    ).toBeTruthy()
+    expect(
+      within(dialog)
+        .getByRole("link", { name: "Connection" })
+        .getAttribute("href")
+    ).toBe("/prtg?tab=overview")
+  })
+
+  it("opens the editor from ?edit=", async () => {
+    mountWithRouter(
+      () => <PrtgPolicies connection={CONN} canManage />,
+      ["/?tab=policies&edit=p1"]
+    )
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByDisplayValue("Core switches")).toBeTruthy()
+  })
 })
