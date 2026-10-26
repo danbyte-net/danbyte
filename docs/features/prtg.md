@@ -452,7 +452,8 @@ The same channels can go on a dashboard: see
 
 **The Monitoring tab** gets one **PRTG** row per linked device or VM - the
 same row as the strip and the Overview's monitoring bar - and a link to the
-Sensors tab; a count opens the tab filtered to its state.
+Sensors tab; a count opens the tab filtered to its state. Its chevron opens
+the [registration details](#planned-changes) in place.
 The rest of the tab is unchanged; like the Zabbix section, the row never
 changes Danbyte's own status.
 
@@ -499,7 +500,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `policies/<id>/matches/` | Every device and VM the policy matches now, by the planning pass's own matching, limited to the objects the caller may view, paged (`page_size` honoured): `{kind, id, name, site, role, platform, prtg_sync, linked, link: {objid, name, url}, managed, via, reason, group_policy: {id, name}, wins_group, policies}`. `group_policy` is the policy that decides the object's group (null when the connection does), `policies` every enabled policy that matches it. `?prtg_sync=` (`inherit`, `always`, `never`, comma-separated) and `?linked=1\|0` narrow it. Needs view on PRTG policies. |
 | `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `params` are checked against the kind and stored with its defaults. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
-| `plan/?device=` or `?virtual_machine=` | What PRTG would get for one object, per enabled connection: `{connection, prtg_sync, managed, via, reason, reason_issue, linked, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues}`. `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape. Needs view on the object; asks PRTG nothing. |
+| `plan/?device=` or `?virtual_machine=` | What PRTG has and would get for one object, per enabled connection: `{connection, prtg_sync, linked: {objid, name, host, group, matched_by, created_here, created_at, url} | null, managed, registers, registration: {mode, policies, group}, planned: {create_device, sensors: [{key, name, kind, kind_label, interface}], move: {from, to} | null, remove: [{objid, name, kind}], reasons, queued}, via, reason, reason_issue, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues}`. `linked` is whether it is in PRTG (the stored link); `managed` whether Danbyte created that PRTG device; `registers` whether anything registers it, and `registration.mode` what: `always`, `policies`, `register_all`, `never` (excluded) or `none`. `planned.reasons` say why nothing is planned; `queued` counts its planned rows in the review queue. `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape, empty for a linked object nothing registers. Needs view on the object; asks PRTG nothing. |
 | `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`. |
 | `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG) and `device_url`. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
@@ -644,11 +645,25 @@ skips planned rows. Dismiss and Restore work as for any row. A row that is no
 longer true goes away with the next pass. A pass whose group read fails
 proposes and drops nothing.
 
-The device's and VM's **Monitoring** tab has **What would PRTG get?** on its
-PRTG row: per connection, whether the object is in the plan and why, the
-group, the policies that match it (each linked to its detail), the profiles,
-each sensor marked present or planned, the credentials by name, and anything
-in the way. It is computed from what Danbyte holds; PRTG is not asked.
+The device's and VM's **Monitoring** tab has a chevron (**Details**) on its
+PRTG row. It opens, in place, one card per connection - computed from what
+Danbyte holds, PRTG is not asked:
+
+| Row | Shows |
+|---|---|
+| **In PRTG** | **Yes** with the PRTG device (opens it in PRTG) and how it was matched (*matched by address*, *adopted*, *created by Danbyte*), or **No**. This is the stored link only, never the registration decision: a device PRTG has that nothing registers is still **Yes**. |
+| **Managed by Danbyte** | **Yes, created on …** when Danbyte created the PRTG device, otherwise **No**. |
+| **Registration** | *Monitor in PRTG set on the object*, *Policy …* (each policy linked to its detail), *Register all*, *Excluded*, or *Nothing registers it* - with links to where it is set. |
+| **Planned** | What the next plan proposes: create the device (and in which group), each sensor to add by name and kind, a move, a Danbyte sensor to remove - or *Nothing planned* with the reason. A linked device nothing registers is left alone: nothing planned, and no *Nothing registers this object* warning. |
+
+Credential and group problems follow the card, each with its link. Under it,
+**Register in PRTG** sets **Monitor in PRTG** on the object through its API
+and runs a plan straight away (when you may change PRTG connections;
+otherwise the next scheduled plan picks it up). It shows only while the
+object is not in PRTG and not excluded, to someone who may change the
+object. **Open review queue** shows when the queue holds planned rows for
+the object. The block starts collapsed and the browser remembers whether
+you left it open.
 
 Every reason says what is missing and where to fix it, with a link there:
 

@@ -13369,14 +13369,58 @@ export interface PrtgPolicyMatch {
   policies: { id: string; name: string }[]
 }
 
-/** GET /api/prtg/plan/?device=|virtual_machine= - one per connection. */
+/** What registers an object in PRTG, in the plan's words. */
+export type PrtgRegistrationMode =
+  "never" | "always" | "policies" | "register_all" | "none"
+
+/** GET /api/prtg/plan/?device=|virtual_machine= - one per connection.
+ * `linked` says whether it is in PRTG, `managed` whether Danbyte created
+ * that PRTG device, `registration` what registers it and `planned` what
+ * the next plan proposes. */
 export interface PrtgPlanEntry {
   connection: { id: string; name: string }
   prtg_sync: PrtgSync
+  /** Danbyte created the linked PRTG device. */
   managed: boolean
+  /** Something registers the object (Monitor in PRTG, a policy, Register
+   * all). */
+  registers: boolean
+  registration: {
+    mode: PrtgRegistrationMode
+    policies: { id: string; name: string }[]
+    group: PrtgPlanEntry["group"]
+  }
+  planned: {
+    create_device: boolean
+    sensors: {
+      key: string
+      name: string
+      kind: string
+      kind_label: string
+      interface: { id: string; name: string } | null
+    }[]
+    move: {
+      from: { objid: string; path: string } | null
+      to: { objid: string; path: string; kind?: string } | null
+    } | null
+    remove: { objid: string; name: string; kind: string }[]
+    /** Why nothing is planned, when nothing registers it. */
+    reasons: PrtgIssue[]
+    /** Planned rows for this object waiting in the review queue. */
+    queued: number
+  }
   via: "" | "never" | "always" | "policy" | "register_all"
   reason: string
-  linked: { objid: string; name: string; group: string; url: string } | null
+  linked: {
+    objid: string
+    name: string
+    group: string
+    url: string
+    host?: string
+    matched_by?: string
+    created_here?: boolean
+    created_at?: string
+  } | null
   group: {
     objid: string
     path: string
