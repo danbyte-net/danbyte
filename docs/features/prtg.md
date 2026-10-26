@@ -575,12 +575,18 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `params` are checked against the kind and stored with its defaults. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
 | `plan/?device=` or `?virtual_machine=` | What PRTG has and would get for one object, per enabled connection: `{connection, prtg_sync, linked: {objid, name, host, group, matched_by, created_here, created_at, url} | null, managed, registers, registration: {mode, policies, group}, planned: {create_device, sensors: [{key, name, kind, kind_label, interface}], move: {from, to} | null, remove: [{objid, name, kind}], reasons, queued}, via, reason, reason_issue, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues, last_apply}`. `linked` is whether it is in PRTG (the stored link); `managed` whether Danbyte created that PRTG device; `registers` whether anything registers it, and `registration.mode` what: `always`, `policies`, `register_all`, `never` (excluded) or `none`. `planned.reasons` say why nothing is planned; `queued` counts its planned rows in the review queue. `last_apply` is what Danbyte last wrote for it, `{at, kind, ok, detail, result, by}` or null (a pending create's last attempt when there is no link yet). `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape, empty for a linked object nothing registers. Needs view on the object; asks PRTG nothing. |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `paused`. |
-| `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `paused`; `write_mode`, the connection's (whether sensors can be added by hand). The `sensors/`, `scan/`, `discover/` and `sensor-schema/` actions below need `change` on PRTG sensors and view on the device or VM. |
+| `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, `link`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
 | `sensors/<id>/acknowledge/` | `POST {note}`. Acknowledges a down sensor (*Down*, *Down (Partial)*) in PRTG with `[Danbyte] <name>: <note>`, then answers the sensor as it now reads. 400 while the connection's `write_acknowledgements` is off or the sensor is not down, 502 with PRTG's sentence. Each row of `sensors/` carries `ackable`: whether this would be accepted now. |
 | `sensors/<id>/pause/` | `POST {minutes, note}`. Pauses the sensor in PRTG for `minutes` (1 to 527040), or until resumed when `minutes` is null or absent; answers the sensor, now paused. |
 | `sensors/<id>/resume/` | `POST`. Resumes the sensor, reads the device's sensors again, and answers the sensor. |
 | `links/<id>/pause/`, `links/<id>/resume/` | `POST {minutes, note}` and `POST`. The same for the PRTG device behind a link - PRTG pauses its sensors with it; answers the link, whose `paused` says whether PRTG holds it paused. |
+| `connections/<id>/sensor-kinds/` | `GET` (`?link=` the device to ask about, `?refresh=1`). The kinds that can be [added by hand](#adding-sensors-by-hand): `{mode, source, read_at, danbyte_forms, detail, kinds: [{id, name, description, help, category, form, danbyte_kind, scan, credentials, manual, copy_from_seed}]}`. `source` is `prtg` (API v2, kept a day) or `danbyte` (seed copies or no writes); `form` is `danbyte` or `generic`. |
+| `connections/<id>/device-templates/` | `GET` (`?refresh=1`). PRTG's device templates, kept a day: `{source, read_at, templates: [{file_name, name, id}]}`; `source` `defaults` lists PRTG's stock generic ones when the list cannot be read. |
+| `links/<id>/sensor-schema/?kind=` | `GET`. PRTG's create form for a kind as fields: `{kind, fields: [{key, section, section_title, name, label, type, default, required, options, minimum, maximum, help}], scan: {section, field} \| null}`; `type` is `text`, `password`, `number`, `select`, `multi` or `checkbox`. |
+| `links/<id>/scan/` | `POST {kind}`. PRTG's metascan of the device: `{kind, rows: [{value, name, status, connected, info}]}`. Needs API v2 writes; 502 with PRTG's sentence. |
+| `links/<id>/sensors/` | `POST {kind, name?, params, interval_seconds?, tags?, interfaces?, request_id?}`. Adds a sensor now: `kind` is a Danbyte kind or a PRTG kind id; `params` are the kind's parameters, or `{"<section>.<field>": value}` for a generic kind; `interfaces` the picked scan rows (`[{value, name}]`, one sensor each, at most 50); `request_id` makes a retry find what an earlier attempt made. Answers 201 `{detail, objids, failed, sensors}` with the new rows as the re-read imported them; 400 with a sentence when it cannot be written, 409 while another write to the connection runs, 502 when PRTG refused. |
+| `links/<id>/discover/` | `POST {template?}`. Runs PRTG's auto-discovery on the device, with a device template file name or the device's own; answers `{detail}`. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
 | `sensors/<id>/channels/` | The sensor's channels, read from PRTG at most once per status interval: `{fetched_at, summary, rows}`, each row `{id, name, value, value_raw, unit, kind, state, status, lookup_label, limits: {warn_min, warn_max, error_min, error_max}, lookup_states: [{value, to, label, state}], min, max, primary}`. `kind` is `number`, `percent`, `lookup` or `text`; a lookup `state` is `ok`, `warning`, `error`, `none` or `unknown`. Needs view on the device or VM. 502 with PRTG's sentence when PRTG cannot be read and nothing is cached; `stale: true` when the last read is served instead. |
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
@@ -892,6 +898,53 @@ runs per connection at a time. **Propose removing devices** makes the
 planning pass propose **Remove device from PRTG** for a device Danbyte
 created whose object no longer belongs in PRTG. Both are off by default,
 and removals are always applied by a person, row by row.
+
+## Adding sensors by hand
+
+Profiles say what a device *should* carry; a sensor can also be added to a
+linked device straight away. On a device's or VM's **Sensors** tab the PRTG
+device's row has **Add sensor** and **Discover**, shown to anyone with
+`change` on PRTG sensors while the connection can create objects (*API v2*
+or *Seed copies*). The /prtg **Sensors** tab shows the same two buttons
+above the table once its filters narrow it to one PRTG device.
+
+**Add sensor** opens a searchable list of the sensor kinds PRTG offers,
+grouped (SNMP, Windows, Web, Ping, Flow, Network services, vendors, …),
+each with PRTG's description and a chip:
+
+| Chip | The form |
+|---|---|
+| **Danbyte form** | A kind Danbyte knows (Ping, SNMP uptime / CPU / memory / traffic, HTTP, SSL certificate, SSL security check, WMI CPU / memory / disk, Windows service): the same parameter fields as a profile's definition. |
+| **Generic form** | Any other kind: the fields of PRTG's own create form for it, read from `GET /api/v2/experimental/schemas/{device}/post?kind=` - text, number, choice and checkbox fields. Inherited sections (access, schedule, interval) and read-only fields are left to PRTG; PRTG checks the values. |
+
+The list is read from PRTG (`GET /api/v2/experimental/schemas/{device}`,
+354 kinds on PRTG 26.3.124, 12 of them with a Danbyte form) and kept on the
+connection for a day; the refresh button reads it again. On a seed-copy
+server the list is Danbyte's own kinds that a copy can make, and the
+sensor is a copy of the seed device's sensor of that kind.
+
+Every form also takes a name (blank: the kind's default), an interval
+(blank: inherited) and extra tags. **SNMP traffic** - and any generic kind
+PRTG fills from a scan - has a second step: **Scan device** runs PRTG's
+metascan and lists what it found, with **Select all** and **Connected
+only**; each picked row becomes one sensor.
+
+The sensor is created the way an applied **Add sensor in PRTG** row is
+(API v2, or a seed copy), tagged `danbyte`, `danbyte-manual` and a
+`danbyte-man-` key. A retry - the same dialog saved twice - finds the
+sensor by that key instead of creating another. Danbyte records it as one
+it created (so it may delete it), writes a journal note and change-log
+entry on the device or VM, reads the device's sensors again and shows the
+new card with a brief highlight. Its card carries an **Added from
+Danbyte** chip. The planning pass never proposes removing a sensor added
+by hand: only `danbyte-def-` sensors are profile sensors.
+
+**Discover** runs PRTG's auto-discovery on the device (classic
+`discovernow.htm`) with an optional device template - PRTG's list
+(`GET /api/v2/experimental/devices/templates`, kept for a day) is offered
+as suggestions, and a template file name can be typed. PRTG adds what it
+finds on its own schedule; the sensors arrive with the next status read.
+Discovered sensors carry no Danbyte tags.
 
 ---
 
