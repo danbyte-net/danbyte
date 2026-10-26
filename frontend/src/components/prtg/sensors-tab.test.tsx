@@ -13,7 +13,7 @@ import { PrtgSensorsTab, countSensors, currentLookup } from "./sensors-tab"
 // and the one PRTG row on the Monitoring tab.
 
 const { apiMock } = vi.hoisted(() => ({
-  apiMock: vi.fn<(path: string) => Promise<unknown>>(),
+  apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
@@ -115,12 +115,54 @@ const CHANNELS: PrtgChannels = {
       max: null,
       primary: false,
     },
+    {
+      id: "2",
+      name: "Days to Expiration",
+      value: "781 #",
+      value_raw: 781,
+      unit: "#",
+      kind: "number",
+      state: "up",
+      status: "Up",
+      lookup_label: "",
+      limits: {
+        warn_min: 30,
+        warn_max: null,
+        error_min: 7,
+        error_max: null,
+      },
+      lookup_states: [],
+      min: 0,
+      max: 781,
+      primary: false,
+    },
+    {
+      id: "-4",
+      name: "Downtime",
+      value: "",
+      value_raw: null,
+      unit: "%",
+      kind: "percent",
+      state: "up",
+      status: "Up",
+      lookup_label: "",
+      limits: {
+        warn_min: null,
+        warn_max: null,
+        error_min: null,
+        error_max: null,
+      },
+      lookup_states: [],
+      min: 0,
+      max: 100,
+      primary: false,
+    },
   ],
 }
 
 beforeEach(() => {
   apiMock.mockReset()
-  apiMock.mockImplementation((path) => {
+  apiMock.mockImplementation((path, init) => {
     if (path.startsWith("/api/prtg/links/"))
       return Promise.resolve({
         count: 1,
@@ -156,8 +198,36 @@ beforeEach(() => {
               { t: "2026-10-26T07:01:00Z", v: 3 },
             ],
           },
+          {
+            // PRTG's lookup history: the share of time in "Yes".
+            id: "3",
+            name: "Root Authority Trusted (Yes)",
+            unit: "%",
+            points: [
+              { t: "2026-10-26T07:00:00Z", v: 0 },
+              { t: "2026-10-26T07:01:00Z", v: 0 },
+            ],
+          },
+          {
+            // One value between gaps, as the SSL sensor records it.
+            id: "2",
+            name: "Days to Expiration",
+            unit: "#",
+            points: [
+              { t: "2026-10-26T07:00:00Z", v: null },
+              { t: "2026-10-26T07:01:00Z", v: 781 },
+              { t: "2026-10-26T07:02:00Z", v: null },
+              { t: "2026-10-26T07:03:00Z", v: 781 },
+            ],
+          },
         ],
       })
+    if (path.startsWith("/api/prtg/sensor-pins/"))
+      return Promise.resolve(
+        init?.method === "POST"
+          ? { id: "p1" }
+          : { count: 0, next: null, previous: null, results: [] }
+      )
     if (path.startsWith("/api/prtg/sensors/"))
       return Promise.resolve({
         count: SENSORS.length,
@@ -215,6 +285,31 @@ describe("PrtgSensorsTab", () => {
     expect(screen.getByText("14")).toBeTruthy()
   })
 
+  it("clamps a long message to two lines, the whole text in the tooltip", async () => {
+    const long =
+      "Warning caused by lookup value 'No' in channel 'Root Authority " +
+      "Trusted' (Root Authority Trusted is No) and lookup value 'Yes' in " +
+      "channel 'Self-Signed' (Self-Signed is Yes)"
+    SENSORS[0] = { ...SENSORS[0], message: long }
+    try {
+      mountTab()
+      const [msg] = await screen.findAllByTestId("prtg-sensor-message")
+      expect(msg.textContent).toBe(long)
+      // The clamp is on the text; the padded box is its parent, so no
+      // sliver of a third line shows under the ellipsis.
+      expect(msg.className).toContain("line-clamp-2")
+      expect(msg.parentElement?.className).toContain("py-1")
+      expect(msg.className).not.toContain("py-")
+      // The shared tooltip, never a browser title.
+      expect(msg.closest("[title]")).toBeNull()
+      fireEvent.focus(msg.parentElement!)
+      const tip = await screen.findByRole("tooltip")
+      expect(tip.textContent).toContain(long)
+    } finally {
+      SENSORS[0] = { ...SENSORS[0], message: "Destination unreachable" }
+    }
+  })
+
   it("opens the panel from a card", async () => {
     const onSelect = mountTab()
     const cards = await screen.findAllByTestId("prtg-sensor-card")
@@ -228,7 +323,7 @@ describe("PrtgSensorsTab", () => {
     await waitFor(() =>
       expect(
         panel.querySelectorAll("[data-testid=prtg-channel-card]")
-      ).toHaveLength(2)
+      ).toHaveLength(4)
     )
     expect(panel.querySelector("[data-kind=number] [role=meter]")).toBeTruthy()
     const lookup = panel.querySelector("[data-kind=lookup]")
@@ -236,6 +331,89 @@ describe("PrtgSensorsTab", () => {
       lookup?.querySelector("[data-current]")?.getAttribute("data-tone")
     ).toBe("warning")
     expect(currentLookup(CHANNELS.rows[1])).toBe("1")
+  })
+})
+
+describe("channel cards", () => {
+  async function cards() {
+    mountTab("s2092")
+    const panel = await screen.findByTestId("prtg-sensor-panel")
+    await waitFor(() =>
+      expect(
+        panel.querySelectorAll("[data-testid=prtg-channel-card]")
+      ).toHaveLength(4)
+    )
+    // The hour's history lands after the channels.
+    await waitFor(() =>
+      expect(panel.querySelector("[data-testid=prtg-steady]")).toBeTruthy()
+    )
+    const byName = (name: string) =>
+      [
+        ...panel.querySelectorAll<HTMLElement>(
+          "[data-testid=prtg-channel-card]"
+        ),
+      ].find((c) => c.textContent?.includes(name))!
+    return byName
+  }
+
+  it("draws a number that moved with a sparkline and the range switch", async () => {
+    const byName = await cards()
+    const rt = byName("Response Time")
+    expect(rt.querySelector("svg path")).toBeTruthy()
+    expect(
+      rt.querySelector("[role=tablist], [role=radiogroup], button")
+    ).toBeTruthy()
+  })
+
+  it("says a flat number is steady, not a chart", async () => {
+    const byName = await cards()
+    const days = byName("Days to Expiration")
+    expect(days.querySelector("[data-testid=prtg-steady]")?.textContent).toBe(
+      "Steady over the last 1h"
+    )
+    expect(days.textContent).not.toContain("%")
+  })
+
+  it("gives a lookup a state timeline, no line and no percent axis", async () => {
+    const byName = await cards()
+    const trusted = byName("Root Authority Trusted")
+    const tl = trusted.querySelector("[data-testid=prtg-lookup-timeline]")!
+    expect(tl.querySelector("[data-state=No]")).toBeTruthy()
+    expect(trusted.textContent).not.toContain("%")
+    expect(trusted.querySelector("[data-testid=prtg-history-chart]")).toBeNull()
+  })
+
+  it("says No value for a channel without one, with no range switch", async () => {
+    const byName = await cards()
+    const down = byName("Downtime")
+    expect(down.querySelector("[data-testid=prtg-no-value]")).toBeTruthy()
+    expect(down.querySelector("[role=meter]")).toBeNull()
+    expect(
+      down.querySelectorAll("button:not([data-testid=prtg-pin-toggle])")
+    ).toHaveLength(0)
+  })
+
+  it("pins a channel to the Overview", async () => {
+    const byName = await cards()
+    const toggle = byName("Days to Expiration").querySelector<HTMLElement>(
+      "[data-testid=prtg-pin-toggle]"
+    )!
+    expect(toggle.getAttribute("aria-pressed")).toBe("false")
+    fireEvent.click(toggle)
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(
+          ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+        )
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(
+      ([p, i]) => p === "/api/prtg/sensor-pins/" && i?.method === "POST"
+    )!
+    expect(JSON.parse(String(init?.body))).toEqual({
+      sensor: "s2092",
+      channel_id: "2",
+    })
   })
 })
 

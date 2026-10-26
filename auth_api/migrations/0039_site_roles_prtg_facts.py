@@ -1,11 +1,11 @@
 """Site roles gain the PRTG system information rows.
 
 A ``PrtgHostFacts`` row is what PRTG says about one linked device or VM, and
-belongs to that device's or VM's site like the links and sensors 0037 added.
+belongs to that device's or VM's site like the links, sensors and pins 0037 and 0038 added.
 A new site role gets the type from ``site_role_types``; the roles built
 before it gain it here.
 
-A grant counts as a site role by the rules of 0028 to 0037 (name suffix,
+A grant counts as a site role by the rules of 0028 to 0038 (name suffix,
 exactly the role's actions, limited to sites, only the role's known types). A
 hand-built grant is left alone. A second run changes nothing. Reverse is a
 no-op.
@@ -15,11 +15,11 @@ import importlib
 from django.db import migrations
 
 _0028 = importlib.import_module("auth_api.migrations.0028_site_roles_site_view")
-_0037 = importlib.import_module("auth_api.migrations.0037_site_roles_prtg")
+_0038 = importlib.import_module("auth_api.migrations.0038_site_roles_prtg_pins")
 
 NEW_TYPES = ["prtghostfacts"]
 NEW_CATALOGS: list[str] = []
-KNOWN = _0037.KNOWN | set(NEW_TYPES)
+KNOWN = _0038.KNOWN | set(NEW_TYPES)
 
 
 def _looks_like_role(perm, suffix, actions) -> bool:
@@ -46,7 +46,7 @@ def forwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("auth_api", "0037_site_roles_prtg"),
+        ("auth_api", "0038_site_roles_prtg_pins"),
     ]
 
     operations = [

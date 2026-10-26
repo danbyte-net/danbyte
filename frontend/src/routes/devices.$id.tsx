@@ -204,6 +204,7 @@ import {
   usePrtgLinks,
 } from "@/components/prtg/sensors-tab"
 import { naturalCompare } from "@/lib/natural-sort"
+import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
 const DEVICE_TABS = [
   "overview",
@@ -1292,6 +1293,19 @@ function DeviceOverview({
     <div className="space-y-6">
       {/* Monitoring roll-up first, mirroring the IP detail page. */}
       <DeviceMonitoring deviceId={d.id} />
+      <PinnedSensorsCard
+        parent={{ device: d.id }}
+        sensorLink={(sensor, children) => (
+          <Link
+            to="/devices/$id"
+            params={{ id: d.id }}
+            search={{ tab: "sensors", sensor }}
+            className="block h-full"
+          >
+            {children}
+          </Link>
+        )}
+      />
 
       {showPanel ? (
         // Two columns: attributes left, the Panel at the top of the right

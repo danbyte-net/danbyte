@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('api', '0220_software_version_source'),
         ('core', '0061_tenantsettings_coverage_warning_days'),
-        ('prtg', '0003_sensors_vms'),
+        ('prtg', '0004_sensor_pins'),
     ]
 
     operations = [

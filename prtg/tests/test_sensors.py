@@ -343,6 +343,29 @@ class ChannelReadTests(_Lab):
         ch.read_history(PrtgSensor.objects.get(pk=self.ping.pk), "1h", now=now)
         self.assertEqual(len(self.fake.calls("/api/historicdata.xml")), 1)
 
+    def test_ssl_history_matches_channels_by_id_in_their_own_unit(self):
+        """The SSL sensor's recorded history: Days to Expiration is channel 2
+        in both the channels table and the history, in "#", with a value on
+        every interval PRTG measured; the lookup channels come back as the
+        share of time in one named state, in "%"."""
+        now = datetime(2026, 10, 26, 8, 6, tzinfo=UTC)
+        self.ssl.interval_seconds = 300
+        out = ch.read_history(self.ssl, "1h", now=now)
+        rows = {r["id"]: r for r in ch.read_channels(self.ssl)["rows"]}
+        days = out["series"]["2"]
+        self.assertEqual(rows["2"]["name"], "Days to Expiration")
+        self.assertEqual((days["name"], days["unit"]), ("Days to Expiration", "#"))
+        values = [p["v"] for p in days["points"] if p["v"] is not None]
+        self.assertGreaterEqual(len(values), 2)
+        self.assertEqual(set(values), {781.0})
+        self.assertEqual(rows["2"]["unit"], "#")
+        trusted = out["series"]["3"]
+        self.assertEqual(trusted["name"], "Root Authority Trusted (Yes)")
+        self.assertEqual(trusted["unit"], "%")
+        self.assertEqual(rows["3"]["kind"], "lookup")
+        self.assertEqual(
+            {p["v"] for p in trusted["points"] if p["v"] is not None}, {0.0})
+
     def test_history_ranges_pick_their_average(self):
         for rng, avg in (("24h", 900), ("7d", 3600)):
             with self.subTest(rng=rng):

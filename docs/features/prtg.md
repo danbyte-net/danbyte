@@ -357,7 +357,9 @@ states, then the PRTG device with a link to it in PRTG and when it was last
 read. Below, a card per sensor, worst first: its name and kind, the state
 pill (PRTG's own word, *Paused by Dependency*, in the tooltip), the last value
 as the big number, the last check, the uptime, and PRTG's message as a muted
-notice when the sensor is not up. The link icon opens the sensor in PRTG.
+notice when the sensor is not up - two lines at most, ending in an ellipsis,
+with the whole message on hover and in the panel. The link icon opens the
+sensor in PRTG.
 
 **The sensor panel.** Clicking a card opens the sensor's panel
 (`?sensor=<id>` in the address, so it can be linked). It shows PRTG's
@@ -371,8 +373,25 @@ summary and one card per channel:
 | Text (`Only Strong Protocols Available`) | The text. |
 
 Values are shown in the unit PRTG displays: a traffic channel PRTG keeps in
-bytes per second reads `0.03 Mbit/s`. Each channel card has a sparkline of
-the last hour and a **1h / 24h / 7d** switch that opens its history graph.
+bytes per second reads `0.03 Mbit/s`. A channel PRTG has no value for
+(*Downtime* on a sensor that has never been down) reads **No value**.
+
+Under the reading, what the channel's history says, with no setting per
+channel:
+
+- **A number or percentage that moved** gets the last hour's sparkline and a
+  **1h / 24h / 7d** switch that opens its history graph, in the channel's
+  own unit. The switch appears only once the hour has at least two values.
+- **A number that did not move** (*Days to Expiration* over an hour) reads
+  *Steady over the last 1h* instead of a flat line; its graph says the same
+  for a range in which it stayed put.
+- **A lookup** gets a state timeline instead of a line: one coloured segment
+  per run of the same state along the chosen range, no axis and no
+  percentages. PRTG records a lookup channel's history as the share of each
+  interval spent in one named state (*Root Authority Trusted (Yes)*, 0 %);
+  Danbyte reads that back as the state.
+- **Text** has no history to show.
+
 PRTG averages the history per range: one minute for an hour (or the sensor's
 interval when that is longer), 15 minutes for 24 hours, one hour for 7 days,
 at most 400 points per channel.
@@ -386,6 +405,21 @@ interval: opening the same sensor again, by anyone, inside the interval asks
 PRTG nothing. When PRTG does not answer, the last read is shown and marked.
 `historicdata` takes its window in the PRTG server's local time; Danbyte learns
 the offset once from `getstatus.htm` and keeps it on the connection.
+
+### Pinned sensors
+
+Each channel card in the panel has a **Pin to Overview** toggle. Pinned
+channels show on the device's or VM's **Overview** in a **Sensors** card: one
+small tile per channel - the gauge, lookup bar or value, the channel and its
+sensor, and the sensor's state when it is not up - in the order they were
+pinned. A tile opens the sensor's panel; hovering it shows **Unpin**. The card
+is absent until something is pinned. A pin keeps no reading: the tiles read
+the channels as the panel does, and a sensor gone from PRTG takes its pins
+with it. Pinning and unpinning need change on *PRTG sensor pins* and view on
+the device or VM; site roles include the pins of their sites' objects.
+
+The same channels can go on a dashboard: see
+[Sensor widgets](dashboard.md#sensor-widgets).
 
 **The Monitoring tab** gets one **PRTG** row per linked device or VM: the
 roll-up pill, the state strip, the PRTG device and a link to the Sensors tab.
@@ -435,6 +469,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
 | `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision* and adoptions that cannot be placed). Kinds: `link_device`, `adopt` (no device; `key` and `detail.objid` are the PRTG object id, `detail` carries `name`, `host`, `address`, `group`, `probe`, the placement as `site`/`site_id`, `role`/`role_id`, `device_type`/`device_type_id`, `rule`, `defaulted`, and `reason` while it cannot be placed), `ambiguous`. `applicable` says whether apply can run. |
 | `adoption-rules/` | CRUD for where adopted PRTG devices land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight` (lower first), `enabled`. Site, role and type must be the tenant's own. |
+| `sensor-pins/?device=\|virtual_machine=` | Channels pinned to an Overview, in order: `{id, sensor, channel_id, display, position, device, virtual_machine, sensor_info}`. `POST {sensor, channel_id, display}` pins one (`display` is `auto`, `gauge`, `lookup` or `value`; the device or VM is the sensor's own; a channel pins once, at most 24 per object); `DELETE <id>/` unpins; `POST reorder/ {device \| virtual_machine, order: [pin ids]}` sets the order. Writes need change on PRTG sensor pins; every call needs view on the device or VM. |
 | `device-status/?device=`, `?virtual_machine=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device or VM. |
 | `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
 | `vm-states/` | The same for virtual machines. Feeds the VM-list column. |

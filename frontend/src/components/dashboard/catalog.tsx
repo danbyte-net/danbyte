@@ -22,6 +22,11 @@ import { MyTasksWidget } from "./widget-tasks"
 import { SupportCoverageWidget } from "./widget-support-coverage"
 import type { SupportCoverageConfig } from "./widget-support-coverage"
 import {
+  SensorAlarmsWidget,
+  SensorWidget,
+  sensorWidgetTitle,
+} from "./widget-prtg"
+import {
   AvailabilityByGroupWidget,
   CoverageWidget,
   SlaHeadlineWidget,
@@ -78,6 +83,8 @@ export type WidgetId =
   | "coverage"
   | "upcoming-maintenance"
   | "support-coverage"
+  | "prtg-sensor"
+  | "prtg-alarms"
 
 import type { WidgetMeta } from "@/lib/dashboard-layout"
 
@@ -104,6 +111,9 @@ export interface WidgetDef {
   fit?: WidgetFit
   /** May appear several times on one dashboard (each with its own config). */
   multi?: boolean
+  /** A per-instance title from the widget's config (a title override);
+   * undefined keeps `title`. */
+  titleOf?: (config: Record<string, unknown> | undefined) => string | undefined
   render: (d: DashboardData, ctx?: WidgetCtx) => ReactNode
 }
 
@@ -206,6 +216,16 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
     span: { w: 3, h: 3 },
     min: { w: 2, h: 2 },
     max: { w: 6, h: 5 },
+  },
+  "prtg-sensor": {
+    span: { w: 2, h: 2 },
+    min: { w: 1, h: 2 },
+    max: { w: 4, h: 4 },
+  },
+  "prtg-alarms": {
+    span: { w: 3, h: 3 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 6 },
   },
 }
 
@@ -643,6 +663,35 @@ export const CATALOG: WidgetDef[] = [
     render: (_d, ctx) => (
       <SupportCoverageWidget
         config={ctx?.config as SupportCoverageConfig | undefined}
+        editing={ctx?.editing}
+        setConfig={(c) => ctx?.setConfig({ ...c })}
+      />
+    ),
+  },
+  {
+    id: "prtg-sensor",
+    fit: "scroll",
+    multi: true,
+    title: "Sensor",
+    description: "One PRTG sensor channel as a gauge, value or sparkline",
+    titleOf: sensorWidgetTitle,
+    render: (_d, ctx) => (
+      <SensorWidget
+        config={ctx?.config}
+        editing={ctx?.editing}
+        setConfig={(c) => ctx?.setConfig({ ...c })}
+      />
+    ),
+  },
+  {
+    id: "prtg-alarms",
+    fit: "scroll",
+    multi: true,
+    title: "Sensor alarms",
+    description: "PRTG sensors that are down or degraded",
+    render: (_d, ctx) => (
+      <SensorAlarmsWidget
+        config={ctx?.config}
         editing={ctx?.editing}
         setConfig={(c) => ctx?.setConfig({ ...c })}
       />

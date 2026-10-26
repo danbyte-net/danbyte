@@ -253,8 +253,9 @@ editor's own local entries under
     the role's shape is left as it is. They also gain the PRTG rows of their
     sites' devices and VMs - device links (`prtgdevicelink`), sensors
     (`prtgsensor`) and the review queue (`prtgchange`) - so the
-    [Sensors tab](prtg.md#sensors) shows to local IT. PRTG connections stay
-    with administrators.
+    [Sensors tab](prtg.md#sensors) shows to local IT - and the sensor pins
+    (`prtgsensorpin`) of the [Overview's Sensors card](prtg.md#pinned-sensors).
+    PRTG connections stay with administrators.
 
 ### Set it up when you create the user
 

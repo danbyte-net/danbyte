@@ -38,6 +38,7 @@ import { ServicesPane } from "@/components/services-pane"
 import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
+import { VmMonitoringBadge } from "@/components/monitoring/device-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
@@ -53,6 +54,7 @@ import {
   usePrtgLinks,
 } from "@/components/prtg/sensors-tab"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
+import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -170,6 +172,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
+              <VmMonitoringBadge vmId={vm.id} />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"
@@ -529,6 +532,19 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
   ]
   return (
     <div className="space-y-6">
+      <PinnedSensorsCard
+        parent={{ virtual_machine: vm.id }}
+        sensorLink={(sensor, children) => (
+          <Link
+            to="/virtual-machines/$id"
+            params={{ id: vm.id }}
+            search={{ tab: "sensors", sensor }}
+            className="block h-full"
+          >
+            {children}
+          </Link>
+        )}
+      />
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <div className="min-w-0 space-y-6">
           <KvCard title="Virtual machine" rows={vmRows} />
