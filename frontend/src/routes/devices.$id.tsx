@@ -198,6 +198,11 @@ import { Switch } from "@/components/ui/switch"
 import { DeviceConnectMenu } from "@/components/device-connect-menu"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
+import {
+  PrtgSensorsTab,
+  linkedSensorCount,
+  usePrtgLinks,
+} from "@/components/prtg/sensors-tab"
 import { naturalCompare } from "@/lib/natural-sort"
 
 const DEVICE_TABS = [
@@ -207,6 +212,7 @@ const DEVICE_TABS = [
   "images",
   "photo-ports",
   "monitoring",
+  "sensors",
   "snmp",
   "services",
   "software",
@@ -243,7 +249,12 @@ export const Route = createFileRoute("/devices/$id")({
   // search and the page falls back to its default instead of an empty pane.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: DeviceTab; sub?: DeviceComponentSub; cabled?: CableState } => ({
+  ): {
+    tab?: DeviceTab
+    sub?: DeviceComponentSub
+    cabled?: CableState
+    sensor?: string
+  } => ({
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
       : {}),
@@ -256,6 +267,8 @@ export const Route = createFileRoute("/devices/$id")({
     CABLE_STATES.includes(s.cabled as CableState)
       ? { cabled: s.cabled as CableState }
       : {}),
+    // A PRTG sensor whose panel the Sensors tab opens.
+    ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
   }),
   component: DeviceDetail,
 })
@@ -295,6 +308,22 @@ function Body({ device: d }: { device: Device }) {
   // payload's figure stands in until it lands.
   const software = useSoftwareSummary({ kind: "device", id: d.id })
   const goBack = useCallback(() => nav({ to: "/devices" }), [nav])
+  // PRTG's sensors get a tab once PRTG has a device for this one; the links
+  // come back empty while the integration is off.
+  const prtgLinks = usePrtgLinks({ device: d.id })
+  const hasPrtg = (prtgLinks.data ?? []).length > 0
+  const search = Route.useSearch()
+  const openSensor = search.sensor
+  const selectSensor = useCallback(
+    (sensor: string | null) =>
+      nav({
+        to: "/devices/$id",
+        params: { id: d.id },
+        search: { ...search, sensor: sensor ?? undefined },
+        replace: true,
+      }),
+    [nav, search, d.id]
+  )
 
   return (
     <DetailShell
@@ -420,6 +449,15 @@ function Body({ device: d }: { device: Device }) {
           ? [{ value: "photo-ports", label: "Photo ports" }]
           : []),
         { value: "monitoring", label: "Monitoring" },
+        ...(hasPrtg
+          ? [
+              {
+                value: "sensors",
+                label: "Sensors",
+                count: linkedSensorCount(prtgLinks.data) || undefined,
+              },
+            ]
+          : []),
         // The value stays "snmp" so every ?tab=snmp link keeps landing here;
         // the label says what the tab holds now that checks have their own.
         {
@@ -487,6 +525,13 @@ function Body({ device: d }: { device: Device }) {
           <ObjectSlaPanel objectType="api.device" objectId={d.id} />
           <DeviceChecksPanel deviceId={d.id} />
         </div>
+      </DetailTab>
+      <DetailTab value="sensors">
+        <PrtgSensorsTab
+          parent={{ device: d.id }}
+          selected={openSensor}
+          onSelect={selectSensor}
+        />
       </DetailTab>
       <DetailTab value="snmp">
         <div className="space-y-6">

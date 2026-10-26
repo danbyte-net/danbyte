@@ -35,6 +35,12 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { PrtgChanges } from "@/components/prtg/changes"
 import { PrtgLinks } from "@/components/prtg/links"
+import { PrtgAlarms } from "@/components/prtg/alarms"
+import { PrtgSensors } from "@/components/prtg/sensors"
+import {
+  PrtgStateStrip,
+  usePrtgSensorSummary,
+} from "@/components/prtg/sensor-strip"
 import { PrtgStateMapEditor, editableOnly } from "@/components/prtg/state-map"
 import {
   Field,
@@ -69,7 +75,7 @@ const LINK_MODES = [
 
 // The connection, the decisions waiting on a person, and the pairings the
 // reads have made - looked up when a device reads wrong.
-const TABS = ["overview", "review", "links"] as const
+const TABS = ["overview", "review", "alarms", "sensors", "links"] as const
 type PrtgTab = (typeof TABS)[number]
 
 /** The PRTG integration: the connection, its review queue and its links. */
@@ -91,6 +97,14 @@ function PrtgPage() {
   const conn = all.find((c) => c.id === selectedId) ?? all.at(0)
   const refresh = () =>
     void qc.invalidateQueries({ queryKey: ["prtg-connections"] })
+  // Every imported sensor of the connection, counted per state: the
+  // Overview's strip and the Alarms and Sensors tab counts.
+  const summaryQuery = usePrtgSensorSummary(
+    conn ? { connection: conn.id } : {},
+    !!conn
+  )
+  const summary = summaryQuery.data ?? null
+  const alarmCount = summary ? summary.down + summary.degraded : 0
 
   const test = useMutation({
     mutationFn: (id: string) =>
@@ -120,6 +134,8 @@ function PrtgPage() {
       refresh()
       void qc.invalidateQueries({ queryKey: ["prtg-links"] })
       void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
+      void qc.invalidateQueries({ queryKey: ["prtg-sensors"] })
+      void qc.invalidateQueries({ queryKey: ["prtg-sensor-summary"] })
     },
     onError: (e) => {
       apiErrorToast(e)
@@ -179,11 +195,30 @@ function PrtgPage() {
             items={[
               { value: "overview", label: "Overview" },
               { value: "review", label: "Review queue" },
+              {
+                value: "alarms",
+                label: "Alarms",
+                count: alarmCount || undefined,
+              },
+              { value: "sensors", label: "Sensors", count: summary?.total },
               { value: "links", label: "Links" },
             ]}
           />
           {tab === "overview" && (
             <>
+              {summary && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <PrtgStateStrip summary={summary} />
+                  {(summary.read_at ?? conn.last_status_at) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
+                      read{" "}
+                      <TimeCell
+                        iso={(summary.read_at ?? conn.last_status_at)!}
+                      />
+                    </span>
+                  )}
+                </div>
+              )}
               <ConnectionCard
                 conn={conn}
                 result={results[conn.id]}
@@ -202,6 +237,8 @@ function PrtgPage() {
             </>
           )}
           {tab === "review" && <PrtgChanges connection={conn} />}
+          {tab === "alarms" && <PrtgAlarms connection={conn} />}
+          {tab === "sensors" && <PrtgSensors connection={conn} />}
           {tab === "links" && (
             <PrtgLinks connection={conn} canManage={canManage} />
           )}

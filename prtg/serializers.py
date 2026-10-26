@@ -11,7 +11,7 @@ from api.models import DeviceRole, DeviceType, Site
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from . import status as st
-from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink
+from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
 
 
 def _host(url: str) -> str:
@@ -198,13 +198,20 @@ class PrtgDefaultsSerializer(serializers.Serializer):
         }
 
 
+def _ref(obj) -> dict | None:
+    return {"id": str(obj.id), "name": obj.name} if obj is not None else None
+
+
 class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
     device = serializers.SerializerMethodField()
+    virtual_machine = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
 
     def get_device(self, obj) -> dict | None:
-        d = obj.device
-        return {"id": str(d.id), "name": d.name} if d else None
+        return _ref(obj.device)
+
+    def get_virtual_machine(self, obj) -> dict | None:
+        return _ref(obj.virtual_machine)
 
     def get_url(self, obj) -> str:
         return obj.connection.device_url(obj.objid)
@@ -212,7 +219,8 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrtgDeviceLink
         fields = [
-            "id", "connection", "device", "objid", "name", "host", "probe_name",
+            "id", "connection", "device", "virtual_machine", "objid", "name", "host",
+            "probe_name",
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
         ]
@@ -221,13 +229,16 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
 
 class PrtgChangeSerializer(serializers.ModelSerializer):
     device = serializers.SerializerMethodField()
+    virtual_machine = serializers.SerializerMethodField()
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     #: Whether this one can be applied at all - "needs a decision" cannot.
     applicable = serializers.SerializerMethodField()
 
     def get_device(self, obj) -> dict | None:
-        d = obj.device
-        return {"id": str(d.id), "name": d.name} if d else None
+        return _ref(obj.device)
+
+    def get_virtual_machine(self, obj) -> dict | None:
+        return _ref(obj.virtual_machine)
 
     def get_applicable(self, obj) -> bool:
         return obj.kind != PrtgChange.AMBIGUOUS
@@ -235,8 +246,58 @@ class PrtgChangeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrtgChange
         fields = [
-            "id", "kind", "kind_display", "device", "key", "detail", "ignored",
+            "id", "kind", "kind_display", "device", "virtual_machine", "key", "detail",
+            "ignored",
             "applicable", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class PrtgSensorSerializer(serializers.ModelSerializer):
+    """One imported sensor: what the Sensors tab and the /prtg tables show.
+    Read-only - the row is PRTG's, rewritten by every status read. The
+    channels and history are their own endpoints, read on demand."""
+
+    device = serializers.SerializerMethodField()
+    virtual_machine = serializers.SerializerMethodField()
+    connection_name = serializers.CharField(source="connection.name", read_only=True)
+    #: PRTG's own word for the status ("Paused by Dependency").
+    status = serializers.SerializerMethodField()
+    paused = serializers.BooleanField(read_only=True)
+    acknowledged = serializers.BooleanField(read_only=True)
+    url = serializers.SerializerMethodField()
+    device_url = serializers.SerializerMethodField()
+    prtg_device = serializers.CharField(source="link.name", read_only=True)
+    #: When the channels were last read, or null - they are read on demand.
+    channels_at = serializers.SerializerMethodField()
+
+    def get_device(self, obj) -> dict | None:
+        return _ref(obj.device)
+
+    def get_virtual_machine(self, obj) -> dict | None:
+        return _ref(obj.virtual_machine)
+
+    def get_status(self, obj) -> str:
+        return st.label(obj.status_raw) if obj.status_raw is not None else ""
+
+    def get_url(self, obj) -> str:
+        return obj.connection.sensor_url(obj.objid)
+
+    def get_device_url(self, obj) -> str:
+        return obj.connection.device_url(obj.link.objid)
+
+    def get_channels_at(self, obj) -> str | None:
+        return (obj.channels or {}).get("fetched_at")
+
+    class Meta:
+        model = PrtgSensor
+        fields = [
+            "id", "connection", "connection_name", "device", "virtual_machine",
+            "prtg_device", "objid", "name", "kind", "kind_label", "status_raw", "status",
+            "state", "paused", "acknowledged", "message", "tags", "active",
+            "last_value", "last_value_raw", "unit", "interval_seconds", "uptime_pct",
+            "downtime_pct", "priority", "last_check_at", "last_up_at", "last_down_at",
+            "probe_name", "group_path", "last_seen_at", "url", "device_url", "channels_at",
         ]
         read_only_fields = fields
 

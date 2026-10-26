@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+  <histdata totalcount="25" listend="1">
+   <prtg-version>26.3.124.1727</prtg-version>
+   <item>
+    <datetime>10/26/2026 7:00:00 AM - 7:05:00 AM</datetime>
+    <datetime_raw>46321.2534722222</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:05:00 AM - 7:10:00 AM</datetime>
+    <datetime_raw>46321.2569444444</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:10:00 AM - 7:15:00 AM</datetime>
+    <datetime_raw>46321.2604166667</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:15:00 AM - 7:20:00 AM</datetime>
+    <datetime_raw>46321.2638888889</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:20:00 AM - 7:25:00 AM</datetime>
+    <datetime_raw>46321.2673611111</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:25:00 AM - 7:30:00 AM</datetime>
+    <datetime_raw>46321.2708333333</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:30:00 AM - 7:35:00 AM</datetime>
+    <datetime_raw>46321.2743055556</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:35:00 AM - 7:40:00 AM</datetime>
+    <datetime_raw>46321.2777777778</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:40:00 AM - 7:45:00 AM</datetime>
+    <datetime_raw>46321.2812500000</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:45:00 AM - 7:50:00 AM</datetime>
+    <datetime_raw>46321.2847222222</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:50:00 AM - 7:55:00 AM</datetime>
+    <datetime_raw>46321.2881944444</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 7:55:00 AM - 8:00:00 AM</datetime>
+    <datetime_raw>46321.2916666667</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:00:00 AM - 8:05:00 AM</datetime>
+    <datetime_raw>46321.2951388889</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:05:00 AM - 8:10:00 AM</datetime>
+    <datetime_raw>46321.2986111111</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:10:00 AM - 8:15:00 AM</datetime>
+    <datetime_raw>46321.3020833333</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:15:00 AM - 8:20:00 AM</datetime>
+    <datetime_raw>46321.3055555556</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:20:00 AM - 8:25:00 AM</datetime>
+    <datetime_raw>46321.3090277778</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:25:00 AM - 8:30:00 AM</datetime>
+    <datetime_raw>46321.3125000000</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:30:00 AM - 8:35:00 AM</datetime>
+    <datetime_raw>46321.3159722222</datetime_raw>
+    <value channel="Days to Expiration" channelid="2"/>
+    <value channel="Root Authority Trusted (Yes)" channelid="3"/>
+    <value channel="Revoked (No)" channelid="4"/>
+    <value channel="Public Key Length (Good (2048))" channelid="5"/>
+    <value channel="Self-Signed (No)" channelid="6"/>
+    <value channel="Common Name Check (Matches device address)" channelid="7"/>
+    <value channel="Downtime" channelid="-4"/>
+    <coverage>0 %</coverage>
+    <coverage_raw>0000000000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:35:00 AM - 8:40:00 AM</datetime>
+    <datetime_raw>46321.3194444444</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:40:00 AM - 8:45:00 AM</datetime>
+    <datetime_raw>46321.3229166667</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:45:00 AM - 8:50:00 AM</datetime>
+    <datetime_raw>46321.3263888889</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:50:00 AM - 8:55:00 AM</datetime>
+    <datetime_raw>46321.3298611111</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 8:55:00 AM - 9:00:00 AM</datetime>
+    <datetime_raw>46321.3333333333</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+   <item>
+    <datetime>10/26/2026 9:00:00 AM - 9:05:00 AM</datetime>
+    <datetime_raw>46321.3368055556</datetime_raw>
+    <value channel="Days to Expiration" channelid="2">781 #</value>
+    <value_raw channel="Days to Expiration" channelid="2">781.0000</value_raw>
+    <value channel="Root Authority Trusted (Yes)" channelid="3">0 %</value>
+    <value_raw channel="Root Authority Trusted (Yes)" channelid="3">0.000000000000000</value_raw>
+    <value channel="Revoked (No)" channelid="4">0 %</value>
+    <value_raw channel="Revoked (No)" channelid="4">0.000000000000000</value_raw>
+    <value channel="Public Key Length (Good (2048))" channelid="5">100 %</value>
+    <value_raw channel="Public Key Length (Good (2048))" channelid="5">100.000000000000000</value_raw>
+    <value channel="Self-Signed (No)" channelid="6">0 %</value>
+    <value_raw channel="Self-Signed (No)" channelid="6">0.000000000000000</value_raw>
+    <value channel="Common Name Check (Matches device address)" channelid="7">0 %</value>
+    <value_raw channel="Common Name Check (Matches device address)" channelid="7">0.000000000000000</value_raw>
+    <value channel="Downtime" channelid="-4">0 %</value>
+    <value_raw channel="Downtime" channelid="-4">0.0000</value_raw>
+    <coverage>100 %</coverage>
+    <coverage_raw>0000010000</coverage_raw>
+   </item>
+  </histdata>

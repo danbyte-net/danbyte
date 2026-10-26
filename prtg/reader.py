@@ -31,8 +31,16 @@ from django.utils import timezone
 from monitoring.external.beat import skip_reason
 
 from . import status as st
+from .channels import scaled
 from .client import PrtgClient, PrtgError
-from .matching import annotate_devices, index_devices, match_device, shared_addresses
+from .matching import (
+    annotate_devices,
+    annotate_vms,
+    index_devices,
+    match_device,
+    match_vm,
+    shared_addresses,
+)
 from .models import PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
 
 log = logging.getLogger("prtg.reader")
@@ -80,34 +88,64 @@ def _release(conn) -> None:
 # ── linking ─────────────────────────────────────────────────────────────────
 
 
+def _is_vm(obj) -> bool:
+    return bool(getattr(obj, "_prtg_vm", False))
+
+
+def _owner_key(obj) -> tuple:
+    return ("vm" if _is_vm(obj) else "device", obj.id)
+
+
+def _link_key(link) -> tuple:
+    return ("vm", link.virtual_machine_id) if link.virtual_machine_id else ("device", link.device_id)
+
+
+def _parent_kwargs(obj) -> dict:
+    """The parent fields of a link, sensor or change row for ``obj``."""
+    if _is_vm(obj):
+        return {"device": None, "virtual_machine": obj}
+    return {"device": obj, "virtual_machine": None}
+
+
+def _label(obj) -> str:
+    return f"VM {obj.name}" if _is_vm(obj) else obj.name
+
+
 def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
-    """Match every device of the tenant to PRTG's devices; link or propose.
+    """Match every device and virtual machine of the tenant to PRTG's
+    devices; link or propose.
 
     ``devices`` are normalised ``table.json`` device rows. Returns counts.
+    A VM is matched by its tag, its primary or assigned addresses and their
+    DNS names - never by name alone (see :data:`prtg.matching.VM_CASCADE`).
     """
-    from api.models import Device
+    from api.models import Device, VirtualMachine
 
     counts = {"linked": 0, "proposed": 0, "ambiguous": 0, "unmatched": 0}
     index = index_devices(devices)
-    tenant_devices = annotate_devices(
+    owners = annotate_devices(
         conn.tenant,
         Device.objects.filter(tenant=conn.tenant).only("id", "name", "tenant_id"),
+    ) + annotate_vms(
+        conn.tenant,
+        VirtualMachine.objects.filter(tenant=conn.tenant).only("id", "name", "tenant_id"),
     )
-    links = {link.device_id: link for link in PrtgDeviceLink.objects.filter(connection=conn)}
+    links = {_link_key(link): link for link in PrtgDeviceLink.objects.filter(connection=conn)}
     shared = shared_addresses(conn.tenant, set(index["address"]))
 
     matches = []
     by_objid: dict[str, list] = defaultdict(list)
-    for device in tenant_devices:
-        match = match_device(device, index, links.get(device.id))
+    for owner in owners:
+        link = links.get(_owner_key(owner))
+        match = match_vm(owner, index, link) if _is_vm(owner) else match_device(owner, index, link)
         if match.matched and match.how == "address":
             host = (match.remote.get("host") or "").strip()
-            owners = shared.get(host) if host else None
-            if owners:
+            owner_names = shared.get(host) if host else None
+            if owner_names:
                 match.host, match.how = None, "ambiguous"
                 match.reason = (
                     f"Address {host} of PRTG device {match_name(index, host)} is held "
-                    f"by several Danbyte objects ({', '.join(owners[:4])})."
+                    f"by several Danbyte objects ({', '.join(owner_names[:4])})."
                 )
         matches.append(match)
         if match.matched:
@@ -116,12 +154,13 @@ def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
     fresh: set = set()
     with transaction.atomic():
         for match in matches:
-            device = match.device
+            owner = match.device
+            parent = _parent_kwargs(owner)
             if match.how == "ambiguous":
                 counts["ambiguous"] += 1
                 PrtgChange.propose(
                     conn, fresh, {"reason": match.reason},
-                    device=device, kind=PrtgChange.AMBIGUOUS, key="",
+                    **parent, kind=PrtgChange.AMBIGUOUS, key="",
                 )
                 continue
             if not match.matched:
@@ -130,26 +169,26 @@ def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
             remote = match.remote
             rivals = by_objid[remote["objid"]]
             if len(rivals) > 1:
-                # One PRTG device answering to two Danbyte devices is the
+                # One PRTG device answering to two Danbyte objects is the
                 # same question asked from the other side.
                 counts["ambiguous"] += 1
-                names = ", ".join(sorted(m.device.name for m in rivals)[:4])
+                names = ", ".join(sorted(_label(m.device) for m in rivals)[:4])
                 PrtgChange.propose(
                     conn, fresh,
                     {"reason": (
                         f"PRTG device {remote.get('name')} matches several Danbyte "
-                        f"devices by {match.how} ({names})."
+                        f"objects by {match.how} ({names})."
                     ), "objid": remote["objid"]},
-                    device=device, kind=PrtgChange.AMBIGUOUS, key="",
+                    **parent, kind=PrtgChange.AMBIGUOUS, key="",
                 )
                 continue
-            link = links.get(device.id)
+            link = links.get(_owner_key(owner))
             if link is not None and link.objid == remote["objid"]:
                 _refresh_link(link, remote, now)
                 counts["linked"] += 1
                 continue
-            if conn.link_mode == PrtgConnection.LINK_AUTO and _free(conn, device, remote):
-                make_link(conn, device, remote, match.how, now)
+            if conn.link_mode == PrtgConnection.LINK_AUTO and _free(conn, owner, remote):
+                make_link(conn, owner, remote, match.how, now)
                 counts["linked"] += 1
                 continue
             counts["proposed"] += 1
@@ -158,7 +197,7 @@ def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
                 {"objid": remote["objid"], "name": remote.get("name", ""),
                  "host": remote.get("host", ""), "matched_by": match.how,
                  "replaces": link.objid if link is not None else ""},
-                device=device, kind=PrtgChange.LINK, key=remote["objid"],
+                **parent, kind=PrtgChange.LINK, key=remote["objid"],
             )
         PrtgChange.drop_stale(conn, fresh)
     return counts
@@ -169,11 +208,14 @@ def match_name(index, host) -> str:
     return rows[0].get("name", host) if rows else host
 
 
-def _free(conn, device, remote) -> bool:
-    """Whether linking would collide with another device's link."""
-    return not PrtgDeviceLink.objects.filter(
-        connection=conn, objid=remote["objid"]
-    ).exclude(device=device).exists()
+def _free(conn, owner, remote) -> bool:
+    """Whether linking would collide with another object's link."""
+    others = PrtgDeviceLink.objects.filter(connection=conn, objid=remote["objid"])
+    if _is_vm(owner):
+        others = others.exclude(virtual_machine=owner)
+    else:
+        others = others.exclude(device=owner)
+    return not others.exists()
 
 
 def _link_fields(remote, now) -> dict:
@@ -187,30 +229,36 @@ def _link_fields(remote, now) -> dict:
     }
 
 
-def make_link(conn, device, remote, how, now) -> PrtgDeviceLink:
-    """Pair ``device`` with the PRTG device ``remote``, replacing any older
-    pairing of the device on this connection."""
+def make_link(conn, owner, remote, how, now) -> PrtgDeviceLink:
+    """Pair ``owner`` (a device, or a VM marked by :func:`annotate_vms` or
+    passed with ``_prtg_vm``) with the PRTG device ``remote``, replacing any
+    older pairing of it on this connection."""
+    parent = _parent_kwargs(owner)
+    lookup = (
+        {"virtual_machine": owner} if _is_vm(owner) else {"device": owner}
+    )
     link, _ = PrtgDeviceLink.objects.update_or_create(
-        connection=conn, device=device,
+        connection=conn, **lookup,
         defaults={
+            **parent,
             "tenant": conn.tenant, "objid": str(remote["objid"]),
             "matched_by": how, "unwanted_since": None,
-            "tagged": _tagged(device.id, remote),
+            "tagged": _tagged(owner.id, remote),
             **_link_fields(remote, now),
         },
     )
     return link
 
 
-def _tagged(device_id, remote) -> bool:
-    """Whether the PRTG device carries this device's ``danbyte-<uuid>`` tag."""
-    return f"danbyte-{device_id}".lower() in [t.lower() for t in remote.get("tags") or ()]
+def _tagged(owner_id, remote) -> bool:
+    """Whether the PRTG device carries this object's ``danbyte-<uuid>`` tag."""
+    return f"danbyte-{owner_id}".lower() in [t.lower() for t in remote.get("tags") or ()]
 
 
 def _refresh_link(link, remote, now) -> None:
     for field, value in _link_fields(remote, now).items():
         setattr(link, field, value)
-    link.tagged = _tagged(link.device_id, remote)
+    link.tagged = _tagged(link.device_id or link.virtual_machine_id, remote)
     link.save(update_fields=[*_link_fields(remote, now), "tagged"])
 
 
@@ -219,17 +267,20 @@ def apply_link(change: PrtgChange) -> str:
     conn = change.connection
     detail = change.detail or {}
     objid = str(detail.get("objid") or change.key or "")
-    if change.device_id is None or not objid:
+    owner = change.device if change.device_id else change.virtual_machine
+    if owner is None or not objid:
         raise ValueError("This proposal names no device to link.")
-    if change.device.tenant_id != conn.tenant_id:
+    if owner.tenant_id != conn.tenant_id:
         raise ValueError("The device is not in this connection's tenant.")
-    if not _free(conn, change.device, {"objid": objid}):
+    if change.virtual_machine_id:
+        owner._prtg_vm = True
+    if not _free(conn, owner, {"objid": objid}):
         raise ValueError("Another device is already linked to that PRTG device.")
-    make_link(conn, change.device, {**detail, "objid": objid},
+    make_link(conn, owner, {**detail, "objid": objid},
               detail.get("matched_by") or "link", timezone.now())
     name = detail.get("name") or objid
     change.delete()
-    return f"Linked {change.device.name} to PRTG device {name}."
+    return f"Linked {owner.name} to PRTG device {name}."
 
 
 # ── sensors and the roll-up ─────────────────────────────────────────────────
@@ -257,6 +308,7 @@ def write_sensors(conn, links, sensor_rows, now) -> dict:
                 fields = {
                     "tenant": conn.tenant, "connection": conn, "link": link,
                     "device_id": link.device_id,
+                    "virtual_machine_id": link.virtual_machine_id,
                     "name": (row.get("name") or "")[:255],
                     "kind": (row.get("kind") or "")[:128],
                     "kind_label": (row.get("type") or "")[:128],
@@ -267,6 +319,7 @@ def write_sensors(conn, links, sensor_rows, now) -> dict:
                     "active": row.get("active", True),
                     "last_check_at": row.get("last_check_at"),
                     "last_seen_at": now,
+                    **_record_fields(row),
                 }
                 sensor = existing.get(objid)
                 if sensor is None:
@@ -283,6 +336,28 @@ def write_sensors(conn, links, sensor_rows, now) -> dict:
                 counts["deleted"] += PrtgSensor.objects.filter(id__in=gone).delete()[0]
             roll_up(link, mapping, now)
     return counts
+
+
+def _record_fields(row) -> dict:
+    """The sensor's primary value and record, for the Sensors tab. Only the
+    columns the row carries: a narrower read leaves the rest as they were."""
+    out = {}
+    if "last_value" in row:
+        out["last_value"] = (row.get("last_value") or "")[:255]
+        # In the unit PRTG displays, like the channel values.
+        out["last_value_raw"] = scaled(row.get("last_value"), row.get("last_value_raw"))
+        out["unit"] = (row.get("unit") or "")[:32]
+    for key in ("interval_seconds", "uptime_pct", "downtime_pct", "priority",
+                "last_up_at", "last_down_at"):
+        if key in row:
+            out[key] = row[key]
+    if out.get("interval_seconds") is not None and out["interval_seconds"] < 0:
+        out["interval_seconds"] = None
+    if "probe" in row:
+        out["probe_name"] = (row.get("probe") or "")[:255]
+    if "group" in row:
+        out["group_path"] = (row.get("group") or "")[:255]
+    return out
 
 
 def roll_up(link, mapping, now) -> None:
@@ -444,7 +519,12 @@ def _hurry_checks(conn, link, now) -> None:
 
     from .checker import KIND
 
+    parent = (
+        {"target_ip__assigned_vm_id": link.virtual_machine_id}
+        if link.virtual_machine_id
+        else {"target_ip__assigned_device_id": link.device_id}
+    )
     CheckState.objects.filter(
         tenant=conn.tenant, kind=KIND, engine__in=conn.engines.all(),
-        target_ip__assigned_device_id=link.device_id, in_flight=False,
+        in_flight=False, **parent,
     ).update(next_run=now)

@@ -115,9 +115,9 @@ SITE_PATHS: dict[str, str] = {
     "portutilizationrule": "device__site",
     "zabbixhostlink": "device__site",
     "zabbixchange": "device__site",
-    "prtgdevicelink": "device__site",
-    "prtgsensor": "device__site",
-    "prtgchange": "device__site",
+    "prtgdevicelink": "device__site|virtual_machine__site",
+    "prtgsensor": "device__site|virtual_machine__site",
+    "prtgchange": "device__site|virtual_machine__site",
     "dhcpscope": "prefix__site",
     "dhcpreservation": "scope__prefix__site",
     "dhcplease": "scope__prefix__site",
@@ -161,10 +161,6 @@ SITE_ROLE_EXCLUDED: frozenset[str] = frozenset({
     "portutilizationrule",
     "zabbixhostlink",
     "zabbixchange",
-    # PRTG rows stay out of the site roles until the device page shows them.
-    "prtgdevicelink",
-    "prtgsensor",
-    "prtgchange",
     "dhcpscope",
     "dhcpreservation",
     "dhcplease",
@@ -261,6 +257,7 @@ SITE_ROLE_REFERENCE_EXCLUDED: dict[str, str] = {
     "tunnel": "inventory that spans sites, not a catalog",
     "exporttemplate": "automation templates are administration",
     "oxidizedconnection": "integration configuration",
+    "prtgconnection": "integration configuration; holds the API key",
 }
 
 

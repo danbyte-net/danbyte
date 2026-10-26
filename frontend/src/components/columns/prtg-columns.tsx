@@ -23,6 +23,17 @@ const RANK: Record<string, number> = {
  * the integration is on. */
 export function usePrtgDeviceStates():
   Record<string, PrtgDeviceState> | undefined {
+  return usePrtgStates("device-states")
+}
+
+/** The same for the VM list. */
+export function usePrtgVmStates(): Record<string, PrtgDeviceState> | undefined {
+  return usePrtgStates("vm-states")
+}
+
+function usePrtgStates(
+  path: "device-states" | "vm-states"
+): Record<string, PrtgDeviceState> | undefined {
   const toggles = useQuery({
     queryKey: ["integrations-enabled"],
     queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
@@ -30,9 +41,8 @@ export function usePrtgDeviceStates():
   })
   const on = !!toggles.data?.prtg
   const states = useQuery({
-    queryKey: ["prtg-device-states"],
-    queryFn: () =>
-      api<Record<string, PrtgDeviceState>>("/api/prtg/device-states/"),
+    queryKey: [`prtg-${path}`],
+    queryFn: () => api<Record<string, PrtgDeviceState>>(`/api/prtg/${path}/`),
     enabled: on,
     staleTime: 60_000,
   })

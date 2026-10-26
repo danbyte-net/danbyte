@@ -56,6 +56,10 @@ SENSOR_COLUMNS = (
     "message", "lastvalue", "priority", "tags", "lastcheck", "lastup", "lastdown",
     "uptime", "downtime", "interval", "parentid", "active",
 )
+#: ``content=channels``: the ``info`` column is a JSON document per channel
+#: carrying its status, whether it is a percentage, its limits and its lookup
+#: table - everything the sensor panel needs in one call per sensor.
+CHANNEL_COLUMNS = ("objid", "name", "lastvalue", "info", "minimum", "maximum")
 DEVICE_COLUMNS = (
     "objid", "name", "host", "probe", "group", "status", "message", "tags",
     "parentid", "active",
@@ -229,6 +233,24 @@ def normalise_row(row: dict) -> dict:
         if col in row or f"{col}_raw" in row:
             out[key] = parse_percent(row.get(col), row.get(f"{col}_raw"))
     return out
+
+
+_CLOCK_FORMATS = (
+    "%m/%d/%Y %I:%M:%S %p", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
+    "%d/%m/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S",
+)
+
+
+def parse_clock(value) -> datetime | None:
+    """``getstatus``'s ``Clock`` ("10/26/2026 12:08:06 AM", in the user's
+    date format) as a naive datetime, or None."""
+    text = clean_text(value)
+    for fmt in _CLOCK_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 @dataclass
@@ -441,6 +463,73 @@ class PrtgClient:
         out = {k: clean_text(v) for k, v in data.items()}
         out["status_raw"] = _int(data.get("statusid"), st.UNKNOWN)
         return out
+
+    def channels(self, objid: int) -> list[dict]:
+        """``table.json?content=channels&id=<sensor>``: the sensor's channels
+        as PRTG returns them (mapped by :mod:`prtg.channels`). A sensor has
+        tens of channels at most, so one page."""
+        payload = self.get_json("/api/table.json", {
+            "content": "channels", "id": int(objid),
+            "columns": ",".join(CHANNEL_COLUMNS), "count": 500,
+        })
+        rows = payload.get("channels") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise PrtgError("PRTG returned channels in an unexpected shape.")
+        return rows
+
+    def historic(self, objid: int, start, end, avg: int) -> list[dict]:
+        """``historicdata.xml``: averaged history of every channel of a
+        sensor between ``start`` and ``end`` (naive datetimes in the PRTG
+        server's local time, as the API wants them), one row per ``avg``
+        seconds.
+
+        The XML form, not ``historicdata.json``: the JSON repeats one
+        ``value`` key per channel without saying which channel it is (or,
+        with ``usecaption``, drops the raw timestamp), while the XML names
+        each value's channel id and carries the UTC timestamp.
+
+        Returns ``[{"end": aware UTC datetime, "values": {channel id:
+        {"name", "display", "raw"}}}]``; an empty value is ``raw: None``.
+        """
+        fmt = "%Y-%m-%d-%H-%M-%S"
+        resp = self._check(self._request("/api/historicdata.xml", {
+            "id": int(objid), "avg": int(avg),
+            "sdate": start.strftime(fmt), "edate": end.strftime(fmt),
+        }))
+        try:
+            root = ET.fromstring(resp.text.strip())
+        except ET.ParseError as exc:
+            raise PrtgError("PRTG returned history in an unexpected shape.") from exc
+        if root.tag == "prtg" and root.find("error") is not None:
+            raise PrtgError(_error_sentence(resp.text))
+        out = []
+        for item in root.iter("item"):
+            end_at = ole_to_datetime((item.findtext("datetime_raw") or "").strip())
+            if end_at is None:
+                continue
+            values: dict = {}
+            for node in item.findall("value"):
+                cid = node.get("channelid")
+                if cid is None:
+                    continue
+                values[cid] = {"name": clean_text(node.get("channel")),
+                               "display": clean_text(node.text), "raw": None}
+            for node in item.findall("value_raw"):
+                cid = node.get("channelid")
+                if cid not in values:
+                    continue
+                try:
+                    values[cid]["raw"] = float((node.text or "").strip())
+                except ValueError:
+                    values[cid]["raw"] = None
+            out.append({"end": end_at, "values": values})
+        return out
+
+    def server_clock(self) -> datetime | None:
+        """The PRTG server's clock in the API user's time zone, naive, from
+        ``getstatus.htm`` - what ``historicdata`` windows are written in.
+        None when the format is not one PRTG uses."""
+        return parse_clock(self.status().get("Clock"))
 
     def get_property(self, objid: int, name: str) -> str:
         """``getobjectproperty.htm`` - one property's value, as text."""

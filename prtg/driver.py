@@ -96,7 +96,8 @@ def answer(conn, states, now=None) -> tuple[dict, bool]:
         }, False
 
     links = list(PrtgDeviceLink.objects.filter(connection=conn))
-    by_device = {link.device_id: link for link in links}
+    by_device = {link.device_id: link for link in links if link.device_id}
+    by_vm = {link.virtual_machine_id: link for link in links if link.virtual_machine_id}
     by_host: dict[str, list] = defaultdict(list)
     for link in links:
         if link.host:
@@ -111,6 +112,8 @@ def answer(conn, states, now=None) -> tuple[dict, bool]:
         ip = s.target_ip
         address = str(ip.ip_address).split("/")[0]
         link = by_device.get(ip.assigned_device_id) if ip.assigned_device_id else None
+        if link is None and ip.assigned_vm_id:
+            link = by_vm.get(ip.assigned_vm_id)
         if link is None:
             rows = by_host.get(address.lower()) or []
             if len(rows) > 1:

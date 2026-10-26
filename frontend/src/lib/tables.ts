@@ -302,6 +302,8 @@ const ROWS: Row[] = [
   ["zabbix-scope", "Zabbix · Scope", "Integrations", null],
   ["prtg-links", "PRTG · Linked devices", "Integrations", "/api/prtg/links/"],
   ["prtg-changes", "PRTG · Review queue", "Integrations", "/api/prtg/changes/"],
+  ["prtg-alarms", "PRTG · Alarms", "Integrations", "/api/prtg/sensors/"],
+  ["prtg-sensors", "PRTG · Sensors", "Integrations", "/api/prtg/sensors/"],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
 
