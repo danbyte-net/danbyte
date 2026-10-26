@@ -21,20 +21,26 @@ export const AppCard = memo(function AppCard(props: NodeProps) {
     <>
       <Card {...props} />
       {d.accent && (
+        // Clipped to the card's own rounded outline, so the colour follows
+        // the corners exactly instead of sitting beside them as a strip.
         <span
           aria-hidden
-          data-accent={d.accent}
           className={cn(
-            "pointer-events-none absolute left-0 rounded-l-lg transition-opacity",
+            "pointer-events-none absolute inset-0 overflow-hidden rounded-lg transition-opacity",
             d.dimmed && "opacity-30"
           )}
-          style={{
-            top: ACCENT.INSET,
-            bottom: ACCENT.INSET,
-            width: ACCENT.W,
-            backgroundColor: d.accent,
-          }}
-        />
+        >
+          <span
+            data-accent={d.accent}
+            className="absolute left-0"
+            style={{
+              top: ACCENT.INSET,
+              bottom: ACCENT.INSET,
+              width: ACCENT.W,
+              backgroundColor: d.accent,
+            }}
+          />
+        </span>
       )}
     </>
   )
