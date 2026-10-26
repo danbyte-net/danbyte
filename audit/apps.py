@@ -154,6 +154,7 @@ AUDITED_MODELS = [
     "zabbix.ZabbixAdoptionRule",
     "prtg.PrtgConnection",
     "prtg.PrtgAdoptionRule",
+    "prtg.PrtgSensorPin",
     "oxidized.OxidizedConnection",
     "api.Service",
     "api.ServiceTemplate",

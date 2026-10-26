@@ -54,6 +54,7 @@ import {
   usePrtgLinks,
 } from "@/components/prtg/sensors-tab"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
+import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -531,6 +532,19 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
   ]
   return (
     <div className="space-y-6">
+      <PinnedSensorsCard
+        parent={{ virtual_machine: vm.id }}
+        sensorLink={(sensor, children) => (
+          <Link
+            to="/virtual-machines/$id"
+            params={{ id: vm.id }}
+            search={{ tab: "sensors", sensor }}
+            className="block h-full"
+          >
+            {children}
+          </Link>
+        )}
+      />
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <div className="min-w-0 space-y-6">
           <KvCard title="Virtual machine" rows={vmRows} />

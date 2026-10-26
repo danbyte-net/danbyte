@@ -13350,6 +13350,31 @@ export interface PrtgHistory {
   }[]
 }
 
+/** How a pinned channel is drawn: `auto` follows the channel (a gauge for
+ * a number, the lookup bar for a lookup, the text for text). */
+export type PrtgPinDisplay = "auto" | "gauge" | "lookup" | "value"
+
+/** GET /api/prtg/sensor-pins/?device=|virtual_machine= - a channel pinned
+ * to a device's or VM's Overview. */
+export interface PrtgSensorPin {
+  id: string
+  sensor: string
+  channel_id: string
+  display: PrtgPinDisplay
+  position: number
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  sensor_info: {
+    name: string
+    kind_label: string
+    state: CheckStatus
+    status: string
+    paused: boolean
+    url: string
+  }
+  created_at: string
+}
+
 export interface PrtgHookToken {
   token: string
   path: string

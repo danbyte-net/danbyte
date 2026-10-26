@@ -6,6 +6,14 @@ class PrtgConfig(AppConfig):
     name = "prtg"
     verbose_name = "PRTG monitoring"
 
+    def import_models(self):
+        # The Overview pins live in their own module (prtg.pins); load them
+        # with the models so the registry and migrations see them.
+        super().import_models()
+        from importlib import import_module
+
+        import_module(f"{self.name}.pins")
+
     def ready(self):
         # The check kind registers on import; the engine kind and the beat
         # entry are what make PRTG answer for it.

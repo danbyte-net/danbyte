@@ -2,11 +2,8 @@ import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
 
-import {
-  api,
-  type BulkStatusResponse,
-  type DeviceChecksResponse,
-} from "@/lib/api"
+import { api } from "@/lib/api"
+import type { BulkStatusResponse, DeviceChecksResponse } from "@/lib/api"
 import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { MixedStatusBadge } from "./mixed-status-badge"
@@ -63,7 +60,7 @@ export function VmMonitoringBadge({ vmId }: { vmId: string }) {
       }),
     refetchInterval: 60_000,
   })
-  const e = q.data?.statuses?.[vmId]
+  const e = q.data?.statuses[vmId]
   if (!e || !e.status || !e.monitored_ips) return null
   return (
     <ExternalStatusHover entry={e}>

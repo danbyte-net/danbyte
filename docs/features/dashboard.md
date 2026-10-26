@@ -28,6 +28,10 @@ The page is a mosaic of tiles:
 - **Support coverage** - devices per [coverage status](support-coverage.md),
   narrowed by site and manufacturer, and the support contracts that end
   soonest. A count opens the devices list filtered to it.
+- **PRTG widgets** - **Sensor** (one channel of one [PRTG sensor](prtg.md#sensors)
+  as a gauge, lookup bar, value or sparkline over 1h, 24h or 7d) and
+  **Sensor alarms** (the down and degraded sensors). See
+  [Sensor widgets](#sensor-widgets).
 - **Activity widgets** - **Changelog** (the latest audit changes across the
   tenant: who changed what, each linking to the full change and out to the audit
   log) and **Recent activity** (latest monitoring status changes).
@@ -150,6 +154,22 @@ stays up for `every` seconds, 10 at the least.
 
 The figure widgets read the [rollups](monitoring.md#rollups), so they cover
 the whole time frame even beyond the raw results' thirty days.
+
+### Sensor widgets
+
+Both need [PRTG monitoring](prtg.md) to be on.
+
+| Widget | What it shows |
+|---|---|
+| **Sensor** | One channel of one PRTG sensor, with the sensor's state pill and a link to its device's or VM's Sensors tab with the panel open. While editing, pick a **Device** or **VM**, the **Sensor**, the **Channel** (*Primary* by default), the display - **Gauge**, **Lookup bar**, **Value** or **Sparkline** with its range (1h, 24h, 7d) - and an optional **Title** that replaces the widget's. Add it more than once for several. |
+| **Sensor alarms** | The down and degraded sensors, worst and newest first, for every connection or one: sensor, device or VM, state and since when, capped to 5, 10 or 20 rows, with a link to the PRTG page's **Alarms** tab. |
+
+The widgets keep only ids and read the sensor live on every refresh of the
+dashboard, with the viewer's permissions: a sensor that is gone, or PRTG
+switched off, reads *No data*; a device or VM the viewer cannot see reads
+*No access*. A sparkline follows the sensor panel's rule: a number that did
+not move reads *Steady over the last …*, a lookup channel shows its state
+timeline.
 
 ## Related
 

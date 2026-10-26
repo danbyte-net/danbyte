@@ -3,11 +3,10 @@ import { useQuery } from "@tanstack/react-query"
 import { ExternalLink } from "lucide-react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
-import { ApiError, api } from "@/lib/api"
+import { ApiError } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type {
   PrtgChannel,
-  PrtgChannels,
   PrtgDeviceLink,
   PrtgHistory,
   PrtgHistoryRange,
@@ -36,15 +35,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { EmptyState } from "@/components/empty-state"
-import { Gauge } from "@/components/gauge"
 import { Loading } from "@/components/loading"
-import { LookupBar } from "@/components/lookup-bar"
-import type { LookupTone } from "@/components/lookup-bar"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { Sparkline } from "@/components/sparkline"
 import { TimeCell } from "@/components/cells/time-ago"
 import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { formatGaugeValue } from "@/components/gauge"
+import {
+  ChannelReading,
+  ChannelTrend,
+  currentLookup,
+  seriesFor,
+  steadyText,
+  trendOf,
+  useChannels,
+  useHistory,
+} from "./channel-view"
+import { PinToggle } from "./sensor-pins"
 import { PrtgStateStrip } from "./sensor-strip"
 
 /** The device or VM whose PRTG sensors a surface shows. */
@@ -314,28 +321,6 @@ function SensorCard({
   )
 }
 
-/** The sensor's channels, read from PRTG when the panel opens and reused
- * for one status interval on the server. */
-function useChannels(sensorId: string | null) {
-  return useQuery({
-    queryKey: ["prtg-channels", sensorId],
-    queryFn: () => api<PrtgChannels>(`/api/prtg/sensors/${sensorId}/channels/`),
-    enabled: !!sensorId,
-    staleTime: 60_000,
-  })
-}
-
-/** Every channel's history for one range: one request serves every card. */
-function useHistory(sensorId: string | null, range: PrtgHistoryRange | null) {
-  return useQuery({
-    queryKey: ["prtg-history", sensorId, range],
-    queryFn: () =>
-      api<PrtgHistory>(`/api/prtg/sensors/${sensorId}/history/?range=${range}`),
-    enabled: !!sensorId && !!range,
-    staleTime: 60_000,
-  })
-}
-
 /**
  * The sensor panel: PRTG's sensor overview drawn the Danbyte way. A header
  * with the state, kind, PRTG device and a link into PRTG; PRTG's message;
@@ -404,7 +389,7 @@ export function SensorPanel({
                   {channels.data!.rows.map((c) => (
                     <ChannelCard
                       key={c.id}
-                      sensorId={sensor.id}
+                      sensor={sensor}
                       channel={c}
                       hour={hour.data}
                     />
@@ -424,26 +409,7 @@ export function SensorPanel({
   )
 }
 
-const LOOKUP_TONE: Record<string, LookupTone> = {
-  ok: "ok",
-  warning: "warning",
-  error: "error",
-}
-
-function lookupKey(s: { value: number; to: number | null }) {
-  return s.to != null ? `${s.value}-${s.to}` : String(s.value)
-}
-
-/** The lookup state the raw value falls in - a single value or a range. */
-export function currentLookup(c: PrtgChannel): string | null {
-  if (c.value_raw == null) return null
-  const hit = c.lookup_states.find((s) =>
-    s.to != null
-      ? c.value_raw! >= s.value && c.value_raw! <= s.to
-      : s.value === c.value_raw
-  )
-  return hit ? lookupKey(hit) : null
-}
+export { currentLookup }
 
 const RANGES: { value: PrtgHistoryRange; label: string }[] = [
   { value: "1h", label: "1h" },
@@ -451,19 +417,30 @@ const RANGES: { value: PrtgHistoryRange; label: string }[] = [
   { value: "7d", label: "7d" },
 ]
 
+/**
+ * One channel in the panel: its reading, then what its history says. A
+ * number that moved gets the hour's sparkline and the range switch for its
+ * graph; a number that did not says it was steady; a lookup gets its state
+ * timeline for the chosen range; text and channels with too little history
+ * get nothing under the reading.
+ */
 function ChannelCard({
-  sensorId,
+  sensor,
   channel: c,
   hour,
 }: {
-  sensorId: string
+  sensor: PrtgSensor
   channel: PrtgChannel
   hour: PrtgHistory | undefined
 }) {
   const [range, setRange] = useState<PrtgHistoryRange | "">("")
-  const spark = hour?.channels.find((h) => h.id === c.id)?.points ?? []
-  const warn = { below: c.limits.warn_min, above: c.limits.warn_max }
-  const error = { below: c.limits.error_min, above: c.limits.error_max }
+  const series = seriesFor(hour, c.id)
+  const trend = trendOf(c, series)
+  const lookup = c.kind === "lookup"
+  // A lookup's range switch moves its timeline; a number's opens its graph.
+  const timelineRange: PrtgHistoryRange = range || "1h"
+  const ranged = useHistory(lookup && range ? sensor.id : null, range || null)
+  const showSwitch = lookup || trend.kind === "line" || trend.kind === "steady"
   return (
     <div
       className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3"
@@ -475,50 +452,36 @@ function ChannelCard({
           {c.name}
         </p>
         {c.state !== "up" && c.status && <CheckStatusBadge status={c.state} />}
+        <PinToggle sensor={sensor} channelId={c.id} />
       </div>
       <div className="flex min-h-[84px] items-center justify-center">
-        {c.kind === "lookup" ? (
-          <LookupBar
-            states={c.lookup_states.map((s) => ({
-              key: lookupKey(s),
-              label: s.label,
-              tone: LOOKUP_TONE[s.state] ?? "neutral",
-            }))}
-            current={currentLookup(c)}
-            label={c.lookup_label || c.value}
-          />
-        ) : c.kind === "text" ? (
-          <p className="text-center text-sm font-medium">{c.value || "-"}</p>
-        ) : (
-          <Gauge
-            value={c.value_raw}
-            unit={c.unit}
-            min={c.min ?? 0}
-            max={c.max ?? 100}
-            warn={warn}
-            error={error}
-            label={c.name}
-          />
-        )}
+        <ChannelReading channel={c} />
       </div>
-      <div className="flex items-center gap-2">
-        {c.kind !== "text" && (
-          <Sparkline
-            values={spark.map((p) => p.v)}
-            label={`${c.name}, last hour`}
-            className="min-w-0 flex-1"
-            width={120}
-          />
-        )}
-        <SegmentedTabs
-          className="ml-auto"
-          value={range}
-          onValueChange={(v) => setRange(v === range ? "" : v)}
-          items={RANGES}
-        />
-      </div>
-      {range && (
-        <ChannelHistory sensorId={sensorId} channel={c} range={range} />
+      {(showSwitch || trend.kind !== "none") && (
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            {lookup ? (
+              <ChannelTrend
+                channel={c}
+                series={range ? seriesFor(ranged.data, c.id) : series}
+                range={timelineRange}
+              />
+            ) : (
+              <ChannelTrend channel={c} series={series} range="1h" />
+            )}
+          </div>
+          {showSwitch && (
+            <SegmentedTabs
+              className="ml-auto shrink-0"
+              value={range}
+              onValueChange={(v) => setRange(v === range ? "" : v)}
+              items={RANGES}
+            />
+          )}
+        </div>
+      )}
+      {range && !lookup && (
+        <ChannelHistory sensorId={sensor.id} channel={c} range={range} />
       )}
     </div>
   )
@@ -528,6 +491,9 @@ const CONFIG = {
   v: { label: "Value", color: "var(--chart-1)" },
 } satisfies ChartConfig
 
+/** A number's history graph for one range, in the channel's own unit. The
+ * same rule as the sparkline: two values at least, and a flat range says
+ * "steady" instead of drawing a flat line. */
 function ChannelHistory({
   sensorId,
   channel,
@@ -539,8 +505,10 @@ function ChannelHistory({
 }) {
   const { formatCustom } = useDateFormat()
   const q = useHistory(sensorId, range)
-  const series = q.data?.channels.find((h) => h.id === channel.id)
-  const unit = series?.unit || channel.unit
+  const series = seriesFor(q.data, channel.id)
+  // The channel's unit, never the history's: PRTG reports some channels'
+  // history as a percentage of time, which is not what the channel measures.
+  const unit = channel.unit
   const data = useMemo(
     () =>
       (series?.points ?? []).map((p) => ({
@@ -548,27 +516,43 @@ function ChannelHistory({
         v: p.v,
         label: formatCustom(
           p.t,
-          range === "1h"
-            ? { hour: "2-digit", minute: "2-digit" }
-            : range === "24h"
-              ? { hour: "2-digit", minute: "2-digit" }
-              : { month: "short", day: "numeric", hour: "2-digit" }
+          range === "7d"
+            ? { month: "short", day: "numeric", hour: "2-digit" }
+            : { hour: "2-digit", minute: "2-digit" }
         ),
       })),
     [series, range, formatCustom]
   )
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
-  if (data.every((d) => d.v == null))
+  const trend = trendOf(channel, series)
+  if (trend.kind === "none")
     return (
-      <p className="py-4 text-center text-xs text-muted-foreground">
-        No values in this range.
+      <p
+        className="py-4 text-center text-xs text-muted-foreground"
+        data-testid="prtg-history-empty"
+      >
+        Not enough history in this range.
+      </p>
+    )
+  if (trend.kind === "steady")
+    return (
+      <p
+        className="py-4 text-center text-xs text-muted-foreground"
+        data-testid="prtg-steady"
+      >
+        <span className="num font-medium text-foreground">
+          {formatGaugeValue(trend.value)}
+          {unit ? ` ${unit}` : ""}
+        </span>{" "}
+        · {steadyText(range)}
       </p>
     )
   return (
     <ChartContainer
       config={CONFIG}
       className={cn("aspect-auto h-[140px] w-full")}
+      data-testid="prtg-history-chart"
     >
       <LineChart
         accessibilityLayer
@@ -588,7 +572,10 @@ function ChannelHistory({
           tickLine={false}
           axisLine={false}
           width={48}
-          tickFormatter={(v: number) => `${v}${unit ? ` ${unit}` : ""}`}
+          domain={["auto", "auto"]}
+          tickFormatter={(v: number) =>
+            `${formatGaugeValue(v)}${unit ? ` ${unit}` : ""}`
+          }
         />
         <ChartTooltip
           cursor={false}
@@ -612,7 +599,9 @@ function ChannelHistory({
           type="monotone"
           stroke="var(--color-v)"
           strokeWidth={2}
-          dot={false}
+          // A value between two gaps has no neighbour to draw a line to;
+          // its dot is what shows it.
+          dot={{ r: 1.5 }}
           connectNulls={false}
           isAnimationActive={false}
         />

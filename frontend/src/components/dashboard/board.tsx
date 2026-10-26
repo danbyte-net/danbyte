@@ -179,7 +179,7 @@ export function DashboardGrid({
             return (
               <div key={it.id}>
                 <WidgetTile
-                  title={w.title}
+                  title={w.titleOf?.(it.config) ?? w.title}
                   description={w.description}
                   fit={w.fit ?? "scroll"}
                   editing={editing}
