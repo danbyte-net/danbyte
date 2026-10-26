@@ -217,10 +217,13 @@ class StatusReadTests(_Lab):
         counts = self.read()
         self.assertEqual(counts["linked"], 0)
         self.assertFalse(PrtgDeviceLink.objects.exists())
-        row = PrtgChange.objects.get(kind=PrtgChange.AMBIGUOUS)
+        row = PrtgChange.objects.get(kind=PrtgChange.AMBIGUOUS, device__isnull=False)
         self.assertEqual(row.device.name, "kbh-srv1")
         self.assertIn("10.0.0.41", row.detail["reason"])
         self.assertIn("VM db-dev01", row.detail["reason"])
+        # The VM matches the same address, and is asked about too.
+        vm_row = PrtgChange.objects.get(kind=PrtgChange.AMBIGUOUS, device__isnull=True)
+        self.assertEqual(vm_row.virtual_machine.name, "db-dev01")
 
     def test_two_danbyte_devices_on_one_prtg_device_is_a_question(self):
         self.device("db-zabbix", "10.0.5.1")

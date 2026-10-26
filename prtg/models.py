@@ -104,6 +104,10 @@ class PrtgConnection(TimestampedModel):
     v2_available = models.BooleanField(null=True, blank=True)
     last_checked_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="", db_default="")
+    #: Minutes the PRTG server's clock (as its API user sees it) is ahead of
+    #: UTC, from ``getstatus.htm``'s ``Clock``. ``historicdata`` takes its
+    #: window in that local time. Null until learned.
+    server_utc_offset_minutes = models.SmallIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -177,9 +181,31 @@ class PrtgConnection(TimestampedModel):
         """The PRTG device page."""
         return f"{self.url.rstrip('/')}/device.htm?id={objid}"
 
+    def sensor_url(self, objid) -> str:
+        """The PRTG sensor page."""
+        return f"{self.url.rstrip('/')}/sensor.htm?id={objid}"
+
+    @property
+    def cache_seconds(self) -> int:
+        """How long a channel or history read is reused: one status
+        interval, never under a minute."""
+        return max(int(self.status_interval_seconds or 0), 60)
+
+
+def _one_parent(name: str) -> models.CheckConstraint:
+    """A row belongs to a device or to a virtual machine - exactly one."""
+    return models.CheckConstraint(
+        condition=(
+            models.Q(device__isnull=False, virtual_machine__isnull=True)
+            | models.Q(device__isnull=True, virtual_machine__isnull=False)
+        ),
+        name=name,
+    )
+
 
 class PrtgDeviceLink(ExternalLinkBase):
-    """The pairing between a Danbyte device and a PRTG device.
+    """The pairing between a Danbyte device - or virtual machine - and a PRTG
+    device.
 
     Made by matching (:mod:`prtg.matching`), kept across renames and
     re-addressing on both sides, and read by the status pass and the ``prtg``
@@ -192,7 +218,13 @@ class PrtgDeviceLink(ExternalLinkBase):
         PrtgConnection, on_delete=models.CASCADE, related_name="links"
     )
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="prtg_links"
+        "api.Device", on_delete=models.CASCADE, related_name="prtg_links",
+        null=True, blank=True,
+    )
+    #: The other kind of parent: a PRTG device that watches a VM.
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="prtg_links",
+        null=True, blank=True,
     )
     #: PRTG object id, as a string like every remote id Danbyte keeps.
     objid = models.CharField(max_length=16)
@@ -224,10 +256,19 @@ class PrtgDeviceLink(ExternalLinkBase):
             models.UniqueConstraint(
                 fields=["connection", "objid"], name="uniq_prtg_link_conn_objid"
             ),
+            models.UniqueConstraint(
+                fields=["connection", "virtual_machine"], name="uniq_prtg_link_conn_vm"
+            ),
+            _one_parent("prtg_link_one_parent"),
         ]
 
     def __str__(self) -> str:
-        return f"{self.device_id} -> {self.objid}"
+        return f"{self.device_id or self.virtual_machine_id} -> {self.objid}"
+
+    @property
+    def parent(self):
+        """The device or VM this link is for."""
+        return self.device if self.device_id else self.virtual_machine
 
     @property
     def paused(self) -> bool:
@@ -251,7 +292,12 @@ class PrtgSensor(TimestampedModel):
     )
     link = models.ForeignKey(PrtgDeviceLink, on_delete=models.CASCADE, related_name="sensors")
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="prtg_sensors"
+        "api.Device", on_delete=models.CASCADE, related_name="prtg_sensors",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="prtg_sensors",
+        null=True, blank=True,
     )
     objid = models.CharField(max_length=16)
     name = models.CharField(max_length=255, blank=True, default="", db_default="")
@@ -270,20 +316,60 @@ class PrtgSensor(TimestampedModel):
     last_check_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
+    # ── the primary value and the record, from the sensors table ──────
+    #: The primary channel's value as PRTG formats it ("12 msec", "81 %").
+    last_value = models.CharField(max_length=255, blank=True, default="", db_default="")
+    last_value_raw = models.FloatField(null=True, blank=True)
+    unit = models.CharField(max_length=32, blank=True, default="", db_default="")
+    interval_seconds = models.PositiveIntegerField(null=True, blank=True)
+    uptime_pct = models.FloatField(null=True, blank=True)
+    downtime_pct = models.FloatField(null=True, blank=True)
+    #: PRTG's 1-5 stars.
+    priority = models.SmallIntegerField(null=True, blank=True)
+    last_up_at = models.DateTimeField(null=True, blank=True)
+    last_down_at = models.DateTimeField(null=True, blank=True)
+    probe_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    group_path = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    # ── read on demand, for the sensor panel ──────────────────────────
+    #: ``{fetched_at, summary, rows: [...]}`` - see :mod:`prtg.channels`.
+    #: Empty until somebody opens the sensor; reused for one interval.
+    channels = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: ``{range: {fetched_at, avg, series: {channel id: [{t, v}]}}}``.
+    history = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
                 fields=["connection", "objid"], name="uniq_prtg_sensor_conn_objid"
             ),
+            _one_parent("prtg_sensor_one_parent"),
         ]
         indexes = [
             models.Index(fields=["tenant", "device"], name="prtg_sensor_tenant_device"),
+            models.Index(fields=["tenant", "virtual_machine"], name="prtg_sensor_tenant_vm"),
             models.Index(fields=["connection", "state"], name="prtg_sensor_conn_state"),
         ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.objid})"
+
+    @property
+    def paused(self) -> bool:
+        from .status import PAUSED
+
+        return self.status_raw in PAUSED
+
+    @property
+    def acknowledged(self) -> bool:
+        from .status import DOWN_ACKNOWLEDGED
+
+        return self.status_raw == DOWN_ACKNOWLEDGED
 
 
 class PrtgChange(ExternalChangeBase):
@@ -310,6 +396,10 @@ class PrtgChange(ExternalChangeBase):
         "api.Device", on_delete=models.CASCADE, null=True, blank=True,
         related_name="prtg_changes",
     )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="prtg_changes",
+    )
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
     #: The PRTG object a proposal is about, or "" for a device-level one.
     key = models.CharField(max_length=64, blank=True, default="", db_default="")
@@ -320,14 +410,14 @@ class PrtgChange(ExternalChangeBase):
             # Adoption rows (later) have no device; without nulls_distinct=False
             # Postgres would let their duplicates through.
             models.UniqueConstraint(
-                fields=["connection", "device", "kind", "key"],
-                name="uniq_prtg_change_conn_device_kind_key",
+                fields=["connection", "device", "virtual_machine", "kind", "key"],
+                name="uniq_prtg_change_conn_parent_kind_key",
                 nulls_distinct=False,
             )
         ]
 
     def __str__(self) -> str:
-        return f"{self.kind} {self.device_id or ''}".strip()
+        return f"{self.kind} {self.device_id or self.virtual_machine_id or ''}".strip()
 
 
 class PrtgAdoptionRule(ExternalAdoptionRuleBase):

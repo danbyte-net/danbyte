@@ -23,7 +23,10 @@ import ipaddress
 
 from monitoring.external.matching import Cascade, Level, Match
 
-__all__ = ["CASCADE", "Match", "annotate_devices", "index_devices", "match_device", "tag_for"]
+__all__ = [
+    "CASCADE", "VM_CASCADE", "Match", "annotate_devices", "annotate_vms", "index_devices",
+    "match_device", "match_vm", "tag_for",
+]
 
 
 def tag_for(device) -> str:
@@ -142,3 +145,58 @@ CASCADE = Cascade(
 def match_device(device, index, link=None) -> Match:
     """Which PRTG device this device is, and how that was decided."""
     return CASCADE.match(device, index, str(link.objid) if link is not None else None)
+
+
+# ── virtual machines ────────────────────────────────────────────────────────
+
+
+def annotate_vms(tenant, vms) -> list:
+    """Each VM with ``_prtg_ips`` and ``_prtg_dns``: its primary address and
+    every address assigned to it (directly or through a VM interface) in
+    this tenant, with their DNS names. Each VM is marked ``_prtg_vm`` so the
+    passes know which kind of parent a match is for."""
+    from django.db.models import Q
+
+    from api.models import IPAddress
+
+    vms = list(vms)
+    by_id = {v.id: v for v in vms}
+    for v in vms:
+        v._prtg_ips, v._prtg_dns, v._prtg_vm = set(), set(), True
+    if not by_id:
+        return vms
+    ids = list(by_id)
+    rows = IPAddress.objects.filter(tenant=tenant).filter(
+        Q(assigned_vm_id__in=ids) | Q(assigned_vm_interface__vm_id__in=ids)
+        | Q(primary_ip_for_vms__id__in=ids)
+    ).values_list(
+        "assigned_vm_id", "assigned_vm_interface__vm_id", "primary_ip_for_vms__id",
+        "ip_address", "dns_name",
+    )
+    for direct, via_iface, primary, address, dns_name in rows:
+        for vm_id in {direct, via_iface, primary} - {None}:
+            v = by_id.get(vm_id)
+            if v is None:
+                continue
+            if _address(str(address)):
+                v._prtg_ips.add(_address(str(address)))
+            if dns_name:
+                v._prtg_dns.add(_dns(dns_name))
+    return vms
+
+
+#: A VM is recognised by its tag, an address or a DNS name - not by name
+#: alone: VM names repeat the names of the hosts and services around them,
+#: and a name match would make a device's established pairing ambiguous.
+VM_CASCADE = Cascade(
+    levels=CASCADE.levels[:3],
+    id_key="objid",
+    label_key="name",
+    plural="PRTG devices",
+    singular="PRTG device",
+)
+
+
+def match_vm(vm, index, link=None) -> Match:
+    """Which PRTG device this VM is, and how that was decided."""
+    return VM_CASCADE.match(vm, index, str(link.objid) if link is not None else None)

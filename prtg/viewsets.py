@@ -7,6 +7,8 @@ has no session and checks the switch itself.
 """
 from __future__ import annotations
 
+from django.db.models import Case, Count, IntegerField, Max, Q, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
@@ -16,20 +18,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from api.models import Device, IPAddress
+from api.models import Device, IPAddress, VirtualMachine
 from api.views import _get_active_tenant
-from api.viewsets import TenantScopedViewSet
+from api.viewsets import TenantScopedReadViewSet, TenantScopedViewSet
 from auth_api import rbac
 from integrations.toggles import IntegrationToggleMixin, integration_enabled
 from monitoring.external.queue import ChangeQueueMixin
 
-from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink
+from . import status as st
+from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
 from .serializers import (
     PrtgAdoptionRuleSerializer,
     PrtgChangeSerializer,
     PrtgConnectionSerializer,
     PrtgDefaultsSerializer,
     PrtgDeviceLinkSerializer,
+    PrtgSensorSerializer,
 )
 
 _TestResult = inline_serializer("PrtgTestResult", fields={
@@ -115,13 +119,19 @@ class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedV
 
     integration_keys = ("prtg",)
     http_method_names = ["get", "delete", "head", "options"]
-    queryset = PrtgDeviceLink.objects.select_related("device", "connection").order_by("name")
+    queryset = PrtgDeviceLink.objects.select_related(
+        "device", "virtual_machine", "connection"
+    ).order_by("name")
     serializer_class = PrtgDeviceLinkSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
-        device = self.request.query_params.get("device") if self.request else None
-        return qs.filter(device_id=device) if device else qs
+        params = self.request.query_params if self.request else {}
+        if params.get("device"):
+            qs = qs.filter(device_id=params["device"])
+        if params.get("virtual_machine"):
+            qs = qs.filter(virtual_machine_id=params["virtual_machine"])
+        return qs
 
 
 class PrtgChangeViewSet(
@@ -133,7 +143,7 @@ class PrtgChangeViewSet(
     integration_keys = ("prtg",)
     http_method_names = ["get", "post", "head", "options"]
     queryset = (
-        PrtgChange.objects.select_related("device", "connection")
+        PrtgChange.objects.select_related("device", "virtual_machine", "connection")
         .order_by("kind", "-created_at")
     )
     serializer_class = PrtgChangeSerializer
@@ -151,7 +161,9 @@ class PrtgChangeViewSet(
         from .reader import apply_link
 
         applied, failed = 0, []
-        for change in PrtgChange.applicable(conn).select_related("device", "connection"):
+        for change in PrtgChange.applicable(conn).select_related(
+            "device", "virtual_machine", "connection"
+        ):
             try:
                 apply_link(change)
                 applied += 1
@@ -182,6 +194,171 @@ def _visible_devices(request, tenant):
     )
 
 
+def _visible_vms(request, tenant):
+    return rbac.restrict_queryset(
+        VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
+        "virtualmachine", "view",
+    )
+
+
+def _parent_visible(request, tenant, obj) -> bool:
+    """Whether the caller may view the device or VM a link or sensor is for."""
+    if obj.device_id:
+        return _visible_devices(request, tenant).filter(id=obj.device_id).exists()
+    return _visible_vms(request, tenant).filter(id=obj.virtual_machine_id).exists()
+
+
+#: Worst first, for the alarms ordering.
+_STATE_RANK = Case(
+    When(state="down", then=Value(0)),
+    When(state="degraded", then=Value(1)),
+    When(state="unknown", then=Value(2)),
+    When(state="up", then=Value(3)),
+    default=Value(4),
+    output_field=IntegerField(),
+)
+
+_SENSOR_ORDERINGS = {
+    "name": ("name", "objid"),
+    "-name": ("-name", "objid"),
+    # Worst first, newest problem first within a state.
+    "alarms": (
+        "_rank", Coalesce("last_down_at", "last_check_at").desc(nulls_last=True), "name",
+    ),
+}
+
+
+class PrtgSensorViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedReadViewSet):
+    """Every imported sensor. Read-only: the rows are PRTG's.
+
+    Filters: ``connection``, ``device``, ``virtual_machine``, ``state``
+    (comma-separated; ``paused`` names the paused sensors whatever their
+    state), ``kind`` (raw or display name), ``probe``, ``group``,
+    ``alarms=1`` (down and degraded only, not paused), ``hide_paused=1``,
+    ``search`` (sensor, device, VM, message, PRTG device, object id) and
+    ``ordering`` (``name``, ``-name``, ``alarms``).
+
+    ``channels/`` and ``history/`` read PRTG on demand and need view on the
+    device or VM as well; ``summary/`` counts per state in one query.
+    """
+
+    integration_keys = ("prtg",)
+    queryset = PrtgSensor.objects.select_related(
+        "device", "virtual_machine", "connection", "link"
+    )
+    serializer_class = PrtgSensorSerializer
+
+    def filter_sensors(self, qs):
+        p = self.request.query_params if self.request else {}
+        if p.get("device"):
+            qs = qs.filter(device_id=p["device"])
+        if p.get("virtual_machine"):
+            qs = qs.filter(virtual_machine_id=p["virtual_machine"])
+        if p.get("state"):
+            wanted = {v.strip() for v in p["state"].split(",") if v.strip()}
+            q = Q(state__in=wanted - {"paused"}) & ~Q(status_raw__in=st.PAUSED)
+            if "paused" in wanted:
+                q |= Q(status_raw__in=st.PAUSED)
+            qs = qs.filter(q)
+        if p.get("kind"):
+            qs = qs.filter(Q(kind__iexact=p["kind"]) | Q(kind_label__iexact=p["kind"]))
+        if p.get("probe"):
+            qs = qs.filter(probe_name=p["probe"])
+        if p.get("group"):
+            qs = qs.filter(group_path=p["group"])
+        if p.get("alarms") in ("1", "true"):
+            qs = qs.filter(state__in=("down", "degraded")).exclude(status_raw__in=st.PAUSED)
+        if p.get("hide_paused") in ("1", "true"):
+            qs = qs.exclude(status_raw__in=st.PAUSED)
+        term = (p.get("search") or "").strip()
+        if term:
+            qs = qs.filter(
+                Q(name__icontains=term) | Q(device__name__icontains=term)
+                | Q(virtual_machine__name__icontains=term) | Q(message__icontains=term)
+                | Q(link__name__icontains=term) | Q(kind_label__icontains=term)
+                | Q(objid=term)
+            )
+        return qs
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action in ("list", "summary"):
+            qs = self.filter_sensors(qs)
+        ordering = (self.request.query_params.get("ordering") if self.request else "") or "name"
+        qs = qs.annotate(_rank=_STATE_RANK)
+        return qs.order_by(*_SENSOR_ORDERINGS.get(ordering, _SENSOR_ORDERINGS["name"]))
+
+    def _sensor_for_read(self, request):
+        sensor = self.get_object()
+        tenant = _get_active_tenant(request)
+        if not _parent_visible(request, tenant, sensor):
+            raise NotFound()
+        if not sensor.connection.enabled or not sensor.connection.api_key_set:
+            raise NotFound("The PRTG connection is off.")
+        return sensor
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """Counts per state for a status strip, in one query: ``down``,
+        ``degraded``, ``up``, ``unknown`` over sensors that are not paused,
+        ``paused``, ``acknowledged``, ``total``, and ``read_at`` (the latest
+        read that saw one of them). Takes the list's filters."""
+        qs = self.get_queryset().order_by()
+        live = ~Q(status_raw__in=st.PAUSED)
+        agg = qs.aggregate(
+            total=Count("id"),
+            paused=Count("id", filter=Q(status_raw__in=st.PAUSED)),
+            acknowledged=Count("id", filter=Q(status_raw=st.DOWN_ACKNOWLEDGED)),
+            down=Count("id", filter=live & Q(state="down")),
+            degraded=Count("id", filter=live & Q(state="degraded")),
+            up=Count("id", filter=live & Q(state="up")),
+            unknown=Count("id", filter=live & ~Q(state__in=("down", "degraded", "up"))),
+            read_at=Max("last_seen_at"),
+        )
+        return Response(agg)
+
+    @action(detail=True, methods=["get"])
+    def channels(self, request, pk=None):
+        """The sensor's channels, read from PRTG at most once per status
+        interval (see :mod:`prtg.channels`)."""
+        from .channels import read_channels
+        from .client import PrtgError
+
+        sensor = self._sensor_for_read(request)
+        try:
+            return Response(read_channels(sensor))
+        except PrtgError as exc:
+            return Response({"detail": str(exc)[:300]}, status=502)
+
+    @action(detail=True, methods=["get"])
+    def history(self, request, pk=None):
+        """``?range=1h|24h|7d`` (1h by default) and optional ``channel=<id>``:
+        ``{range, avg, fetched_at, stale, channels: [{id, name, unit, points:
+        [{t, v}]}]}``, read from PRTG at most once per range and interval."""
+        from .channels import RANGES, read_history
+        from .client import PrtgError
+
+        rng = request.query_params.get("range") or "1h"
+        if rng not in RANGES:
+            return Response({"range": f"One of {', '.join(RANGES)}."}, status=400)
+        sensor = self._sensor_for_read(request)
+        try:
+            data = read_history(sensor, rng)
+        except PrtgError as exc:
+            return Response({"detail": str(exc)[:300]}, status=502)
+        wanted = request.query_params.get("channel")
+        channels = [
+            {"id": cid, **entry}
+            for cid, entry in (data.get("series") or {}).items()
+            if wanted in (None, "", cid)
+        ]
+        return Response({
+            "range": data.get("range", rng), "avg": data.get("avg"),
+            "fetched_at": data.get("fetched_at"), "stale": bool(data.get("stale")),
+            "channels": channels,
+        })
+
+
 class PrtgDeviceStatusView(APIView):
     """What PRTG says about a device - ``?device=<id>`` or ``?ip=<id>``.
 
@@ -196,7 +373,15 @@ class PrtgDeviceStatusView(APIView):
         if tenant is None or not integration_enabled(tenant, "prtg"):
             raise NotFound("Integration not enabled.")
         device_id = (request.query_params.get("device") or "").strip()
+        vm_id = (request.query_params.get("virtual_machine") or "").strip()
         ip_id = (request.query_params.get("ip") or "").strip()
+        if vm_id:
+            vm = _visible_vms(request, tenant).filter(id=vm_id).first()
+            if vm is None:
+                return Response([])
+            return Response(self._entries(
+                PrtgDeviceLink.objects.filter(virtual_machine=vm, connection__enabled=True)
+            ))
         if ip_id and not device_id:
             ip = rbac.restrict_queryset(
                 IPAddress.objects.filter(tenant=tenant, id=ip_id),
@@ -206,17 +391,22 @@ class PrtgDeviceStatusView(APIView):
                 return Response([])
             device_id = str(ip.assigned_device_id)
         if not device_id:
-            return Response({"detail": "device or ip is required."}, status=400)
+            return Response(
+                {"detail": "device, virtual_machine or ip is required."}, status=400
+            )
         device = _visible_devices(request, tenant).filter(id=device_id).first()
         if device is None:
             return Response([])
+        return Response(self._entries(
+            PrtgDeviceLink.objects.filter(device=device, connection__enabled=True)
+        ))
+
+    @staticmethod
+    def _entries(links) -> list:
         from .reader import problems_for
 
-        links = (
-            PrtgDeviceLink.objects.filter(device=device, connection__enabled=True)
-            .select_related("connection").order_by("connection__name")
-        )
-        return Response([
+        links = links.select_related("connection").order_by("connection__name")
+        return [
             {
                 "connection": {"id": str(lk.connection_id), "name": lk.connection.name,
                                "url": lk.connection.url},
@@ -227,29 +417,35 @@ class PrtgDeviceStatusView(APIView):
                            "problems": problems_for(lk), "read_at": lk.status_read_at},
             }
             for lk in links
-        ])
+        ]
 
 
 class PrtgDeviceStatesView(APIView):
     """Every linked device's roll-up, for the device list's PRTG column:
     ``{device id: {state, down, warning, url, name}}``. Only devices the
-    caller may view; one connection per device (the first by name)."""
+    caller may view; one connection per device (the first by name).
+    :class:`PrtgVmStatesView` is the same for virtual machines."""
 
     permission_classes = [IsAuthenticated]
+    parent_field = "device_id"
+
+    def visible(self, request, tenant):
+        return _visible_devices(request, tenant)
 
     def get(self, request):
         tenant = _get_active_tenant(request)
         if tenant is None or not integration_enabled(tenant, "prtg"):
             raise NotFound("Integration not enabled.")
-        visible = _visible_devices(request, tenant).values("id")
+        visible = self.visible(request, tenant).values("id")
         out: dict = {}
         links = (
             PrtgDeviceLink.objects.filter(
-                tenant=tenant, connection__enabled=True, device_id__in=visible,
+                tenant=tenant, connection__enabled=True,
+                **{f"{self.parent_field}__in": visible},
             ).select_related("connection").order_by("connection__name")
         )
         for lk in links:
-            key = str(lk.device_id)
+            key = str(getattr(lk, self.parent_field))
             if key in out:
                 continue
             counts = lk.sensor_counts or {}
@@ -261,3 +457,12 @@ class PrtgDeviceStatesView(APIView):
                 "url": lk.connection.device_url(lk.objid),
             }
         return Response(out)
+
+
+class PrtgVmStatesView(PrtgDeviceStatesView):
+    """``{vm id: {state, down, warning, url, name}}`` for the VM list."""
+
+    parent_field = "virtual_machine_id"
+
+    def visible(self, request, tenant):
+        return _visible_vms(request, tenant)

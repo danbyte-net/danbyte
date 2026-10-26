@@ -1,8 +1,9 @@
 """A small PRTG in this process, for tests.
 
-It answers the classic endpoints the client uses - ``table.json``,
-``getstatus.htm``, ``getsensordetails.json``, ``getobjectproperty.htm`` and
-the simple writes - plus the API v2 probe, from fixtures in ``fixtures/``
+It answers the classic endpoints the client uses - ``table.json`` (sensors,
+devices, probes and a sensor's channels), ``getstatus.htm``,
+``getsensordetails.json``, ``historicdata.xml``, ``getobjectproperty.htm``
+and the simple writes - plus the API v2 probe, from fixtures in ``fixtures/``
 shaped like PRTG 26.x responses. Tests reach it over real HTTP on 127.0.0.1,
 so the client, the outbound guard (with 127.0.0.1 allow-listed), headers and
 query strings are exercised end to end rather than mocked.
@@ -126,6 +127,16 @@ class FakePrtg:
             "probenode": load_fixture("table_probenode.json")["probenode"],
         }
         self.details = load_fixture("getsensordetails.json")
+        #: sensor objid -> channel rows (``content=channels&id=``).
+        self.channels = {
+            objid: load_fixture(f"table_channels_{objid}.json")["channels"]
+            for objid in (2091, 2089, 1004, 1005)
+        }
+        #: sensor objid -> the recorded ``historicdata.xml`` body.
+        self.history = {
+            objid: load_fixture(f"historicdata_{objid}.xml", raw=True)
+            for objid in (2089, 2091)
+        }
         #: content -> body served verbatim instead of the table, for quirks.
         self.raw_tables: dict[str, str] = {}
         self.properties: dict[tuple[int, str], str] = {}
@@ -241,6 +252,12 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(self.fake.status)
         if path == "/api/table.json":
             return self._table(q, multi)
+        if path == "/api/historicdata.xml":
+            body = self.fake.history.get(int(q.get("id", 0) or 0))
+            if body is None:
+                body = ('<?xml version="1.0" encoding="UTF-8"?>\n<histdata totalcount="0" '
+                        f'listend="1"><prtg-version>{VERSION}</prtg-version></histdata>')
+            return self._send(200, body, "text/xml")
         if path == "/api/getsensordetails.json":
             if self.fake.sensor(int(q.get("id", 0))) is None:
                 return self._json({"prtg-version": VERSION, "treesize": 0, "sensordata": {}})
@@ -254,6 +271,12 @@ class _Handler(BaseHTTPRequestHandler):
         content = q.get("content", "")
         if content in self.fake.raw_tables:
             return self._send(200, self.fake.raw_tables[content], "application/json")
+        if content == "channels":
+            rows = self.fake.channels.get(int(q.get("id", 0) or 0))
+            if rows is None:
+                return self._error(400, "Sorry, the selected object cannot be used here.")
+            return self._json({"prtg-version": VERSION, "treesize": 0,
+                               "channels": copy.deepcopy(rows)})
         if content not in self.fake.tables:
             return self._error(400, f"The content type {content} is not supported.")
         filters = {k[7:]: v for k, v in multi.items() if k.startswith("filter_")}

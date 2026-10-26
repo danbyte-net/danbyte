@@ -5,14 +5,17 @@ icon: lucide/activity
 # PRTG monitoring
 
 Danbyte can read an existing PRTG Network Monitor core server. It pairs PRTG
-devices with Danbyte devices, reads every linked device's sensors on a
-schedule, rolls them up into one Danbyte state per device, and answers `prtg`
-checks from that read, so PRTG's verdict reaches Danbyte's status, alerts and
-SLA. Nothing is written to PRTG.
+devices with Danbyte devices and virtual machines, reads every linked
+device's sensors on a schedule, rolls them up into one Danbyte state per
+device, and answers `prtg` checks from that read, so PRTG's verdict reaches
+Danbyte's status, alerts and SLA. Each linked device and VM gets a
+**Sensors** tab with PRTG's sensors, channels and history drawn in Danbyte's
+own way. Nothing is written to PRTG.
 
-!!! note "Danbyte does not become a PRTG frontend"
-    No graphs, no history browser, no channel limits. What PRTG monitors
-    stays configured in PRTG.
+!!! note "What PRTG monitors stays configured in PRTG"
+    Danbyte shows PRTG's sensors, channel values, limits and history; it does
+    not edit them. There is no limit editor and no sensor settings. Every
+    sensor and device links into PRTG for that.
 
 ## Turning it on
 
@@ -108,6 +111,14 @@ Tried in order, and the first level with exactly one answer wins:
 | Address | Its *IPv4 address/DNS name* field is one of the addresses assigned to the device in this tenant, primary or not. |
 | DNS name | That field is the DNS name of one of those addresses. |
 | Name | Its name equals the device's name, ignoring case. |
+
+**Virtual machines** are matched too, by the tag `danbyte-<vm uuid>`, by an
+address - the VM's primary address or one assigned to it or to one of its
+interfaces - and by the DNS name of one of those addresses. Never by name
+alone: VM names repeat the names of the hosts and services around them. A
+VM's link, sensors and queue rows belong to the VM, and the roll-up, the
+`prtg` check (on an address assigned to the VM) and the list column work for
+it as they do for a device.
 
 **Two candidates are no match.** Two PRTG devices at one level, one PRTG
 device matched by two Danbyte devices, or an address that several Danbyte
@@ -207,6 +218,76 @@ Devices get a **PRTG** column, hidden until ticked in the Columns menu: the
 device's roll-up as its state pill, red and amber counts of down and warning
 sensors, and a link to the device in PRTG. `?prtg=` filters the device list
 API: `linked`, `unlinked`, or a state (`up`, `degraded`, `down`, `unknown`).
+The virtual machine list has the same **PRTG** column.
+
+## Sensors
+
+Every status read writes each linked sensor's record as well as its state:
+the primary value as PRTG formats it (`12 msec`, `81 %`) with its number and
+unit, the interval, uptime and downtime, priority, the last check, last up and
+last down, and the probe and group. A device or VM that PRTG has a device for
+gets a **Sensors** tab, with the sensor count, while the integration is on.
+
+**The tab.** A status strip on top: one badge per state with its count -
+down, degraded, up, unknown, and paused apart - named as the tenant names its
+states, then the PRTG device with a link to it in PRTG and when it was last
+read. Below, a card per sensor, worst first: its name and kind, the state
+pill (PRTG's own word, *Paused by Dependency*, in the tooltip), the last value
+as the big number, the last check, the uptime, and PRTG's message as a muted
+notice when the sensor is not up. The link icon opens the sensor in PRTG.
+
+**The sensor panel.** Clicking a card opens the sensor's panel
+(`?sensor=<id>` in the address, so it can be linked). It shows PRTG's
+summary and one card per channel:
+
+| Channel | Drawn as |
+|---|---|
+| A number (`Response Time`, `Days to Expiration`) | An arc gauge: the value as the big number with its unit, min and max at the ends, and PRTG's warning and error limits as thin amber and red arcs. The value arc is green inside the limits, amber or red in a band, and neutral when the channel has no limits. |
+| A percentage (`Free Space C:`) | The same gauge from 0 to 100 %. |
+| A lookup (`Root Authority Trusted`, `Public Key Length`) | A segmented state bar: one segment per value the lookup knows, the current one filled in what it means (green ok, amber warning, red error), its label underneath. |
+| Text (`Only Strong Protocols Available`) | The text. |
+
+Values are shown in the unit PRTG displays: a traffic channel PRTG keeps in
+bytes per second reads `0.03 Mbit/s`. Each channel card has a sparkline of
+the last hour and a **1h / 24h / 7d** switch that opens its history graph.
+PRTG averages the history per range: one minute for an hour (or the sensor's
+interval when that is longer), 15 minutes for 24 hours, one hour for 7 days,
+at most 400 points per channel.
+
+**Reading PRTG on demand.** Channels are one call per sensor, so the status
+read never fetches them. The panel reads them when it opens -
+`table.json?content=channels` (its `info` column carries each channel's
+status, limits and lookup table) and `getsensordetails.json` - and the history
+from `historicdata.xml` per range. Both are kept on the sensor for one status
+interval: opening the same sensor again, by anyone, inside the interval asks
+PRTG nothing. When PRTG does not answer, the last read is shown and marked.
+`historicdata` takes its window in the PRTG server's local time; Danbyte learns
+the offset once from `getstatus.htm` and keeps it on the connection.
+
+**The Monitoring tab** gets one **PRTG** row per linked device or VM: the
+roll-up pill, the state strip, the PRTG device and a link to the Sensors tab.
+The rest of the tab is unchanged; like the Zabbix section, the row never
+changes Danbyte's own status.
+
+**Who sees it.** The sensors and channels are the device's or VM's data: the
+channels and history need view on the device or VM as well as on PRTG
+sensors. Site roles include PRTG device links, sensors and the review queue
+for their sites (an `auth_api` migration gives roles made before 0.19 the same,
+see [Permissions](permissions.md#site-roles-local-it-in-one-click)); PRTG
+connections stay with administrators.
+
+## The PRTG page
+
+**Overview** carries a status strip across every imported sensor of the
+connection, with when it was last read, above the connection card.
+**Alarms** lists every down or degraded sensor, worst and newest first: the
+sensor (linked to its device's or VM's Sensors tab with the panel open), the
+device or VM, kind, state, PRTG's message, since when (the last down, else
+the last check), whether it is acknowledged in PRTG (*Down (Acknowledged)*),
+probe and group, and a link into PRTG. **Sensors** lists every sensor with
+the same columns plus the last value and uptime, and a **Hide paused**
+switch. Both have search, facets for state, device, kind and probe/group, and
+export. **Review queue** and **Links** are below.
 
 ## API
 
@@ -220,17 +301,22 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `connections/<id>/test/` | `POST`. Returns `ok`, `detail`, `version`, `probes`, `sensors`, `v2_available` and `v2_detail`; 502 when it fails. Records the version, API v2 answer and error on the connection. |
 | `connections/<id>/status-now/` | `POST`. Runs a status read now; returns its counts (`linked`, `proposed`, `ambiguous`, `unmatched`, `sensors`, `deleted`, `gone`), 502 with PRTG's sentence when it fails. |
 | `connections/<id>/rotate-hook-token/` | `POST`. A new push token: `{token, path}`, shown this once. |
-| `links/` | List (`?connection=`, `?device=`), retrieve, delete (unlink). Each link has its PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`. |
+| `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG) and `device_url`. |
+| `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
+| `sensors/<id>/channels/` | The sensor's channels, read from PRTG at most once per status interval: `{fetched_at, summary, rows}`, each row `{id, name, value, value_raw, unit, kind, state, status, lookup_label, limits: {warn_min, warn_max, error_min, error_max}, lookup_states: [{value, to, label, state}], min, max, primary}`. `kind` is `number`, `percent`, `lookup` or `text`; a lookup `state` is `ok`, `warning`, `error`, `none` or `unknown`. Needs view on the device or VM. 502 with PRTG's sentence when PRTG cannot be read and nothing is cached; `stale: true` when the last read is served instead. |
+| `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
 | `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision*). Kinds: `link_device`, `ambiguous`. |
 | `adoption-rules/` | CRUD for where adopted PRTG devices will land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight`, `enabled`. Adoption reads them once it ships. |
-| `device-status/?device=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device. |
+| `device-status/?device=`, `?virtual_machine=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device or VM. |
 | `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
+| `vm-states/` | The same for virtual machines. Feeds the VM-list column. |
 | `hook/<token>/` | `POST`, no session: the push receiver above. 202 when accepted. |
 
 ## Coming
 
-The sensors of a linked device on its page, acknowledgements and maintenance
-windows in both directions, adopting PRTG devices, and keeping PRTG in step
+Sensors linked to their interfaces, addresses and services, acknowledgements
+and maintenance windows in both directions, adopting PRTG devices, and keeping PRTG in step
 with Danbyte's inventory. The connection's provisioning scope already defaults
 to *every device the policies match* for that last part.
 
