@@ -176,7 +176,7 @@ def catalog(conn: PrtgConnection, *, link: PrtgDeviceLink | None = None,
     _usable(conn)
     mode = write_mode(conn, v2=v2)
     if mode != PrtgConnection.WRITE_V2:
-        kinds = _danbyte_kinds()
+        kinds = [_shape(k) for k in _danbyte_kinds()]
         return {"mode": mode, "source": "danbyte", "read_at": None, "kinds": kinds,
                 "danbyte_forms": len(kinds), "detail": conn.write_detail or ""}
     now = timezone.now()
@@ -197,10 +197,40 @@ def catalog(conn: PrtgConnection, *, link: PrtgDeviceLink | None = None,
         if now is not None:
             entry = {"read_at": now.isoformat(), "rows": rows}
             _keep(conn, "kinds", entry)
-    rows = entry.get("rows") or []
+    rows = [_shape(r) for r in entry.get("rows") or []]
     return {"mode": mode, "source": "prtg", "read_at": entry.get("read_at"), "kinds": rows,
             "danbyte_forms": sum(1 for k in rows if k["form"] == "danbyte"),
             "detail": conn.write_detail or ""}
+
+
+def _shape(row: dict) -> dict:
+    """A catalog row with the picker's names beside the dialog's own:
+    ``danbyte_form``, ``needs_scan`` and ``credential_group``."""
+    return {**row, "danbyte_form": row.get("form") == "danbyte",
+            "needs_scan": bool(row.get("scan")),
+            "credential_group": row.get("credentials") or ""}
+
+
+def cached_kind(conn: PrtgConnection, kindid: str) -> dict | None:
+    """The row PRTG's cached list holds for ``kindid``, or None."""
+    for row in ((conn.sensor_catalog or {}).get("kinds") or {}).get("rows") or []:
+        if row.get("id") == kindid:
+            return row
+    return None
+
+
+def has_catalog(conn: PrtgConnection) -> bool:
+    return bool(((conn.sensor_catalog or {}).get("kinds") or {}).get("rows"))
+
+
+def needs_of(row: dict | None) -> str | None:
+    """The Danbyte credential a PRTG kind's credential group stands for."""
+    group = str((row or {}).get("credentials") or "").lower()
+    if "snmp" in group:
+        return sk.SNMP
+    if "windows" in group or "wmi" in group:
+        return sk.WINDOWS
+    return None
 
 
 # ── PRTG's form for a kind ──────────────────────────────────────────────────
@@ -292,7 +322,63 @@ def schema_fields(link: PrtgDeviceLink, kindid: str, *, v2=None) -> dict:
         schema = v2.post_schema(link.objid, kindid)
     except PrtgError as exc:
         raise ActionError(f"PRTG has no form for '{kindid}': {exc}"[:300], 502) from None
-    return {"kind": kindid, **parse_schema(schema)}
+    out = {"kind": kindid, **parse_schema(schema)}
+    _keep_schema(conn, kindid, out)
+    return out
+
+
+def _keep_schema(conn, kindid: str, form: dict) -> None:
+    conn.refresh_from_db(fields=["sensor_catalog"])
+    schemas = dict((conn.sensor_catalog or {}).get("schemas") or {})
+    schemas[kindid] = {"read_at": timezone.now().isoformat(), "fields": form["fields"],
+                       "scan": form["scan"]}
+    _keep(conn, "schemas", schemas)
+
+
+def cached_schema(conn: PrtgConnection, kindid: str) -> dict | None:
+    """The form last read for ``kindid``: ``{fields, scan}``, or None."""
+    entry = ((conn.sensor_catalog or {}).get("schemas") or {}).get(kindid)
+    return entry if entry and isinstance(entry.get("fields"), list) else None
+
+
+def connection_schema(conn: PrtgConnection, kindid: str, *, link: PrtgDeviceLink | None = None,
+                      refresh: bool = False, v2=None) -> dict:
+    """PRTG's create form for ``kindid`` at connection level, for the
+    profile editor: kept beside the kind list for a day. PRTG answers per
+    device, so ``link`` (or the first linked device) is asked."""
+    _usable(conn)
+    entry = cached_schema(conn, kindid)
+    if entry and not refresh and not _stale(entry, timezone.now()):
+        return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
+    if link is None:
+        link = conn.links.order_by("name").first()
+    if link is None:
+        if entry:
+            return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
+        raise ActionError("No device is linked yet: PRTG gives a sensor's form per device.")
+    try:
+        return schema_fields(link, kindid, v2=v2)
+    except ActionError:
+        if entry:
+            return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
+        raise
+
+
+def flat_params(sections: dict) -> dict:
+    """Settings sections as the generic form's ``section.field`` keys."""
+    return {f"{section}.{name}": value
+            for section, values in (sections or {}).items()
+            for name, value in (values or {}).items()}
+
+
+def sections_of(params: dict) -> dict:
+    """A profile's generic ``section.field`` params as settings sections."""
+    out: dict = {}
+    for key, value in (params or {}).items():
+        section, _, name = str(key).partition(".")
+        if section and name:
+            out.setdefault(section, {})[name] = value
+    return out
 
 
 def clean_generic(fields: list, values) -> dict:

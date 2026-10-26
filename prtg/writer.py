@@ -242,7 +242,18 @@ class Writer:
         body = copy.deepcopy(inst.get("sections") or {})
         basic = body.setdefault("basic", {})
         basic["tags"] = tags
-        scan = inst.get("metascan")
+        if "metascan" in inst:
+            scan = inst["metascan"]
+        else:
+            # From a profile: where a scan's rows go is in PRTG's form.
+            from .manual import parse_schema
+
+            scan = parse_schema(self.v2.post_schema(device_objid, kindid))["scan"]
+        if scan and not inst.get("scan_values") and "metascan" not in inst:
+            rows = self.v2.metascan(device_objid, kindid)
+            if not rows:
+                raise Refused("PRTG's scan of the device found nothing to monitor.")
+            inst = {**inst, "scan_values": [_scan_value(r) for r in rows]}
         scanned = bool(scan and inst.get("scan_values"))
         if scanned:
             body.setdefault(scan["section"], {})[scan["field"]] = list(inst["scan_values"])

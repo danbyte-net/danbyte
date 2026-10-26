@@ -408,7 +408,7 @@ def expand(defn: PrtgSensorDefinition, obj, *, host: str = "", ports=None) -> li
     """One definition as the sensors it means for this object."""
     kind = sk.BY_VALUE.get(defn.kind)
     if kind is None:
-        return []
+        return expand_generic(defn)
     params = dict(defn.params or {})
     base = {
         "definition": str(defn.id), "profile": defn.profile.name, "kind": kind.value,
@@ -446,6 +446,27 @@ def expand(defn: PrtgSensorDefinition, obj, *, host: str = "", ports=None) -> li
         **base, "key": tag,
         "name": _name(defn, kind, service=params.get("service"), port=port),
         "params": params, "tags": [*(defn.tags or []), tag], "interface": None,
+    }]
+
+
+def expand_generic(defn: PrtgSensorDefinition) -> list[dict]:
+    """A definition of a kind only PRTG knows: one sensor, created from
+    PRTG's form as the profile filled it in - the way a sensor added by
+    hand is (:meth:`prtg.writer.Writer._create_v2_generic`). A kind PRTG
+    scans for gets every row its scan finds."""
+    from .manual import cached_kind, needs_of, sections_of
+
+    row = cached_kind(defn.profile.connection, defn.kind)
+    label = str((row or {}).get("name") or defn.kind)
+    params = dict(defn.params or {})
+    tag = instance_tag(defn.id)
+    return [{
+        "definition": str(defn.id), "profile": defn.profile.name, "kind": defn.kind,
+        "kindid": defn.kind, "kind_label": label, "required": bool(defn.required),
+        "interval_seconds": defn.interval_seconds, "needs": needs_of(row),
+        "key": tag, "name": (defn.name or label).strip(), "params": params,
+        "sections": sections_of(params), "tags": [*(defn.tags or []), tag],
+        "interface": None,
     }]
 
 
@@ -555,7 +576,10 @@ def find_sensor(inst: dict, sensors: list, claimed: set):
             return s
     kind = sk.BY_VALUE.get(inst["kind"])
     if kind is None:
-        return None
+        # A PRTG-only kind: a sensor of exactly that type.
+        want = str(inst.get("kindid") or inst["kind"]).lower()
+        return next((s for s in sensors
+                     if s.id not in claimed and (s.kind or "").lower() == want), None)
     iface = ((inst.get("interface") or {}).get("name") or "").lower()
     for s in sensors:
         if s.id in claimed or not kind.matches_type(s.kind):
@@ -792,6 +816,9 @@ def _sensor_detail(inst: dict) -> dict:
         "params": inst["params"], "interval_seconds": inst["interval_seconds"],
         "tags": inst["tags"], "required": inst["required"],
         "interface": inst.get("interface"),
+        # A PRTG-only kind: what the writer's generic create needs.
+        **({"kindid": inst["kindid"], "sections": inst.get("sections") or {}}
+           if inst.get("kindid") else {}),
     }
 
 
