@@ -14,7 +14,7 @@ import logging
 
 from django.utils import timezone
 
-from integrations.toggles import integration_enabled
+from monitoring.external.beat import skip_reason
 
 from . import facts
 from .client import ZabbixClient, ZabbixError
@@ -78,12 +78,9 @@ def run_status_sync(connection_id: str) -> dict:
     conn = (
         ZabbixConnection.objects.filter(pk=connection_id).select_related("tenant").first()
     )
-    if conn is None:
-        return {"skipped": "gone"}
-    if not conn.tenant.is_active:
-        return {"skipped": "tenant inactive"}
-    if not integration_enabled(conn.tenant, "zabbix"):
-        return {"skipped": "integration off"}
+    reason = skip_reason(conn, "zabbix")
+    if reason:
+        return {"skipped": reason}
     if not (conn.enabled and conn.read_host_status and conn.token_set):
         return {"skipped": "host status off"}
     try:

@@ -15,26 +15,15 @@ Where a level finds **two** candidates, the answer is **no match** - recorded
 as needing a person. A wrong pairing means an operator reads one host's
 problems believing they are reading another's, and nothing downstream would
 ever flag it. A missing pairing is visible and fixable; a wrong one is neither.
+
+The cascade itself is shared (:mod:`monitoring.external.matching`); this
+module supplies Zabbix's levels and its host index.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from monitoring.external.matching import Cascade, Level, Match
 
-
-@dataclass
-class Match:
-    """The outcome of matching one device."""
-
-    device: object
-    host: dict | None = None
-    #: link | address | serial | name | none | ambiguous
-    how: str = "none"
-    #: Human sentence for the "needs a decision" queue.
-    reason: str = ""
-
-    @property
-    def matched(self) -> bool:
-        return self.host is not None
+__all__ = ["CASCADE", "Match", "index_hosts", "match_device"]
 
 
 def _device_addresses(device) -> set[str]:
@@ -76,55 +65,19 @@ def index_hosts(hosts) -> dict:
     return {"address": by_address, "serial": by_serial, "name": by_name}
 
 
-def _only(candidates):
-    """One host, or nothing. Deduplicated by hostid first, because a host with
-    two interfaces on the same address is one host, not an ambiguity."""
-    if not candidates:
-        return None, 0
-    unique = {h["hostid"]: h for h in candidates}
-    if len(unique) == 1:
-        return next(iter(unique.values())), 1
-    return None, len(unique)
+CASCADE = Cascade(
+    levels=(
+        Level("address", lambda device: sorted(_device_addresses(device))),
+        Level("serial", lambda device: [(device.serial_number or "").strip().lower()]),
+        Level("name", lambda device: [(device.name or "").strip().lower()]),
+    ),
+    id_key="hostid",
+    label_key="name",
+    plural="Zabbix hosts",
+    singular="Zabbix host",
+)
 
 
 def match_device(device, index, link=None) -> Match:
     """Which Zabbix host this device is, and how we decided."""
-    if link is not None:
-        host = index.get("by_id", {}).get(link.hostid)
-        if host is not None:
-            return Match(device, host, "link")
-        # The link points at a host that is gone. Fall through and try to
-        # find it again rather than reporting the device unmatched - a host
-        # deleted and recreated in Zabbix is still the same box.
-
-    for how, keys in (
-        ("address", sorted(_device_addresses(device))),
-        ("serial", [(device.serial_number or "").strip().lower()]),
-        ("name", [(device.name or "").strip().lower()]),
-    ):
-        found = None
-        for key in keys:
-            if not key:
-                continue
-            hit, n = _only(index[how].get(key) or [])
-            if n > 1:
-                names = ", ".join(
-                    sorted(h["name"] for h in index[how][key])[:4]
-                )
-                return Match(
-                    device, None, "ambiguous",
-                    f"{n} Zabbix hosts share this device's {how} "
-                    f"'{key}' ({names}).",
-                )
-            if hit is not None:
-                if found is not None and found["hostid"] != hit["hostid"]:
-                    return Match(
-                        device, None, "ambiguous",
-                        f"This device's addresses point at different Zabbix "
-                        f"hosts ({found['name']}, {hit['name']}).",
-                    )
-                found = hit
-        if found is not None:
-            return Match(device, found, how)
-
-    return Match(device, None, "none", "No Zabbix host matches this device.")
+    return CASCADE.match(device, index, link.hostid if link is not None else None)
