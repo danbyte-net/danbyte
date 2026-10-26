@@ -44,7 +44,7 @@ import { PrtgLinks } from "@/components/prtg/links"
 import { PrtgAlarms } from "@/components/prtg/alarms"
 import { PrtgSensors } from "@/components/prtg/sensors"
 import {
-  PrtgStateStrip,
+  PrtgSensorBreakdown,
   usePrtgSensorSummary,
 } from "@/components/prtg/sensor-strip"
 import { PrtgStateMapEditor, editableOnly } from "@/components/prtg/state-map"
@@ -244,33 +244,32 @@ function PrtgPage() {
           />
           {tab === "overview" && (
             <>
-              {summary && (
-                <div className="flex flex-wrap items-center gap-3">
-                  <PrtgStateStrip summary={summary} />
-                  {(summary.read_at ?? conn.last_status_at) && (
-                    <span className="inline-flex items-center gap-1 text-[11px] whitespace-nowrap text-muted-foreground">
-                      read{" "}
-                      <TimeCell
-                        iso={(summary.read_at ?? conn.last_status_at)!}
-                      />
-                    </span>
-                  )}
-                </div>
-              )}
-              <ConnectionCard
-                conn={conn}
-                result={results[conn.id]}
-                canManage={canManage}
-                canDelete={canDelete}
-                testing={test.isPending}
-                reading={readNow.isPending}
-                planning={planNow.isPending}
-                onTest={() => test.mutate(conn.id)}
-                onRead={() => readNow.mutate(conn.id)}
-                onPlan={() => planNow.mutate(conn.id)}
-                onEdit={() => setEditing(conn)}
-                onDelete={() => setDeleting(conn)}
-              />
+              {/* Side by side on a wide screen: what PRTG says on the
+                  left, the connection that says it on the right. */}
+              <div className="grid items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)]">
+                {summary && (
+                  <PrtgSensorBreakdown
+                    connection={conn}
+                    summary={summary}
+                    readAt={summary.read_at ?? conn.last_status_at}
+                    onOpen={setTab}
+                  />
+                )}
+                <ConnectionCard
+                  conn={conn}
+                  result={results[conn.id]}
+                  canManage={canManage}
+                  canDelete={canDelete}
+                  testing={test.isPending}
+                  reading={readNow.isPending}
+                  planning={planNow.isPending}
+                  onTest={() => test.mutate(conn.id)}
+                  onRead={() => readNow.mutate(conn.id)}
+                  onPlan={() => planNow.mutate(conn.id)}
+                  onEdit={() => setEditing(conn)}
+                  onDelete={() => setDeleting(conn)}
+                />
+              </div>
               {conn.push_enabled && canManage && (
                 <PushSetup conn={conn} onRotated={refresh} />
               )}

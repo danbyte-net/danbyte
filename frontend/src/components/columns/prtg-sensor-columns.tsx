@@ -3,16 +3,12 @@ import { Link } from "@tanstack/react-router"
 import { ExternalLink } from "lucide-react"
 
 import type { PrtgSensor } from "@/lib/api"
-import { SortHeader } from "@/components/data-table"
+import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import { SensorActionsMenu } from "@/components/prtg/sensor-actions"
+import { SensorStatePill } from "@/components/prtg/tile-corner"
 
 // Imported PRTG sensors as table rows - one factory for the /prtg page's
 // Alarms and Sensors tabs. The state is Danbyte's pill (from the
@@ -86,6 +82,10 @@ export function SensorLink({
 export interface PrtgSensorColumnOpts {
   /** `alarms` leaves out the last value and uptime; `sensors` has them. */
   variant: "alarms" | "sensors"
+  /** A leading checkbox column, for the selection bar. */
+  selection?: boolean
+  /** A trailing column with each row's actions menu. */
+  actions?: boolean
 }
 
 export function buildPrtgSensorColumns(
@@ -124,7 +124,7 @@ export function buildPrtgSensorColumns(
           },
         ]
       : []
-  return [
+  const cols: ColumnDef<PrtgSensor, unknown>[] = [
     {
       id: "name",
       accessorKey: "name",
@@ -199,21 +199,7 @@ export function buildPrtgSensorColumns(
       id: "state",
       accessorFn: (r) => (r.paused ? 0 : (RANK[r.state] ?? 0)),
       header: ({ column }) => <SortHeader column={column} label="Status" />,
-      cell: ({ row }) => {
-        const r = row.original
-        const pill = <CheckStatusBadge status={r.state || "unknown"} />
-        if (!r.status) return pill
-        return (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex">{pill}</span>
-            </TooltipTrigger>
-            <TooltipContent variant="default">
-              {r.status} in PRTG
-            </TooltipContent>
-          </Tooltip>
-        )
-      },
+      cell: ({ row }) => <SensorStatePill sensor={row.original} />,
       meta: {
         facet: {
           kind: "enum",
@@ -300,6 +286,16 @@ export function buildPrtgSensorColumns(
       meta: { label: "PRTG link" },
     },
   ]
+  if (opts.actions)
+    cols.push({
+      id: "actions",
+      enableSorting: false,
+      enableHiding: false,
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => <SensorActionsMenu sensor={row.original} />,
+      meta: { label: "Actions" },
+    })
+  return opts.selection ? [selectionColumn<PrtgSensor>(), ...cols] : cols
 }
 
 function fmtPct(v: number): string {
