@@ -868,22 +868,64 @@ export function flowsGraph(
 
 /** What hovering or selecting a card brings forward: the card, its
  * install or flow lines and the cards at their other ends (an
- * application's hosts, a host's applications). Null for no card. */
+ * application's hosts, a host's applications). In the Tree it follows the
+ * hierarchy too: an application brings its whole subtree - every
+ * descendant with its host lines and hosts - and its ancestors up to the
+ * root; a host brings its applications' ancestors. The lines up to the
+ * ancestors are `trail`: in focus, drawn plainer than the rest. Null for
+ * no card. */
 export function focusSet(
   graph: AppMapGraph,
   id: string | null | undefined
-): { nodes: Set<string>; edges: Set<string> } | null {
+): { nodes: Set<string>; edges: Set<string>; trail: Set<string> } | null {
   if (!id || !graph.nodes.some((n) => n.id === id)) return null
+  // The Tree's parent-to-child lines; the Flows view has none.
+  const children = new Map<string, AppEdge[]>()
+  const parentLine = new Map<string, AppEdge>()
+  for (const e of graph.edges) {
+    if (e.data?.kind !== "child") continue
+    children.set(e.source, [...(children.get(e.source) ?? []), e])
+    parentLine.set(e.target, e)
+  }
   const nodes = new Set([id])
   const edges = new Set<string>()
+  const trail = new Set<string>()
+  // The card and its subtree.
+  const stack = [id]
+  while (stack.length) {
+    for (const e of children.get(stack.pop()!) ?? []) {
+      if (nodes.has(e.target)) continue
+      edges.add(e.id)
+      nodes.add(e.target)
+      stack.push(e.target)
+    }
+  }
+  // Their install or flow lines, and the cards at the other ends.
+  const subtree = new Set(nodes)
+  const ends: string[] = []
   for (const e of graph.edges) {
     if (e.data?.kind === "child") continue
-    if (e.source !== id && e.target !== id) continue
+    const other = subtree.has(e.source)
+      ? e.target
+      : subtree.has(e.target)
+        ? e.source
+        : null
+    if (other === null) continue
     edges.add(e.id)
-    nodes.add(e.source)
-    nodes.add(e.target)
+    nodes.add(other)
+    ends.push(other)
   }
-  return { nodes, edges }
+  // Up to the root: from the card, and from a host's applications.
+  for (const from of [id, ...ends]) {
+    let at = from
+    for (let e = parentLine.get(at); e; e = parentLine.get(at)) {
+      if (trail.has(e.id) || edges.has(e.id)) break
+      trail.add(e.id)
+      nodes.add(e.source)
+      at = e.source
+    }
+  }
+  return { nodes, edges, trail }
 }
 
 /** Cards moved by hand (centres, by id) put where they were left. */

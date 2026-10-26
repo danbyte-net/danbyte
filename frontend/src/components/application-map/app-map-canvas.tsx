@@ -44,8 +44,10 @@ import type { AppBand, AppCardNode, AppEdge, AppMapGraph } from "./model"
 // exactly what it drew before.
 //
 // Hovering or selecting a card brings it forward with its install or flow
-// lines and the cards at their other ends, and fades the rest, as a
-// search does (`dimmed`). Hovering a host line names its application and
+// lines and the cards at their other ends - in the Tree with its subtree
+// and its ancestors (model.ts `focusSet`) - and fades the rest, as a
+// search does (`dimmed`). The lines up to the ancestors are in focus but
+// not thickened. Hovering a host line names its application and
 // version in the canvas tip.
 //
 // The cards drag freely; where they were left is reported on drop, and
@@ -138,8 +140,8 @@ export function toFlow(
     })),
   ]
   const edges: Edge[] = graph.edges.map((e) => {
-    const lit = !!focus?.edges.has(e.id)
-    const hot = e.id === selectedEdgeId || lit
+    const lit = !!focus && (focus.edges.has(e.id) || focus.trail.has(e.id))
+    const hot = e.id === selectedEdgeId || !!focus?.edges.has(e.id)
     const dim = !!matched && !(matched.has(e.source) || matched.has(e.target))
     const out = !!focus && !lit
     return {

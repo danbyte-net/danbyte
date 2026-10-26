@@ -112,7 +112,12 @@ selected.
 
 Hover or select a card to bring it forward with its lines and the cards
 at their other ends - an application's hosts, a host's applications, a
-flow end's peers - and fade the rest; **Esc** or a click on the canvas
+flow end's peers - and fade the rest. In the Tree view focus follows the
+hierarchy: an application also brings its whole subtree (every
+descendant with its host lines and hosts) and its parents up to the
+root, so hovering a parent with no installs of its own lights everything
+under it; a host also brings its applications' parents. The lines up to
+the parents stay plain rather than thickened. **Esc** or a click on the canvas
 lets go. Hovering a host line names its application and version
 (*Redis · 7.2*).
 
