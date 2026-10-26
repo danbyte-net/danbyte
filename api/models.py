@@ -2192,6 +2192,17 @@ SOFTWARE_VERSION_SOURCES = (
     ("import", "Import"),
 )
 
+
+#: Whether PRTG should monitor a device or VM, decided on the object itself.
+#: ``inherit`` follows the PRTG policies and the connection's "register all";
+#: ``always`` and ``never`` overrule both (never wins over everything).
+PRTG_SYNC_CHOICES = [
+    ("inherit", "Follow policies"),
+    ("always", "Monitor in PRTG"),
+    ("never", "Exclude from PRTG"),
+]
+
+
 class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """A physical device.
 
@@ -2414,6 +2425,10 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     comments = models.TextField(
         blank=True, default="",
         help_text="Long-form notes (separate from the short description).",
+    )
+    #: PRTG registration for this device (see ``PRTG_SYNC_CHOICES``).
+    prtg_sync = models.CharField(
+        max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
     )
 
     class Meta:
@@ -5101,6 +5116,10 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
         related_name="primary_ip_for_vms",
     )
     description = models.TextField(blank=True)
+    #: PRTG registration for this VM (see ``PRTG_SYNC_CHOICES``).
+    prtg_sync = models.CharField(
+        max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
+    )
 
     class Meta:
         ordering = ["name"]

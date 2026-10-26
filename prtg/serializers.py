@@ -11,7 +11,14 @@ from api.models import DeviceRole, DeviceType, Site
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from . import status as st
-from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
+from .models import (
+    PrtgAdoptionRule,
+    PrtgChange,
+    PrtgConnection,
+    PrtgDeviceLink,
+    PrtgSensor,
+    PrtgSensorProfile,
+)
 
 
 def _host(url: str) -> str:
@@ -64,6 +71,14 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
     adopt_names = serializers.SerializerMethodField()
     #: Not a column: three names for the form and the card.
     list_columns_exclude = ("adopt_names",)
+    #: What "register all" gives an object: a profile of this connection and
+    #: a PRTG group or probe (object id; the path is kept for reading).
+    register_profile = serializers.PrimaryKeyRelatedField(
+        queryset=PrtgSensorProfile.objects.all(), required=False, allow_null=True
+    )
+    register_profile_name = serializers.CharField(
+        source="register_profile.name", read_only=True, default=""
+    )
 
     def get_adopt_names(self, obj) -> dict:
         return {
@@ -82,6 +97,9 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "write_acknowledgements", "sync_maintenance", "last_maintenance_sync_at",
             "adopt_devices", "adopt_site", "adopt_role", "adopt_device_type",
             "adopt_names", "read_inventory", "last_inventory_at",
+            "register_all", "register_profile", "register_profile_name",
+            "register_group_id", "register_group_path", "groups_read_at",
+            "last_plan_at", "last_plan_summary",
             "version", "supported", "v2_available", "last_checked_at", "last_error",
             "last_status_at", "last_status_summary",
             "created_at", "updated_at",
@@ -91,6 +109,8 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "last_checked_at", "last_error", "engine_names", "hook_token_set",
             "last_status_at", "last_status_summary", "created_at", "updated_at",
             "last_maintenance_sync_at", "last_inventory_at", "adopt_names",
+            "register_profile_name", "groups_read_at", "last_plan_at",
+            "last_plan_summary",
         ]
 
     def _own(self, value, what):
@@ -109,6 +129,22 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
 
     def validate_adopt_device_type(self, value):
         return self._own(value, "device type")
+
+    def validate_register_profile(self, value):
+        """A profile of this connection: one of another connection - or
+        another tenant - would be a sensor list nobody here can see."""
+        if value is None:
+            return value
+        self._own(value, "profile")
+        if self.instance is None or value.connection_id != self.instance.id:
+            raise serializers.ValidationError("Pick a profile of this connection.")
+        return value
+
+    def validate_register_group_id(self, value):
+        value = (value or "").strip()
+        if value and not value.isdigit():
+            raise serializers.ValidationError("A PRTG object id is a number.")
+        return value
 
     def _tenant(self):
         from api.views import _get_active_tenant
@@ -297,14 +333,21 @@ class PrtgChangeSerializer(serializers.ModelSerializer):
             from monitoring.external.adoption import applicable
 
             return applicable(obj.detail or {})
+        if obj.planned:
+            # Whether it could be written once writes exist: a group to
+            # create it in and the credentials its sensors need.
+            return bool((obj.detail or {}).get("applicable", True))
         return obj.kind != PrtgChange.AMBIGUOUS
+
+    #: A planned write to PRTG: shown, never applied in this release.
+    planned = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = PrtgChange
         fields = [
             "id", "kind", "kind_display", "device", "virtual_machine", "key", "detail",
             "ignored",
-            "applicable", "created_at",
+            "applicable", "planned", "created_at",
         ]
         read_only_fields = fields
 

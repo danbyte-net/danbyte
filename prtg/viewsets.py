@@ -121,6 +121,26 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             return Response({"detail": counts["error"]}, status=502)
         return Response(counts)
 
+    @action(detail=True, methods=["post"], url_path="plan-now")
+    def plan_now(self, request, pk=None):
+        """Work out what PRTG should have now and refresh the planned
+        changes in the queue. Reads PRTG's devices and groups; writes
+        nothing to PRTG."""
+        from .client import PrtgError
+        from .provision import plan, stamp
+
+        conn = self.get_object()
+        if not conn.api_key_set:
+            return Response({"detail": "No API key is set."}, status=400)
+        now = timezone.now()
+        try:
+            counts = plan(conn, now=now)
+        except PrtgError as exc:
+            stamp(conn, now, {"error": str(exc)[:300]})
+            return Response({"detail": str(exc)[:300]}, status=502)
+        stamp(conn, now, counts)
+        return Response(counts)
+
     @extend_schema(request=None, responses={200: _HookToken})
     @action(detail=True, methods=["post"], url_path="rotate-hook-token")
     def rotate_hook_token(self, request, pk=None):
@@ -172,8 +192,13 @@ class PrtgChangeViewSet(
 
     def apply_change(self, change) -> str:
         from .adopt import apply_adoption
+        from .provision import NOT_YET
         from .reader import apply_link
 
+        if change.planned:
+            # Planned writes are shown so the operator sees what Danbyte
+            # would do to PRTG; nothing can write them yet.
+            raise ValueError(NOT_YET)
         if change.kind == PrtgChange.LINK:
             return apply_link(change)
         if change.kind == PrtgChange.ADOPT:
@@ -189,6 +214,8 @@ class PrtgChangeViewSet(
         for change in PrtgChange.applicable(conn).select_related(
             "device", "virtual_machine", "connection", "connection__tenant"
         ):
+            if change.planned:
+                continue
             if change.kind == PrtgChange.ADOPT and not applicable(change.detail or {}):
                 continue
             try:

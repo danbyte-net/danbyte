@@ -98,6 +98,36 @@ class PrtgConnection(TimestampedModel):
         default=SCOPE_POLICIES, db_default=SCOPE_POLICIES,
     )
 
+    # ── registration (what PRTG should have) ───────────────────────────
+    #: Register every device and VM of the tenant, less the usual exclusions
+    #: (retired statuses, objects already linked, objects set to "Exclude
+    #: from PRTG", primary addresses excluded from monitoring).
+    register_all = models.BooleanField(default=False, db_default=False)
+    #: What "register all" - and an object set to "Monitor in PRTG" that no
+    #: policy matches - gets: a sensor profile and a PRTG group or probe.
+    register_profile = models.ForeignKey(
+        "prtg.PrtgSensorProfile", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    register_group_id = models.CharField(
+        max_length=16, blank=True, default="", db_default=""
+    )
+    register_group_path = models.CharField(
+        max_length=255, blank=True, default="", db_default=""
+    )
+    #: PRTG's groups and probes as the last read saw them: ``[{objid, name,
+    #: kind, path, probe, parent_id}]``. What the group pickers offer and
+    #: what the planning pass checks a target against.
+    groups_cache = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    groups_read_at = models.DateTimeField(null=True, blank=True)
+    #: The last planning pass and its counts.
+    last_plan_at = models.DateTimeField(null=True, blank=True)
+    last_plan_summary = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+
     # ── two-way ─────────────────────────────────────────────────────────
     #: Acknowledgements travel both ways: acknowledging a Danbyte alert that a
     #: PRTG check raised acknowledges the Down sensors behind it in PRTG, and
@@ -460,10 +490,21 @@ class PrtgChange(ExternalChangeBase):
     #: the PRTG object id; it has no device until it is applied.
     ADOPT = "adopt"
     AMBIGUOUS = ExternalChangeBase.AMBIGUOUS
+    #: What the planning pass wants PRTG to have. Planned only: nothing
+    #: writes them to PRTG yet, and applying one is refused.
+    CREATE_DEVICE = "create_device"
+    ADD_SENSOR = "add_sensor"
+    REMOVE_SENSOR = "remove_sensor"
+    MOVE_DEVICE = "move_device"
+    PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE)
     KIND_CHOICES = [
         (LINK, "Link in Danbyte"),
         (ADOPT, "Adopt into Danbyte"),
         (AMBIGUOUS, "Needs a decision"),
+        (CREATE_DEVICE, "Create in PRTG"),
+        (ADD_SENSOR, "Add sensor in PRTG"),
+        (REMOVE_SENSOR, "Remove from PRTG"),
+        (MOVE_DEVICE, "Move in PRTG"),
     ]
 
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_changes")
@@ -496,6 +537,15 @@ class PrtgChange(ExternalChangeBase):
 
     def __str__(self) -> str:
         return f"{self.kind} {self.device_id or self.virtual_machine_id or ''}".strip()
+
+    @classmethod
+    def unattended_skip(cls) -> tuple:
+        # "Apply all" never reaches a planned write: nothing can write it yet.
+        return (cls.AMBIGUOUS, *cls.PLANNED)
+
+    @property
+    def planned(self) -> bool:
+        return self.kind in self.PLANNED
 
 
 class PrtgAdoptionRule(ExternalAdoptionRuleBase):
@@ -582,3 +632,161 @@ class PrtgHostFacts(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.device_id or self.virtual_machine_id} facts"
+
+
+class PrtgSensorProfile(TimestampedModel):
+    """A named list of sensors a device or VM should carry in PRTG.
+
+    A policy names one; an object several policies match gets the union of
+    their profiles' definitions. Nothing is seeded: the starter profile is a
+    button that makes an ordinary, editable profile.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="prtg_sensor_profiles"
+    )
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="sensor_profiles"
+    )
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "name"], name="uniq_prtg_profile_conn_name"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PrtgSensorDefinition(TimestampedModel):
+    """One sensor a profile asks for: its kind, the kind's parameters, the
+    scanning interval, the tags to set and whether its absence is drift.
+
+    ``kind`` and ``params`` are validated by :mod:`prtg.sensor_kinds`. A
+    per-interface kind expands to one sensor per matching interface.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    profile = models.ForeignKey(
+        PrtgSensorProfile, on_delete=models.CASCADE, related_name="definitions"
+    )
+    position = models.PositiveSmallIntegerField(default=0, db_default=0)
+    kind = models.CharField(max_length=24)
+    #: Blank names the sensor after its kind; ``{interface}`` is replaced by
+    #: the interface name for a per-interface kind.
+    name = models.CharField(max_length=120, blank=True, default="", db_default="")
+    params = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: Seconds between scans; null keeps what PRTG inherits.
+    interval_seconds = models.PositiveIntegerField(null=True, blank=True)
+    #: A required sensor a linked device lacks is proposed; an optional one
+    #: is only part of what a new device gets.
+    required = models.BooleanField(default=True, db_default=True)
+    #: Tags to set on the sensor in PRTG, beside Danbyte's own.
+    tags = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+
+    class Meta:
+        ordering = ["profile", "position", "created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.profile_id}:{self.kind}"
+
+    @property
+    def tenant_id(self):
+        """The profile's tenant - what the change log files an edit under."""
+        return self.profile.tenant_id if self.profile_id else None
+
+
+class PrtgPolicy(TimestampedModel):
+    """Which devices and VMs PRTG should have, with which sensors, where.
+
+    The scope fields are named as on :class:`~monitoring.models.MonitoringPolicy`
+    so the shared device matcher (:mod:`monitoring.external.policy`) answers
+    for a device unchanged; ``location`` is PRTG's own addition. Policies
+    stack: every matching policy adds its profile, and the matching policy
+    with the lowest ``priority`` decides the PRTG group.
+    """
+
+    SCOPE_CHOICES = [
+        ("global", "Every device and VM"),
+        ("region", "Region"),
+        ("site", "Site"),
+        ("location", "Location"),
+        ("platform", "Platform"),
+        ("device_type", "Device type"),
+        ("device_role", "Role"),
+    ]
+    #: The field each scope's target lives in.
+    TARGET_FIELDS = {
+        "region": "region", "site": "target_site", "location": "location",
+        "platform": "platform", "device_type": "device_type",
+        "device_role": "device_role",
+    }
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_policies")
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="policies"
+    )
+    name = models.CharField(max_length=120)
+    enabled = models.BooleanField(default=True, db_default=True)
+    #: Lower first. The first matching policy decides the group.
+    priority = models.PositiveSmallIntegerField(default=100, db_default=100)
+    scope = models.CharField(
+        max_length=16, choices=SCOPE_CHOICES, default="global", db_default="global"
+    )
+    region = models.ForeignKey(
+        "api.Region", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    target_site = models.ForeignKey(
+        "api.Site", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    location = models.ForeignKey(
+        "api.Location", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    platform = models.ForeignKey(
+        "api.Platform", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    device_type = models.ForeignKey(
+        "api.DeviceType", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    device_role = models.ForeignKey(
+        "api.DeviceRole", on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    #: Filters, as on a monitoring policy: they narrow, never widen.
+    match_tags = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    match_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    match_hardware = models.CharField(
+        max_length=255, blank=True, default="", db_default=""
+    )
+    applies_to_devices = models.BooleanField(default=True, db_default=True)
+    applies_to_vms = models.BooleanField(default=True, db_default=True)
+    profile = models.ForeignKey(
+        PrtgSensorProfile, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policies",
+    )
+    #: The PRTG group or probe new devices go under, by object id, and its
+    #: path when it was picked - for reading, and for naming a group that
+    #: has gone.
+    group_id = models.CharField(max_length=16, blank=True, default="", db_default="")
+    group_path = models.CharField(max_length=255, blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["priority", "name"]
+        indexes = [
+            models.Index(fields=["connection", "enabled"], name="prtg_policy_conn_enabled"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name

@@ -3034,6 +3034,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         "mount_offset_mm", "mount_span_u",
         # Its own column, Next end of life (device-columns.tsx).
         "lifecycle_next",
+        # Set in the form; the PRTG column shows what PRTG has.
+        "prtg_sync",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3686,7 +3688,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "primary_ip", "primary_ip_id",
                   "secondary_ip", "secondary_ip_id",
                   "oob_ip", "oob_ip_id",
-                  "tags", "tag_ids", "custom_fields",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync",
                   "interface_count", "ip_count",
                   "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
@@ -6333,7 +6335,7 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     # Its own column, Next end of life (vm-columns.tsx).
-    list_columns_exclude = ("lifecycle_next",)
+    list_columns_exclude = ("lifecycle_next", "prtg_sync")
     cluster = ClusterMiniSerializer(read_only=True)
     disks = VirtualDiskSerializer(many=True, read_only=True)
     # Detail-only tab counters (like the device page). Zero on list responses so
@@ -6491,7 +6493,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count", "install_count",
                   "primary_ip", "primary_ip_id", "description",
-                  "tags", "tag_ids", "custom_fields",
+                  "tags", "tag_ids", "custom_fields", "prtg_sync",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",

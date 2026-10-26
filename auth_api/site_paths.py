@@ -195,6 +195,7 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "zabbixconnection": "integration config; adopt_site is a default",
     "prtgadoptionrule": "integration config; the site is where it adopts devices",
     "prtgconnection": "integration config; adopt_site is a default",
+    "prtgpolicy": "integration config; site and location are what it applies to",
 }
 
 # Compliance triage (``compliancetriage``) is tenant-wide and in neither map:
