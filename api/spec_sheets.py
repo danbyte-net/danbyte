@@ -213,7 +213,7 @@ def interface_rows(device) -> tuple[list[dict], list]:
 
 
 def device_context(device, request=None) -> dict:
-    from .models import IPAddress
+    from .ip_usage import addresses_of
 
     dt = device.device_type
     rack = device.rack
@@ -322,7 +322,7 @@ def device_context(device, request=None) -> dict:
         "comments": device.comments or "",
         "images": images,
         "elevation": elevation,
-        "ip_count": IPAddress.objects.filter(assigned_device=device).count(),
+        "ip_count": addresses_of("device", device).count(),
         "ports": _ports_used(type(device).objects.filter(pk=device.pk), device.tenant),
     }
 

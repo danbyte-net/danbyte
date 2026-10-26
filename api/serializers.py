@@ -3569,8 +3569,13 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def get_ip_count(self, obj) -> int:
         # The list renders this, so it can't be skipped; served from a queryset
         # annotation when present (DeviceViewSet), else a direct count.
+        # Every address the device uses (api/ip_usage.py), as its IPs tab.
         annotated = getattr(obj, "ip_count_annotated", None)
-        return annotated if annotated is not None else obj.ip_addresses.count()
+        if annotated is not None:
+            return annotated
+        from .ip_usage import addresses_of
+
+        return addresses_of("device", obj).count()
 
     # The @detail_only per-tab counts are only for the device detail page;
     # the list doesn't render them, so it skips their queries (no N+1).
@@ -6346,12 +6351,23 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     certificate_count = serializers.SerializerMethodField()
     routing_count = serializers.SerializerMethodField()
     install_count = serializers.SerializerMethodField()
+    ip_count = serializers.SerializerMethodField()
 
     def get_install_count(self, obj) -> int:
         """Installed software rows (#436), for the Software tab. Served from
         the viewset's annotation; a query only where the row came without it."""
         v = getattr(obj, "install_count_annotated", None)
         return v if v is not None else obj.installed_software.count()
+
+    def get_ip_count(self, obj) -> int:
+        """Every address the VM uses (api/ip_usage.py), for its IPs tab. Served
+        from the viewset's annotation; a query only without it."""
+        v = getattr(obj, "ip_count_annotated", None)
+        if v is not None:
+            return v
+        from .ip_usage import addresses_of
+
+        return addresses_of("vm", obj).count()
 
     @detail_only(0)
     def get_routing_count(self, obj) -> int:
@@ -6492,6 +6508,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "software_version_source",
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count", "install_count",
+                  "ip_count",
                   "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields", "prtg_sync",
                   "created_at", "updated_at"]

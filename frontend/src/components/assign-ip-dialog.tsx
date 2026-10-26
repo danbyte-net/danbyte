@@ -195,6 +195,7 @@ export function AssignIpDialog({
       if (target!.vmId) {
         qc.invalidateQueries({ queryKey: ["vm-interfaces", target!.vmId] })
         qc.invalidateQueries({ queryKey: ["vm", target!.vmId] })
+        qc.invalidateQueries({ queryKey: ["vm-ips", target!.vmId] })
       }
       qc.invalidateQueries({
         queryKey: ["device-interfaces", target!.deviceId],
