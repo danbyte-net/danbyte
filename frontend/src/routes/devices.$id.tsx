@@ -186,9 +186,9 @@ import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
 import {
-  DeviceMonitoring,
-  DeviceMonitoringBadge,
-} from "@/components/monitoring/device-monitoring"
+  MonitoringBar,
+  MonitoringHeaderBadge,
+} from "@/components/monitoring/monitoring-bar"
 import { AssignIpDialog } from "@/components/assign-ip-dialog"
 import { AssignedIpsPane } from "@/components/assigned-ips-pane"
 import type { AssignIpTarget } from "@/components/assign-ip-dialog"
@@ -255,6 +255,7 @@ export const Route = createFileRoute("/devices/$id")({
     sub?: DeviceComponentSub
     cabled?: CableState
     sensor?: string
+    state?: string
   } => ({
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
@@ -270,6 +271,9 @@ export const Route = createFileRoute("/devices/$id")({
       : {}),
     // A PRTG sensor whose panel the Sensors tab opens.
     ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
+    // The monitoring bar's filter: `problem` or one state, on the
+    // Monitoring tab's addresses and the Sensors tab's cards.
+    ...(typeof s.state === "string" && s.state ? { state: s.state } : {}),
   }),
   component: DeviceDetail,
 })
@@ -321,6 +325,16 @@ function Body({ device: d }: { device: Device }) {
         to: "/devices/$id",
         params: { id: d.id },
         search: { ...search, sensor: sensor ?? undefined },
+        replace: true,
+      }),
+    [nav, search, d.id]
+  )
+  const setStateFilter = useCallback(
+    (state: string | null) =>
+      nav({
+        to: "/devices/$id",
+        params: { id: d.id },
+        search: { ...search, state: state ?? undefined },
         replace: true,
       }),
     [nav, search, d.id]
@@ -403,7 +417,7 @@ function Body({ device: d }: { device: Device }) {
           subtitle={
             <>
               <StatusBadge status={d.status} />
-              <DeviceMonitoringBadge deviceId={d.id} />
+              <MonitoringHeaderBadge target={{ device: d.id }} />
               {d.virtual_chassis && (
                 <Badge variant="secondary" asChild>
                   <Link
@@ -524,7 +538,12 @@ function Body({ device: d }: { device: Device }) {
       <DetailTab value="monitoring">
         <div className="space-y-6">
           <ObjectSlaPanel objectType="api.device" objectId={d.id} />
-          <DeviceChecksPanel deviceId={d.id} prtgSync={d.prtg_sync} />
+          <DeviceChecksPanel
+            deviceId={d.id}
+            prtgSync={d.prtg_sync}
+            state={search.state}
+            onState={setStateFilter}
+          />
         </div>
       </DetailTab>
       <DetailTab value="sensors">
@@ -532,6 +551,8 @@ function Body({ device: d }: { device: Device }) {
           parent={{ device: d.id }}
           selected={openSensor}
           onSelect={selectSensor}
+          state={search.state}
+          onState={setStateFilter}
         />
       </DetailTab>
       <DetailTab value="snmp">
@@ -1291,8 +1312,8 @@ function DeviceOverview({
 
   return (
     <div className="space-y-6">
-      {/* Monitoring roll-up first, mirroring the IP detail page. */}
-      <DeviceMonitoring deviceId={d.id} />
+      {/* Monitoring first: one row per source, each opening its tab. */}
+      <MonitoringBar target={{ device: d.id }} notify={{ device: d.id }} />
       <PinnedSensorsCard
         parent={{ device: d.id }}
         sensorLink={(sensor, children) => (
