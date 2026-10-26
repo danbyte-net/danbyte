@@ -47,7 +47,8 @@ export function PrtgChanges({
       ),
   })
   const rows = changes.data?.results ?? []
-  const applicable = rows.filter((c) => c.applicable)
+  // Planned writes to PRTG cannot be applied yet; "apply all" skips them.
+  const applicable = rows.filter((c) => c.applicable && !c.planned)
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
@@ -90,11 +91,14 @@ export function PrtgChanges({
         accessorKey: "kind_display",
         header: ({ column }) => <SortHeader column={column} label="Change" />,
         cell: ({ row }) => (
-          <Badge
-            variant={row.original.kind === "ambiguous" ? "warning" : "info"}
-          >
-            {row.original.kind_display}
-          </Badge>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Badge
+              variant={row.original.kind === "ambiguous" ? "warning" : "info"}
+            >
+              {row.original.kind_display}
+            </Badge>
+            {row.original.planned && <Badge variant="outline">Planned</Badge>}
+          </span>
         ),
       },
       {
@@ -144,7 +148,7 @@ export function PrtgChanges({
                 const applying = busy && act.variables?.verb === "apply"
                 return (
                   <span className="inline-flex items-center gap-2">
-                    {c.applicable && (
+                    {c.applicable && !c.planned && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -257,6 +261,7 @@ function ChangeDetail({ change }: { change: PrtgChange }) {
       </span>
     )
   if (change.kind === "adopt") return <AdoptDetail detail={d} />
+  if (change.planned) return <PlannedDetail change={change} />
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
       <span className="font-mono text-xs">{String(d.name ?? d.objid)}</span>
@@ -301,6 +306,96 @@ export function AdoptDetail({
       Creates the device <span className="font-mono text-xs">{name}</span> in
       Danbyte{parts.length ? ` - ${parts.join(", ")}` : ""}.
       {d.note ? ` ${String(d.note)}` : ""}
+    </span>
+  )
+}
+
+type PlannedSensor = {
+  name?: string
+  kind_label?: string
+  interface?: { name: string } | null
+}
+type PlannedGroup = { path?: string; objid?: string } | null
+
+const CREDENTIAL_LABEL: Record<string, string> = {
+  snmp: "SNMP",
+  windows: "Windows",
+}
+
+/** What a planned write would do to PRTG - not written in this release. */
+export function PlannedDetail({ change }: { change: PrtgChange }) {
+  const d = change.detail
+  const reason =
+    !change.applicable && d.reason ? (
+      <Badge variant="warning">{String(d.reason)}</Badge>
+    ) : null
+  const groupPath = (g: unknown) => {
+    const group = g as PlannedGroup
+    return group ? String(group.path || group.objid || "") : ""
+  }
+  if (change.kind === "create_device") {
+    const sensors = (d.sensors as PlannedSensor[] | undefined) ?? []
+    const templates = (d.templates as string[] | undefined) ?? []
+    const creds =
+      (d.credentials as { kind: string; name: string }[] | undefined) ?? []
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="font-mono text-xs">{String(d.host ?? "")}</span>
+        {groupPath(d.group) && (
+          <span className="text-muted-foreground">in {groupPath(d.group)}</span>
+        )}
+        {sensors.map((s, i) => (
+          <Badge key={`${s.name}-${i}`} variant="secondary">
+            {s.name}
+          </Badge>
+        ))}
+        {templates.map((t) => (
+          <Badge key={`t-${t}`} variant="outline">
+            Template {t}
+          </Badge>
+        ))}
+        {creds.map((c) => (
+          <Badge key={`c-${c.kind}-${c.name}`} variant="outline">
+            {CREDENTIAL_LABEL[c.kind] ?? c.kind} {c.name}
+          </Badge>
+        ))}
+        {reason}
+      </span>
+    )
+  }
+  if (change.kind === "add_sensor") {
+    const s = (d.sensor as PlannedSensor | undefined) ?? {}
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="font-medium">{s.name}</span>
+        <Badge variant="secondary">{s.kind_label}</Badge>
+        {s.interface?.name && (
+          <span className="font-mono text-xs text-muted-foreground">
+            {s.interface.name}
+          </span>
+        )}
+        {reason}
+      </span>
+    )
+  }
+  if (change.kind === "remove_sensor") {
+    const s = (d.sensor as { name?: string; objid?: string } | undefined) ?? {}
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="font-medium">{s.name}</span>
+        <span className="font-mono text-xs text-muted-foreground">
+          {s.objid}
+        </span>
+        {reason}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+      <span className="text-muted-foreground">{groupPath(d.from)}</span>
+      <span>→</span>
+      <span>{groupPath(d.to)}</span>
+      {reason}
     </span>
   )
 }

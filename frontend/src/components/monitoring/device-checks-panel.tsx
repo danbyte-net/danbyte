@@ -17,6 +17,7 @@ import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
 import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
+import type { PrtgSync } from "@/lib/api"
 
 /**
  * A device's Monitoring tab: the roll-up across its addresses with seven days
@@ -25,7 +26,14 @@ import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
  * addresses, so the rows link there; what Zabbix says about the host sits
  * beside Danbyte's own status, never folded into it.
  */
-export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
+export function DeviceChecksPanel({
+  deviceId,
+  prtgSync,
+}: {
+  deviceId: string
+  /** The device's PRTG setting, for the PRTG row's Exclude chip. */
+  prtgSync?: PrtgSync
+}) {
   const qc = useQueryClient()
   const checks = useQuery({
     queryKey: ["device-checks", deviceId],
@@ -75,8 +83,7 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
         {/* A host Zabbix watches is worth showing even before Danbyte
             monitors any of its addresses itself. */}
         <ZabbixHostPanel scope={{ device: deviceId }} />
-        <DevicePrtgRow deviceId={deviceId} />
-        <DevicePrtgRow deviceId={deviceId} />
+        <DevicePrtgRow deviceId={deviceId} prtgSync={prtgSync} />
       </div>
     )
 
@@ -173,16 +180,24 @@ export function DeviceChecksPanel({ deviceId }: { deviceId: string }) {
       </Section>
 
       <ZabbixHostPanel scope={{ device: deviceId }} />
+      <DevicePrtgRow deviceId={deviceId} prtgSync={prtgSync} />
       <HistoryPanel scope={{ device: deviceId }} />
     </div>
   )
 }
 
 /** The PRTG row, linking to the device's Sensors tab. */
-function DevicePrtgRow({ deviceId }: { deviceId: string }) {
+function DevicePrtgRow({
+  deviceId,
+  prtgSync,
+}: {
+  deviceId: string
+  prtgSync?: PrtgSync
+}) {
   return (
     <PrtgMonitoringRow
       parent={{ device: deviceId }}
+      prtgSync={prtgSync}
       sensorsLink={(children) => (
         <Link
           to="/devices/$id"

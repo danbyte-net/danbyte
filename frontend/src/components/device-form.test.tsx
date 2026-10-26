@@ -1078,3 +1078,27 @@ describe("DeviceForm cooling (#434)", () => {
     expect(screen.queryByText("Cooling", { selector: "label" })).toBeNull()
   })
 })
+
+describe("DeviceForm PRTG", () => {
+  it("offers the PRTG select while the integration is on, and sends it", async () => {
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/integrations/enabled/"
+        ? Promise.resolve({ prtg: true })
+        : base(path, init)
+    )
+    renderForm()
+    await screen.findByText("PRTG", { selector: "label" })
+    expect(trigger("PRTG").textContent).toBe("Follow policies")
+    await choose("PRTG", "Exclude from PRTG")
+    await save()
+    expect(await sent()).toMatchObject({ prtg_sync: "never" })
+  })
+
+  it("hides it and sends nothing while PRTG is off", async () => {
+    renderForm()
+    await save()
+    expect(await sent()).not.toHaveProperty("prtg_sync")
+    expect(screen.queryByText("PRTG", { selector: "label" })).toBeNull()
+  })
+})

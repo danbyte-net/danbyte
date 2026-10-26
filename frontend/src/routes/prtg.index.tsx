@@ -12,6 +12,7 @@ import type {
   PrtgConnection,
   PrtgDefaults,
   PrtgHookToken,
+  PrtgSensorProfile,
   PrtgTestResult,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -35,6 +36,9 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
+import { PrtgGroupPicker } from "@/components/prtg/group-picker"
+import { PrtgPolicies } from "@/components/prtg/policies"
+import { PrtgProfiles } from "@/components/prtg/profiles"
 import { PrtgChanges } from "@/components/prtg/changes"
 import { PrtgLinks } from "@/components/prtg/links"
 import { PrtgAlarms } from "@/components/prtg/alarms"
@@ -85,6 +89,8 @@ const TABS = [
   "alarms",
   "sensors",
   "links",
+  "policies",
+  "profiles",
   "adoption",
 ] as const
 type PrtgTab = (typeof TABS)[number]
@@ -154,6 +160,24 @@ function PrtgPage() {
     },
   })
 
+  const planNow = useMutation({
+    mutationFn: (id: string) =>
+      api<Record<string, number>>(`/api/prtg/connections/${id}/plan-now/`, {
+        method: "POST",
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `Planned - ${r.create ?? 0} to create, ${r.add_sensor ?? 0} sensors to add.`
+      )
+      refresh()
+      void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
+    },
+    onError: (e) => {
+      apiErrorToast(e)
+      refresh()
+    },
+  })
+
   const remove = useMutation({
     mutationFn: (id: string) =>
       api(`/api/prtg/connections/${id}/`, { method: "DELETE" }),
@@ -213,6 +237,8 @@ function PrtgPage() {
               },
               { value: "sensors", label: "Sensors", count: summary?.total },
               { value: "links", label: "Links" },
+              { value: "policies", label: "Policies" },
+              { value: "profiles", label: "Profiles" },
               { value: "adoption", label: "Adoption" },
             ]}
           />
@@ -238,8 +264,10 @@ function PrtgPage() {
                 canDelete={canDelete}
                 testing={test.isPending}
                 reading={readNow.isPending}
+                planning={planNow.isPending}
                 onTest={() => test.mutate(conn.id)}
                 onRead={() => readNow.mutate(conn.id)}
+                onPlan={() => planNow.mutate(conn.id)}
                 onEdit={() => setEditing(conn)}
                 onDelete={() => setDeleting(conn)}
               />
@@ -253,6 +281,12 @@ function PrtgPage() {
               connection={conn}
               onEditConnection={canManage ? () => setEditing(conn) : undefined}
             />
+          )}
+          {tab === "policies" && (
+            <PrtgPolicies connection={conn} canManage={canManage} />
+          )}
+          {tab === "profiles" && (
+            <PrtgProfiles connection={conn} canManage={canManage} />
           )}
           {tab === "adoption" && (
             <PrtgAdoptionRules connection={conn} canManage={canManage} />
@@ -306,8 +340,10 @@ function ConnectionCard({
   canDelete,
   testing,
   reading,
+  planning,
   onTest,
   onRead,
+  onPlan,
   onEdit,
   onDelete,
 }: {
@@ -317,8 +353,10 @@ function ConnectionCard({
   canDelete: boolean
   testing: boolean
   reading: boolean
+  planning: boolean
   onTest: () => void
   onRead: () => void
+  onPlan: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -406,6 +444,47 @@ function ConnectionCard({
         </span>
       ) : (
         <Badge variant="secondary">Off</Badge>
+      ),
+    },
+  ]
+  const plan = conn.last_plan_summary ?? {}
+  const registration: KvRow[] = [
+    {
+      label: "Register all",
+      value: conn.register_all ? (
+        <span className="inline-flex items-center gap-2">
+          <Badge variant="success">On</Badge>
+          {conn.register_profile_name && (
+            <span className="text-xs text-muted-foreground">
+              {conn.register_profile_name}
+              {conn.register_group_path ? ` · ${conn.register_group_path}` : ""}
+            </span>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Off</Badge>
+      ),
+    },
+    {
+      label: "Last plan",
+      value: conn.last_plan_at ? (
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <TimeCell iso={conn.last_plan_at} />
+          {plan.error ? (
+            <Badge variant="destructive">{String(plan.error)}</Badge>
+          ) : (
+            <>
+              <Badge variant="secondary" className="num">
+                {Number(plan.create ?? 0)} to create
+              </Badge>
+              <Badge variant="secondary" className="num">
+                {Number(plan.add_sensor ?? 0)} sensors
+              </Badge>
+            </>
+          )}
+        </span>
+      ) : (
+        <Badge variant="secondary">Never planned</Badge>
       ),
     },
   ]
@@ -498,6 +577,14 @@ function ConnectionCard({
             >
               {reading ? "Reading…" : "Read now"}
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={planning || !conn.api_key_set}
+              onClick={onPlan}
+            >
+              {planning ? "Planning…" : "Plan now"}
+            </Button>
             <Button size="sm" variant="outline" onClick={onEdit}>
               Edit
             </Button>
@@ -513,6 +600,7 @@ function ConnectionCard({
         <KvCard title="Connection" rows={connection} />
         <KvCard title="Server" rows={server} />
         <KvCard title="Two-way" rows={twoWay} />
+        <KvCard title="Registration" rows={registration} />
       </div>
     </section>
   )
@@ -683,6 +771,26 @@ function PrtgConnectionForm({
   const [adoptType, setAdoptType] = useState<string | null>(
     connection?.adopt_device_type ?? null
   )
+  const [registerAll, setRegisterAll] = useState(
+    connection?.register_all ?? false
+  )
+  const [registerProfile, setRegisterProfile] = useState<string | null>(
+    connection?.register_profile ?? null
+  )
+  const [registerGroup, setRegisterGroup] = useState<string | null>(
+    connection?.register_group_id || null
+  )
+  const [registerPath, setRegisterPath] = useState(
+    connection?.register_group_path ?? ""
+  )
+  const profiles = useQuery({
+    queryKey: ["prtg-profiles", connection?.id],
+    queryFn: () =>
+      apiAll<PrtgSensorProfile>(
+        `/api/prtg/profiles/?connection=${connection?.id}`
+      ),
+    enabled: !!connection,
+  })
   const sites = useQuery({
     queryKey: ["prtg-adopt-sites"],
     queryFn: () =>
@@ -750,6 +858,16 @@ function PrtgConnectionForm({
             adopt_site: adopt ? adoptSite : null,
             adopt_role: adopt ? adoptRole : null,
             adopt_device_type: adopt ? adoptType : null,
+            // Registration needs the connection's own profiles, so it is
+            // only edited once the connection exists.
+            ...(isEdit
+              ? {
+                  register_all: registerAll,
+                  register_profile: registerProfile,
+                  register_group_id: registerGroup ?? "",
+                  register_group_path: registerPath,
+                }
+              : {}),
           }),
         }
       ),
@@ -920,6 +1038,46 @@ function PrtgConnectionForm({
           </FormSection>
         </FormColumn>
       </FormColumns>
+
+      {connection && (
+        <FormSection title="Registration" card>
+          <FormCheckbox
+            label="Register all devices and VMs"
+            info="Every device and VM goes to PRTG with this profile and group. Left out: retired statuses, objects already linked, objects set to Exclude from PRTG, and addresses excluded from monitoring. Policies win where they match. Nothing is written to PRTG yet: the review queue shows the plan."
+            checked={registerAll}
+            onChange={setRegisterAll}
+          />
+          {registerAll && (
+            <FormColumns>
+              <FormColumn>
+                <FormSelect
+                  label="Sensor profile"
+                  value={registerProfile}
+                  onChange={setRegisterProfile}
+                  options={(profiles.data?.results ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  }))}
+                  noneLabel="None"
+                  error={fieldErrors.register_profile}
+                />
+              </FormColumn>
+              <FormColumn>
+                <PrtgGroupPicker
+                  connectionId={connection.id}
+                  value={registerGroup}
+                  path={registerPath}
+                  onChange={(id, path) => {
+                    setRegisterGroup(id)
+                    setRegisterPath(path)
+                  }}
+                  error={fieldErrors.register_group_id}
+                />
+              </FormColumn>
+            </FormColumns>
+          )}
+        </FormSection>
+      )}
 
       <PrtgStateMapEditor
         defaults={defaults.data}
