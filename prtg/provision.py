@@ -4,8 +4,8 @@ Danbyte decides, per connection, which of the tenant's devices and VMs PRTG
 should monitor, under which PRTG group or probe, and with which sensors. The
 planning pass compares that with what the status read found - the links and
 the imported sensors - and writes the difference into the review queue as
-**planned** changes. Nothing here writes to PRTG: applying a planned change is
-refused until the writes arrive.
+**planned** changes. Nothing here writes to PRTG; applying a planned change
+does (:mod:`prtg.writer`).
 
 Which objects PRTG should have, strongest first:
 
@@ -62,8 +62,36 @@ RETIRED_STATUSES = frozenset({"decommissioning", "decommissioned", "retired"})
 #: The tag prefix Danbyte will write on every sensor it creates, followed by
 #: a short hash of the definition (and interface) that wants it.
 DEF_TAG = "danbyte-def-"
-#: The sentence every apply of a planned change answers with.
-NOT_YET = "Writing to PRTG arrives in the next release."
+#: What a planned row says when this PRTG cannot create anything.
+NO_WRITES = "This PRTG cannot create objects through its API."
+#: Keys of a row's detail the writer keeps, which a new pass must not drop.
+_KEPT = ("result", "log", "last_error")
+#: How long an applied row stays in the queue once nothing proposes it.
+APPLIED_KEEP_HOURS = 24
+
+
+def propose(conn, fresh: set, detail: dict, **lookup):
+    """:meth:`PrtgChange.propose`, keeping what the writer recorded on the
+    row (progress, log, last error) so a retry resumes and the panel keeps
+    its history. A row proposed again is wanted again: it is not applied."""
+    old = PrtgChange.objects.filter(connection=conn, **lookup).values_list(
+        "detail", flat=True
+    ).first() or {}
+    kept = {k: old[k] for k in _KEPT if k in old}
+    return PrtgChange.propose(conn, fresh, {**detail, **kept}, **lookup)
+
+
+def drop_stale(conn, fresh: set, now) -> None:
+    """Delete planned rows this pass did not propose again - except rows
+    applied within the last day, which stay as *Applied* to be seen."""
+    from datetime import timedelta
+
+    PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED).exclude(
+        id__in=fresh
+    ).exclude(
+        detail__has_key="applied",
+        updated_at__gte=now - timedelta(hours=APPLIED_KEEP_HOURS),
+    ).delete()
 
 
 #: Why an object is left out or a planned row cannot be written, as plain
@@ -90,6 +118,10 @@ TEXT = {
                      "{label} cannot be set up.",
     "no_address": "It has no primary address. Set one so PRTG can reach it.",
     "unwanted_sensor": "Danbyte made this sensor and no profile wants it any more.",
+    "not_created_sensor": "It carries a Danbyte tag, but Danbyte did not create it. "
+                          "Remove it in PRTG if it should go.",
+    "no_writes": "This PRTG cannot create objects through its API. Name a seed device "
+                 "on the connection, or use PRTG 26.2.120 or later.",
 }
 _TEXT_ONLY = ("status", "label", "tab")
 
@@ -635,6 +667,7 @@ def has_work(conn) -> bool:
         or VirtualMachine.objects.filter(tenant=conn.tenant, prtg_sync="always").exists()
         or PrtgSensor.objects.filter(connection=conn, tags__icontains=DEF_TAG).exists()
         or PrtgChange.objects.filter(connection=conn, kind__in=PrtgChange.PLANNED).exists()
+        or PrtgDeviceLink.objects.filter(connection=conn, created_here=True).exists()
     )
 
 
@@ -651,9 +684,10 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
 
     now = now or timezone.now()
     counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
-              "move": 0, "not_applicable": 0, "no_address": 0, "awaiting_link": 0}
+              "move": 0, "remove_device": 0, "not_applicable": 0, "no_address": 0,
+              "awaiting_link": 0}
     if not has_work(conn):
-        PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED).delete()
+        drop_stale(conn, set(), now)
         return counts
     client = client or client_for(conn)
     if device_rows is None:
@@ -677,18 +711,33 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
         waiting.add(d or v)
 
     fresh: set = set()
+    no_writes = conn.write_mode == PrtgConnection.WRITE_NONE
     with transaction.atomic():
         for obj in _objects(conn):
             link = links.get(obj.id)
             present = link is not None and link.objid in parent_of
-            want = decide(conn, obj, ctx, linked=link is not None, checked=checked)
+            # A device Danbyte created is still wanted by "register all":
+            # register all only skips what was in PRTG already.
+            want = decide(conn, obj, ctx,
+                          linked=link is not None and not link.created_here,
+                          checked=checked)
+            if link is not None and present and link.created_here and not want.managed:
+                if conn.prune_devices:
+                    counts["remove_device"] += 1
+                    propose(conn, fresh, {
+                        "objid": link.objid, "name": link.name,
+                        "group": link.group_path,
+                        "reason": want.reason or "Set to Exclude from PRTG.",
+                        "applicable": True,
+                    }, **_parent(obj), kind=PrtgChange.REMOVE_DEVICE, key="")
+                continue
             if want.via == "never":
                 continue
             wanted = sensors_for(want) if want.managed else []
             if link is not None and present:
                 _plan_linked(conn, obj, link, want, wanted,
                              sensors_by_link.get(link.id, []), parent_of,
-                             groups_by_id, counts, fresh)
+                             groups_by_id, counts, fresh, no_writes)
                 if want.managed:
                     counts["scoped"] += 1
                 continue
@@ -708,6 +757,8 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
                 issues.append(problem)
             creds, missing = credential_issues(obj, conn.tenant, wanted)
             issues.extend(missing)
+            if no_writes:
+                issues.append(issue("no_writes"))
             reasons = [i["text"] for i in issues]
             group = dict(want.group or {})
             if group.get("objid") in groups_by_id:
@@ -728,11 +779,9 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
             if reasons:
                 counts["not_applicable"] += 1
             counts["create"] += 1
-            PrtgChange.propose(conn, fresh, detail, **_parent(obj),
-                               kind=PrtgChange.CREATE_DEVICE, key="")
-        PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED).exclude(
-            id__in=fresh
-        ).delete()
+            propose(conn, fresh, detail, **_parent(obj),
+                    kind=PrtgChange.CREATE_DEVICE, key="")
+        drop_stale(conn, fresh, now)
     return counts
 
 
@@ -747,11 +796,13 @@ def _sensor_detail(inst: dict) -> dict:
 
 
 def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id,
-                 counts, fresh) -> None:
+                 counts, fresh, no_writes=False) -> None:
     """A linked object: missing required sensors, Danbyte sensors nothing
     wants any more, and a group that differs."""
     claimed: set = set()
     missing = []
+    created = dict(link.created_sensors or {})
+    present_objids = {s.objid for s in sensors}
     for inst in wanted:
         if inst.get("template"):
             # A template cannot be read back; it is what a new device gets.
@@ -760,24 +811,43 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         if found is not None:
             claimed.add(found.id)
             continue
-        if inst["required"]:
-            missing.append(inst)
-    for inst in missing:
+        # One Danbyte made and somebody deleted in PRTG is wanted again,
+        # required or not.
+        deleted = inst["key"] in created and created[inst["key"]].get(
+            "objid"
+        ) not in present_objids
+        if inst["required"] or deleted:
+            missing.append((inst, deleted))
+    for inst, deleted in missing:
         issues = []
         if inst.get("needs"):
             _, issues = credential_issues(obj, conn.tenant, [inst])
+        if no_writes:
+            issues.append(issue("no_writes"))
         reasons = [i["text"] for i in issues]
         counts["add_sensor"] += 1
         if reasons:
             counts["not_applicable"] += 1
-        PrtgChange.propose(conn, fresh, {
+        propose(conn, fresh, {
             "objid": link.objid, "device_name": link.name,
             "definition": {"id": inst["definition"], "profile": inst["profile"],
                            "kind": inst["kind"], "kind_label": inst["kind_label"]},
             "sensor": _sensor_detail(inst),
             "interface": inst.get("interface"),
-            "applicable": not reasons, "reason": " ".join(reasons), "issues": issues,
+            "applicable": not reasons,
+            "reason": " ".join(reasons) or ("Deleted in PRTG." if deleted else ""),
+            "issues": issues,
+            "deleted_in_prtg": deleted,
         }, **_parent(obj), kind=PrtgChange.ADD_SENSOR, key=inst["key"])
+    # Forget sensors Danbyte made that nothing wants and PRTG no longer has.
+    wanted_keys = {i["key"] for i in wanted}
+    stale = [k for k, v in created.items()
+             if k not in wanted_keys and v.get("objid") not in present_objids]
+    if stale:
+        for k in stale:
+            created.pop(k)
+        link.created_sensors = created
+        link.save(update_fields=["created_sensors"])
 
     keys = {i["key"] for i in wanted}
     for s in sensors:
@@ -785,12 +855,16 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         if not ours or any(t in keys for t in ours):
             continue
         counts["remove_sensor"] += 1
-        PrtgChange.propose(conn, fresh, {
+        made = any(v.get("objid") == s.objid for v in created.values())
+        if not made:
+            counts["not_applicable"] += 1
+        propose(conn, fresh, {
             "objid": link.objid, "device_name": link.name,
             "sensor": {"objid": s.objid, "name": s.name, "kind": s.kind_label or s.kind},
             "tag": ours[0],
-            "reason": TEXT["unwanted_sensor"],
-            "applicable": True,
+            "reason": TEXT["unwanted_sensor"] if made else TEXT["not_created_sensor"],
+            "issues": [] if made else [issue("not_created_sensor")],
+            "applicable": made,
         }, **_parent(obj), kind=PrtgChange.REMOVE_SENSOR, key=s.objid)
 
     if not want.managed or want.group is None:
@@ -812,7 +886,7 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
     counts["move"] += 1
     if problem:
         counts["not_applicable"] += 1
-    PrtgChange.propose(conn, fresh, {
+    propose(conn, fresh, {
         "objid": link.objid, "name": link.name,
         "from": {"objid": current, "path": frm["path"] if frm else link.group_path},
         "to": to,
@@ -840,7 +914,8 @@ def preview(conn: PrtgConnection, obj) -> dict:
     registration decision."""
     ctx, checked = _prepare(conn)
     link = PrtgDeviceLink.objects.filter(connection=conn, **_parent(obj)).first()
-    want = decide(conn, obj, ctx, linked=link is not None, checked=checked)
+    want = decide(conn, obj, ctx, linked=link is not None and not link.created_here,
+                  checked=checked)
     groups_by_id = {g["objid"]: g for g in (conn.groups_cache or [])}
     wanted = sensors_for(want) if want.managed else []
     sensors = list(PrtgSensor.objects.filter(link=link).order_by("name")) if link else []
@@ -928,7 +1003,27 @@ def preview(conn: PrtgConnection, obj) -> dict:
         "credentials": creds,
         "problems": [i["text"] for i in issues],
         "issues": issues,
+        "last_apply": _last_apply(conn, obj, link),
     }
+
+
+def _last_apply(conn, obj, link) -> dict | None:
+    """What Danbyte last wrote to PRTG for this object: the link's record,
+    or a pending create's last attempt."""
+    if link is not None and link.last_apply:
+        return link.last_apply
+    change = PrtgChange.objects.filter(
+        connection=conn, kind=PrtgChange.CREATE_DEVICE, **_parent(obj)
+    ).first()
+    if change is None:
+        return None
+    entries = (change.detail or {}).get("log") or []
+    if not entries:
+        return None
+    last = entries[-1]
+    return {"at": last.get("at"), "kind": change.kind, "ok": last.get("ok"),
+            "detail": last.get("detail"), "result": (change.detail or {}).get("result") or {},
+            "by": last.get("by")}
 
 
 # ── the starter profile ─────────────────────────────────────────────────────

@@ -51,7 +51,7 @@ from prtg.models import (
     PrtgSensorProfile,
 )
 from prtg.provision import (
-    NOT_YET,
+    NO_WRITES,
     TEXT,
     Context,
     decide,
@@ -703,18 +703,19 @@ class ProfileApiTests(_Api):
 
 
 class QueueApiTests(_Api):
-    def test_apply_is_refused_and_apply_all_skips_planned(self):
+    def test_a_row_that_cannot_be_written_is_refused_and_skipped(self):
         d = Device.objects.create(tenant=self.tenant, name="edge", site=self.site)
         change = PrtgChange.objects.create(
             tenant=self.tenant, connection=self.conn, device=d,
-            kind=PrtgChange.CREATE_DEVICE, detail={"applicable": True},
+            kind=PrtgChange.CREATE_DEVICE,
+            detail={"applicable": False, "reason": NO_WRITES},
         )
         rows = self.client.get("/api/prtg/changes/").json()["results"]
         self.assertTrue(rows[0]["planned"])
         self.assertEqual(rows[0]["kind_display"], "Create in PRTG")
+        self.assertEqual(rows[0]["status"], "attention")
         r = self.client.post(f"/api/prtg/changes/{change.id}/apply/")
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.json()["detail"], NOT_YET)
         r = self.client.post("/api/prtg/changes/apply-all/",
                              {"connection": str(self.conn.id)}, format="json")
         self.assertEqual(r.json()["applied"], 0)

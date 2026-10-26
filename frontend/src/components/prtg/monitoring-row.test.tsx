@@ -274,3 +274,111 @@ describe("PrtgMonitoringRow", () => {
     expect(screen.queryByTestId("prtg-details")).toBeNull()
   })
 })
+
+describe("PrtgMonitoringRow for a device Danbyte created", () => {
+  const LINK = {
+    id: "l1",
+    connection: "c1",
+    device: { id: "d1", name: "edge" },
+    virtual_machine: null,
+    objid: "2120",
+    name: "edge",
+    host: "10.0.0.90",
+    probe_name: "Local Probe",
+    group_path: "Local Probe",
+    matched_by: "created",
+    created_here: true,
+    tagged: true,
+    status_raw: 3,
+    state: "up",
+    sensor_counts: { total: 1, up: 1 },
+    status_read_at: null,
+    last_seen_at: null,
+    url: "https://prtg.example.com/device.htm?id=2120",
+    maintenance_paused_at: null,
+    maintenance_paused_until: null,
+    maintenance_events: [],
+    maintenance_note: "",
+  }
+  const CREATED: PrtgPlanEntry = {
+    ...BASE,
+    managed: true,
+    linked: {
+      objid: "2120",
+      name: "edge",
+      group: "Local Probe",
+      host: "10.0.0.90",
+      url: LINK.url,
+      matched_by: "created",
+      created_here: true,
+      created_at: "2026-10-26T08:00:00Z",
+    },
+    last_apply: {
+      at: "2026-10-26T09:00:00Z",
+      kind: "create_device",
+      ok: true,
+      detail: "Created edge in PRTG as device 2120.",
+      result: { device: "2120" },
+      by: "root",
+    },
+  }
+
+  function serveWithLink(plan: PrtgPlanEntry[]) {
+    apiMock.mockImplementation((path) => {
+      if (path === "/api/integrations/enabled/")
+        return Promise.resolve({ prtg: true })
+      if (path.startsWith("/api/prtg/plan/")) return Promise.resolve(plan)
+      if (path.startsWith("/api/prtg/links/"))
+        return Promise.resolve({
+          count: 1,
+          next: null,
+          previous: null,
+          results: [LINK],
+        })
+      return Promise.resolve({
+        count: 0,
+        next: null,
+        previous: null,
+        results: [],
+      })
+    })
+  }
+
+  it("says so on the row and in the Managed line with the last apply", async () => {
+    serveWithLink([CREATED])
+    mount()
+    expect((await screen.findAllByText("Created by Danbyte")).length).toBe(1)
+    await expand()
+    await screen.findByTestId("prtg-last-apply")
+    const managed = row("Managed by Danbyte")
+    expect(managed).toMatch(/Yes, created on \S/)
+    expect(managed).toContain("last apply")
+    expect(managed).toContain("Applied")
+    // A successful apply needs no detail line.
+    expect(managed).not.toContain("Created edge in PRTG")
+  })
+
+  it("shows a failed create attempt before there is a link", async () => {
+    serve([
+      {
+        ...BASE,
+        registers: true,
+        last_apply: {
+          at: "2026-10-26T09:00:00Z",
+          kind: "create_device",
+          ok: false,
+          detail: "PRTG refused the device: group 64 is gone.",
+          result: {},
+          by: "root",
+        },
+      },
+    ])
+    mount()
+    await expand()
+    await screen.findByTestId("prtg-last-apply")
+    const managed = row("Managed by Danbyte")
+    expect(managed).toContain("No")
+    expect(managed).toContain("Failed")
+    expect(managed).toContain("PRTG refused the device: group 64 is gone.")
+  })
+})

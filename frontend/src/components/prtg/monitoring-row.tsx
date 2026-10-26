@@ -6,7 +6,12 @@ import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { PrtgDeviceLink, PrtgPlanEntry, PrtgSync } from "@/lib/api"
+import type {
+  PrtgDeviceLink,
+  PrtgLastApply,
+  PrtgPlanEntry,
+  PrtgSync,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
@@ -19,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { TimeCell } from "@/components/cells/time-ago"
 import { EmptyState } from "@/components/empty-state"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -122,6 +128,14 @@ export function PrtgMonitoringRow({
                   extra: (
                     <>
                       {excluded}
+                      {link.created_here && (
+                        <Badge
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                        >
+                          Created by Danbyte
+                        </Badge>
+                      )}
                       {pausedUntil(link) && (
                         <Badge
                           variant="secondary"
@@ -429,6 +443,24 @@ function Planned({
   )
 }
 
+function LastApply({ apply }: { apply: PrtgLastApply }) {
+  return (
+    <span
+      className="inline-flex flex-wrap items-center gap-x-1.5"
+      data-testid="prtg-last-apply"
+    >
+      <span className="text-muted-foreground">· last apply</span>
+      <Badge variant={apply.ok ? "success" : "destructive"}>
+        {apply.ok ? "Applied" : "Failed"}
+      </Badge>
+      <TimeCell iso={apply.at} />
+      {!apply.ok && apply.detail && (
+        <span className="text-xs text-muted-foreground">{apply.detail}</span>
+      )}
+    </span>
+  )
+}
+
 function DetailsEntry({
   entry: e,
   many,
@@ -464,12 +496,19 @@ function DetailsEntry({
     },
     {
       label: "Managed by Danbyte",
-      value:
-        e.managed && e.linked?.created_at
-          ? `Yes, created on ${formatDate(e.linked.created_at)}`
-          : e.managed
-            ? "Yes"
-            : "No",
+      value: (
+        <span
+          className="inline-flex flex-wrap items-center gap-x-1.5"
+          data-testid="prtg-managed"
+        >
+          {e.managed && e.linked?.created_at
+            ? `Yes, created on ${formatDate(e.linked.created_at)}`
+            : e.managed
+              ? "Yes"
+              : "No"}
+          {e.last_apply?.at && <LastApply apply={e.last_apply} />}
+        </span>
+      ),
     },
     {
       label: "Registration",

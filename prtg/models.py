@@ -128,6 +128,35 @@ class PrtgConnection(TimestampedModel):
         default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
     )
 
+    # ── writing to PRTG ──────────────────────────────────────────────────
+    #: An empty, paused PRTG device the operator made once, with one sensor
+    #: of each kind Danbyte may need. Where PRTG cannot create objects
+    #: through API v2, new devices and sensors are copies of it.
+    seed_device_objid = models.CharField(
+        max_length=16, blank=True, default="", db_default=""
+    )
+    #: Write the SNMP and Windows credentials Danbyte holds onto a device it
+    #: creates in PRTG, as device properties with inheritance off.
+    send_credentials = models.BooleanField(default=False, db_default=False)
+    #: Let the beat apply planned creates, sensors and moves itself.
+    #: Removals always wait for a person.
+    auto_apply_registration = models.BooleanField(default=False, db_default=False)
+    #: Propose removing a PRTG device Danbyte created once its object no
+    #: longer belongs in PRTG. Devices Danbyte did not create are never
+    #: proposed.
+    prune_devices = models.BooleanField(default=False, db_default=False)
+    #: How this PRTG can be written: ``v2`` (API v2 creates objects),
+    #: ``seed`` (copies of the seed device), ``none``, or "" before a check.
+    WRITE_V2, WRITE_SEED, WRITE_NONE = "v2", "seed", "none"
+    write_mode = models.CharField(max_length=8, blank=True, default="", db_default="")
+    write_detail = models.CharField(max_length=255, blank=True, default="", db_default="")
+    write_checked_at = models.DateTimeField(null=True, blank=True)
+    #: The last apply of planned changes, by a person or the beat.
+    last_apply_at = models.DateTimeField(null=True, blank=True)
+    last_apply_summary = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+
     # ── two-way ─────────────────────────────────────────────────────────
     #: Acknowledgements travel both ways: acknowledging a Danbyte alert that a
     #: PRTG check raised acknowledges the Down sensors behind it in PRTG, and
@@ -245,6 +274,15 @@ class PrtgConnection(TimestampedModel):
             seconds=max(self.status_interval_seconds, 60)
         )
 
+    def auto_apply_due(self, now) -> bool:
+        """Whether the beat should apply ready planned rows: auto apply is
+        on and a planning pass has run since the last apply."""
+        if not (self.enabled and self.auto_apply_registration and self.api_key_set):
+            return False
+        if self.last_plan_at is None:
+            return False
+        return self.last_apply_at is None or self.last_apply_at < self.last_plan_at
+
     #: How often the inventory pass runs. Each pass reads a batch of the
     #: links whose system information is oldest.
     INVENTORY_EVERY = timedelta(hours=1)
@@ -333,6 +371,23 @@ class PrtgDeviceLink(ExternalLinkBase):
     )
     #: Whether Danbyte wrote the ``danbyte-<uuid>`` tag on the PRTG device.
     tagged = models.BooleanField(default=False, db_default=False)
+    #: The sensors Danbyte created on this device, by the ``danbyte-def-``
+    #: tag that wanted them: ``{tag: {"objid", "name", "created_at"}}``.
+    #: Kept after PRTG loses one, so one deleted by hand is proposed again;
+    #: and the only sensors Danbyte will ever remove.
+    created_sensors = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: The last write Danbyte made for this device: ``{at, kind, ok, detail,
+    #: result}``.
+    last_apply = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: A keyed hash of the credentials last written to the PRTG device -
+    #: never the credentials.
+    credentials_hash = models.CharField(
+        max_length=64, blank=True, default="", db_default=""
+    )
     status_read_at = models.DateTimeField(null=True, blank=True)
 
     # ── what the maintenance mirror did to the PRTG device ─────────────
@@ -517,13 +572,18 @@ class PrtgChange(ExternalChangeBase):
     #: the PRTG object id; it has no device until it is applied.
     ADOPT = "adopt"
     AMBIGUOUS = ExternalChangeBase.AMBIGUOUS
-    #: What the planning pass wants PRTG to have. Planned only: nothing
-    #: writes them to PRTG yet, and applying one is refused.
+    #: What the planning pass wants PRTG to have, written by
+    #: :mod:`prtg.writer` when applied.
     CREATE_DEVICE = "create_device"
     ADD_SENSOR = "add_sensor"
     REMOVE_SENSOR = "remove_sensor"
     MOVE_DEVICE = "move_device"
-    PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE)
+    #: A device Danbyte created whose object no longer belongs in PRTG.
+    REMOVE_DEVICE = "remove_device"
+    PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE, REMOVE_DEVICE)
+    #: Deletions: applied one at a time by a person, never by "apply all"
+    #: or the beat.
+    DESTRUCTIVE = (REMOVE_SENSOR, REMOVE_DEVICE)
     KIND_CHOICES = [
         (LINK, "Link in Danbyte"),
         (ADOPT, "Adopt into Danbyte"),
@@ -532,6 +592,7 @@ class PrtgChange(ExternalChangeBase):
         (ADD_SENSOR, "Add sensor in PRTG"),
         (REMOVE_SENSOR, "Remove from PRTG"),
         (MOVE_DEVICE, "Move in PRTG"),
+        (REMOVE_DEVICE, "Remove device from PRTG"),
     ]
 
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_changes")
@@ -567,8 +628,9 @@ class PrtgChange(ExternalChangeBase):
 
     @classmethod
     def unattended_skip(cls) -> tuple:
-        # "Apply all" never reaches a planned write: nothing can write it yet.
-        return (cls.AMBIGUOUS, *cls.PLANNED)
+        # "Apply all" and the beat never decide an ambiguity or delete
+        # anything in PRTG: a removal is confirmed row by row.
+        return (cls.AMBIGUOUS, *cls.DESTRUCTIVE)
 
     @property
     def planned(self) -> bool:

@@ -4,10 +4,10 @@ import type { ReactNode } from "react"
 import type { PrtgIssue } from "@/lib/api"
 
 /**
- * Whether applying a planned change writes to PRTG. Off until the writes
- * land; flipping it changes every "planned only" line at once.
+ * Whether applying a planned change writes to PRTG. On since the writes
+ * landed; it changes every "planned only" line at once.
  */
-export const PRTG_WRITES_LIVE = false
+export const PRTG_WRITES_LIVE = true
 
 /** The line under the PRTG details on the Monitoring tab, before and after
  * the writes. */
@@ -77,7 +77,7 @@ function PolicyEditLink({ id }: { id: string }) {
   )
 }
 
-export function ConnectionLink() {
+export function ConnectionLink({ label = "Register all" }: { label?: string }) {
   return (
     <Link
       to="/prtg"
@@ -85,7 +85,7 @@ export function ConnectionLink() {
       hash="registration"
       className="link"
     >
-      Register all
+      {label}
     </Link>
   )
 }
@@ -112,6 +112,8 @@ export function prtgIssueLinks(
         issue.policy ? <PolicyEditLink key="policy" id={issue.policy} /> : null,
         <ConnectionLink key="conn" />,
       ]
+    case "no_writes":
+      return [<ConnectionLink key="conn" label="Connection" />]
     case "no_match":
       return [
         <PoliciesLink key="policies" />,
