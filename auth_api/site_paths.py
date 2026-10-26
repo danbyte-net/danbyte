@@ -115,6 +115,9 @@ SITE_PATHS: dict[str, str] = {
     "portutilizationrule": "device__site",
     "zabbixhostlink": "device__site",
     "zabbixchange": "device__site",
+    "prtgdevicelink": "device__site",
+    "prtgsensor": "device__site",
+    "prtgchange": "device__site",
     "dhcpscope": "prefix__site",
     "dhcpreservation": "scope__prefix__site",
     "dhcplease": "scope__prefix__site",
@@ -158,6 +161,10 @@ SITE_ROLE_EXCLUDED: frozenset[str] = frozenset({
     "portutilizationrule",
     "zabbixhostlink",
     "zabbixchange",
+    # PRTG rows stay out of the site roles until the device page shows them.
+    "prtgdevicelink",
+    "prtgsensor",
+    "prtgchange",
     "dhcpscope",
     "dhcpreservation",
     "dhcplease",
@@ -188,6 +195,7 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "virtplacementrule": "integration config; the site is where it places VMs",
     "zabbixadoptionrule": "integration config; the site is where it adopts hosts",
     "zabbixconnection": "integration config; adopt_site is a default",
+    "prtgadoptionrule": "integration config; the site is where it adopts devices",
 }
 
 # Compliance triage (``compliancetriage``) is tenant-wide and in neither map:

@@ -4414,6 +4414,10 @@ class DeviceViewSet(
             qs = software_target.apply_filter(qs, self.request)
             # ?software_version= / ?software_version_source= (#451).
             qs = software_versions.apply_list_filters(qs, self.request)
+            # ?prtg=linked|unlinked|up|degraded|down|unknown - the PRTG roll-up.
+            from prtg.filters import apply_device_filter as prtg_filter
+
+            qs = prtg_filter(qs, self.request)
             contract = _uuid_param(self.request.query_params, "support_contract")
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)

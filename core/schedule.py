@@ -124,6 +124,12 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Enqueue due Zabbix inventory, provisioning and host-status syncs",
     ),
     ScheduledTask(
+        unit="danbyte-extmon-sync",
+        commands=("extmon_sync",),
+        every=MINUTE,
+        label="Enqueue due external monitoring passes (PRTG status reads)",
+    ),
+    ScheduledTask(
         unit="danbyte-oxidized-sync",
         commands=("oxidized_sync",),
         every=MINUTE,

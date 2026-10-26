@@ -2,9 +2,12 @@
 
 The codes are the fixed list PRTG returns as ``status_raw`` in ``table.json``.
 The default state is what a code means before an operator edits anything;
-the per-connection map that edits it comes with status reading.
+each connection's ``state_map`` edits the six codes that carry a verdict, on
+the shared :class:`~monitoring.external.state_map.StateMap`.
 """
 from __future__ import annotations
+
+from monitoring.external.state_map import StateMap
 
 NONE = 0
 UNKNOWN = 1
@@ -70,6 +73,63 @@ def label(code) -> str:
         return LABELS.get(int(code), f"Status {code}")
     except (TypeError, ValueError):
         return "Unknown"
+
+
+# ── the per-connection map ──────────────────────────────────────────────────
+
+#: Every code: the editable ones first, in the order the map editor lists
+#: them, then the fixed ones.
+SOURCE_VALUES = tuple(
+    (code, LABELS[code])
+    for code in (UP, WARNING, UNUSUAL, DOWN, DOWN_PARTIAL, DOWN_ACKNOWLEDGED,
+                 PAUSED_USER, PAUSED_DEPENDENCY, PAUSED_SCHEDULE, PAUSED_UNTIL,
+                 NOT_LICENSED, NO_PROBE, NONE, UNKNOWN, SCANNING)
+)
+
+#: PRTG's vocabulary on the shared map. The six codes in ``MAPPABLE`` are the
+#: operator's to place; paused, unmeasured, unlicensed and probe-less sensors
+#: are fixed to unknown, because PRTG not measuring something is never a
+#: verdict about it.
+STATE_MAP = StateMap(
+    source_values=SOURCE_VALUES,
+    defaults={str(code): state for code, state in DEFAULT_STATE.items()},
+    mappable=("up", "degraded", "down"),
+    fixed={str(code): "unknown" for code in LABELS if code not in MAPPABLE},
+    fallback="unknown",
+)
+
+
+def clean_map(raw) -> dict:
+    """A stored map, completed from the defaults; fixed codes stay unknown."""
+    return STATE_MAP.clean(raw)
+
+
+def _code(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def map_code(code, mapping) -> str:
+    """The Danbyte state one status code means under ``mapping``."""
+    key = _code(code)
+    return "unknown" if key is None else mapping.get(str(key), "unknown")
+
+
+def rollup(codes, mapping) -> str:
+    """A device's state from its sensors' codes: worst wins.
+
+    Paused sensors are left out - pausing is somebody's decision, not a
+    result - and a device whose sensors are all paused, or that has none, is
+    unknown. ``unknown`` ranks below ``up``, so a sensor beyond the licence
+    limit beside a healthy one leaves the device up, and a device with only
+    unlicensed sensors is unknown, never down.
+    """
+    states = [map_code(c, mapping) for c in codes if _code(c) not in PAUSED]
+    if not states:
+        return "unknown"
+    return max(states, key=lambda s: STATE_MAP.order.get(s, -1))
 
 
 def default_state(code) -> str:

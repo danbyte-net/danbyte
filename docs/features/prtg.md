@@ -4,11 +4,11 @@ icon: lucide/activity
 
 # PRTG monitoring
 
-Danbyte can connect to an existing PRTG Network Monitor core server. Today
-that means a connection and a test of it: Danbyte reaches PRTG, reads its
-version, counts the probes and sensors the API key can see, and checks whether
-PRTG's API v2 answers. Nothing is read on a schedule yet, and nothing is
-written to PRTG.
+Danbyte can read an existing PRTG Network Monitor core server. It pairs PRTG
+devices with Danbyte devices, reads every linked device's sensors on a
+schedule, rolls them up into one Danbyte state per device, and answers `prtg`
+checks from that read, so PRTG's verdict reaches Danbyte's status, alerts and
+SLA. Nothing is written to PRTG.
 
 !!! note "Danbyte does not become a PRTG frontend"
     No graphs, no history browser, no channel limits. What PRTG monitors
@@ -46,7 +46,7 @@ verification off.
 
 | Field | Meaning |
 |---|---|
-| Version | The PRTG version from `getstatus.json`. Below **24.1** the connection is marked unsupported. |
+| Version | The PRTG version from `getstatus.htm`. Below **24.1** the connection is marked unsupported. |
 | Probes, sensors | How many the API key can see, from `table.json`. A key scoped to nothing shows zero. |
 | API v2 | Whether PRTG's API v2 answers on the same host (port 1616 for HTTPS, 1615 for HTTP). A refused key still counts as answering. |
 | Last error | PRTG's own sentence when it refused the call, or why it could not be reached. |
@@ -56,8 +56,14 @@ connection until the next test passes.
 
 ## How Danbyte talks to PRTG
 
-The classic HTTP API, with the API key in an `Authorization: Bearer` header,
-which PRTG prefers over query parameters. Tables are read in pages of 5,000
+The classic HTTP API, with the API key as the `apitoken` query parameter. That
+is the only way the classic API takes a key: PRTG 26.3 answers an
+`Authorization: Bearer` header there with 401 *Unsupported authorization
+scheme.* API v2 is the other way round and takes the key only as a Bearer
+header. Because the classic key travels in the URL, Danbyte never puts a
+request URL in an error or a log line; the key is redacted from anything it
+reports. PRTG's own web server logs the URL, as it does for every classic API
+client. Tables are read in pages of 5,000
 rows with a short pause between pages, since the same web server serves the
 PRTG interface. Status codes 0-14 are read from `status_raw`; *Not Licensed*
 (11, the state of sensors beyond a licence's limit) and every paused state read
@@ -65,23 +71,168 @@ as **unknown**, never down.
 
 The freeware edition (100 sensors) has the same API as the commercial ones.
 
+Probe counts use `table.json?content=probenode&filter_type=probenode`.
+Unfiltered, that content lists other objects too: a fresh 26.3 install
+answers 188 rows.
+
+## The status read
+
+Every **Read every** interval (1 minute to 1 hour, 2 minutes by default) the
+shared external-monitoring beat (`manage.py extmon_sync`, run each minute by
+`danbyte-extmon-sync.timer`) queues a read of each enabled connection that is
+due. **Read now** on the PRTG page runs the same read straight away. One read
+is two calls: the devices table and the sensors table. Then Danbyte:
+
+1. Matches every device of the tenant to a PRTG device and links it, or puts
+   it in the review queue (see below).
+2. Writes each linked device's sensors as rows: name, type, PRTG status, the
+   Danbyte state it maps to, the message, tags and the last check. A sensor
+   PRTG no longer has is deleted.
+3. Rolls each linked device up into one state, with counts per state.
+
+The job checks again when it runs that the connection still exists, its
+tenant is active and the integration is on. A read that fails writes nothing
+and keeps PRTG's sentence as the connection's **Last error**. The attempt is
+stamped anyway, so a broken connection waits for its interval instead of being
+queued every minute. A per-connection lock keeps two reads from running at
+once.
+
+## Matching PRTG devices to Danbyte devices
+
+Tried in order, and the first level with exactly one answer wins:
+
+| Level | A PRTG device matches when |
+|---|---|
+| Link | It is the PRTG device the stored link names. Survives renames and re-addressing on both sides. |
+| Tag | It carries the tag `danbyte-<device uuid>`. Add it in PRTG to pin a pairing by hand. |
+| Address | Its *IPv4 address/DNS name* field is one of the addresses assigned to the device in this tenant, primary or not. |
+| DNS name | That field is the DNS name of one of those addresses. |
+| Name | Its name equals the device's name, ignoring case. |
+
+**Two candidates are no match.** Two PRTG devices at one level, one PRTG
+device matched by two Danbyte devices, or an address that several Danbyte
+objects hold all become a **Needs a decision** row in the review queue, with
+the reason. A common case is a VM and the device recorded on the same address:
+PRTG's `host` does not say which of the two it watches. Fix the data (a tag
+in PRTG is quickest) and the next read links it.
+
+**Link devices** on the connection decides what a clear match does:
+*Automatically* links it at once (the default; a link is Danbyte bookkeeping
+and writes nothing to PRTG), *After review* puts a **Link in Danbyte** row in
+the queue first. The **Review queue** tab lists both kinds, with *Link*,
+*Dismiss*, *Restore* and *Link all*. A proposal that is no longer true goes
+away on the next read. The **Links** tab lists every pairing with its roll-up;
+*Unlink* removes one and the next read matches the device from scratch.
+
+Matching covers every device of the tenant, not only those with a check: a
+device PRTG already monitors is that device whatever Danbyte checks exist.
+
+## Status mapping
+
+Each PRTG status code maps onto a Danbyte state. Six carry a verdict and can be
+changed on the connection under **Status mapping**:
+
+| PRTG status | Default |
+|---|---|
+| Up | up |
+| Warning | degraded |
+| Unusual | degraded |
+| Down | down |
+| Down (Partial) | degraded |
+| Down (Acknowledged) | down |
+
+The rest are always **unknown**, because PRTG is not measuring the sensor:
+Paused (by user, dependency, schedule or until), Not Licensed (a sensor beyond
+the licence limit, such as the 101st on freeware), No Probe, None, Unknown and
+Scanning.
+
+A device's state is the **worst** over its active sensors. Paused sensors are
+left out, and a device with no other sensors is unknown. Unknown ranks below
+up, so one unlicensed sensor beside a healthy one leaves the device up. A
+device with only unlicensed sensors is unknown, never down. Changing the map
+re-rolls the stored states at once.
+
+## The `prtg` check
+
+To put PRTG's verdict into Danbyte's status, alerts and SLA, use the check kind
+**PRTG** like any other: a check template, a policy over a site or role, or an
+assignment. Create a monitoring engine of kind **PRTG** (Governance →
+Monitoring engines), add it under **Engines** on the connection, and bind the
+scope to it. The engine's driver answers every due `prtg` check from the last
+read, without calling PRTG per check. Hysteresis, alert rules, silences,
+flapping, escalation, notifications and SLA behave as for Danbyte's own
+checks.
+
+By default a check is the device's roll-up. Two optional template parameters
+narrow it:
+
+| Parameter | Narrows to |
+|---|---|
+| `sensor_type` | Sensors of that PRTG type, by raw name (`ping`, `paessler.icmp.ping_sensor.48`) or display name (`Ping v2`). |
+| `sensor_tag` | Sensors carrying that tag (`pingsensor`). |
+
+The check reads **unknown**, never down, with the reason, when the address
+has no linked PRTG device, two PRTG devices share it, the PRTG device is
+paused, no sensor fits the narrowing, the last read is older than three
+intervals, or the last read failed. The check's detail lists the down and
+degraded sensors with PRTG's message, and the monitoring hover links to the
+device in PRTG.
+
+## Push notifications
+
+Polling is the truth. PRTG can also say "look now": its **Execute HTTP
+Action** notification makes Danbyte read that one device again within seconds
+and makes the device's `prtg` checks due.
+
+1. On the connection, tick **Accept push notifications** and save. On the
+   Overview tab, **Make token** shows the URL **once**. Only a hash of the
+   token is stored; **New token** replaces it and the old URL stops working.
+2. In PRTG, *Setup → Account Settings → Notification Templates → Add*:
+   * **Execute HTTP Action** on.
+   * **URL**: the URL shown, `https://<danbyte>/api/prtg/hook/<token>/`.
+   * **HTTP Method**: POST.
+   * **Payload**: `sensorid=%sensorid&deviceid=%deviceid&laststatus=%laststatus`
+3. Trigger it on state change at the root group, so every sensor inherits it.
+
+Only the ids are read; `laststatus` and everything else is ignored, and the
+device is read from PRTG through the API key. A forged call can at most make
+Danbyte ask PRTG sooner. An unknown token, push switched off, a disabled
+connection, an inactive tenant or the integration off all answer 404. Each
+connection takes 60 notifications a minute (429 beyond), and a second
+notification for the same device within 5 seconds rides the first.
+
+## The device list
+
+Devices get a **PRTG** column, hidden until ticked in the Columns menu: the
+device's roll-up as its state pill, red and amber counts of down and warning
+sensors, and a link to the device in PRTG. `?prtg=` filters the device list
+API: `linked`, `unlinked`, or a state (`up`, `degraded`, `down`, `unknown`).
+
 ## API
 
 All under `/api/prtg/`, scoped to the active tenant, 404 while the integration
-is off, and gated on the *PRTG connections* permission (group *Monitoring*).
+is off, and gated on the PRTG permissions (group *Monitoring*).
 
 | Endpoint | Purpose |
 |---|---|
-| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. |
+| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. `engines` are the tenant's PRTG engines only. `state_map` takes the six editable codes onto `up`, `degraded` or `down`. A fixed code may only be `unknown`, and the map is stored complete. `link_mode` is `auto` or `review`; `push_enabled`; `hook_token_set` (read-only); `last_status_at` and `last_status_summary` (read-only). |
+| `connections/defaults/` | Every status code with its label, whether it is fixed and why, the default map, and the states (named by the tenant) a code may map onto. |
 | `connections/<id>/test/` | `POST`. Returns `ok`, `detail`, `version`, `probes`, `sensors`, `v2_available` and `v2_detail`; 502 when it fails. Records the version, API v2 answer and error on the connection. |
+| `connections/<id>/status-now/` | `POST`. Runs a status read now; returns its counts (`linked`, `proposed`, `ambiguous`, `unmatched`, `sensors`, `deleted`, `gone`), 502 with PRTG's sentence when it fails. |
+| `connections/<id>/rotate-hook-token/` | `POST`. A new push token: `{token, path}`, shown this once. |
+| `links/` | List (`?connection=`, `?device=`), retrieve, delete (unlink). Each link has its PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`. |
+| `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision*). Kinds: `link_device`, `ambiguous`. |
+| `adoption-rules/` | CRUD for where adopted PRTG devices will land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight`, `enabled`. Adoption reads them once it ships. |
+| `device-status/?device=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device. |
+| `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
+| `hook/<token>/` | `POST`, no session: the push receiver above. 202 when accepted. |
 
 ## Coming
 
-Reading sensor states into Danbyte's checks and alerts, the sensors of a
-linked device on its page, acknowledgements and maintenance windows in both
-directions, adopting PRTG devices, and keeping PRTG in step with Danbyte's
-inventory. The connection's provisioning scope already defaults to
-*every device the policies match* for that last part.
+The sensors of a linked device on its page, acknowledgements and maintenance
+windows in both directions, adopting PRTG devices, and keeping PRTG in step
+with Danbyte's inventory. The connection's provisioning scope already defaults
+to *every device the policies match* for that last part.
 
 ---
 

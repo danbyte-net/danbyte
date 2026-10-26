@@ -72,13 +72,25 @@ Its models subclass the abstract bases. Its change viewset mixes in
 `apply_change`, `apply_pending` and `remote_errors`. Its matching declares a
 `Cascade` with its levels. Its state vocabulary is a `StateMap`.
 
+| Piece | Zabbix | PRTG |
+|---|---|---|
+| Engine kind and check kind | `zabbix`, `ZabbixDriver`: asks Zabbix per claim (`host.get` + `problem.get`) | `prtg`, `PrtgDriver`: answers from the sensor rows the last status read wrote, no call per claim |
+| State vocabulary | `STATE_MAP` over severities 0-5, all editable | `prtg.status.STATE_MAP` over status codes 0-14: six editable, paused, unknown, no probe and not licensed fixed to unknown; `rollup()` leaves paused sensors out |
+| Matching | `CASCADE`: address → serial → name | `prtg.matching.CASCADE`: tag `danbyte-<uuid>` → address → DNS name → name; an address several Danbyte objects hold is an ambiguity |
+| Link, change, rule tables | `ZabbixHostLink`, `ZabbixChange`, `ZabbixAdoptionRule` | `PrtgDeviceLink`, `PrtgChange` (`link_device`, `ambiguous`), `PrtgAdoptionRule` |
+| Change queue | `ZabbixChangeViewSet` | `PrtgChangeViewSet`, same URL shape |
+| Beat | `register_beat("zabbix", …, own_timer=True)`, `danbyte-zabbix-sync.timer` | `register_beat("prtg", …)`, run by `extmon_sync` |
+| Ack writer, window listener, observation source | Registered | Not yet |
+
 ## The beat
 
 `manage.py extmon_sync` runs every beat entry that has no timer of its own.
 Zabbix registers with `own_timer=True` and is still driven by
 `danbyte-zabbix-sync.timer` running `zabbix_sync`, so `extmon_sync` never runs
-it twice. `extmon_sync` has no timer yet. One is added when the first system
-that depends on it ships.
+it twice. `danbyte-extmon-sync.timer` runs `extmon_sync` every minute (in
+`core/schedule.py`, the Makefile's `TIMERS` and the Jobs page as *External
+monitoring sync*); PRTG's status reads are its first entry. A container
+install runs it through `run_scheduler` like every other row of the schedule.
 
 ## Where Zabbix sits
 
