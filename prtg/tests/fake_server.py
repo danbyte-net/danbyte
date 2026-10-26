@@ -137,6 +137,12 @@ class FakePrtg:
             objid: load_fixture(f"historicdata_{objid}.xml", raw=True)
             for objid in (2089, 2091)
         }
+        #: device objid -> the recorded ``content=sysinfo`` body (PRTG 26.3
+        #: repeats an empty key per column, so it is served as recorded).
+        self.sysinfo = {
+            objid: load_fixture(f"table_sysinfo_{objid}.json", raw=True)
+            for objid in (40, 2081)
+        }
         #: content -> body served verbatim instead of the table, for quirks.
         self.raw_tables: dict[str, str] = {}
         self.properties: dict[tuple[int, str], str] = {}
@@ -159,8 +165,11 @@ class FakePrtg:
     def sensor(self, objid: int) -> dict | None:
         return next((r for r in self.tables["sensors"] if r["objid"] == objid), None)
 
+    def device(self, objid: int) -> dict | None:
+        return next((r for r in self.tables["devices"] if r["objid"] == objid), None)
+
     def set_status(self, objid: int, code: int, message: str | None = None):
-        row = self.sensor(objid)
+        row = self.sensor(objid) or self.device(objid)
         row["status_raw"] = code
         row["status"] = st.label(code)
         if message is not None:
@@ -271,6 +280,11 @@ class _Handler(BaseHTTPRequestHandler):
         content = q.get("content", "")
         if content in self.fake.raw_tables:
             return self._send(200, self.fake.raw_tables[content], "application/json")
+        if content == "sysinfo":
+            body = self.fake.sysinfo.get(int(q.get("id", 0) or 0))
+            if body is None:
+                body = json.dumps({"prtg-version": VERSION, "treesize": 0, "sysinfo": []})
+            return self._send(200, body, "application/json")
         if content == "channels":
             rows = self.fake.channels.get(int(q.get("id", 0) or 0))
             if rows is None:
@@ -308,12 +322,24 @@ class _Handler(BaseHTTPRequestHandler):
         if name == "setobjectproperty.htm":
             self.fake.properties[(objid, q.get("name", ""))] = q.get("value", "")
             return self._send(200, "<html><body>OK</body></html>")
-        if row is None:
+        device = self.fake.device(objid) if row is None else None
+        if row is None and device is None:
             return self._error(400, "Sorry, the selected object cannot be used here.")
+        if device is not None:
+            return self._device_write(name, objid, q)
         if name == "acknowledgealarm.htm":
-            if row["status_raw"] not in (st.DOWN, st.DOWN_PARTIAL):
-                return self._error(400, "This object cannot be acknowledged.")
-            self.fake.set_status(objid, st.DOWN_ACKNOWLEDGED, q.get("ackmsg", ""))
+            # As PRTG 26.3: a redirect to the alarms list either way; only a
+            # sensor in a Down state changes.
+            if row["status_raw"] in (st.DOWN, st.DOWN_PARTIAL):
+                msg = q.get("ackmsg", "")
+                self.fake.set_status(
+                    objid, st.DOWN_ACKNOWLEDGED,
+                    f"{msg} (Acknowledged by PRTG System Administrator on 10/26/2026 "
+                    f"at 9:51:27 AM [GMT+0100]): {row.get('message_raw', '')}",
+                )
+            return self._send(302, "", headers={
+                "Location": "/alarms.htm?filter_status=5&filter_status=13"
+            })
         elif name == "pause.htm":
             self.fake.set_status(
                 objid, st.UP if q.get("action") == "1" else st.PAUSED_USER
@@ -324,4 +350,23 @@ class _Handler(BaseHTTPRequestHandler):
             if q.get("approve") != "1":
                 return self._error(400, "Deleting needs approve=1.")
             self.fake.tables["sensors"].remove(row)
+        return self._send(200, "<html><body>OK</body></html>")
+
+    def _device_write(self, name: str, objid: int, q: dict):
+        """Pausing a device pauses its sensors ("paused by parent"), and the
+        pause message leads the device's message, as PRTG 26.3 does it."""
+        sensors = [r for r in self.fake.tables["sensors"] if r.get("parentid") == objid]
+        if name in ("pause.htm", "pauseobjectfor.htm") and q.get("action") != "1":
+            code = st.PAUSED_UNTIL if name == "pauseobjectfor.htm" else st.PAUSED_USER
+            msg = q.get("pausemsg", "")
+            self.fake.set_status(objid, code, f"{msg} (Paused by PRTG System Administrator)")
+            for s in sensors:
+                s.setdefault("_before", s["status_raw"])
+                self.fake.set_status(s["objid"], st.PAUSED_USER, "Paused by parent")
+        elif name == "pause.htm":
+            self.fake.set_status(objid, st.UP, "OK")
+            for s in sensors:
+                self.fake.set_status(s["objid"], s.pop("_before", st.UP), "OK")
+        elif name == "acknowledgealarm.htm":
+            return self._send(302, "", headers={"Location": "/alarms.htm"})
         return self._send(200, "<html><body>OK</body></html>")

@@ -310,12 +310,13 @@ class WriteTests(_Live):
         self.client_for().acknowledge(2093, "[Danbyte] on it")
         row = self.fake.sensor(2093)
         self.assertEqual(row["status_raw"], st.DOWN_ACKNOWLEDGED)
-        self.assertEqual(row["message_raw"], "[Danbyte] on it")
+        # PRTG 26.3 puts the note first: "<note> (Acknowledged by …): <message>".
+        self.assertTrue(row["message_raw"].startswith("[Danbyte] on it (Acknowledged by "))
 
-    def test_acknowledging_an_up_sensor_reports_prtgs_refusal(self):
-        with self.assertRaises(PrtgError) as ctx:
-            self.client_for().acknowledge(2089, "x")
-        self.assertIn("cannot be acknowledged", str(ctx.exception))
+    def test_acknowledging_an_up_sensor_changes_nothing(self):
+        # PRTG 26.3 answers with the same redirect and leaves it as it is.
+        self.client_for().acknowledge(2089, "x")
+        self.assertEqual(self.fake.sensor(2089)["status_raw"], st.UP)
 
     def test_pause_resume_and_pause_for(self):
         client = self.client_for()

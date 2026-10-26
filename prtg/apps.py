@@ -21,6 +21,20 @@ class PrtgConfig(AppConfig):
             return enqueue_due_reads(now)
 
         register_beat("prtg", "PRTG status", _enqueue_due)
+
+        # Two-way: acknowledgements and windows flow back to PRTG. Monitoring
+        # owns the signal handlers; these only queue jobs, which re-check
+        # every switch at run time.
+        from monitoring.external.hooks import register_ack_writer, register_window_listener
+        from monitoring.observations import register_observation_source
+
+        from . import acks, facts, maintenance
+
+        register_ack_writer(KIND, acks.write_back, system=acks.SYSTEM)
+        register_window_listener("prtg", maintenance.window_changed)
+        # What PRTG's system information says reaches the drift inbox the
+        # SNMP poller fills, below the poller itself.
+        register_observation_source("prtg", "PRTG", facts.observed_state)
         register_monitoring_engine(
             KIND,
             "PRTG",

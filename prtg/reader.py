@@ -199,7 +199,10 @@ def link_pass(conn: PrtgConnection, devices: list, now) -> dict:
                  "replaces": link.objid if link is not None else ""},
                 **parent, kind=PrtgChange.LINK, key=remote["objid"],
             )
-        PrtgChange.drop_stale(conn, fresh)
+        # Adoption proposals have a pass of their own (prtg.adopt).
+        PrtgChange.pending(conn).exclude(kind=PrtgChange.ADOPT).exclude(
+            id__in=fresh
+        ).delete()
     return counts
 
 
@@ -437,7 +440,23 @@ def read_status(conn: PrtgConnection, now=None, *, client: PrtgClient | None = N
             link.save(update_fields=["status_raw", "state", "sensor_counts", "status_read_at"])
     counts["gone"] = sum(1 for lk in links if lk.objid not in present)
     counts["skipped_rows"] = devices.skipped + sensors.skipped
+    counts["adopt"] = adoption_pass(conn, devices.rows)
+    from .acks import read_acks
+
+    counts["acknowledged"] = read_acks(conn)
     return counts
+
+
+def adoption_pass(conn, devices) -> int:
+    """Propose the PRTG devices nothing answers to, or clear the proposals
+    when adoption is off."""
+    from .adopt import drop_stale, plan_adoption
+
+    fresh: set = set()
+    with transaction.atomic():
+        n = plan_adoption(conn, devices, fresh) if conn.adopt_devices else 0
+        drop_stale(conn, fresh)
+    return n
 
 
 def _stamp(conn, now, *, error: str = "", summary: dict | None = None) -> None:
@@ -509,6 +528,11 @@ def refresh_device(connection_id: str, sensor_objid=None, device_objid=None) -> 
         return {"error": str(exc)[:300]}
     counts = write_sensors(conn, [link], rows, now)
     _hurry_checks(conn, link, now)
+    # An acknowledgement made in PRTG is a state change too: with push on it
+    # reaches the Danbyte alert in seconds rather than at the next read.
+    from .acks import read_acks
+
+    counts["acknowledged"] = read_acks(conn, [link])
     return counts
 
 

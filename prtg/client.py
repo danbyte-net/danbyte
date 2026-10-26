@@ -65,6 +65,11 @@ DEVICE_COLUMNS = (
     "parentid", "active",
 )
 
+#: ``content=sysinfo&category=system``, in the order rows are read back.
+SYSINFO_COLUMNS = (
+    "_key", "_value", "_id", "_adapter", "_receivetime", "_displayname",
+)
+
 OLE_EPOCH = datetime(1899, 12, 30, tzinfo=UTC)
 
 
@@ -99,6 +104,17 @@ def loads_lenient(text: str):
     except ValueError:
         fixed = _ESCAPE.sub(lambda m: m.group(0) if m.group(1) else "\\\\", text)
         return json.loads(fixed, strict=False)
+
+
+def _loads_pairs(text: str):
+    """:func:`loads_lenient`, keeping every object as its list of pairs -
+    the only way to read a JSON object whose keys repeat."""
+    hook = {"object_pairs_hook": list}
+    try:
+        return json.loads(text, strict=False, **hook)
+    except ValueError:
+        fixed = _ESCAPE.sub(lambda m: m.group(0) if m.group(1) else "\\\\", text)
+        return json.loads(fixed, strict=False, **hook)
 
 
 def unquote_raw(value):
@@ -530,6 +546,49 @@ class PrtgClient:
         ``getstatus.htm`` - what ``historicdata`` windows are written in.
         None when the format is not one PRTG uses."""
         return parse_clock(self.status().get("Clock"))
+
+    def sysinfo(self, objid: int, category: str = "system") -> list[dict]:
+        """``table.json?content=sysinfo``: the system information PRTG holds
+        for a device - ``[{"key", "value", "id", "adapter", "displayname",
+        "receivetime"}]``, empty when PRTG has none (PRTG reads it over WMI or
+        SNMP, about once a day, and only where it can).
+
+        PRTG 26.3 names every ``_``-prefixed sysinfo column ``""`` in its
+        JSON - each row is the same empty key repeated, display then
+        ``_raw`` per column - so the row is read by position, in the order
+        the columns were asked for.
+        """
+        resp = self._check(self._request("/api/table.json", {
+            "content": "sysinfo", "id": int(objid), "category": category,
+            "columns": ",".join(SYSINFO_COLUMNS),
+        }))
+        try:
+            payload = _loads_pairs(resp.text)
+        except ValueError as exc:
+            raise PrtgError("PRTG returned system information in an unexpected shape.") from exc
+        rows = dict(payload).get("sysinfo") if isinstance(payload, list) else None
+        if not isinstance(rows, list):
+            raise PrtgError("PRTG returned system information in an unexpected shape.")
+        names = [c.lstrip("_") for c in SYSINFO_COLUMNS]
+        out = []
+        for row in rows:
+            if not isinstance(row, list):
+                continue
+            named = {k.lstrip("_").removesuffix("_raw"): v for k, v in row if k.strip("_")}
+            if named and set(names) & set(named):
+                values = [named.get(n) for n in names]
+            else:
+                # Display then raw, per column: the raw value is the second.
+                values = [v for i, (_k, v) in enumerate(row) if i % 2 == 1]
+            # A short row leaves the missing columns blank.
+            values = (values + [None] * len(names))[: len(names)]
+            entry = {
+                n: clean_text(v) if v is not None else ""
+                for n, v in zip(names, values, strict=True)
+            }
+            if entry.get("key"):
+                out.append(entry)
+        return out
 
     def get_property(self, objid: int, name: str) -> str:
         """``getobjectproperty.htm`` - one property's value, as text."""
