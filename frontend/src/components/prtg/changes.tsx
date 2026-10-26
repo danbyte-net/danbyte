@@ -19,12 +19,19 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { PrtgParentLink, prtgParentName } from "./parent-link"
 
 /**
- * The PRTG review queue: link proposals (review mode) and the ambiguities a
- * read could not settle. Same actions and URL shape as the Zabbix queue;
- * mirrored rather than shared because the Zabbix rows describe writes into
- * Zabbix and these describe pairings in Danbyte.
+ * The PRTG review queue: link proposals (review mode), PRTG devices offered
+ * for adoption, and the ambiguities a read could not settle. Same actions and
+ * URL shape as the Zabbix queue; every row here changes Danbyte, not PRTG.
  */
-export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
+export function PrtgChanges({
+  connection,
+  onEditConnection,
+}: {
+  connection: PrtgConnection
+  /** Opens the connection form, where an adoption waiting on a default is
+   * unblocked. */
+  onEditConnection?: () => void
+}) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canApply = canDo("prtgchange", "change")
@@ -67,7 +74,7 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
         { method: "POST", body: JSON.stringify({ connection: connection.id }) }
       ),
     onSuccess: (r) => {
-      toast.success(`Linked ${r.applied}.`)
+      toast.success(`Applied ${r.applied}.`)
       for (const f of r.failed) toast.error(f.detail)
       refresh()
     },
@@ -94,12 +101,19 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
         id: "device",
         accessorFn: (r) => prtgParentName(r),
         header: ({ column }) => <SortHeader column={column} label="Device" />,
-        cell: ({ row }) => (
-          <PrtgParentLink
-            device={row.original.device}
-            virtual_machine={row.original.virtual_machine}
-          />
-        ),
+        cell: ({ row }) =>
+          row.original.kind === "adopt" ? (
+            // Not a device yet: the PRTG device's name, which applying makes
+            // one.
+            <span className="font-mono text-xs">
+              {String(row.original.detail.name ?? "")}
+            </span>
+          ) : (
+            <PrtgParentLink
+              device={row.original.device}
+              virtual_machine={row.original.virtual_machine}
+            />
+          ),
       },
       {
         id: "detail",
@@ -126,6 +140,8 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
                       {busy ? "Restoring…" : "Restore"}
                     </Button>
                   )
+                const adopt = c.kind === "adopt"
+                const applying = busy && act.variables?.verb === "apply"
                 return (
                   <span className="inline-flex items-center gap-2">
                     {c.applicable && (
@@ -135,9 +151,24 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
                         disabled={act.isPending}
                         onClick={() => act.mutate({ id: c.id, verb: "apply" })}
                       >
-                        {busy && act.variables?.verb === "apply"
-                          ? "Linking…"
-                          : "Link"}
+                        {adopt
+                          ? applying
+                            ? "Adopting…"
+                            : "Adopt"
+                          : applying
+                            ? "Linking…"
+                            : "Link"}
+                      </Button>
+                    )}
+                    {adopt && !c.applicable && onEditConnection && (
+                      // Waiting on the connection's defaults: the button is
+                      // the decision, not a label saying one is needed.
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onEditConnection}
+                      >
+                        Set defaults
                       </Button>
                     )}
                     <Button
@@ -159,7 +190,7 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
     ],
     // The cells close over the mutation; its pending id is what changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canApply, view, pendingId]
+    [canApply, view, pendingId, onEditConnection]
   )
 
   return (
@@ -183,9 +214,7 @@ export function PrtgChanges({ connection }: { connection: PrtgConnection }) {
               disabled={applyAll.isPending}
               onClick={() => applyAll.mutate()}
             >
-              {applyAll.isPending
-                ? "Linking…"
-                : `Link ${applicable.length} devices`}
+              {applyAll.isPending ? "Applying…" : `Apply ${applicable.length}`}
             </Button>
           )}
         </>
@@ -227,6 +256,7 @@ function ChangeDetail({ change }: { change: PrtgChange }) {
         {String(d.reason ?? "")}
       </span>
     )
+  if (change.kind === "adopt") return <AdoptDetail detail={d} />
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
       <span className="font-mono text-xs">{String(d.name ?? d.objid)}</span>
@@ -241,6 +271,36 @@ function ChangeDetail({ change }: { change: PrtgChange }) {
           replaces {String(d.replaces)}
         </span>
       ) : null}
+    </span>
+  )
+}
+
+/** What adopting makes: the device, where, and on which address. */
+export function AdoptDetail({
+  detail: d,
+}: {
+  detail: Record<string, unknown>
+}) {
+  const name = String(d.name ?? d.host ?? "")
+  if (d.reason)
+    return (
+      <span className="text-[13px] text-muted-foreground">
+        <span className="font-mono text-xs">{name}</span> - {String(d.reason)}
+      </span>
+    )
+  const parts: string[] = []
+  if (d.device_type) parts.push(`a ${String(d.device_type)}`)
+  if (d.role) parts.push(String(d.role))
+  if (d.site)
+    parts.push(
+      `at ${String(d.site)}${d.rule ? ` (rule ${String(d.rule)})` : ""}`
+    )
+  if (d.address) parts.push(`on ${String(d.address)}`)
+  return (
+    <span className="text-[13px] text-muted-foreground">
+      Creates the device <span className="font-mono text-xs">{name}</span> in
+      Danbyte{parts.length ? ` - ${parts.join(", ")}` : ""}.
+      {d.note ? ` ${String(d.note)}` : ""}
     </span>
   )
 }

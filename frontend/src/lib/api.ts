@@ -13156,6 +13156,24 @@ export interface PrtgConnection {
   /** Whether a push token exists. The token is shown once, by
    * rotate-hook-token. */
   hook_token_set: boolean
+  /** Acknowledgements both ways: Danbyte → PRTG and PRTG → Danbyte. */
+  write_acknowledgements: boolean
+  /** Pause linked PRTG devices for Danbyte's maintenance windows. */
+  sync_maintenance: boolean
+  last_maintenance_sync_at: string | null
+  /** Propose a Danbyte device for every PRTG device nothing answers to. */
+  adopt_devices: boolean
+  adopt_site: string | null
+  adopt_role: string | null
+  adopt_device_type: string | null
+  adopt_names: {
+    site: string | null
+    role: string | null
+    device_type: string | null
+  }
+  /** Read PRTG's system information into the drift inbox. */
+  read_inventory: boolean
+  last_inventory_at: string | null
   version: string
   supported: boolean
   /** Whether API v2 answered the last test; null until one has run. */
@@ -13201,11 +13219,38 @@ export interface PrtgDeviceLink {
   last_seen_at: string | null
   /** The device's page in PRTG. */
   url: string
+  /** Set while Danbyte holds the PRTG device paused for a maintenance
+   * window: when it paused it, until when, and for which windows. */
+  maintenance_paused_at: string | null
+  maintenance_paused_until: string | null
+  maintenance_events: { id: string; name: string }[]
+  maintenance_note: string
+}
+
+/** Where an adopted PRTG device lands, by what it looks like. */
+export interface PrtgAdoptionRule {
+  id: string
+  connection: string
+  scope: "name" | "group" | "probe" | "ip"
+  scope_display: string
+  /** Glob by default, `regex:` for a regular expression, a CIDR for an
+   * address rule. */
+  pattern: string
+  site: string
+  site_name: string
+  role: string | null
+  role_name: string
+  device_type: string | null
+  device_type_name: string
+  weight: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface PrtgChange {
   id: string
-  kind: "link_device" | "ambiguous"
+  kind: "link_device" | "adopt" | "ambiguous"
   kind_display: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null

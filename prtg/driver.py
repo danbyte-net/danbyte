@@ -130,6 +130,19 @@ def answer(conn, states, now=None) -> tuple[dict, bool]:
     return out, True
 
 
+def narrow(sensors, params) -> list:
+    """The sensors a check with ``params`` speaks for: all of them, or those
+    of one type (raw or display name) and/or carrying one tag."""
+    params = params or {}
+    kind = (params.get("sensor_type") or "").strip().lower()
+    tag = (params.get("sensor_tag") or "").strip().lower()
+    if kind:
+        sensors = [x for x in sensors if kind in (x.kind.lower(), x.kind_label.lower())]
+    if tag:
+        sensors = [x for x in sensors if tag in [t.lower() for t in x.tags or ()]]
+    return list(sensors)
+
+
 def outcome_for(conn, link, sensors, mapping, params) -> CheckOutcome:
     """One check's answer: the link's sensors, narrowed by the check's
     params, rolled up worst-wins."""
@@ -144,10 +157,7 @@ def outcome_for(conn, link, sensors, mapping, params) -> CheckOutcome:
 
     kind = (params.get("sensor_type") or "").strip().lower()
     tag = (params.get("sensor_tag") or "").strip().lower()
-    if kind:
-        sensors = [x for x in sensors if kind in (x.kind.lower(), x.kind_label.lower())]
-    if tag:
-        sensors = [x for x in sensors if tag in [t.lower() for t in x.tags or ()]]
+    sensors = narrow(sensors, params)
     if (kind or tag) and not sensors:
         wanted = " and ".join(p for p in (
             f"of type {params.get('sensor_type')}" if kind else "",

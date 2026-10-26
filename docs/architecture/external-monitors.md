@@ -77,10 +77,14 @@ Its models subclass the abstract bases. Its change viewset mixes in
 | Engine kind and check kind | `zabbix`, `ZabbixDriver`: asks Zabbix per claim (`host.get` + `problem.get`) | `prtg`, `PrtgDriver`: answers from the sensor rows the last status read wrote, no call per claim |
 | State vocabulary | `STATE_MAP` over severities 0-5, all editable | `prtg.status.STATE_MAP` over status codes 0-14: six editable, paused, unknown, no probe and not licensed fixed to unknown; `rollup()` leaves paused sensors out |
 | Matching | `CASCADE`: address → serial → name | `prtg.matching.CASCADE`: tag `danbyte-<uuid>` → address → DNS name → name; an address several Danbyte objects hold is an ambiguity |
-| Link, change, rule tables | `ZabbixHostLink`, `ZabbixChange`, `ZabbixAdoptionRule` | `PrtgDeviceLink`, `PrtgChange` (`link_device`, `ambiguous`), `PrtgAdoptionRule` |
+| Link, change, rule tables | `ZabbixHostLink`, `ZabbixChange`, `ZabbixAdoptionRule` | `PrtgDeviceLink`, `PrtgChange` (`link_device`, `adopt`, `ambiguous`), `PrtgAdoptionRule` |
 | Change queue | `ZabbixChangeViewSet` | `PrtgChangeViewSet`, same URL shape |
-| Beat | `register_beat("zabbix", …, own_timer=True)`, `danbyte-zabbix-sync.timer` | `register_beat("prtg", …)`, run by `extmon_sync` |
-| Ack writer, window listener, observation source | Registered | Not yet |
+| Beat | `register_beat("zabbix", …, own_timer=True)`, `danbyte-zabbix-sync.timer` | `register_beat("prtg", …)`, run by `extmon_sync`: status read, maintenance reconcile, inventory read |
+| Ack writer | `zabbix.hooks.write_back`: acknowledges the open problems (`event.acknowledge`), clears them too | `prtg.acks.write_back`: acknowledges the sensors behind the check that are down (`acknowledgealarm.htm`, note behind a `[Danbyte]` marker); PRTG cannot un-acknowledge |
+| Reverse acknowledgement | None | `prtg.acks.read_acks` on every status read and push re-read: `set_acknowledged(..., source="prtg")` when every sensor behind a firing alert is *Down (Acknowledged)* by a person |
+| Window listener | `zabbix.maintenance`: a maintenance period per window over `desired_for_links` | `prtg.maintenance`: pauses each linked device (`pauseobjectfor.htm`) for the union of the windows open on it, from `desired_windows` plus the window's VM impacts; resumes only its own pause |
+| Adoption | `zabbix.adopt`: hosts by address, serial, name; `adopt_host` | `prtg.adopt`: PRTG devices no device or VM answers to; rule (name, group, probe, address) → group named like a site → defaults; `adopt` keyed by object id |
+| Observation source | `zabbix` from `ZabbixHostFacts` (host inventory) | `prtg` from `PrtgHostFacts` (`content=sysinfo`, one row per link) |
 
 ## The beat
 
@@ -89,7 +93,8 @@ Zabbix registers with `own_timer=True` and is still driven by
 `danbyte-zabbix-sync.timer` running `zabbix_sync`, so `extmon_sync` never runs
 it twice. `danbyte-extmon-sync.timer` runs `extmon_sync` every minute (in
 `core/schedule.py`, the Makefile's `TIMERS` and the Jobs page as *External
-monitoring sync*); PRTG's status reads are its first entry. A container
+monitoring sync*); PRTG's status reads, maintenance reconciles and inventory
+reads are its first entries. A container
 install runs it through `run_scheduler` like every other row of the schedule.
 
 ## Where Zabbix sits

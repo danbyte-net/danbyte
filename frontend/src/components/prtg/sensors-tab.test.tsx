@@ -42,6 +42,10 @@ const LINK = {
   status_read_at: "2026-10-26T08:00:00Z",
   last_seen_at: "2026-10-26T08:00:00Z",
   url: "https://prtg.example.com/device.htm?id=2081",
+  maintenance_paused_at: null,
+  maintenance_paused_until: null,
+  maintenance_events: [],
+  maintenance_note: "",
 } satisfies PrtgDeviceLink
 
 const SENSORS = [
@@ -430,6 +434,39 @@ describe("PrtgMonitoringRow", () => {
     expect(
       screen.getByText("3 sensors").closest("a")?.getAttribute("href")
     ).toBe("/devices/d1?tab=sensors")
+  })
+
+  it("says when a maintenance window holds the PRTG device paused", async () => {
+    const until = new Date(Date.now() + 2 * 3600_000).toISOString()
+    const prev = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path: string) =>
+      path.startsWith("/api/prtg/links/")
+        ? Promise.resolve({
+            count: 1,
+            next: null,
+            previous: null,
+            results: [
+              {
+                ...LINK,
+                maintenance_paused_until: until,
+                maintenance_events: [{ id: "e1", name: "Splice" }],
+              },
+            ],
+          })
+        : prev(path)
+    )
+    mountWithRouter(() => (
+      <PrtgMonitoringRow parent={{ device: "d1" }} sensorsLink={(c) => c} />
+    ))
+    expect(await screen.findByText(/Paused by maintenance until/)).toBeTruthy()
+  })
+
+  it("does not say it once the pause has ended", async () => {
+    mountWithRouter(() => (
+      <PrtgMonitoringRow parent={{ device: "d1" }} sensorsLink={(c) => c} />
+    ))
+    await screen.findByTestId("prtg-monitoring-row")
+    expect(screen.queryByText(/Paused by maintenance/)).toBeNull()
   })
 
   it("is absent when PRTG has no device for it", async () => {

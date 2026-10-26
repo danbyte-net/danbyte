@@ -50,6 +50,28 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
     def get_engine_names(self, obj) -> list:
         return [{"id": str(e.id), "name": e.name} for e in obj.engines.all().order_by("name")]
 
+    #: The adoption defaults, each one of the active tenant's rows.
+    adopt_site = TenantScopedPrimaryKeyRelatedField(
+        queryset=Site.objects.all(), required=False, allow_null=True
+    )
+    adopt_role = TenantScopedPrimaryKeyRelatedField(
+        queryset=DeviceRole.objects.all(), required=False, allow_null=True
+    )
+    adopt_device_type = TenantScopedPrimaryKeyRelatedField(
+        queryset=DeviceType.objects.all(), required=False, allow_null=True
+    )
+    #: The adoption defaults by name, so the page can say them.
+    adopt_names = serializers.SerializerMethodField()
+    #: Not a column: three names for the form and the card.
+    list_columns_exclude = ("adopt_names",)
+
+    def get_adopt_names(self, obj) -> dict:
+        return {
+            "site": obj.adopt_site.name if obj.adopt_site_id else None,
+            "role": obj.adopt_role.name if obj.adopt_role_id else None,
+            "device_type": obj.adopt_device_type.model if obj.adopt_device_type_id else None,
+        }
+
     class Meta:
         model = PrtgConnection
         fields = [
@@ -57,6 +79,9 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "verify_tls", "enabled", "status_interval_seconds", "provision_scope",
             "engines", "engine_names", "state_map", "link_mode",
             "push_enabled", "hook_token_set",
+            "write_acknowledgements", "sync_maintenance", "last_maintenance_sync_at",
+            "adopt_devices", "adopt_site", "adopt_role", "adopt_device_type",
+            "adopt_names", "read_inventory", "last_inventory_at",
             "version", "supported", "v2_available", "last_checked_at", "last_error",
             "last_status_at", "last_status_summary",
             "created_at", "updated_at",
@@ -65,7 +90,25 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "id", "v2_base", "api_key_set", "version", "supported", "v2_available",
             "last_checked_at", "last_error", "engine_names", "hook_token_set",
             "last_status_at", "last_status_summary", "created_at", "updated_at",
+            "last_maintenance_sync_at", "last_inventory_at", "adopt_names",
         ]
+
+    def _own(self, value, what):
+        """A default has to be one of this connection's tenant's rows - also
+        when there is no request to scope the lookup by."""
+        tenant = self._tenant()
+        if value is not None and tenant is not None and value.tenant_id != tenant.id:
+            raise serializers.ValidationError(f"That {what} is not in the active tenant.")
+        return value
+
+    def validate_adopt_site(self, value):
+        return self._own(value, "site")
+
+    def validate_adopt_role(self, value):
+        return self._own(value, "role")
+
+    def validate_adopt_device_type(self, value):
+        return self._own(value, "device type")
 
     def _tenant(self):
         from api.views import _get_active_tenant
@@ -164,6 +207,7 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         before = st.clean_map(instance.state_map)
+        defaults = (instance.adopt_site_id, instance.adopt_role_id, instance.adopt_device_type_id)
         obj = super().update(instance, validated_data)
         if "state_map" in validated_data and before != st.clean_map(obj.state_map):
             # The device list reads the stored states; a new map must not
@@ -171,6 +215,12 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             from .reader import remap
 
             remap(obj)
+        if (obj.adopt_site_id, obj.adopt_role_id, obj.adopt_device_type_id) != defaults:
+            # The queue is what the operator is looking at when they set
+            # these; its proposals must not wait for the next read.
+            from .adopt import refresh_pending_proposals
+
+            refresh_pending_proposals(obj)
         return obj
 
 
@@ -223,6 +273,8 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "probe_name",
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
+            "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
+            "maintenance_note",
         ]
         read_only_fields = fields
 
@@ -241,6 +293,10 @@ class PrtgChangeSerializer(serializers.ModelSerializer):
         return _ref(obj.virtual_machine)
 
     def get_applicable(self, obj) -> bool:
+        if obj.kind == PrtgChange.ADOPT:
+            from monitoring.external.adoption import applicable
+
+            return applicable(obj.detail or {})
         return obj.kind != PrtgChange.AMBIGUOUS
 
     class Meta:

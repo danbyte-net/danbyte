@@ -63,7 +63,9 @@ class _ByConnection:
 
 class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     integration_keys = ("prtg",)
-    queryset = PrtgConnection.objects.all().order_by("name")
+    queryset = PrtgConnection.objects.select_related(
+        "adopt_site", "adopt_role", "adopt_device_type"
+    ).order_by("name")
     serializer_class = PrtgConnectionSerializer
 
     @action(detail=False, methods=["get"])
@@ -99,6 +101,24 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             _stamp(conn, now, error=str(exc))
             return Response({"detail": str(exc)[:300]}, status=502)
         _stamp(conn, now, summary=counts)
+        return Response(counts)
+
+    @action(detail=True, methods=["post"], url_path="maintenance-now")
+    def maintenance_now(self, request, pk=None):
+        """Reconcile the maintenance pauses now - the pass the beat and a
+        changed window run."""
+        from .client import PrtgError
+        from .maintenance import reconcile
+
+        conn = self.get_object()
+        if not (conn.sync_maintenance and conn.api_key_set):
+            return Response({"detail": "Maintenance sync is off."}, status=400)
+        try:
+            counts = reconcile(conn)
+        except PrtgError as exc:
+            return Response({"detail": str(exc)[:300]}, status=502)
+        if counts.get("error"):
+            return Response({"detail": counts["error"]}, status=502)
         return Response(counts)
 
     @extend_schema(request=None, responses={200: _HookToken})
@@ -151,21 +171,28 @@ class PrtgChangeViewSet(
     connection_model = PrtgConnection
 
     def apply_change(self, change) -> str:
+        from .adopt import apply_adoption
         from .reader import apply_link
 
-        if change.kind != PrtgChange.LINK:
-            raise ValueError("This proposal needs a decision, not an apply.")
-        return apply_link(change)
+        if change.kind == PrtgChange.LINK:
+            return apply_link(change)
+        if change.kind == PrtgChange.ADOPT:
+            return apply_adoption(change)
+        raise ValueError("This proposal needs a decision, not an apply.")
 
     def apply_pending(self, conn) -> dict:
-        from .reader import apply_link
+        """Every applicable proposal: links, and adoptions whose placement
+        is complete. An adoption still missing a default waits."""
+        from monitoring.external.adoption import applicable
 
         applied, failed = 0, []
         for change in PrtgChange.applicable(conn).select_related(
-            "device", "virtual_machine", "connection"
+            "device", "virtual_machine", "connection", "connection__tenant"
         ):
+            if change.kind == PrtgChange.ADOPT and not applicable(change.detail or {}):
+                continue
             try:
-                apply_link(change)
+                self.apply_change(change)
                 applied += 1
             except ValueError as exc:
                 failed.append({"id": str(change.id), "detail": str(exc)})

@@ -1,9 +1,11 @@
 """PRTG on the shared external-monitor beat.
 
 ``manage.py extmon_sync`` runs every minute (``danbyte-extmon-sync.timer``)
-and enqueues the connections whose status read is due - every
-``status_interval_seconds``, not every minute: the classic API is PRTG's own
-web server. The job re-checks every switch when it runs.
+and enqueues the passes each connection is due for: the status read every
+``status_interval_seconds`` (the classic API is PRTG's own web server, so not
+every minute), the maintenance reconcile on the same cadence when it is on,
+and the inventory read hourly when it is on. Each job re-checks every switch
+when it runs.
 """
 from __future__ import annotations
 
@@ -16,13 +18,23 @@ from .models import PrtgConnection
 
 
 def enqueue_due_reads(now=None) -> dict:
+    from .facts import run_inventory_read
+    from .maintenance import run_maintenance_sync
     from .reader import run_status_read
 
     return enqueue_due(
         PrtgConnection.objects.filter(enabled=True, tenant__is_active=True)
         .select_related("tenant"),
         "prtg",
-        (BeatTask("status", lambda c, at: c.status_due(at), run_status_read, 300),),
+        (
+            BeatTask("status", lambda c, at: c.status_due(at), run_status_read, 300),
+            BeatTask(
+                "maintenance", lambda c, at: c.maintenance_due(at), run_maintenance_sync, 300
+            ),
+            BeatTask(
+                "inventory", lambda c, at: c.inventory_due(at), run_inventory_read, 600
+            ),
+        ),
         queue=django_rq.get_queue("low"),
         now=now or timezone.now(),
     )

@@ -98,6 +98,42 @@ class PrtgConnection(TimestampedModel):
         default=SCOPE_POLICIES, db_default=SCOPE_POLICIES,
     )
 
+    # ── two-way ─────────────────────────────────────────────────────────
+    #: Acknowledgements travel both ways: acknowledging a Danbyte alert that a
+    #: PRTG check raised acknowledges the Down sensors behind it in PRTG, and
+    #: a sensor acknowledged in PRTG acknowledges the Danbyte alert. On by
+    #: default: an acknowledgement is a note, not a change to what is
+    #: monitored.
+    write_acknowledgements = models.BooleanField(default=True, db_default=True)
+    #: Pause each linked PRTG device for the length of a confirmed Danbyte
+    #: maintenance or outage window that covers it. Off by default, like every
+    #: write that changes what PRTG measures.
+    sync_maintenance = models.BooleanField(default=False, db_default=False)
+    last_maintenance_sync_at = models.DateTimeField(null=True, blank=True)
+
+    # ── adoption and inventory ──────────────────────────────────────────
+    #: Propose a Danbyte device for every PRTG device no Danbyte device or VM
+    #: answers to. Off: reading a device list is one thing, minting inventory
+    #: rows from it is another.
+    adopt_devices = models.BooleanField(default=False, db_default=False)
+    #: The last-resort placement for an adopted device; a rule, or a PRTG
+    #: group named like a site, decides first.
+    adopt_site = models.ForeignKey(
+        "api.Site", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    adopt_role = models.ForeignKey(
+        "api.DeviceRole", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    adopt_device_type = models.ForeignKey(
+        "api.DeviceType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    #: Read the system information PRTG holds for each linked device and
+    #: offer its name and serial to the device's drift inbox.
+    read_inventory = models.BooleanField(default=False, db_default=False)
+    last_inventory_at = models.DateTimeField(null=True, blank=True)
+
     # ── what the last connection test learned ──────────────────────────
     version = models.CharField(max_length=32, blank=True, default="", db_default="")
     #: Whether API v2 answered the last probe. Null until a test has run.
@@ -167,6 +203,28 @@ class PrtgConnection(TimestampedModel):
         return now - self.last_status_at >= timedelta(
             seconds=max(self.status_interval_seconds, 60)
         )
+
+    def maintenance_due(self, now) -> bool:
+        """Whether the maintenance reconcile should run: on the status
+        cadence, so a window that opens is mirrored within one interval."""
+        if not (self.enabled and self.sync_maintenance and self.api_key_set):
+            return False
+        if self.last_maintenance_sync_at is None:
+            return True
+        return now - self.last_maintenance_sync_at >= timedelta(
+            seconds=max(self.status_interval_seconds, 60)
+        )
+
+    #: How often the inventory pass runs. Each pass reads a batch of the
+    #: links whose system information is oldest.
+    INVENTORY_EVERY = timedelta(hours=1)
+
+    def inventory_due(self, now) -> bool:
+        if not (self.enabled and self.read_inventory and self.api_key_set):
+            return False
+        if self.last_inventory_at is None:
+            return True
+        return now - self.last_inventory_at >= self.INVENTORY_EVERY
 
     def status_fresh(self, now) -> bool:
         """Whether the last successful read is recent enough to answer checks
@@ -246,6 +304,22 @@ class PrtgDeviceLink(ExternalLinkBase):
     #: Whether Danbyte wrote the ``danbyte-<uuid>`` tag on the PRTG device.
     tagged = models.BooleanField(default=False, db_default=False)
     status_read_at = models.DateTimeField(null=True, blank=True)
+
+    # ── what the maintenance mirror did to the PRTG device ─────────────
+    #: When Danbyte paused the PRTG device for a maintenance window, and the
+    #: end it paused it until. Null when Danbyte has not paused it: a resume
+    #: is only ever sent for a pause recorded here, so a device somebody
+    #: paused by hand in PRTG is never resumed by Danbyte.
+    maintenance_paused_at = models.DateTimeField(null=True, blank=True)
+    maintenance_paused_until = models.DateTimeField(null=True, blank=True)
+    #: ``[{"id", "name"}]`` of the Danbyte windows the pause covers.
+    maintenance_events = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    #: Why the last reconcile left the device alone, or what it could not do.
+    maintenance_note = models.CharField(
+        max_length=255, blank=True, default="", db_default=""
+    )
 
     class Meta:
         ordering = ["name"]
@@ -382,9 +456,13 @@ class PrtgChange(ExternalChangeBase):
     #: Pair a Danbyte device with a PRTG device. Danbyte bookkeeping - nothing
     #: is written to PRTG.
     LINK = "link_device"
+    #: Make a Danbyte device for a PRTG device nothing answers to. Keyed by
+    #: the PRTG object id; it has no device until it is applied.
+    ADOPT = "adopt"
     AMBIGUOUS = ExternalChangeBase.AMBIGUOUS
     KIND_CHOICES = [
         (LINK, "Link in Danbyte"),
+        (ADOPT, "Adopt into Danbyte"),
         (AMBIGUOUS, "Needs a decision"),
     ]
 
@@ -407,7 +485,7 @@ class PrtgChange(ExternalChangeBase):
     class Meta:
         ordering = ["kind", "-created_at"]
         constraints = [
-            # Adoption rows (later) have no device; without nulls_distinct=False
+            # Adoption rows have no device; without nulls_distinct=False
             # Postgres would let their duplicates through.
             models.UniqueConstraint(
                 fields=["connection", "device", "virtual_machine", "kind", "key"],
@@ -422,7 +500,7 @@ class PrtgChange(ExternalChangeBase):
 
 class PrtgAdoptionRule(ExternalAdoptionRuleBase):
     """Where an adopted PRTG device lands, by its name, group, probe or
-    address. Adoption itself reads these once it exists; ``pattern``,
+    address (:mod:`prtg.adopt`); ``pattern``,
     ``role``, ``device_type``, ``weight`` and ``enabled`` come from the
     shared base."""
 
@@ -455,3 +533,52 @@ class PrtgAdoptionRule(ExternalAdoptionRuleBase):
 
     def __str__(self) -> str:
         return f"{self.get_scope_display()} {self.pattern} -> {self.site_id}"
+
+
+class PrtgHostFacts(TimestampedModel):
+    """What PRTG's system information says about a linked device or VM.
+
+    Shaped like :class:`~monitoring.models.DeviceSnmp` - ``data``,
+    ``interfaces``, ``polled_at``, ``reachable`` - so it reaches the drift
+    inbox through :mod:`monitoring.observations` as source ``prtg``, below
+    Danbyte's own poll. One row per link; never the source of truth: nothing
+    here reaches a device until somebody accepts the drift item it raises.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_facts")
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="facts"
+    )
+    link = models.OneToOneField(
+        PrtgDeviceLink, on_delete=models.CASCADE, related_name="facts"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="prtg_facts",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="prtg_facts",
+        null=True, blank=True,
+    )
+    #: Under the keys the drift engine reads - ``sys_name``, ``serial`` - plus
+    #: ``vendor``, ``model`` and ``os`` for context, when PRTG has them.
+    data = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    #: Interface presence is not read from PRTG. Empty means "not looked
+    #: at", never "no interfaces".
+    interfaces = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    polled_at = models.DateTimeField(null=True, blank=True)
+    #: False while the PRTG device is paused: what it said last is not an
+    #: observation of now.
+    reachable = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-polled_at"]
+        constraints = [_one_parent("prtg_facts_one_parent")]
+
+    def __str__(self) -> str:
+        return f"{self.device_id or self.virtual_machine_id} facts"
