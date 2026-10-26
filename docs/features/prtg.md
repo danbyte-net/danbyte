@@ -441,12 +441,27 @@ more, side by side. Pins show on the device's or VM's **Overview** in a
   sensor, and the sensor's state when it is not up.
 
 A tile opens the sensor's panel; hovering it shows **Unpin**. The card is
-absent until something is pinned, and one device or VM carries at most 24
-pins of either kind. A pin keeps no reading: the tiles read the channels and
-the hour's history as the panel does, and a sensor gone from PRTG takes its
-pins with it. Pinning and unpinning need change on *PRTG sensor pins* and
-view on the device or VM; site roles include the pins of their sites'
-objects.
+absent until something is pinned, and one object carries at most 24 pins of
+either kind. A pin keeps no reading: the tiles read the channels and the
+hour's history as the panel does, and a sensor gone from PRTG takes its
+pins with it.
+
+**Where a pin goes.** A pin sits on the page it was pinned from. On the
+device's or VM's Sensors tab the toggle pins to the device's or VM's
+Overview. On an IP address's, interface's or service's Sensors tab (see
+[Where sensors show up](#where-sensors-show-up)) it reads **Pin to this
+address's Overview** (interface's, service's) and pins to that object's
+Overview, where the same **Sensors** card shows above the rest; a tile there
+opens the panel on the object's own Sensors tab. The same sensor can be
+pinned on its device and on the address it watches, each with its own order
+and its own 24. Only a sensor linked to an address, interface or service
+can be pinned on it - the API refuses any other with *This sensor does not
+watch this address* - and deleting the object takes its pins with it.
+
+Pinning and unpinning need change on *PRTG sensor pins*, view on the object
+the pin sits on and view on the sensor's device or VM. A pin's site is its
+object's - the address's, the interface's device's, the service's - so site
+roles include the pins of their sites' objects.
 
 The same channels can go on a dashboard: see
 [Sensor widgets](dashboard.md#sensor-widgets).
@@ -535,7 +550,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
 | `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision* and adoptions that cannot be placed). Kinds: `link_device`, `adopt` (no device; `key` and `detail.objid` are the PRTG object id, `detail` carries `name`, `host`, `address`, `group`, `probe`, the placement as `site`/`site_id`, `role`/`role_id`, `device_type`/`device_type_id`, `rule`, `defaulted`, and `reason` while it cannot be placed), `ambiguous`, and the planned kinds `create_device`, `add_sensor` (`key` is the sensor's `danbyte-def-` tag), `remove_sensor` (`key` is the PRTG sensor id), `move_device` and `remove_device` - see [Planned changes](#planned-changes). A planned row's `detail` carries `reason` and `fix_link` when it cannot be written, and what applying it did: `result` (`device`, `sensors` by tag, `credentials`, `templates`), `log` (`[{at, by, ok, detail, steps}]`), `applied` or `last_error`. `applicable` says whether apply can run now; `status` is `ready`, `attention`, `applied`, `failed` or `decision`; `destructive` marks removals. `<id>/apply/` answers `{ok, detail, status, result}` (400 when the row cannot be written, 502 when PRTG refused). `apply-all/` applies ready rows and skips removals; `apply-selected/` (`{ids: [...]}`, at most 500, removals included) and `dismiss-selected/` act on the tenant's rows named, `apply-selected/` answering `{applied, failed, results: [{id, ok, detail, status}]}`. |
 | `adoption-rules/` | CRUD for where adopted PRTG devices land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight` (lower first), `enabled`. Site, role and type must be the tenant's own. |
-| `sensor-pins/?device=\|virtual_machine=` | Sensors and channels pinned to an Overview, in order: `{id, sensor, channel_id, display, position, device, virtual_machine, sensor_info}`. `POST {sensor, channel_id, display}` pins one (`display` is `auto`, `gauge`, `lookup` or `value`; the device or VM is the sensor's own; a channel pins once, at most 24 per object); `POST {sensor}` with no or a blank `channel_id` pins the whole sensor (`channel_id` reads `""`, once per sensor, beside its channel pins; `sensor_info` carries `last_value` and `last_check_at` for its tile); `DELETE <id>/` unpins; `POST reorder/ {device \| virtual_machine, order: [pin ids]}` sets the order. Writes need change on PRTG sensor pins; every call needs view on the device or VM. |
+| `sensor-pins/?device=\|virtual_machine=\|ip_address=\|interface=\|vm_interface=\|service=` | Sensors and channels pinned to an Overview, in order: `{id, sensor, channel_id, display, position, device, virtual_machine, ip_address, interface, vm_interface, service, sensor_info}`, exactly one of the six set. `POST {sensor, channel_id, display}` pins one (`display` is `auto`, `gauge`, `lookup` or `value`; a channel pins once, at most 24 per object); with no object named it goes on the sensor's own device or VM, and `ip_address`, `interface`, `vm_interface` or `service: <id>` - or `parent: {kind, id}` - pins it on that object, which must be the one the sensor is linked to (otherwise 400). `POST {sensor}` with no or a blank `channel_id` pins the whole sensor (`channel_id` reads `""`, once per sensor and object, beside its channel pins; `sensor_info` carries `last_value` and `last_check_at` for its tile); `DELETE <id>/` unpins; `POST reorder/ {<object field>, order: [pin ids]}` sets one object's order. Writes need change on PRTG sensor pins; every call needs view on the pinned object and on the sensor's device or VM. |
 | `device-status/?device=`, `?virtual_machine=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device or VM. |
 | `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
 | `vm-states/` | The same for virtual machines. Feeds the VM-list column. |

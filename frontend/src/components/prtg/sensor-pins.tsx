@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react"
 import type { ReactNode } from "react"
 import {
   useMutation,
@@ -41,14 +42,55 @@ import {
 } from "./channel-view"
 import type { PrtgParent } from "./sensors-tab"
 
-// Sensors and channels pinned to a device's or VM's Overview: the toggles on
-// a sensor card, the sensor panel's header and a channel card, and the
+// Sensors and channels pinned to an object's Overview - the sensor's device
+// or VM, or the address, interface or service it watches: the toggles on a
+// sensor card, the sensor panel's header and a channel card, and the
 // Overview's Sensors card that draws them.
 
-function parentQuery(parent: PrtgParent): string {
-  return "device" in parent
-    ? `device=${parent.device}`
-    : `virtual_machine=${parent.virtual_machine}`
+/** The object a pin sits on. Only a sensor linked to an address, interface
+ * or service may be pinned on it; the server says so otherwise. */
+export type PinParent =
+  | PrtgParent
+  | { ip_address: string }
+  | { interface: string }
+  | { vm_interface: string }
+  | { service: string }
+
+function parentEntry(parent: PinParent): [string, string] {
+  return Object.entries(parent)[0]
+}
+
+function parentQuery(parent: PinParent): string {
+  const [key, value] = parentEntry(parent)
+  return `${key}=${encodeURIComponent(value)}`
+}
+
+/** "this address's", for an object other than a device or VM. */
+const OWN_OVERVIEW: Record<string, string> = {
+  ip_address: "this address's Overview",
+  interface: "this interface's Overview",
+  vm_interface: "this interface's Overview",
+  service: "this service's Overview",
+}
+
+/** The toggle's label on a parent: plain "Overview" on a device or VM. */
+export function pinLabel(parent: PinParent | null, pinned: boolean): string {
+  const where = (parent && OWN_OVERVIEW[parentEntry(parent)[0]]) || "Overview"
+  return pinned ? `Unpin from ${where}` : `Pin to ${where}`
+}
+
+const PinScope = createContext<PinParent | null>(null)
+
+/** Inside an address's, interface's or service's sensors section: the
+ * toggles pin to that object instead of the sensor's device or VM. */
+export function PinScopeProvider({
+  scope,
+  children,
+}: {
+  scope: PinParent | null
+  children: ReactNode
+}) {
+  return <PinScope.Provider value={scope}>{children}</PinScope.Provider>
 }
 
 /** The device or VM a sensor belongs to. */
@@ -60,7 +102,7 @@ export function sensorParent(s: PrtgSensor): PrtgParent | null {
 
 /** The object's pins in order. Empty while the integration is off or the
  * caller has no grant on pins - the Overview simply shows no card. */
-export function usePins(parent: PrtgParent | null) {
+export function usePins(parent: PinParent | null) {
   const qs = parent ? parentQuery(parent) : ""
   return useQuery({
     queryKey: ["prtg-pins", qs],
@@ -79,15 +121,20 @@ export function usePins(parent: PrtgParent | null) {
   })
 }
 
-function usePinMutations(parent: PrtgParent | null) {
+function usePinMutations(parent: PinParent | null) {
   const qc = useQueryClient()
   const key = ["prtg-pins", parent ? parentQuery(parent) : ""]
   const done = () => qc.invalidateQueries({ queryKey: key })
+  // A device or VM pin names no object: the server takes the sensor's own.
+  const target =
+    parent && !("device" in parent) && !("virtual_machine" in parent)
+      ? parent
+      : {}
   const pin = useMutation({
     mutationFn: (body: { sensor: string; channel_id?: string }) =>
       api<PrtgSensorPin>("/api/prtg/sensor-pins/", {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, ...target }),
       }),
     onSuccess: done,
     onError: (e) => apiErrorToast(e, "Could not pin to the Overview"),
@@ -103,17 +150,23 @@ function usePinMutations(parent: PrtgParent | null) {
 
 /** "Pin to Overview" on a channel card in the sensor panel, or - without a
  * channel - on a sensor card and the panel's header, for the whole sensor.
- * Hidden without the grant; the server checks it again. */
+ * It pins to the scope it is rendered in: `scope`, else the nearest
+ * `PinScopeProvider` (an address's, interface's or service's sensors), else
+ * the sensor's device or VM. Hidden without the grant; the server checks it
+ * again. */
 export function PinToggle({
   sensor,
   channelId = "",
+  scope,
 }: {
   sensor: PrtgSensor
   /** The channel's PRTG id; blank for the whole sensor. */
   channelId?: string
+  scope?: PinParent | null
 }) {
   const { canDo } = useMe()
-  const parent = sensorParent(sensor)
+  const provided = useContext(PinScope)
+  const parent = scope ?? provided ?? sensorParent(sensor)
   const pins = usePins(parent)
   const { pin, unpin } = usePinMutations(parent)
   if (!parent || !canDo("prtgsensorpin", "change")) return null
@@ -121,7 +174,7 @@ export function PinToggle({
     (p) => p.sensor === sensor.id && p.channel_id === channelId
   )
   const busy = pin.isPending || unpin.isPending || pins.isLoading
-  const label = mine ? "Unpin from Overview" : "Pin to Overview"
+  const label = pinLabel(parent, !!mine)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -256,7 +309,7 @@ export function PinnedSensorsCard({
   parent,
   sensorLink,
 }: {
-  parent: PrtgParent
+  parent: PinParent
   /** Wraps a tile in a link to the Sensors tab with that sensor's panel. */
   sensorLink: (sensorId: string, children: ReactNode) => ReactNode
 }) {
@@ -380,5 +433,40 @@ export function PinnedSensorsCard({
         })}
       </div>
     </section>
+  )
+}
+
+/**
+ * The Sensors card on an address's, interface's or service's Overview: the
+ * same tiles, each opening the sensor's panel on the page's Sensors tab
+ * through `onOpen`. Absent when nothing is pinned.
+ */
+export function ObjectPinnedSensors({
+  parent,
+  onOpen,
+}: {
+  parent: PinParent
+  onOpen: (sensorId: string) => void
+}) {
+  return (
+    <PinnedSensorsCard
+      parent={parent}
+      sensorLink={(sensor, children) => (
+        <div
+          role="button"
+          tabIndex={0}
+          className="block h-full cursor-pointer rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          onClick={() => onOpen(sensor)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              onOpen(sensor)
+            }
+          }}
+        >
+          {children}
+        </div>
+      )}
+    />
   )
 }

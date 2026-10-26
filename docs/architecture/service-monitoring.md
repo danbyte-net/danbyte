@@ -81,7 +81,9 @@ that were waiting for one.
   separate edit route - the dialog *is* the editor), and **Delete** removes the
   service and cascades its checks. A service a PRTG HTTP or SSL sensor checks
   gets a **Sensors** tab - see
-  [Where sensors show up](../features/prtg.md#where-sensors-show-up).
+  [Where sensors show up](../features/prtg.md#where-sensors-show-up). Its
+  sensors and channels can be pinned to the service's Overview
+  ([Pinned sensors](../features/prtg.md#pinned-sensors)).
 - The old `POST /api/services/{id}/monitor/` action still exists (sets
   `monitored=True` + reconciles) for backward compatibility.
 

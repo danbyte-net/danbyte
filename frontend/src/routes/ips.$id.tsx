@@ -53,6 +53,7 @@ import {
   PrtgSensorsSection,
   usePrtgSensors,
 } from "@/components/prtg/sensors-tab"
+import { ObjectPinnedSensors } from "@/components/prtg/sensor-pins"
 
 export const Route = createFileRoute("/ips/$id")({ component: IPDetail })
 
@@ -89,6 +90,9 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
   // there is one (none while the integration is off).
   const prtgSensors = usePrtgSensors({ ip_address: ip.id })
   const sensorCount = prtgSensors.data?.length ?? 0
+  // The sensor whose panel is open on the Sensors tab; a pinned tile on the
+  // Overview opens it there.
+  const [sensor, setSensor] = useState<string | null>(null)
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
 
@@ -564,6 +568,16 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
           />
         </div>
 
+        <div className="mb-6 empty:hidden">
+          <ObjectPinnedSensors
+            parent={{ ip_address: ip.id }}
+            onOpen={(id) => {
+              setSensor(id)
+              setTab("sensors")
+            }}
+          />
+        </div>
+
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Details" rows={detailsRows} />
           <KvCard title="Network" rows={networkRows} />
@@ -620,7 +634,11 @@ function IPDetailBody({ ip }: { ip: IPAddress }) {
       </DetailTab>
 
       <DetailTab value="sensors">
-        <PrtgSensorsSection scope={{ ip_address: ip.id }} />
+        <PrtgSensorsSection
+          scope={{ ip_address: ip.id }}
+          selected={sensor ?? undefined}
+          onSelect={setSensor}
+        />
       </DetailTab>
 
       <DetailTab value="certificates">

@@ -1,4 +1,8 @@
-"""Sensors and sensor channels pinned to a device's or VM's Overview.
+"""Sensors and sensor channels pinned to an object's Overview.
+
+The object is a device or VM - the sensor's own - or one thing the sensor
+watches: its IP address, interface (device or VM) or service. A pin on one
+of those is allowed only for a sensor linked to it.
 
 A pin says "show this channel of this sensor on the object's Overview" - or,
 with a blank channel, "show this sensor": the sensor, the channel's PRTG id
@@ -20,12 +24,26 @@ from core.models import Tenant, TimestampedModel
 
 from .models import PrtgSensor
 
-#: Pins one device or VM may carry: an Overview card, not a dashboard.
+#: Pins one object may carry: an Overview card, not a dashboard.
 MAX_PINS = 24
+
+#: The objects a pin may sit on, by field; exactly one is set.
+PARENT_FIELDS = (
+    "device", "virtual_machine", "ip_address", "interface", "vm_interface", "service",
+)
+
+
+def _one_parent() -> models.Q:
+    q = models.Q()
+    for field in PARENT_FIELDS:
+        q |= models.Q(**{
+            f"{f}__isnull": f != field for f in PARENT_FIELDS
+        })
+    return q
 
 
 class PrtgSensorPin(TimestampedModel):
-    """One pinned channel, or a whole sensor, on a device's or VM's Overview."""
+    """One pinned channel, or a whole sensor, on an object's Overview."""
 
     AUTO, GAUGE, LOOKUP, VALUE = "auto", "gauge", "lookup", "value"
     DISPLAY_CHOICES = [
@@ -47,6 +65,22 @@ class PrtgSensorPin(TimestampedModel):
         "api.VirtualMachine", on_delete=models.CASCADE, related_name="prtg_sensor_pins",
         null=True, blank=True,
     )
+    ip_address = models.ForeignKey(
+        "api.IPAddress", on_delete=models.CASCADE, related_name="prtg_sensor_pins",
+        null=True, blank=True,
+    )
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.CASCADE, related_name="prtg_sensor_pins",
+        null=True, blank=True,
+    )
+    vm_interface = models.ForeignKey(
+        "api.VMInterface", on_delete=models.CASCADE, related_name="prtg_sensor_pins",
+        null=True, blank=True,
+    )
+    service = models.ForeignKey(
+        "api.Service", on_delete=models.CASCADE, related_name="prtg_sensor_pins",
+        null=True, blank=True,
+    )
     sensor = models.ForeignKey(PrtgSensor, on_delete=models.CASCADE, related_name="pins")
     #: PRTG's channel id within the sensor ("0", "2", "-4"); blank pins the
     #: whole sensor. The unique constraints below hold blank as a value of its
@@ -61,18 +95,24 @@ class PrtgSensorPin(TimestampedModel):
     class Meta:
         ordering = ["position", "created_at"]
         constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(device__isnull=False, virtual_machine__isnull=True)
-                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
-                ),
-                name="prtg_pin_one_parent",
-            ),
+            models.CheckConstraint(condition=_one_parent(), name="prtg_pin_one_parent"),
             models.UniqueConstraint(
                 fields=["device", "sensor", "channel_id"], name="uniq_prtg_pin_device",
             ),
             models.UniqueConstraint(
                 fields=["virtual_machine", "sensor", "channel_id"], name="uniq_prtg_pin_vm",
+            ),
+            models.UniqueConstraint(
+                fields=["ip_address", "sensor", "channel_id"], name="uniq_prtg_pin_ip",
+            ),
+            models.UniqueConstraint(
+                fields=["interface", "sensor", "channel_id"], name="uniq_prtg_pin_interface",
+            ),
+            models.UniqueConstraint(
+                fields=["vm_interface", "sensor", "channel_id"], name="uniq_prtg_pin_vm_interface",
+            ),
+            models.UniqueConstraint(
+                fields=["service", "sensor", "channel_id"], name="uniq_prtg_pin_service",
             ),
         ]
         indexes = [
@@ -88,5 +128,10 @@ class PrtgSensorPin(TimestampedModel):
         return not self.channel_id
 
     @property
+    def parent_field(self) -> str:
+        """The field that names the pin's object."""
+        return next(f for f in PARENT_FIELDS if getattr(self, f"{f}_id"))
+
+    @property
     def parent(self):
-        return self.device if self.device_id else self.virtual_machine
+        return getattr(self, self.parent_field)

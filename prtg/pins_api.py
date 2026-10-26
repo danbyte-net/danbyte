@@ -1,20 +1,26 @@
-"""``/api/prtg/sensor-pins/``: sensors and channels pinned to a device's or
-VM's Overview.
+"""``/api/prtg/sensor-pins/``: sensors and channels pinned to an object's
+Overview - the sensor's device or VM, or the IP address, interface (device or
+VM) or service the sensor watches.
 
-``GET ?device=<id>`` or ``?virtual_machine=<id>`` lists an object's pins in
-order, each with its sensor's summary; ``POST {sensor, channel_id, display}``
-pins a channel, ``POST {sensor}`` without a channel pins the whole sensor
-(the device or VM is the sensor's own); ``DELETE <id>/``
-unpins; ``POST reorder/ {device | virtual_machine, order: [pin ids]}`` sets
-the order.
+``GET ?device=<id>`` (or ``virtual_machine``, ``ip_address``, ``interface``,
+``vm_interface``, ``service``) lists an object's pins in order, each with its
+sensor's summary. ``POST {sensor, channel_id, display}`` pins a channel and
+``POST {sensor}`` without a channel pins the whole sensor; with no object
+named the pin goes on the sensor's own device or VM, as before. Naming one -
+``ip_address: <id>`` and so on, or ``parent: {kind, id}`` - pins it there,
+and only a sensor linked to that object may be pinned on it. ``DELETE
+<id>/`` unpins; ``POST reorder/ {<parent field>, order: [pin ids]}`` sets the
+order of one object's pins.
 
 Every write needs ``prtgsensorpin.change`` - a pin is a view preference on
-the object, not a record of its own - and every call needs view on the
-device or VM. Site scope follows the parent, as for the sensors.
+the object, not a record of its own - and every call needs view on the pinned
+object and on the sensor's device or VM. Site scope follows the pinned
+object.
 """
 from __future__ import annotations
 
 import re
+import uuid
 
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q
@@ -23,20 +29,71 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.models import Interface, IPAddress, Service, VMInterface
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
+from auth_api import rbac
 from integrations.toggles import IntegrationToggleMixin
 
 from . import status as st
 from .models import PrtgSensor
-from .pins import MAX_PINS, PrtgSensorPin
+from .pins import MAX_PINS, PARENT_FIELDS, PrtgSensorPin
 from .viewsets import _visible_devices, _visible_vms
 
 _CHANNEL_ID = re.compile(r"^-?\d{1,15}$")
 
+#: The objects a sensor watches, and how a refusal names them.
+_WATCHED = {
+    "ip_address": "address",
+    "interface": "interface",
+    "vm_interface": "interface",
+    "service": "service",
+}
+
 
 def _already(channel: str) -> str:
     return "This channel is already pinned." if channel else "This sensor is already pinned."
+
+
+def _visible(request, tenant, field: str):
+    """The caller's viewable objects of one parent kind, in the tenant."""
+    if field == "device":
+        return _visible_devices(request, tenant)
+    if field == "virtual_machine":
+        return _visible_vms(request, tenant)
+    qs, slug = {
+        "ip_address": (IPAddress.objects.filter(tenant=tenant), "ipaddress"),
+        "interface": (Interface.objects.filter(device__tenant=tenant), "interface"),
+        "vm_interface": (VMInterface.objects.filter(vm__tenant=tenant), "vminterface"),
+        "service": (Service.objects.filter(tenant=tenant), "service"),
+    }[field]
+    return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+
+def _parent_asked(data) -> tuple[str, str] | None:
+    """The object a request names - ``parent: {kind, id}`` or one parent
+    field - as ``(field, id)``; ``None`` when it names none."""
+    if not hasattr(data, "get"):
+        return None
+    asked = []
+    parent = data.get("parent")
+    if parent is not None:
+        if not isinstance(parent, dict):
+            raise ValidationError({"parent": "An object: {kind, id}."})
+        kind = parent.get("kind")
+        if kind not in PARENT_FIELDS:
+            raise ValidationError({"parent": f"Kind is one of {', '.join(PARENT_FIELDS)}."})
+        asked.append((kind, parent.get("id")))
+    asked += [(f, data.get(f)) for f in PARENT_FIELDS if data.get(f)]
+    if not asked:
+        return None
+    if len({f for f, _ in asked}) > 1:
+        raise ValidationError({"parent": "Name one object to pin on."})
+    field, value = asked[0]
+    try:
+        return field, str(uuid.UUID(str(value)))
+    except ValueError:
+        raise ValidationError({field: "Not an id."}) from None
 
 
 class PrtgSensorPinSerializer(serializers.ModelSerializer):
@@ -47,16 +104,20 @@ class PrtgSensorPinSerializer(serializers.ModelSerializer):
     )
     device = serializers.SerializerMethodField()
     virtual_machine = serializers.SerializerMethodField()
+    ip_address = serializers.SerializerMethodField()
+    interface = serializers.SerializerMethodField()
+    vm_interface = serializers.SerializerMethodField()
+    service = serializers.SerializerMethodField()
     #: Enough of the sensor to draw the tile's header without another call.
     sensor_info = serializers.SerializerMethodField()
 
     class Meta:
         model = PrtgSensorPin
         fields = [
-            "id", "sensor", "channel_id", "display", "position", "device",
-            "virtual_machine", "sensor_info", "created_at",
+            "id", "sensor", "channel_id", "display", "position", *PARENT_FIELDS,
+            "sensor_info", "created_at",
         ]
-        read_only_fields = ["id", "position", "device", "virtual_machine", "created_at"]
+        read_only_fields = ["id", "position", *PARENT_FIELDS, "created_at"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,13 +128,28 @@ class PrtgSensorPinSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _ref(obj):
-        return {"id": str(obj.id), "name": obj.name} if obj else None
+        if obj is None:
+            return None
+        name = getattr(obj, "name", None) or getattr(obj, "ip_address", None) or str(obj)
+        return {"id": str(obj.id), "name": str(name)}
 
     def get_device(self, obj) -> dict | None:
         return self._ref(obj.device)
 
     def get_virtual_machine(self, obj) -> dict | None:
         return self._ref(obj.virtual_machine)
+
+    def get_ip_address(self, obj) -> dict | None:
+        return self._ref(obj.ip_address)
+
+    def get_interface(self, obj) -> dict | None:
+        return self._ref(obj.interface)
+
+    def get_vm_interface(self, obj) -> dict | None:
+        return self._ref(obj.vm_interface)
+
+    def get_service(self, obj) -> dict | None:
+        return self._ref(obj.service)
 
     def get_sensor_info(self, obj) -> dict:
         s = obj.sensor
@@ -100,19 +176,28 @@ class PrtgSensorPinSerializer(serializers.ModelSerializer):
         tenant = _get_active_tenant(request)
         sensor = attrs["sensor"]
         # The device or VM is the sensor's; one the caller cannot see is a
-        # sensor they cannot pin.
-        if sensor.device_id:
-            visible = _visible_devices(request, tenant).filter(id=sensor.device_id).exists()
-        else:
-            visible = _visible_vms(request, tenant).filter(id=sensor.virtual_machine_id).exists()
-        if not visible:
+        # sensor they cannot pin (its tile reads the sensor's channels).
+        owner = "device" if sensor.device_id else "virtual_machine"
+        owner_id = getattr(sensor, f"{owner}_id")
+        if not owner_id or not _visible(request, tenant, owner).filter(id=owner_id).exists():
             raise ValidationError({"sensor": "Not found."})
-        for field in ("device", "virtual_machine"):
-            asked = request.data.get(field) if hasattr(request.data, "get") else None
-            if asked and str(asked) != str(getattr(sensor, f"{field}_id") or ""):
+        asked = _parent_asked(request.data)
+        if asked is None:
+            field, parent_id = owner, str(owner_id)
+        else:
+            field, parent_id = asked
+            linked = str(getattr(sensor, f"{field}_id") or "")
+            if linked != parent_id:
+                if field in _WATCHED:
+                    raise ValidationError({
+                        field: f"This sensor does not watch this {_WATCHED[field]}; "
+                        "pin it on the device or VM instead."
+                    })
                 raise ValidationError({field: "The sensor belongs to another object."})
-        parent = {"device_id": sensor.device_id, "virtual_machine_id": sensor.virtual_machine_id}
-        pins = PrtgSensorPin.objects.filter(tenant=tenant, **parent)
+            if not _visible(request, tenant, field).filter(id=parent_id).exists():
+                raise ValidationError({field: "Not found."})
+        parent = {f"{f}_id": (parent_id if f == field else None) for f in PARENT_FIELDS}
+        pins = PrtgSensorPin.objects.filter(tenant=tenant, **{f"{field}_id": parent_id})
         channel = attrs.get("channel_id", "")
         if pins.filter(sensor=sensor, channel_id=channel).exists():
             raise ValidationError({"channel_id": _already(channel)})
@@ -130,7 +215,8 @@ class PrtgSensorPinViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     integration_keys = ("prtg",)
     http_method_names = ["get", "post", "delete", "head", "options"]
     queryset = PrtgSensorPin.objects.select_related(
-        "sensor", "sensor__connection", "device", "virtual_machine"
+        "sensor", "sensor__connection", "device", "virtual_machine", "ip_address",
+        "interface", "vm_interface", "service",
     )
     serializer_class = PrtgSensorPinSerializer
     # Pinning is arranging what the object's page shows: one grant for all of it.
@@ -142,15 +228,22 @@ class PrtgSensorPinViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         tenant = _get_active_tenant(request)
         if tenant is None:
             return qs.none()
-        qs = qs.filter(
-            Q(device__in=_visible_devices(request, tenant).values("id"))
-            | Q(virtual_machine__in=_visible_vms(request, tenant).values("id"))
-        )
         p = request.query_params
-        if p.get("device"):
-            qs = qs.filter(device_id=p["device"])
-        if p.get("virtual_machine"):
-            qs = qs.filter(virtual_machine_id=p["virtual_machine"])
+        wanted = [f for f in PARENT_FIELDS if p.get(f)]
+        for f in wanted:
+            try:
+                uuid.UUID(str(p[f]))
+            except ValueError:
+                raise ValidationError({f: "Not an id."}) from None
+            qs = qs.filter(**{f"{f}_id": p[f]})
+        # View on the pinned object, and on the sensor's device or VM.
+        on = Q()
+        for f in wanted or PARENT_FIELDS:
+            on |= Q(**{f"{f}__in": _visible(request, tenant, f).values("id")})
+        qs = qs.filter(on).filter(
+            Q(sensor__device__in=_visible_devices(request, tenant).values("id"))
+            | Q(sensor__virtual_machine__in=_visible_vms(request, tenant).values("id"))
+        )
         return qs.order_by("position", "created_at")
 
     def create(self, request, *args, **kwargs):
@@ -169,25 +262,30 @@ class PrtgSensorPinViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     def perform_create(self, serializer):
         tenant = self._tenant_or_403()
         data = serializer.validated_data
-        top = PrtgSensorPin.objects.filter(
-            tenant=tenant, device_id=data["device_id"],
-            virtual_machine_id=data["virtual_machine_id"],
-        ).aggregate(m=Max("position"))["m"]
+        parent = {f"{f}_id": data[f"{f}_id"] for f in PARENT_FIELDS}
+        top = PrtgSensorPin.objects.filter(tenant=tenant, **parent).aggregate(
+            m=Max("position"))["m"]
         serializer.save(tenant=tenant, position=0 if top is None else top + 1)
 
     @action(detail=False, methods=["post"])
     def reorder(self, request):
-        """``{device | virtual_machine, order: [pin ids]}``: the pins in that
-        order. Every id must be one of the object's pins."""
-        device = request.data.get("device")
-        vm = request.data.get("virtual_machine")
+        """``{<parent field>, order: [pin ids]}`` - ``device``,
+        ``virtual_machine``, ``ip_address``, ``interface``, ``vm_interface``
+        or ``service``: the object's pins in that order. Every id must be one
+        of the object's pins."""
+        named = [f for f in PARENT_FIELDS if request.data.get(f)]
         order = request.data.get("order")
-        if bool(device) == bool(vm):
-            raise ValidationError({"device": "Give a device or a virtual machine."})
+        if len(named) != 1:
+            raise ValidationError({"device": "Name one object: a device, VM, address, "
+                                             "interface or service."})
+        field = named[0]
+        try:
+            parent_id = str(uuid.UUID(str(request.data[field])))
+        except ValueError:
+            raise ValidationError({field: "Not an id."}) from None
         if not isinstance(order, list) or not all(isinstance(i, str) for i in order):
             raise ValidationError({"order": "A list of pin ids."})
-        pins = self.get_queryset().filter(**({"device_id": device} if device else
-                                             {"virtual_machine_id": vm}))
+        pins = self.get_queryset().filter(**{f"{field}_id": parent_id})
         by_id = {str(p.id): p for p in pins}
         if len(set(order)) != len(order) or set(order) != set(by_id):
             raise ValidationError({"order": "Every pin of the object, once each."})
