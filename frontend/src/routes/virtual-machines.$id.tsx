@@ -38,6 +38,7 @@ import { ServicesPane } from "@/components/services-pane"
 import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
+import { VmMonitoringBadge } from "@/components/monitoring/device-monitoring"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
@@ -170,6 +171,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
+              <VmMonitoringBadge vmId={vm.id} />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"

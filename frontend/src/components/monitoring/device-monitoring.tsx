@@ -2,7 +2,11 @@ import { Link } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
 
-import { api, type DeviceChecksResponse } from "@/lib/api"
+import {
+  api,
+  type BulkStatusResponse,
+  type DeviceChecksResponse,
+} from "@/lib/api"
 import { ExternalChips } from "./external-chips"
 import { ExternalStatusHover } from "./external-status"
 import { MixedStatusBadge } from "./mixed-status-badge"
@@ -40,6 +44,33 @@ export function DeviceMonitoringBadge({ deviceId }: { deviceId: string }) {
     <span title={rollupTooltip(r)} className="inline-flex">
       <MixedStatusBadge counts={r.counts} status={r.status} />
     </span>
+  )
+}
+
+/**
+ * The VM's rolled-up monitoring status for its header: the same mixed badge
+ * the VM list shows, from the same roll-up (every address assigned to the VM,
+ * including what PRTG or Zabbix answer for them), with the list's hover.
+ * Renders nothing when the VM has no monitored addresses.
+ */
+export function VmMonitoringBadge({ vmId }: { vmId: string }) {
+  const q = useQuery({
+    queryKey: ["vm-monitoring", [vmId]],
+    queryFn: () =>
+      api<BulkStatusResponse>("/api/monitoring/status/", {
+        method: "POST",
+        body: JSON.stringify({ vms: [vmId] }),
+      }),
+    refetchInterval: 60_000,
+  })
+  const e = q.data?.statuses?.[vmId]
+  if (!e || !e.status || !e.monitored_ips) return null
+  return (
+    <ExternalStatusHover entry={e}>
+      <span className="inline-flex" data-testid="vm-monitoring-badge">
+        <MixedStatusBadge counts={e.counts ?? {}} status={e.status} />
+      </span>
+    </ExternalStatusHover>
   )
 }
 
