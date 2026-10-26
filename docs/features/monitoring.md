@@ -585,49 +585,58 @@ Monitoring shows on a device's and a virtual machine's page twice: a simple
 version and a detailed one. Both are left out when nothing monitors the
 object.
 
+Every state on these surfaces is the shared state pill, and a source with
+things in several states is the shared mixed badge (one colour band per
+state present) - the same badges the device and prefix lists use. A source
+whose items are all in one state shows that state's pill alone (*Up*),
+never a count beside it. Every badge has the same hover - the shared
+tooltip with the counts, then the items worst first, ten at most - and the
+same click: the tab the items live on, filtered.
+
 **In the header**, beside the status and the other badges, is the overall
 state as one pill: worst wins across Danbyte's checks, Zabbix and PRTG.
-Hovering it lists each source's state and counts.
+Hovering it lists each source with its badge and counts, then whatever is in
+a problem state; clicking it opens the worst source's tab, filtered to
+problems.
 
-**On the Overview** is the monitoring card. It leads with the problems:
+**On the Overview** is the monitoring card. Its header line carries the
+state; the body is only the problem rows:
 
 ```
-MONITORING  [Down]  since 2h · read 45s ago                        Notify me
-▌ Down      HTTPS 10.0.0.41             Danbyte check   down 2h · timeout
-▌ Down      Ping 10.0.0.41              Danbyte check   down 2h
-▌ Degraded  SSL Certificate (Port 443)  PRTG            Root authority not trusted
-  View all 8 →
-Checks ▬▬▬▬▬▬ 2 down · 1 up     Zabbix ▬▬▬▬▬▬ no problems     PRTG ▬▬▬▬▬▬ 1 degraded · 4 up
+MONITORING [Down] since 2h | Checks [mixed] · Zabbix [Up] · PRTG [mixed]   read 45s ago  Notify me
+[Down]      HTTPS 10.0.0.41             Danbyte check   timeout                        2h
+[Down]      Ping 10.0.0.41              Danbyte check                                  2h
+[Degraded]  SSL Certificate (Port 443)  PRTG            Root authority not trusted     5m
+View all 8 →
 ```
 
-- **The header line**: the overall state, the one pill on the card; *since*
-  how long the longest-standing problem has been so; when the sources were
-  last read; and **Notify me** (on a VM it watches the primary address).
-- **The problems**: up to three, worst first, across all the sources. Each
-  row carries its state as a coloured left edge and the state's name, the
-  item (a check with its address, a PRTG sensor, a Zabbix host or the
-  protocol Zabbix cannot reach it on), the source, how long it has been so,
-  and the source's own words: a check's last error, PRTG's message, the
-  Zabbix trigger. The full message is in the tooltip. **View all N** opens the
+- **The header line**: the overall state; *since* how long the
+  longest-standing problem has been so; each source the object has, its
+  name and its badge (left out when the object has one source in one state:
+  the overall pill already says it); when the sources were last read; and
+  **Notify me** (on a VM it watches the primary address).
+- **The problems**: up to three, worst first, across all the sources, one
+  32px row each: the state's pill, the item (a check with its address, a
+  PRTG sensor, a Zabbix host or the protocol Zabbix cannot reach it on), the
+  source, the source's own words (a check's last error, PRTG's message, the
+  Zabbix trigger; the full text in the tooltip) and how long it has been so.
+  On a phone the source and the words give way. **View all N** opens the
   Monitoring tab filtered to problems.
-- **The sources**: one segment per source the object has: its name, a bar
-  of its states in proportion and the counts. Zabbix counts problems, not
-  items, so its bar is one colour: its state.
 
-When nothing is in a problem state the card shrinks to one line in the
-Overview's grid, beside the first attribute card: *All 3 checks up · Zabbix
-up · PRTG 5 sensors up · read 45s ago*, with Notify me. With problems it is
-full width above the cards.
+When nothing is in a problem state the card is the header line alone, in
+the Overview's grid beside the first attribute card: *Checks [Up] · Zabbix
+[Up] · PRTG [Up] · read 45s ago*, with Notify me. With problems it is full
+width above the cards.
 
 Everything on the card is a link into the page:
 
 | Click | Opens |
 | --- | --- |
-| A check, or a check count | The **Monitoring** tab filtered to that state (`?tab=monitoring&state=down`) |
+| A check | The **Monitoring** tab filtered to its state (`?tab=monitoring&state=down`) |
 | A PRTG sensor | The **Sensors** tab with that sensor's panel open (`?tab=sensors&sensor=…`) |
-| A PRTG count | The **Sensors** tab filtered to that state (`?tab=sensors&state=up`) |
 | Anything from Zabbix | The **Zabbix** section of the Monitoring tab (`#zabbix`) |
-| A source's name or bar | Its tab, filtered to problems when it has any |
+| A source's name or badge | Its tab, filtered to problems when it has any |
+| The overall pill | The worst source's tab, filtered to problems |
 | **View all N** | The **Monitoring** tab filtered to problems (`?state=problem`) |
 
 The `state` filter on the Monitoring tab and the Sensors tab takes `problem`

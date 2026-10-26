@@ -356,20 +356,45 @@ unit, the interval, uptime and downtime, priority, the last check, last up and
 last down, and the probe and group. A device or VM that PRTG has a device for
 gets a **Sensors** tab, with the sensor count, while the integration is on.
 
-**The tab.** A status strip on top, the PRTG row of the Monitoring tab: the state
-pill, one badge per state with its count - down, degraded, up, unknown, and
-paused apart - named as the tenant names its states, then the PRTG device with
-a link to it in PRTG and when it was last read. Hovering a count lists its
-sensors with PRTG's message. Clicking a count shows only the sensors in that
-state (`?state=down`, `?state=paused`, ...); clicking it again, or *Show all*,
-clears it, and clicking *PRTG* or the pill shows the down and degraded ones
-(`?state=problem`). Below, a card per sensor, worst first: its name and kind, the state
-pill (PRTG's own word, *Paused by Dependency*, in the tooltip), the last value
-as the big number, the last check, the uptime, and PRTG's message as a muted
-notice when the sensor is not up - two lines at most, ending in an ellipsis,
-with the whole message on hover and in the panel. The link icon opens the
-sensor in PRTG; the pin puts the sensor on the Overview (see
-[Pinned sensors](#pinned-sensors)).
+**The tab.** A one-line strip on top, the PRTG row of the Monitoring tab:
+*PRTG*, the sensors' state as the shared badge - one pill when every sensor
+is in one state (*Up*), the mixed badge when they are not - then the PRTG
+device with a link to it in PRTG, when it was last read, and the device's
+actions menu. Hovering the badge lists the counts per state (named as the
+tenant names its states, paused apart) and the sensors worst first with
+PRTG's message. Clicking *PRTG* or the badge shows the down and degraded
+ones (`?state=problem`); clicking again, or *Show all*, clears it. A link
+from the Overview card can open the tab on one state (`?state=down`,
+`?state=paused`, ...). Below, a card per sensor, worst first: its name and
+kind, the state pill flush in the top-right corner (*Paused* when paused;
+PRTG's own word, *Paused by Dependency*, and its message in the tooltip),
+the last value as the big number, the last check, the uptime, and PRTG's
+message as a muted notice when the sensor is not up - two lines at most,
+ending in an ellipsis, with the whole message on hover and in the panel.
+Hovering a card slides the pill left and shows the pin (puts the sensor on
+the Overview, see [Pinned sensors](#pinned-sensors)) and the actions menu
+in the corner; on a touch screen they always show. The link icon opens the
+sensor in PRTG.
+
+**Acknowledge, pause, resume.** The actions menu (the `...` button on a
+card, in the sensor panel's header and on each row of the /prtg Alarms and
+Sensors tabs) acts on the sensor in PRTG:
+
+- **Acknowledge...** - for a down sensor, while the connection writes
+  acknowledgements (*Two-way > Acknowledgements*). A small dialog takes a
+  note; PRTG gets `[Danbyte] <your name>: <note>` and the sensor reads
+  *Down (Acknowledged)* at once.
+- **Pause for 1 hour**, **Pause for 24 hours**, **Pause until resumed** -
+  the sensor reads *Paused* and drops out of the counts straight away.
+- **Resume** - on a paused sensor; Danbyte reads the device's sensors again
+  so the card shows PRTG's state.
+
+The strip's menu does the same for the whole PRTG device: pause (1 hour,
+24 hours, until resumed) and resume, which PRTG applies to every sensor on
+it. Each action is written to the device's or VM's **Journal** and
+**Change log** under your name. The menu shows with *change* on PRTG
+sensors (or on PRTG links for the device menu); the server checks it again,
+and PRTG's own error comes back as the toast.
 
 **The sensor panel.** Clicking a card opens the sensor's panel
 (`?sensor=<id>` in the address, so it can be linked). It shows PRTG's
@@ -491,8 +516,11 @@ object's page.
 
 ## The PRTG page
 
-**Overview** carries a status strip across every imported sensor of the
-connection, with when it was last read, above the connection card.
+**Overview** puts the connection's sensors beside the connection card on a
+wide screen (above it on a narrow one): one row per state with sensors in
+it, worst first, each the state's pill and its count. A row opens the tab
+that lists it - **Alarms** for down and degraded, **Sensors** for the rest -
+and hovering a down or degraded row lists its sensors.
 **Alarms** lists every down or degraded sensor, worst and newest first: the
 sensor (linked to its device's or VM's Sensors tab with the panel open), the
 device or VM, kind, state, PRTG's message, since when (the last down, else
@@ -500,7 +528,11 @@ the last check), whether it is acknowledged in PRTG (*Down (Acknowledged)*),
 probe and group, and a link into PRTG. **Sensors** lists every sensor with
 the same columns plus the last value and uptime, and a **Hide paused**
 switch. Both have search, facets for state, device, kind and probe/group, and
-export. **Review queue** holds link proposals, adoptions, ambiguities and planned changes;
+export. With *change* on PRTG sensors, each row ends in the sensor's actions
+menu (see [Acknowledge, pause, resume](#sensors)) and rows can be selected:
+the selection bar at the foot acknowledges every selected down sensor (one
+note for all), pauses the selected sensors for 1 hour, 24 hours or until
+resumed, or resumes the paused ones. **Review queue** holds link proposals, adoptions, ambiguities and planned changes;
 **Links** lists the pairings; **Adoption** edits the adoption rules;
 **Policies** and **Profiles** edit what PRTG should have (see
 [Registering devices and VMs](#registering-devices-and-vms)). The
@@ -528,8 +560,12 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `profiles/` | CRUD (`?connection=`) with `definitions` nested in order: `{id, kind, name, params, interval_seconds, required, tags}`. Writing `definitions` replaces the list; a row with an existing `id` is updated. `params` are checked against the kind and stored with its defaults. Deleting a profile in use answers 400. `profiles/kinds/` lists the kinds, their parameters and PRTG's intervals; `POST profiles/starter/ {connection}` makes the starter profile. |
 | `groups/?connection=<id>` | PRTG's probes and groups: `{connection, read_at, groups: [{objid, name, kind, path, probe, parent_id}], error}`. Kept on the connection and read again after one status interval, or with `refresh=1`. Needs view on PRTG policies. |
 | `plan/?device=` or `?virtual_machine=` | What PRTG has and would get for one object, per enabled connection: `{connection, prtg_sync, linked: {objid, name, host, group, matched_by, created_here, created_at, url} | null, managed, registers, registration: {mode, policies, group}, planned: {create_device, sensors: [{key, name, kind, kind_label, interface}], move: {from, to} | null, remove: [{objid, name, kind}], reasons, queued}, via, reason, reason_issue, group, policies, profiles, sensors: [{name, kind, kind_label, params, interval_seconds, tags, required, interface, template, present, sensor}], credentials, problems, issues, last_apply}`. `linked` is whether it is in PRTG (the stored link); `managed` whether Danbyte created that PRTG device; `registers` whether anything registers it, and `registration.mode` what: `always`, `policies`, `register_all`, `never` (excluded) or `none`. `planned.reasons` say why nothing is planned; `queued` counts its planned rows in the review queue. `last_apply` is what Danbyte last wrote for it, `{at, kind, ok, detail, result, by}` or null (a pending create's last attempt when there is no link yet). `problems` are sentences; `issues` the same as `{code, text, policy, object}`, where `policy` is the policy to edit and `object` (`{kind, id}`) the object whose tab fixes it; `reason_issue` is `reason` in that shape, empty for a linked object nothing registers. Needs view on the object; asks PRTG nothing. |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it). |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `paused`. |
 | `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
+| `sensors/<id>/acknowledge/` | `POST {note}`. Acknowledges a down sensor (*Down*, *Down (Partial)*) in PRTG with `[Danbyte] <name>: <note>`, then answers the sensor as it now reads. 400 while the connection's `write_acknowledgements` is off or the sensor is not down, 502 with PRTG's sentence. Each row of `sensors/` carries `ackable`: whether this would be accepted now. |
+| `sensors/<id>/pause/` | `POST {minutes, note}`. Pauses the sensor in PRTG for `minutes` (1 to 527040), or until resumed when `minutes` is null or absent; answers the sensor, now paused. |
+| `sensors/<id>/resume/` | `POST`. Resumes the sensor, reads the device's sensors again, and answers the sensor. |
+| `links/<id>/pause/`, `links/<id>/resume/` | `POST {minutes, note}` and `POST`. The same for the PRTG device behind a link - PRTG pauses its sensors with it; answers the link, whose `paused` says whether PRTG holds it paused. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
 | `sensors/<id>/channels/` | The sensor's channels, read from PRTG at most once per status interval: `{fetched_at, summary, rows}`, each row `{id, name, value, value_raw, unit, kind, state, status, lookup_label, limits: {warn_min, warn_max, error_min, error_max}, lookup_states: [{value, to, label, state}], min, max, primary}`. `kind` is `number`, `percent`, `lookup` or `text`; a lookup `state` is `ok`, `warning`, `error`, `none` or `unknown`. Needs view on the device or VM. 502 with PRTG's sentence when PRTG cannot be read and nothing is cached; `stale: true` when the last read is served instead. |
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
