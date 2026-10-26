@@ -304,6 +304,9 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
     paused = serializers.BooleanField(read_only=True)
     virtual_machine = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
+    #: How the connection creates objects in PRTG (``v2``, ``seed``,
+    #: ``none``, or "" before it was asked): whether sensors can be added.
+    write_mode = serializers.CharField(source="connection.write_mode", read_only=True)
 
     def get_device(self, obj) -> dict | None:
         return _ref(obj.device)
@@ -322,7 +325,7 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "group_path", "matched_by", "created_here", "tagged", "status_raw",
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
             "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
-            "maintenance_note", "last_apply", "paused",
+            "maintenance_note", "last_apply", "paused", "write_mode",
         ]
         read_only_fields = fields
 
@@ -460,7 +463,7 @@ class PrtgSensorSerializer(serializers.ModelSerializer):
         model = PrtgSensor
         fields = [
             "id", "connection", "connection_name", "device", "virtual_machine",
-            "prtg_device", "objid", "name", "kind", "kind_label", "status_raw", "status",
+            "link", "prtg_device", "objid", "name", "kind", "kind_label", "status_raw", "status",
             "state", "paused", "acknowledged", "ackable", "message", "tags", "active",
             "last_value", "last_value_raw", "unit", "interval_seconds", "uptime_pct",
             "downtime_pct", "priority", "last_check_at", "last_up_at", "last_down_at",

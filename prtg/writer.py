@@ -26,6 +26,7 @@ the queue as *Applied* until the next planning pass no longer proposes it.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import logging
@@ -163,7 +164,10 @@ class Writer:
         self.result.update(values)
         self.detail["result"] = self.result
         self.change.detail = self.detail
-        self.change.save(update_fields=["detail", "updated_at"])
+        if not self.change._state.adding:
+            # A sensor added by hand (prtg.manual) has no queue row: a retry
+            # resumes by the sensor's tag instead.
+            self.change.save(update_fields=["detail", "updated_at"])
 
     def step(self, text: str) -> None:
         self.steps.append(text)
@@ -198,12 +202,15 @@ class Writer:
         if inst.get("interval_seconds"):
             self.classic.set_interval(objid, inst["interval_seconds"])
         self._remember(link, key, objid, inst.get("name", ""))
-        self.step(f"Created sensor {inst.get('name') or sk.label(kind)} ({objid}).")
+        label = inst.get("name") or inst.get("kind_label") or sk.label(kind)
+        self.step(f"Created sensor {label} ({objid}).")
         return objid
 
     def _create_v2(self, device_objid, inst: dict, tags: list) -> str:
         kind = inst["kind"]
         spec = V2_KINDS.get(kind)
+        if spec is None and inst.get("kindid"):
+            return self._create_v2_generic(device_objid, inst, tags)
         if spec is None:
             raise Refused(f"Danbyte cannot create a {sk.label(kind)} sensor.")
         kindid, scan = spec
@@ -217,11 +224,32 @@ class Writer:
             body["exespecific"] = {"port": int(params["port"])}
         if scan is not None:
             section, field = scan
-            body[section] = {field: self._scan_values(device_objid, kindid, inst)}
+            # A sensor added by hand carries the scan rows the operator picked.
+            values = inst.get("scan_values") or self._scan_values(device_objid, kindid, inst)
+            body[section] = {field: list(values)}
         objid = self.v2.create_sensor(device_objid, kindid, body)
         if scan is not None and inst.get("name"):
             # A scanned kind takes its name from what it found; Danbyte's
             # name is set after.
+            self.v2.update_sensor(objid, {"name": inst["name"], "tags": tags})
+        return objid
+
+    def _create_v2_generic(self, device_objid, inst: dict, tags: list) -> str:
+        """A PRTG sensor kind Danbyte has no form of its own for: the
+        settings sections from PRTG's schema as the operator filled them in
+        (:func:`prtg.manual.clean_generic`), plus Danbyte's tags."""
+        kindid = inst["kindid"]
+        body = copy.deepcopy(inst.get("sections") or {})
+        basic = body.setdefault("basic", {})
+        basic["tags"] = tags
+        scan = inst.get("metascan")
+        scanned = bool(scan and inst.get("scan_values"))
+        if scanned:
+            body.setdefault(scan["section"], {})[scan["field"]] = list(inst["scan_values"])
+        elif inst.get("name"):
+            basic["name"] = inst["name"]
+        objid = self.v2.create_sensor(device_objid, kindid, body)
+        if scanned and inst.get("name"):
             self.v2.update_sensor(objid, {"name": inst["name"], "tags": tags})
         return objid
 
