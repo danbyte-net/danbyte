@@ -37,7 +37,10 @@ import {
 } from "@/components/application-group-assign"
 import { useSaveObject } from "@/lib/save-object"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
-import { PrtgSyncSelect } from "@/components/prtg/prtg-sync-select"
+import {
+  PrtgSyncSelect,
+  prtgSaveToast,
+} from "@/components/prtg/prtg-sync-select"
 
 interface MiniNamed {
   id: string
@@ -103,6 +106,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   )
   const prtgOn = usePrtgEnabled()
   const [prtgSync, setPrtgSync] = useState<PrtgSync>(vm?.prtg_sync ?? "inherit")
+  const [prtgHost, setPrtgHost] = useState(vm?.prtg_host ?? "")
 
   useEffect(() => {
     if (!vm) return
@@ -123,6 +127,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
     setPrtgSync(vm.prtg_sync ?? "inherit")
+    setPrtgHost(vm.prtg_host ?? "")
     reset()
   }, [vm, reset])
 
@@ -177,7 +182,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         tag_ids: tagIds,
         custom_fields: customFields,
         // Only while PRTG is on: the field is not shown otherwise.
-        ...(prtgOn ? { prtg_sync: prtgSync } : {}),
+        ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
       }
       const saved = await saveObject<VirtualMachine>({
         objectType: "api.virtualmachine",
@@ -194,6 +199,11 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       qc.invalidateQueries({ queryKey: ["virtual-machines-picker"] })
       qc.invalidateQueries({ queryKey: ["virtual-machine", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
+      const prtg = prtgSaveToast(saved.prtg_plan)
+      if (prtg) {
+        toast.info(prtg)
+        qc.invalidateQueries({ queryKey: ["prtg-plan"] })
+      }
       onSaved(saved)
     },
     onError: (err) => {
@@ -461,6 +471,9 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                 value={prtgSync}
                 onChange={setPrtgSync}
                 error={fieldErrors.prtg_sync}
+                host={prtgHost}
+                onHostChange={setPrtgHost}
+                hostError={fieldErrors.prtg_host}
               />
             </FormSection>
           )}

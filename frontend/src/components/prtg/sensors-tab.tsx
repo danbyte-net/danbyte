@@ -58,6 +58,13 @@ import { PinScopeProvider, PinToggle, sensorParent } from "./sensor-pins"
 import { LinkActionsMenu, SensorActionsMenu } from "./sensor-actions"
 import { AddSensorButtons, MANUAL_TAG } from "./add-sensor"
 import { SensorStatePill, TileCorner } from "./tile-corner"
+import {
+  PrtgObjectStateCard,
+  useAddToPrtgNow,
+  usePrtgPlan,
+  useRefreshWhenLinked,
+} from "./object-state"
+import type { PrtgObjectRef } from "./object-state"
 import { useMe } from "@/lib/use-me"
 import {
   MonitoringSourceRow,
@@ -272,11 +279,17 @@ export function PrtgSensorsSection({
           />
         ))}
         {rows.length === 0 ? (
-          <EmptyState title="No sensors.">
-            {parent
-              ? "PRTG has no sensors on this device yet."
-              : "No PRTG sensor watches this."}
-          </EmptyState>
+          parent ? (
+            <PrtgParentStates
+              parent={scope}
+              links={links.data ?? []}
+              onAdded={flash}
+            />
+          ) : (
+            <EmptyState title="No sensors.">
+              No PRTG sensor watches this.
+            </EmptyState>
+          )
         ) : (
           <>
             <StateFilterNote state={state} onClear={() => onState?.(null)} />
@@ -299,6 +312,69 @@ export function PrtgSensorsSection({
         <SensorPanel sensor={open} onClose={() => select(null)} />
       </div>
     </PinScopeProvider>
+  )
+}
+
+/** A device or VM PRTG shows no sensors for: one state card per
+ * connection - excluded, not in PRTG, planned, needs attention, being
+ * added, or in PRTG without sensors. */
+function PrtgParentStates({
+  parent,
+  links,
+  onAdded,
+}: {
+  parent: PrtgParent
+  links: PrtgDeviceLink[]
+  onAdded: (objids: string[]) => void
+}) {
+  const object: PrtgObjectRef =
+    "device" in parent
+      ? { kind: "device", id: parent.device }
+      : { kind: "virtual_machine", id: parent.virtual_machine }
+  const plan = usePrtgPlan(object)
+  const add = useAddToPrtgNow(object)
+  useRefreshWhenLinked(plan.data)
+  if (plan.isLoading) return <Loading />
+  if (plan.isError) return <QueryError error={plan.error} />
+  const entries = plan.data ?? []
+  if (!entries.length)
+    return (
+      <EmptyState title="No PRTG connection">
+        <Link to="/prtg" className="link">
+          Set one up on the PRTG page
+        </Link>
+      </EmptyState>
+    )
+  return (
+    <div className="grid gap-3">
+      {entries.map((e) => {
+        const link = links.find((l) => l.connection === e.connection.id)
+        return (
+          <PrtgObjectStateCard
+            key={e.connection.id}
+            entry={e}
+            object={object}
+            prtgSync={e.prtg_sync}
+            sensors={0}
+            add={add}
+            link={link}
+            addSensors={
+              link ? (
+                <AddSensorButtons
+                  target={{
+                    linkId: link.id,
+                    connectionId: link.connection,
+                    name: link.name || link.objid,
+                    writeMode: link.write_mode,
+                  }}
+                  onAdded={onAdded}
+                />
+              ) : null
+            }
+          />
+        )
+      })}
+    </div>
   )
 }
 

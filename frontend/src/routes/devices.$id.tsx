@@ -203,6 +203,7 @@ import {
   linkedSensorCount,
   usePrtgLinks,
 } from "@/components/prtg/sensors-tab"
+import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { naturalCompare } from "@/lib/natural-sort"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
 
@@ -316,7 +317,10 @@ function Body({ device: d }: { device: Device }) {
   // PRTG's sensors get a tab once PRTG has a device for this one; the links
   // come back empty while the integration is off.
   const prtgLinks = usePrtgLinks({ device: d.id })
-  const hasPrtg = (prtgLinks.data ?? []).length > 0
+  // With the integration on, the tab also says what PRTG will do: planned,
+  // excluded, or what is missing.
+  const prtgOn = usePrtgEnabled()
+  const hasPrtg = (prtgLinks.data ?? []).length > 0 || prtgOn
   const search = Route.useSearch()
   const openSensor = search.sensor
   const selectSensor = useCallback(

@@ -65,7 +65,7 @@ DEF_TAG = "danbyte-def-"
 #: What a planned row says when this PRTG cannot create anything.
 NO_WRITES = "This PRTG cannot create objects through its API."
 #: Keys of a row's detail the writer keeps, which a new pass must not drop.
-_KEPT = ("result", "log", "last_error")
+_KEPT = ("result", "log", "last_error", "queued_apply")
 #: How long an applied row stays in the queue once nothing proposes it.
 APPLIED_KEEP_HOURS = 24
 
@@ -152,6 +152,11 @@ def _parent(obj) -> dict:
 
 
 def host_address(obj) -> str:
+    """What PRTG polls: the object's PRTG host override, else its primary
+    address."""
+    override = (getattr(obj, "prtg_host", "") or "").strip()
+    if override:
+        return override
     ip = getattr(obj, "primary_ip", None) if obj.primary_ip_id else None
     return str(ip.ip_address).split("/")[0] if ip is not None else ""
 
@@ -731,7 +736,7 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
     waiting = set()
     for d, v in PrtgChange.pending(conn).filter(
         kind__in=(PrtgChange.LINK, PrtgChange.AMBIGUOUS)
-    ).values_list("device_id", "virtual_machine_id"):
+    ).exclude(detail__has_key="applied").values_list("device_id", "virtual_machine_id"):
         waiting.add(d or v)
 
     fresh: set = set()
@@ -739,75 +744,231 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
     with transaction.atomic():
         for obj in _objects(conn):
             link = links.get(obj.id)
-            present = link is not None and link.objid in parent_of
-            # A device Danbyte created is still wanted by "register all":
-            # register all only skips what was in PRTG already.
-            want = decide(conn, obj, ctx,
-                          linked=link is not None and not link.created_here,
-                          checked=checked)
-            if link is not None and present and link.created_here and not want.managed:
-                if conn.prune_devices:
-                    counts["remove_device"] += 1
-                    propose(conn, fresh, {
-                        "objid": link.objid, "name": link.name,
-                        "group": link.group_path,
-                        "reason": want.reason or "Set to Exclude from PRTG.",
-                        "applicable": True,
-                    }, **_parent(obj), kind=PrtgChange.REMOVE_DEVICE, key="")
-                continue
-            if want.via == "never":
-                continue
-            wanted = sensors_for(want) if want.managed else []
-            if link is not None and present:
-                _plan_linked(conn, obj, link, want, wanted,
-                             sensors_by_link.get(link.id, []), parent_of,
-                             groups_by_id, counts, fresh, no_writes)
-                if want.managed:
-                    counts["scoped"] += 1
-                continue
-            if not want.managed or link is not None:
-                continue
-            counts["scoped"] += 1
-            if obj.id in waiting:
-                counts["awaiting_link"] += 1
-                continue
-            host = host_address(obj)
-            if not host:
-                counts["no_address"] += 1
-                continue
-            issues = []
-            problem = group_issue(want, groups_by_id)
-            if problem:
-                issues.append(problem)
-            creds, missing = credential_issues(obj, conn.tenant, wanted)
-            issues.extend(missing)
-            if no_writes:
-                issues.append(issue("no_writes"))
-            reasons = [i["text"] for i in issues]
-            group = dict(want.group or {})
-            if group.get("objid") in groups_by_id:
-                found = groups_by_id[group["objid"]]
-                group.update(path=found["path"], kind=found["kind"])
-            detail = {
-                "name": obj.name, "host": host, "group": group or None,
-                "via": want.via,
-                "policies": [{"id": str(p.id), "name": p.name} for p in want.policies],
-                "profiles": [p.name for p in want.profiles],
-                "sensors": [_sensor_detail(i) for i in wanted if not i.get("template")],
-                "templates": [i["template"] for i in wanted if i.get("template")],
-                "credentials": creds,
-                "tags": ["danbyte", f"danbyte-{obj.id}"],
-                "applicable": not reasons, "reason": " ".join(reasons),
-                "issues": issues,
-            }
-            if reasons:
-                counts["not_applicable"] += 1
-            counts["create"] += 1
-            propose(conn, fresh, detail, **_parent(obj),
-                    kind=PrtgChange.CREATE_DEVICE, key="")
+            _plan_object(
+                conn, obj, link=link,
+                present=link is not None and link.objid in parent_of,
+                ctx=ctx, checked=checked, groups_by_id=groups_by_id,
+                parent_of=parent_of,
+                sensors=sensors_by_link.get(link.id, []) if link else [],
+                waiting=obj.id in waiting, counts=counts, fresh=fresh,
+                no_writes=no_writes,
+            )
         drop_stale(conn, fresh, now)
     return counts
 
+
+def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent_of,
+                 sensors, waiting, counts, fresh, no_writes) -> None:
+    """One object of the planning pass: propose its rows into ``fresh``.
+    ``present`` is whether PRTG still has the linked device; ``waiting``
+    whether a link or ambiguity for it waits in the queue."""
+    # A device Danbyte created is still wanted by "register all":
+    # register all only skips what was in PRTG already.
+    want = decide(conn, obj, ctx,
+                  linked=link is not None and not link.created_here,
+                  checked=checked)
+    if link is not None and present and link.created_here and not want.managed:
+        if conn.prune_devices:
+            counts["remove_device"] += 1
+            propose(conn, fresh, {
+                "objid": link.objid, "name": link.name,
+                "group": link.group_path,
+                "reason": want.reason or "Set to Exclude from PRTG.",
+                "applicable": True,
+            }, **_parent(obj), kind=PrtgChange.REMOVE_DEVICE, key="")
+        return
+    if want.via == "never":
+        return
+    wanted = sensors_for(want) if want.managed else []
+    if link is not None and present:
+        _plan_linked(conn, obj, link, want, wanted,
+                     sensors, parent_of,
+                     groups_by_id, counts, fresh, no_writes)
+        if want.managed:
+            counts["scoped"] += 1
+        return
+    if not want.managed or link is not None:
+        return
+    counts["scoped"] += 1
+    if waiting:
+        counts["awaiting_link"] += 1
+        return
+    host = host_address(obj)
+    if not host:
+        counts["no_address"] += 1
+        return
+    issues = []
+    problem = group_issue(want, groups_by_id)
+    if problem:
+        issues.append(problem)
+    creds, missing = credential_issues(obj, conn.tenant, wanted)
+    issues.extend(missing)
+    if no_writes:
+        issues.append(issue("no_writes"))
+    reasons = [i["text"] for i in issues]
+    group = dict(want.group or {})
+    found = groups_by_id.get(group.get("objid"))
+    if found:
+        group.update(path=found["path"], kind=found["kind"])
+    detail = {
+        "name": obj.name, "host": host, "group": group or None,
+        "via": want.via,
+        "policies": [{"id": str(p.id), "name": p.name} for p in want.policies],
+        "profiles": [p.name for p in want.profiles],
+        "sensors": [_sensor_detail(i) for i in wanted if not i.get("template")],
+        "templates": [i["template"] for i in wanted if i.get("template")],
+        "credentials": creds,
+        "tags": ["danbyte", f"danbyte-{obj.id}"],
+        "applicable": not reasons, "reason": " ".join(reasons),
+        "issues": issues,
+    }
+    if reasons:
+        counts["not_applicable"] += 1
+    counts["create"] += 1
+    propose(conn, fresh, detail, **_parent(obj),
+            kind=PrtgChange.CREATE_DEVICE, key="")
+
+
+
+class _Unread(dict):
+    """No group list read yet: a picked group counts as present - it was
+    picked from PRTG's list - until a read says otherwise."""
+
+    def __contains__(self, key) -> bool:
+        return True
+
+
+def plan_object(conn: PrtgConnection, obj, *, now=None) -> dict:
+    """The planning pass for one device or VM, from what Danbyte holds - the
+    stored link, its sensors and the last group list. PRTG is not asked.
+
+    Proposes and drops only this object's rows. A pending move is kept:
+    where PRTG has the device now is only known from a read. Runs when an
+    object's PRTG setting changes, and before Add to PRTG now."""
+    from datetime import timedelta
+
+    now = now or timezone.now()
+    counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
+              "move": 0, "remove_device": 0, "not_applicable": 0, "no_address": 0,
+              "awaiting_link": 0}
+    ctx, checked = _prepare(conn)
+    parent = _parent(obj)
+    link = PrtgDeviceLink.objects.filter(connection=conn, **parent).first()
+    sensors = (
+        list(PrtgSensor.objects.filter(link=link).order_by("name", "objid")) if link else []
+    )
+    waiting = PrtgChange.pending(conn).filter(
+        kind__in=(PrtgChange.LINK, PrtgChange.AMBIGUOUS), **parent
+    ).exclude(detail__has_key="applied").exists()
+    groups = conn.groups_cache or []
+    groups_by_id = {g["objid"]: g for g in groups} if groups else _Unread()
+    fresh: set = set()
+    with transaction.atomic():
+        _plan_object(
+            conn, obj, link=link, present=link is not None, ctx=ctx, checked=checked,
+            groups_by_id=groups_by_id, parent_of={}, sensors=sensors, waiting=waiting,
+            counts=counts, fresh=fresh,
+            no_writes=conn.write_mode == PrtgConnection.WRITE_NONE,
+        )
+        PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **parent).exclude(
+            id__in=fresh
+        ).exclude(kind=PrtgChange.MOVE_DEVICE).exclude(
+            detail__has_key="applied",
+            updated_at__gte=now - timedelta(hours=APPLIED_KEEP_HOURS),
+        ).delete()
+    return counts
+
+
+#: How long a queued apply counts as running before the plan stops saying so.
+QUEUED_APPLY_SECONDS = 600
+
+
+def plan_after_save(obj) -> dict | None:
+    """Plan one device or VM right after its PRTG setting changed, on every
+    enabled connection of its tenant; with Apply automatically on, queue an
+    apply of its ready rows after commit, so the save does not wait on PRTG.
+
+    Returns ``{"state", "connections"}`` for the form's toast - ``state`` is
+    ``applying``, ``planned``, ``attention``, ``excluded`` or ``none`` - or
+    None while the integration is off. Never raises: a save must not fail
+    over a plan; the beat plans the object later anyway."""
+    from integrations.toggles import integration_enabled
+
+    from .writer import ready
+
+    tenant = obj.tenant
+    if tenant is None or not integration_enabled(tenant, "prtg"):
+        return None
+    names, applying_now, planned, attention = [], False, False, False
+    for conn in PrtgConnection.objects.filter(tenant=tenant, enabled=True).order_by("name"):
+        try:
+            plan_object(conn, obj)
+            rows = list(PrtgChange.pending(conn).filter(
+                kind__in=PrtgChange.PLANNED, **_parent(obj)
+            ))
+            ok = [r for r in rows if ready(r)]
+            if ok and conn.auto_apply_registration and conn.api_key_set:
+                queue_apply(conn, obj, ok)
+                applying_now = True
+            elif ok:
+                planned = True
+            elif any(not (r.detail or {}).get("applied") for r in rows):
+                attention = True
+        except Exception:  # noqa: BLE001
+            log.exception("prtg plan on save failed for %s", obj.pk)
+            continue
+        names.append(conn.name)
+    if getattr(obj, "prtg_sync", "inherit") == "never":
+        state = "excluded"
+    elif applying_now:
+        state = "applying"
+    elif planned:
+        state = "planned"
+    elif attention:
+        state = "attention"
+    else:
+        state = "none"
+    return {"state": state, "connections": names}
+
+
+def queue_apply(conn, obj, rows) -> None:
+    """Mark ``rows`` as being applied and queue
+    :func:`prtg.writer.run_apply_object` for the object, after commit."""
+    import django_rq
+
+    from .writer import run_apply_object
+
+    at = timezone.now().isoformat()
+    for row in rows:
+        row.detail = {**(row.detail or {}), "queued_apply": at}
+        row.save(update_fields=["detail", "updated_at"])
+    args = (str(conn.id), "virtual_machine" if _is_vm(obj) else "device", str(obj.pk))
+
+    def _go():
+        try:
+            django_rq.get_queue("low").enqueue(run_apply_object, *args, job_timeout=900)
+        except Exception:  # noqa: BLE001 - the beat's apply picks it up
+            log.exception("prtg apply on save could not be queued")
+
+    transaction.on_commit(_go)
+
+
+def applying(conn, obj, now=None) -> bool:
+    """Whether an apply of this object's rows was queued in the last few
+    minutes and has not finished."""
+    from datetime import datetime
+
+    now = now or timezone.now()
+    for d in PrtgChange.pending(conn).filter(
+        kind__in=PrtgChange.PLANNED, detail__has_key="queued_apply", **_parent(obj)
+    ).values_list("detail", flat=True):
+        try:
+            at = datetime.fromisoformat(d["queued_apply"])
+        except (TypeError, ValueError):
+            continue
+        if not d.get("applied") and (now - at).total_seconds() < QUEUED_APPLY_SECONDS:
+            return True
+    return False
 
 def _sensor_detail(inst: dict) -> dict:
     return {
@@ -997,13 +1158,19 @@ def preview(conn: PrtgConnection, obj) -> dict:
         row = queue.filter(kind=PrtgChange.MOVE_DEVICE).first()
         if row is not None:
             move = {"from": (row.detail or {}).get("from"), "to": (row.detail or {}).get("to")}
+    from .writer import change_status, ready
+
+    rows_now = list(queue)
     return {
-        "connection": {"id": str(conn.id), "name": conn.name},
+        "connection": {"id": str(conn.id), "name": conn.name,
+                       "auto_apply": conn.auto_apply_registration,
+                       "write_mode": conn.write_mode},
         "prtg_sync": getattr(obj, "prtg_sync", "inherit"),
         "linked": (
             {"objid": link.objid, "name": link.name, "host": link.host,
              "group": link.group_path, "matched_by": link.matched_by,
              "created_here": link.created_here, "created_at": link.created_at,
+             "sent_tags": list(link.sent_tags or []),
              "url": conn.device_url(link.objid)} if link else None
         ),
         "managed": bool(link is not None and link.created_here),
@@ -1019,7 +1186,11 @@ def preview(conn: PrtgConnection, obj) -> dict:
             "move": move,
             "remove": remove,
             "reasons": [reason_issue] if reason_issue else [],
-            "queued": queue.count(),
+            "queued": len(rows_now),
+            # Rows Add to PRTG now would write, and how the rest stand.
+            "ready": sum(1 for r in rows_now if ready(r)),
+            "statuses": sorted({change_status(r) for r in rows_now}),
+            "applying": applying(conn, obj),
         },
         "via": want.via, "reason": reason_issue["text"] if reason_issue else "",
         "reason_issue": reason_issue,

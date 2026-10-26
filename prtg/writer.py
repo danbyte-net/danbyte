@@ -30,6 +30,7 @@ import copy
 import hashlib
 import hmac
 import logging
+import re
 
 from django.conf import settings
 from django.utils import timezone
@@ -37,7 +38,7 @@ from django.utils import timezone
 from monitoring.external.beat import skip_reason
 
 from . import sensor_kinds as sk
-from .client import PrtgClient, PrtgError
+from .client import PrtgClient, PrtgError, PrtgUnauthorized, PrtgUnreachable
 from .client_v2 import PrtgNotFound, PrtgV2Client, capabilities
 from .models import PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
 
@@ -75,6 +76,30 @@ ENC_MODES = {
     "aes128": "AESPrivProtocol", "aes192": "AES192PrivProtocol",
     "aes256": "AES256PrivProtocol",
 }
+
+
+#: How much of PRTG's answer a row keeps: all of it, within reason.
+MESSAGE_CHARS = 4000
+#: What a failed interface scan means, for the Status column.
+SNMP_SCAN = ("PRTG could not read the interfaces over SNMP. Check the device's SNMP "
+             "credentials and that PRTG can reach it.")
+#: Kinds whose sensor is made from a scan of the device over SNMP.
+SNMP_SCANNED = ("snmp_traffic", "snmp_memory")
+
+
+class ScanFailed(PrtgError):
+    """PRTG's scan of a device over SNMP failed: timeouts, no response, bad
+    credentials. Says so in one sentence; ``original`` is PRTG's text and
+    ``issue`` where to fix it."""
+
+    def __init__(self, original: str, obj=None):
+        super().__init__(SNMP_SCAN)
+        self.original = original
+        self.issue = None
+        if obj is not None:
+            from .provision import _target
+
+            self.issue = {"code": "snmp_scan", "text": SNMP_SCAN, "object": _target(obj)}
 
 
 class Refused(ValueError):
@@ -194,6 +219,7 @@ class Writer:
                 self._remember(link, key, str(row["objid"]), row.get("name", ""))
                 return str(row["objid"])
         tags = _sensor_tags(inst)
+        tags += [t for t in object_tags(self.conn, self.obj) if t not in tags]
         kind = inst["kind"]
         if self.mode == PrtgConnection.WRITE_V2:
             objid = self._create_v2(device_objid, inst, tags)
@@ -265,7 +291,14 @@ class Writer:
         return objid
 
     def _scan_values(self, device_objid, kindid: str, inst: dict) -> list:
-        rows = self.v2.metascan(device_objid, kindid)
+        try:
+            rows = self.v2.metascan(device_objid, kindid)
+        except (PrtgUnauthorized, PrtgUnreachable):
+            raise
+        except PrtgError as exc:
+            if inst["kind"] not in SNMP_SCANNED:
+                raise
+            raise ScanFailed(str(exc), self.obj) from exc
         if not rows:
             raise Refused("PRTG's scan of the device found nothing to monitor.")
         if inst["kind"] == "snmp_memory":
@@ -349,6 +382,65 @@ class Writer:
                 return False
             raise
         return True
+
+
+def prtg_tag(value: str) -> str:
+    """A tag as PRTG takes it: lower case, no spaces or commas."""
+    return re.sub(r"[^a-z0-9_.\-]+", "-", (value or "").strip().lower()).strip("-")
+
+
+def object_tags(conn: PrtgConnection, obj) -> list[str]:
+    """The Danbyte tags a device or VM sends to PRTG: its own tags (slugs),
+    and ``site-<slug>`` and ``role-<slug>`` when the connection says so.
+    Empty while the connection does not send tags."""
+    if obj is None or not conn.send_tags:
+        return []
+    out = [prtg_tag(t.slug or t.name) for t in obj.tags.all()]
+    if conn.tag_site_role:
+        site = getattr(obj, "site", None) if getattr(obj, "site_id", None) else None
+        role = getattr(obj, "role", None) if getattr(obj, "role_id", None) else None
+        if site is not None:
+            out.append(prtg_tag(f"site-{site.slug or site.name}"))
+        if role is not None:
+            out.append(prtg_tag(f"role-{getattr(role, 'slug', '') or role.name}"))
+    seen: list = []
+    for t in out:
+        if t and t not in seen and not t.startswith("danbyte"):
+            seen.append(t)
+    return seen
+
+
+def sync_tags(conn: PrtgConnection, links, device_rows, client=None) -> int:
+    """Bring the Danbyte tags on the PRTG devices Danbyte created in step
+    with their objects: add what is new, remove only what Danbyte put there
+    before (``sent_tags``), never an operator's own. Returns how many PRTG
+    devices were written. A device that cannot be written is left for the
+    next read."""
+    if not conn.send_tags and not any(lk.sent_tags for lk in links):
+        return 0
+    rows = {str(r["objid"]): r for r in device_rows}
+    client = client or PrtgClient.for_connection(conn)
+    written = 0
+    for link in links:
+        if not link.created_here or link.objid not in rows:
+            continue
+        obj = link.device if link.device_id else link.virtual_machine
+        want = object_tags(conn, obj)
+        sent = list(link.sent_tags or [])
+        if sorted(want) == sorted(sent):
+            continue
+        current = [t.lower() for t in rows[link.objid].get("tags") or []]
+        keep = [t for t in current if t not in sent]
+        tags = keep + [t for t in want if t not in keep]
+        try:
+            client.set_property(int(link.objid), "tags", " ".join(tags))
+        except PrtgError as exc:
+            log.warning("prtg tags for %s not written: %s", link.objid, exc)
+            continue
+        link.sent_tags = want
+        link.save(update_fields=["sent_tags"])
+        written += 1
+    return written
 
 
 def _sensor_tags(inst: dict) -> list:
@@ -492,7 +584,8 @@ def apply_create_device(w: Writer) -> str:
     if not group.get("objid"):
         raise Refused("No PRTG group to create it in.")
     tag = f"danbyte-{obj.id}"
-    tags = ["danbyte", tag]
+    extra = object_tags(w.conn, obj)
+    tags = ["danbyte", tag, *extra]
     objid = w.result.get("device")
     created_here = bool(objid)
     if objid:
@@ -535,7 +628,9 @@ def apply_create_device(w: Writer) -> str:
                      timezone.now())
     link.created_here = created_here
     link.tagged = True
-    link.save(update_fields=["created_here", "tagged"])
+    if created_here:
+        link.sent_tags = extra
+    link.save(update_fields=["created_here", "tagged", "sent_tags"])
     if w.conn.send_credentials and not w.result.get("credentials"):
         names = send_credentials(w, objid, link)
         w.keep(credentials=names or ["none"])
@@ -544,7 +639,8 @@ def apply_create_device(w: Writer) -> str:
         try:
             w.create_sensor(objid, inst, link)
         except (Refused, PrtgError) as exc:
-            failures.append(f"{inst.get('name') or inst.get('kind')}: {exc}")
+            said = f" PRTG said: {exc.original}" if isinstance(exc, ScanFailed) else ""
+            failures.append(f"{inst.get('name') or inst.get('kind')}: {exc}{said}")
     templates = [t for t in d.get("templates") or [] if t]
     if templates and not w.result.get("templates"):
         w.classic.discover_now(int(objid), templates)
@@ -657,16 +753,17 @@ def apply(change: PrtgChange, *, user=None, classic=None, v2=None) -> dict:
     try:
         sentence = fn(w)
     except (Refused, PrtgError, PrtgNotFound) as exc:
-        _finish(w, now, by, ok=False, sentence=str(exc)[:400])
+        _finish(w, now, by, ok=False, sentence=str(exc)[:MESSAGE_CHARS], error=exc)
         raise
     _finish(w, now, by, ok=True, sentence=sentence)
     return {"detail": sentence, "result": w.result}
 
 
-def _finish(w: Writer, now, by: str, *, ok: bool, sentence: str) -> None:
+def _finish(w: Writer, now, by: str, *, ok: bool, sentence: str, error=None) -> None:
     entry = {"at": now.isoformat(), "by": by, "ok": ok, "detail": sentence,
              "steps": w.steps}
     w.detail = dict(w.change.detail or {}) | {"result": w.result}
+    w.detail.pop("queued_apply", None)
     history = list(w.detail.get("log") or [])[-9:]
     history.append(entry)
     w.detail["log"] = history
@@ -675,6 +772,9 @@ def _finish(w: Writer, now, by: str, *, ok: bool, sentence: str) -> None:
         w.detail.pop("last_error", None)
     else:
         w.detail["last_error"] = {"at": entry["at"], "detail": sentence}
+        if error is not None and getattr(error, "issue", None):
+            w.detail["last_error"].update(issue=error.issue, prtg=error.original)
+            entry.update(issue=error.issue, prtg=error.original)
     w.change.detail = w.detail
     w.change.save(update_fields=["detail", "updated_at"])
     if w.obj is not None and (ok or w.steps):
@@ -729,9 +829,86 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
             r = apply(change, user=user)
             out.append({"id": str(change.id), "ok": True, "detail": r["detail"]})
         except (ValueError, PrtgError) as exc:
-            out.append({"id": str(change.id), "ok": False, "detail": str(exc)[:400]})
+            out.append({"id": str(change.id), "ok": False,
+                        "detail": str(exc)[:MESSAGE_CHARS]})
     return {"applied": sum(1 for r in out if r["ok"]),
             "failed": [r for r in out if not r["ok"]], "results": out}
+
+
+#: The order an object's rows are written in: the device before its sensors.
+_ORDER = {PrtgChange.CREATE_DEVICE: 0, PrtgChange.ADD_SENSOR: 1, PrtgChange.MOVE_DEVICE: 2}
+
+
+def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
+    """Add one device or VM to PRTG now: plan it, then write every ready
+    planned row of it - the device, then its sensors. Never removes.
+    Returns ``{applied, failed, results: [{id, kind, ok, detail, status}],
+    link}``; ``link`` is the PRTG device afterwards, or None."""
+    from .provision import _parent, plan_object
+
+    plan_object(conn, obj)
+    rows = sorted(
+        PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **_parent(obj))
+        .select_related("device", "virtual_machine", "connection", "connection__tenant"),
+        key=lambda r: (_ORDER.get(r.kind, 9), r.created_at),
+    )
+    out = []
+    for change in rows:
+        if not ready(change):
+            continue
+        try:
+            r = apply(change, user=user)
+            item = {"ok": True, "detail": r["detail"]}
+        except (ValueError, PrtgError) as exc:
+            item = {"ok": False, "detail": str(exc)[:MESSAGE_CHARS]}
+        change.refresh_from_db()
+        out.append({"id": str(change.id), "kind": change.kind, **item,
+                    "status": change_status(change)})
+        if change.kind == PrtgChange.CREATE_DEVICE and not item["ok"]:
+            break
+    link = PrtgDeviceLink.objects.filter(connection=conn, **_parent(obj)).first()
+    return {
+        "applied": sum(1 for r in out if r["ok"]),
+        "failed": [r for r in out if not r["ok"]],
+        "results": out,
+        "link": {"id": str(link.id), "objid": link.objid, "name": link.name,
+                 "url": conn.device_url(link.objid)} if link else None,
+    }
+
+
+def run_apply_object(connection_id: str, kind: str, object_id: str) -> dict:
+    """The apply a save queues when Apply automatically is on: one object's
+    ready rows. Every switch is checked again here, and the object must
+    still be in the connection's tenant."""
+    from api.models import Device, VirtualMachine
+
+    from .provision import _parent
+
+    conn = PrtgConnection.objects.filter(pk=connection_id).select_related("tenant").first()
+    reason = skip_reason(conn, "prtg")
+    model = VirtualMachine if kind == "virtual_machine" else Device
+    obj = model.objects.filter(pk=object_id, tenant=conn.tenant).first() if conn else None
+    try:
+        if reason:
+            return {"skipped": reason}
+        if obj is None:
+            return {"skipped": "object gone"}
+        if not (conn.enabled and conn.api_key_set and conn.auto_apply_registration):
+            return {"skipped": "auto apply off"}
+        if not _lock(conn):
+            return {"skipped": "already applying"}
+        try:
+            out = apply_object(conn, obj)
+        finally:
+            _unlock(conn)
+        return {"applied": out["applied"], "failed": len(out["failed"])}
+    finally:
+        if conn is not None and obj is not None:
+            for row in PrtgChange.objects.filter(
+                connection=conn, detail__has_key="queued_apply", **_parent(obj)
+            ):
+                row.detail.pop("queued_apply", None)
+                row.save(update_fields=["detail", "updated_at"])
 
 
 def _lock(conn) -> bool:
@@ -782,10 +959,10 @@ def change_status(change: PrtgChange) -> str:
     """The queue's status pill: ``ready``, ``attention``, ``applied``,
     ``failed`` or ``decision``."""
     d = change.detail or {}
-    if change.kind == PrtgChange.AMBIGUOUS:
-        return "decision"
     if d.get("applied"):
         return "applied"
+    if change.kind == PrtgChange.AMBIGUOUS:
+        return "failed" if d.get("last_error") else "decision"
     if d.get("last_error"):
         return "failed"
     if change.kind == PrtgChange.ADOPT:

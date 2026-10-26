@@ -50,7 +50,13 @@ While [PRTG monitoring](../features/prtg.md) is on, the form has a **PRTG**
 select: **Follow policies** (the default) leaves it to the PRTG policies
 and the connection's *Register all*, **Monitor in PRTG** puts the device in
 PRTG's plan whatever they say, and **Exclude from PRTG** keeps it out of
-every plan. The API field is `prtg_sync` (`inherit`, `always`, `never`). See
+every plan. The API field is `prtg_sync` (`inherit`, `always`, `never`). A
+muted line under it says what happens next: *Planned changes wait in the
+Review queue* or *Applied automatically*. **PRTG polls** (`prtg_host`) names
+the address or DNS name PRTG should poll instead of the primary address.
+Changing either plans the device for PRTG at once, and the save says
+**Planned for PRTG** or **Being added to PRTG** (`prtg_plan` on the
+response). See
 [Registering devices and VMs](../features/prtg.md#registering-devices-and-vms).
 
 The form's **Topology card** section sets which lines this device's card
@@ -337,7 +343,7 @@ rear ports. Like the other tab counts they are 0 on the device list.
 | **Services**   | Application services running on the device.                                                     |
 | **Software**   | Applications installed on the device, each at a version - add, edit and remove them here, or assign an [application group](../features/applications.md#application-groups). The tab shows the count (`install_count` on the device, list and detail). See [Applications & installed software](../features/applications.md). |
 | **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
-| **Sensors**    | Only when [PRTG monitoring](../features/prtg.md#sensors) is on and PRTG has a device for this one, with the sensor count: a status strip, a card per PRTG sensor, and a panel with each sensor's channels as gauges and state bars. The **Monitoring** tab gets one **PRTG** row linking here; its chevron opens whether the device is in PRTG, whether Danbyte made it, what registers it and what is planned, with **Register in PRTG** - see [Planned changes](../features/prtg.md#planned-changes). |
+| **Sensors**    | Only when [PRTG monitoring](../features/prtg.md#sensors) is on, with the sensor count: a status strip, a card per PRTG sensor, and a panel with each sensor's channels as gauges and state bars. Before PRTG has sensors for the device it shows where it stands - excluded, not in PRTG, planned (with **Add to PRTG now**), needs attention, being added, or in PRTG without sensors - see [Registering devices and VMs](../features/prtg.md#registering-devices-and-vms). The **Monitoring** tab gets one **PRTG** row linking here; its chevron opens whether the device is in PRTG, whether Danbyte made it, what registers it and what is planned, with **Register in PRTG** and **Add to PRTG now** - see [Planned changes](../features/prtg.md#planned-changes). |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |

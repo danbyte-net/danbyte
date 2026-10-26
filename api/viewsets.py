@@ -3699,6 +3699,22 @@ ASSIGNED_IP_RELATED = (
 )
 
 
+def _prtg_state(obj) -> tuple:
+    """What a save must compare to know the PRTG plan changed."""
+    return (obj.prtg_sync or "inherit", obj.prtg_host or "")
+
+
+def _plan_prtg_on_save(obj, before: tuple) -> None:
+    """A device's or VM's PRTG setting or host changed: plan it for PRTG now
+    (and, with Apply automatically on, queue the apply) instead of at the
+    next pass. What happened rides back on the response as ``prtg_plan``."""
+    if _prtg_state(obj) == before:
+        return
+    from prtg.provision import plan_after_save
+
+    obj._prtg_plan = plan_after_save(obj)
+
+
 @extend_schema_view(
     list=extend_schema(parameters=[
         OpenApiParameter(
@@ -4532,6 +4548,7 @@ class DeviceViewSet(
         # C9300-48P type materialises its 48 interfaces + console + PSU
         # inlets on every new device of the type).
         materialize_device_components(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, ("inherit", ""))
 
     def perform_update(self, serializer):
         _check_unique_name(Device, serializer, self._tenant_or_403(), "device")
@@ -4540,8 +4557,10 @@ class DeviceViewSet(
         old = serializer.instance
         old_in_stack = old.virtual_chassis_id is not None
         old_pos = old.vc_position if old_in_stack else None
+        old_prtg = _prtg_state(old)
         serializer.save()
         new = serializer.instance
+        _plan_prtg_on_save(new, old_prtg)
         new_in_stack = new.virtual_chassis_id is not None
         new_pos = new.vc_position if new_in_stack else None
         if (old_in_stack, old_pos) != (new_in_stack, new_pos):
@@ -6392,10 +6411,13 @@ class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
     def perform_create(self, serializer):
         super().perform_create(serializer)
         self._fill_site(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, ("inherit", ""))
 
     def perform_update(self, serializer):
+        old_prtg = _prtg_state(serializer.instance)
         super().perform_update(serializer)
         self._fill_site(serializer.instance)
+        _plan_prtg_on_save(serializer.instance, old_prtg)
 
     def _fill_site(self, vm) -> None:
         from .cluster_site import apply_cluster_site

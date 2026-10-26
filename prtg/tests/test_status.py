@@ -201,10 +201,11 @@ class StatusReadTests(_Lab):
         self.assertEqual((ping.kind_label, ping.state, ping.tags),
                          ("Ping v2", "up", ["icmp", "ping", "pingsensor"]))
 
-    def test_a_vm_and_a_device_on_one_address_is_a_question(self):
+    def test_a_shared_address_goes_to_the_object_named_like_prtg(self):
         """The lab's case: db-dev01 is a VM at 10.0.0.41, and kbh-srv1 is a
         device recorded on the same address. PRTG's db-dev01 must not be
-        linked to kbh-srv1 because they share it."""
+        linked to kbh-srv1 because they share it: the VM named like it
+        takes it, and nothing is asked."""
         # As in the demo tenant: the address row is kbh-srv1's, and the VM
         # names it as its primary address.
         kbh = self.device("kbh-srv1", "10.0.0.41")
@@ -215,15 +216,12 @@ class StatusReadTests(_Lab):
             primary_ip=kbh.primary_ip,
         )
         counts = self.read()
-        self.assertEqual(counts["linked"], 0)
-        self.assertFalse(PrtgDeviceLink.objects.exists())
-        row = PrtgChange.objects.get(kind=PrtgChange.AMBIGUOUS, device__isnull=False)
-        self.assertEqual(row.device.name, "kbh-srv1")
-        self.assertIn("10.0.0.41", row.detail["reason"])
-        self.assertIn("VM db-dev01", row.detail["reason"])
-        # The VM matches the same address, and is asked about too.
-        vm_row = PrtgChange.objects.get(kind=PrtgChange.AMBIGUOUS, device__isnull=True)
-        self.assertEqual(vm_row.virtual_machine.name, "db-dev01")
+        self.assertEqual(counts["linked"], 1)
+        link = PrtgDeviceLink.objects.get()
+        self.assertIsNone(link.device_id)
+        self.assertEqual(link.virtual_machine.name, "db-dev01")
+        self.assertFalse(PrtgDeviceLink.objects.filter(device=kbh).exists())
+        self.assertFalse(PrtgChange.objects.filter(kind=PrtgChange.AMBIGUOUS).exists())
 
     def test_two_danbyte_devices_on_one_prtg_device_is_a_question(self):
         self.device("db-zabbix", "10.0.5.1")

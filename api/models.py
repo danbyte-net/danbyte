@@ -2430,6 +2430,9 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     prtg_sync = models.CharField(
         max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
     )
+    #: What PRTG polls instead of the primary address: an IP or a DNS name.
+    #: Used when Danbyte creates the PRTG device and when it matches one.
+    prtg_host = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         unique_together = ("tenant", "name")
@@ -5120,6 +5123,8 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     prtg_sync = models.CharField(
         max_length=8, choices=PRTG_SYNC_CHOICES, default="inherit", db_default="inherit",
     )
+    #: What PRTG polls instead of the primary address (see Device.prtg_host).
+    prtg_host = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["name"]

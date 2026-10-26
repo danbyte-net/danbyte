@@ -27,7 +27,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
-| **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). |
+| **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). Under it, what happens next (*Planned changes wait in the Review queue* or *Applied automatically*) and **PRTG polls** (`prtg_host`): the address or DNS name PRTG polls instead of the primary address. Changing either plans the VM for PRTG at once; the save says **Planned for PRTG** or **Being added to PRTG**. |
 
 ## The detail page
 
@@ -69,8 +69,8 @@ interfaces a VLAN. Then:
 | **Software** | Applications installed on it, each at a version, with a count on the tab (`install_count` in the API), and its [application groups](applications.md#application-groups). See [Applications & installed software](applications.md). |
 | **Flows** | [Application flows](application-flows.md) with an end at one of its addresses, or at a prefix or range that holds one. |
 | **Routing** | Static routes and BGP, OSPF, IS-IS and EIGRP instances on the VM - a virtual router's routing, the same as a device's. See [Routing on virtual machines](routing.md#routing-on-virtual-machines). |
-| **Monitoring** | Checks against its primary address, same engine as devices (`?state=` filters them, as the monitoring bar does), and one **PRTG** row while PRTG is on, whose chevron opens [in PRTG, managed, registration and planned](prtg.md#planned-changes) with **Register in PRTG**. |
-| **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on and PRTG has a device for this VM, with the sensor count: the same status strip, sensor cards and sensor panel as a device's. |
+| **Monitoring** | Checks against its primary address, same engine as devices (`?state=` filters them, as the monitoring bar does), and one **PRTG** row while PRTG is on, whose chevron opens [in PRTG, managed, registration and planned](prtg.md#planned-changes) with **Register in PRTG** and **Add to PRTG now**. |
+| **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on, with the sensor count: the same status strip, sensor cards and sensor panel as a device's, and before PRTG has sensors for the VM the same state cards (excluded, not in PRTG, planned with **Add to PRTG now**, needs attention, being added, no sensors yet). |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
 | **Certificates** | TLS certificates seen on its endpoints. |
 | **Config** | The rendered config context for this VM, and the [Oxidized backup](oxidized.md) of a virtual router when that is on. |

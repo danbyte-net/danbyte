@@ -248,7 +248,9 @@ describe("PrtgChanges planned rows", () => {
     // Ready gets Apply, failed gets Retry, the attention row neither.
     expect(screen.getAllByRole("button", { name: "Apply" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1)
-    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(3)
+    // A failed row offers Skip beside Retry instead of the Dismiss icon.
+    expect(screen.getAllByRole("button", { name: "Skip" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(2)
   })
 
   it("applies a ready row", async () => {

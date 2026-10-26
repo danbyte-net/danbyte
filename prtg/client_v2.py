@@ -158,7 +158,7 @@ class PrtgV2Client:
             raise PrtgUnauthorized(f"PRTG refused the API key ({message or code})")
         if code == 404:
             raise PrtgNotFound(message or "PRTG has no such object.")
-        raise PrtgError(f"PRTG API v2 answered {code}: {message}"[:400])
+        raise PrtgError(f"PRTG API v2 answered {code}: {message}"[:4000])
 
     def _json(self, resp):
         try:
@@ -302,9 +302,9 @@ def _message(resp) -> str:
     try:
         data = resp.json()
     except ValueError:
-        return re.sub(r"<[^>]+>", " ", resp.text or "").strip()[:300]
+        return re.sub(r"<[^>]+>", " ", resp.text or "").strip()[:4000]
     if isinstance(data, dict):
-        return str(data.get("message") or data.get("code") or "")[:300]
+        return str(data.get("message") or data.get("code") or "")[:4000]
     return ""
 
 

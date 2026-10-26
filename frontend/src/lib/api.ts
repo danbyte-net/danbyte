@@ -1583,6 +1583,10 @@ export interface Device {
   name: string
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
+  /** What PRTG polls instead of the primary address ("" = the primary). */
+  prtg_host?: string
+  /** On a save that changed the PRTG setting: what the plan made of it. */
+  prtg_plan?: PrtgSavePlan | null
   /** Per-device photo-port override; null = inherit the type's layout. */
   image_ports?: DeviceType["image_ports"] | null
   /** Topology card lines for this device; null inherits the view, role
@@ -1728,6 +1732,7 @@ export interface Device {
 export interface DeviceWritePayload {
   name: string
   prtg_sync?: PrtgSync
+  prtg_host?: string
   device_type_id?: string | null
   site_id?: string | null
   role_id?: string | null
@@ -5387,6 +5392,10 @@ export interface VirtualMachine {
   name: string
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
+  /** What PRTG polls instead of the primary address ("" = the primary). */
+  prtg_host?: string
+  /** On a save that changed the PRTG setting: what the plan made of it. */
+  prtg_plan?: PrtgSavePlan | null
   cluster: { id: string; name: string; status: StatusMini | null }
   group: { id: string; name: string; kind: string } | null
   device: { id: string; name: string } | null
@@ -5521,6 +5530,7 @@ export interface VirtualSwitch {
 export interface VirtualMachineWritePayload {
   name: string
   prtg_sync?: PrtgSync
+  prtg_host?: string
   cluster_id: string
   /** A VM group on the same cluster, or null for none. */
   group_id?: string | null
@@ -13219,6 +13229,10 @@ export interface PrtgConnection {
   /** Writing to PRTG. */
   seed_device_objid: string
   send_credentials: boolean
+  /** Send the object's Danbyte tags to PRTG. */
+  send_tags?: boolean
+  /** Also site-<slug> and role-<slug>. */
+  tag_site_role?: boolean
   auto_apply_registration: boolean
   prune_devices: boolean
   /** What this PRTG can create: v2, seed (copies), none, or "" before a
@@ -13439,6 +13453,7 @@ export interface PrtgIssue {
     | "unwanted_sensor"
     | "not_created_sensor"
     | "no_writes"
+    | "snmp_scan"
   text: string
   /** The policy that decides the group, for no_group / group_gone. */
   policy?: string
@@ -13474,8 +13489,35 @@ export type PrtgRegistrationMode =
  * `linked` says whether it is in PRTG, `managed` whether Danbyte created
  * that PRTG device, `registration` what registers it and `planned` what
  * the next plan proposes. */
-export interface PrtgPlanEntry {
+/** What a device or VM save made of a changed PRTG setting. */
+export interface PrtgSavePlan {
+  state: "applying" | "planned" | "attention" | "excluded" | "none"
+  connections: string[]
+}
+
+/** POST /api/prtg/changes/apply-object/ - one entry per connection. */
+export interface PrtgApplyObjectResult {
   connection: { id: string; name: string }
+  applied: number
+  failed: { id: string; kind: string; ok: boolean; detail: string }[]
+  results: {
+    id: string
+    kind: string
+    ok: boolean
+    detail: string
+    status: PrtgChangeStatus
+  }[]
+  link: { id: string; objid: string; name: string; url: string } | null
+}
+
+export interface PrtgPlanEntry {
+  connection: {
+    id: string
+    name: string
+    /** Apply automatically is on for the connection. */
+    auto_apply?: boolean
+    write_mode?: string
+  }
   prtg_sync: PrtgSync
   /** Danbyte created the linked PRTG device. */
   managed: boolean
@@ -13505,6 +13547,12 @@ export interface PrtgPlanEntry {
     reasons: PrtgIssue[]
     /** Planned rows for this object waiting in the review queue. */
     queued: number
+    /** Of those, the ones Add to PRTG now would write. */
+    ready?: number
+    /** How the queued rows stand. */
+    statuses?: PrtgChangeStatus[]
+    /** An apply of this object's rows is queued or running. */
+    applying?: boolean
   }
   via: "" | "never" | "always" | "policy" | "register_all"
   reason: string
@@ -13517,6 +13565,7 @@ export interface PrtgPlanEntry {
     matched_by?: string
     created_here?: boolean
     created_at?: string
+    sent_tags?: string[]
   } | null
   group: {
     objid: string
@@ -13568,6 +13617,8 @@ export interface PrtgDefaults {
 export interface PrtgDeviceLink {
   id: string
   connection: string
+  /** The Danbyte tags Danbyte last wrote onto the PRTG device. */
+  sent_tags?: string[]
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null
   objid: string
@@ -13646,6 +13697,8 @@ export interface PrtgChange {
   status: PrtgChangeStatus
   /** Deletes something in PRTG: applied row by row, never by Apply all. */
   destructive: boolean
+  /** A decision row's extra choice: a separate PRTG device for its object. */
+  decision?: { can_create: boolean } | null
   created_at: string
   updated_at: string
 }
@@ -13660,6 +13713,26 @@ export interface PrtgApplyLogEntry {
   ok: boolean
   detail: string
   steps: string[]
+  /** PRTG's own words, when the detail is Danbyte's reading of them. */
+  prtg?: string
+  issue?: PrtgIssue
+}
+
+/** A Danbyte object a decision row could link its PRTG device to. */
+export interface PrtgDecisionCandidate {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  site: string
+  address: string
+}
+
+/** A PRTG device on a decision row. */
+export interface PrtgDecisionRemote {
+  objid: string
+  name: string
+  host: string
+  group?: string
 }
 
 /** What Danbyte last wrote to PRTG for an object. */

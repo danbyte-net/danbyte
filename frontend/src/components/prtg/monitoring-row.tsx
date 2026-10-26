@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { ReactNode } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
@@ -10,6 +10,7 @@ import type {
   PrtgDeviceLink,
   PrtgLastApply,
   PrtgPlanEntry,
+  PrtgSavePlan,
   PrtgSync,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -43,6 +44,13 @@ import {
   prtgIssueLinks,
 } from "./issues"
 import { sensorTotal, usePrtgLinks, usePrtgSensors } from "./sensors-tab"
+import {
+  AddToPrtgNowButton,
+  useAddToPrtgNow,
+  usePrtgPlan,
+  useRefreshWhenLinked,
+} from "./object-state"
+import { prtgSaveToast } from "./prtg-sync-select"
 import type { PrtgParent } from "./sensors-tab"
 
 /**
@@ -226,36 +234,24 @@ export function PrtgDetails({
   prtgSync?: PrtgSync
   className?: string
 }) {
-  const qs =
-    "device" in parent
-      ? `device=${parent.device}`
-      : `virtual_machine=${parent.virtual_machine}`
   const object = objectOf(parent)
   const qc = useQueryClient()
   const { canDo } = useMe()
-  const plan = useQuery({
-    queryKey: ["prtg-plan", qs],
-    queryFn: () => api<PrtgPlanEntry[]>(`/api/prtg/plan/?${qs}`),
-  })
+  const plan = usePrtgPlan(object)
+  const add = useAddToPrtgNow(object)
+  useRefreshWhenLinked(plan.data)
   const register = useMutation({
-    mutationFn: async (entries: PrtgPlanEntry[]) => {
-      const path =
+    // The save plans the object at once (and applies it when the
+    // connection applies automatically).
+    mutationFn: () =>
+      api<{ prtg_plan?: PrtgSavePlan | null }>(
         object.kind === "device"
           ? `/api/devices/${object.id}/`
-          : `/api/virtual-machines/${object.id}/`
-      await api(path, {
-        method: "PATCH",
-        body: JSON.stringify({ prtg_sync: "always" }),
-      })
-      // The next scheduled plan picks it up for anyone who may not plan now.
-      if (!canDo("prtgconnection", "change")) return
-      for (const e of entries)
-        await api(`/api/prtg/connections/${e.connection.id}/plan-now/`, {
-          method: "POST",
-        }).catch(() => undefined)
-    },
-    onSuccess: () => {
-      toast.success("Set to Monitor in PRTG")
+          : `/api/virtual-machines/${object.id}/`,
+        { method: "PATCH", body: JSON.stringify({ prtg_sync: "always" }) }
+      ),
+    onSuccess: (saved) => {
+      toast.success(prtgSaveToast(saved.prtg_plan) ?? "Set to Monitor in PRTG")
       void qc.invalidateQueries({ queryKey: ["prtg-plan"] })
       void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
       void qc.invalidateQueries({
@@ -283,6 +279,12 @@ export function PrtgDetails({
       !excluded &&
       canDo(object.kind === "device" ? "device" : "virtualmachine", "change")
     const queued = entries.reduce((n, e) => n + e.planned.queued, 0)
+    const ready = entries.reduce(
+      (n, e) => n + (e.linked ? 0 : (e.planned.ready ?? 0)),
+      0
+    )
+    const adding =
+      add.isPending || entries.some((e) => !e.linked && e.planned.applying)
     body = (
       <>
         {entries.map((e) => (
@@ -299,14 +301,22 @@ export function PrtgDetails({
               size="sm"
               variant="outline"
               disabled={register.isPending}
-              onClick={() => register.mutate(entries)}
+              onClick={() => register.mutate()}
             >
               {register.isPending ? "Registering…" : "Register in PRTG"}
             </Button>
           )}
+          {adding ? (
+            <span className="text-[13px] text-muted-foreground">
+              Adding to PRTG…
+            </span>
+          ) : (
+            ready > 0 &&
+            !excluded && <AddToPrtgNowButton object={object} add={add} />
+          )}
           {queued > 0 && (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/prtg" search={{ tab: "review" }}>
+              <Link to="/prtg" search={{ tab: "review", object: object.id }}>
                 Open review queue
               </Link>
             </Button>
@@ -507,6 +517,12 @@ function DetailsEntry({
               ? "Yes"
               : "No"}
           {e.last_apply?.at && <LastApply apply={e.last_apply} />}
+          {e.managed &&
+            (e.linked?.sent_tags ?? []).map((t) => (
+              <Badge key={t} variant="outline" data-testid="prtg-sent-tag">
+                {t}
+              </Badge>
+            ))}
         </span>
       ),
     },

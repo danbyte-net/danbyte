@@ -65,7 +65,21 @@ def annotate_devices(tenant, devices) -> list:
             d._prtg_ips.add(_address(str(address)))
         if dns_name:
             d._prtg_dns.add(_dns(dns_name))
+    for d in devices:
+        _override(d)
     return devices
+
+
+def _override(obj) -> None:
+    """An object with a PRTG host override is matched by that host alone:
+    it is what PRTG polls."""
+    host = (getattr(obj, "prtg_host", "") or "").strip()
+    if not host:
+        return
+    if _address(host):
+        obj._prtg_ips, obj._prtg_dns = {_address(host)}, set()
+    else:
+        obj._prtg_ips, obj._prtg_dns = set(), {_dns(host)}
 
 
 def shared_addresses(tenant, addresses) -> dict:
@@ -182,6 +196,8 @@ def annotate_vms(tenant, vms) -> list:
                 v._prtg_ips.add(_address(str(address)))
             if dns_name:
                 v._prtg_dns.add(_dns(dns_name))
+    for v in vms:
+        _override(v)
     return vms
 
 

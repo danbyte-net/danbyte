@@ -215,7 +215,7 @@ describe("PrtgMonitoringRow", () => {
       screen
         .getByRole("link", { name: "Open review queue" })
         .getAttribute("href")
-    ).toBe("/prtg?tab=review")
+    ).toBe("/prtg?tab=review&object=d1")
     expect(
       screen.getByRole("button", { name: "Register in PRTG" })
     ).toBeTruthy()
@@ -233,7 +233,7 @@ describe("PrtgMonitoringRow", () => {
     ).toBeNull()
   })
 
-  it("registers through the object's API and plans now", async () => {
+  it("registers through the object's API, which plans it", async () => {
     serve([{ ...BASE, planned: { ...BASE.planned, reasons: [] } }])
     mount()
     await expand()
@@ -242,9 +242,14 @@ describe("PrtgMonitoringRow", () => {
     )
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(
-        "/api/prtg/connections/c1/plan-now/",
-        { method: "POST" }
+        "/api/devices/d1/",
+        expect.objectContaining({ method: "PATCH" })
       )
+    )
+    // The save plans it; no full planning pass from here.
+    expect(apiMock).not.toHaveBeenCalledWith(
+      "/api/prtg/connections/c1/plan-now/",
+      expect.anything()
     )
     const patch = apiMock.mock.calls.find(([p]) => p === "/api/devices/d1/")
     expect(patch?.[1]).toEqual({
