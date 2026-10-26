@@ -211,6 +211,31 @@ describe("PrtgSensorsTab", () => {
     expect(screen.getByText("14")).toBeTruthy()
   })
 
+  it("clamps a long message to two lines, the whole text in the tooltip", async () => {
+    const long =
+      "Warning caused by lookup value 'No' in channel 'Root Authority " +
+      "Trusted' (Root Authority Trusted is No) and lookup value 'Yes' in " +
+      "channel 'Self-Signed' (Self-Signed is Yes)"
+    SENSORS[0] = { ...SENSORS[0], message: long }
+    try {
+      mountTab()
+      const [msg] = await screen.findAllByTestId("prtg-sensor-message")
+      expect(msg.textContent).toBe(long)
+      // The clamp is on the text; the padded box is its parent, so no
+      // sliver of a third line shows under the ellipsis.
+      expect(msg.className).toContain("line-clamp-2")
+      expect(msg.parentElement?.className).toContain("py-1")
+      expect(msg.className).not.toContain("py-")
+      // The shared tooltip, never a browser title.
+      expect(msg.closest("[title]")).toBeNull()
+      fireEvent.focus(msg.parentElement!)
+      const tip = await screen.findByRole("tooltip")
+      expect(tip.textContent).toContain(long)
+    } finally {
+      SENSORS[0] = { ...SENSORS[0], message: "Destination unreachable" }
+    }
+  })
+
   it("opens the panel from a card", async () => {
     const onSelect = mountTab()
     const cards = await screen.findAllByTestId("prtg-sensor-card")

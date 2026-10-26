@@ -234,7 +234,9 @@ states, then the PRTG device with a link to it in PRTG and when it was last
 read. Below, a card per sensor, worst first: its name and kind, the state
 pill (PRTG's own word, *Paused by Dependency*, in the tooltip), the last value
 as the big number, the last check, the uptime, and PRTG's message as a muted
-notice when the sensor is not up. The link icon opens the sensor in PRTG.
+notice when the sensor is not up - two lines at most, ending in an ellipsis,
+with the whole message on hover and in the panel. The link icon opens the
+sensor in PRTG.
 
 **The sensor panel.** Clicking a card opens the sensor's panel
 (`?sensor=<id>` in the address, so it can be linked). It shows PRTG's

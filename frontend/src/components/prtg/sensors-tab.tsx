@@ -220,6 +220,29 @@ function splitValue(s: PrtgSensor): [string, string] {
   return [text, ""]
 }
 
+/** PRTG's message on a card: two lines at most, ending in an ellipsis,
+ * the whole text in the shared tooltip. The clamp sits on an inner block so
+ * the box's padding cannot show a sliver of a third line. */
+function SensorMessage({ message }: { message: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+          <p
+            className="line-clamp-2 break-words"
+            data-testid="prtg-sensor-message"
+          >
+            {message}
+          </p>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent variant="default" className="max-w-sm break-words">
+        {message}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function SensorCard({
   sensor: s,
   onOpen,
@@ -266,14 +289,7 @@ function SensorCard({
           <span className="text-sm text-muted-foreground">No value</span>
         )}
       </p>
-      {notUp && s.message && (
-        <p
-          className="line-clamp-2 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
-          data-testid="prtg-sensor-message"
-        >
-          {s.message}
-        </p>
-      )}
+      {notUp && s.message && <SensorMessage message={s.message} />}
       <div className="mt-auto flex items-center gap-3 text-[11px] whitespace-nowrap text-muted-foreground">
         {s.last_check_at && (
           <span className="inline-flex items-center gap-1">
