@@ -27,6 +27,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
+| **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). |
 
 ## The detail page
 

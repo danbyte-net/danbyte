@@ -46,6 +46,13 @@ served as `effective_airflow` and drives the 3D room's airflow cones),
     [custom field](../features/tags-and-custom-fields.md), in line with the
     zero-pre-filled-data philosophy.
 
+While [PRTG monitoring](../features/prtg.md) is on, the form has a **PRTG**
+select: **Follow policies** (the default) leaves it to the PRTG policies
+and the connection's *Register all*, **Monitor in PRTG** puts the device in
+PRTG's plan whatever they say, and **Exclude from PRTG** keeps it out of
+every plan. The API field is `prtg_sync` (`inherit`, `always`, `never`). See
+[Registering devices and VMs](../features/prtg.md#registering-devices-and-vms).
+
 The form's **Topology card** section sets which lines this device's card
 shows on the topology Diagram. **Inherit** (the default) takes them from
 the map's saved view, the device role or All devices, and previews the
