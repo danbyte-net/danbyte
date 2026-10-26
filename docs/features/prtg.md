@@ -10,7 +10,10 @@ device's sensors on a schedule, rolls them up into one Danbyte state per
 device, and answers `prtg` checks from that read, so PRTG's verdict reaches
 Danbyte's status, alerts and SLA. Each linked device and VM gets a
 **Sensors** tab with PRTG's sensors, channels and history drawn in Danbyte's
-own way. Nothing is written to PRTG.
+own way. Two things travel back, each behind its own switch:
+acknowledgements (both ways) and Danbyte's maintenance windows (as pauses).
+PRTG devices Danbyte has no device for can be adopted, and what PRTG knows
+about a device's name and serial reaches its drift inbox.
 
 !!! note "What PRTG monitors stays configured in PRTG"
     Danbyte shows PRTG's sensors, channel values, limits and history; it does
@@ -24,8 +27,10 @@ own way. Nothing is written to PRTG.
    the sidebar; off, the page is hidden and the API answers 404. Opened by
    link, the page says PRTG is off.
 2. In PRTG, create an **API key** for the user Danbyte should act as (*Setup →
-   Account Settings → API Keys*). Read access is enough for everything Danbyte
-   does today.
+   Account Settings → API Keys*). Reading needs read access. Acknowledging
+   alarms and pausing devices for maintenance need a user that may do both
+   on the devices Danbyte links; with a read-only key, leave those two
+   switches off.
 3. On the **PRTG** page, add the connection: a name, the URL of the PRTG web
    interface, the API key, how often Danbyte will read PRTG, TLS verification,
    and whether the connection is enabled. Press **Test connection**.
@@ -212,6 +217,124 @@ connection, an inactive tenant or the integration off all answer 404. Each
 connection takes 60 notifications a minute (429 beyond), and a second
 notification for the same device within 5 seconds rides the first.
 
+## Acknowledgements
+
+**Acknowledgements both ways** on the connection (on by default) keeps "someone
+has this" the same in both systems.
+
+**Danbyte → PRTG.** Acknowledging a Danbyte alert that a `prtg` check raised
+acknowledges, in PRTG, every sensor behind the check that the last read saw
+*Down* or *Down (Partial)* (`acknowledgealarm.htm`). A check narrowed to a
+sensor type or tag acknowledges only those sensors. The note reads
+`[Danbyte] <your name>: <your note>`, and PRTG shows it first in the sensor's
+message. The write is a background job, so the acknowledgement in Danbyte
+never waits on PRTG. What was written, or PRTG's refusal, is kept on the alert
+(`detail.prtg_ack`). PRTG accepts an acknowledgement only for a sensor that is
+down, so nothing else is sent. PRTG has no un-acknowledge: clearing the
+acknowledgement in Danbyte is recorded on the alert and goes no further.
+
+**PRTG → Danbyte.** When a status read finds every sensor behind a firing,
+unacknowledged alert in *Down (Acknowledged)*, and at least one of them was
+acknowledged by a person in PRTG, the Danbyte alert is acknowledged with the
+note `Acknowledged in PRTG by <who>: <their note>`. It has no Danbyte user.
+
+**No echo.** An acknowledgement read from PRTG is recorded with the source
+`prtg`, and the write-back is never called for it. The `[Danbyte]` marker keeps
+Danbyte's own acknowledgements from being read back as PRTG's. If you clear an
+acknowledgement in Danbyte that came from PRTG, the same PRTG acknowledgement
+does not set it again. A new acknowledgement in PRTG does.
+
+**With push.** A push notification re-reads its device's sensors, and the
+acknowledgement check runs on that re-read too. When the notification
+template fires on the change to *Down (Acknowledged)*, a PRTG acknowledgement
+reaches Danbyte in seconds. Otherwise it arrives with the next status read.
+
+## Maintenance windows
+
+**Pause for maintenance windows** on the connection (off by default) mirrors
+Danbyte's calendar into PRTG. A confirmed maintenance or outage window that
+silences devices pauses each linked PRTG device it covers, for the rest of the
+window (`pauseobjectfor.htm`, in minutes, with the message
+`[Danbyte] Maintenance: <window>`). A virtual machine the window names is
+paused as well when PRTG has a device linked to it. PRTG pauses the device's
+sensors with it (*Paused by parent*). Danbyte reads paused as unknown, and its
+own silence holds the alerts.
+
+* **One pause per device.** PRTG keeps one pause per object, so overlapping
+  windows on one device are written as their union: from the earliest start
+  to the latest end of every window that overlaps the one open now.
+* **Not early.** A window that has not started is not written. The reconcile
+  runs every status interval and whenever a window changes, so a device is
+  paused within one interval of its window opening.
+* **Moves follow.** A window that is lengthened, shortened or joined by
+  another is written again. A window cancelled or deleted early resumes the
+  device (`pause.htm?action=1`). One that ends on time needs nothing: PRTG
+  lifts the timed pause itself.
+* **Hands off what is not Danbyte's.** A device that is already paused when
+  its window opens was paused by somebody in PRTG. Danbyte leaves it alone and
+  records nothing, so it never resumes it. Danbyte resumes only a device it
+  paused that is still paused with Danbyte's message. A device somebody
+  resumed or paused again by hand is left as it is.
+
+The link records what Danbyte did: when it paused the device, until when, and
+for which windows. The device's **Monitoring** tab shows *Paused by
+maintenance until …* on its PRTG row while that holds. The API's
+`maintenance-now/` runs the pass at once.
+
+## Adopting PRTG devices
+
+**Adopt devices** on the connection (off by default) turns PRTG into a way
+into Danbyte. Every status read proposes an **Adopt into Danbyte** row in the
+review queue for each PRTG device that no Danbyte device or virtual machine
+answers to. "Answers to" means by address, serial or name, across the whole
+tenant. PRTG's own objects are skipped: the core server (no address) and the
+probe device (a loopback address). The proposal is keyed by the PRTG object
+id, so a device is proposed once.
+
+Where the device would land is decided most specific first:
+
+1. The first matching **adoption rule** in order (*Adoption* tab, lower order
+   first). A rule matches the PRTG device's name, its group, its probe or its
+   address. The pattern is a glob, `regex:`, or a CIDR for addresses. A rule
+   sets the site, and the role and device type when it names them.
+2. A PRTG **group named like one of your sites**.
+3. The connection's **defaults**: site, role, device type.
+
+A proposal that still lacks a site, role or type says so and waits;
+**Set defaults** opens the connection. Changing the defaults updates the
+waiting proposals at once, leaving what a rule or group decided alone.
+
+**Adopt** makes the device with PRTG's name, links it
+(`matched_by="adopted"`) and records its address only when the PRTG host is
+an IP inside one of your existing prefixes. A device PRTG knows by a DNS name
+is adopted without an address, and the row says so: Danbyte never resolves a
+name to invent one. **Apply all** skips proposals that cannot be placed.
+Every site, role and type in a proposal is read again inside your tenant when
+it is applied. Turning adoption off clears the proposals at the next read.
+
+## Inventory drift
+
+**Read system information** on the connection (off by default) reads what
+PRTG holds about each linked device (`table.json?content=sysinfo`, category
+*system*) once an hour, 50 devices a pass, the oldest first, each again after
+12 hours. PRTG collects it itself over WMI, SNMP or SSH, about once a day, and
+only where it has credentials. Many devices have none, which Danbyte records
+as "looked, nothing to say".
+
+| PRTG key | Recorded as | Drift |
+|---|---|---|
+| *Bios Serial Number*, *Serial Number* | serial | Offered |
+| *sysName*, *Host Name*, *Computer Name* | name | Offered |
+| *Manufacturer*, *Vendor* | vendor | Recorded only |
+| *Model*, *System Model* | model | Recorded only |
+| *Windows Version*, *Operating System*, *sysDescr* | OS | Recorded only |
+
+A different name or serial shows in the device's **drift inbox**, marked as
+coming from PRTG. Nothing reaches the device until somebody accepts it.
+Danbyte's own SNMP poll outranks PRTG wherever both report the same field. A
+paused PRTG device is not an observation of now. Turning the switch off
+withdraws PRTG's opinions rather than leaving the last ones standing.
+
 ## The device list
 
 Devices get a **PRTG** column, hidden until ticked in the Columns menu: the
@@ -271,8 +394,8 @@ changes Danbyte's own status.
 
 **Who sees it.** The sensors and channels are the device's or VM's data: the
 channels and history need view on the device or VM as well as on PRTG
-sensors. Site roles include PRTG device links, sensors and the review queue
-for their sites (an `auth_api` migration gives roles made before 0.19 the same,
+sensors. Site roles include PRTG device links, sensors, system information
+and the review queue for their sites (an `auth_api` migration gives roles made before 0.19 the same,
 see [Permissions](permissions.md#site-roles-local-it-in-one-click)); PRTG
 connections stay with administrators.
 
@@ -287,7 +410,10 @@ the last check), whether it is acknowledged in PRTG (*Down (Acknowledged)*),
 probe and group, and a link into PRTG. **Sensors** lists every sensor with
 the same columns plus the last value and uptime, and a **Hide paused**
 switch. Both have search, facets for state, device, kind and probe/group, and
-export. **Review queue** and **Links** are below.
+export. **Review queue** holds link proposals, adoptions and ambiguities;
+**Links** lists the pairings; **Adoption** edits the adoption rules. The
+connection card's **Two-way** panel says which of acknowledgements,
+maintenance pauses, inventory and adoption are on.
 
 ## API
 
@@ -296,18 +422,19 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 
 | Endpoint | Purpose |
 |---|---|
-| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. `engines` are the tenant's PRTG engines only. `state_map` takes the six editable codes onto `up`, `degraded` or `down`. A fixed code may only be `unknown`, and the map is stored complete. `link_mode` is `auto` or `review`; `push_enabled`; `hook_token_set` (read-only); `last_status_at` and `last_status_summary` (read-only). |
+| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. `engines` are the tenant's PRTG engines only. `state_map` takes the six editable codes onto `up`, `degraded` or `down`. A fixed code may only be `unknown`, and the map is stored complete. `link_mode` is `auto` or `review`; `push_enabled`; `hook_token_set` (read-only); `last_status_at` and `last_status_summary` (read-only). Two-way: `write_acknowledgements` (default on, both directions), `sync_maintenance`, `read_inventory`, `adopt_devices` (default off) with `adopt_site`, `adopt_role` and `adopt_device_type` (the tenant's own rows only) and `adopt_names` (read-only); `last_maintenance_sync_at` and `last_inventory_at` (read-only). |
 | `connections/defaults/` | Every status code with its label, whether it is fixed and why, the default map, and the states (named by the tenant) a code may map onto. |
 | `connections/<id>/test/` | `POST`. Returns `ok`, `detail`, `version`, `probes`, `sensors`, `v2_available` and `v2_detail`; 502 when it fails. Records the version, API v2 answer and error on the connection. |
-| `connections/<id>/status-now/` | `POST`. Runs a status read now; returns its counts (`linked`, `proposed`, `ambiguous`, `unmatched`, `sensors`, `deleted`, `gone`), 502 with PRTG's sentence when it fails. |
+| `connections/<id>/status-now/` | `POST`. Runs a status read now; returns its counts (`linked`, `proposed`, `ambiguous`, `unmatched`, `sensors`, `deleted`, `gone`, `adopt`, `acknowledged`), 502 with PRTG's sentence when it fails. |
+| `connections/<id>/maintenance-now/` | `POST`. Reconciles the maintenance pauses now; returns `paused`, `extended`, `resumed`, `left`, `failed`. 400 while `sync_maintenance` is off, 502 when PRTG cannot be read. |
 | `connections/<id>/rotate-hook-token/` | `POST`. A new push token: `{token, path}`, shown this once. |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`. |
 | `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG) and `device_url`. |
 | `sensors/summary/` | Counts for a status strip in one query, with the list's filters: `down`, `degraded`, `up`, `unknown` (not paused), `paused`, `acknowledged`, `total`, `read_at`. |
 | `sensors/<id>/channels/` | The sensor's channels, read from PRTG at most once per status interval: `{fetched_at, summary, rows}`, each row `{id, name, value, value_raw, unit, kind, state, status, lookup_label, limits: {warn_min, warn_max, error_min, error_max}, lookup_states: [{value, to, label, state}], min, max, primary}`. `kind` is `number`, `percent`, `lookup` or `text`; a lookup `state` is `ok`, `warning`, `error`, `none` or `unknown`. Needs view on the device or VM. 502 with PRTG's sentence when PRTG cannot be read and nothing is cached; `stale: true` when the last read is served instead. |
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
-| `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision*). Kinds: `link_device`, `ambiguous`. |
-| `adoption-rules/` | CRUD for where adopted PRTG devices will land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight`, `enabled`. Adoption reads them once it ships. |
+| `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision* and adoptions that cannot be placed). Kinds: `link_device`, `adopt` (no device; `key` and `detail.objid` are the PRTG object id, `detail` carries `name`, `host`, `address`, `group`, `probe`, the placement as `site`/`site_id`, `role`/`role_id`, `device_type`/`device_type_id`, `rule`, `defaulted`, and `reason` while it cannot be placed), `ambiguous`. `applicable` says whether apply can run. |
+| `adoption-rules/` | CRUD for where adopted PRTG devices land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight` (lower first), `enabled`. Site, role and type must be the tenant's own. |
 | `device-status/?device=`, `?virtual_machine=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device or VM. |
 | `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
 | `vm-states/` | The same for virtual machines. Feeds the VM-list column. |
@@ -315,9 +442,8 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 
 ## Coming
 
-Sensors linked to their interfaces, addresses and services, acknowledgements
-and maintenance windows in both directions, adopting PRTG devices, and keeping PRTG in step
-with Danbyte's inventory. The connection's provisioning scope already defaults
+Sensors linked to their interfaces, addresses and services, and keeping PRTG
+in step with Danbyte's inventory. The connection's provisioning scope already defaults
 to *every device the policies match* for that last part.
 
 ---
