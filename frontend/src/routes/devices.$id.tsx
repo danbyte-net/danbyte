@@ -1293,6 +1293,16 @@ function DeviceOverview({
     </div>
   )
 
+  // All clear, the monitoring card is one line in the grid, beside the
+  // first attribute card.
+  const monitoringCompact = (
+    <MonitoringBar
+      target={{ device: d.id }}
+      notify={{ device: d.id }}
+      slot="compact"
+    />
+  )
+
   const attributeCards = (
     <>
       <KvCard title="Device" rows={deviceRows} />
@@ -1312,8 +1322,12 @@ function DeviceOverview({
 
   return (
     <div className="space-y-6">
-      {/* Monitoring first: one row per source, each opening its tab. */}
-      <MonitoringBar target={{ device: d.id }} notify={{ device: d.id }} />
+      {/* Monitoring first: with problems, full width above the cards. */}
+      <MonitoringBar
+        target={{ device: d.id }}
+        notify={{ device: d.id }}
+        slot="banner"
+      />
       <PinnedSensorsCard
         parent={{ device: d.id }}
         sensorLink={(sensor, children) => (
@@ -1334,6 +1348,7 @@ function DeviceOverview({
         <div className="grid items-start gap-6 lg:grid-cols-2">
           <div className="min-w-0 space-y-6">{attributeCards}</div>
           <div className="min-w-0 space-y-6">
+            {monitoringCompact}
             <DeviceFrontPanel device={d} glow={portGlow} />
             <PortUtilizationCard
               deviceId={d.id}
@@ -1350,6 +1365,7 @@ function DeviceOverview({
       ) : (
         // No panel - the original auto-balanced masonry.
         <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
+          {monitoringCompact}
           {attributeCards}
           <PortUtilizationCard
             deviceId={d.id}
