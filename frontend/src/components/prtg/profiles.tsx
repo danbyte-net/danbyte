@@ -242,6 +242,65 @@ function defaultsFor(kind: PrtgSensorKind | undefined) {
   return out
 }
 
+/** A Danbyte sensor kind's parameters as form fields: the profile editor's
+ * definitions and the Add sensor dialog share them. */
+export function KindParamFields({
+  kind,
+  params,
+  onChange,
+  skip,
+}: {
+  kind: PrtgSensorKind
+  params: Record<string, unknown>
+  onChange: (params: Record<string, unknown>) => void
+  /** Parameters this surface sets another way (the scanned interfaces). */
+  skip?: string[]
+}) {
+  const shown = kind.params.filter((p) => !skip?.includes(p.name))
+  if (shown.length === 0) return null
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {shown.map((p) => {
+        const value = params[p.name] ?? p.default
+        const set = (v: unknown) => onChange({ ...params, [p.name]: v })
+        if (p.type === "bool")
+          return (
+            <FormCheckbox
+              key={p.name}
+              label={p.label}
+              checked={!!value}
+              onChange={set}
+            />
+          )
+        if (p.type === "choice")
+          return (
+            <FormSelect
+              key={p.name}
+              label={p.label}
+              value={value == null ? null : String(value)}
+              onChange={set}
+              options={p.choices.map((c) => ({ value: c, label: c }))}
+            />
+          )
+        return (
+          <FormText
+            key={p.name}
+            label={p.label}
+            required={p.required}
+            type={p.type === "int" ? "number" : undefined}
+            value={value == null ? "" : String(value)}
+            onChange={(v) =>
+              set(p.type === "int" ? (v === "" ? null : Number(v)) : v)
+            }
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+export { defaultsFor as kindDefaults, INTERVAL_LABEL }
+
 export function ProfileForm({
   connection,
   profile,
@@ -413,50 +472,12 @@ export function ProfileForm({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              {kind && kind.params.length > 0 && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {kind.params.map((p) => {
-                    const value = r.params[p.name] ?? p.default
-                    const set = (v: unknown) =>
-                      update(r._key, { params: { ...r.params, [p.name]: v } })
-                    if (p.type === "bool")
-                      return (
-                        <FormCheckbox
-                          key={p.name}
-                          label={p.label}
-                          checked={!!value}
-                          onChange={set}
-                        />
-                      )
-                    if (p.type === "choice")
-                      return (
-                        <FormSelect
-                          key={p.name}
-                          label={p.label}
-                          value={value == null ? null : String(value)}
-                          onChange={set}
-                          options={p.choices.map((c) => ({
-                            value: c,
-                            label: c,
-                          }))}
-                        />
-                      )
-                    return (
-                      <FormText
-                        key={p.name}
-                        label={p.label}
-                        required={p.required}
-                        type={p.type === "int" ? "number" : undefined}
-                        value={value == null ? "" : String(value)}
-                        onChange={(v) =>
-                          set(
-                            p.type === "int" ? (v === "" ? null : Number(v)) : v
-                          )
-                        }
-                      />
-                    )
-                  })}
-                </div>
+              {kind && (
+                <KindParamFields
+                  kind={kind}
+                  params={r.params}
+                  onChange={(params) => update(r._key, { params })}
+                />
               )}
               <div className="grid gap-3 sm:grid-cols-3">
                 <FormSelect

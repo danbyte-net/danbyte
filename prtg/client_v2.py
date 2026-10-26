@@ -208,6 +208,22 @@ class PrtgV2Client:
         data = self.get(f"/experimental/schemas/{parent}", {"limit": 0})
         return data if isinstance(data, list) else []
 
+    def post_schema(self, parent, kind: str) -> dict:
+        """The settings a new ``kind`` under ``parent`` takes, every section
+        included: the ``modifyItemSchema`` object of PRTG's OpenAPI answer."""
+        data = self.get(f"/experimental/schemas/{parent}/post",
+                        {"kind": kind, "include": "all_sections"})
+        if isinstance(data, dict) and "components" in data:
+            data = ((data.get("components") or {}).get("schemas") or {})
+        if isinstance(data, dict) and "modifyItemSchema" in data:
+            data = data["modifyItemSchema"]
+        return data if isinstance(data, dict) else {}
+
+    def device_templates(self) -> list:
+        """PRTG's device templates: ``[{file_name, id, name, ...}]``."""
+        data = self.get("/experimental/devices/templates")
+        return data if isinstance(data, list) else []
+
     # ── writes ───────────────────────────────────────────────────────
 
     def create_device(self, parent_id, name: str, host: str, tags=(), *,

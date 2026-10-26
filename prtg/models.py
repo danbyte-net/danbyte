@@ -122,6 +122,12 @@ class PrtgConnection(TimestampedModel):
         default=list, blank=True, db_default=models.Value([], models.JSONField()),
     )
     groups_read_at = models.DateTimeField(null=True, blank=True)
+    #: What PRTG offers to add by hand, read at most once a day:
+    #: ``{"kinds": {"read_at", "rows"}, "templates": {"read_at", "rows"}}``
+    #: (:mod:`prtg.manual`).
+    sensor_catalog = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
     #: The last planning pass and its counts.
     last_plan_at = models.DateTimeField(null=True, blank=True)
     last_plan_summary = models.JSONField(

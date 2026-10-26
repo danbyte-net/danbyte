@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode, SyntheticEvent } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
@@ -56,6 +56,7 @@ import {
 } from "./channel-view"
 import { PinScopeProvider, PinToggle, sensorParent } from "./sensor-pins"
 import { LinkActionsMenu, SensorActionsMenu } from "./sensor-actions"
+import { AddSensorButtons, MANUAL_TAG } from "./add-sensor"
 import { SensorStatePill, TileCorner } from "./tile-corner"
 import { useMe } from "@/lib/use-me"
 import {
@@ -216,6 +217,7 @@ export function PrtgSensorsSection({
   onState?: (state: string | null) => void
 }) {
   const [own, setOwn] = useState<string | null>(null)
+  const [fresh, flash] = useFreshSensors()
   const labels = useStatusLabels()
   const parent = isParent(scope)
   // Only a device or VM lists its PRTG devices.
@@ -252,7 +254,20 @@ export function PrtgSensorsSection({
             source={prtgSource(link, rows, labels)}
             link={toggle}
             active={state}
-            actions={<LinkActionsMenu link={link} />}
+            actions={
+              <span className="inline-flex items-center gap-1.5">
+                <AddSensorButtons
+                  target={{
+                    linkId: link.id,
+                    connectionId: link.connection,
+                    name: link.name || link.objid,
+                    writeMode: link.write_mode,
+                  }}
+                  onAdded={flash}
+                />
+                <LinkActionsMenu link={link} />
+              </span>
+            }
             className="min-h-10 rounded-lg border border-border bg-card px-3 py-1.5"
           />
         ))}
@@ -273,6 +288,7 @@ export function PrtgSensorsSection({
                   <SensorCard
                     key={s.id}
                     sensor={s}
+                    fresh={fresh.includes(s.objid)}
                     onOpen={() => select(s.id)}
                   />
                 ))}
@@ -506,11 +522,33 @@ function SensorMessage({ message }: { message: string }) {
   )
 }
 
+/** The sensors just added from Danbyte (PRTG object ids), highlighted for a
+ * few seconds once their cards appear. */
+function useFreshSensors(): [string[], (objids: string[]) => void] {
+  const [fresh, setFresh] = useState<string[]>([])
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    []
+  )
+  const flash = useCallback((objids: string[]) => {
+    setFresh(objids)
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setFresh([]), 4000)
+  }, [])
+  return [fresh, flash]
+}
+
 function SensorCard({
   sensor: s,
+  fresh,
   onOpen,
 }: {
   sensor: PrtgSensor
+  /** Just added: a brief highlight. */
+  fresh?: boolean
   onOpen: () => void
 }) {
   const [num, unit] = splitValue(s)
@@ -528,8 +566,12 @@ function SensorCard({
           onOpen()
         }
       }}
-      className="group/tile flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className={cn(
+        "group/tile flex min-w-0 cursor-pointer flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left transition-colors duration-700 hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        fresh && "border-primary bg-primary/5"
+      )}
       data-testid="prtg-sensor-card"
+      data-fresh={fresh || undefined}
     >
       <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -570,6 +612,11 @@ function SensorCard({
           <span className="num">{s.uptime_pct.toFixed(2)}% uptime</span>
         )}
         {s.acknowledged && <Badge variant="secondary">Acknowledged</Badge>}
+        {s.tags.includes(MANUAL_TAG) && (
+          <Badge variant="outline" className="text-muted-foreground">
+            Added from Danbyte
+          </Badge>
+        )}
         <a
           href={s.url}
           target="_blank"

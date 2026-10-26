@@ -15,7 +15,12 @@ from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed, NotFound, ValidationError
+from rest_framework.exceptions import (
+    MethodNotAllowed,
+    NotFound,
+    PermissionDenied,
+    ValidationError,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -52,6 +57,13 @@ _HookToken = inline_serializer("PrtgHookToken", fields={
     "token": serializers.CharField(),
     "path": serializers.CharField(),
 })
+
+
+def _uuid(value, field: str) -> str:
+    try:
+        return str(uuid.UUID(str(value)))
+    except ValueError:
+        raise ValidationError({field: "Not an id."}) from None
 
 
 class _ByConnection:
@@ -174,6 +186,44 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             for r in rows
         ])
 
+    @action(detail=True, methods=["get"], url_path="sensor-kinds")
+    def sensor_kinds(self, request, pk=None):
+        """The sensor kinds this PRTG offers to add by hand, cached for a
+        day (``?refresh=1`` reads again; ``?link=`` names the device to ask
+        about): ``{mode, source, read_at, kinds: [{id, name, description,
+        category, form, danbyte_kind, scan, copy_from_seed}],
+        danbyte_forms}``."""
+        from .actions import ActionError
+        from .manual import catalog
+
+        conn = self.get_object()
+        link = None
+        if request.query_params.get("link"):
+            link = PrtgDeviceLink.objects.filter(
+                connection=conn, pk=_uuid(request.query_params["link"], "link"),
+            ).first()
+        try:
+            return Response(catalog(conn, link=link,
+                                    refresh=request.query_params.get("refresh") in ("1", "true")))
+        except ActionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status)
+
+    @action(detail=True, methods=["get"], url_path="device-templates")
+    def device_templates(self, request, pk=None):
+        """PRTG's device templates for a discovery (API v2, cached for a
+        day; ``?refresh=1``), or the stock ones when the list cannot be
+        read: ``{source, read_at, templates: [{file_name, name}]}``."""
+        from .actions import ActionError
+        from .manual import templates
+
+        conn = self.get_object()
+        try:
+            return Response(templates(
+                conn, refresh=request.query_params.get("refresh") in ("1", "true"),
+            ))
+        except ActionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status)
+
     @extend_schema(request=None, responses={200: _HookToken})
     @action(detail=True, methods=["post"], url_path="rotate-hook-token")
     def rotate_hook_token(self, request, pk=None):
@@ -189,9 +239,14 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedViewSet):
     """Read-only: a link is made by matching. Deleting one says "that pairing
     is wrong"; the next pass matches the device from scratch. ``pause/`` and
-    ``resume/`` pause or resume the PRTG device itself."""
+    ``resume/`` pause or resume the PRTG device itself; ``sensors/``,
+    ``scan/``, ``discover/`` and ``sensor-schema/`` add sensors to it by hand
+    (:mod:`prtg.manual`) and need ``change`` on PRTG sensors."""
 
     integration_keys = ("prtg",)
+    # Adding a sensor changes PRTG sensors, not the link: the link needs
+    # view, the sensor grant is checked in the action.
+    rbac_action_map = {"sensors": "view", "scan": "view", "discover": "view"}
     http_method_names = ["get", "post", "delete", "head", "options"]
     queryset = PrtgDeviceLink.objects.select_related(
         "device", "virtual_machine", "connection"
@@ -255,6 +310,82 @@ class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedV
 
         link = self._link_for_write(request)
         return self._act(resume_link, link, request.user)
+
+    # ── adding sensors by hand (prtg.manual) ─────────────────────────
+
+    def _link_for_sensors(self, request):
+        """The link a sensor is added to: ``change`` on PRTG sensors, view
+        on the device or VM, and a connection that is on."""
+        link = self._link_for_write(request)
+        tenant = _get_active_tenant(request)
+        if not rbac.has_action(request.user, tenant, "prtgsensor", "change"):
+            raise PermissionDenied("Adding sensors needs the change permission on PRTG sensors.")
+        return link
+
+    @staticmethod
+    def _manual(fn, *args, **kwargs):
+        from .actions import ActionError
+
+        try:
+            return fn(*args, **kwargs), None
+        except ActionError as exc:
+            body = {"detail": exc.detail}
+            if getattr(exc, "fields", None):
+                body["fields"] = exc.fields
+            return None, Response(body, status=exc.status)
+
+    @action(detail=True, methods=["get"], url_path="sensor-schema")
+    def sensor_schema(self, request, pk=None):
+        """PRTG's create form for one sensor kind (``?kind=``) as fields:
+        ``{kind, fields: [{key, label, type, default, options, ...}], scan}``."""
+        from .manual import schema_fields
+
+        link = self._link_for_sensors(request)
+        kind = (request.query_params.get("kind") or "").strip()
+        if not kind:
+            raise ValidationError({"kind": "Which sensor kind?"})
+        out, error = self._manual(schema_fields, link, kind)
+        return error or Response(out)
+
+    @action(detail=True, methods=["post"])
+    def scan(self, request, pk=None):
+        """PRTG's metascan of the device for ``kind`` (SNMP traffic): the
+        rows to pick from, ``{kind, rows: [{value, name, status,
+        connected}]}``."""
+        from .manual import scan
+
+        link = self._link_for_sensors(request)
+        out, error = self._manual(scan, link, str(request.data.get("kind") or ""))
+        return error or Response(out)
+
+    @action(detail=True, methods=["post"])
+    def sensors(self, request, pk=None):
+        """Add a sensor in PRTG now: ``{kind, name?, params, interval_seconds?,
+        tags?, interfaces?, request_id?}``. Answers with the new sensor
+        rows as the re-read imported them."""
+        from .manual import add_sensor
+
+        link = self._link_for_sensors(request)
+        data = request.data if isinstance(request.data, dict) else {}
+        out, error = self._manual(add_sensor, link, data, request.user)
+        if error:
+            return error
+        ctx = {"request": request}
+        return Response({
+            "detail": out["detail"], "objids": out["objids"], "failed": out["failed"],
+            "sensors": PrtgSensorSerializer(out["sensors"], many=True, context=ctx).data,
+        }, status=201)
+
+    @action(detail=True, methods=["post"])
+    def discover(self, request, pk=None):
+        """Run PRTG's auto-discovery on the device, with an optional device
+        ``template`` (file name). Found sensors arrive with the next read."""
+        from .manual import discover
+
+        link = self._link_for_sensors(request)
+        out, error = self._manual(discover, link, str(request.data.get("template") or ""),
+                                  request.user)
+        return error or Response(out)
 
 
 class PrtgChangeViewSet(

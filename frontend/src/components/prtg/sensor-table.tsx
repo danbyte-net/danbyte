@@ -11,6 +11,8 @@ import { useTableFilters } from "@/components/table-filters"
 import { buildPrtgSensorColumns } from "@/components/columns/prtg-sensor-columns"
 import { useMe } from "@/lib/use-me"
 import { SensorBulkBar } from "./sensor-actions"
+import { AddSensorButtons } from "./add-sensor"
+import type { AddTarget } from "./add-sensor"
 
 /** Every imported sensor of a connection, or only its alarms (down and
  * degraded, not paused) worst and newest first - the server's order. */
@@ -73,6 +75,20 @@ export function PrtgSensorTable({
     columns: wiredColumns,
     filteredRows,
   } = useTableFilters(columns, rows)
+  // Filtered down to one PRTG device: sensors can be added to it here too.
+  const target = useMemo((): AddTarget | null => {
+    if (variant !== "sensors" || filteredRows.length === rows.length)
+      return null
+    const ids = new Set(filteredRows.map((r) => r.link))
+    const first = filteredRows[0]
+    if (ids.size !== 1 || filteredRows.length === 0 || !first.link) return null
+    return {
+      linkId: first.link,
+      connectionId: connection.id,
+      name: first.prtg_device || first.objid,
+      writeMode: connection.write_mode,
+    }
+  }, [variant, filteredRows, rows, connection])
 
   if (q.isLoading) return <Loading />
   if (q.isError) return <QueryError error={q.error} />
@@ -83,7 +99,12 @@ export function PrtgSensorTable({
     <div className="flex min-w-0 overflow-hidden rounded-lg border border-border">
       {rail}
       <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-        {toolbar}
+        {(toolbar || target) && (
+          <div className="flex items-center justify-end gap-1.5">
+            {target && <AddSensorButtons target={target} />}
+            {toolbar}
+          </div>
+        )}
         <DataTable
           tableId={tableId}
           data={filteredRows}
