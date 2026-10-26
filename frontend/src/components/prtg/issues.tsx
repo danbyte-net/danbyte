@@ -9,7 +9,8 @@ import type { PrtgIssue } from "@/lib/api"
  */
 export const PRTG_WRITES_LIVE = true
 
-/** The line under "What would PRTG get?", before and after the writes. */
+/** The line under the PRTG details on the Monitoring tab, before and after
+ * the writes. */
 export function prtgPlanFootnote(writesLive: boolean): string {
   return writesLive
     ? "Planned only: nothing is written to PRTG until applied in the Review queue."
@@ -76,7 +77,7 @@ function PolicyEditLink({ id }: { id: string }) {
   )
 }
 
-function ConnectionLink({ label = "Register all" }: { label?: string }) {
+export function ConnectionLink({ label = "Register all" }: { label?: string }) {
   return (
     <Link
       to="/prtg"
@@ -98,8 +99,11 @@ function PoliciesLink() {
 }
 
 /** Where to fix an issue, as links. `object` stands in when the issue does
- * not name one (the dialog knows its own object). */
-function issueLinks(issue: IssueLike, object?: ObjectRef): ReactNode[] {
+ * not name one (the Monitoring tab knows its own object). */
+export function prtgIssueLinks(
+  issue: IssueLike,
+  object?: ObjectRef
+): ReactNode[] {
   const target = issue.object ?? object
   switch (issue.code) {
     case "no_group":
@@ -173,7 +177,7 @@ export function PrtgIssueLine({
   object?: ObjectRef
   className?: string
 }) {
-  const links = issueLinks(issue, object).filter(Boolean)
+  const links = prtgIssueLinks(issue, object).filter(Boolean)
   return (
     <p className={className} data-testid="prtg-issue">
       {issue.text}
