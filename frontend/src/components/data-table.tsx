@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 
 import { ColumnsMenu } from "@/components/column-menu"
+import { TableScrollProxy, useTableScroll } from "@/components/table-scroll"
 import type { ColumnGroup } from "@/components/column-menu"
 import {
   collectRowKeys,
@@ -595,8 +596,7 @@ export function DataTable<T>({
     // group header - without this, expanded() doesn't reach them.
     getSubRows: (row) =>
       (row as unknown as { subRows?: unknown[] }).subRows as
-        | never[]
-        | undefined,
+        never[] | undefined,
   })
 
   // Footer figures, in one place for the pager's "is there anything to page"
@@ -666,6 +666,8 @@ export function DataTable<T>({
     // table is stable; re-emit when selection or data changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowSelection, data])
+
+  const hscroll = useTableScroll(stickyHeader)
 
   return (
     // min-w-0: a table placed straight into a flex row may shrink below its
@@ -872,10 +874,14 @@ export function DataTable<T>({
           table's width and the page clips it with no scrollbar at all.
           With `stickyHeader` the frame may shrink below the table's height,
           and the table container inside it (the element that scrolls, and so
-          the one a sticky header sticks to) shrinks with it. */}
+          the one a sticky header sticks to) shrinks with it.
+          A table wider than the frame gets a floating scrollbar under it
+          (sticky to the viewport's bottom edge) and edge shadows on the
+          sides with more columns - see table-scroll.tsx. */}
       <div
+        ref={hscroll.frameRef}
         className={cn(
-          "overflow-x-auto rounded-lg border border-border",
+          "relative overflow-x-auto rounded-lg border border-border",
           stickyHeader &&
             "flex min-h-0 flex-col [&>[data-slot=table-container]]:min-h-0"
         )}
@@ -1048,6 +1054,7 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </div>
+      <TableScrollProxy scroll={hscroll} className="-mt-2" />
 
       {/* One capped page of a longer list says so - a detail tab that fetches
           500 rows otherwise looks complete at exactly 500. */}

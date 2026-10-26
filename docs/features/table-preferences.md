@@ -26,6 +26,15 @@ off.
     A few columns (like the row-select checkbox and the row-actions menu) always
     stay in place and can't be moved or hidden.
 
+## Wide tables
+
+A table with more columns than fit the window scrolls sideways. Its
+horizontal scrollbar floats at the bottom of the window while the table is
+on screen, so you can scroll sideways without first scrolling to the last
+row, and a soft shadow on the left or right edge shows there are more
+columns that way. Shift + mouse wheel and sideways trackpad scrolling work
+too.
+
 ## Every field is a column
 
 A table is not limited to the columns its page was designed with. The
