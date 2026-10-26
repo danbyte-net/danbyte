@@ -8,7 +8,13 @@ import type {
   PrtgHistoryRange,
   PrtgPinDisplay,
 } from "@/lib/api"
+import { useDateFormat } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Gauge, formatGaugeValue } from "@/components/gauge"
 import { LookupBar } from "@/components/lookup-bar"
 import type { LookupTone } from "@/components/lookup-bar"
@@ -118,7 +124,9 @@ export function trendOf(
 ): Trend {
   if (c.kind === "lookup") return { kind: "timeline" }
   if (!isNumeric(c)) return { kind: "none" }
-  const values = (series?.points ?? []).map((p) => p.v)
+  // A sparse sensor's empty points in between are its rhythm, not gaps:
+  // the line runs through them.
+  const values = bridgedPoints(series?.points ?? []).map((p) => p.v)
   const nums = values.filter((v): v is number => v != null)
   if (nums.length < 2) return { kind: "none" }
   if (nums.every((v) => v === nums[0]))
@@ -173,6 +181,99 @@ export function lookupStatesAt(
   })
 }
 
+type HistoryPoint = HistorySeries["points"][number]
+
+function median(xs: number[]): number {
+  if (!xs.length) return 0
+  const s = [...xs].sort((a, b) => a - b)
+  const m = s.length >> 1
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+function steps(ts: number[]): number[] {
+  return ts.slice(1).map((t, i) => t - ts[i])
+}
+
+/**
+ * The time grid of a history answer: each point's time, the step between
+ * points (PRTG's average interval) and how far apart two samples may sit and
+ * still read as one stretch. A sensor checked hourly, averaged per 15
+ * minutes, has three empty points between its samples - that is the sensor's
+ * rhythm, not a gap. Two samples further apart than one and a half of their
+ * usual spacing have a real gap between them: PRTG has no data there.
+ */
+function historyGrid(points: HistoryPoint[]) {
+  const ts = points.map((p) => Date.parse(p.t))
+  const step = median(steps(ts)) || 60_000
+  const sampled = ts.filter((_, i) => points[i].v != null)
+  const spacing = median(steps(sampled)) || step
+  return { ts, step, reach: Math.max(step, spacing) * 1.5 }
+}
+
+/**
+ * The points with the empty ones between a sensor's samples left out, so a
+ * line runs from sample to sample; an empty stretch longer than the sensor's
+ * rhythm stays, and still breaks the line.
+ */
+export function bridgedPoints(points: HistoryPoint[]): HistoryPoint[] {
+  const { ts, reach } = historyGrid(points)
+  const drop = new Set<number>()
+  let prev = -1
+  points.forEach((p, i) => {
+    if (p.v == null) return
+    if (prev >= 0 && ts[i] - ts[prev] <= reach)
+      for (let j = prev + 1; j < i; j++) drop.add(j)
+    prev = i
+  })
+  return drop.size ? points.filter((_, i) => !drop.has(i)) : points
+}
+
+/** One stretch of a lookup's timeline: a state from `start` to `end` (ms),
+ * or no data (`entry` null). */
+export type TimelineRun = {
+  key: string
+  entry: LookupEntry | null
+  start: number
+  end: number
+}
+
+/**
+ * A lookup channel's history as runs: consecutive samples in the same state
+ * are one run, which lasts until the next sample (or the range's end); a run
+ * without data only where PRTG has none - before the first sample, or where
+ * two samples sit further apart than the sensor's rhythm.
+ */
+export function lookupRuns(
+  c: PrtgChannel,
+  series: HistorySeries | undefined
+): TimelineRun[] {
+  const points = series?.points ?? []
+  if (!points.length) return []
+  const states = lookupStatesAt(c, series)
+  const { ts, step, reach } = historyGrid(points)
+  const rangeEnd = ts[ts.length - 1] + step
+  const runs: TimelineRun[] = []
+  const push = (entry: LookupEntry | null, start: number, end: number) => {
+    if (end <= start) return
+    const key = entry ? lookupKey(entry) : ""
+    const last = runs.at(-1)
+    if (last && last.key === key && last.end === start) last.end = end
+    else runs.push({ key, entry, start, end })
+  }
+  const samples = states.flatMap((s, i) => (s ? [i] : []))
+  let cursor = ts[0]
+  samples.forEach((i, k) => {
+    const t = ts[i]
+    if (t > cursor) push(null, cursor, t)
+    const next = k + 1 < samples.length ? ts[samples[k + 1]] : rangeEnd
+    const stop = next - t <= reach ? next : Math.min(t + step, next)
+    push(states[i], t, stop)
+    cursor = stop
+  })
+  if (samples.length && cursor < rangeEnd) push(null, cursor, rangeEnd)
+  return runs
+}
+
 const TONE_FILL: Record<LookupTone, string> = {
   ok: "bg-emerald-500 dark:bg-emerald-400",
   warning: "bg-amber-500 dark:bg-amber-400",
@@ -180,10 +281,32 @@ const TONE_FILL: Record<LookupTone, string> = {
   neutral: "bg-muted-foreground/60",
 }
 
+/** "07:00 - 08:15": a run's span in the viewer's time format. */
+function RunSpan({
+  run,
+  range,
+}: {
+  run: TimelineRun
+  range: PrtgHistoryRange
+}) {
+  const { formatCustom } = useDateFormat()
+  const opts: Intl.DateTimeFormatOptions =
+    range === "7d"
+      ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+      : { hour: "2-digit", minute: "2-digit" }
+  return (
+    <span className="num">
+      {formatCustom(new Date(run.start), opts)} –{" "}
+      {formatCustom(new Date(run.end), opts)}
+    </span>
+  )
+}
+
 /**
- * A lookup channel's states along the range: one coloured segment per run of
- * the same state, sized by how long it lasted, gaps where PRTG has nothing,
- * and the range's start and end under it. No axis, no percentages.
+ * A lookup channel's states along the range: one rounded segment per run of
+ * the same state, sized by how long it lasted, a muted one only where PRTG
+ * has no data, and the range's start and end under it. Hovering a segment
+ * names the state and its span. No axis, no percentages.
  */
 export function LookupTimeline({
   channel,
@@ -196,14 +319,7 @@ export function LookupTimeline({
   range: PrtgHistoryRange
   className?: string
 }) {
-  const states = lookupStatesAt(channel, series)
-  const runs: { key: string; entry: LookupEntry | null; n: number }[] = []
-  for (const s of states) {
-    const key = s ? lookupKey(s) : ""
-    const last = runs.at(-1)
-    if (last && last.key === key) last.n++
-    else runs.push({ key, entry: s, n: 1 })
-  }
+  const runs = lookupRuns(channel, series)
   if (!runs.some((r) => r.entry))
     return (
       <p
@@ -219,27 +335,36 @@ export function LookupTimeline({
       data-testid="prtg-lookup-timeline"
     >
       <div
-        className="flex h-2.5 gap-px overflow-hidden rounded-md"
+        className="flex h-2.5 gap-px"
         role="img"
         aria-label={`${channel.name}, last ${RANGE_WORDS[range]}: ${runs
           .filter((r) => r.entry)
           .map((r) => r.entry!.label)
           .join(", ")}`}
       >
-        {runs.map((r, i) => (
-          <span
-            key={i}
-            data-state={r.entry?.label ?? ""}
-            data-tone={r.entry ? (LOOKUP_TONE[r.entry.state] ?? "neutral") : ""}
-            style={{ flexGrow: r.n }}
-            className={cn(
-              "h-full basis-0",
-              r.entry
-                ? TONE_FILL[LOOKUP_TONE[r.entry.state] ?? "neutral"]
-                : "bg-muted"
-            )}
-          />
-        ))}
+        {runs.map((r, i) => {
+          const tone = r.entry ? (LOOKUP_TONE[r.entry.state] ?? "neutral") : ""
+          return (
+            <Tooltip key={i}>
+              <TooltipTrigger asChild>
+                <span
+                  data-run={r.entry?.label ?? ""}
+                  data-tone={tone}
+                  // Minutes: segments share the bar by how long they lasted.
+                  style={{ flexGrow: (r.end - r.start) / 60_000 }}
+                  className={cn(
+                    "h-full min-w-px basis-0 rounded-md",
+                    tone ? TONE_FILL[tone] : "bg-muted"
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipContent variant="default">
+                {r.entry?.label ?? "No data"} ·{" "}
+                <RunSpan run={r} range={range} />
+              </TooltipContent>
+            </Tooltip>
+          )
+        })}
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
         <span>{RANGE_WORDS[range]} ago</span>

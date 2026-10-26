@@ -44,6 +44,7 @@ import { formatGaugeValue } from "@/components/gauge"
 import {
   ChannelReading,
   ChannelTrend,
+  bridgedPoints,
   currentLookup,
   seriesFor,
   steadyText,
@@ -511,7 +512,7 @@ function ChannelHistory({
   const unit = channel.unit
   const data = useMemo(
     () =>
-      (series?.points ?? []).map((p) => ({
+      bridgedPoints(series?.points ?? []).map((p) => ({
         t: p.t,
         v: p.v,
         label: formatCustom(
@@ -599,8 +600,9 @@ function ChannelHistory({
           type="monotone"
           stroke="var(--color-v)"
           strokeWidth={2}
-          // A value between two gaps has no neighbour to draw a line to;
-          // its dot is what shows it.
+          // The empty points between a sparse sensor's samples are left out
+          // (bridgedPoints), so only a real gap breaks the line; a value
+          // between two gaps has no neighbour, and its dot shows it.
           dot={{ r: 1.5 }}
           connectNulls={false}
           isAnimationActive={false}

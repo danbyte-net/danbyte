@@ -382,14 +382,23 @@ channel:
 - **A number or percentage that moved** gets the last hour's sparkline and a
   **1h / 24h / 7d** switch that opens its history graph, in the channel's
   own unit. The switch appears only once the hour has at least two values.
+  The sparkline and the graph are one line from sample to sample: a sensor
+  checked less often than the history's averaging interval leaves empty
+  points between its samples, and those are its rhythm, not gaps. Only a
+  stretch longer than one and a half times its usual spacing breaks the
+  line.
 - **A number that did not move** (*Days to Expiration* over an hour) reads
   *Steady over the last 1h* instead of a flat line; its graph says the same
   for a range in which it stayed put.
-- **A lookup** gets a state timeline instead of a line: one coloured segment
-  per run of the same state along the chosen range, no axis and no
-  percentages. PRTG records a lookup channel's history as the share of each
-  interval spent in one named state (*Root Authority Trusted (Yes)*, 0 %);
-  Danbyte reads that back as the state.
+- **A lookup** gets a state timeline instead of a line: one rounded
+  segment per run of the same state along the chosen range, sized by how
+  long it lasted, no axis and no percentages. A state holds from its sample
+  to the next; consecutive samples in the same state are one segment, and a
+  muted segment marks only where PRTG has no data (before the first sample,
+  or a stretch longer than the sensor's rhythm, as for the line). Hovering a
+  segment shows its state and its span. PRTG records a lookup channel's
+  history as the share of each interval spent in one named state (*Root
+  Authority Trusted (Yes)*, 0 %); Danbyte reads that back as the state.
 - **Text** has no history to show.
 
 PRTG averages the history per range: one minute for an hour (or the sensor's

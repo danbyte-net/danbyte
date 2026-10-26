@@ -378,7 +378,7 @@ describe("channel cards", () => {
     const byName = await cards()
     const trusted = byName("Root Authority Trusted")
     const tl = trusted.querySelector("[data-testid=prtg-lookup-timeline]")!
-    expect(tl.querySelector("[data-state=No]")).toBeTruthy()
+    expect(tl.querySelector("[data-run=No]")).toBeTruthy()
     expect(trusted.textContent).not.toContain("%")
     expect(trusted.querySelector("[data-testid=prtg-history-chart]")).toBeNull()
   })
@@ -415,6 +415,7 @@ describe("channel cards", () => {
       channel_id: "2",
     })
   })
+
 })
 
 describe("PrtgMonitoringRow", () => {
