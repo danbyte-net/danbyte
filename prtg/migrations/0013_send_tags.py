@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('prtg', '0011_sensor_catalog'),
+        ('prtg', '0012_definition_any_kind'),
     ]
 
     operations = [
