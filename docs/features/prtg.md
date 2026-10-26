@@ -356,7 +356,7 @@ unit, the interval, uptime and downtime, priority, the last check, last up and
 last down, and the probe and group. A device or VM that PRTG has a device for
 gets a **Sensors** tab, with the sensor count, while the integration is on.
 
-**The tab.** A status strip on top, the monitoring bar's PRTG row: the state
+**The tab.** A status strip on top, the PRTG row of the Monitoring tab: the state
 pill, one badge per state with its count - down, degraded, up, unknown, and
 paused apart - named as the tenant names its states, then the PRTG device with
 a link to it in PRTG and when it was last read. Hovering a count lists its
@@ -452,7 +452,7 @@ The same channels can go on a dashboard: see
 [Sensor widgets](dashboard.md#sensor-widgets).
 
 **The Monitoring tab** gets one **PRTG** row per linked device or VM - the
-same row as the strip and the Overview's monitoring bar - and a link to the
+same row as the strip - and a link to the
 Sensors tab; a count opens the tab filtered to its state.
 The rest of the tab is unchanged; like the Zabbix section, the row never
 changes Danbyte's own status.

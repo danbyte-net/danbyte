@@ -7073,6 +7073,8 @@ export interface MonitoringCheckItem {
   status: CheckStatus
   /** When it entered this state. */
   since: string | null
+  /** The last run's error, when it was not up. */
+  error?: string
 }
 
 /** An engine kind a driver registered - configured on its own page rather
