@@ -52,6 +52,7 @@ from prtg.models import (
 )
 from prtg.provision import (
     NO_WRITES,
+    TEXT,
     Context,
     decide,
     expand,
@@ -221,7 +222,8 @@ class PrecedenceTests(_Plan):
         d = self.device("edge", "10.0.0.90")
         want = decide(self.conn, d, self.ctx(), linked=False, checked=set())
         self.assertEqual(want.via, "")
-        self.assertIn("No PRTG check", want.reason)
+        self.assertEqual(want.reason, TEXT["no_check"])
+        self.assertEqual(want.reason_issue["code"], "no_check")
         want = decide(self.conn, d, self.ctx(), linked=False, checked={d.id})
         self.assertEqual(want.via, "policy")
 
@@ -400,8 +402,14 @@ class ProposalTests(_Plan):
         self.plan()
         [c] = self.changes(PrtgChange.CREATE_DEVICE)
         self.assertFalse(c.detail["applicable"])
-        self.assertIn("no group gone", c.detail["reason"])
-        self.assertIn("SNMP profile", c.detail["reason"])
+        self.assertIn("The PRTG group gone is gone.", c.detail["reason"])
+        self.assertIn("No SNMP profile applies to edge. Set one on its Access tab.",
+                      c.detail["reason"])
+        codes = [(i["code"], i.get("policy")) for i in c.detail["issues"]]
+        gone = PrtgPolicy.objects.get(name="gone")
+        self.assertEqual(codes, [("group_gone", str(gone.id)), ("no_snmp", None)])
+        self.assertEqual(c.detail["issues"][1]["object"],
+                         {"kind": "device", "id": str(c.device_id)})
 
     def test_wmi_needs_a_windows_login(self):
         self.device("win", "10.0.0.90")
@@ -410,7 +418,10 @@ class ProposalTests(_Plan):
         self.plan()
         [c] = self.changes(PrtgChange.CREATE_DEVICE)
         self.assertFalse(c.detail["applicable"])
-        self.assertIn("Windows login", c.detail["reason"])
+        self.assertEqual(
+            c.detail["reason"],
+            "Danbyte holds no Windows login for win. Add one on its Access tab.",
+        )
 
     def test_a_template_is_part_of_a_new_device_only(self):
         d = self.device("edge", "10.0.0.90")
@@ -722,7 +733,8 @@ class PlanApiTests(_Api):
         self.assertTrue(entry["managed"])
         self.assertEqual(entry["group"]["path"], "Local Probe")
         self.assertEqual([s["kind"] for s in entry["sensors"]], ["ping"])
-        self.assertIn("It has no primary address for PRTG to reach.", entry["problems"])
+        self.assertIn(TEXT["no_address"], entry["problems"])
+        self.assertIn("no_address", [i["code"] for i in entry["issues"]])
 
     def test_plan_for_a_foreign_object_is_404(self):
         d = Device.objects.create(tenant=self.other, name="edge")

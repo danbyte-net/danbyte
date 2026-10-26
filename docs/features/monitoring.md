@@ -559,16 +559,14 @@ The prefix Monitoring tab shows:
 ### On a device
 
 Checks attach to IPs, not to devices - but the device page rolls them up for
-you in three places:
+you in these places (a virtual machine's page has the same bar and pill):
 
-- A **roll-up badge** in the device header, next to the status badge (the same
-  mixed-status badge as the list column).
+- A **monitoring pill** in the header, next to the status badge: the worst
+  state across every source (Danbyte's checks, Zabbix and PRTG). Hovering it
+  shows each source's state and counts.
 - The **IPs tab** has a **Monitoring** column showing each IP's status badge.
-- The **Overview** has a **Monitoring** summary: the roll-up badge + breakdown
-  across every IP assigned to the device (worst status winning) and a per-IP
-  status grid linking to each monitored IP. What an external system reports -
-  open problems, protocols it cannot reach the host on - shows as chips beside
-  the badge, and in the badge's hover, the same way the lists show it.
+- The **Overview** opens with the **monitoring bar** (see
+  [The monitoring bar](#the-monitoring-bar) below).
 - The **Monitoring** tab: the roll-up with seven days of status to scale, one
   row per monitored address with its own strip and chips, a **Zabbix** panel
   when the device is a Zabbix host (what Zabbix reports - problems,
@@ -579,8 +577,32 @@ you in three places:
   system facts, interfaces, sensors, drift.
 
 Because a service's check lives on the service's IP, service monitoring rolls
-up here too. The summary only appears when the device has at least one
-monitored IP. Manage the actual checks on each IP's Monitoring section.
+up here too. Manage the actual checks on each IP's Monitoring section.
+
+### The monitoring bar
+
+The Overview of a device or a virtual machine opens with one quiet bar: the
+overall state as a pill on the left (worst wins across the sources), then one
+row per source the object has, and **Notify me** on the right (on a VM it
+watches the primary address). A source the object does not have is left out,
+and the bar is absent when nothing monitors the object. With one source the
+overall pill is the only state pill.
+
+| Source | Row | Hover | Click |
+| --- | --- | --- | --- |
+| **Checks** | Danbyte's checks across the object's addresses: state and a count per state (*1 degraded*, *4 up*) | Each check's name and address, its state and when it last changed | The **Monitoring** tab, filtered to problems; a count filters to its state (`?tab=monitoring&state=degraded`) |
+| **Zabbix** | Devices only: the host's state, its open problems and the protocols Zabbix cannot reach it on, the host with a link into Zabbix and when it was read | The triggers with their severity and since when, and Zabbix's own reachability error | The **Zabbix** section of the Monitoring tab (`#zabbix`) |
+| **PRTG** | One row per PRTG device: its state, a count per sensor state, the PRTG device with a link into PRTG and when it was read | The sensors in that state with PRTG's message | The **Sensors** tab, filtered to down and degraded; a count filters to its state (`?tab=sensors&state=up`) |
+
+Each hover lists at most ten, worst first, and says how many more there are.
+The `state` filter on the Monitoring tab and the Sensors tab takes `problem`
+(anything not up, skipped or paused) or one state; *Show all* clears it.
+
+The bar reads `POST /api/monitoring/status/` with `detail: true` (the checks
+behind the roll-up, worst first, at most 50, for up to 25 devices or VMs per
+call), `/api/zabbix/host-status/` and `/api/prtg/links/` with the object's
+PRTG sensors - the same requests the page's tabs make, so they share one fetch.
+It refreshes every minute.
 
 ### In list pages
 

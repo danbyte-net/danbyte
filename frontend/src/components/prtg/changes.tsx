@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Link } from "@tanstack/react-router"
 import { ExternalLink, Undo2, X } from "lucide-react"
 import { toast } from "sonner"
 
@@ -13,6 +12,7 @@ import type {
   PrtgChange,
   PrtgChangeStatus,
   PrtgConnection,
+  PrtgIssue,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
@@ -33,6 +33,7 @@ import { Section } from "@/components/ui/section"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useTableFilters } from "@/components/table-filters"
 
+import { PrtgIssueLine } from "./issues"
 import { PrtgParentLink, prtgParentName } from "./parent-link"
 
 /**
@@ -522,21 +523,6 @@ export function SelectionBar({
   )
 }
 
-function FixLink({ to }: { to: string }) {
-  if (!to) return null
-  const [pathname, query = ""] = to.split("?")
-  const search = Object.fromEntries(new URLSearchParams(query))
-  return (
-    <Link
-      to={pathname as never}
-      search={search as never}
-      className="link whitespace-nowrap"
-    >
-      Fix
-    </Link>
-  )
-}
-
 /** The status pill and what goes with it. */
 export function StatusCell({
   change: c,
@@ -583,12 +569,26 @@ export function StatusCell({
     )
   }
   if (status === "attention") {
+    const issues = (d.issues as PrtgIssue[] | undefined) ?? []
     const reason = String(d.reason ?? "")
+    const object = c.device
+      ? { kind: "device" as const, id: c.device.id }
+      : c.virtual_machine
+        ? { kind: "virtual_machine" as const, id: c.virtual_machine.id }
+        : undefined
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5 text-[12px]">
         <Badge variant="warning">Needs attention</Badge>
-        {reason && <span className="text-muted-foreground">{reason}</span>}
-        <FixLink to={String(d.fix_link ?? "")} />
+        {issues.length > 0
+          ? issues.map((i) => (
+              <PrtgIssueLine
+                key={`${i.code}-${i.text}`}
+                issue={i}
+                object={object}
+                className="text-muted-foreground"
+              />
+            ))
+          : reason && <span className="text-muted-foreground">{reason}</span>}
       </span>
     )
   }

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { ExternalLink } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -22,19 +23,24 @@ import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import { CheckStatusBadge } from "@/components/monitoring/status-badge"
+import {
+  MonitoringSourceRow,
+  prtgSource,
+} from "@/components/monitoring/monitoring-bar"
+import { useStatusLabels } from "@/components/monitoring/status-palette"
 import { usePrtgEnabled } from "./group-picker"
-import { PrtgStateStrip, usePrtgSensorSummary } from "./sensor-strip"
-import { sensorTotal, usePrtgLinks } from "./sensors-tab"
+import { PRTG_PLAN_FOOTNOTE, PrtgIssueLine } from "./issues"
+import { sensorTotal, usePrtgLinks, usePrtgSensors } from "./sensors-tab"
 import type { PrtgParent } from "./sensors-tab"
 
 /**
- * One row on a device's or VM's Monitoring tab: what PRTG says about it -
- * the roll-up pill, the state badges with their counts, the PRTG device and
- * a link to the Sensors tab, where the sensors themselves are. With no PRTG
- * device it only offers the plan preview, and it is absent while the
- * integration is off. Like the Zabbix section beside it, it never changes
- * Danbyte's own status.
+ * One row on a device's or VM's Monitoring tab: what PRTG says about it, as
+ * the monitoring bar's PRTG source row - the state pill, the counts with
+ * their sensors in the hover, the PRTG device and when it was read - then a
+ * link to the Sensors tab. A count opens that tab filtered to its state.
+ * With no PRTG device it only offers the plan preview, and it is absent
+ * while the integration is off. Like the Zabbix section beside it, it never
+ * changes Danbyte's own status.
  */
 export function PrtgMonitoringRow({
   parent,
@@ -42,18 +48,19 @@ export function PrtgMonitoringRow({
   prtgSync,
 }: {
   parent: PrtgParent
-  /** The page's link to its Sensors tab, so the route stays typed. */
-  sensorsLink: (children: ReactNode) => ReactNode
+  /** The page's link to its Sensors tab, so the route stays typed;
+   * `state` is the filter a count opens it with. */
+  sensorsLink: (children: ReactNode, state?: string) => ReactNode
   /** The object's own PRTG setting, for the Exclude chip. */
   prtgSync?: PrtgSync
 }) {
+  const labels = useStatusLabels()
   const links = usePrtgLinks(parent)
   const enabled = usePrtgEnabled()
   const { formatDateTime } = useDateFormat()
   const rows = links.data ?? []
-  const summary = usePrtgSensorSummary(parent, rows.length > 0)
+  const sensors = usePrtgSensors(parent, rows.length > 0)
   if (rows.length === 0 && !enabled) return null
-  const s = summary.data
   const excluded =
     prtgSync === "never" ? <Badge variant="secondary">Exclude</Badge> : null
   return (
@@ -77,43 +84,44 @@ export function PrtgMonitoringRow({
           {rows.map((link) => (
             <div
               key={link.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 text-[13px]"
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2"
               data-testid="prtg-monitoring-row"
             >
-              <CheckStatusBadge status={link.state || "unknown"} />
-              {s && rows.length === 1 && <PrtgStateStrip summary={s} />}
-              {excluded}
-              {link.created_here && (
-                <Badge variant="secondary" className="whitespace-nowrap">
-                  Created by Danbyte
-                </Badge>
-              )}
-              {pausedUntil(link) && (
-                <Badge variant="secondary" className="whitespace-nowrap">
-                  Paused by maintenance until{" "}
-                  {formatDateTime(pausedUntil(link))}
-                </Badge>
-              )}
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noreferrer"
-                className="link inline-flex items-center gap-1 font-mono text-xs"
-              >
-                {link.name || link.objid}
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              <span className="ml-auto inline-flex items-center gap-3 text-[11px] whitespace-nowrap text-muted-foreground">
-                {link.status_read_at && (
-                  <span className="inline-flex items-center gap-1">
-                    read <TimeCell iso={link.status_read_at} />
-                  </span>
-                )}
+              <MonitoringSourceRow
+                className="min-w-0 flex-1"
+                source={{
+                  ...prtgSource(link, sensors.data ?? undefined, labels),
+                  extra: (
+                    <>
+                      {excluded}
+                      {link.created_here && (
+                        <Badge
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                        >
+                          Created by Danbyte
+                        </Badge>
+                      )}
+                      {pausedUntil(link) && (
+                        <Badge
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                        >
+                          Paused by maintenance until{" "}
+                          {formatDateTime(pausedUntil(link))}
+                        </Badge>
+                      )}
+                    </>
+                  ),
+                }}
+                link={sensorsLink}
+              />
+              <span className="text-[11px] whitespace-nowrap text-muted-foreground">
                 {sensorsLink(
-                  <>
+                  <span className="link">
                     {sensorTotal(link)} sensor
                     {sensorTotal(link) === 1 ? "" : "s"}
-                  </>
+                  </span>
                 )}
               </span>
             </div>
@@ -175,11 +183,14 @@ export function PrtgPlanPreview({ parent }: { parent: PrtgParent }) {
   return (
     <div className="grid gap-4">
       {entries.map((e) => (
-        <PlanEntry key={e.connection.id} entry={e} many={entries.length > 1} />
+        <PlanEntry
+          key={e.connection.id}
+          entry={e}
+          many={entries.length > 1}
+          parent={parent}
+        />
       ))}
-      <p className="text-[11px] text-muted-foreground">
-        Computed from what Danbyte holds; the review queue writes it to PRTG.
-      </p>
+      <p className="text-[11px] text-muted-foreground">{PRTG_PLAN_FOOTNOTE}</p>
     </div>
   )
 }
@@ -187,10 +198,17 @@ export function PrtgPlanPreview({ parent }: { parent: PrtgParent }) {
 function PlanEntry({
   entry: e,
   many,
+  parent,
 }: {
   entry: PrtgPlanEntry
   many: boolean
+  parent: PrtgParent
 }) {
+  const object =
+    "device" in parent
+      ? { kind: "device" as const, id: parent.device }
+      : { kind: "virtual_machine" as const, id: parent.virtual_machine }
+  const issues = e.issues ?? e.problems.map((text) => ({ text }))
   const rows: KvRow[] = [
     {
       label: "In PRTG",
@@ -199,13 +217,39 @@ function PlanEntry({
       ) : (
         <span className="inline-flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{VIA[e.via] ?? "No"}</Badge>
-          {e.reason && (
-            <span className="text-xs text-muted-foreground">{e.reason}</span>
+          {e.reason_issue ? (
+            <PrtgIssueLine
+              issue={e.reason_issue}
+              object={object}
+              className="text-xs text-muted-foreground"
+            />
+          ) : (
+            e.reason && (
+              <span className="text-xs text-muted-foreground">{e.reason}</span>
+            )
           )}
         </span>
       ),
     },
   ]
+  if (e.policies.length)
+    rows.push({
+      label: "Policies",
+      value: (
+        <span className="inline-flex flex-wrap gap-x-2">
+          {e.policies.map((p) => (
+            <Link
+              key={p.id}
+              to="/prtg"
+              search={{ tab: "policies", policy: p.id }}
+              className="link"
+            >
+              {p.name}
+            </Link>
+          ))}
+        </span>
+      ),
+    })
   if (e.linked)
     rows.push({
       label: "PRTG device",
@@ -253,11 +297,6 @@ function PlanEntry({
         <Badge variant="warning">None</Badge>
       ),
     })
-    if (e.policies.length)
-      rows.push({
-        label: "Policies",
-        value: e.policies.map((p) => p.name).join(", "),
-      })
     if (e.profiles.length)
       rows.push({ label: "Profiles", value: e.profiles.join(", ") })
     if (e.credentials.length)
@@ -303,10 +342,8 @@ function PlanEntry({
           ))}
         </div>
       )}
-      {e.problems.map((p) => (
-        <p key={p} className="text-xs text-amber-600 dark:text-amber-400">
-          {p}
-        </p>
+      {issues.map((i) => (
+        <PrtgIssueLine key={i.text} issue={i} object={object} />
       ))}
     </div>
   )

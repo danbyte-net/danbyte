@@ -50,9 +50,14 @@ const PLAN: PrtgPlanEntry[] = [
       },
     ],
     credentials: [{ kind: "snmp", name: "lab-v2c" }],
-    problems: ["It has no primary address for PRTG to reach."],
+    problems: ["It has no primary address. Set one so PRTG can reach it."],
   },
 ]
+
+const NO_GROUP =
+  "No PRTG group chosen. Set one on the matching policy or under Register all on the connection."
+const NOTHING =
+  "Nothing registers this object. Add a policy that matches it, set Monitor in PRTG on the object, or turn on Register all."
 
 beforeEach(() => {
   apiMock.mockReset()
@@ -91,9 +96,74 @@ describe("PrtgMonitoringRow without a PRTG device", () => {
       "Planned"
     )
     expect(
-      screen.getByText("It has no primary address for PRTG to reach.")
+      screen.getByText(
+        "It has no primary address. Set one so PRTG can reach it."
+      )
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        "Planned only: nothing is written to PRTG until applied in the Review queue."
+      )
     ).toBeTruthy()
     expect(apiMock).toHaveBeenCalledWith("/api/prtg/plan/?device=d1")
+  })
+
+  it("links each issue to where it is fixed, and the matching policies", async () => {
+    apiMock.mockImplementation((path) => {
+      if (path === "/api/integrations/enabled/")
+        return Promise.resolve({ prtg: true })
+      if (path.startsWith("/api/prtg/plan/"))
+        return Promise.resolve([
+          {
+            ...PLAN[0],
+            group: null,
+            problems: [NO_GROUP],
+            issues: [{ code: "no_group", text: NO_GROUP, policy: "p1" }],
+          },
+          {
+            ...PLAN[0],
+            connection: { id: "c2", name: "other" },
+            managed: false,
+            via: "",
+            reason: NOTHING,
+            reason_issue: { code: "no_match", text: NOTHING },
+            policies: [],
+            sensors: [],
+            problems: [],
+            issues: [],
+          },
+        ])
+      return Promise.resolve({
+        count: 0,
+        next: null,
+        previous: null,
+        results: [],
+      })
+    })
+    mountWithRouter(() => (
+      <PrtgMonitoringRow parent={{ device: "d1" }} sensorsLink={(c) => c} />
+    ))
+    fireEvent.click(
+      await screen.findByRole("button", { name: "What would PRTG get?" })
+    )
+    const [group, nothing] = await screen.findAllByTestId("prtg-issue")
+    expect(group.textContent).toContain(NO_GROUP)
+    const hrefs = (el: HTMLElement) =>
+      Array.from(el.querySelectorAll("a")).map((a) => a.getAttribute("href"))
+    expect(hrefs(group)).toEqual([
+      "/prtg?tab=policies&edit=p1",
+      "/prtg?tab=overview#registration",
+    ])
+    expect(nothing.textContent).toContain(NOTHING)
+    expect(hrefs(nothing)).toEqual([
+      "/prtg?tab=policies",
+      "/devices/d1/edit",
+      "/prtg?tab=overview#registration",
+    ])
+    // The policies that match link to their detail.
+    expect(
+      screen.getByRole("link", { name: "Servers" }).getAttribute("href")
+    ).toBe("/prtg?tab=policies&policy=p1")
   })
 })
 

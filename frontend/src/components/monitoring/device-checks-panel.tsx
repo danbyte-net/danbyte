@@ -16,6 +16,7 @@ import { ExcludedPill } from "./excluded-pill"
 import { NotifyMeButton } from "./notify-me-button"
 import { StatusStrip } from "./status-strip"
 import { ZabbixHostPanel } from "./zabbix-host-panel"
+import { StateFilterNote, matchesState } from "./monitoring-bar"
 import { PrtgMonitoringRow } from "@/components/prtg/monitoring-row"
 import type { PrtgSync } from "@/lib/api"
 
@@ -29,10 +30,15 @@ import type { PrtgSync } from "@/lib/api"
 export function DeviceChecksPanel({
   deviceId,
   prtgSync,
+  state,
+  onState,
 }: {
   deviceId: string
   /** The device's PRTG setting, for the PRTG row's Exclude chip. */
   prtgSync?: PrtgSync
+  /** The monitoring bar's filter (`?state=`): `problem` or one state. */
+  state?: string
+  onState?: (state: string | null) => void
 }) {
   const qc = useQueryClient()
   const checks = useQuery({
@@ -89,6 +95,12 @@ export function DeviceChecksPanel({
 
   const tl = timeline.data
   const stripFor = (ipId: string) => tl?.ips.find((i) => i.id === ipId)?.rollup
+  // The bar's filter: only the addresses with a check in that state.
+  const shownIps = state
+    ? data.ips.filter(
+        (ip) => !ip.excluded && matchesState(state, ip.status, ip.counts)
+      )
+    : data.ips
 
   return (
     <div className="space-y-6">
@@ -131,8 +143,14 @@ export function DeviceChecksPanel({
           </>
         }
       >
+        <StateFilterNote state={state} onClear={() => onState?.(null)} />
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-          {data.ips.map((ip) => {
+          {shownIps.length === 0 && (
+            <p className="px-3 py-2 text-[13px] text-muted-foreground">
+              No address matches.
+            </p>
+          )}
+          {shownIps.map((ip) => {
             const segs = stripFor(ip.id)
             return (
               <div
@@ -198,12 +216,12 @@ function DevicePrtgRow({
     <PrtgMonitoringRow
       parent={{ device: deviceId }}
       prtgSync={prtgSync}
-      sensorsLink={(children) => (
+      sensorsLink={(children, state) => (
         <Link
           to="/devices/$id"
           params={{ id: deviceId }}
-          search={{ tab: "sensors" }}
-          className="link"
+          search={{ tab: "sensors", state }}
+          className="inline-flex"
         >
           {children}
         </Link>

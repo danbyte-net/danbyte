@@ -240,23 +240,84 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-function mountTab(selected?: string, onSelect = vi.fn()) {
+function mountTab(
+  selected?: string,
+  onSelect = vi.fn(),
+  state?: string,
+  onState = vi.fn()
+) {
   mountWithRouter(() => (
     <TooltipProvider>
       <PrtgSensorsTab
         parent={{ device: "d1" }}
         selected={selected}
         onSelect={onSelect}
+        state={state}
+        onState={onState}
       />
     </TooltipProvider>
   ))
   return onSelect
 }
 
+describe("PrtgSensorsTab strip filter", () => {
+  it("is the shared source row, and a count sets ?state=", async () => {
+    const onState = vi.fn()
+    mountTab(undefined, vi.fn(), undefined, onState)
+    const row = await screen.findByTestId("monitoring-source")
+    expect(row.getAttribute("data-source")).toBe("prtg")
+    fireEvent.click(row.querySelector("[data-state=down]")!)
+    expect(onState).toHaveBeenCalledWith("down")
+    // The name opens the problems.
+    fireEvent.click(screen.getByText("PRTG"))
+    expect(onState).toHaveBeenLastCalledWith("problem")
+  })
+
+  it("shows only the sensors in the state, and clears", async () => {
+    const onState = vi.fn()
+    mountTab(undefined, vi.fn(), "problem", onState)
+    const cards = await screen.findAllByTestId("prtg-sensor-card")
+    expect(cards.map((c) => c.textContent)).toEqual([
+      expect.stringContaining("Ping v2"),
+    ])
+    const counts = screen.getByTestId("monitoring-source-counts")
+    expect(counts.querySelector("[data-active]")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }))
+    expect(onState).toHaveBeenCalledWith(null)
+  })
+
+  it("marks the active count and toggles it off", async () => {
+    const onState = vi.fn()
+    mountTab(undefined, vi.fn(), "paused", onState)
+    const cards = await screen.findAllByTestId("prtg-sensor-card")
+    expect(cards).toHaveLength(1)
+    expect(cards[0].textContent).toContain("HTTP")
+    const paused = screen
+      .getByTestId("monitoring-source-counts")
+      .querySelector("[data-state=paused]")!
+    expect(paused.getAttribute("data-active")).toBe("true")
+    fireEvent.click(paused)
+    expect(onState).toHaveBeenCalledWith(null)
+  })
+
+  it("lists the sensors behind a count in the shared tooltip", async () => {
+    mountTab()
+    const down = (
+      await screen.findByTestId("monitoring-source-counts")
+    ).querySelector("[data-state=down]")!
+    expect(down.closest("[title]")).toBeNull()
+    fireEvent.focus(down.closest("button")!)
+    const tip = await screen.findByRole("tooltip")
+    expect(tip.textContent).toContain("Ping v2")
+    expect(tip.textContent).toContain("Destination unreachable")
+    expect(tip.textContent).not.toContain("HTTP v2")
+  })
+})
+
 describe("PrtgSensorsTab", () => {
   it("counts each state in the strip, paused apart", async () => {
     mountTab()
-    const strip = await screen.findByTestId("prtg-state-strip")
+    const strip = await screen.findByTestId("monitoring-source-counts")
     expect(strip.querySelector("[data-state=down]")?.textContent).toContain("1")
     expect(strip.querySelector("[data-state=up]")?.textContent).toContain("1")
     expect(strip.querySelector("[data-state=paused]")?.textContent).toContain(
@@ -473,8 +534,13 @@ describe("PrtgMonitoringRow", () => {
     ))
     const row = await screen.findByTestId("prtg-monitoring-row")
     await waitFor(() =>
-      expect(row.querySelector("[data-testid=prtg-state-strip]")).toBeTruthy()
+      expect(
+        row.querySelector("[data-testid=monitoring-source-counts]")
+      ).toBeTruthy()
     )
+    expect(
+      row.querySelector("[data-testid=monitoring-source]")?.textContent
+    ).toContain("db-dev01")
     expect(
       screen.getByText("3 sensors").closest("a")?.getAttribute("href")
     ).toBe("/devices/d1?tab=sensors")

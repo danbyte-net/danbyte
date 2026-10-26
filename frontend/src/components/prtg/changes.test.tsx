@@ -85,7 +85,13 @@ const PLANNED: PrtgChange[] = [
       to: { objid: "999", path: "Gone" },
       applicable: false,
       reason: "PRTG has no group Gone any more.",
-      fix_link: "/prtg?tab=policies",
+      issues: [
+        {
+          code: "group_gone",
+          text: "PRTG has no group Gone any more.",
+          policy: "pol1",
+        },
+      ],
     },
     ignored: false,
     applicable: false,
@@ -234,7 +240,7 @@ describe("PrtgChanges planned rows", () => {
     expect(screen.getAllByText("Ready").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Needs attention").length).toBeGreaterThan(0)
     expect(screen.getByText("PRTG has no group Gone any more.")).toBeTruthy()
-    expect(screen.getByRole("link", { name: "Fix" })).toBeTruthy()
+    expect(screen.getByRole("link", { name: "Edit policy" })).toBeTruthy()
     expect(screen.getAllByText("Applied").length).toBeGreaterThan(0)
     expect(screen.getByText("2081, 2120")).toBeTruthy()
     expect(screen.getAllByText("Failed").length).toBeGreaterThan(0)

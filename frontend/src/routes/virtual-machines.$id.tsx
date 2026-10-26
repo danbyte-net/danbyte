@@ -38,7 +38,10 @@ import { ServicesPane } from "@/components/services-pane"
 import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { IpMonitoring } from "@/components/monitoring/ip-monitoring"
-import { VmMonitoringBadge } from "@/components/monitoring/device-monitoring"
+import {
+  MonitoringBar,
+  MonitoringHeaderBadge,
+} from "@/components/monitoring/monitoring-bar"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
 import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
@@ -63,9 +66,11 @@ export const Route = createFileRoute("/virtual-machines/$id")({
   // `?sensor=` opens that PRTG sensor's panel on the Sensors tab.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: string; sensor?: string } => ({
+  ): { tab?: string; sensor?: string; state?: string } => ({
     ...(typeof s.tab === "string" ? { tab: s.tab } : {}),
     ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
+    // The monitoring bar's filter, on the Monitoring and Sensors tabs.
+    ...(typeof s.state === "string" && s.state ? { state: s.state } : {}),
   }),
 })
 
@@ -132,6 +137,16 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       }),
     [nav, search, vm.id]
   )
+  const setStateFilter = useCallback(
+    (state: string | null) =>
+      nav({
+        to: "/virtual-machines/$id",
+        params: { id: vm.id },
+        search: { ...search, state: state ?? undefined },
+        replace: true,
+      }),
+    [nav, search, vm.id]
+  )
   const goBack = useCallback(
     () => nav({ to: "/virtual-machines", search: { device: undefined } }),
     [nav]
@@ -172,7 +187,7 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
-              <VmMonitoringBadge vmId={vm.id} />
+              <MonitoringHeaderBadge target={{ virtual_machine: vm.id }} />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"
@@ -288,6 +303,8 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
               id: vm.primary_ip.id,
               ip_address: vm.primary_ip.ip_address,
             }}
+            state={search.state}
+            onState={setStateFilter}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -305,12 +322,12 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           <PrtgMonitoringRow
             parent={{ virtual_machine: vm.id }}
             prtgSync={vm.prtg_sync}
-            sensorsLink={(children) => (
+            sensorsLink={(children, state) => (
               <Link
                 to="/virtual-machines/$id"
                 params={{ id: vm.id }}
-                search={{ tab: "sensors" }}
-                className="link"
+                search={{ tab: "sensors", state }}
+                className="inline-flex"
               >
                 {children}
               </Link>
@@ -323,6 +340,8 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           parent={{ virtual_machine: vm.id }}
           selected={openSensor}
           onSelect={selectSensor}
+          state={search.state}
+          onState={setStateFilter}
         />
       </DetailTab>
       <DetailTab value="snmp">
@@ -533,6 +552,10 @@ function VmOverview({ vm }: { vm: VirtualMachine }) {
   ]
   return (
     <div className="space-y-6">
+      <MonitoringBar
+        target={{ virtual_machine: vm.id }}
+        notify={vm.primary_ip ? { ip: vm.primary_ip.id } : undefined}
+      />
       <PinnedSensorsCard
         parent={{ virtual_machine: vm.id }}
         sensorLink={(sensor, children) => (

@@ -634,7 +634,9 @@ function ConnectionCard({
         <KvCard title="Connection" rows={connection} />
         <KvCard title="Server" rows={server} />
         <KvCard title="Two-way" rows={twoWay} />
-        <KvCard title="Registration" rows={registration} />
+        <div id="registration">
+          <KvCard title="Registration" rows={registration} />
+        </div>
       </div>
     </section>
   )
