@@ -546,7 +546,14 @@ class ProposalTests(_Plan):
         before = PrtgChange.objects.count()
         out = preview(self.conn, d)
         self.assertEqual(PrtgChange.objects.count(), before)
-        self.assertTrue(out["managed"])
+        # In PRTG by address, registered by the policy, not made by Danbyte.
+        self.assertEqual(out["linked"]["matched_by"], "address")
+        self.assertTrue(out["registers"])
+        self.assertFalse(out["managed"])
+        self.assertEqual(out["registration"]["mode"], "policies")
+        self.assertEqual([s["kind"] for s in out["planned"]["sensors"]], ["snmp_uptime"])
+        self.assertFalse(out["planned"]["create_device"])
+        self.assertEqual(out["planned"]["queued"], 1)
         self.assertEqual(out["via"], "policy")
         self.assertEqual(out["group"]["path"], "Local Probe")
         self.assertEqual([(s["kind"], s["present"]) for s in out["sensors"]],
@@ -730,11 +737,99 @@ class PlanApiTests(_Api):
         self.post_policy()
         [entry] = self.client.get(f"/api/prtg/plan/?device={d.id}").json()
         self.assertEqual(entry["connection"]["name"], "a")
-        self.assertTrue(entry["managed"])
+        self.assertTrue(entry["registers"])
+        self.assertFalse(entry["managed"])
         self.assertEqual(entry["group"]["path"], "Local Probe")
         self.assertEqual([s["kind"] for s in entry["sensors"]], ["ping"])
         self.assertIn(TEXT["no_address"], entry["problems"])
         self.assertIn("no_address", [i["code"] for i in entry["issues"]])
+
+    def plan_for(self, d):
+        r = self.client.get(f"/api/prtg/plan/?device={d.id}")
+        self.assertEqual(r.status_code, 200, r.content)
+        [entry] = r.json()
+        return entry
+
+    def test_linked_but_unmanaged_is_in_prtg_with_nothing_planned(self):
+        d = Device.objects.create(tenant=self.tenant, name="gw", site=self.site)
+        PrtgDeviceLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=d, objid="2095",
+            name="gw 10.0.0.0", host="10.0.0.1", matched_by="address",
+        )
+        entry = self.plan_for(d)
+        self.assertEqual(entry["linked"]["objid"], "2095")
+        self.assertEqual(entry["linked"]["name"], "gw 10.0.0.0")
+        self.assertEqual(entry["linked"]["matched_by"], "address")
+        self.assertFalse(entry["linked"]["created_here"])
+        self.assertFalse(entry["managed"])
+        self.assertFalse(entry["registers"])
+        self.assertEqual(entry["registration"]["mode"], "none")
+        self.assertEqual(entry["planned"], {
+            "create_device": False, "sensors": [], "move": None, "remove": [],
+            "reasons": [], "queued": 0,
+        })
+        codes = [i["code"] for i in entry["issues"]]
+        self.assertNotIn("no_match", codes)
+        self.assertIsNone(entry["reason_issue"])
+        self.assertNotIn(TEXT["no_match"], entry["problems"] + [entry["reason"]])
+
+    def test_linked_and_created_here_with_a_policy_plans_missing_sensors(self):
+        d = Device.objects.create(tenant=self.tenant, name="gw", site=self.site)
+        PrtgDeviceLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=d, objid="2095",
+            matched_by="created", created_here=True,
+        )
+        self.post_policy(name="Core switches")
+        entry = self.plan_for(d)
+        self.assertTrue(entry["managed"])
+        self.assertEqual(entry["registration"]["mode"], "policies")
+        self.assertFalse(entry["planned"]["create_device"])
+        self.assertEqual([s["kind"] for s in entry["planned"]["sensors"]], ["ping"])
+
+    def test_unlinked_with_a_policy_plans_the_device(self):
+        d = Device.objects.create(tenant=self.tenant, name="edge", site=self.site)
+        self.post_policy(name="Core switches")
+        entry = self.plan_for(d)
+        self.assertIsNone(entry["linked"])
+        self.assertFalse(entry["managed"])
+        self.assertEqual(entry["registration"]["mode"], "policies")
+        self.assertEqual(
+            [p["name"] for p in entry["registration"]["policies"]], ["Core switches"]
+        )
+        self.assertEqual(entry["registration"]["group"]["path"], "Local Probe")
+        self.assertTrue(entry["planned"]["create_device"])
+        self.assertEqual(
+            [(s["name"], s["kind"]) for s in entry["planned"]["sensors"]], [("Ping", "ping")]
+        )
+        self.assertEqual(entry["planned"]["reasons"], [])
+
+    def test_unlinked_with_nothing_registering_it_says_so(self):
+        d = Device.objects.create(tenant=self.tenant, name="edge", site=self.site)
+        entry = self.plan_for(d)
+        self.assertEqual(entry["registration"]["mode"], "none")
+        self.assertEqual([i["code"] for i in entry["planned"]["reasons"]], ["no_match"])
+
+    def test_excluded_plans_nothing_even_when_linked(self):
+        d = Device.objects.create(
+            tenant=self.tenant, name="edge", site=self.site, prtg_sync="never"
+        )
+        self.post_policy()
+        link = PrtgDeviceLink.objects.create(
+            tenant=self.tenant, connection=self.conn, device=d, objid="2081",
+            matched_by="created", created_here=True,
+        )
+        PrtgSensor.objects.create(
+            tenant=self.tenant, connection=self.conn, link=link, device=d,
+            objid="9", name="Old", kind="ping", tags=[instance_tag("gone")],
+        )
+        entry = self.plan_for(d)
+        self.assertTrue(entry["linked"])
+        self.assertTrue(entry["managed"])
+        self.assertEqual(entry["registration"]["mode"], "never")
+        self.assertFalse(entry["planned"]["create_device"])
+        self.assertEqual(entry["planned"]["sensors"], [])
+        self.assertEqual(entry["planned"]["remove"], [])
+        self.assertEqual([i["code"] for i in entry["planned"]["reasons"]], ["excluded"])
 
     def test_plan_for_a_foreign_object_is_404(self):
         d = Device.objects.create(tenant=self.other, name="edge")

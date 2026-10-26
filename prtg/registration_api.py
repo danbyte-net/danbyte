@@ -140,10 +140,11 @@ class PrtgGroupsView(APIView):
 
 
 class PrtgPlanView(APIView):
-    """What PRTG would get for one device or VM - ``?device=<id>`` or
-    ``?virtual_machine=<id>``: one entry per connection of the tenant, from
-    the policies, profiles, stored links and sensors. PRTG is not asked and
-    nothing is written. Needs view on the object."""
+    """What PRTG has and would get for one device or VM - ``?device=<id>``
+    or ``?virtual_machine=<id>``: one entry per connection of the tenant,
+    with ``linked`` (in PRTG), ``managed`` (Danbyte created it),
+    ``registration`` and ``planned`` - see :func:`prtg.provision.preview`.
+    PRTG is not asked and nothing is written. Needs view on the object."""
 
     permission_classes = [IsAuthenticated]
 

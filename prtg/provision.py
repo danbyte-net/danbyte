@@ -897,10 +897,21 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
 # ── one object, for the preview ─────────────────────────────────────────────
 
 
+#: The registration decision's ``via`` as the plan's ``registration.mode``.
+MODES = {"never": "never", "always": "always", "policy": "policies",
+         "register_all": "register_all", "": "none"}
+
+
 def preview(conn: PrtgConnection, obj) -> dict:
-    """What PRTG would get for one device or VM from this connection, from
-    the stored link, sensors and group list - PRTG is not asked and nothing
-    is written."""
+    """What PRTG has and would get for one device or VM from this
+    connection, from the stored link, sensors, queue and group list - PRTG
+    is not asked and nothing is written.
+
+    Four separate answers: ``linked`` (is it in PRTG - the stored link,
+    however it was made), ``managed`` (Danbyte created that PRTG device),
+    ``registration`` (what registers it, if anything) and ``planned`` (what
+    the next plan would propose). Being in PRTG never depends on the
+    registration decision."""
     ctx, checked = _prepare(conn)
     link = PrtgDeviceLink.objects.filter(connection=conn, **_parent(obj)).first()
     want = decide(conn, obj, ctx, linked=link is not None and not link.created_here,
@@ -932,16 +943,59 @@ def preview(conn: PrtgConnection, obj) -> dict:
             issues.append(problem)
         if not host_address(obj):
             issues.append(issue("no_address", object=_target(obj)))
+
+    # A linked object nothing registers is simply left alone: "nothing
+    # registers this object" would read as "not in PRTG".
+    reason_issue = want.reason_issue
+    if link is not None and reason_issue and reason_issue["code"] in (
+        "no_match", "already_linked"
+    ):
+        reason_issue = None
+    planned_sensors = [
+        {"key": r["key"], "name": r["name"], "kind": r["kind"],
+         "kind_label": r["kind_label"], "interface": r["interface"]}
+        for r in rows
+        if not r["template"] and not r["present"] and (link is None or r["required"])
+    ]
+    keys = {r["key"] for r in rows}
+    remove = [
+        {"objid": s.objid, "name": s.name, "kind": s.kind_label or s.kind}
+        for s in (sensors if want.via != "never" else [])
+        if (ours := [t for t in (s.tags or []) if t.startswith(DEF_TAG)])
+        and not any(t in keys for t in ours)
+    ]
+    queue = PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **_parent(obj))
+    move = None
+    if link is not None and want.managed:
+        row = queue.filter(kind=PrtgChange.MOVE_DEVICE).first()
+        if row is not None:
+            move = {"from": (row.detail or {}).get("from"), "to": (row.detail or {}).get("to")}
     return {
         "connection": {"id": str(conn.id), "name": conn.name},
         "prtg_sync": getattr(obj, "prtg_sync", "inherit"),
-        "managed": want.managed, "via": want.via, "reason": want.reason,
-        "reason_issue": want.reason_issue,
         "linked": (
-            {"objid": link.objid, "name": link.name, "group": link.group_path,
-             "url": conn.device_url(link.objid),
-             "created_here": link.created_here} if link else None
+            {"objid": link.objid, "name": link.name, "host": link.host,
+             "group": link.group_path, "matched_by": link.matched_by,
+             "created_here": link.created_here, "created_at": link.created_at,
+             "url": conn.device_url(link.objid)} if link else None
         ),
+        "managed": bool(link is not None and link.created_here),
+        "registers": want.managed,
+        "registration": {
+            "mode": MODES.get(want.via, "none"),
+            "policies": [{"id": str(p.id), "name": p.name} for p in want.policies],
+            "group": group,
+        },
+        "planned": {
+            "create_device": want.managed and link is None,
+            "sensors": planned_sensors,
+            "move": move,
+            "remove": remove,
+            "reasons": [reason_issue] if reason_issue else [],
+            "queued": queue.count(),
+        },
+        "via": want.via, "reason": reason_issue["text"] if reason_issue else "",
+        "reason_issue": reason_issue,
         "group": group,
         "policies": [{"id": str(p.id), "name": p.name} for p in want.policies],
         "profiles": [p.name for p in want.profiles],
