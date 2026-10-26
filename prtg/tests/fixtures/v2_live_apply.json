@@ -1,0 +1,323 @@
+{
+ "prtg_version": "26.3.124.1727",
+ "note": "Live apply: create danbyte-write-test with a Ping sensor under the Local Probe, read, then prune.",
+ "calls": [
+  {
+   "method": "GET",
+   "path": ":1616/api/v2/version",
+   "params": {},
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"application_server_version\":\"0.362.0\",\"prtg_version\":\"26.3.124.1727+\",\"prtg_release_channel\":\"Stable\"}\n"
+  },
+  {
+   "method": "GET",
+   "path": ":1616/api/v2/experimental/probes",
+   "params": {
+    "limit": 3000,
+    "offset": 0
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "[{\"basic\":{\"active\":\"1\",\"name\":\"Local Probe\",\"priority\":\"3\",\"tags\":[]},\"href\":\"/api/v2/probes/1\",\"id\":\"1\",\"kind\":\"probenode\",\"kind_name\":\"Probe\",\"name\":\"Local Probe\",\"parent\":{\"id\":\"0\",\"name\":\"Root\",\"type\":\"REFERENCED_ROOT\",\"href\":\"/api/v2/groups/0\"},\"status\":\"CONNECTED\",\"type\":\"osk.probe\"}\n]"
+  },
+  {
+   "method": "GET",
+   "path": ":1616/api/v2/experimental/schemas/1",
+   "params": {
+    "limit": 0
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "[{\"creatable\":true,\"kind\":\"autodiscoverytask\",\"name\":\"Auto-discovery task\",\"href\":\"/api/v2/experimental/schemas/1/post\\u0026kind=autodiscoverytask\"}\n,{\"creatable\":true,\"kind\":\"autodiscoverytask[1]\",\"name\":\"Auto-discovery task\",\"href\":\"/api/v2/experimental/schemas/1/post\\u0026kind=autodiscoverytask[1\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "devices",
+    "columns": "objid,name,host,probe,group,status,message,tags,parentid,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":7,\"devices\":[{\"objid\":40,\"objid_raw\":40,\"name\":\"Probe Device\",\"name_raw\":\"Probe Device\",\"host\":\"127.0.0.1\",\"host_raw\":\"127.0.0.1\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Local Probe\",\"status\":\"Up\",\"status_raw\":3,\"m\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "probenode",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000,
+    "filter_type": "probenode"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"probenode\":[{\"objid\":1,\"objid_raw\":1,\"name\":\"Local Probe\",\"name_raw\":\"Local Probe\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"parentid\":0,\"parentid_raw\":0,\"type\":\"Probe\",\"type_raw\":\"probenode\",\"active\":true,\"active_raw\":-1}]}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "groups",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":15,\"groups\":[{\"objid\":0,\"objid_raw\":0,\"name\":\"Root\",\"name_raw\":\"Root\",\"probe\":\"\",\"probe_raw\":\"\",\"parentid\":-1000,\"parentid_raw\":-1000,\"type\":\"Group\",\"type_raw\":\"group\",\"active\":true,\"active_raw\":-1},{\"objid\":50,\"objid_raw\":50,\"name\":\"Network Discovery\",\"nam\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "devices",
+    "columns": "objid,name,host,probe,group,status,message,tags,parentid,active",
+    "start": 0,
+    "count": 5000,
+    "filter_tags": "@tag(danbyte-6a1d0abe-5735-4913-986e-6e49cd70620e)"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":0,\"devices\":[]}"
+  },
+  {
+   "method": "POST",
+   "path": ":1616/api/v2/experimental/probes/1/device",
+   "params": {},
+   "body": {
+    "basic": {
+     "name": "danbyte-write-test",
+     "host": "10.0.0.42",
+     "tags": [
+      "danbyte",
+      "danbyte-6a1d0abe-5735-4913-986e-6e49cd70620e"
+     ]
+    }
+   },
+   "status": 201,
+   "location": "/api/v2/devices/2114",
+   "response": ""
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "sensors",
+    "columns": "objid,name,device,host,probe,group,type,status,message,lastvalue,priority,tags,lastcheck,lastup,lastdown,uptime,downtime,interval,parentid,active",
+    "start": 0,
+    "count": 5000,
+    "filter_parentid": "2114"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":0,\"sensors\":[]}"
+  },
+  {
+   "method": "POST",
+   "path": ":1616/api/v2/experimental/devices/2114/sensor",
+   "params": {
+    "kindid": "ping"
+   },
+   "body": {
+    "basic": {
+     "tags": [
+      "danbyte",
+      "danbyte-def-66d6efbb858c"
+     ],
+     "name": "Ping"
+    }
+   },
+   "status": 404,
+   "location": "",
+   "response": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object. Cause: could not find parent with ID: 2114\",\"request_id\":\"pZvMQE\"}\n\n"
+  },
+  {
+   "method": "POST",
+   "path": ":1616/api/v2/experimental/devices/2114/sensor",
+   "params": {
+    "kindid": "ping"
+   },
+   "body": {
+    "basic": {
+     "tags": [
+      "danbyte",
+      "danbyte-def-66d6efbb858c"
+     ],
+     "name": "Ping"
+    }
+   },
+   "status": 201,
+   "location": "/api/v2/sensors/2115",
+   "response": ""
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "sensors",
+    "columns": "objid,name,device,host,probe,group,type,status,message,lastvalue,priority,tags,lastcheck,lastup,lastdown,uptime,downtime,interval,parentid,active",
+    "start": 0,
+    "count": 5000,
+    "filter_parentid": "2114"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"sensors\":[{\"objid\":2115,\"objid_raw\":2115,\"name\":\"Ping\",\"name_raw\":\"Ping\",\"device\":\"danbyte-write-test\",\"device_raw\":\"danbyte-write-test\",\"host\":\"\",\"host_raw\":\"\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Local Prob\u2026"
+  },
+  {
+   "method": "GET",
+   "path": ":1616/api/v2/devices/2114",
+   "params": {},
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"basic\":{\"active\":\"1\",\"host\":\"10.0.0.42\",\"hostv6\":\"\",\"ipversion\":\"0\",\"name\":\"danbyte-write-test\",\"parenttags\":[],\"priority\":\"3\",\"tags\":[\"danbyte\",\"danbyte-6a1d0abe-5735-4913-986e-6e49cd70620e\"]},\"href\":\"/api/v2/devices/2114\",\"id\":\"2114\",\"kind\":\"device\",\"kind_name\":\"Device\",\"name\":\"danbyte-write-test\",\"parent\":{\"id\":\"1\",\"name\":\"Local Probe\",\"type\":\"REFERENCED_PROBE\",\"href\":\"/api/v2/probes/1\"},\"status\":\"UP\",\"type\":\"osk.device\"}\n"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "devices",
+    "columns": "objid,name,host,probe,group,status,message,tags,parentid,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":8,\"devices\":[{\"objid\":40,\"objid_raw\":40,\"name\":\"Probe Device\",\"name_raw\":\"Probe Device\",\"host\":\"127.0.0.1\",\"host_raw\":\"127.0.0.1\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Local Probe\",\"status\":\"Up\",\"status_raw\":3,\"m\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "sensors",
+    "columns": "objid,name,device,host,probe,group,type,status,message,lastvalue,priority,tags,lastcheck,lastup,lastdown,uptime,downtime,interval,parentid,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":18,\"sensors\":[{\"objid\":1001,\"objid_raw\":1001,\"name\":\"System Health\",\"name_raw\":\"System Health\",\"device\":\"Probe Device\",\"device_raw\":\"Probe Device\",\"host\":\"\",\"host_raw\":\"\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Loc\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "probenode",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000,
+    "filter_type": "probenode"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"probenode\":[{\"objid\":1,\"objid_raw\":1,\"name\":\"Local Probe\",\"name_raw\":\"Local Probe\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"parentid\":0,\"parentid_raw\":0,\"type\":\"Probe\",\"type_raw\":\"probenode\",\"active\":true,\"active_raw\":-1}]}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "groups",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":15,\"groups\":[{\"objid\":0,\"objid_raw\":0,\"name\":\"Root\",\"name_raw\":\"Root\",\"probe\":\"\",\"probe_raw\":\"\",\"parentid\":-1000,\"parentid_raw\":-1000,\"type\":\"Group\",\"type_raw\":\"group\",\"active\":true,\"active_raw\":-1},{\"objid\":50,\"objid_raw\":50,\"name\":\"Network Discovery\",\"nam\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "devices",
+    "columns": "objid,name,host,probe,group,status,message,tags,parentid,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":8,\"devices\":[{\"objid\":40,\"objid_raw\":40,\"name\":\"Probe Device\",\"name_raw\":\"Probe Device\",\"host\":\"127.0.0.1\",\"host_raw\":\"127.0.0.1\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Local Probe\",\"status\":\"Up\",\"status_raw\":3,\"m\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "sensors",
+    "columns": "objid,name,device,host,probe,group,type,status,message,lastvalue,priority,tags,lastcheck,lastup,lastdown,uptime,downtime,interval,parentid,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":18,\"sensors\":[{\"objid\":1001,\"objid_raw\":1001,\"name\":\"System Health\",\"name_raw\":\"System Health\",\"device\":\"Probe Device\",\"device_raw\":\"Probe Device\",\"host\":\"\",\"host_raw\":\"\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"group\":\"Local Probe\",\"group_raw\":\"Loc\u2026"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "probenode",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000,
+    "filter_type": "probenode"
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":1,\"probenode\":[{\"objid\":1,\"objid_raw\":1,\"name\":\"Local Probe\",\"name_raw\":\"Local Probe\",\"probe\":\"Local Probe\",\"probe_raw\":\"Local Probe\",\"parentid\":0,\"parentid_raw\":0,\"type\":\"Probe\",\"type_raw\":\"probenode\",\"active\":true,\"active_raw\":-1}]}"
+  },
+  {
+   "method": "GET",
+   "path": "/api/table.json",
+   "params": {
+    "content": "groups",
+    "columns": "objid,name,probe,parentid,type,active",
+    "start": 0,
+    "count": 5000
+   },
+   "body": null,
+   "status": 200,
+   "location": "",
+   "response": "{\"prtg-version\":\"26.3.124.1727\",\"treesize\":15,\"groups\":[{\"objid\":0,\"objid_raw\":0,\"name\":\"Root\",\"name_raw\":\"Root\",\"probe\":\"\",\"probe_raw\":\"\",\"parentid\":-1000,\"parentid_raw\":-1000,\"type\":\"Group\",\"type_raw\":\"group\",\"active\":true,\"active_raw\":-1},{\"objid\":50,\"objid_raw\":50,\"name\":\"Network Discovery\",\"nam\u2026"
+  },
+  {
+   "method": "DELETE",
+   "path": ":1616/api/v2/experimental/devices/2114",
+   "params": {},
+   "body": null,
+   "status": 204,
+   "location": "",
+   "response": ""
+  },
+  {
+   "method": "GET",
+   "path": ":1616/api/v2/devices/2114",
+   "params": {},
+   "body": null,
+   "status": 404,
+   "location": "",
+   "response": "{\"code\":\"NOT_FOUND\",\"message\":\"The resource could not be found in this endpoint. Check the ID of the object.\",\"request_id\":\"oePxvK\"}\n\n"
+  }
+ ]
+}

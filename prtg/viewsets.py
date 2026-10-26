@@ -141,6 +141,37 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         stamp(conn, now, counts)
         return Response(counts)
 
+    @action(detail=True, methods=["post"], url_path="check-writes")
+    def check_writes(self, request, pk=None):
+        """Ask PRTG what it can create through its API and keep the answer:
+        ``{mode: v2 | seed | none, detail, version}``."""
+        from .writer import check_writes
+
+        conn = self.get_object()
+        if not conn.api_key_set:
+            return Response({"detail": "No API key is set."}, status=400)
+        return Response(check_writes(conn))
+
+    @action(detail=True, methods=["get"], url_path="prtg-devices")
+    def prtg_devices(self, request, pk=None):
+        """PRTG's devices, for the seed device picker: ``[{objid, name,
+        host, group, paused}]``, read live."""
+        from .client import PrtgError
+        from .reader import client_for
+
+        conn = self.get_object()
+        if not conn.api_key_set:
+            return Response([])
+        try:
+            rows = client_for(conn).devices().rows
+        except PrtgError as exc:
+            return Response({"detail": str(exc)[:300]}, status=502)
+        return Response([
+            {"objid": str(r["objid"]), "name": r.get("name", ""), "host": r.get("host", ""),
+             "group": r.get("group", ""), "paused": r.get("status_raw") in st.PAUSED}
+            for r in rows
+        ])
+
     @extend_schema(request=None, responses={200: _HookToken})
     @action(detail=True, methods=["post"], url_path="rotate-hook-token")
     def rotate_hook_token(self, request, pk=None):
@@ -192,38 +223,108 @@ class PrtgChangeViewSet(
 
     def apply_change(self, change) -> str:
         from .adopt import apply_adoption
-        from .provision import NOT_YET
         from .reader import apply_link
+        from .writer import apply
 
         if change.planned:
-            # Planned writes are shown so the operator sees what Danbyte
-            # would do to PRTG; nothing can write them yet.
-            raise ValueError(NOT_YET)
+            # A write to PRTG (prtg.writer): the operator's act, logged
+            # under their name.
+            return apply(change, user=self.request.user)["detail"]
         if change.kind == PrtgChange.LINK:
             return apply_link(change)
         if change.kind == PrtgChange.ADOPT:
             return apply_adoption(change)
         raise ValueError("This proposal needs a decision, not an apply.")
 
-    def apply_pending(self, conn) -> dict:
-        """Every applicable proposal: links, and adoptions whose placement
-        is complete. An adoption still missing a default waits."""
+    @action(detail=True, methods=["post"])
+    def apply(self, request, pk=None):
+        """Apply one row. A planned row stays in the queue afterwards,
+        marked applied or failed, with the PRTG objects it made."""
+        response = super().apply(request, pk)
+        change = PrtgChange.objects.filter(pk=pk).first()
+        if change is not None:
+            from .writer import change_status
+
+            response.data["status"] = change_status(change)
+            response.data["result"] = (change.detail or {}).get("result") or {}
+        return response
+
+    def _one(self, change) -> dict:
+        from .client import PrtgError
+
+        try:
+            return {"id": str(change.id), "ok": True, "detail": self.apply_change(change)}
+        except (ValueError, PrtgError) as exc:
+            return {"id": str(change.id), "ok": False, "detail": str(exc)[:400]}
+
+    def _skip(self, change) -> bool:
         from monitoring.external.adoption import applicable
 
-        applied, failed = 0, []
-        for change in PrtgChange.applicable(conn).select_related(
+        from .writer import ready
+
+        if change.planned:
+            return not ready(change)
+        if change.kind == PrtgChange.ADOPT:
+            return not applicable(change.detail or {})
+        return False
+
+    def apply_pending(self, conn) -> dict:
+        """Every applicable proposal: links, adoptions whose placement is
+        complete, and planned writes that are ready. Ambiguities and
+        removals wait for a person, one row at a time."""
+        results = [
+            self._one(change)
+            for change in PrtgChange.applicable(conn).select_related(
+                "device", "virtual_machine", "connection", "connection__tenant"
+            ).order_by("kind", "created_at")
+            if not self._skip(change)
+        ]
+        return {"applied": sum(1 for r in results if r["ok"]),
+                "failed": [r for r in results if not r["ok"]], "results": results}
+
+    @action(detail=False, methods=["post"], url_path="apply-selected")
+    def apply_selected(self, request):
+        """Apply the rows named by ``ids`` (of one tenant's queue), one at a
+        time: ``{applied, failed, results: [{id, ok, detail, status}]}``.
+        A selected removal is applied too - picking it is the confirmation.
+        Ambiguities, applied rows and rows that cannot be written as they
+        stand come back as not applied, with the reason."""
+        from .writer import change_status
+
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 500:
+            return Response({"ids": "A list of 1-500 change ids."}, status=400)
+        rows = self.get_queryset().filter(id__in=[str(i) for i in ids]).select_related(
             "device", "virtual_machine", "connection", "connection__tenant"
-        ):
-            if change.planned:
-                continue
-            if change.kind == PrtgChange.ADOPT and not applicable(change.detail or {}):
-                continue
-            try:
-                self.apply_change(change)
-                applied += 1
-            except ValueError as exc:
-                failed.append({"id": str(change.id), "detail": str(exc)})
-        return {"applied": applied, "failed": failed}
+        ).order_by("kind", "created_at")
+        results = []
+        found = set()
+        for change in rows:
+            found.add(str(change.id))
+            if change.kind == PrtgChange.AMBIGUOUS:
+                r = {"id": str(change.id), "ok": False,
+                     "detail": "This proposal needs a decision, not an apply."}
+            else:
+                r = self._one(change)
+            fresh = PrtgChange.objects.filter(pk=change.pk).first()
+            r["status"] = change_status(fresh) if fresh is not None else "applied"
+            results.append(r)
+        for i in ids:
+            if str(i) not in found:
+                results.append({"id": str(i), "ok": False, "detail": "Not found.",
+                                "status": "missing"})
+        return Response({"applied": sum(1 for r in results if r["ok"]),
+                         "failed": [r for r in results if not r["ok"]],
+                         "results": results})
+
+    @action(detail=False, methods=["post"], url_path="dismiss-selected")
+    def dismiss_selected(self, request):
+        """Dismiss the rows named by ``ids``."""
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 500:
+            return Response({"ids": "A list of 1-500 change ids."}, status=400)
+        n = self.get_queryset().filter(id__in=[str(i) for i in ids]).update(ignored=True)
+        return Response({"dismissed": n})
 
     def remote_errors(self) -> tuple:
         from .client import PrtgError

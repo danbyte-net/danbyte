@@ -674,6 +674,39 @@ class PrtgClient:
     def scan_now(self, objid: int) -> None:
         self._write("/api/scannow.htm", {"id": int(objid)})
 
+    def duplicate(self, objid: int, name: str, target_id: int, host: str | None = None) -> str:
+        """``duplicateobject.htm``: copy a device or sensor under
+        ``target_id``. The copy arrives **paused**; its id is read from the
+        redirect's ``Location`` (``/device.htm?id=2107``), which only works
+        because the outbound guard never follows redirects. Returns the id."""
+        params = {"id": int(objid), "name": name, "targetid": int(target_id)}
+        if host:
+            params["host"] = host
+        resp = self._check(self._request("/api/duplicateobject.htm", params), write=True)
+        m = re.search(r"[?&]id=(\d+)", resp.headers.get("Location", ""))
+        if not m:
+            raise PrtgError("PRTG did not say which object the copy is.")
+        return m.group(1)
+
+    def discover_now(self, objid: int, templates=()) -> None:
+        """``discovernow.htm``: run auto-discovery on a device, with the
+        named device templates (file names, e.g. ``Device Generic Ping.odt``)."""
+        params: dict = {"id": int(objid)}
+        if templates:
+            params["template"] = ",".join(f'"{t}"' for t in templates)
+        self._write("/api/discovernow.htm", params)
+
+    def set_interval(self, objid: int, seconds: int) -> None:
+        """A sensor's scanning interval, with inheritance switched off.
+
+        API v2 refuses the interval section on create and on PATCH (PRTG
+        26.3: "section intervalgroup is not yet supported"), so it is the
+        classic properties: ``interval`` and the inheritance switch, whose
+        classic name is ``intervalgroup_`` (``intervalgroup`` is accepted
+        and does nothing)."""
+        self.set_property(objid, "interval", int(seconds))
+        self.set_property(objid, "intervalgroup_", 0)
+
     # ── API v2 ───────────────────────────────────────────────────────
 
     def probe_v2(self) -> tuple[bool, str]:
