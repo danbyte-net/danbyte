@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Plus, Radar } from "lucide-react"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { api, apiErrorMessage } from "@/lib/api"
 import type {
   PrtgAddSensorResult,
   PrtgAddableKind,
@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -40,12 +41,18 @@ import {
   usePrtgSensorKinds,
 } from "./profiles"
 import { SensorKindBrowser } from "./sensor-kind-picker"
+import type { SensorKindOption } from "./sensor-kind-picker"
 
 // Adding a sensor to a linked PRTG device by hand (prtg/manual.py): pick one
 // of the kinds PRTG offers, fill in its settings - Danbyte's own form for
 // the kinds it knows, PRTG's schema for the rest - and, for a scanned kind
 // (SNMP traffic), pick the rows PRTG's scan found. The server creates the
 // sensor, re-reads the device and answers with the new rows.
+//
+// Several kinds at once: the ones with Danbyte's form and nothing to fill
+// in are created with their defaults straight away; the rest (PRTG's form,
+// a required setting, a scan) follow as steps, "2 of 5", each created or
+// skipped in turn; a result list ends it.
 
 /** The tag every sensor added by hand carries. */
 export const MANUAL_TAG = "danbyte-manual"
@@ -344,7 +351,55 @@ function ScanPicker({
 
 // ── the dialog ─────────────────────────────────────────────────────────
 
-type Step = "pick" | "form" | "scan"
+type Step = "pick" | "form" | "scan" | "running" | "results"
+
+/** How one kind of a multi-add ended. */
+interface Outcome {
+  name: string
+  status: "created" | "failed" | "skipped"
+  detail: string
+}
+
+interface Batch {
+  /** The kinds that need the operator, in turn. */
+  steps: PrtgAddableKind[]
+  at: number
+  /** Kinds created before the steps (no settings to fill in). */
+  offset: number
+  total: number
+}
+
+const OUTCOME_BADGE = {
+  created: { variant: "success", label: "Created" },
+  failed: { variant: "destructive", label: "Failed" },
+  skipped: { variant: "secondary", label: "Skipped" },
+} as const
+
+function ResultList({ outcomes }: { outcomes: Outcome[] }) {
+  return (
+    <div
+      className="max-h-[50vh] overflow-y-auto rounded-md border border-border"
+      data-testid="prtg-add-results"
+    >
+      {outcomes.map((o, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-3 border-b border-border px-3 py-2 text-sm last:border-b-0"
+        >
+          <Badge variant={OUTCOME_BADGE[o.status].variant}>
+            {OUTCOME_BADGE[o.status].label}
+          </Badge>
+          <div className="min-w-0">
+            <p className="truncate">{o.name}</p>
+            {o.detail && (
+              <p className="text-xs text-muted-foreground">{o.detail}</p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export function AddSensorDialog({
   target,
@@ -366,6 +421,11 @@ export function AddSensorDialog({
   const [tags, setTags] = useState("")
   const [scanRows, setScanRows] = useState<PrtgScanRow[]>([])
   const [picked, setPicked] = useState<string[]>([])
+  const [batch, setBatch] = useState<Batch | null>(null)
+  const [outcomes, setOutcomes] = useState<Outcome[]>([])
+  const [added, setAdded] = useState<string[]>([])
+  const [progress, setProgress] = useState("")
+  const [lastError, setLastError] = useState<string | null>(null)
   const schema = useSensorSchema(target, kind)
   const spec = kind?.danbyte_kind
     ? (danbyteKinds.data?.kinds ?? []).find(
@@ -387,9 +447,96 @@ export function AddSensorDialog({
     setName("")
     setPicked([])
     setScanRows([])
+    setIntervalSeconds(null)
+    setTags("")
+    setLastError(null)
     // A new kind is a new request: a retry of this one finds what it made.
     setRequestId(newRequestId())
     setStep("form")
+  }
+
+  const specOf = (k: PrtgAddableKind) =>
+    k.danbyte_kind
+      ? (danbyteKinds.data?.kinds ?? []).find((d) => d.value === k.danbyte_kind)
+      : undefined
+  /** Danbyte's form, no scan and nothing required without a default. */
+  const direct = (k: PrtgAddableKind) => {
+    const s = specOf(k)
+    return (
+      k.form === "danbyte" &&
+      !k.scan &&
+      !!s &&
+      s.params.every(
+        (p) => !p.required || (p.default != null && p.default !== "")
+      )
+    )
+  }
+
+  const finishBatch = (objids: string[]) => {
+    refresh()
+    if (objids.length) onAdded?.(objids)
+    setBatch(null)
+    setStep("results")
+  }
+
+  /** Several kinds from the browser: one goes the single way. */
+  const pickMany = async (options: SensorKindOption[]) => {
+    const kinds = options.flatMap((o) => (o.prtg ? [o.prtg] : []))
+    if (kinds.length === 0) return
+    if (kinds.length === 1) return pick(kinds[0])
+    const now = kinds.filter(direct)
+    const later = kinds.filter((k) => !direct(k))
+    const done: Outcome[] = []
+    const objids: string[] = []
+    setStep("running")
+    for (const [i, k] of now.entries()) {
+      setProgress(`Adding ${k.name} (${i + 1} of ${now.length})…`)
+      try {
+        const res = await api<PrtgAddSensorResult>(
+          `/api/prtg/links/${target.linkId}/sensors/`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              kind: k.danbyte_kind ?? k.id,
+              kind_label: k.name,
+              name: "",
+              params: kindDefaults(specOf(k)),
+              interval_seconds: null,
+              tags: [],
+              interfaces: [],
+              request_id: newRequestId(),
+            }),
+          }
+        )
+        objids.push(...res.objids)
+        done.push({ name: k.name, status: "created", detail: res.detail })
+      } catch (e) {
+        done.push({
+          name: k.name,
+          status: "failed",
+          detail: apiErrorMessage(e, "PRTG did not add the sensor"),
+        })
+      }
+    }
+    setOutcomes(done)
+    setAdded(objids)
+    if (later.length === 0) return finishBatch(objids)
+    if (objids.length) refresh()
+    setBatch({ steps: later, at: 0, offset: now.length, total: kinds.length })
+    pick(later[0])
+  }
+
+  /** The current step's kind ended: record it and go on. */
+  const advance = (outcome: Outcome, objids: string[] = []) => {
+    setOutcomes((o) => [...o, outcome])
+    const all = [...added, ...objids]
+    setAdded(all)
+    if (!batch) return
+    const next = batch.at + 1
+    if (next < batch.steps.length) {
+      setBatch({ ...batch, at: next })
+      pick(batch.steps[next])
+    } else finishBatch(all)
   }
 
   const scan = useMutation({
@@ -430,6 +577,15 @@ export function AddSensorDialog({
       )
     },
     onSuccess: (res) => {
+      if (batch)
+        return advance(
+          {
+            name: name.trim() || kind?.name || "",
+            status: res.failed.length ? "failed" : "created",
+            detail: res.detail,
+          },
+          res.objids
+        )
       if (res.failed.length)
         toast.warning(`${res.detail}`, { duration: 10_000 })
       else toast.success(res.detail)
@@ -437,8 +593,17 @@ export function AddSensorDialog({
       refresh()
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e, "PRTG did not add the sensor"),
+    onError: (e) => {
+      const msg = apiErrorToast(e, "PRTG did not add the sensor")
+      if (batch) setLastError(msg)
+    },
   })
+  const skip = () =>
+    advance({
+      name: kind?.name ?? "",
+      status: lastError ? "failed" : "skipped",
+      detail: lastError ?? "",
+    })
 
   const intervals = danbyteKinds.data?.intervals ?? []
   const needsScan = !!kind?.scan && step === "form"
@@ -449,10 +614,19 @@ export function AddSensorDialog({
       <DialogContent size="2xl" data-testid="prtg-add-sensor-dialog">
         <DialogHeader>
           <DialogTitle>
-            {step === "pick" ? "Add sensor" : (kind?.name ?? "Add sensor")}
+            {step === "pick" || step === "running"
+              ? "Add sensors"
+              : step === "results"
+                ? "Sensors added"
+                : (kind?.name ?? "Add sensor")}
           </DialogTitle>
           <DialogDescription>
-            {step === "pick"
+            {batch && (step === "form" || step === "scan") && (
+              <span className="num mr-2" data-testid="prtg-add-stepper">
+                {batch.offset + batch.at + 1} of {batch.total}
+              </span>
+            )}
+            {step === "pick" || step === "running" || step === "results"
               ? `On ${target.name} in PRTG.`
               : step === "scan"
                 ? "Pick what to monitor; each becomes one sensor."
@@ -465,9 +639,22 @@ export function AddSensorDialog({
             connectionId={target.connectionId}
             linkId={target.linkId}
             mode="add"
-            onPick={(o) => o.prtg && pick(o.prtg)}
+            multiple
+            onCancel={() => onOpenChange(false)}
+            onPickMany={(o) => void pickMany(o)}
           />
         )}
+
+        {step === "running" && (
+          <div className="grid gap-1">
+            <Loading />
+            <p className="text-center text-xs text-muted-foreground">
+              {progress}
+            </p>
+          </div>
+        )}
+
+        {step === "results" && <ResultList outcomes={outcomes} />}
 
         {step === "form" && kind && (
           <form
@@ -530,18 +717,30 @@ export function AddSensorDialog({
           <ScanPicker rows={scanRows} picked={picked} onChange={setPicked} />
         )}
 
-        {step !== "pick" && (
+        {step === "results" && (
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              className="mr-auto"
-              disabled={busy}
-              onClick={() => setStep(step === "scan" ? "form" : "pick")}
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back
+            <Button type="button" onClick={() => onOpenChange(false)}>
+              Done
             </Button>
+          </DialogFooter>
+        )}
+
+        {(step === "form" || step === "scan") && (
+          <DialogFooter>
+            {!batch || step === "scan" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="mr-auto"
+                disabled={busy}
+                onClick={() => setStep(step === "scan" ? "form" : "pick")}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back
+              </Button>
+            ) : (
+              <span className="mr-auto" />
+            )}
             <Button
               type="button"
               variant="outline"
@@ -549,6 +748,16 @@ export function AddSensorDialog({
             >
               Cancel
             </Button>
+            {batch && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={skip}
+              >
+                Skip
+              </Button>
+            )}
             {step === "form" ? (
               <Button
                 type="submit"

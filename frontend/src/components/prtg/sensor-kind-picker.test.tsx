@@ -164,3 +164,37 @@ describe("SensorKindBrowser", () => {
     ).toBeTruthy()
   })
 })
+
+describe("SensorKindBrowser, multiple", () => {
+  it("checks rows and hands every chosen kind over at once", async () => {
+    const onPickMany = vi.fn()
+    mountWithRouter(() => (
+      <SensorKindBrowser
+        connectionId="c1"
+        mode="profile"
+        multiple
+        onPickMany={onPickMany}
+      />
+    ))
+    await screen.findByRole("group", { name: "Standard" })
+    const add = screen.getByRole("button", { name: "Add 0 sensors" })
+    expect((add as HTMLButtonElement).disabled).toBe(true)
+    const search = screen.getByRole("combobox", {
+      name: "Search sensor kinds",
+    })
+    fireEvent.change(search, { target: { value: "port" } })
+    fireEvent.click(screen.getByTestId("prtg-kind-option"))
+    // Search and category still narrow; the choice outlives them.
+    fireEvent.change(search, { target: { value: "" } })
+    const rail = screen.getByRole("navigation", { name: "Categories" })
+    fireEvent.click(within(rail).getByRole("button", { name: /^Ping/ }))
+    fireEvent.keyDown(search, { key: "Enter" })
+    expect(screen.getByTestId("prtg-kind-chosen").textContent).toBe(
+      "2 selected"
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 sensors" }))
+    expect(
+      onPickMany.mock.calls[0][0].map((o: { id: string }) => o.id)
+    ).toEqual(["port", "ping"])
+  })
+})

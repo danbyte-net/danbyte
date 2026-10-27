@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react"
+import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -16,6 +16,7 @@ import type {
 import { apiErrorToast } from "@/lib/api-toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -35,11 +36,15 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
-import { QueryError } from "@/components/query-error"
 import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 import { SchemaFields } from "./add-sensor"
-import { SensorKindPicker, usePrtgSensorKinds } from "./sensor-kind-picker"
+import {
+  SensorKindPicker,
+  SensorKindsDialog,
+  usePrtgSensorKinds,
+} from "./sensor-kind-picker"
+import type { SensorKindOption } from "./sensor-kind-picker"
 
 const INTERVAL_LABEL = (s: number) =>
   s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`
@@ -299,8 +304,86 @@ export function KindParamFields({
 
 export { defaultsFor as kindDefaults, INTERVAL_LABEL }
 
-/** A PRTG-only kind's parameters: PRTG's create form for it, read through
- * the connection, as `section.field` values. */
+/** Settings typed by hand as `section.field` and a value: a PRTG-only
+ * kind's params when PRTG's form is not there to fill in. */
+function SettingsEditor({
+  params,
+  onChange,
+}: {
+  params: Record<string, unknown>
+  onChange: (params: Record<string, unknown>) => void
+}) {
+  const [rows, setRows] = useState<{ key: string; value: string }[]>(() =>
+    Object.entries(params).map(([key, v]) => ({
+      key,
+      value: v == null ? "" : Array.isArray(v) ? v.join(",") : String(v),
+    }))
+  )
+  const commit = (next: { key: string; value: string }[]) => {
+    setRows(next)
+    const out: Record<string, unknown> = {}
+    for (const r of next) if (r.key.trim()) out[r.key.trim()] = r.value
+    onChange(out)
+  }
+  return (
+    <div className="grid gap-2" data-testid="prtg-settings-editor">
+      {rows.map((r, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            aria-label="Setting"
+            placeholder="section.field"
+            value={r.key}
+            onChange={(e) =>
+              commit(
+                rows.map((x, j) =>
+                  j === i ? { ...x, key: e.target.value } : x
+                )
+              )
+            }
+          />
+          <Input
+            aria-label="Value"
+            placeholder="Value"
+            value={r.value}
+            onChange={(e) =>
+              commit(
+                rows.map((x, j) =>
+                  j === i ? { ...x, value: e.target.value } : x
+                )
+              )
+            }
+          />
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Remove setting"
+            onClick={() => commit(rows.filter((_, j) => j !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setRows([...rows, { key: "", value: "" }])}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add setting
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** A PRTG-only kind's parameters. A profile is tied to no device, so PRTG's
+ * create form is only help: read in the background (the server asks a
+ * linked device that can take the kind) and shown when it arrives. Without
+ * it PRTG's defaults apply and settings can be typed by hand; PRTG checks
+ * them when it creates the sensor. */
 function GenericParams({
   connectionId,
   kind,
@@ -321,14 +404,22 @@ function GenericParams({
     staleTime: 10 * 60_000,
     retry: false,
   })
-  if (schema.isLoading) return <Loading />
-  if (schema.isError) return <QueryError error={schema.error} />
   const fields = schema.data?.fields ?? []
+  if (fields.length === 0)
+    return (
+      <div className="grid gap-2">
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="prtg-defaults-note"
+        >
+          PRTG&apos;s defaults apply; add settings below if needed.
+        </p>
+        <SettingsEditor key={kind} params={params} onChange={onChange} />
+      </div>
+    )
   return (
     <>
-      {fields.length > 0 && (
-        <SchemaFields fields={fields} values={params} onChange={onChange} />
-      )}
+      <SchemaFields fields={fields} values={params} onChange={onChange} />
       {schema.data?.scan && (
         <p className="text-xs text-muted-foreground">
           Every row PRTG&apos;s scan finds becomes a sensor.
@@ -373,18 +464,22 @@ export function ProfileForm({
       ;[next[i], next[j]] = [next[j], next[i]]
       return next
     })
-  const add = () =>
+  const [picking, setPicking] = useState(false)
+  // One definition per chosen kind: name blank, interval inherited, required.
+  const addKinds = (options: SensorKindOption[]) =>
     setRows((rs) => [
       ...rs,
-      {
+      ...options.map((o) => ({
         _key: newKey(),
-        kind: "ping",
+        kind: o.id,
+        kind_label: o.name,
+        form: o.form,
         name: "",
-        params: {},
+        params: o.spec ? defaultsFor(o.spec) : {},
         interval_seconds: null,
         required: true,
         tags: [],
-      },
+      })),
     ])
 
   const save = useMutation({
@@ -568,11 +663,22 @@ export function ProfileForm({
           </p>
         )}
         <div>
-          <Button type="button" size="sm" variant="outline" onClick={add}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setPicking(true)}
+          >
             <Plus className="h-3.5 w-3.5" />
             Add sensor
           </Button>
         </div>
+        <SensorKindsDialog
+          connectionId={connection.id}
+          open={picking}
+          onOpenChange={setPicking}
+          onPick={addKinds}
+        />
       </div>
       <FormFooter
         onCancel={onDone}

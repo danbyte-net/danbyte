@@ -13340,6 +13340,8 @@ export interface PrtgSensorSchema {
   kind: string
   fields: PrtgSchemaField[]
   scan: { section: string; field: string } | null
+  /** Set when no linked device could describe the kind: no fields. */
+  note?: string
 }
 
 export interface PrtgScanRow {
