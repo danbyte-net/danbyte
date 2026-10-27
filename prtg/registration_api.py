@@ -16,9 +16,13 @@ from auth_api import rbac
 from integrations.toggles import IntegrationToggleMixin, integration_enabled
 
 from . import sensor_kinds as sk
-from .models import PrtgConnection, PrtgPolicy, PrtgSensorProfile
+from .models import PrtgConnection, PrtgCredential, PrtgPolicy, PrtgSensorProfile
 from .policy_api import PolicyMatchesMixin
-from .registration_serializers import PrtgPolicySerializer, PrtgSensorProfileSerializer
+from .registration_serializers import (
+    PrtgCredentialSerializer,
+    PrtgPolicySerializer,
+    PrtgSensorProfileSerializer,
+)
 
 
 class _ByConnection:
@@ -86,6 +90,35 @@ class PrtgSensorProfileViewSet(IntegrationToggleMixin, _ByConnection, TenantScop
             return Response({"detail": "Unknown connection."}, status=404)
         profile = make_starter(conn)
         return Response(self.get_serializer(profile).data, status=201)
+
+
+class PrtgCredentialViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedViewSet):
+    """Logins a sensor profile can place on a PRTG group or device. The
+    secrets are write-only. One a profile or policy places cannot be
+    deleted."""
+
+    integration_keys = ("prtg",)
+    queryset = PrtgCredential.objects.order_by("name")
+    serializer_class = PrtgCredentialSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        cred = self.get_object()
+        users = [
+            p.name for p in PrtgSensorProfile.objects.filter(connection=cred.connection_id)
+            if any((e or {}).get("credential") == str(cred.id)
+                   for e in (p.credential_placement or {}).values())
+        ] + [
+            p.name for p in PrtgPolicy.objects.filter(connection=cred.connection_id)
+            if any((e or {}).get("credential") == str(cred.id)
+                   for e in (p.credential_placement or {}).values())
+        ]
+        if users:
+            return Response(
+                {"detail": f"In use by {', '.join(users[:3])}. Pick another credential "
+                           "there first."},
+                status=400,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 def _connection(request, tenant):

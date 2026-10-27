@@ -10,7 +10,13 @@ from api.models import DeviceRole, DeviceType, Location, Platform, Region, Site
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 
 from . import sensor_kinds as sk
-from .models import PrtgConnection, PrtgPolicy, PrtgSensorDefinition, PrtgSensorProfile
+from .models import (
+    PrtgConnection,
+    PrtgCredential,
+    PrtgPolicy,
+    PrtgSensorDefinition,
+    PrtgSensorProfile,
+)
 
 
 def _active_tenant(serializer):
@@ -146,17 +152,26 @@ class PrtgSensorProfileSerializer(serializers.ModelSerializer):
     connection = TenantScopedPrimaryKeyRelatedField(queryset=PrtgConnection.objects.all())
     definitions = PrtgSensorDefinitionSerializer(many=True, required=False)
     policy_count = serializers.SerializerMethodField()
+    #: The credential sections the definitions need: ``[{section, label,
+    #: writable, kinds}]`` (:func:`prtg.credentials.profile_sections`).
+    credential_sections = serializers.SerializerMethodField()
 
     def get_policy_count(self, obj) -> int:
         return obj.policies.count()
+
+    def get_credential_sections(self, obj) -> list:
+        from .credentials import profile_sections
+
+        return profile_sections(obj)
 
     class Meta:
         model = PrtgSensorProfile
         fields = [
             "id", "connection", "name", "description", "definitions", "policy_count",
-            "created_at", "updated_at",
+            "credential_placement", "credential_sections", "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "policy_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "policy_count", "credential_sections", "created_at",
+                            "updated_at"]
 
     def validate_connection(self, value):
         tenant = _active_tenant(self)
@@ -179,6 +194,8 @@ class PrtgSensorProfileSerializer(serializers.ModelSerializer):
         attrs["name"] = name
         if conn is not None and attrs.get("definitions"):
             self._check_generic(conn, attrs["definitions"])
+        if conn is not None and "credential_placement" in attrs:
+            attrs["credential_placement"] = _placement(conn, attrs["credential_placement"])
         return attrs
 
     @staticmethod
@@ -230,6 +247,136 @@ class PrtgSensorProfileSerializer(serializers.ModelSerializer):
         return instance
 
 
+def _placement(conn, value) -> dict:
+    from .credentials import clean_placement
+
+    try:
+        return clean_placement(conn, value)
+    except ValueError as exc:
+        raise serializers.ValidationError({"credential_placement": str(exc)}) from None
+
+
+class PrtgCredentialSerializer(serializers.ModelSerializer):
+    """A login Danbyte can place on a PRTG group or device. Secrets are
+    write-only: ``password``, ``token_secret``, ``private_key``; the API
+    answers ``password_set`` and so on, never a value. A blank secret on an
+    update keeps the stored one."""
+
+    connection = TenantScopedPrimaryKeyRelatedField(queryset=PrtgConnection.objects.all())
+    kind_display = serializers.CharField(source="get_kind_display", read_only=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True,
+                                     trim_whitespace=False)
+    token_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    private_key = serializers.CharField(write_only=True, required=False, allow_blank=True,
+                                        trim_whitespace=False)
+    password_set = serializers.SerializerMethodField()
+    token_secret_set = serializers.SerializerMethodField()
+    private_key_set = serializers.SerializerMethodField()
+
+    SECRETS = ("password", "token_secret", "private_key")
+    #: What each kind keeps in ``params``.
+    PARAMS = {
+        "proxmox": ("user", "realm", "token_id", "port"),
+        "vmware": ("user", "port"),
+        "windows_login": ("domain", "user"),
+        "ssh": ("user", "port"),
+    }
+
+    def _set(self, obj, name) -> bool:
+        return bool((obj.secret_params or {}).get(name))
+
+    def get_password_set(self, obj) -> bool:
+        return self._set(obj, "password")
+
+    def get_token_secret_set(self, obj) -> bool:
+        return self._set(obj, "token_secret")
+
+    def get_private_key_set(self, obj) -> bool:
+        return self._set(obj, "private_key")
+
+    class Meta:
+        model = PrtgCredential
+        fields = [
+            "id", "connection", "name", "kind", "kind_display", "params", "description",
+            "password", "token_secret", "private_key", "password_set", "token_secret_set",
+            "private_key_set", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "kind_display", "password_set", "token_secret_set",
+                            "private_key_set", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        def get(name):
+            return attrs[name] if name in attrs else getattr(self.instance, name, None)
+
+        conn = get("connection")
+        tenant = _active_tenant(self)
+        if conn is not None and tenant is not None and conn.tenant_id != tenant.id:
+            raise serializers.ValidationError({"connection": "Not in the active tenant."})
+        if self.instance is not None and conn is not None and (
+            conn.id != self.instance.connection_id
+        ):
+            raise serializers.ValidationError({"connection": "A credential stays with its "
+                                                             "connection."})
+        name = (get("name") or "").strip()
+        if not name:
+            raise serializers.ValidationError({"name": "A name is needed."})
+        clash = PrtgCredential.objects.filter(connection=conn, name=name)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError({"name": "A credential with this name exists."})
+        attrs["name"] = name
+        kind = get("kind")
+        raw = attrs.get("params", getattr(self.instance, "params", None)) or {}
+        if not isinstance(raw, dict):
+            raise serializers.ValidationError({"params": "Expected an object."})
+        params = {}
+        for key in self.PARAMS.get(kind, ()):
+            value = raw.get(key)
+            if value in (None, ""):
+                continue
+            if key == "port":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({"params": "The port is a number."}) from None
+                if not 0 < value < 65536:
+                    raise serializers.ValidationError({"params": "The port is 1 to 65535."})
+            else:
+                value = str(value).strip()[:255]
+            params[key] = value
+        if not params.get("user"):
+            raise serializers.ValidationError({"params": "A user is needed."})
+        attrs["params"] = params
+        secrets = dict(self.instance.secret_params or {}) if self.instance else {}
+        if self.instance is not None and self.instance.kind != kind:
+            secrets = {}
+        for key in self.SECRETS:
+            value = attrs.pop(key, None)
+            if value:
+                secrets[key] = value
+        if kind == "proxmox" and not (secrets.get("token_secret") or secrets.get("password")):
+            raise serializers.ValidationError({"token_secret": "The API token secret is "
+                                                               "needed."})
+        if kind == "proxmox" and not params.get("token_id") and "!" not in params["user"]:
+            raise serializers.ValidationError({"params": "PRTG takes a Proxmox API token: "
+                                                         "give its token id."})
+        if kind in ("vmware", "windows_login") and not secrets.get("password"):
+            raise serializers.ValidationError({"password": "A password is needed."})
+        if kind == "ssh" and not (secrets.get("password") or secrets.get("private_key")):
+            raise serializers.ValidationError({"password": "A password or private key is "
+                                                           "needed."})
+        if kind == "proxmox" and not secrets.get("token_secret") and secrets.get("password"):
+            # PRTG 26.3's Proxmox sensors take only an API token.
+            raise serializers.ValidationError({"token_secret": "PRTG takes the Proxmox "
+                                                               "API token secret, not a "
+                                                               "password."})
+        attrs["secret_params"] = secrets
+        if conn is not None:
+            attrs["tenant"] = conn.tenant
+        return attrs
+
+
 def _scoped(model):
     return TenantScopedPrimaryKeyRelatedField(
         queryset=model.objects.all(), required=False, allow_null=True
@@ -268,7 +415,8 @@ class PrtgPolicySerializer(serializers.ModelSerializer):
             "region", "target_site", "location", "platform", "device_type", "device_role",
             "target_name", "match_tags", "match_name", "match_hardware",
             "applies_to_devices", "applies_to_vms", "profile", "profile_name",
-            "group_id", "group_path", "created_at", "updated_at",
+            "group_id", "group_path", "use_layout", "credential_placement",
+            "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "scope_display", "target_name", "profile_name", "created_at", "updated_at",
@@ -321,8 +469,16 @@ class PrtgPolicySerializer(serializers.ModelSerializer):
             errors["profile"] = "Pick a sensor profile."
         elif conn is not None and profile.connection_id != conn.id:
             errors["profile"] = "Pick a profile of this connection."
-        if not get("group_id"):
+        if not get("group_id") and not get("use_layout"):
             errors["group_id"] = "Pick the PRTG group or probe new devices go under."
+        if conn is not None and "credential_placement" in attrs:
+            try:
+                from .credentials import clean_placement
+
+                attrs["credential_placement"] = clean_placement(
+                    conn, attrs["credential_placement"])
+            except ValueError as exc:
+                errors["credential_placement"] = str(exc)
         devices = get("applies_to_devices")
         vms = get("applies_to_vms")
         if devices is False and vms is False:

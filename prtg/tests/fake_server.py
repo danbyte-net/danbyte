@@ -105,6 +105,26 @@ def sensor_row(objid: int, name: str = "Ping", *, device: str = "dev", status: i
     }
 
 
+def _masked(values: dict) -> dict:
+    """A settings section as PRTG reads it back: passwords and secrets as
+    ``*********``, the inheritance switch dropped."""
+    secret = ("pass", "secret", "privatekey", "comm")
+    return {k: ("*********" if v and any(s in k.lower() for s in secret) else v)
+            for k, v in values.items() if not k.startswith("_")}
+
+
+def group_row(objid: int, name: str, *, parent: int = 1, tags=()) -> dict:
+    """A group row in the shape ``table_groups.json`` uses."""
+    tags = " ".join(tags)
+    return {
+        "objid": objid, "objid_raw": objid, "name": name, "name_raw": name,
+        "probe": "Local Probe", "probe_raw": "Local Probe", "group": name, "group_raw": name,
+        "parentid": parent, "parentid_raw": parent, "type": "Group", "type_raw": "group",
+        "status": "Up", "status_raw": 3, "active": True, "active_raw": -1,
+        "tags": tags, "tags_raw": tags,
+    }
+
+
 def device_row(objid: int, name: str, *, host: str = "", parent: int = 1,
                tags=(), status: int = 3) -> dict:
     """A device row in the shape ``table_devices.json`` uses."""
@@ -185,6 +205,15 @@ class FakePrtg:
         self.v2_calls: list[dict] = []
         #: device objid -> the sections PATCHed onto it.
         self.device_settings: dict[int, dict] = {}
+        #: probe, group or device objid -> settings sections set on it, as
+        #: PRTG reads them back (passwords masked), for inheritance.
+        self.node_settings: dict[int, dict] = {
+            # PRTG's root ships SNMP v2c with community "public".
+            0: {"snmpversiongroup": {"snmpversion": "V2", "snmpcommv2": "*********"}},
+        }
+        #: Groups made through API v2 answer "could not find parent" for
+        #: this many child creates first, as PRTG 26.3 does for ~5 s.
+        self.group_parent_misses = 0
         #: (status, body) every classic call answers with, to force errors.
         self.fail: tuple[int, str] | None = None
         #: Every request: {"path", "params", "auth"} - auth is how the key came.
@@ -205,6 +234,33 @@ class FakePrtg:
 
     def device(self, objid: int) -> dict | None:
         return next((r for r in self.tables["devices"] if r["objid"] == objid), None)
+
+    def group(self, objid: int) -> dict | None:
+        return next((r for r in self.tables["groups"] if r["objid"] == objid), None)
+
+    def probe(self, objid: int) -> dict | None:
+        return next((r for r in self.tables["probenode"] if r["objid"] == objid), None)
+
+    def node(self, objid: int) -> dict | None:
+        return self.device(objid) or self.group(objid) or self.probe(objid)
+
+    def effective(self, objid: int, section: str) -> dict:
+        """A section as PRTG 26.3 answers it with ``include=<section>,
+        inheritance``: the values in effect, ``_inherited`` and where they
+        come from (``node_settings``, else empty at the root)."""
+        current, inherited = objid, False
+        while current not in (None, -1000):
+            values = self.node_settings.get(current, {}).get(section)
+            node = self.node(current)
+            if values is not None:
+                name = (node or {}).get("name", "Root")
+                return {**values, "_inherited": inherited,
+                        "_inheritancesource": {"id": str(current), "name": name}}
+            if node is None:
+                break
+            current = node.get("parentid")
+            inherited = True
+        return {"_inherited": True, "_inheritancesource": {"id": "0", "name": "Root"}}
 
     def set_status(self, objid: int, code: int, message: str | None = None):
         row = self.sensor(objid) or self.device(objid)
@@ -408,6 +464,69 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(load_fixture("v2_schemas_device.json"))
             return self._json([{"creatable": True, "kind": "device[1]", "name": "Device"},
                                {"creatable": True, "kind": "group[1]", "name": "Group"}])
+        m = re.fullmatch(r"/experimental/(groups|probes)/(\d+)/group", path)
+        if method == "POST" and m:
+            parent = int(m.group(2))
+            if fake.group(parent) is None and fake.probe(parent) is None:
+                return self._v2_error(404, "NOT_FOUND", f"{missing[1]} Cause: could not find "
+                                      f"parent with ID: {parent}")
+            if fake.group_parent_misses > 0:
+                fake.group_parent_misses -= 1
+                return self._v2_error(404, "NOT_FOUND", f"{missing[1]} Cause: could not find "
+                                      f"parent with ID: {parent}")
+            basic = (body or {}).get("basic") or {}
+            objid = self._new_id()
+            fake.tables["groups"].append(group_row(
+                objid, basic.get("name", "Group"), parent=parent, tags=basic.get("tags") or [],
+            ))
+            return self._send(201, "", "application/json",
+                              {"Location": f"/api/v2/groups/{objid}"})
+        m = re.fullmatch(r"/experimental/(groups|probes)/(\d+)", path)
+        if m and method in ("PATCH", "DELETE"):
+            objid = int(m.group(2))
+            row = fake.group(objid) if m.group(1) == "groups" else fake.probe(objid)
+            if row is None:
+                return self._v2_error(404, *missing)
+            if method == "DELETE":
+                gone = {objid}
+                while True:
+                    more = {g["objid"] for g in fake.tables["groups"]
+                            if g.get("parentid") in gone} - gone
+                    if not more:
+                        break
+                    gone |= more
+                fake.tables["groups"] = [g for g in fake.tables["groups"]
+                                         if g["objid"] not in gone]
+                fake.tables["devices"] = [d for d in fake.tables["devices"]
+                                          if d.get("parentid") not in gone]
+                return self._send(204, "")
+            for name, values in (body or {}).items():
+                if name == "basic":
+                    if "name" in values:
+                        row["name"] = row["name_raw"] = values["name"]
+                    continue
+                fake.node_settings.setdefault(objid, {})[name] = _masked(values)
+            return self._send(204, "")
+        if method == "GET" and path == "/experimental/groups":
+            return self._json([
+                {"id": str(g["objid"]), "name": g["name"], "kind": "group",
+                 "basic": {"name": g["name"], "tags": [t for t in str(
+                     g.get("tags_raw") or g.get("tags") or "").split() if t]},
+                 "parent": {"id": str(g.get("parentid"))}}
+                for g in fake.tables["groups"] if g["objid"] != 0
+            ])
+        m = re.fullmatch(r"/(groups|probes|devices)/(\d+)", path)
+        if method == "GET" and m and q.get("include"):
+            objid = int(m.group(2))
+            row = fake.node(objid)
+            if row is None:
+                return self._v2_error(404, *missing)
+            out = {"id": str(objid), "name": row["name"],
+                   "basic": {"name": row["name"]}}
+            for section in q["include"].split(","):
+                if section not in ("inheritance", "basic", "all_sections"):
+                    out[section] = fake.effective(objid, section)
+            return self._json(out)
         m = re.fullmatch(r"/experimental/(groups|probes)/(\d+)/device", path)
         if method == "POST" and m:
             parent = int(m.group(2))
@@ -475,6 +594,9 @@ class _Handler(BaseHTTPRequestHandler):
                 sections = fake.device_settings.setdefault(int(m.group(1)), {})
                 for name, values in (body or {}).items():
                     sections.setdefault(name, {}).update(values)
+                    if name != "basic":
+                        fake.node_settings.setdefault(int(m.group(1)), {})[name] = _masked(
+                            values)
                 basic = (body or {}).get("basic") or {}
                 if "host" in basic:
                     device["host"] = device["host_raw"] = basic["host"]
@@ -512,7 +634,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._send(204, "")
         m = re.fullmatch(r"/objects/(\d+)/move", path)
         if m and method == "POST":
-            device = fake.device(int(m.group(1)))
+            device = fake.device(int(m.group(1))) or fake.group(int(m.group(1)))
             parent = str((body or {}).get("parent") or "")
             if device is None or not parent.isdigit():
                 return self._v2_error(404, *missing)

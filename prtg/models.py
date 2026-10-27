@@ -115,8 +115,42 @@ class PrtgConnection(TimestampedModel):
     register_group_path = models.CharField(
         max_length=255, blank=True, default="", db_default=""
     )
+    #: Where new devices go when no policy names a group: ``none`` (the
+    #: policy's or the registration group), ``sites`` (region, site and
+    #: location groups), ``roles`` (one group per device role) or
+    #: ``sites_roles`` (role groups under the deepest location or site).
+    #: Danbyte creates the groups it needs (:mod:`prtg.layout`).
+    LAYOUT_NONE, LAYOUT_SITES, LAYOUT_ROLES, LAYOUT_SITES_ROLES = (
+        "none", "sites", "roles", "sites_roles",
+    )
+    GROUP_LAYOUT_CHOICES = [
+        (LAYOUT_NONE, "Policy or default group"),
+        (LAYOUT_SITES, "Sites and locations"),
+        (LAYOUT_ROLES, "Roles"),
+        (LAYOUT_SITES_ROLES, "Sites, then roles"),
+    ]
+    group_layout = models.CharField(
+        max_length=12, choices=GROUP_LAYOUT_CHOICES, default=LAYOUT_NONE,
+        db_default=LAYOUT_NONE,
+    )
+    #: With a site layout: a group per region (the whole region chain) above
+    #: the site, and a group per location (the whole chain) below it.
+    layout_regions = models.BooleanField(default=True, db_default=True)
+    layout_locations = models.BooleanField(default=True, db_default=True)
+    #: The probe or group the layout is built under; blank uses the
+    #: registration group.
+    layout_root_id = models.CharField(max_length=16, blank=True, default="", db_default="")
+    layout_root_path = models.CharField(
+        max_length=255, blank=True, default="", db_default=""
+    )
+    #: The credential sections PRTG reported as effective on a group, probe
+    #: or device, as the last read saw them: ``{objid: {"read_at", "sections":
+    #: {section: {"set", "inherited", "source"}}}}``. Never holds a value.
+    credential_reads = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
     #: PRTG's groups and probes as the last read saw them: ``[{objid, name,
-    #: kind, path, probe, parent_id}]``. What the group pickers offer and
+    #: kind, path, probe, parent_id, tags}]``. What the group pickers offer and
     #: what the planning pass checks a target against.
     groups_cache = models.JSONField(
         default=list, blank=True, db_default=models.Value([], models.JSONField()),
@@ -602,11 +636,20 @@ class PrtgChange(ExternalChangeBase):
     UPDATE_HOST = "update_host"
     #: A device Danbyte created whose object no longer belongs in PRTG.
     REMOVE_DEVICE = "remove_device"
+    #: The group layout: a group Danbyte makes for a region, site, location
+    #: or role; a new name for one it made; one it made that is empty and
+    #: wanted by nothing. Group rows have no device; ``key`` names the group.
+    CREATE_GROUP = "create_group"
+    RENAME_GROUP = "rename_group"
+    REMOVE_GROUP = "remove_group"
+    #: Credentials a profile places on a device's group.
+    GROUP_CREDENTIALS = "group_creds"
+    GROUP_KINDS = (CREATE_GROUP, RENAME_GROUP, REMOVE_GROUP, GROUP_CREDENTIALS)
     PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE, UPDATE_HOST,
-               REMOVE_DEVICE)
+               REMOVE_DEVICE, CREATE_GROUP, RENAME_GROUP, REMOVE_GROUP, GROUP_CREDENTIALS)
     #: Deletions: applied one at a time by a person, never by "apply all"
     #: or the beat.
-    DESTRUCTIVE = (REMOVE_SENSOR, REMOVE_DEVICE)
+    DESTRUCTIVE = (REMOVE_SENSOR, REMOVE_DEVICE, REMOVE_GROUP)
     KIND_CHOICES = [
         (LINK, "Link in Danbyte"),
         (ADOPT, "Adopt into Danbyte"),
@@ -617,6 +660,10 @@ class PrtgChange(ExternalChangeBase):
         (MOVE_DEVICE, "Move in PRTG"),
         (UPDATE_HOST, "Update host in PRTG"),
         (REMOVE_DEVICE, "Remove device from PRTG"),
+        (CREATE_GROUP, "Create group in PRTG"),
+        (RENAME_GROUP, "Rename group in PRTG"),
+        (REMOVE_GROUP, "Remove group from PRTG"),
+        (GROUP_CREDENTIALS, "Set group credentials in PRTG"),
     ]
 
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_changes")
@@ -764,6 +811,13 @@ class PrtgSensorProfile(TimestampedModel):
     )
     name = models.CharField(max_length=120)
     description = models.TextField(blank=True, default="", db_default="")
+    #: Where the credentials its sensors need are set in PRTG, per PRTG
+    #: settings section: ``{section: {"mode": "inherit" | "group" |
+    #: "device", "credential": <PrtgCredential id>, "snmp_profile": <id>}}``.
+    #: A section left out inherits (:mod:`prtg.credentials`).
+    credential_placement = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -897,11 +951,113 @@ class PrtgPolicy(TimestampedModel):
     #: has gone.
     group_id = models.CharField(max_length=16, blank=True, default="", db_default="")
     group_path = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Place matched objects by the connection's group layout instead of
+    #: ``group_id``.
+    use_layout = models.BooleanField(default=False, db_default=False)
+    #: Overrides the profiles' credential placement, section by section.
+    credential_placement = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
 
     class Meta:
         ordering = ["priority", "name"]
         indexes = [
             models.Index(fields=["connection", "enabled"], name="prtg_policy_conn_enabled"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PrtgGroupLink(TimestampedModel):
+    """A PRTG group the group layout uses, or a group Danbyte set
+    credentials on.
+
+    ``key`` names the group's place in the layout (:func:`prtg.layout.
+    node_key`), or ``objid:<id>`` for a group Danbyte only sets credentials
+    on. ``created_here`` is what allows a rename or a removal: a group found
+    by name is reused and never changed.
+    """
+
+    KIND_CHOICES = [
+        ("region", "Region"), ("site", "Site"), ("location", "Location"),
+        ("role", "Role"), ("", "Group"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="group_links"
+    )
+    key = models.CharField(max_length=64)
+    objid = models.CharField(max_length=16, blank=True, default="", db_default="")
+    name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    path = models.CharField(max_length=500, blank=True, default="", db_default="")
+    parent_objid = models.CharField(max_length=16, blank=True, default="", db_default="")
+    kind = models.CharField(
+        max_length=12, choices=KIND_CHOICES, blank=True, default="", db_default=""
+    )
+    #: The Danbyte region, site, location or role the group mirrors.
+    object_id = models.CharField(max_length=36, blank=True, default="", db_default="")
+    tag = models.CharField(max_length=64, blank=True, default="", db_default="")
+    created_here = models.BooleanField(default=False, db_default=False)
+    #: A keyed hash per credential section Danbyte wrote on the group, so it
+    #: is written again only when it changes. Never a value.
+    credential_hashes = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+
+    class Meta:
+        ordering = ["path"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "key"], name="uniq_prtg_group_link_conn_key"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.path or self.key
+
+
+class PrtgCredential(TimestampedModel):
+    """A login Danbyte can place on a PRTG group or device: Proxmox, VMware,
+    Windows or SSH. The secrets are encrypted at rest and never returned by
+    the API (``*_set`` says whether one is stored).
+
+    ``params`` holds what is not secret (user, realm, token id, domain,
+    port); ``secret_params`` the password, token secret or private key.
+    """
+
+    PROXMOX, VMWARE, WINDOWS, SSH = "proxmox", "vmware", "windows_login", "ssh"
+    KIND_CHOICES = [
+        (PROXMOX, "Proxmox"), (VMWARE, "VMware"), (WINDOWS, "Windows login"),
+        (SSH, "SSH"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="prtg_credentials"
+    )
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="stored_credentials"
+    )
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    params = models.JSONField(
+        default=dict, blank=True, db_default=models.Value({}, models.JSONField()),
+    )
+    secret_params = EncryptedJSONField(
+        help_text="Password, token secret or private key. Encrypted at rest; never "
+        "returned by the API.",
+    )
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["connection", "name"], name="uniq_prtg_credential_conn_name"
+            )
         ]
 
     def __str__(self) -> str:

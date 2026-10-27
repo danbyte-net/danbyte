@@ -29,6 +29,14 @@ every sensor kind, and the experimental schema endpoint answering. What PRTG
   The classic API has no move call (``moveobjectnow.htm`` is 404 on 26.3).
 * ``DELETE /experimental/devices/{id}`` and ``/experimental/sensors/{id}``
   answer 204, and 404 once the object is gone.
+* ``POST /experimental/probes/{id}/group`` and ``/experimental/groups/{id}/
+  group`` answer 201, empty body, the id in ``Location``. The new group is
+  not a parent for about five seconds (404 "could not find parent"), which
+  is waited out. ``PATCH /experimental/groups/{id}`` renames (``basic.name``)
+  and takes credential sections with ``_inherited: false``; ``DELETE`` takes
+  the group with everything in it (204, then 404). ``GET /groups/{id}`` with
+  ``include=<sections>,inheritance`` answers each section's values in
+  effect, ``_inherited`` and ``_inheritancesource``.
 * ``POST /experimental/devices/{id}/metascan?kind=`` answers 201; its result
   is read with ``GET`` on the same path, 202 with ``progress`` until done.
 
@@ -191,7 +199,9 @@ class PrtgV2Client:
         return self.list_all("/experimental/probes")
 
     def groups(self) -> list:
-        return self.list_all("/experimental/groups")
+        """Every group with its ``basic`` section (name, ``tags``) and
+        ``parent``."""
+        return self.list_all("/experimental/groups", {"include": "basic"})
 
     def devices(self, filter: str | None = None) -> list:
         return self.list_all("/experimental/devices", {"filter": filter} if filter else None)
@@ -226,15 +236,70 @@ class PrtgV2Client:
 
     # ── writes ───────────────────────────────────────────────────────
 
+    def _create_under(self, path: str, body: dict) -> str:
+        """POST a new object under a parent. A group made a moment ago is
+        not yet a parent PRTG knows (26.3: 404 "could not find parent with
+        ID" for about five seconds), so that answer is waited out."""
+        deadline = time.monotonic() + self.parent_wait_seconds
+        while True:
+            try:
+                resp = self._call("POST", path, body=body, ok=(200, 201))
+                return id_from_location(resp.headers.get("Location", ""))
+            except PrtgNotFound as exc:
+                if "parent" not in str(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(self.poll_seconds)
+
     def create_device(self, parent_id, name: str, host: str, tags=(), *,
                       parent_kind: str = "group") -> str:
         """A device under a group or probe. Returns its id."""
         where = "probes" if parent_kind == "probe" else "groups"
-        resp = self._call(
-            "POST", f"/experimental/{where}/{parent_id}/device",
-            body={"basic": {"name": name, "host": host, "tags": list(tags)}}, ok=(200, 201),
+        return self._create_under(
+            f"/experimental/{where}/{parent_id}/device",
+            {"basic": {"name": name, "host": host, "tags": list(tags)}},
         )
-        return id_from_location(resp.headers.get("Location", ""))
+
+    def create_group(self, parent_id, name: str, tags=(), *,
+                     parent_kind: str = "group") -> str:
+        """A group under a group or probe. Returns its id. PRTG 26.3 answers
+        201 with an empty body and the id in ``Location``."""
+        where = "probes" if parent_kind == "probe" else "groups"
+        return self._create_under(
+            f"/experimental/{where}/{parent_id}/group",
+            {"basic": {"name": name, "tags": list(tags)}},
+        )
+
+    def update_group(self, objid, sections: dict, *, kind: str = "group") -> None:
+        """``PATCH`` whole settings sections onto a group (or a probe). A
+        group made a moment ago answers 404 until PRTG has it."""
+        where = "probes" if kind == "probe" else "groups"
+        deadline = time.monotonic() + self.parent_wait_seconds
+        while True:
+            try:
+                self._call("PATCH", f"/experimental/{where}/{objid}", body=sections,
+                           ok=(200, 204))
+                return
+            except PrtgNotFound:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(self.poll_seconds)
+
+    def delete_group(self, objid) -> bool:
+        """Delete a group with everything in it. False when already gone."""
+        try:
+            self._call("DELETE", f"/experimental/groups/{objid}", ok=(200, 204))
+        except PrtgNotFound:
+            return False
+        return True
+
+    def settings(self, objid, kind: str, sections) -> dict:
+        """The named settings sections of a probe, group or device, with
+        PRTG's ``_inherited`` and ``_inheritancesource`` per section.
+        Passwords come back as ``*********``."""
+        where = {"probe": "probes", "device": "devices"}.get(kind, "groups")
+        data = self.get(f"/{where}/{objid}",
+                        {"include": ",".join([*sections, "inheritance"])})
+        return data if isinstance(data, dict) else {}
 
     def update_device(self, objid, sections: dict) -> None:
         """``PATCH /devices/{id}`` with whole settings sections.

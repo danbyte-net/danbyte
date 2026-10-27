@@ -99,6 +99,8 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "adopt_names", "read_inventory", "last_inventory_at",
             "register_all", "register_profile", "register_profile_name",
             "register_group_id", "register_group_path", "groups_read_at",
+            "group_layout", "layout_regions", "layout_locations", "layout_root_id",
+            "layout_root_path",
             "last_plan_at", "last_plan_summary",
             "seed_device_objid", "send_credentials", "send_tags", "tag_site_role",
             "auto_apply_registration",
@@ -156,6 +158,9 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
         if value and not value.isdigit():
             raise serializers.ValidationError("A PRTG object id is a number.")
         return value
+
+    def validate_layout_root_id(self, value):
+        return self.validate_register_group_id(value)
 
     def _tenant(self):
         from api.views import _get_active_tenant
@@ -237,6 +242,14 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
         if v2 and _host(v2) != _host(url):
             raise serializers.ValidationError({
                 "api_v2_url": "Use the same host as the web interface URL.",
+            })
+        layout = attrs.get("group_layout", self.instance.group_layout if self.instance else "")
+        root = attrs.get("layout_root_id", self.instance.layout_root_id if self.instance else "")
+        reg = attrs.get("register_group_id",
+                        self.instance.register_group_id if self.instance else "")
+        if layout and layout != PrtgConnection.LAYOUT_NONE and not (root or reg):
+            raise serializers.ValidationError({
+                "layout_root_id": "Pick the probe or group the layout is built under.",
             })
 
         api_key = attrs.pop("api_key", None)
