@@ -102,7 +102,7 @@ export function PanelShell({
     <aside
       aria-label={label}
       // Opaque: a panel is read, and a card behind it would tint its rows.
-      className="absolute top-3 right-3 z-10 flex max-h-[calc(100%-1.5rem)] w-80 flex-col rounded-lg border border-border bg-background"
+      className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-1.5rem)] w-80 flex-col rounded-lg border border-border bg-background"
     >
       <div className="flex items-center gap-2 border-b border-border py-1.5 pr-1.5 pl-3">
         <TruncatedText
