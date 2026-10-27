@@ -115,7 +115,7 @@ class FlowShapeTests(_Base):
         body = self.ok(self.post(name="pool", source_any=True,
                                  destination_range_id=str(self.pool.id)), 201)
         self.assertEqual(body["source"], {"kind": "any", "id": None, "label": "Any",
-                                          "device": None, "vm": None})
+                                          "device": None, "vm": None, "hidden": False})
         self.assertEqual(body["destination"]["label"], "10.2.0.100-10.2.0.150")
 
     def test_exactly_one_end_per_side(self):
