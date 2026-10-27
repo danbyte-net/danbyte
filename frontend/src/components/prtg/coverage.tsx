@@ -1,5 +1,5 @@
 import { useState } from "react"
-import type { ReactNode } from "react"
+import type { FormEvent, ReactNode } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { Check, ChevronDown, ChevronRight } from "lucide-react"
@@ -8,9 +8,18 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { PrtgCoverage, PrtgCoverageStatus, PrtgPlanEntry } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { PrtgIssueLine } from "./issues"
 import { usePrtgPlan } from "./object-state"
 import type { PrtgObjectRef } from "./object-state"
@@ -26,6 +35,7 @@ const STATUS: Record<
   failed: { label: "Failed", variant: "destructive" },
   waiting: { label: "Waiting", variant: "warning" },
   skipped: { label: "Skipped", variant: "secondary" },
+  off: { label: "Off for this device", variant: "secondary" },
 }
 
 const ORIGIN: Record<Extra["origin"], string> = {
@@ -39,28 +49,25 @@ const MODE: Partial<Record<string, string>> = {
   register_all: "Register all",
 }
 
-/** Whether the strip is open: the viewer's last choice for a complete or an
- * incomplete strip, remembered per browser; closed when complete, open
- * otherwise until they choose. */
-function useOpen(complete: boolean): [boolean, (v: boolean) => void] {
-  const key = `danbyte.prtg.coverage.${complete ? "complete" : "incomplete"}`
-  const read = () => {
+const OPEN_KEY = "danbyte.prtg.coverage.open"
+
+/** Whether the strip is open: closed until the viewer opens it, then their
+ * last choice, remembered per browser. */
+function useOpen(): [boolean, (v: boolean) => void] {
+  const [open, setOpen] = useState(() => {
     try {
-      const v = window.localStorage.getItem(key)
-      if (v === "1" || v === "0") return v === "1"
+      return window.localStorage.getItem(OPEN_KEY) === "1"
     } catch {
-      // Storage blocked: fall back to the default.
+      // Storage blocked: closed.
+      return false
     }
-    return !complete
-  }
-  const [choice, setChoice] = useState<Record<string, boolean>>({})
-  const open = choice[key] ?? read()
+  })
   return [
     open,
     (v) => {
-      setChoice((c) => ({ ...c, [key]: v }))
+      setOpen(v)
       try {
-        window.localStorage.setItem(key, v ? "1" : "0")
+        window.localStorage.setItem(OPEN_KEY, v ? "1" : "0")
       } catch {
         // Storage blocked: the strip still toggles, it is just not remembered.
       }
@@ -119,6 +126,37 @@ function useApply() {
   })
 }
 
+type OverrideArgs = { key: string; enabled: boolean; note?: string }
+
+/** Turn a wanted sensor off for the object (with an optional note), or
+ * back on - which removes the override, so the policies decide again. */
+function useOverride(object: PrtgObjectRef, connection: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ key, enabled, note }: OverrideArgs) =>
+      enabled
+        ? api(
+            `/api/prtg/sensor-overrides/?${object.kind}=${object.id}&definition_key=${encodeURIComponent(key)}`,
+            { method: "DELETE" }
+          )
+        : api("/api/prtg/sensor-overrides/", {
+            method: "PUT",
+            body: JSON.stringify({
+              [object.kind]: object.id,
+              connection,
+              definition_key: key,
+              enabled: false,
+              note: note ?? "",
+            }),
+          }),
+    onError: (e) => apiErrorToast(e),
+    onSettled: () => {
+      for (const key of ["prtg-plan", "prtg-changes"])
+        void qc.invalidateQueries({ queryKey: [key] })
+    },
+  })
+}
+
 /** One connection's coverage: the policies and how many of their sensors
  * PRTG has; open, a row per wanted sensor and the ones no policy wants. */
 export function PrtgCoverageCard({
@@ -132,11 +170,14 @@ export function PrtgCoverageCard({
   object: PrtgObjectRef
   named?: boolean
 }) {
-  const complete = c.present === c.wanted.length && c.extra.length === 0
-  const [open, setOpen] = useOpen(complete)
+  const [open, setOpen] = useOpen()
   const { canDo } = useMe()
   const apply = useApply()
+  const override = useOverride(object, entry.connection.id)
   const mayApply = canDo("prtgchange", "change")
+  const mayOverride = canDo("prtgsensoroverride", "change")
+  const used = c.wanted.filter((w) => w.status !== "off").length
+  const off = c.wanted.length - used
   // A new device's sensors share its create row: one button, on the first.
   const withButton = new Set<string>()
   const seen = new Set<string>()
@@ -193,10 +234,14 @@ export function PrtgCoverageCard({
           className="ml-auto text-xs whitespace-nowrap text-muted-foreground"
           data-testid="prtg-coverage-summary"
         >
-          {c.wanted.length > 0 &&
-            `${c.present} of ${c.wanted.length} ${c.wanted.length === 1 ? "sensor" : "sensors"}`}
-          {c.wanted.length > 0 && c.extra.length > 0 && " · "}
-          {c.extra.length > 0 && `${c.extra.length} not from a policy`}
+          {[
+            used > 0 &&
+              `${c.present} of ${used} ${used === 1 ? "sensor" : "sensors"}`,
+            off > 0 && `${off} off`,
+            c.extra.length > 0 && `${c.extra.length} not from a policy`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
       </div>
       {open && (
@@ -211,6 +256,7 @@ export function PrtgCoverageCard({
                   <RowAction row={w} apply={apply} />
                 ) : null
               }
+              override={mayOverride ? override : null}
             />
           ))}
           {c.extra.length > 0 && (
@@ -268,32 +314,128 @@ function WantedRow({
   row: w,
   object,
   action,
+  override,
 }: {
   row: Wanted
   object: PrtgObjectRef
   action: ReactNode
+  override: ReturnType<typeof useOverride> | null
 }) {
+  const { formatDateTime } = useDateFormat()
+  const [asking, setAsking] = useState(false)
+  const [text, setText] = useState("")
+  const isOff = w.status === "off"
   const state = w.status === "present" ? null : STATUS[w.status]
-  const note = w.issue ? w.issue : w.reason ? { text: w.reason } : null
+  // An off row only says more when the sensor is still in PRTG.
+  const note =
+    isOff && !w.sensor_objid
+      ? null
+      : w.issue
+        ? w.issue
+        : w.reason
+          ? { text: w.reason }
+          : null
+  const busy = override?.isPending && override.variables?.key === w.key
+  const turnOff = (e: FormEvent) => {
+    e.preventDefault()
+    override?.mutate(
+      { key: w.key, enabled: false, note: text.trim() },
+      { onSuccess: () => setAsking(false) }
+    )
+  }
+  const badge = state && <Badge variant={state.variant}>{state.label}</Badge>
+  const set = w.override
   return (
     <div className="px-3 py-0.5" data-testid="prtg-coverage-row">
       <div className="flex min-h-7 items-center gap-2">
-        <span className="min-w-0 truncate">{w.name}</span>
+        <span
+          className={cn("min-w-0 truncate", isOff && "text-muted-foreground")}
+        >
+          {w.name}
+        </span>
         <span className="hidden truncate text-xs text-muted-foreground sm:inline">
           {w.kind_label}
         </span>
         <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-          {action}
-          {state ? (
-            <Badge variant={state.variant}>{state.label}</Badge>
+          {!isOff && action}
+          {isOff && set ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="rounded-md">
+                  {badge}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent variant="panel" className="max-w-xs break-words">
+                {[
+                  set.by && `Turned off by ${set.by}`,
+                  formatDateTime(set.at),
+                  set.note,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </TooltipContent>
+            </Tooltip>
+          ) : state ? (
+            badge
           ) : (
             <Check
               className="size-3.5 text-muted-foreground"
               aria-label="In PRTG"
             />
           )}
+          {override && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Switch
+                  size="sm"
+                  checked={!isOff && !asking}
+                  disabled={busy}
+                  aria-label="Use on this device"
+                  onCheckedChange={(on) => {
+                    if (on && asking) setAsking(false)
+                    else if (on) override.mutate({ key: w.key, enabled: true })
+                    else {
+                      setText("")
+                      setAsking(true)
+                    }
+                  }}
+                />
+              </TooltipTrigger>
+              <TooltipContent variant="default">
+                Use on this device
+              </TooltipContent>
+            </Tooltip>
+          )}
         </span>
       </div>
+      {asking && (
+        <form
+          className="flex items-center gap-1.5 pb-1"
+          onSubmit={turnOff}
+          data-testid="prtg-coverage-off-note"
+        >
+          <Input
+            autoFocus
+            value={text}
+            maxLength={255}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Note (optional)"
+            aria-label="Note"
+            className="h-7 text-xs"
+          />
+          <Button type="submit" size="xs" disabled={busy}>
+            {busy ? "Saving…" : "Turn off"}
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() => setAsking(false)}
+          >
+            Cancel
+          </Button>
+        </form>
+      )}
       {state && note && (
         <PrtgIssueLine
           issue={note}
