@@ -11,11 +11,11 @@ import {
   api,
   type IPAddress,
   type IPListResponse,
-  type Paginated,
   type Prefix,
   type SpaceMap as SpaceMapData,
   type SubnetDetailRow,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { useCurrentHref } from "@/lib/return-to"
 import { CopyButton, KvCard, dash, type KvRow } from "@/components/kv-card"
 import {
@@ -769,7 +769,7 @@ function NextAvailableTable({
 function usePrefixAncestors(prefix: Prefix): Prefix[] {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
     staleTime: 30_000,
   })
   return useMemo(() => {
@@ -909,7 +909,7 @@ function ChildPrefixesPane({
 }) {
   const query = useQuery({
     queryKey: ["prefixes", "all"],
-    queryFn: () => api<Paginated<Prefix>>("/api/prefixes/?page_size=2000"),
+    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
   })
   const cfQuery = useCustomFieldDefs("prefix")
 

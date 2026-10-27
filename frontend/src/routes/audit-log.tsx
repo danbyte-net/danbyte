@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { ChevronRight } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { ChangeAction, ChangeLogEntry, Paginated } from "@/lib/api"
 import { VIA_LABEL, VIA_OPTIONS } from "@/lib/audit-source"
 import { Badge } from "@/components/ui/badge"
@@ -261,14 +262,13 @@ function AuditLogPage() {
           total={q.data?.count}
           columns={columns}
           // The table holds one 50-row page; an audit export must not be
-          // silently truncated to it.
+          // silently truncated to it, nor to the API's page cap: walk the
+          // pages instead of asking for one huge one (#452).
           exportAll={async () => {
             const all = new URLSearchParams(params)
-            all.set("page", "1")
-            all.set("page_size", "10000")
-            const r = await api<Paginated<ChangeLogEntry>>(
-              `/api/changelog/?${all}`
-            )
+            all.delete("page")
+            all.delete("page_size")
+            const r = await apiAll<ChangeLogEntry>(`/api/changelog/?${all}`)
             return r.results
           }}
           flexColumn="object"
