@@ -183,40 +183,21 @@ class PrtgSensorProfileSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _check_generic(conn, rows) -> None:
-        """A PRTG-only kind must be in the connection's sensor list, and its
-        params fit PRTG's form for it, typed as the Add sensor dialog types
-        them (:func:`prtg.manual.clean_generic`) and kept as ``section.field``
-        keys."""
-        from .actions import ActionError
-        from .manual import (
-            cached_kind,
-            clean_generic,
-            connection_schema,
-            flat_params,
-            has_catalog,
-        )
+        """A PRTG-only kind's params, typed by PRTG's form when one is
+        already kept on the connection (:func:`prtg.manual.type_generic`).
+        A profile is not tied to any device, so saving never asks PRTG and
+        never needs the form: PRTG checks the settings when the sensor is
+        created on a matched device, and a refusal shows on that row of the
+        review queue."""
+        from .manual import cached_schema, type_generic
 
-        errors: list = []
         for row in rows:
             kind = row.get("kind")
-            error: dict = {}
-            if kind in sk.BY_VALUE:
-                pass
-            elif not has_catalog(conn):
-                error = {"kind": "Read PRTG's sensor list first: test the connection."}
-            elif cached_kind(conn, kind) is None:
-                error = {"kind": f"PRTG's sensor list has no '{kind}'."}
-            else:
-                try:
-                    form = connection_schema(conn, kind)
-                    row["params"] = flat_params(
-                        clean_generic(form["fields"], row.get("params"))
-                    )
-                except ActionError as exc:
-                    error = {"params": getattr(exc, "fields", None) or exc.detail}
-            errors.append(error)
-        if any(errors):
-            raise serializers.ValidationError({"definitions": errors})
+            if kind in sk.BY_VALUE or not row.get("params"):
+                continue
+            form = cached_schema(conn, kind)
+            if form and form.get("fields"):
+                row["params"] = type_generic(form["fields"], row["params"])
 
     @staticmethod
     def _write_definitions(profile, rows):

@@ -271,10 +271,15 @@ class Writer:
         if "metascan" in inst:
             scan = inst["metascan"]
         else:
-            # From a profile: where a scan's rows go is in PRTG's form.
+            # From a profile: where a scan's rows go is in PRTG's form. With
+            # no form for this device the sensor is sent as the profile has
+            # it (PRTG's defaults for the rest) and PRTG says if it refuses.
             from .manual import parse_schema
 
-            scan = parse_schema(self.v2.post_schema(device_objid, kindid))["scan"]
+            try:
+                scan = parse_schema(self.v2.post_schema(device_objid, kindid))["scan"]
+            except PrtgNotFound:
+                scan = None
         if scan and not inst.get("scan_values") and "metascan" not in inst:
             rows = self.v2.metascan(device_objid, kindid)
             if not rows:
