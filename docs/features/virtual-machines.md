@@ -195,6 +195,14 @@ For a VM that came from a hypervisor:
 VMs, interfaces and IPs **you** created are linked and blank-filled, never
 overwritten, and never deleted by a sync.
 
+## Deleting virtual machines
+
+**Delete** in the VM's header, or tick VMs on the list and use **Delete**
+on the selection bar (`POST /api/virtual-machines/bulk-delete/`), which
+first shows what would go. When a VM is linked to a PRTG device, both offer
+**Also remove from PRTG** - see
+[PRTG: Deleting and retiring](prtg.md#deleting-and-retiring).
+
 ## See also
 
 - [Clusters](clusters.md) - where VMs run.

@@ -366,6 +366,15 @@ appears on every device's form and Overview. See
 Use the **Delete** button in the device header. You'll be asked to confirm.
 Deleting a device removes its interfaces and any IP assignments on them.
 
+To delete several, tick them on the device list and use **Delete** on the
+selection bar: it first shows what would go and what is kept because it is
+still in use (`POST /api/devices/bulk-delete/`).
+
+When a device is linked to a PRTG device, both dialogs offer **Also remove
+from PRTG** - deleted in PRTG when Danbyte created it, otherwise paused
+unless you pick **Delete it anyway**. See
+[PRTG: Deleting and retiring](../features/prtg.md#deleting-and-retiring).
+
 ## Front panel
 
 The device Overview draws a **front panel** - the device rendered as hardware,
