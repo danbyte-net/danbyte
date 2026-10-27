@@ -95,17 +95,19 @@ takes seconds to build and holds a server worker while it does. A few
 10,000-row pages used to hold every worker at once, so the cap is 2,000.
 
 **Large pages are limited per token.** A request whose `page_size` is above
-the default page (100) is a large page, and one API token, or one signed-in
-user, may have **2** in flight at a time (`API_LARGE_PAGE_CONCURRENCY`). The
-next one answers `429 Too Many Requests` with a `Retry-After` header in
-seconds; wait that long and send it again. Pages of 100 rows or fewer are
-never held back. A script that reads pages one after another, as the loop
-above does, never meets the limit; the script SDK and the web app wait and
-retry on their own.
+**1,000** (`API_LARGE_PAGE_THRESHOLD`) is a large page, and one API token, or
+one signed-in user, may have **2** in flight at a time
+(`API_LARGE_PAGE_CONCURRENCY`). The next one answers `429 Too Many Requests`
+with a `Retry-After` header in seconds; wait that long and send it again.
+Pages of 1,000 rows or fewer are never held back, so a script that pages at
+1,000, as the loop above does, never meets the limit, and neither does the
+web app. The script SDK and the web app retry a `429` after its
+`Retry-After` on their own.
 
-To serve bigger pages, an administrator sets `API_MAX_PAGE_SIZE` (and, for
-more large pages at once, `API_LARGE_PAGE_CONCURRENCY`) in the service
-environment and restarts the web service; see
+To serve bigger pages, an administrator sets `API_MAX_PAGE_SIZE` (and, to
+move or loosen the limit, `API_LARGE_PAGE_THRESHOLD` and
+`API_LARGE_PAGE_CONCURRENCY`) in the service environment and restarts the
+web service; see
 [Settings](settings.md#drf). Raising them trades other users' response
 times for one client's fewer round trips.
 

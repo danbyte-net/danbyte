@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import type { Certificate, CertificateAssignment, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
@@ -91,10 +92,7 @@ export function CertificatesPanel({
   // stale row can't read itself healthy and origin shows without a per-row fetch.
   const certs = useQuery({
     queryKey: ["certificates", "picker"],
-    queryFn: () =>
-      api<Paginated<Certificate>>(
-        "/api/monitoring/certificates/?page_size=2000"
-      ),
+    queryFn: () => apiAll<Certificate>("/api/monitoring/certificates/"),
     staleTime: 60_000,
   })
   const certById = useMemo(() => {

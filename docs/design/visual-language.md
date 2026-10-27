@@ -269,8 +269,9 @@ can't drift page to page (source of truth:
   which walks `next` 1,000 rows a request up to 10,000 and hands back one
   page-shaped answer; anything else names its `page_size`. Never call `api`
   on a list without one (#447), and never name a `page_size` above the API's
-  2,000 cap: walk `next` instead (#452). `api` runs at most two reads above
-  100 rows at once and queues the rest, matching the server's per-user limit.
+  2,000 cap: walk `next` instead (#452). Keep reads at 1,000 rows or fewer;
+  the server limits pages above 1,000 to two at a time per user, and `api`
+  queues any such read to match and retries a `429` after its `Retry-After`.
 - An **embedded** table on a detail page fetches one capped page (`page_size=500`)
   rather than paging. Hand `DataTable` the server's `total={q.data?.count}` with
   it: when more rows exist than arrived it says so, instead of a site with 600

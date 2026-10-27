@@ -78,14 +78,14 @@ export async function apiStatus<T>(
   return { data: (await res.json()) as T, status: res.status }
 }
 
-// Large list pages (#452). The server lets one user have two pages above its
-// default page size (100) in flight and answers the next with 429 and
-// Retry-After. Reads here queue for one of two slots, so a page that loads
-// several lists at once waits its turn instead of drawing 429s, and a 429
-// that still arrives (another tab holds the slots) is retried after the wait.
-export const LARGE_PAGE_ROWS = 100
+// Large list pages (#452). The server lets one user have two pages above
+// 1,000 rows in flight (API_LARGE_PAGE_THRESHOLD) and answers the next with
+// 429 and Retry-After. The web app reads at most 1,000 a request, so it never
+// meets that limit; a read above it still queues for one of two slots here.
+// Any read answered 429 with a Retry-After is sent again after the wait.
+export const LARGE_PAGE_ROWS = 1000
 export const LARGE_PAGE_SLOTS = 2
-const LARGE_PAGE_RETRIES = 10
+const READ_RETRIES = 5
 let largeInFlight = 0
 const largeWaiting: (() => void)[] = []
 
@@ -109,20 +109,30 @@ function releaseLargeSlot(): void {
   else largeInFlight--
 }
 
-function retryAfterMs(res: Response): number {
-  const s = Number(res.headers.get("Retry-After"))
-  return Math.min(Math.max(Number.isFinite(s) ? s : 1, 1), 30) * 1000
+function retryAfterMs(res: Response): number | null {
+  const raw = res.headers.get("Retry-After")
+  const s = Number(raw)
+  if (raw === null || !Number.isFinite(s)) return null
+  return Math.min(Math.max(s, 1), 30) * 1000
+}
+
+async function fetchWithRetry(
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(path, init)
+    const wait = res.status === 429 ? retryAfterMs(res) : null
+    if (wait === null || attempt >= READ_RETRIES) return res
+    await new Promise((r) => setTimeout(r, wait))
+  }
 }
 
 async function fetchRead(path: string, init: RequestInit): Promise<Response> {
-  if (!isLargePage(path)) return fetch(path, init)
+  if (!isLargePage(path)) return fetchWithRetry(path, init)
   await takeLargeSlot()
   try {
-    for (let attempt = 0; ; attempt++) {
-      const res = await fetch(path, init)
-      if (res.status !== 429 || attempt >= LARGE_PAGE_RETRIES) return res
-      await new Promise((r) => setTimeout(r, retryAfterMs(res)))
-    }
+    return await fetchWithRetry(path, init)
   } finally {
     releaseLargeSlot()
   }

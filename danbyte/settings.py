@@ -309,13 +309,16 @@ RQ_QUEUES = {
 # positive integers and the cap is at least the default page; a bad value
 # refuses to start rather than quietly serving something else.
 #
-# A request asking for more than API_PAGE_SIZE rows is a large page; one token
-# or user may have API_LARGE_PAGE_CONCURRENCY of them in flight, and the next
-# answers 429 with Retry-After until one finishes (#452, core/middleware.py).
-def api_paging(env) -> tuple[int, int, int]:
-    """``(API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_CONCURRENCY)`` from
-    an environment mapping. An unset cap is 2,000, or the default page when a
-    deployment set that higher; a cap set below the default page is refused."""
+# A request asking for more than API_LARGE_PAGE_THRESHOLD rows (1,000, the
+# most the web app asks for) is a large page; one token or user may have
+# API_LARGE_PAGE_CONCURRENCY of them in flight, and the next answers 429 with
+# Retry-After until one finishes (#452, core/middleware.py).
+def api_paging(env) -> tuple[int, int, int, int]:
+    """``(API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_THRESHOLD,
+    API_LARGE_PAGE_CONCURRENCY)`` from an environment mapping. An unset cap is
+    2,000, or the default page when a deployment set that higher; an unset
+    threshold is 1,000 kept between the two. A cap below the default page, or
+    a threshold outside default page..cap, is refused."""
     from django.core.exceptions import ImproperlyConfigured
 
     def positive(name: str, default: int) -> int:
@@ -336,10 +339,18 @@ def api_paging(env) -> tuple[int, int, int]:
         raise ImproperlyConfigured(
             f"API_MAX_PAGE_SIZE ({cap}) must be at least API_PAGE_SIZE ({page})."
         )
-    return page, cap, positive("API_LARGE_PAGE_CONCURRENCY", 2)
+    threshold = positive("API_LARGE_PAGE_THRESHOLD", min(max(1000, page), cap))
+    if not page <= threshold <= cap:
+        raise ImproperlyConfigured(
+            f"API_LARGE_PAGE_THRESHOLD ({threshold}) must be between API_PAGE_SIZE "
+            f"({page}) and API_MAX_PAGE_SIZE ({cap})."
+        )
+    return page, cap, threshold, positive("API_LARGE_PAGE_CONCURRENCY", 2)
 
 
-API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_CONCURRENCY = api_paging(os.environ)
+(
+    API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_THRESHOLD, API_LARGE_PAGE_CONCURRENCY,
+) = api_paging(os.environ)
 
 REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a

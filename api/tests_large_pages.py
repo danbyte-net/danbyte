@@ -24,15 +24,18 @@ ROWS = 25
 
 class PageSizeSettingTests(TestCase):
     def test_defaults(self):
-        self.assertEqual(api_paging({}), (100, 2000, 2))
+        self.assertEqual(api_paging({}), (100, 2000, 1000, 2))
 
     def test_from_the_environment(self):
         env = {"API_PAGE_SIZE": "50", "API_MAX_PAGE_SIZE": "5000",
-               "API_LARGE_PAGE_CONCURRENCY": "4"}
-        self.assertEqual(api_paging(env), (50, 5000, 4))
+               "API_LARGE_PAGE_THRESHOLD": "1500", "API_LARGE_PAGE_CONCURRENCY": "4"}
+        self.assertEqual(api_paging(env), (50, 5000, 1500, 4))
 
     def test_an_unset_cap_holds_a_larger_default_page(self):
-        self.assertEqual(api_paging({"API_PAGE_SIZE": "3000"})[:2], (3000, 3000))
+        self.assertEqual(api_paging({"API_PAGE_SIZE": "3000"})[:3], (3000, 3000, 3000))
+
+    def test_an_unset_threshold_stays_under_a_lower_cap(self):
+        self.assertEqual(api_paging({"API_MAX_PAGE_SIZE": "500"})[1:3], (500, 500))
 
     def test_bad_values_refuse_to_start(self):
         for env in (
@@ -42,6 +45,9 @@ class PageSizeSettingTests(TestCase):
             {"API_PAGE_SIZE": "0"},
             {"API_LARGE_PAGE_CONCURRENCY": "0"},
             {"API_PAGE_SIZE": "500", "API_MAX_PAGE_SIZE": "200"},
+            {"API_LARGE_PAGE_THRESHOLD": "0"},
+            {"API_LARGE_PAGE_THRESHOLD": "50"},
+            {"API_LARGE_PAGE_THRESHOLD": "2001"},
         ):
             with self.assertRaises(ImproperlyConfigured, msg=env):
                 api_paging(env)
@@ -76,7 +82,7 @@ class LargePageGuardTests(_TokenBase):
         seen: list[int] = []
 
         def req():
-            return factory.get("/api/sites/?page_size=1000",
+            return factory.get("/api/sites/?page_size=2000",
                                HTTP_AUTHORIZATION=f"Token {self.key}")
 
         # Each request's view starts the next one while it is still running,
@@ -107,7 +113,7 @@ class LargePageGuardTests(_TokenBase):
         def boom(_request):
             raise RuntimeError("boom")
 
-        request = RequestFactory().get("/api/sites/?page_size=1000",
+        request = RequestFactory().get("/api/sites/?page_size=2000",
                                        HTTP_AUTHORIZATION=f"Token {self.key}")
         with self.assertRaises(RuntimeError):
             LargePageGuardMiddleware(boom)(request)
@@ -116,15 +122,15 @@ class LargePageGuardTests(_TokenBase):
     def test_through_the_api(self):
         for key in self.slots:  # two large pages already in flight
             cache.set(key, 1, 60)
-        r = self.client.get("/api/sites/?page_size=1000")
+        r = self.client.get("/api/sites/?page_size=1001")
         self.assertEqual(r.status_code, 429, r.content)
         self.assertEqual(r["Retry-After"], "2")
         self.assertIn("follow `next`", r.json()["detail"])
-        # A default or small page is never held back.
+        # A page at the threshold (1,000) or smaller is never held back.
         self.assertEqual(self.client.get("/api/sites/").status_code, 200)
-        self.assertEqual(self.client.get("/api/sites/?page_size=100").status_code, 200)
+        self.assertEqual(self.client.get("/api/sites/?page_size=1000").status_code, 200)
         cache.delete(self.slots[0])
-        r = self.client.get("/api/sites/?page_size=1000")
+        r = self.client.get("/api/sites/?page_size=2000")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(len(r.json()["results"]), ROWS)
         self.assertIsNotNone(cache.get(self.slots[1]))
@@ -136,7 +142,7 @@ class LargePageGuardTests(_TokenBase):
             cache.set(key, 1, 60)
         third = f"api:large-page:t:{hash_api_key(self.key)}:2"
         self.addCleanup(cache.delete, third)
-        self.assertEqual(self.client.get("/api/sites/?page_size=1000").status_code, 200)
+        self.assertEqual(self.client.get("/api/sites/?page_size=2000").status_code, 200)
 
     def test_another_token_has_its_own_slots(self):
         for key in self.slots:
@@ -149,7 +155,7 @@ class LargePageGuardTests(_TokenBase):
         s.save()
         self.addCleanup(cache.delete_many,
                         [f"api:large-page:u:{other.pk}:{n}" for n in range(2)])
-        self.assertEqual(client.get("/api/sites/?page_size=1000").status_code, 200)
+        self.assertEqual(client.get("/api/sites/?page_size=2000").status_code, 200)
 
 
 class _UrlopenToTestClient:
@@ -194,6 +200,14 @@ class SdkPagingTests(_TokenBase):
         self.assertEqual(len({r["id"] for r in rows}), ROWS)
         self.assertEqual(len(fake.calls), 3)
 
+    def test_its_1000_row_pages_never_meet_the_guard(self):
+        fake = _UrlopenToTestClient(self.client)
+        for key in self.slots:
+            cache.set(key, 1, 60)
+        with mock.patch("urllib.request.urlopen", fake):
+            self.assertEqual(len(self.sdk().list("sites")), ROWS)
+
+    @override_settings(API_LARGE_PAGE_THRESHOLD=500)
     def test_a_429_is_retried_after_the_wait(self):
         fake = _UrlopenToTestClient(self.client)
         for key in self.slots:

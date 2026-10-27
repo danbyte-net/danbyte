@@ -141,8 +141,8 @@ LARGE_PAGE_RETRY_AFTER = 2
 
 
 def _large_page_size(request) -> int | None:
-    """The ``page_size`` a list request names, when it is above the default
-    page; ``None`` for every other request."""
+    """The ``page_size`` a list request names, when it is above
+    ``API_LARGE_PAGE_THRESHOLD``; ``None`` for every other request."""
     if request.method not in ("GET", "HEAD") or not (request.path or "").startswith("/api/"):
         return None
     raw = request.GET.get("page_size")
@@ -154,7 +154,7 @@ def _large_page_size(request) -> int | None:
         return None
     from django.conf import settings
 
-    return size if size > settings.API_PAGE_SIZE else None
+    return size if size > settings.API_LARGE_PAGE_THRESHOLD else None
 
 
 def _large_page_owner(request) -> str | None:
@@ -176,8 +176,9 @@ def _large_page_owner(request) -> str | None:
 
 class LargePageGuardMiddleware:
     """At most ``API_LARGE_PAGE_CONCURRENCY`` large list pages in flight per
-    token or user (#452). A page above ``API_PAGE_SIZE`` rows holds a worker
-    for seconds; a handful of them used to hold every worker. Each request
+    token or user (#452). A page above ``API_LARGE_PAGE_THRESHOLD`` rows
+    (1,000, the most the web app asks for) holds a worker for seconds; a
+    handful of them used to hold every worker. Each request
     takes a slot (a Redis key with a TTL, so a request that dies without
     letting go frees it anyway) and gives it back in ``finally``. With every
     slot taken the answer is 429 with ``Retry-After``. Small pages, writes and
@@ -203,7 +204,7 @@ class LargePageGuardMiddleware:
                     slot = key
                     break
             else:
-                return _too_many_large_pages(settings.API_PAGE_SIZE)
+                return _too_many_large_pages(settings.API_LARGE_PAGE_THRESHOLD)
         except Exception:  # noqa: BLE001 - the cache is down: let it through
             slot = None
         try:

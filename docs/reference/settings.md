@@ -78,7 +78,8 @@ default is small because serializing 10,000 rows held a gunicorn worker for
 seconds, and the cap is 2,000 because a handful of 10,000-row pages still
 held every worker (see [Pagination](api.md#pagination)).
 
-A request whose `page_size` is above `API_PAGE_SIZE` is a large page. One API
+A request whose `page_size` is above `API_LARGE_PAGE_THRESHOLD` (1,000, the
+most the web app asks for in one request) is a large page. One API
 token, or one signed-in user, may have `API_LARGE_PAGE_CONCURRENCY` of them in
 flight; the next answers `429` with `Retry-After` until one finishes. Each
 large page holds a slot in Redis (the cache) with a two-minute expiry and
@@ -90,18 +91,19 @@ through rather than refusing them.
 |---|---|---|---|
 | `API_PAGE_SIZE` | `API_PAGE_SIZE` | `100` | Rows a list answers when the request names no `page_size`. A positive whole number. |
 | `API_MAX_PAGE_SIZE` | `API_MAX_PAGE_SIZE` | `2000` | The most rows `?page_size=` can ask for in one response. A positive whole number, at least `API_PAGE_SIZE`; unset, it is 2,000 or `API_PAGE_SIZE` if that is larger. |
-| `API_LARGE_PAGE_CONCURRENCY` | `API_LARGE_PAGE_CONCURRENCY` | `2` | Large pages (above `API_PAGE_SIZE` rows) one token or user may have in flight at once. A positive whole number. |
+| `API_LARGE_PAGE_THRESHOLD` | `API_LARGE_PAGE_THRESHOLD` | `1000` | A request whose `page_size` is above this is a large page. A positive whole number between `API_PAGE_SIZE` and `API_MAX_PAGE_SIZE`; unset, it is 1,000 kept within those two. |
+| `API_LARGE_PAGE_CONCURRENCY` | `API_LARGE_PAGE_CONCURRENCY` | `2` | Large pages one token or user may have in flight at once. A positive whole number. |
 
-A value that is not a positive whole number, or a cap below the default page,
-stops the service at start with an error naming the setting, rather than
+A value that is not a positive whole number, a cap below the default page,
+or a threshold outside the default page and the cap stops the service at start with an error naming the setting, rather than
 serving something other than what was configured. Set them in the service
 environment (`.env`, or the unit's `Environment=`) and restart the web
 service.
 
 The web app asks for what it needs: a table, picker or map that filters
-in the browser walks the pages, 1,000 rows a request up to 10,000, at most
-two large pages at a time (it queues the rest and retries a `429` after its
-`Retry-After`), and a
+in the browser walks the pages, 1,000 rows a request up to 10,000, so it
+never asks for a large page (a read that is answered `429` is retried after
+its `Retry-After`), and a
 list page whose tenant holds more says so rather than looking complete (see
 [Very long lists](../features/table-preferences.md#very-long-lists)).
 
