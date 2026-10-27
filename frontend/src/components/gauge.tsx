@@ -165,7 +165,7 @@ export function Gauge({
           <span className="ml-0.5 text-xs text-muted-foreground">{unit}</span>
         )}
       </div>
-      <div className="num flex justify-between px-[4%] text-[10px] text-muted-foreground">
+      <div className="num flex justify-between px-[4%] pb-2 text-[10px] text-muted-foreground">
         <span data-part="min">{formatGaugeValue(min)}</span>
         <span data-part="max">{formatGaugeValue(max)}</span>
       </div>
