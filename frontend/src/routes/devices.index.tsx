@@ -222,14 +222,19 @@ function DevicesPage() {
           secondary_ip: false,
           oob_ip: false,
         }}
-        onSelectedRowsChange={canDeploy ? setSelected : undefined}
+        onSelectedRowsChange={canDeploy || canDelete ? setSelected : undefined}
       />
       <DeviceDeleteDialog
         device={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-      {canDeploy && (
-        <DeviceBulkBar selected={selected} onCleared={() => setSelected([])} />
+      {(canDeploy || canDelete) && (
+        <DeviceBulkBar
+          selected={selected}
+          onCleared={() => setSelected([])}
+          canDeploy={canDeploy}
+          canDelete={canDelete}
+        />
       )}
     </ListPageShell>
   )

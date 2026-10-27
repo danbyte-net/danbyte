@@ -157,6 +157,7 @@ AUDITED_MODELS = [
     "prtg.PrtgSensorPin",
     "prtg.PrtgSensorOverride",
     "prtg.PrtgPolicy",
+    "prtg.PrtgRetireRule",
     "prtg.PrtgSensorProfile",
     "prtg.PrtgSensorDefinition",
     "prtg.PrtgCredential",

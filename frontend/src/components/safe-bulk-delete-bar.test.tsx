@@ -338,3 +338,58 @@ describe("SafeBulkDeleteBar notes and option", () => {
     ])
   })
 })
+
+describe("SafeBulkDeleteBar and PRTG", () => {
+  beforeEach(() => {
+    apiMock.mockReset()
+    toastMock.success.mockReset()
+    toastMock.error.mockReset()
+  })
+
+  it("offers Also remove from PRTG for linked rows and sends it", async () => {
+    const prtg = { linked: 2, created: 1, other: 1, default_remove: true }
+    apiMock
+      .mockResolvedValueOnce(answer({ deleted: 2, prtg }))
+      .mockResolvedValueOnce(
+        answer({
+          deleted: 2,
+          dry_run: false,
+          prtg_results: [
+            {
+              connection: "c1",
+              objid: "2081",
+              name: "edge",
+              object: "edge",
+              action: "pause",
+              ok: false,
+              queued: false,
+              detail: "boom",
+            },
+          ],
+        })
+      )
+    renderBar({ prtg: true })
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    expect(await screen.findByText("Also remove from PRTG")).toBeTruthy()
+    expect(
+      screen.getByText("1 not created by Danbyte: paused instead.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2" }))
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2))
+    expect(JSON.parse(String(apiMock.mock.calls[1][1]?.body))).toEqual({
+      ids: ["a", "b"],
+      prtg: "remove",
+    })
+    await vi.waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith("PRTG: edge - boom")
+    )
+  })
+
+  it("leaves PRTG out when nothing is linked", async () => {
+    apiMock.mockResolvedValueOnce(answer({ deleted: 2 }))
+    renderBar({ prtg: true })
+    fireEvent.click(screen.getByRole("button", { name: /Delete/ }))
+    await screen.findByText("2 virtual chassis will be deleted.")
+    expect(screen.queryByText("Also remove from PRTG")).toBeNull()
+  })
+})

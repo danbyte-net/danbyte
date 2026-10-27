@@ -4,6 +4,7 @@ import { Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import type { PrtgDeleteResult } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import {
   BatchFailure,
@@ -30,6 +31,7 @@ import {
 import { FormCheckbox } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { PendingLabel } from "@/components/pending-label"
+import { prtgDeleteToast } from "@/components/prtg/delete-toast"
 
 /** What a `bulk-delete` endpoint built on the backend's SafeBulkDeleteMixin
  * answers - for a dry run as for the real thing. */
@@ -44,6 +46,18 @@ export interface SafeBulkDeleteResult {
    * feed still cabled to a device. */
   notes?: SafeBulkDeleteNote[]
   dry_run: boolean
+  /** Devices and VMs, on a dry run the caller may write PRTG for: what the
+   * rows have in PRTG. */
+  prtg?: PrtgDeleteSummary
+  /** Devices and VMs: what the delete did in PRTG. */
+  prtg_results?: PrtgDeleteResult[]
+}
+
+export interface PrtgDeleteSummary {
+  linked: number
+  created: number
+  other: number
+  default_remove: boolean
 }
 
 export interface SafeBulkDeleteNote {
@@ -75,6 +89,9 @@ export interface SafeBulkDeleteBarProps<T extends { id: string }> {
   /** Offer Delete (default true). */
   canDelete?: boolean
   option?: SafeBulkDeleteOption
+  /** Offer "Also remove from PRTG" when the rows are linked there
+   * (devices and VMs). */
+  prtg?: boolean
 }
 
 const plural = (n: number, [one, many]: [string, string]) =>
@@ -93,6 +110,19 @@ export function mergeDeleteAnswers(
     released: sumCounts(answers.map((a) => a.released ?? [])),
     notes: answers.flatMap((a) => a.notes ?? []),
     dry_run: answers.every((a) => a.dry_run),
+    ...(answers.some((a) => a.prtg)
+      ? {
+          prtg: {
+            linked: sumOf(answers, (a) => a.prtg?.linked ?? 0),
+            created: sumOf(answers, (a) => a.prtg?.created ?? 0),
+            other: sumOf(answers, (a) => a.prtg?.other ?? 0),
+            default_remove: answers.some((a) => a.prtg?.default_remove),
+          },
+        }
+      : {}),
+    ...(answers.some((a) => a.prtg_results)
+      ? { prtg_results: answers.flatMap((a) => a.prtg_results ?? []) }
+      : {}),
   }
 }
 
@@ -123,6 +153,7 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
   actions,
   canDelete = true,
   option,
+  prtg,
 }: SafeBulkDeleteBarProps<T>) {
   const [open, setOpen] = useState(false)
   if (selected.length === 0) return null
@@ -163,6 +194,7 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
           noun={noun}
           invalidate={invalidate}
           option={option}
+          prtg={prtg}
           onClose={() => setOpen(false)}
           onDone={onCleared}
         />
@@ -171,12 +203,15 @@ export function SafeBulkDeleteBar<T extends { id: string }>({
   )
 }
 
-function SafeBulkDeleteDialog({
+/** The confirmation itself, for a bar of its own that offers Delete
+ * beside other actions. */
+export function SafeBulkDeleteDialog({
   ids,
   endpoint,
   noun,
   invalidate,
   option,
+  prtg,
   onClose,
   onDone,
 }: {
@@ -185,6 +220,7 @@ function SafeBulkDeleteDialog({
   noun: [string, string]
   invalidate: string[][]
   option?: SafeBulkDeleteOption
+  prtg?: boolean
   onClose: () => void
   onDone: () => void
 }) {
@@ -194,6 +230,8 @@ function SafeBulkDeleteDialog({
   // The option is offered once a preview keeps a row, and stays offered.
   const [offered, setOffered] = useState(false)
   const [optionOn, setOptionOn] = useState(false)
+  // Null until the first preview says what the rows have in PRTG.
+  const [prtgOn, setPrtgOn] = useState<boolean | null>(null)
   const send = (part: string[], dryRun: boolean, on: boolean) =>
     api<SafeBulkDeleteResult>(url, {
       method: "POST",
@@ -201,6 +239,7 @@ function SafeBulkDeleteDialog({
         ids: part,
         ...(dryRun ? { dry_run: true } : {}),
         ...(option && on ? { [option.key]: true } : {}),
+        ...(prtg && !dryRun && prtgOn ? { prtg: "remove" } : {}),
       }),
     })
   const preview = useMutation({
@@ -210,6 +249,8 @@ function SafeBulkDeleteDialog({
       ),
     onSuccess: (res) => {
       if (res.skipped.length > 0) setOffered(true)
+      if (prtgOn === null && res.prtg?.linked)
+        setPrtgOn(res.prtg.default_remove)
     },
     onError: (err) => {
       apiErrorToast(err)
@@ -232,6 +273,7 @@ function SafeBulkDeleteDialog({
         `Deleted ${plural(res.deleted, noun)}.` +
           (skipped ? ` ${skipped} still in use, kept.` : "")
       )
+      prtgDeleteToast(res.prtg_results)
       onClose()
       onDone()
     },
@@ -339,6 +381,21 @@ function SafeBulkDeleteDialog({
             onChange={setOptionOn}
             disabled={preview.isPending || run.isPending}
           />
+        )}
+        {prtg && !!p?.prtg?.linked && (
+          <div className="space-y-1 text-xs">
+            <FormCheckbox
+              label="Also remove from PRTG"
+              checked={!!prtgOn}
+              onChange={setPrtgOn}
+              disabled={run.isPending}
+            />
+            {prtgOn && p.prtg.other > 0 && (
+              <p className="pl-6 text-muted-foreground">
+                {p.prtg.other} not created by Danbyte: paused instead.
+              </p>
+            )}
+          </div>
         )}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={run.isPending}>Cancel</AlertDialogCancel>

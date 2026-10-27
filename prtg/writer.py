@@ -390,15 +390,22 @@ class Writer:
 
     def delete_object(self, objid, *, device: bool) -> bool:
         """Delete through API v2 where it writes, else the classic call."""
-        if self.mode == PrtgConnection.WRITE_V2:
-            return (self.v2.delete_device if device else self.v2.delete_sensor)(objid)
-        try:
-            self.classic.delete(int(objid))
-        except PrtgError as exc:
-            if "cannot be used" in str(exc) or "not found" in str(exc).lower():
-                return False
-            raise
-        return True
+        return delete_remote(self.conn, objid, classic=self.classic, v2=self.v2,
+                             device=device)
+
+
+def delete_remote(conn, objid, *, classic, v2, device: bool = True) -> bool:
+    """Delete a PRTG device (or sensor) through API v2 where it writes, else
+    the classic call. False when PRTG no longer had it."""
+    if write_mode(conn, v2=v2) == PrtgConnection.WRITE_V2:
+        return (v2.delete_device if device else v2.delete_sensor)(objid)
+    try:
+        classic.delete(int(objid))
+    except PrtgError as exc:
+        if "cannot be used" in str(exc) or "not found" in str(exc).lower():
+            return False
+        raise
+    return True
 
 
 def prtg_tag(value: str) -> str:
@@ -756,7 +763,9 @@ def apply_update_host(w: Writer) -> str:
 def apply_remove_device(w: Writer) -> str:
     _owner(w)
     link = _link(w)
-    if not link.created_here:
+    # A retirement rule with "delete any" is the one way to remove a PRTG
+    # device Danbyte did not create; the rule must still say so now.
+    if not link.created_here and not _rule_deletes_any(w):
         raise Refused(
             f"Danbyte did not create PRTG device {link.objid}; it is left alone."
         )
@@ -969,6 +978,64 @@ def place_on_device(w: Writer, objid: str, d: dict) -> list[str]:
     return names
 
 
+def _rule_deletes_any(w: Writer) -> bool:
+    from .models import PrtgRetireRule
+
+    rule_id = ((w.detail.get("rule") or {}).get("id")) if w.detail.get("delete_any") else None
+    return bool(rule_id) and PrtgRetireRule.objects.filter(
+        pk=rule_id, connection=w.conn, action=PrtgRetireRule.DELETE, delete_any=True
+    ).exists()
+
+
+def apply_pause_device(w: Writer) -> str:
+    """A retirement rule pauses the PRTG device until resumed, with
+    Danbyte's marker, and the link remembers that the rule did."""
+    from .acks import MARKER
+    from .retire import RULE_MESSAGE, mark_rule_paused
+
+    _owner(w)
+    link = _link(w)
+    name = (w.detail.get("rule") or {}).get("name") or "retirement"
+    w.classic.pause(int(link.objid), f"{MARKER} {RULE_MESSAGE.format(name=name)}"[:255])
+    from . import status as st
+
+    link.status_raw = st.PAUSED_USER
+    link.save(update_fields=["status_raw"])
+    mark_rule_paused(link, name)
+    w.step(f"Paused device {link.objid} until resumed.")
+    return f"Paused {link.name or link.objid} in PRTG by rule {name}."
+
+
+def apply_resume_device(w: Writer) -> str:
+    """Resume a PRTG device a rule paused - only while PRTG still holds it
+    paused with Danbyte's message; a pause somebody else made stays."""
+    from . import status as st
+    from .acks import is_ours
+
+    _owner(w)
+    link = _link(w)
+    if link.rule_paused_at is None:
+        raise Refused("No retirement rule paused this PRTG device.")
+    rows = w.classic.devices({"objid": [link.objid]}).rows
+    remote = rows[0] if rows else None
+    resumed = False
+    if remote is not None and remote.get("status_raw") in st.PAUSED and is_ours(
+        remote.get("message", "")
+    ):
+        w.classic.resume(int(link.objid))
+        link.status_raw = st.UNKNOWN
+        resumed = True
+    name = link.rule_paused_name
+    link.rule_paused_at = None
+    link.rule_paused_name = ""
+    link.save(update_fields=["status_raw", "rule_paused_at", "rule_paused_name"])
+    if resumed:
+        w.step(f"Resumed device {link.objid}.")
+        return f"Resumed {link.name or link.objid} in PRTG; rule {name} no longer matches."
+    w.step(f"Device {link.objid} was not paused by Danbyte any more; left as it is.")
+    return f"Left {link.name or link.objid} as it is in PRTG; rule {name} no longer matches."
+
+
 APPLY = {
     PrtgChange.CREATE_GROUP: apply_create_group,
     PrtgChange.RENAME_GROUP: apply_rename_group,
@@ -980,6 +1047,8 @@ APPLY = {
     PrtgChange.MOVE_DEVICE: apply_move_device,
     PrtgChange.UPDATE_HOST: apply_update_host,
     PrtgChange.REMOVE_DEVICE: apply_remove_device,
+    PrtgChange.PAUSE_DEVICE: apply_pause_device,
+    PrtgChange.RESUME_DEVICE: apply_resume_device,
 }
 
 
@@ -1067,8 +1136,13 @@ def _finish(w: Writer, now, by: str, *, ok: bool, sentence: str, error=None) -> 
 def ready(change: PrtgChange) -> bool:
     """Whether a planned row can be applied without a person deciding."""
     d = change.detail or {}
+    # A retirement rule's delete with "allow automatic" on is the one
+    # removal that needs no person.
+    destructive = change.kind in PrtgChange.DESTRUCTIVE and not (
+        change.kind == PrtgChange.REMOVE_DEVICE and d.get("auto") is True
+    )
     return (
-        change.planned and not change.ignored and change.kind not in PrtgChange.DESTRUCTIVE
+        change.planned and not change.ignored and not destructive
         and d.get("applicable", True) is not False and not d.get("applied")
     )
 
@@ -1102,6 +1176,16 @@ def retry_due(change: PrtgChange, now=None) -> bool:
     return (now or timezone.now()) >= at + wait
 
 
+def _rule_still_auto(change: PrtgChange) -> bool:
+    from .models import PrtgRetireRule
+
+    rule_id = ((change.detail or {}).get("rule") or {}).get("id")
+    return bool(rule_id) and PrtgRetireRule.objects.filter(
+        pk=rule_id, connection_id=change.connection_id, action=PrtgRetireRule.DELETE,
+        allow_auto=True,
+    ).exists()
+
+
 def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
     """Apply every ready planned row of a connection (or those of ``ids``),
     one at a time. Returns per-row results. Without a user (auto-apply) a
@@ -1116,6 +1200,9 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
         if not ready(change):
             continue
         if user is None and ids is None and not retry_due(change):
+            continue
+        if change.kind == PrtgChange.REMOVE_DEVICE and not _rule_still_auto(change):
+            # The rule that allowed it unattended was changed since the plan.
             continue
         try:
             r = apply(change, user=user)
@@ -1159,7 +1246,7 @@ def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
     rows = sorted([*own, *_groups_for(conn, own)], key=apply_order)
     out = []
     for change in rows:
-        if not ready(change):
+        if not ready(change) or change.kind == PrtgChange.REMOVE_DEVICE:
             continue
         try:
             r = apply(change, user=user)

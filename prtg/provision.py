@@ -233,6 +233,8 @@ class Context:
         self.want_hardware = any((p.match_hardware or "").strip() for p in policies)
         #: The connection's registration profile, definitions prefetched.
         self.register_profile = None
+        #: The connection's retirement rules, in order (:mod:`prtg.retire`).
+        self.retire_rules: list = []
         self._regions: dict = {}
         self._locations: dict = {}
         #: The group layout's pass state (:class:`LayoutPass`), made on use.
@@ -847,7 +849,10 @@ def checked_objects(conn) -> set:
 
 
 def _prepare(conn):
+    from .retire import load_rules
+
     ctx = Context(conn.tenant, load_policies(conn))
+    ctx.retire_rules = load_rules(conn)
     if conn.register_profile_id:
         ctx.register_profile = (
             PrtgSensorProfile.objects.filter(pk=conn.register_profile_id, connection=conn)
@@ -873,6 +878,8 @@ def has_work(conn) -> bool:
         or PrtgChange.objects.filter(connection=conn, kind__in=PrtgChange.PLANNED).exists()
         or PrtgDeviceLink.objects.filter(connection=conn, created_here=True).exists()
         or conn.group_links.filter(created_here=True).exists()
+        or conn.retire_rules.exists()
+        or PrtgDeviceLink.objects.filter(connection=conn, rule_paused_at__isnull=False).exists()
     )
 
 
@@ -940,7 +947,7 @@ def new_counts() -> dict:
     return {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
             "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
             "no_address": 0, "awaiting_link": 0, "create_group": 0, "rename_group": 0,
-            "remove_group": 0, "group_creds": 0}
+            "remove_group": 0, "group_creds": 0, "pause": 0, "resume": 0}
 
 
 def group_writes(conn) -> bool:
@@ -1214,6 +1221,15 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     ``present`` is whether PRTG still has the linked device; ``waiting``
     whether a link or ambiguity for it waits in the queue; ``overrides``
     the object's sensor overrides by definition key."""
+    from .retire import plan_rules
+
+    # Retirement rules first: a rule that claims the object leaves nothing
+    # for registration to plan. "Exclude from PRTG" does not stop them.
+    if ctx.retire_rules or (link is not None and link.rule_paused_at is not None):
+        if plan_rules(conn, obj, link=link, present=present, rules=ctx.retire_rules,
+                      tags=ctx.tags(obj), counts=counts, fresh=fresh, propose=propose,
+                      parent=_parent(obj), no_writes=no_writes):
+            return
     # A device Danbyte created is still wanted by "register all":
     # register all only skips what was in PRTG already.
     want = decide(conn, obj, ctx,

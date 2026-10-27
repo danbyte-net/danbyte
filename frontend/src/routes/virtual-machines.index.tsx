@@ -23,6 +23,7 @@ import {
 import { ListPageShell } from "@/components/list-page-shell"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
+import { SafeBulkDeleteBar } from "@/components/safe-bulk-delete-bar"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
@@ -60,6 +61,7 @@ function VirtualMachinesPage() {
   const canDelete = canDo("virtualmachine", "delete")
   const [q, setQ] = useUrlSearch()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
+  const [selected, setSelected] = useState<VirtualMachine[]>([])
   const { device } = Route.useSearch()
 
   const query = useQuery({
@@ -168,7 +170,22 @@ function VirtualMachinesPage() {
         columns={wiredColumns}
         flexColumn="primary_ip"
         tableId="virtual-machines"
+        onSelectedRowsChange={canDelete ? setSelected : undefined}
       />
+      {canDelete && (
+        <SafeBulkDeleteBar
+          selected={selected}
+          endpoint="/api/virtual-machines/"
+          noun={["virtual machine", "virtual machines"]}
+          invalidate={[
+            ["virtual-machines"],
+            ["virtual-machines-picker"],
+            ["prtg-links"],
+          ]}
+          prtg
+          onCleared={() => setSelected([])}
+        />
+      )}
       <VmDeleteDialog
         vm={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

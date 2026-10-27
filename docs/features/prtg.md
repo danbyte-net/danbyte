@@ -652,7 +652,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 
 | Endpoint | Purpose |
 |---|---|
-| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. `engines` are the tenant's PRTG engines only. `state_map` takes the six editable codes onto `up`, `degraded` or `down`. A fixed code may only be `unknown`, and the map is stored complete. `link_mode` is `auto` or `review`; `push_enabled`; `hook_token_set` (read-only); `last_status_at` and `last_status_summary` (read-only). Two-way: `write_acknowledgements` (default on, both directions), `sync_maintenance`, `read_inventory`, `adopt_devices` (default off) with `adopt_site`, `adopt_role` and `adopt_device_type` (the tenant's own rows only) and `adopt_names` (read-only); `last_maintenance_sync_at` and `last_inventory_at` (read-only). Writes: `seed_device_objid` (a PRTG object id), `send_credentials`, `auto_apply_registration` and `prune_devices` (default off), `send_tags` (default on) and `tag_site_role` (default off); the [group layout](#group-layout): `group_layout` (`none`, `sites`, `roles`, `sites_roles`), `layout_regions` and `layout_locations` (default on), `layout_root_id` and `layout_root_path` (blank: the registration group; a layout other than `none` needs one of the two); `write_mode` (`v2`, `seed`, `none`, or blank before a check), `write_detail`, `write_checked_at`, `last_apply_at` and `last_apply_summary` (read-only). |
+| `connections/` | List, create, update, delete. `api_key` is write-only; `api_key_set` says whether one is stored. `status_interval_seconds` is 60-3600. `api_v2_url` is blank to derive it, and must name the same host as `url`. `engines` are the tenant's PRTG engines only. `state_map` takes the six editable codes onto `up`, `degraded` or `down`. A fixed code may only be `unknown`, and the map is stored complete. `link_mode` is `auto` or `review`; `push_enabled`; `hook_token_set` (read-only); `last_status_at` and `last_status_summary` (read-only). Two-way: `write_acknowledgements` (default on, both directions), `sync_maintenance`, `read_inventory`, `adopt_devices` (default off) with `adopt_site`, `adopt_role` and `adopt_device_type` (the tenant's own rows only) and `adopt_names` (read-only); `last_maintenance_sync_at` and `last_inventory_at` (read-only). Writes: `seed_device_objid` (a PRTG object id), `send_credentials`, `auto_apply_registration`, `prune_devices` and `delete_default_remove` (default off), `send_tags` (default on) and `tag_site_role` (default off); the [group layout](#group-layout): `group_layout` (`none`, `sites`, `roles`, `sites_roles`), `layout_regions` and `layout_locations` (default on), `layout_root_id` and `layout_root_path` (blank: the registration group; a layout other than `none` needs one of the two); `write_mode` (`v2`, `seed`, `none`, or blank before a check), `write_detail`, `write_checked_at`, `last_apply_at` and `last_apply_summary` (read-only). |
 | `connections/defaults/` | Every status code with its label, whether it is fixed and why, the default map, and the states (named by the tenant) a code may map onto. |
 | `connections/<id>/test/` | `POST`. Returns `ok`, `detail`, `version`, `probes`, `sensors`, `v2_available`, `v2_detail`, `write_mode` and `write_detail`; 502 when it fails. Records the version, API v2 answer, what PRTG can create and the error on the connection. |
 | `connections/<id>/check-writes/` | `POST`. Asks PRTG what it can create: `{mode, detail, version}`, kept on the connection. |
@@ -670,7 +670,7 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `connections/<id>/layout-preview/` | `GET`. The [group layout](#group-layout) for up to 20 devices and VMs the caller may view, from Danbyte's data and the last group list: `{root, layout, rows: [{object, path: [{name, kind, exists, matched_by}]}], groups: [{path, names, objects}]}`. `?layout=`, `?regions=1\|0`, `?locations=1\|0` and `?root=` preview an unsaved setting. Asks PRTG nothing. |
 | `connections/<id>/credential-state/` | `GET ?objid=&kind=group\|probe\|device&sections=a,b`. What PRTG has in effect for those credential sections, read live through API v2: `{objid, sections: {section: {set, inherited, source, text}}, error?}`. Never a value. |
 | `credentials/` | CRUD (`?connection=`): `name`, `kind` (`proxmox`, `vmware`, `windows_login`, `ssh`), `params` (`user`, and `realm`, `token_id`, `domain` or `port` by kind), `description`, and the write-only `password`, `token_secret`, `private_key` (blank keeps the stored one), answered as `password_set`, `token_secret_set`, `private_key_set`. Proxmox needs a token id and token secret. One a profile or policy places cannot be deleted (400). |
-| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `sent_tags` (the Danbyte tags written onto the PRTG device); `paused`; `write_mode`, the connection's (whether sensors can be added by hand). The `sensors/`, `scan/`, `discover/` and `sensor-schema/` actions below need `change` on PRTG sensors and view on the device or VM. |
+| `links/` | List (`?connection=`, `?device=`, `?virtual_machine=`), retrieve, delete (unlink). Each link has its `device` or `virtual_machine`, PRTG object id, name, host, probe, group, `matched_by`, `state`, `sensor_counts` and `url`, and what the maintenance mirror did: `maintenance_paused_at`, `maintenance_paused_until`, `maintenance_events` (`[{id, name}]`) and `maintenance_note`; `created_here` and `last_apply` (what Danbyte last wrote for it); `sent_tags` (the Danbyte tags written onto the PRTG device); `paused`; `rule_paused_at` and `rule_paused_name` (set while a retirement rule holds it paused); `delete_default_remove`, the connection's; `write_mode`, the connection's (whether sensors can be added by hand). The `sensors/`, `scan/`, `discover/` and `sensor-schema/` actions below need `change` on PRTG sensors and view on the device or VM. |
 | `sensors/` | Every imported sensor, read-only. Filters: `connection`, `device`, `virtual_machine`, `ip_address`, `interface` (a device or VM interface), `service` (see [Where sensors show up](#where-sensors-show-up); a malformed id answers 400), `state` (comma-separated; `paused` picks the paused sensors), `kind` (raw or display name), `probe`, `group`, `alarms=1` (down and degraded, not paused), `hide_paused=1`, `search`; `ordering` is `name`, `-name` or `alarms` (worst, then newest problem first); `page_size` honoured. Each row has its `device` or `virtual_machine`, `link`, PRTG's `status` word, the mapped `state`, `paused`, `acknowledged`, the message, the record above, `url` (the sensor in PRTG), `device_url`, and what it watches: `ip_address` (`{id, address, dns_name}`), `interface` (`{id, name, kind, parent}`, `kind` `interface` or `vm_interface`, `parent` the device or VM) and `service` (`{id, name, ports}`), each null when nothing matched. |
 | `sensors/<id>/acknowledge/` | `POST {note}`. Acknowledges a down sensor (*Down*, *Down (Partial)*) in PRTG with `[Danbyte] <name>: <note>`, then answers the sensor as it now reads. 400 while the connection's `write_acknowledgements` is off or the sensor is not down, 502 with PRTG's sentence. Each row of `sensors/` carries `ackable`: whether this would be accepted now. |
 | `sensors/<id>/pause/` | `POST {minutes, note}`. Pauses the sensor in PRTG for `minutes` (1 to 527040), or until resumed when `minutes` is null or absent; answers the sensor, now paused. |
@@ -688,13 +688,16 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `sensors/<id>/history/?range=1h\|24h\|7d&channel=<id>` | `{range, avg, fetched_at, stale, channels: [{id, name, unit, points: [{t, v}]}]}`, read at most once per range and interval, at most 400 points per channel. `channel` narrows to one. Needs view on the device or VM. |
 | `changes/apply-object/` | `POST {device}` or `{virtual_machine}`, optionally `{connection}`. **Add to PRTG now**: plans the object, then writes every ready planned row of it - the device, then its sensors - through the same writer as **Apply**. Removals are never written here. Answers one entry per connection `{connection, applied, failed, results: [{id, kind, ok, detail, status}], link: {id, objid, name, url} \| null}`; 409 while another write to the connection runs, 400 when no connection can write. Needs change on the review queue and view on the object. |
 | `changes/<id>/decide/` | `POST` on a *Needs a decision* row: `{link: {kind, id}}` links the row's PRTG device to that candidate, `{remote: <objid>}` links the row's object to that PRTG device, `{create: true}` creates a separate PRTG device for it. Answers `{ok, detail, status, result}`; 400 with the reason when the choice cannot be made. |
-| `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`, and `?device=`, `?virtual_machine=` or `?object=` for one object's rows), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision* and adoptions that cannot be placed). Kinds: `link_device`, `adopt` (no device; `key` and `detail.objid` are the PRTG object id, `detail` carries `name`, `host`, `address`, `group`, `probe`, the placement as `site`/`site_id`, `role`/`role_id`, `device_type`/`device_type_id`, `rule`, `defaulted`, and `reason` while it cannot be placed), `ambiguous`, and the planned kinds `create_device`, `add_sensor` (`key` is the sensor's `danbyte-def-` tag), `remove_sensor` (`key` is the PRTG sensor id), `move_device`, `update_host` and `remove_device` - see [Planned changes](#planned-changes) - and the group rows, which have no device: `create_group` (`key` the group's place in the layout; `detail` carries `name`, `kind`, `object_id`, `tag`, `tags`, `parent: {objid, key, path}`, `path`, `depth`), `rename_group` (`objid`, `from`, `to`), `remove_group` (`objid`, `path`; a removal) and `group_creds` (`key` `c:<group key>`; `group: {objid, key, path, kind}`, `sections: [{section, label, credential, hash}]`, names only) - see [Group layout](#group-layout) and [Where credentials go](#where-credentials-go). A planned row's `detail` carries `reason` and `fix_link` when it cannot be written, and what applying it did: `result` (`device`, `sensors` by tag, `credentials`, `templates`), `log` (`[{at, by, ok, detail, steps}]`), `applied` or `last_error`. `applicable` says whether apply can run now; `status` is `ready`, `attention`, `applied`, `failed` or `decision`; `destructive` marks removals. `last_error` keeps PRTG's whole answer; when an SNMP scan failed it reads *PRTG could not read the interfaces over SNMP. Check the device's SNMP credentials and that PRTG can reach it.*, with PRTG's own text under `prtg` and an `issue` (`snmp_scan`) linking to the object's Access tab, and so does the log entry. A *Needs a decision* row's `detail` carries `remote` (`{objid, name, host, group}`) and `candidates` (`[{kind, id, name, site, address}]`), or `remotes` when one object matches several PRTG devices; `decision` is `{can_create}`. `<id>/apply/` answers `{ok, detail, status, result}` (400 when the row cannot be written, 502 when PRTG refused). `apply-all/` applies ready rows and skips removals; `apply-selected/` (`{ids: [...]}`, at most 500, removals included) and `dismiss-selected/` act on the tenant's rows named, `apply-selected/` answering `{applied, failed, results: [{id, ok, detail, status}]}`. |
+| `changes/` | The review queue, the same shape as Zabbix's: list (`?connection=`, `?ignored=1`, and `?device=`, `?virtual_machine=` or `?object=` for one object's rows), `<id>/apply/`, `<id>/dismiss/`, `<id>/restore/`, `apply-all/` (body `{"connection": …}`, skips *Needs a decision* and adoptions that cannot be placed). Kinds: `link_device`, `adopt` (no device; `key` and `detail.objid` are the PRTG object id, `detail` carries `name`, `host`, `address`, `group`, `probe`, the placement as `site`/`site_id`, `role`/`role_id`, `device_type`/`device_type_id`, `rule`, `defaulted`, and `reason` while it cannot be placed), `ambiguous`, and the planned kinds `create_device`, `add_sensor` (`key` is the sensor's `danbyte-def-` tag), `remove_sensor` (`key` is the PRTG sensor id), `move_device`, `update_host`, `remove_device`, `pause_device` and `resume_device` - see [Planned changes](#planned-changes) and [Retirement rules](#retirement-rules); a rule's row carries `detail.rule` (`{id, name, action}`), and a rule's `remove_device` also `auto` and `delete_any`; and the group rows, which have no device: `create_group` (`key` the group's place in the layout; `detail` carries `name`, `kind`, `object_id`, `tag`, `tags`, `parent: {objid, key, path}`, `path`, `depth`), `rename_group` (`objid`, `from`, `to`), `remove_group` (`objid`, `path`; a removal) and `group_creds` (`key` `c:<group key>`; `group: {objid, key, path, kind}`, `sections: [{section, label, credential, hash}]`, names only) - see [Group layout](#group-layout) and [Where credentials go](#where-credentials-go). A planned row's `detail` carries `reason` and `fix_link` when it cannot be written, and what applying it did: `result` (`device`, `sensors` by tag, `credentials`, `templates`), `log` (`[{at, by, ok, detail, steps}]`), `applied` or `last_error`. `applicable` says whether apply can run now; `status` is `ready`, `attention`, `applied`, `failed` or `decision`; `destructive` marks removals. `last_error` keeps PRTG's whole answer; when an SNMP scan failed it reads *PRTG could not read the interfaces over SNMP. Check the device's SNMP credentials and that PRTG can reach it.*, with PRTG's own text under `prtg` and an `issue` (`snmp_scan`) linking to the object's Access tab, and so does the log entry. A *Needs a decision* row's `detail` carries `remote` (`{objid, name, host, group}`) and `candidates` (`[{kind, id, name, site, address}]`), or `remotes` when one object matches several PRTG devices; `decision` is `{can_create}`. `<id>/apply/` answers `{ok, detail, status, result}` (400 when the row cannot be written, 502 when PRTG refused). `apply-all/` applies ready rows and skips removals; `apply-selected/` (`{ids: [...]}`, at most 500, removals included) and `dismiss-selected/` act on the tenant's rows named, `apply-selected/` answering `{applied, failed, results: [{id, ok, detail, status}]}`. |
+| `retire-rules/` | CRUD (`?connection=`) for the [retirement rules](#retirement-rules): `name`, `position` (lower first), `statuses` and `tags` (slugs; at least one of either), `action` (`pause`, `delete`, `nothing`), `allow_auto` and `delete_any` (kept only on a delete). Needs the PRTG retirement rule permissions. |
 | `adoption-rules/` | CRUD for where adopted PRTG devices land: `scope` (`name`, `group`, `probe`, `ip`), `pattern` (glob, `regex:`, or a CIDR for `ip`), `site`, optional `role` and `device_type`, `weight` (lower first), `enabled`. Site, role and type must be the tenant's own. |
 | `sensor-pins/?device=\|virtual_machine=\|ip_address=\|interface=\|vm_interface=\|service=` | Sensors and channels pinned to an Overview, in order: `{id, sensor, channel_id, display, position, device, virtual_machine, ip_address, interface, vm_interface, service, sensor_info}`, exactly one of the six set. `POST {sensor, channel_id, display}` pins one (`display` is `auto`, `gauge`, `lookup` or `value`; a channel pins once, at most 24 per object); with no object named it goes on the sensor's own device or VM, and `ip_address`, `interface`, `vm_interface` or `service: <id>` - or `parent: {kind, id}` - pins it on that object, which must be the one the sensor is linked to (otherwise 400). `POST {sensor}` with no or a blank `channel_id` pins the whole sensor (`channel_id` reads `""`, once per sensor and object, beside its channel pins; `sensor_info` carries `last_value` and `last_check_at` for its tile); `DELETE <id>/` unpins; `POST reorder/ {<object field>, order: [pin ids]}` sets one object's order. Writes need change on PRTG sensor pins; every call needs view on the pinned object and on the sensor's device or VM. |
 | `device-status/?device=`, `?virtual_machine=` or `?ip=` | One entry per link: connection, PRTG device and its URL, `matched_by`, the roll-up, counts and the down and degraded sensors. Empty when the caller may not view the device or VM. |
 | `device-states/` | `{device id: {state, down, warning, name, url}}` for every linked device the caller may view. Feeds the device-list column. |
 | `vm-states/` | The same for virtual machines. Feeds the VM-list column. |
 | `hook/<token>/` | `POST`, no session: the push receiver above. 202 when accepted. |
+| `/api/devices/<id>/?prtg=`, `/api/virtual-machines/<id>/?prtg=` | `DELETE` with `prtg` `keep` (default), `remove` or `pause`, and `prtg_force=1` to delete a PRTG device Danbyte did not create - see [Delete with PRTG cleanup](#delete-with-prtg-cleanup). Anything but `keep` needs change on PRTG device links (403 otherwise) and answers 200 `{prtg: [{connection, objid, name, object, action, ok, queued, detail}]}`. |
+| `/api/devices/bulk-delete/`, `/api/virtual-machines/bulk-delete/` | The shared bulk delete, with `prtg` and `prtg_force` in the body. A dry run carries `prtg: {linked, created, other, default_remove}` for a caller who may change PRTG device links; the delete answers `prtg_results` as above. |
 
 **Retries.** Auto-apply picks up every Ready row, old ones included. A row whose apply failed is tried again after 2, 10 and then 30 minutes; after five failed tries in a row it stops and leaves the row as *Failed* for a person to retry. **Retry** in the queue always tries at once.
 
@@ -981,7 +984,9 @@ the imported sensors, and writes the difference into the review queue:
 | **Remove from PRTG** | A sensor carries a `danbyte-def-` tag no profile wants any more. | The sensor and the tag. |
 | **Move in PRTG** | A linked object is under another group than its policy names. | From and to, by path. |
 | **Update host in PRTG** | A device Danbyte created on a fallback host now has a stronger one (a primary address set later). | From and to, and the rule that chose the new host. |
-| **Remove device from PRTG** | A PRTG device Danbyte created belongs in PRTG no more (set to *Exclude from PRTG*, no policy matches, *Register all* off), and **Propose removing devices** is on. | The PRTG device and why. Never proposed for a device Danbyte did not create. |
+| **Remove device from PRTG** | A PRTG device Danbyte created belongs in PRTG no more (set to *Exclude from PRTG*, no policy matches, *Register all* off), and **Propose removing devices** is on - or a [retirement rule](#retirement-rules) deletes it. | The PRTG device and why, and the rule. Pruning never proposes a device Danbyte did not create; a rule does only with **Delete devices Danbyte did not create**. |
+| **Pause in PRTG** | A linked object matches a retirement rule that pauses. | The PRTG device and the rule, with what matched. |
+| **Resume in PRTG** | An object a rule paused no longer matches a pausing rule. | The PRTG device and the rule that paused it. |
 
 A sensor already in PRTG counts when it carries the entry's tag, or when it
 is of the same type (`Ping v2` counts as Ping; a traffic sensor named after
@@ -1242,11 +1247,71 @@ sent.
 **Apply automatically** lets the beat apply the ready creates, sensors and
 moves after each planning pass, under the name *PRTG writer*, and applies an
 object's ready rows right after its PRTG setting is saved; one writer runs
-per connection at a time. It never removes anything. The connection's
+per connection at a time. It never removes anything, except a
+[retirement rule](#retirement-rules)'s delete whose rule allows it, and it
+applies a rule's pauses and resumes. The connection's
 Registration card shows **Auto-apply** on or off with the last apply. **Propose removing devices** makes the
 planning pass propose **Remove device from PRTG** for a device Danbyte
 created whose object no longer belongs in PRTG. Both are off by default,
-and removals are always applied by a person, row by row.
+and removals are applied by a person, row by row, unless a retirement rule
+allows otherwise.
+
+## Deleting and retiring
+
+Deleting a Danbyte device or VM never touches PRTG unless you ask. Two ways
+to ask:
+
+### Delete with PRTG cleanup
+
+The device and VM delete dialogs - one object, or a selection on the
+device or VM list - offer **Also remove from PRTG** when the object is
+linked to a PRTG device and you may change PRTG device links. It is off
+unless the connection's **Remove from PRTG on delete** (connection form,
+*Writes*) ticks it by default.
+
+| PRTG device | Also remove from PRTG |
+|---|---|
+| Created by Danbyte | Deleted in PRTG. |
+| Not created by Danbyte | **Pause in PRTG instead** (the default), or **Delete it anyway**, which must be confirmed by the PRTG device's name. |
+
+A bulk delete removes the devices Danbyte created and pauses the rest;
+deleting somebody else's PRTG device is a one-object decision.
+
+PRTG is asked before the Danbyte object goes, in the same request. When
+PRTG cannot be reached, or a bulk delete touches more than five PRTG
+devices, the rest is handed to a background job. The Danbyte delete goes
+ahead whatever PRTG answers: a failure shows as a toast and, like every
+outcome, is a journal note on the tenant (the object itself is gone). A
+pause carries the message `[Danbyte] Deleted in Danbyte: <name>`.
+
+### Retirement rules
+
+The **When objects retire** card on the PRTG page's Overview lists the
+connection's rules, in order. A rule matches by **statuses** (any of them)
+and/or **tags** (any of them); with both, both must match. The first
+matching rule decides what the planning pass proposes for the object's PRTG
+device:
+
+| Action | Proposed | Applied |
+|---|---|---|
+| Pause in PRTG | **Pause in PRTG** | Pauses the PRTG device until resumed, with `[Danbyte] Retired: rule <name>`. Ready, so **Apply automatically** applies it. |
+| Delete in PRTG | **Remove device from PRTG** | Deletes the PRTG device and the link. Only for a device Danbyte created, unless the rule's **Delete devices Danbyte did not create** is on; otherwise the row is *Needs attention* and says so. Waits for a person unless the rule's **Apply automatically** is on (and the connection's too). |
+| Leave in PRTG | Nothing | Later rules are not tried. |
+
+An object a rule paused that stops matching - its status changes back, the
+tag is removed, the rule is deleted or set to *Leave in PRTG* - gets
+**Resume in PRTG**. A resume is only sent while PRTG still holds the device
+paused with Danbyte's message: a device somebody paused or resumed by hand
+in PRTG is left as they made it, and a device already paused by somebody
+else is never claimed by a rule.
+
+Rules run before registration, so a retiring object gets no new sensors,
+moves or host updates, and pruning does not also propose it. **Exclude from
+PRTG** stops registration only; the rules still apply to an excluded object.
+A rule's pause wins over the maintenance mirror: a window neither shortens
+nor lifts it. Each row names its rule and what matched (*Matches rule
+Retired (status Retired).*), and the device's or VM's Monitoring tab shows
+**Paused by rule Retired** while a rule holds it.
 
 ## Adding sensors by hand
 

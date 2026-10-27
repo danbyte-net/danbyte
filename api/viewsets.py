@@ -3789,6 +3789,86 @@ def _plan_prtg_on_save(obj, before: tuple) -> None:
     obj._prtg_plan = plan_after_save(obj)
 
 
+def _prtg_delete_args(request) -> tuple[str, bool]:
+    """``prtg`` (``keep``, ``remove``, ``pause``) and ``prtg_force`` of a
+    delete: the query string, or the bulk call's JSON body."""
+    from prtg.retire import KEEP, MODES
+
+    body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+    mode = str(request.query_params.get("prtg") or body.get("prtg") or KEEP).strip().lower()
+    if mode not in MODES:
+        raise ValidationError({"prtg": "keep, remove or pause."})
+    raw = request.query_params.get("prtg_force", body.get("prtg_force"))
+    force = str(raw).strip().lower() in ("1", "true", "yes") if raw is not None else False
+    return mode, force
+
+
+class PrtgCleanupDeleteMixin(SafeBulkDeleteMixin):
+    """Single and bulk delete of devices and VMs with ``?prtg=remove|pause``
+    (:mod:`prtg.retire`): the PRTG side runs first - inline, or queued when
+    PRTG is slow - and the Danbyte delete proceeds whatever PRTG answered.
+    A bulk dry run carries ``prtg``: what the rows have in PRTG."""
+
+    rbac_action_map = {"bulk_delete": "delete"}
+    _prtg_mode = ("keep", False)
+    _prtg_results: list = []
+
+    def _prtg_check(self, request) -> tuple[str, bool]:
+        from prtg.retire import KEEP, can_write
+
+        mode, force = _prtg_delete_args(request)
+        if mode != KEEP and not can_write(request.user, _get_active_tenant(request)):
+            raise PermissionDenied("Changing PRTG needs the change permission on PRTG device links.")
+        return mode, force
+
+    def _prtg_cleanup(self, rows) -> list:
+        from prtg.retire import KEEP, cleanup_before_delete
+
+        mode, force = self._prtg_mode
+        if mode == KEEP or not rows:
+            return []
+        return cleanup_before_delete(rows, mode, force=force, user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        mode, force = self._prtg_check(request)
+        if mode == "keep":
+            return super().destroy(request, *args, **kwargs)
+        from django.db.models.deletion import ProtectedError
+
+        instance = self.get_object()
+        try:
+            # A delete the database refuses must not touch PRTG first.
+            self.bulk_collect_into(self.bulk_collector(), [instance])
+        except ProtectedError:
+            return super().destroy(request, *args, **kwargs)
+        self._prtg_mode = (mode, force)
+        results = self._prtg_cleanup([instance])
+        self.perform_destroy(instance)
+        return Response({"prtg": results}, status=drf_status.HTTP_200_OK)
+
+    def bulk_destroy(self, rows) -> None:
+        self._prtg_results = self._prtg_cleanup(rows)
+        super().bulk_destroy(rows)
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        self._prtg_mode = self._prtg_check(request)
+        self._prtg_results = []
+        response = super().bulk_delete(request)
+        data = response.data
+        if data.get("dry_run"):
+            from prtg.retire import can_write, summary
+
+            ids = bulk_ids(request, MAX_IDS)
+            tenant = _get_active_tenant(request)
+            rows = list(self.get_queryset().filter(pk__in=ids))
+            if can_write(request.user, tenant):
+                data["prtg"] = summary(rows)
+        else:
+            data["prtg_results"] = self._prtg_results
+        return response
+
+
 @extend_schema_view(
     list=extend_schema(parameters=[
         OpenApiParameter(
@@ -3823,7 +3903,8 @@ def _plan_prtg_on_save(obj, before: tuple) -> None:
     ]),
 )
 class DeviceViewSet(
-    FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin, TenantScopedViewSet
+    PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin,
+    TenantScopedViewSet,
 ):
     queryset = (
         # select_related every FK the serializer dereferences per row - role,
@@ -4522,9 +4603,11 @@ class DeviceViewSet(
             # ?software_version= / ?software_version_source= (#451).
             qs = software_versions.apply_list_filters(qs, self.request)
             # ?prtg=linked|unlinked|up|degraded|down|unknown - the PRTG roll-up.
-            from prtg.filters import apply_device_filter as prtg_filter
+            # On a delete ``prtg`` says what happens in PRTG instead.
+            if self.action not in ("destroy", "bulk_delete"):
+                from prtg.filters import apply_device_filter as prtg_filter
 
-            qs = prtg_filter(qs, self.request)
+                qs = prtg_filter(qs, self.request)
             contract = _uuid_param(self.request.query_params, "support_contract")
             if contract:
                 qs = qs.filter(support_coverage__contract_id=contract)
@@ -6547,7 +6630,7 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 @extend_schema_view(list=extend_schema(
     parameters=[SOFTWARE_TARGET_PARAMETER, *SOFTWARE_VERSION_PARAMETERS]
 ))
-class VirtualMachineViewSet(CloneableMixin, TenantScopedViewSet):
+class VirtualMachineViewSet(PrtgCleanupDeleteMixin, CloneableMixin, TenantScopedViewSet):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
 
