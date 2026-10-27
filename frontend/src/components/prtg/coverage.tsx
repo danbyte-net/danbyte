@@ -386,20 +386,22 @@ function WantedRow({
           {override && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Switch
-                  size="sm"
-                  checked={!isOff && !asking}
-                  disabled={busy}
-                  aria-label="Use on this device"
-                  onCheckedChange={(on) => {
-                    if (on && asking) setAsking(false)
-                    else if (on) override.mutate({ key: w.key, enabled: true })
-                    else {
-                      setText("")
-                      setAsking(true)
-                    }
-                  }}
-                />
+                <span className="inline-flex">
+                  <Switch
+                    checked={!isOff && !asking}
+                    disabled={busy}
+                    aria-label="Use on this device"
+                    onCheckedChange={(on) => {
+                      if (on && asking) setAsking(false)
+                      else if (on)
+                        override.mutate({ key: w.key, enabled: true })
+                      else {
+                        setText("")
+                        setAsking(true)
+                      }
+                    }}
+                  />
+                </span>
               </TooltipTrigger>
               <TooltipContent variant="default">
                 Use on this device
