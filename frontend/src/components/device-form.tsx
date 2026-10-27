@@ -67,7 +67,7 @@ import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import {
   PrtgSyncSelect,
-  prtgSaveToast,
+  showPrtgSaveToast,
 } from "@/components/prtg/prtg-sync-select"
 import { ColorBadge } from "@/components/cells/color-badge"
 import {
@@ -624,11 +624,8 @@ export function DeviceForm({
       invalidatePortCounts(qc)
       if (saved.cabinet || device?.cabinet) invalidateCabinetDeviceViews(qc)
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
-      const prtg = prtgSaveToast(saved.prtg_plan)
-      if (prtg) {
-        toast.info(prtg)
+      if (showPrtgSaveToast(saved.prtg_plan))
         qc.invalidateQueries({ queryKey: ["prtg-plan"] })
-      }
       if (againRef.current) {
         againRef.current = false
         setName("")
