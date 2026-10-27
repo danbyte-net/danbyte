@@ -633,6 +633,61 @@ class ProposalTests(_Plan):
                          [("ping", True), ("snmp_uptime", False)])
         self.assertEqual(out["sensors"][0]["sensor"]["objid"], "2092")
 
+    def test_coverage_for_a_linked_device(self):
+        d = self.device("db-zabbix", "10.0.0.53")
+        self.read()  # Ping v2 2092 and HTTP 2100
+        PrtgSensor.objects.filter(objid="2100").update(tags=["danbyte-manual"])
+        std = profile(self.conn, "Std", ("ping", {}, True), ("snmp_uptime", {}, True),
+                      ("snmp_cpu", {}, False))
+        pol = policy(self.conn, "std", std)
+        self.plan()
+        cov = preview(self.conn, d)["coverage"]
+        self.assertEqual(cov["policies"], [{"id": str(pol.id), "name": "std",
+                                            "profile": {"id": str(std.id), "name": "Std"}}])
+        self.assertEqual(cov["group"]["path"], "Local Probe")
+        rows = {r["kind"]: r for r in cov["wanted"]}
+        self.assertEqual(rows["ping"]["status"], "present")
+        self.assertEqual(rows["ping"]["sensor_objid"], "2092")
+        self.assertEqual(rows["ping"]["policy"]["name"], "std")
+        self.assertEqual(rows["snmp_uptime"]["status"], "planned")
+        [add] = self.changes(PrtgChange.ADD_SENSOR)
+        self.assertEqual(rows["snmp_uptime"]["change_id"], str(add.id))
+        self.assertEqual(rows["snmp_cpu"]["status"], "skipped")
+        self.assertEqual(cov["present"], 1)
+        self.assertEqual([(e["objid"], e["origin"]) for e in cov["extra"]],
+                         [("2100", "manual")])
+
+        add.detail = {**add.detail, "last_error": {"at": "x", "detail": "PRTG said no."}}
+        add.save()
+        row = next(r for r in preview(self.conn, d)["coverage"]["wanted"]
+                   if r["kind"] == "snmp_uptime")
+        self.assertEqual((row["status"], row["reason"]), ("failed", "PRTG said no."))
+        PrtgChange.objects.filter(pk=add.pk).update(ignored=True)
+        row = next(r for r in preview(self.conn, d)["coverage"]["wanted"]
+                   if r["kind"] == "snmp_uptime")
+        self.assertEqual(row["status"], "skipped")
+
+    def test_coverage_marks_old_definitions_and_prtg_sensors(self):
+        d = self.device("db-zabbix", "10.0.0.53")
+        self.read()
+        PrtgSensor.objects.filter(objid="2100").update(tags=[instance_tag("gone")])
+        cov = preview(self.conn, d)["coverage"]
+        self.assertEqual(cov["wanted"], [])
+        self.assertEqual(sorted((e["objid"], e["origin"]) for e in cov["extra"]),
+                         [("2092", "prtg"), ("2100", "danbyte")])
+
+    def test_coverage_waits_on_missing_credentials(self):
+        SnmpProfile.objects.all().delete()
+        d = self.device("edge", "10.0.0.90")
+        snmp = profile(self.conn, "SNMP", ("ping", {}, True), ("snmp_uptime", {}, True))
+        policy(self.conn, "snmp", snmp)
+        self.plan()
+        [create] = self.changes(PrtgChange.CREATE_DEVICE)
+        rows = {r["kind"]: r for r in preview(self.conn, d)["coverage"]["wanted"]}
+        self.assertEqual(rows["snmp_uptime"]["status"], "waiting")
+        self.assertEqual(rows["snmp_uptime"]["issue"]["code"], "no_snmp")
+        self.assertEqual(rows["snmp_uptime"]["change_id"], str(create.id))
+
 
 class _Api(APITestCase):
     def setUp(self):
@@ -1031,6 +1086,17 @@ class PlanApiTests(_Api):
         self.assertEqual(entry["planned"]["sensors"], [])
         self.assertEqual(entry["planned"]["remove"], [])
         self.assertEqual([i["code"] for i in entry["planned"]["reasons"]], ["excluded"])
+
+    def test_plan_carries_coverage(self):
+        d = Device.objects.create(tenant=self.tenant, name="edge", site=self.site)
+        self.post_policy(name="Core switches")
+        cov = self.plan_for(d)["coverage"]
+        self.assertEqual([p["name"] for p in cov["policies"]], ["Core switches"])
+        self.assertEqual(cov["policies"][0]["profile"]["name"], "Ping")
+        [row] = cov["wanted"]
+        self.assertEqual((row["name"], row["status"]), ("Ping", "waiting"))
+        self.assertEqual(row["issue"]["code"], "no_address")
+        self.assertEqual(cov["extra"], [])
 
     def test_plan_for_a_foreign_object_is_404(self):
         d = Device.objects.create(tenant=self.other, name="edge")
