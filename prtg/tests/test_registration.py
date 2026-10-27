@@ -731,7 +731,7 @@ class ProfileApiTests(_Api):
         self.assertEqual([d["kind"] for d in defs], ["snmp_traffic", "snmp_uptime"])
 
     def test_bad_definitions_are_refused(self):
-        for bad in ({"kind": "nope"}, {"kind": "ping", "params": {"x": 1}},
+        for bad in ({"kind": "no pe"}, {"kind": "ping", "params": {"x": 1}},
                     {"kind": "ping", "interval_seconds": 7},
                     {"kind": "ping", "tags": ["danbyte-mine"]},
                     {"kind": "windows_service"}):
@@ -770,8 +770,12 @@ class ProfileApiTests(_Api):
         body = {"connection": str(self.conn.id), "name": "Ports", "definitions": [
             {"kind": "port", "params": {"portspecific.port": "8443"}},
         ]}
+        # A profile is tied to no device: a PRTG kind saves without PRTG's
+        # sensor list or form, its params kept as given.
         r = self.client.post("/api/prtg/profiles/", body, format="json")
-        self.assertEqual(r.status_code, 400, r.content)  # no sensor list yet
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["definitions"][0]["params"], {"portspecific.port": "8443"})
+        body["name"] = "Ports 2"
         self._catalog()
         r = self.client.post("/api/prtg/profiles/", body, format="json")
         self.assertEqual(r.status_code, 201, r.content)
@@ -780,9 +784,17 @@ class ProfileApiTests(_Api):
         self.assertEqual(d["form"], "generic")
         self.assertEqual(d["kind_label"], "Port")
         self.assertEqual(d["params"], {"portspecific.port": 8443})
-        for bad in ({"kind": "nope.kind"},
-                    {"kind": "port", "params": {"portspecific.port": 70000}},
-                    {"kind": "port", "params": {"nosuch.field": 1}}):
+        # PRTG checks the values when it creates the sensor.
+        r = self.client.post("/api/prtg/profiles/", {
+            "connection": str(self.conn.id), "name": "Later", "definitions": [
+                {"kind": "nope.kind"},
+                {"kind": "port", "params": {"portspecific.port": 70000, "nosuch.field": 1}},
+            ],
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        for bad in ({"kind": "bad kind!"},
+                    {"kind": "port", "params": {"nodot": 1}},
+                    {"kind": "port", "params": {"portspecific.port": {"a": 1}}}):
             with self.subTest(bad=bad):
                 r = self.client.post("/api/prtg/profiles/", {
                     "connection": str(self.conn.id), "name": "y", "definitions": [bad],
@@ -827,6 +839,46 @@ class ProfileApiTests(_Api):
         r = self.client.get(f"/api/prtg/connections/{self.conn.id}/sensor-schema/?kind=port")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertIn("portspecific.port", {f["key"] for f in r.json()["fields"]})
+
+    def test_a_form_is_read_from_a_device_that_can_take_the_kind(self):
+        from prtg.client_v2 import PrtgNotFound
+        from prtg.manual import NO_FORM_NOTE, connection_schema
+
+        kind = "paessler.proxmox.cluster_health_sensor"
+        schema = load_fixture("v2_post_schema_port.json")["components"]["schemas"][
+            "modifyItemSchema"]
+        asked = []
+
+        class V2:
+            def __init__(self, takes):
+                self.takes = takes
+
+            def kinds(self, objid):
+                if objid == "1028":
+                    raise PrtgNotFound("no schemas")
+                return [{"kind": kind, "creatable": True}] if objid in self.takes else []
+
+            def post_schema(self, objid, k):
+                asked.append(objid)
+                if objid not in self.takes:
+                    raise PrtgNotFound("The resource could not be found in this endpoint.")
+                return schema
+
+        for objid, name in (("1028", "a core server"), ("2081", "b dev"), ("2121", "c prox")):
+            d = Device.objects.create(tenant=self.tenant, name=name, site=self.site)
+            PrtgDeviceLink.objects.create(tenant=self.tenant, connection=self.conn, device=d,
+                                          objid=objid, name=name, matched_by="address")
+        out = connection_schema(self.conn, kind, v2=V2({"2121"}))
+        self.assertIn("portspecific.port", {f["key"] for f in out["fields"]})
+        self.assertEqual(asked, ["1028", "2121"])
+        self.assertNotIn("note", out)
+        # No device takes it: no fields and a note, never an error.
+        out = connection_schema(self.conn, "x.none", v2=V2(set()))
+        self.assertEqual(out["fields"], [])
+        self.assertEqual(out["note"], NO_FORM_NOTE)
+        r = self.client.get(f"/api/prtg/connections/{self.conn.id}/sensor-schema/?kind=x.none")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["note"], NO_FORM_NOTE)
 
     def test_a_profile_in_use_is_not_deleted(self):
         self.assertEqual(self.post_policy().status_code, 201)

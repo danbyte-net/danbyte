@@ -14,10 +14,12 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -30,7 +32,8 @@ import { Loading } from "@/components/loading"
 // definition rows (any kind PRTG lists, plus Danbyte's own) and the Add
 // sensor dialog (what PRTG offers that device). The kinds with Danbyte's own
 // form are pinned under "Standard"; the rest is PRTG's list, searchable,
-// sortable and narrowed by category.
+// sortable and narrowed by category. With `multiple` the rows are
+// checkboxes and a footer adds every chosen kind at once.
 
 /** Danbyte's own kinds and their parameters (`/api/prtg/profiles/kinds/`). */
 export function usePrtgSensorKinds() {
@@ -209,10 +212,13 @@ function NoCatalog({ detail }: { detail?: string }) {
   )
 }
 
+const optionKey = (o: SensorKindOption) => `${o.form}:${o.id}`
+
 /**
  * The list itself: search, category rail, sortable columns, keyboard
  * navigation. Inline in the Add sensor dialog; inside the picker's dialog
- * elsewhere.
+ * elsewhere. `multiple`: a checkbox per row (click or Enter toggles) and a
+ * footer that hands every chosen kind to `onPickMany`.
  */
 export function SensorKindBrowser({
   connectionId,
@@ -220,12 +226,19 @@ export function SensorKindBrowser({
   mode,
   value,
   onPick,
+  multiple = false,
+  onPickMany,
+  onCancel,
 }: {
   connectionId: string
   linkId?: string
   mode: "profile" | "add"
   value?: string
-  onPick: (option: SensorKindOption) => void
+  onPick?: (option: SensorKindOption) => void
+  multiple?: boolean
+  onPickMany?: (options: SensorKindOption[]) => void
+  /** A Cancel button in the multiple footer. */
+  onCancel?: () => void
 }) {
   const { options, catalog, refresh, missing, loading } = useSensorKindOptions(
     connectionId,
@@ -238,6 +251,7 @@ export function SensorKindBrowser({
     desc: false,
   })
   const [active, setActive] = useState(0)
+  const [chosen, setChosen] = useState<string[]>([])
   const listId = useId()
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -298,6 +312,15 @@ export function SensorKindBrowser({
       </EmptyState>
     )
 
+  const choose = (o: SensorKindOption) => {
+    if (!multiple) return onPick?.(o)
+    const k = optionKey(o)
+    setChosen((c) => (c.includes(k) ? c.filter((x) => x !== k) : [...c, k]))
+  }
+  const picked = () => {
+    const byKey = new Map(options.map((o) => [optionKey(o), o] as const))
+    return chosen.flatMap((k) => byKey.get(k) ?? [])
+  }
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault()
@@ -313,7 +336,7 @@ export function SensorKindBrowser({
       setActive(flat.length - 1)
     } else if (e.key === "Enter") {
       e.preventDefault()
-      if (flat[active]) onPick(flat[active])
+      if (flat[active]) choose(flat[active])
     }
   }
   const toggleSort = (key: SortKey) =>
@@ -417,6 +440,7 @@ export function SensorKindBrowser({
             id={listId}
             role="listbox"
             aria-label="Sensor kinds"
+            aria-multiselectable={multiple || undefined}
             className="max-h-[50vh] overflow-y-auto"
             data-testid="prtg-kind-list"
           >
@@ -431,16 +455,17 @@ export function SensorKindBrowser({
                   {g.rows.map((o) => {
                     index += 1
                     const i = index
+                    const checked = chosen.includes(optionKey(o))
                     return (
                       <div
                         key={`${o.form}:${o.id}`}
                         id={optionId(i)}
                         role="option"
-                        aria-selected={i === active}
+                        aria-selected={multiple ? checked : i === active}
                         data-index={i}
                         data-testid="prtg-kind-option"
                         onMouseMove={() => i !== active && setActive(i)}
-                        onClick={() => onPick(o)}
+                        onClick={() => choose(o)}
                         className={cn(
                           "cursor-pointer border-b border-border px-3 py-2 text-sm last:border-b-0",
                           GRID,
@@ -448,13 +473,23 @@ export function SensorKindBrowser({
                           value === o.id && "font-medium"
                         )}
                       >
-                        <div className="min-w-0">
-                          <p className="truncate">{o.name}</p>
-                          {o.description && (
-                            <p className="line-clamp-1 text-xs font-normal text-muted-foreground">
-                              {o.description}
-                            </p>
+                        <div className="flex min-w-0 items-start gap-2">
+                          {multiple && (
+                            <Checkbox
+                              checked={checked}
+                              tabIndex={-1}
+                              aria-hidden
+                              className="pointer-events-none mt-0.5"
+                            />
                           )}
+                          <div className="min-w-0">
+                            <p className="truncate">{o.name}</p>
+                            {o.description && (
+                              <p className="line-clamp-1 text-xs font-normal text-muted-foreground">
+                                {o.description}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground sm:contents">
                           <span className="truncate">{o.category}</span>
@@ -483,7 +518,79 @@ export function SensorKindBrowser({
           </div>
         </div>
       </div>
+      {multiple && (
+        <DialogFooter className="items-center">
+          <span
+            className="mr-auto text-xs text-muted-foreground"
+            data-testid="prtg-kind-chosen"
+          >
+            {chosen.length} selected
+          </span>
+          {chosen.length > 0 && (
+            <Button type="button" variant="ghost" onClick={() => setChosen([])}>
+              Clear
+            </Button>
+          )}
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+          <Button
+            type="button"
+            disabled={chosen.length === 0}
+            onClick={() => onPickMany?.(picked())}
+          >
+            {chosen.length === 1
+              ? "Add 1 sensor"
+              : `Add ${chosen.length} sensors`}
+          </Button>
+        </DialogFooter>
+      )}
     </div>
+  )
+}
+
+/** The browser in a dialog, in multiple mode: a profile's "Add sensor". */
+export function SensorKindsDialog({
+  connectionId,
+  linkId,
+  mode = "profile",
+  open,
+  onOpenChange,
+  onPick,
+}: {
+  connectionId: string
+  linkId?: string
+  mode?: "profile" | "add"
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onPick: (options: SensorKindOption[]) => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="4xl" data-testid="prtg-kinds-dialog">
+        <DialogHeader>
+          <DialogTitle>Add sensors</DialogTitle>
+          <DialogDescription>
+            Danbyte&apos;s own kinds first, then everything PRTG lists.
+          </DialogDescription>
+        </DialogHeader>
+        {open && (
+          <SensorKindBrowser
+            connectionId={connectionId}
+            linkId={linkId}
+            mode={mode}
+            multiple
+            onCancel={() => onOpenChange(false)}
+            onPickMany={(o) => {
+              onPick(o)
+              onOpenChange(false)
+            }}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

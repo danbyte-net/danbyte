@@ -38,7 +38,7 @@ from monitoring.external.beat import skip_reason
 from . import sensor_kinds as sk
 from .actions import ActionError
 from .client import PrtgClient, PrtgError
-from .client_v2 import PrtgV2Client
+from .client_v2 import PrtgNotFound, PrtgV2Client
 from .models import PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
 from .writer import NO_WRITES, V2_KINDS, Refused, Writer, _lock, _unlock, record, write_mode
 
@@ -314,54 +314,141 @@ def parse_schema(schema: dict) -> dict:
     return {"fields": fields, "scan": scan}
 
 
+def _read_form(link: PrtgDeviceLink, kindid: str, v2) -> dict:
+    """PRTG's form for ``kindid`` under the linked device, kept on the
+    connection. Raises :class:`PrtgError` (``PrtgNotFound`` when PRTG has
+    no form for it there)."""
+    out = {"kind": kindid, **parse_schema(v2.post_schema(link.objid, kindid))}
+    _keep_schema(link.connection, kindid, out)
+    return out
+
+
 def schema_fields(link: PrtgDeviceLink, kindid: str, *, v2=None) -> dict:
     conn = link.connection
     _usable(conn)
     _, v2 = _clients(conn, v2=v2)
     try:
-        schema = v2.post_schema(link.objid, kindid)
+        return _read_form(link, kindid, v2)
     except PrtgError as exc:
         raise ActionError(f"PRTG has no form for '{kindid}': {exc}"[:300], 502) from None
-    out = {"kind": kindid, **parse_schema(schema)}
-    _keep_schema(conn, kindid, out)
-    return out
 
 
 def _keep_schema(conn, kindid: str, form: dict) -> None:
     conn.refresh_from_db(fields=["sensor_catalog"])
     schemas = dict((conn.sensor_catalog or {}).get("schemas") or {})
     schemas[kindid] = {"read_at": timezone.now().isoformat(), "fields": form["fields"],
-                       "scan": form["scan"]}
+                       "scan": form["scan"], **({"note": form["note"]} if form.get("note") else {})}
     _keep(conn, "schemas", schemas)
 
 
 def cached_schema(conn: PrtgConnection, kindid: str) -> dict | None:
-    """The form last read for ``kindid``: ``{fields, scan}``, or None."""
+    """The form last read for ``kindid``: ``{fields, scan, note?}``, or None."""
     entry = ((conn.sensor_catalog or {}).get("schemas") or {}).get(kindid)
     return entry if entry and isinstance(entry.get("fields"), list) else None
+
+
+#: Said in place of a form no linked device can describe.
+NO_FORM_NOTE = (
+    "PRTG describes this sensor's settings only on a device that can take it. "
+    "The profile saves it with PRTG's defaults; set details after it is created."
+)
+#: The other linked devices whose kind lists are read looking for one that
+#: takes a kind, and how many of those are asked for its form.
+KIND_LISTS = 8
+FORM_TRIES = 3
+
+
+def _device_kinds(conn: PrtgConnection, link: PrtgDeviceLink, v2, now) -> set | None:
+    """The kind ids PRTG can create under the linked device, read once a
+    day per device (None when PRTG cannot be asked)."""
+    cache = dict((conn.sensor_catalog or {}).get("device_kinds") or {})
+    entry = cache.get(str(link.objid))
+    if not _stale(entry, now):
+        return set(entry.get("ids") or [])
+    try:
+        rows = v2.kinds(link.objid)
+    except PrtgNotFound:
+        rows = []
+    except PrtgError:
+        return None
+    ids = sorted({str(r.get("kind")) for r in rows
+                  if r.get("kind") and r.get("creatable") is not False})
+    conn.refresh_from_db(fields=["sensor_catalog"])
+    cache = {k: v for k, v in ((conn.sensor_catalog or {}).get("device_kinds") or {}).items()
+             if not _stale(v, now)}
+    cache[str(link.objid)] = {"read_at": now.isoformat(), "ids": ids}
+    _keep(conn, "device_kinds", cache)
+    return set(ids)
+
+
+def _cached_form(kindid: str, entry: dict) -> dict:
+    out = {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
+    if entry.get("note"):
+        out["note"] = entry["note"]
+    return out
 
 
 def connection_schema(conn: PrtgConnection, kindid: str, *, link: PrtgDeviceLink | None = None,
                       refresh: bool = False, v2=None) -> dict:
     """PRTG's create form for ``kindid`` at connection level, for the
     profile editor: kept beside the kind list for a day. PRTG answers per
-    device, so ``link`` (or the first linked device) is asked."""
+    device and only under a device that can take the kind, so ``link`` (or
+    the first linked device) is asked first, then up to :data:`FORM_TRIES`
+    other linked devices whose kind list names it. When none can describe
+    it the answer is no fields and :data:`NO_FORM_NOTE` - never an error:
+    the profile saves the kind with PRTG's defaults."""
     _usable(conn)
     entry = cached_schema(conn, kindid)
     if entry and not refresh and not _stale(entry, timezone.now()):
-        return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
-    if link is None:
-        link = conn.links.order_by("name").first()
-    if link is None:
+        return _cached_form(kindid, entry)
+    first = link or conn.links.order_by("name").first()
+    if first is None:
         if entry:
-            return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
+            return _cached_form(kindid, entry)
         raise ActionError("No device is linked yet: PRTG gives a sensor's form per device.")
+    _, v2 = _clients(conn, v2=v2)
     try:
-        return schema_fields(link, kindid, v2=v2)
-    except ActionError:
+        return _read_form(first, kindid, v2)
+    except PrtgNotFound:
+        pass
+    except PrtgError as exc:
         if entry:
-            return {"kind": kindid, "fields": entry["fields"], "scan": entry.get("scan")}
-        raise
+            return _cached_form(kindid, entry)
+        raise ActionError(f"PRTG has no form for '{kindid}': {exc}"[:300], 502) from None
+    now, tried = timezone.now(), 0
+    for other in conn.links.exclude(pk=first.pk).order_by("name")[:KIND_LISTS]:
+        ids = _device_kinds(conn, other, v2, now)
+        if not ids or kindid not in ids:
+            continue
+        tried += 1
+        try:
+            return _read_form(other, kindid, v2)
+        except PrtgError:
+            if tried >= FORM_TRIES:
+                break
+    out = {"kind": kindid, "fields": [], "scan": None, "note": NO_FORM_NOTE}
+    _keep_schema(conn, kindid, out)
+    return out
+
+
+def type_generic(fields: list, params: dict) -> dict:
+    """A profile's ``section.field`` params typed by PRTG's form where it
+    names them; everything else kept as given. Never raises: PRTG checks
+    the settings when it creates the sensor."""
+    known = {f["key"]: f for f in fields}
+    out = {}
+    for key, value in (params or {}).items():
+        f = known.get(key)
+        if f is not None and value not in (None, ""):
+            if f["type"] == "checkbox" and not isinstance(value, bool):
+                value = value in (1, "1", "true", "on", "yes")
+            elif f["type"] == "number" and not isinstance(value, bool):
+                try:
+                    value = int(value) if float(value).is_integer() else float(value)
+                except (TypeError, ValueError):
+                    pass
+        out[key] = value
+    return out
 
 
 def flat_params(sections: dict) -> dict:
