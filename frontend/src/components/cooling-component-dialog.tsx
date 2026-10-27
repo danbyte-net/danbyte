@@ -38,7 +38,9 @@ export const coolingQueryKey = (kind: CoolingKind, deviceId: string) => [
 ]
 
 type FeedOption = { id: string; name: string; source: { name: string } }
-type Upstream = "none" | "feed" | "outflow"
+/** "hidden": connected to a feed or outflow the caller may not view
+ * (#453) - kept as it is until another is picked. */
+type Upstream = "none" | "feed" | "outflow" | "hidden"
 
 export interface CoolingComponentDialogProps {
   kind: CoolingKind
@@ -88,7 +90,13 @@ export function CoolingComponentDialog({
     setFeedId(intake?.cooling_feed?.id ?? null)
     setOutflowId(intake?.outflow?.id ?? null)
     setUpstream(
-      intake?.cooling_feed ? "feed" : intake?.outflow ? "outflow" : "none"
+      intake?.upstream_hidden
+        ? "hidden"
+        : intake?.cooling_feed
+          ? "feed"
+          : intake?.outflow
+            ? "outflow"
+            : "none"
     )
     setIntakeId(
       kind === "outflow"
@@ -134,8 +142,11 @@ export function CoolingComponentDialog({
         description: description.trim(),
       }
       if (kind === "intake") {
-        payload.cooling_feed_id = upstream === "feed" ? feedId : null
-        payload.outflow_id = upstream === "outflow" ? outflowId : null
+        // A hidden upstream sends nothing, so the server keeps it.
+        if (upstream !== "hidden") {
+          payload.cooling_feed_id = upstream === "feed" ? feedId : null
+          payload.outflow_id = upstream === "outflow" ? outflowId : null
+        }
       } else {
         payload.intake_id = intakeId
       }
@@ -234,6 +245,9 @@ export function CoolingComponentDialog({
                 value={upstream}
                 onChange={(v) => setUpstream((v ?? "none") as Upstream)}
                 options={[
+                  ...(upstream === "hidden"
+                    ? [{ value: "hidden", label: "Hidden" }]
+                    : []),
                   { value: "none", label: "Nothing" },
                   { value: "feed", label: "Cooling feed" },
                   { value: "outflow", label: "Outflow" },

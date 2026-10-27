@@ -246,6 +246,21 @@ class ReadToolTests(_Base):
             rows = self.tool("list", {"type": "device", "filters": {"site": "HQ"}})
         self.assertEqual([r["name"] for r in rows["rows"]], ["hq-core-1"])
 
+    def test_lists_and_lookups_page_past_the_cap(self):
+        # The tools read in pages the API's cap allows; a lower cap used to
+        # cut a 10,000-row read short without a word (#452).
+        with self.settings(API_PAGE_SIZE=1, API_MAX_PAGE_SIZE=1):
+            rows = self.tool("list", {"type": "device"})
+            self.assertEqual({r["name"] for r in rows["rows"]},
+                             {"aarhus-core-1", "hq-core-1"})
+            self.assertFalse(rows["truncated"])
+            self.assertEqual(rows["total"], 2)
+            for name in ("aarhus-core-1", "hq-core-1"):
+                one = self.tool("get", {"type": "device", "id": name})
+                self.assertEqual(one["object"]["name"], name)
+            rows = self.tool("list", {"type": "device", "filters": {"site": "HQ"}})
+        self.assertEqual([r["name"] for r in rows["rows"]], ["hq-core-1"])
+
     def test_allowed_types_narrows_everything(self):
         AgentSettings.objects.update_or_create(
             tenant=self.tenant, defaults={"allowed_types": ["site"]}

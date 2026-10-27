@@ -69,6 +69,23 @@ GATED_RELATIONS: dict[str, tuple[tuple[str, str], ...]] = {
     # A coverage row is its device's; its contract may be one the caller
     # cannot view.
     "api.supportcoverage": (("contract", "supportcontract"),),
+    # A flow is the site of its first end; the other end may be another
+    # site's address, range or prefix (#453).
+    "api.applicationflow": (
+        ("source_ip", "ipaddress"),
+        ("source_range", "iprange"),
+        ("source_prefix", "prefix"),
+        ("destination_ip", "ipaddress"),
+        ("destination_range", "iprange"),
+        ("destination_prefix", "prefix"),
+        ("service", "service"),
+    ),
+    # An intake is its device's; its feed or the CDU outflow it hangs off
+    # may be another site's (#453).
+    "api.coolingintake": (
+        ("cooling_feed", "coolingfeed"),
+        ("outflow", "coolingoutflow"),
+    ),
 }
 
 #: Gated relations a row's own text names (``str(coverage)`` is "contract →

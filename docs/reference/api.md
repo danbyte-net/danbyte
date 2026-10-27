@@ -70,8 +70,10 @@ Every list endpoint pages its answer:
 
 - **`page_size`** - rows per page. Without it a list answers **100** rows
   (the deployment's `API_PAGE_SIZE`, see [Settings](settings.md#drf)). Ask
-  for up to **10,000** with `?page_size=`; a larger number is cut to 10,000,
-  and a value that is not a positive number is ignored.
+  for up to **2,000** with `?page_size=` (the deployment's
+  `API_MAX_PAGE_SIZE`); a larger number is cut to the cap, and a value that
+  is not a positive number is ignored. A cut page still carries `next`, so a
+  script that follows it reads every row whatever the cap.
 - **`page`** - which page, from 1. A page past the end answers `404`.
 - **`count`** - every matching row, not only the rows on this page.
 - **`next`** / **`previous`** - full links to the neighbouring pages, with
@@ -88,8 +90,26 @@ while [ "$url" != "null" ]; do
 done
 ```
 
-Ask for the rows you need rather than the cap: a 10,000-row page takes
-seconds to build and holds a server worker while it does.
+Ask for the rows you need rather than the cap, and follow `next`: a big page
+takes seconds to build and holds a server worker while it does. A few
+10,000-row pages used to hold every worker at once, so the cap is 2,000.
+
+**Large pages are limited per token.** A request whose `page_size` is above
+**1,000** (`API_LARGE_PAGE_THRESHOLD`) is a large page, and one API token, or
+one signed-in user, may have **2** in flight at a time
+(`API_LARGE_PAGE_CONCURRENCY`). The next one answers `429 Too Many Requests`
+with a `Retry-After` header in seconds; wait that long and send it again.
+Pages of 1,000 rows or fewer are never held back, so a script that pages at
+1,000, as the loop above does, never meets the limit, and neither does the
+web app. The script SDK and the web app retry a `429` after its
+`Retry-After` on their own.
+
+To serve bigger pages, an administrator sets `API_MAX_PAGE_SIZE` (and, to
+move or loosen the limit, `API_LARGE_PAGE_THRESHOLD` and
+`API_LARGE_PAGE_CONCURRENCY`) in the service environment and restarts the
+web service; see
+[Settings](settings.md#drf). Raising them trades other users' response
+times for one client's fewer round trips.
 
 A few lists page differently. Tags, statuses, IP roles and zones answer 500
 rows a page whatever `page_size` says; follow `next` for more. The monitoring check and history lists and

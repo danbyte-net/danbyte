@@ -35,7 +35,8 @@ export function endHost(e: FlowEnd): { id: string; name: string } | null {
 }
 
 /** A stable key for an end: one node per address, range or prefix. "Any"
- * is its own end on each side. */
+ * and a hidden end (#453) are their own end on each side. */
 export function endKey(e: FlowEnd, side: "source" | "destination"): string {
+  if (e.hidden) return `hidden:${side}`
   return e.kind === "any" ? `any:${side}` : `${e.kind}:${e.id}`
 }

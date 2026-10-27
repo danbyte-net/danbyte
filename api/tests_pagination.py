@@ -41,7 +41,7 @@ class ListPaginationTests(APITestCase):
 
     def test_defaults(self):
         self.assertEqual(settings.API_PAGE_SIZE, 100)
-        self.assertEqual(settings.API_MAX_PAGE_SIZE, 10000)
+        self.assertEqual(settings.API_MAX_PAGE_SIZE, 2000)
         self.assertEqual(api_settings.PAGE_SIZE, 100)
         self.assertTrue(issubclass(StandardPagination, StandardResultsSetPagination))
 

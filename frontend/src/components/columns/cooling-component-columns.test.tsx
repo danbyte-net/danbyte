@@ -109,6 +109,14 @@ describe("cooling intake columns", () => {
     expect(intakeCell("fed_from", intake()).textContent).toBe("-")
   })
 
+  it("reads a hidden upstream as a muted Hidden (#453)", () => {
+    const row = intake({ upstream_hidden: true })
+    const el = intakeCell("fed_from", row)
+    expect(el.textContent).toBe("Hidden")
+    expect(el.querySelector("a")).toBeNull()
+    expect(intakeUpstreamText(row)).toBe("Hidden")
+  })
+
   it("reads connector, bore and flow with their units", () => {
     expect(intakeCell("connector", intake()).textContent).toBe('QD 3/8"')
     expect(intakeCell("diameter", intake()).textContent).toBe("10 mm")
@@ -150,6 +158,22 @@ describe("cooling outflow columns", () => {
       "srv2",
       "srv3",
     ])
+  })
+
+  it("reads a served intake the caller may not view as Hidden (#453)", () => {
+    const el = outflowCell(
+      "serves",
+      outflow({
+        served: [
+          { id: "x", name: "in", device: { id: "d2", name: "srv2" } },
+          { id: null, name: null, device: null, hidden: true },
+        ],
+      })
+    )
+    expect([...el.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
+      "srv2",
+    ])
+    expect(el.textContent).toContain("Hidden")
   })
 })
 

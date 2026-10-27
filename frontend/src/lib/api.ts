@@ -62,7 +62,9 @@ export async function apiStatus<T>(
       headers.set("Content-Type", "application/json")
     }
   }
-  const res = await fetch(path, { credentials: "include", ...init, headers })
+  const res = isMutation
+    ? await fetch(path, { credentials: "include", ...init, headers })
+    : await fetchRead(path, { credentials: "include", ...init, headers })
   // Skip the global handler ONLY for the /api/me/ auth probe - a 401 there is
   // the normal "logged out" signal, not a session that just expired. Match the
   // exact path (query string stripped); `includes("/api/me")` wrongly swallowed
@@ -74,6 +76,66 @@ export async function apiStatus<T>(
   if (!res.ok) throw await apiErrorOf(res, path)
   if (res.status === 204) return { data: undefined as T, status: res.status }
   return { data: (await res.json()) as T, status: res.status }
+}
+
+// Large list pages (#452). The server lets one user have two pages above
+// 1,000 rows in flight (API_LARGE_PAGE_THRESHOLD) and answers the next with
+// 429 and Retry-After. The web app reads at most 1,000 a request, so it never
+// meets that limit; a read above it still queues for one of two slots here.
+// Any read answered 429 with a Retry-After is sent again after the wait.
+export const LARGE_PAGE_ROWS = 1000
+export const LARGE_PAGE_SLOTS = 2
+const READ_RETRIES = 5
+let largeInFlight = 0
+const largeWaiting: (() => void)[] = []
+
+function isLargePage(path: string): boolean {
+  const size = Number(new URL(path, "http://x").searchParams.get("page_size"))
+  return Number.isFinite(size) && size > LARGE_PAGE_ROWS
+}
+
+async function takeLargeSlot(): Promise<void> {
+  if (largeInFlight < LARGE_PAGE_SLOTS) {
+    largeInFlight++
+    return
+  }
+  // Released slots pass straight to the next waiter; the count stays put.
+  await new Promise<void>((resolve) => largeWaiting.push(resolve))
+}
+
+function releaseLargeSlot(): void {
+  const next = largeWaiting.shift()
+  if (next) next()
+  else largeInFlight--
+}
+
+function retryAfterMs(res: Response): number | null {
+  const raw = res.headers.get("Retry-After")
+  const s = Number(raw)
+  if (raw === null || !Number.isFinite(s)) return null
+  return Math.min(Math.max(s, 1), 30) * 1000
+}
+
+async function fetchWithRetry(
+  path: string,
+  init: RequestInit
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(path, init)
+    const wait = res.status === 429 ? retryAfterMs(res) : null
+    if (wait === null || attempt >= READ_RETRIES) return res
+    await new Promise((r) => setTimeout(r, wait))
+  }
+}
+
+async function fetchRead(path: string, init: RequestInit): Promise<Response> {
+  if (!isLargePage(path)) return fetchWithRetry(path, init)
+  await takeLargeSlot()
+  try {
+    return await fetchWithRetry(path, init)
+  } finally {
+    releaseLargeSlot()
+  }
 }
 
 // The ApiError a failed response carries. Reads the body ONCE as text, then
@@ -2118,13 +2180,16 @@ export type FlowEndKind = "ip" | "range" | "prefix" | "any"
 export type FlowSide = "source" | "destination"
 
 /** One end of a flow, ready to show: the address, range or prefix (or
- * "Any"), with the device or VM an address is assigned to. */
+ * "Any"), with the device or VM an address is assigned to. An end the
+ * caller may not view (another site's, #453) keeps its kind and comes back
+ * `hidden`, with no id, device or VM. */
 export interface FlowEnd {
   kind: FlowEndKind
   id: string | null
   label: string
   device: { id: string; name: string } | null
   vm: { id: string; name: string } | null
+  hidden?: boolean
 }
 
 export interface FlowIpRef {
@@ -3418,6 +3483,7 @@ export interface CoolingDeviceRef {
   id: string
   name: string
   device: { id: string; name: string }
+  hidden?: undefined
 }
 
 interface CoolingComponentBase {
@@ -3441,15 +3507,27 @@ export interface CoolingIntake extends CoolingComponentBase {
   cooling_feed: {
     id: string
     name: string
-    source: { id: string; name: string }
+    /** null when the caller may not view the source (#453). */
+    source: { id: string; name: string } | null
   } | null
   outflow: CoolingDeviceRef | null
+  /** Connected to a feed or outflow the caller may not view (another
+   * site's, #453): `cooling_feed` and `outflow` read null. */
+  upstream_hidden?: boolean
+}
+
+/** An intake an outflow serves that the caller may not view (#453). */
+export interface CoolingHiddenRef {
+  id: null
+  name: null
+  device: null
+  hidden: true
 }
 
 export interface CoolingOutflow extends CoolingComponentBase {
   intake: { id: string; name: string } | null
   /** The intakes on other devices this outflow feeds. */
-  served: CoolingDeviceRef[]
+  served: (CoolingDeviceRef | CoolingHiddenRef)[]
 }
 
 export interface CoolingComponentWritePayload {

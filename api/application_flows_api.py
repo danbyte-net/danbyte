@@ -25,6 +25,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
+from core.hidden_fields import hidden_related_spec
 from core.models import Tag
 from core.tags import TAGS
 
@@ -43,6 +44,7 @@ from .models import (
 from .natural import natural
 from .serializers import (
     CustomFieldsSerializerMixin,
+    HiddenRelatedFieldsMixin,
     IPMiniSerializer,
     NumIdModelSerializer,
     StatusSerializerMixin,
@@ -50,6 +52,7 @@ from .serializers import (
     TagSerializer,
     TenantScopedPrimaryKeyRelatedField,
     _clean_port_spec,
+    _HiddenRelatedListSerializer,
 )
 from .views import _get_active_tenant
 from .viewsets import StandardPagination, TenantScopedViewSet
@@ -73,20 +76,40 @@ def _range_label(r) -> str:
     return f"{r.start_address}-{r.end_address}"
 
 
-def end_payload(flow, side: str) -> dict:
-    """One end for display: ``{kind, id, label, device, vm}`` - the device or
-    virtual machine when the end is an address assigned to one."""
+#: The object type of each end kind, for the caller's view scope (#453).
+END_SLUGS = {"ip": "ipaddress", "range": "iprange", "prefix": "prefix"}
+
+
+def hidden_end(kind: str) -> dict:
+    """An end the caller may not view: its kind, nothing that names it."""
+    return {"kind": kind, "id": None, "label": "Hidden", "device": None, "vm": None,
+            "hidden": True}
+
+
+def end_payload(flow, side: str, viewable=None) -> dict:
+    """One end for display: ``{kind, id, label, device, vm, hidden}`` - the
+    device or virtual machine when the end is an address assigned to one.
+    With ``viewable`` (``rbac.ViewableRows``) an end the caller may not view
+    is :func:`hidden_end`, and a device or VM they may not view is left out
+    (#453)."""
     kind, obj = flow.end(side)
-    out = {"kind": kind, "id": None, "label": "Any", "device": None, "vm": None}
+    out = {"kind": kind, "id": None, "label": "Any", "device": None, "vm": None,
+           "hidden": False}
     if obj is None:
         return out
+    if viewable and not viewable.may_view(END_SLUGS[kind], obj.pk):
+        return hidden_end(kind)
     out["id"] = str(obj.pk)
     if kind == "ip":
         out["label"] = str(obj.ip_address)
-        if obj.assigned_device_id:
+        if obj.assigned_device_id and (
+            not viewable or viewable.may_view("device", obj.assigned_device_id)
+        ):
             out["device"] = {"id": str(obj.assigned_device_id),
                              "name": obj.assigned_device.name}
-        if obj.assigned_vm_id:
+        if obj.assigned_vm_id and (
+            not viewable or viewable.may_view("virtualmachine", obj.assigned_vm_id)
+        ):
             out["vm"] = {"id": str(obj.assigned_vm_id), "name": obj.assigned_vm.name}
     elif kind == "range":
         out["label"] = _range_label(obj)
@@ -111,10 +134,13 @@ class ApplicationFlowMiniSerializer(NumIdModelSerializer):
 
 
 class ApplicationFlowSerializer(
-    CustomFieldsSerializerMixin, StatusSerializerMixin,
+    HiddenRelatedFieldsMixin, CustomFieldsSerializerMixin, StatusSerializerMixin,
     TaggableSerializerMixin, NumIdModelSerializer,
 ):
     cf_model = "applicationflow"
+    # An end at another site's address, range or prefix - and the device or
+    # VM it names - shows only to a caller who may view it (#453, as #413).
+    hidden_related = hidden_related_spec("api.applicationflow")
 
     application = serializers.SerializerMethodField()
     application_id = TenantScopedPrimaryKeyRelatedField(
@@ -179,6 +205,17 @@ class ApplicationFlowSerializer(
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
         validators = []  # the unique name is checked in validate() as a field error
+        list_serializer_class = _HiddenRelatedListSerializer
+
+    def prime_related(self, rows) -> None:
+        super().prime_related(rows)
+        viewable = self._viewable()
+        if not viewable:
+            return
+        ips = [getattr(obj, f"{side}_ip") for obj in rows for side in SIDES]
+        ips = [ip for ip in ips if ip is not None]
+        viewable.prime("device", {ip.assigned_device_id for ip in ips})
+        viewable.prime("virtualmachine", {ip.assigned_vm_id for ip in ips})
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_application(self, obj):
@@ -214,11 +251,11 @@ class ApplicationFlowSerializer(
 
     @extend_schema_field(END_SCHEMA)
     def get_source(self, obj):
-        return end_payload(obj, "source")
+        return end_payload(obj, "source", self._viewable())
 
     @extend_schema_field(END_SCHEMA)
     def get_destination(self, obj):
-        return end_payload(obj, "destination")
+        return end_payload(obj, "destination", self._viewable())
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_service(self, obj):
@@ -405,16 +442,37 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                 qs = qs.filter(**{key: v})
         s = params.get("search", "").strip()
         if s:
+            ends = Q()
+            for side in SIDES:
+                for kind, field in (("ip", "ip_address"), ("prefix", "cidr")):
+                    ends |= self._visible_end_q(tenant, f"{side}_{kind}", END_SLUGS[kind],
+                                                f"__{field}__icontains", s)
             qs = qs.filter(
                 Q(name__icontains=s) | Q(description__icontains=s)
                 | Q(application__name__icontains=s) | Q(ports__icontains=s)
-                | Q(source_ip__ip_address__icontains=s)
-                | Q(destination_ip__ip_address__icontains=s)
-                | Q(source_prefix__cidr__icontains=s)
-                | Q(destination_prefix__cidr__icontains=s)
+                | ends
                 | cf_text_q(qs.model, s)
             )
         return qs
+
+    def _visible_end_q(self, tenant, field: str, slug: str, lookup: str, value) -> Q:
+        """``field<lookup>=value``, matched only on an end the caller may
+        view: a search never answers for a hidden end (#453)."""
+        from auth_api import rbac
+
+        match = Q(**{f"{field}{lookup}": value})
+        user = self.request.user
+        if tenant is None or getattr(user, "is_superuser", False):
+            return match
+        f = rbac.row_filter(user, tenant, slug, "view")
+        if f is True:
+            return match
+        if f is None:
+            return Q(pk__in=[])
+        from auth_api.object_types import model_for
+
+        visible = model_for(slug)._default_manager.filter(f).values("pk")
+        return match & Q(**{f"{field}__in": visible})
 
     def perform_create(self, serializer):
         if "status" not in serializer.validated_data:

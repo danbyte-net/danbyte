@@ -29,6 +29,14 @@ class ApiError(RuntimeError):
         super().__init__(f"HTTP {status} from {url}: {detail}")
 
 
+def _retry_after(headers) -> float:
+    """Seconds a 429's ``Retry-After`` asks for, 1 to 30."""
+    try:
+        return min(max(float((headers or {}).get("Retry-After") or 1), 1.0), 30.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
 def _endpoint(kind: str) -> str:
     """``"devices"`` and ``"device"`` both reach ``/api/devices/``."""
     kind = str(kind).strip().strip("/")
@@ -81,7 +89,13 @@ class Client:
                     detail = json.loads(raw)
                 except ValueError:
                     detail = raw[:500].decode(errors="replace")
-                # 4xx is the caller's problem; only retry server/transport errors.
+                # 4xx is the caller's problem; only retry server/transport
+                # errors, and a 429 (too many large pages at once, #452) after
+                # the wait it names.
+                if exc.code == 429 and attempt < self.retries:
+                    time.sleep(_retry_after(exc.headers))
+                    last = exc
+                    continue
                 if exc.code < 500 or attempt == self.retries:
                     raise ApiError(exc.code, detail, path) from None
                 last = exc
