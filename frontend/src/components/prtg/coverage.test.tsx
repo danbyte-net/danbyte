@@ -7,8 +7,8 @@ import { mountWithRouter } from "./prtg-test-utils"
 import { PrtgCoverageStrips } from "./coverage"
 
 // The Coverage strip on a device's Sensors tab: the policies, "n of m
-// sensors", one line when complete, a row per wanted sensor otherwise, and
-// the sensors no policy wants.
+// sensors", closed until opened (remembered per browser), a row per wanted
+// sensor with its per-device switch, and the sensors no policy wants.
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -75,7 +75,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("PrtgCoverageStrips", () => {
-  it("is one line when every sensor is in PRTG", async () => {
+  it("starts closed and remembers being opened", async () => {
     mount({ ...BASE, present: 2, wanted: [wanted("Ping"), wanted("Uptime")] })
     expect(
       (await screen.findByTestId("prtg-coverage-summary")).textContent
@@ -86,12 +86,10 @@ describe("PrtgCoverageStrips", () => {
     expect(screen.queryAllByTestId("prtg-coverage-row")).toHaveLength(0)
     fireEvent.click(screen.getByRole("button", { name: /Coverage/ }))
     expect(screen.getAllByTestId("prtg-coverage-row")).toHaveLength(2)
-    expect(window.localStorage.getItem("danbyte.prtg.coverage.complete")).toBe(
-      "1"
-    )
+    expect(window.localStorage.getItem("danbyte.prtg.coverage.open")).toBe("1")
   })
 
-  it("opens with each missing sensor's state, reason and action", async () => {
+  it("lists each missing sensor's state, reason and action", async () => {
     mount({
       ...BASE,
       present: 1,
@@ -127,6 +125,9 @@ describe("PrtgCoverageStrips", () => {
     expect(
       (await screen.findByTestId("prtg-coverage-summary")).textContent
     ).toBe("1 of 4 sensors · 1 not from a policy")
+    // Incomplete, it still starts closed.
+    expect(screen.queryAllByTestId("prtg-coverage-row")).toHaveLength(0)
+    fireEvent.click(screen.getByRole("button", { name: /Coverage/ }))
     expect(screen.getAllByTestId("prtg-coverage-row")).toHaveLength(4)
     expect(screen.getByText("Planned")).toBeTruthy()
     expect(screen.getByText("PRTG said no.")).toBeTruthy()
@@ -141,6 +142,68 @@ describe("PrtgCoverageStrips", () => {
       })
     )
     expect(screen.getByRole("button", { name: "Apply" })).toBeTruthy()
+  })
+
+  it("opens as the viewer left it", async () => {
+    window.localStorage.setItem("danbyte.prtg.coverage.open", "1")
+    mount({ ...BASE, present: 1, wanted: [wanted("Ping")] })
+    expect(await screen.findAllByTestId("prtg-coverage-row")).toHaveLength(1)
+  })
+
+  it("turns a sensor off for the device, with a note, and back on", async () => {
+    window.localStorage.setItem("danbyte.prtg.coverage.open", "1")
+    mount({
+      ...BASE,
+      present: 1,
+      wanted: [
+        wanted("Ping"),
+        wanted("Uptime", {
+          status: "off",
+          reason: "Off for this device.",
+          override: {
+            enabled: false,
+            by: "ops",
+            at: "2026-10-27T10:00:00Z",
+            note: "No SNMP",
+          },
+        }),
+      ],
+    })
+    expect(
+      (await screen.findByTestId("prtg-coverage-summary")).textContent
+    ).toBe("1 of 1 sensor · 1 off")
+    expect(screen.getByText("Off for this device")).toBeTruthy()
+    const [ping, uptime] = screen.getAllByRole("switch", {
+      name: "Use on this device",
+    })
+    expect(ping.getAttribute("aria-checked")).toBe("true")
+    expect(uptime.getAttribute("aria-checked")).toBe("false")
+
+    fireEvent.click(uptime)
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/prtg/sensor-overrides/?device=d1&definition_key=Uptime",
+        { method: "DELETE" }
+      )
+    )
+
+    fireEvent.click(ping)
+    fireEvent.change(await screen.findByLabelText("Note"), {
+      target: { value: "Lab box" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Turn off" }))
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith("/api/prtg/sensor-overrides/", {
+        method: "PUT",
+        body: JSON.stringify({
+          device: "d1",
+          connection: "c1",
+          definition_key: "Ping",
+          enabled: false,
+          note: "Lab box",
+        }),
+      })
+    )
   })
 
   it("is absent before PRTG has the device", async () => {

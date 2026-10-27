@@ -119,6 +119,7 @@ SITE_PATHS: dict[str, str] = {
     "prtgsensor": "device__site|virtual_machine__site",
     "prtgchange": "device__site|virtual_machine__site",
     "prtghostfacts": "device__site|virtual_machine__site",
+    "prtgsensoroverride": "device__site|virtual_machine__site",
     # A pin follows the object it sits on: the sensor's device or VM, or the
     # address, interface or service the sensor watches.
     "prtgsensorpin": (

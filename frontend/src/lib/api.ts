@@ -13821,7 +13821,16 @@ export interface PrtgPlanEntry {
 
 /** Where one sensor a policy wants stands for an object. */
 export type PrtgCoverageStatus =
-  "present" | "planned" | "failed" | "waiting" | "skipped"
+  "present" | "planned" | "failed" | "waiting" | "skipped" | "off"
+
+/** A wanted sensor turned off (or on) for one device or VM. */
+export interface PrtgSensorOverride {
+  enabled: boolean
+  /** Who set it. */
+  by: string
+  at: string
+  note: string
+}
 
 /** The plan entry's `coverage`: the sensors the matching policies and
  * profiles want for the object, and the PRTG sensors none of them wants. */
@@ -13843,6 +13852,8 @@ export interface PrtgCoverage {
     required: boolean
     interface: { id: string; name: string } | null
     status: PrtgCoverageStatus
+    /** Set for this object against what the policies say. */
+    override?: PrtgSensorOverride | null
     sensor_id?: string
     sensor_objid?: string
     /** The queue row that would write it (or did, and failed). */
@@ -13850,7 +13861,7 @@ export interface PrtgCoverage {
     reason?: string
     issue?: PrtgIssue | null
   }[]
-  /** How many of `wanted` PRTG has. */
+  /** How many of `wanted` PRTG has; sensors turned off are not counted. */
   present: number
   extra: {
     sensor_id: string
