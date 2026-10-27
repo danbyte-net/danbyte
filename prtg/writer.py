@@ -293,7 +293,16 @@ class Writer:
             body.setdefault(scan["section"], {})[scan["field"]] = list(inst["scan_values"])
         elif inst.get("name"):
             basic["name"] = inst["name"]
-        objid = self.v2.create_sensor(device_objid, kindid, body)
+        try:
+            objid = self.v2.create_sensor(device_objid, kindid, body)
+        except PrtgError as exc:
+            # Some kinds' schemas type ``basic.tags`` as one space-separated
+            # text instead of a list (PRTG 26.3 Proxmox sensors); PRTG names
+            # the field in its refusal, so the text form is tried once.
+            if "basic.tags" not in str(exc) or "expected text" not in str(exc):
+                raise
+            basic["tags"] = " ".join(tags)
+            objid = self.v2.create_sensor(device_objid, kindid, body)
         if scanned and inst.get("name"):
             self.v2.update_sensor(objid, {"name": inst["name"], "tags": tags})
         return objid

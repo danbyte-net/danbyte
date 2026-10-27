@@ -42,6 +42,9 @@ from .client import PrtgClient, PrtgError, clean_text, loads_lenient, parse_valu
 #: sensor's warning names "No" (3); "Unsafe" key length is 2, "Weak" 3.
 LOOKUP_STATES = {"0": "none", "1": "ok", "2": "error", "3": "warning", "4": "unknown"}
 
+#: A lookup entry's state as Danbyte's monitoring state.
+_LOOKUP_TO_STATE = {"ok": "up", "warning": "degraded", "error": "down"}
+
 #: range -> (seconds, PRTG ``avg`` in seconds). 60, 96 and 168 points.
 RANGES = {
     "1h": (3600, 60),
@@ -167,6 +170,9 @@ def channel_row(row: dict, mapping: dict) -> dict:
         out.update({
             "kind": "lookup", "value_raw": raw, "lookup_states": lookups,
             "lookup_label": current["label"] if current else display,
+            # PRTG repeats the sensor's status on every channel; the
+            # channel's own verdict is the state of its current lookup value.
+            "state": _LOOKUP_TO_STATE.get(current["state"], "unknown") if current else "unknown",
         })
         return out
     if number is None and not display:
@@ -174,6 +180,7 @@ def channel_row(row: dict, mapping: dict) -> dict:
         out["kind"] = "percent" if info.get("ispercent") else "number"
         out["unit"] = "%" if info.get("ispercent") else ""
     elif number is None:
+        out["state"] = "unknown"
         return out  # a text channel ("Disabled", "Only Strong Protocols Available")
     else:
         out["kind"] = "percent" if (info.get("ispercent") or unit.startswith("%")) else "number"
@@ -191,7 +198,24 @@ def channel_row(row: dict, mapping: dict) -> dict:
         if high <= low:
             high = low + (abs(low) or 1.0)
         out["min"], out["max"] = low, high
+    out["state"] = _limit_state(out["value_raw"], out["limits"])
     return out
+
+
+def _limit_state(value, limits) -> str:
+    """A number's own verdict against its channel limits: ``down`` past an
+    error limit, ``degraded`` past a warning one, ``up`` inside them, and
+    ``unknown`` when the channel has no limits or no reading (PRTG's
+    channel table only repeats the sensor's status)."""
+    if value is None or not any(v is not None for v in limits.values()):
+        return "unknown"
+    if (limits["error_min"] is not None and value < limits["error_min"]) or (
+            limits["error_max"] is not None and value > limits["error_max"]):
+        return "down"
+    if (limits["warn_min"] is not None and value < limits["warn_min"]) or (
+            limits["warn_max"] is not None and value > limits["warn_max"]):
+        return "degraded"
+    return "up"
 
 
 def map_channels(rows, mapping) -> list[dict]:
