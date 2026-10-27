@@ -39,7 +39,7 @@ import { useSaveObject } from "@/lib/save-object"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import {
   PrtgSyncSelect,
-  prtgSaveToast,
+  showPrtgSaveToast,
 } from "@/components/prtg/prtg-sync-select"
 
 interface MiniNamed {
@@ -199,11 +199,8 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       qc.invalidateQueries({ queryKey: ["virtual-machines-picker"] })
       qc.invalidateQueries({ queryKey: ["virtual-machine", saved.id] })
       toast.success(isEdit ? `Updated ${saved.name}` : `Created ${saved.name}`)
-      const prtg = prtgSaveToast(saved.prtg_plan)
-      if (prtg) {
-        toast.info(prtg)
+      if (showPrtgSaveToast(saved.prtg_plan))
         qc.invalidateQueries({ queryKey: ["prtg-plan"] })
-      }
       onSaved(saved)
     },
     onError: (err) => {
