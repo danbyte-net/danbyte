@@ -72,7 +72,7 @@ export function TagMultiSelect({
         />
       ))}
 
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover modal open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             {...fieldProps}
