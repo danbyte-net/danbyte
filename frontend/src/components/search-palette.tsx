@@ -13,11 +13,7 @@ import {
   rememberHit,
   rememberQuery,
 } from "@/lib/search-recents"
-import {
-  matchCards,
-  matchPages,
-  visiblePages,
-} from "@/lib/settings-catalog"
+import { matchCards, matchPages, visiblePages } from "@/lib/settings-catalog"
 import type { SettingsPage } from "@/lib/settings-catalog"
 import { cardAnchor } from "@/components/settings/settings-card"
 import { useSettingsScopes } from "@/components/settings/use-settings-scopes"
@@ -210,7 +206,9 @@ export function SearchPalette() {
                         className={rowCls(i)}
                         data-row=""
                       >
-                        <HitRow hit={h} />
+                        <HitLink hit={h} onOpen={() => rememberHit(h)}>
+                          <HitRow hit={h} />
+                        </HitLink>
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -256,7 +254,15 @@ export function SearchPalette() {
                     className={rowCls(i)}
                     data-row=""
                   >
-                    <HitRow hit={h} />
+                    <HitLink
+                      hit={h}
+                      onOpen={() => {
+                        rememberHit(h)
+                        if (debounced) rememberQuery(debounced)
+                      }}
+                    >
+                      <HitRow hit={h} />
+                    </HitLink>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -334,13 +340,15 @@ function useSettingsHits(query: string): SettingHit[] {
   const pages = visiblePages(held)
   if (!query) return []
 
-  const cards: SettingHit[] = matchCards(pages, query).map(({ card, page }) => ({
-    key: `setting-card-${card.key}`,
-    label: card.label,
-    where: page.label,
-    to: page.to,
-    hash: cardAnchor(card.label),
-  }))
+  const cards: SettingHit[] = matchCards(pages, query).map(
+    ({ card, page }) => ({
+      key: `setting-card-${card.key}`,
+      label: card.label,
+      where: page.label,
+      to: page.to,
+      hash: cardAnchor(card.label),
+    })
+  )
   const seen = new Set(cards.map((c) => c.to))
   const rest: SettingHit[] = matchPages(pages, query)
     .filter((p: SettingsPage) => !seen.has(p.to))
@@ -421,4 +429,36 @@ function learnedNote(hit: {
   return device && hit.subtitle.startsWith(prefix)
     ? hit.subtitle.slice(prefix.length)
     : hit.subtitle
+}
+
+/** A result as a real link, so the browser's own right-click menu offers
+ *  "Open in new tab" and Ctrl/Cmd/middle click open one. A plain click is
+ *  left to the palette, which navigates inside the app. */
+function HitLink({
+  hit,
+  onOpen,
+  children,
+}: {
+  hit: { url: string }
+  onOpen: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <a
+      href={hit.url}
+      className="flex min-w-0 flex-1 items-center gap-3 text-inherit no-underline"
+      onClick={(e) => {
+        if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+          e.preventDefault()
+          return
+        }
+        onOpen()
+      }}
+      onAuxClick={(e) => {
+        if (e.button === 1) onOpen()
+      }}
+    >
+      {children}
+    </a>
+  )
 }

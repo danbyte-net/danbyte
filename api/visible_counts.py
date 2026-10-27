@@ -165,6 +165,11 @@ def tagged_count_expr(request):
         elif f:  # Q() is every row: nothing to narrow
             narrowed.append((ct.pk, model, f))
     rows = TaggedItem.objects.filter(tag=OuterRef("pk"))
+    # Tags can be global, but what they tag belongs to a tenant: count only
+    # the active tenant's objects, as the tag's own object list shows them.
+    tenant = _active_tenant(request)
+    if tenant is not None:
+        rows = rows.filter(_in_tenant(tenant))
     if hidden or narrowed:
         shown = ~Q(content_type_id__in=hidden + [ct for ct, _, _ in narrowed])
         for ct, model, f in narrowed:
@@ -174,6 +179,49 @@ def tagged_count_expr(request):
     sub = rows.order_by().values("tag").annotate(c=Count("pk")).values("c")
     return Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
 
+
+
+@functools.lru_cache(maxsize=1)
+def _tenant_taggables() -> tuple:
+    """Taggable models that carry a ``tenant`` field."""
+    from django.apps import apps
+    from taggit.managers import TaggableManager
+
+    from core.models import TaggedItem
+
+    out = []
+    for model in apps.get_models():
+        fields = model._meta.get_fields()
+        if not any(f.name == "tenant" for f in fields):
+            continue
+        if any(
+            isinstance(f, TaggableManager) and f.remote_field.through is TaggedItem
+            for f in fields
+        ):
+            out.append(model)
+    return tuple(out)
+
+
+def _active_tenant(request):
+    if request is None:
+        return None
+    from api.views import _get_active_tenant
+
+    return _get_active_tenant(request)
+
+
+def _in_tenant(tenant) -> Q:
+    """``TaggedItem`` rows whose object belongs to ``tenant``; rows of types
+    without a tenant are kept."""
+    from django.contrib.contenttypes.models import ContentType
+
+    models = _tenant_taggables()
+    cts = ContentType.objects.get_for_models(*models)
+    keep = ~Q(content_type_id__in=[ct.pk for ct in cts.values()])
+    for model, ct in cts.items():
+        mine = model._default_manager.filter(tenant=tenant, pk=OuterRef("object_id"))
+        keep |= Q(content_type_id=ct.pk) & Q(Exists(mine))
+    return keep
 
 def tagged_count(request, tag) -> int:
     """Count of ``tag``'s tagged rows the reader may view."""

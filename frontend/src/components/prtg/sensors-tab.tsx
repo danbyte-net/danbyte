@@ -849,7 +849,11 @@ function ChannelCard({
         </p>
         <TileCorner
           className="-mt-1 -mr-1"
-          state={c.status ? <CheckStatusBadge status={c.state} /> : undefined}
+          state={
+            c.state && c.state !== "unknown" ? (
+              <CheckStatusBadge status={c.state} />
+            ) : undefined
+          }
           controls={
             pinnable ? [<PinToggle sensor={sensor} channelId={c.id} />] : []
           }
