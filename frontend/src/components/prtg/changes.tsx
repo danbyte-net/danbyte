@@ -32,6 +32,7 @@ import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { PanelSection, PanelShell } from "@/components/map-panel"
+import { cn } from "@/lib/utils"
 import { Section } from "@/components/ui/section"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useTableFilters } from "@/components/table-filters"
@@ -431,7 +432,14 @@ export function PrtgChanges({
             : "Nothing dismissed either."}
         </EmptyState>
       ) : (
-        <div className="relative flex min-w-0 overflow-hidden rounded-lg border border-border">
+        <div
+          className={cn(
+            "relative flex min-w-0 overflow-hidden rounded-lg border border-border",
+            // Room for the side panel: a short queue must not squeeze it
+            // into a scrolling strip.
+            open && "min-h-[28rem]"
+          )}
+        >
           {rail}
           <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
             <DataTable
