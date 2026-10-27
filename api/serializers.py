@@ -5479,11 +5479,18 @@ class _CoolingComponentSerializer(CustomFieldsSerializerMixin, TaggableSerialize
         return getattr(self.instance, field, None) if self.instance else None
 
 
-class CoolingIntakeSerializer(_CoolingComponentSerializer):
+class CoolingIntakeSerializer(HiddenRelatedFieldsMixin, _CoolingComponentSerializer):
     """Where coolant enters a device: fed by a ``cooling_feed`` or by an
-    ``outflow`` on another device (a CDU) - at most one of the two."""
+    ``outflow`` on another device (a CDU) - at most one of the two.
+
+    A feed or outflow the caller may not view - another site's - reads
+    ``null``, as does a feed's source they may not view, and
+    ``upstream_hidden`` says the intake is connected to something hidden
+    (#453, as #413 for addresses)."""
 
     cf_model = "coolingintake"
+    hidden_related = hidden_related_spec("api.coolingintake")
+    upstream_hidden = serializers.SerializerMethodField()
     cooling_feed = serializers.SerializerMethodField()
     cooling_feed_id = TenantScopedPrimaryKeyRelatedField(
         source="cooling_feed", queryset=CoolingFeed.objects.all(),
@@ -5495,13 +5502,42 @@ class CoolingIntakeSerializer(_CoolingComponentSerializer):
         write_only=True, required=False, allow_null=True,
     )
 
+    def prime_related(self, rows) -> None:
+        super().prime_related(rows)
+        viewable = self._viewable()
+        if not viewable:
+            return
+        viewable.prime("coolingsource", {
+            obj.cooling_feed.source_id for obj in rows if obj.cooling_feed_id
+        })
+        viewable.prime("device", {obj.outflow.device_id for obj in rows if obj.outflow_id})
+
+    def hidden_fields(self, obj) -> set[str]:
+        out = super().hidden_fields(obj)
+        viewable = self._viewable()
+        # The outflow names its device: a device the caller may not view
+        # hides it too.
+        if viewable and obj.outflow_id and not viewable.may_view(
+            "device", obj.outflow.device_id
+        ):
+            out.add("outflow")
+        return out
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_upstream_hidden(self, obj) -> bool:
+        return bool({"cooling_feed", "outflow"} & self.hidden_fields(obj))
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cooling_feed(self, obj):
         f = obj.cooling_feed
         if f is None:
             return None
-        return {"id": str(f.pk), "name": f.name,
-                "source": {"id": str(f.source_id), "name": f.source.name}}
+        viewable = self._viewable()
+        source = (
+            {"id": str(f.source_id), "name": f.source.name}
+            if not viewable or viewable.may_view("coolingsource", f.source_id) else None
+        )
+        return {"id": str(f.pk), "name": f.name, "source": source}
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_outflow(self, obj):
@@ -5529,14 +5565,22 @@ class CoolingIntakeSerializer(_CoolingComponentSerializer):
         fields = ["id", "device", "device_id", "name", "label",
                   *_COOLING_COMPONENT_FIELDS,
                   "cooling_feed", "cooling_feed_id", "outflow", "outflow_id",
+                  "upstream_hidden",
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "upstream_hidden", "created_at", "updated_at"]
+        list_serializer_class = _HiddenRelatedListSerializer
 
 
-class CoolingOutflowSerializer(_CoolingComponentSerializer):
+#: An intake an outflow serves that the caller may not view (#453).
+HIDDEN_SERVED = {"id": None, "name": None, "device": None, "hidden": True}
+
+
+class CoolingOutflowSerializer(HiddenRelatedFieldsMixin, _CoolingComponentSerializer):
     """Where coolant leaves a device; ``intake`` is the intake on the same
-    device that feeds it, ``served`` the intakes on other devices it feeds."""
+    device that feeds it, ``served`` the intakes on other devices it feeds -
+    one the caller may not view (another site's) reads
+    ``{"hidden": true}`` and names nothing (#453)."""
 
     cf_model = "coolingoutflow"
     intake = serializers.SerializerMethodField()
@@ -5550,9 +5594,24 @@ class CoolingOutflowSerializer(_CoolingComponentSerializer):
     def get_intake(self, obj):
         return _cooling_ref(obj.intake)
 
+    def prime_related(self, rows) -> None:
+        viewable = self._viewable()
+        if not viewable:
+            return
+        intakes = [i for obj in rows for i in obj.intakes.all()]
+        viewable.prime("coolingintake", {i.pk for i in intakes})
+        viewable.prime("device", {i.device_id for i in intakes})
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_served(self, obj):
-        return [_cooling_ref(i, with_device=True) for i in obj.intakes.all()]
+        viewable = self._viewable()
+        return [
+            _cooling_ref(i, with_device=True)
+            if not viewable or (viewable.may_view("coolingintake", i.pk)
+                                and viewable.may_view("device", i.device_id))
+            else dict(HIDDEN_SERVED)
+            for i in obj.intakes.all()
+        ]
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -5572,6 +5631,7 @@ class CoolingOutflowSerializer(_CoolingComponentSerializer):
                   "description", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "served", "created_at", "updated_at"]
+        list_serializer_class = _HiddenRelatedListSerializer
 
 
 class CoolingComponentMiniSerializer(serializers.Serializer):

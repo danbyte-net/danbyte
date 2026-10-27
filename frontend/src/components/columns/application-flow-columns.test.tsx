@@ -5,7 +5,7 @@ import { flexRender } from "@tanstack/react-table"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { ApplicationFlow } from "@/lib/api"
-import { flowServiceLabel } from "@/lib/flows"
+import { endKey, flowServiceLabel } from "@/lib/flows"
 import { endPayload } from "@/components/application-flow-pane"
 import {
   buildApplicationFlowColumns,
@@ -81,6 +81,32 @@ describe("application flow columns", () => {
     expect(flowEndText(flow.source)).toBe("10.1.0.10 web1")
   })
 
+  it("read an end the caller may not view as a muted Hidden (#453)", () => {
+    const hidden = {
+      kind: "ip",
+      id: null,
+      label: "Hidden",
+      device: null,
+      vm: null,
+      hidden: true,
+    } as const
+    const col = buildApplicationFlowColumns().find(
+      (c) => c.id === "destination"
+    )!
+    const { container } = render(
+      <>
+        {flexRender(col.cell, {
+          row: { original: { ...flow, destination: hidden } },
+        } as never)}
+      </>
+    )
+    expect(container.textContent).toBe("Hidden")
+    expect(container.querySelector("a")).toBeNull()
+    expect(container.querySelector(".text-muted-foreground")).toBeTruthy()
+    expect(flowEndText(hidden)).toBe("Hidden")
+    expect(endKey(hidden, "destination")).toBe("hidden:destination")
+  })
+
   it("read the protocol and ports as one label", () => {
     cell("service")
     expect(screen.getByText("TCP 443, 8443")).toBeTruthy()
@@ -112,5 +138,11 @@ describe("flow end payload", () => {
       destination_prefix_id: null,
       destination_any: true,
     })
+  })
+
+  it("sends nothing for a hidden end, so the server keeps it", () => {
+    expect(
+      endPayload("destination", { kind: "ip", id: null, hidden: true })
+    ).toEqual({})
   })
 })

@@ -186,6 +186,13 @@ sites; a site viewer reads them. A flow between two *Any* ends has no site.
 Every reference - application, addresses, ranges, prefixes, service,
 status, tags - must be the active tenant's.
 
+A reader who may read a flow but not one of its ends - a Site A viewer
+reading a flow to a Site B address - sees that end as *Hidden*: the table,
+the Application map, the diagram and its PDF name no address, DNS name,
+range, prefix, device or VM for it, and searching flows does not match on
+it. An address end they may view still leaves out a device or VM they may
+not. Editing such a flow keeps the hidden end unless you pick another.
+
 ## API
 
 | Endpoint | |
@@ -201,13 +208,17 @@ Filters:
 | `?device=`, `?vm=` | The same for every address assigned to the device or VM. |
 | `?prefix=`, `?range=` | Flows with the prefix or range at either end. |
 | `?protocol=`, `?direction=`, `?status=`, `?service=` | Exact. |
-| `?search=` | Name, description, application name, ports, end addresses and CIDRs. |
+| `?search=` | Name, description, application name, ports, and the end addresses and CIDRs you may view. |
 
 A flow carries `application` (`{id, name, slug, path}`), `source` and
-`destination` (`{kind, id, label, device, vm}` - `kind` is `ip`, `range`,
-`prefix` or `any`), the ends' own references (`source_ip`, `source_range`,
-`source_prefix`, `source_any`, and the `destination_*` set), `protocol`,
-`ports`, `direction`, `status` and `service`. Write `application_id`,
+`destination` (`{kind, id, label, device, vm, hidden}` - `kind` is `ip`,
+`range`, `prefix` or `any`), the ends' own references (`source_ip`,
+`source_range`, `source_prefix`, `source_any`, and the `destination_*`
+set), `protocol`, `ports`, `direction`, `status` and `service`. An end you
+may not view comes back `{"kind": …, "id": null, "label": "Hidden",
+"device": null, "vm": null, "hidden": true}` with its reference
+(`destination_ip`, …) `null`, as is a `service` or an end's `device` or `vm`
+you may not view. A write that leaves an end's keys out keeps that end. Write `application_id`,
 `source_ip_id`, `source_range_id`, `source_prefix_id` or `source_any`, the
 `destination_*` equivalents, `status_id` and `service_id`.
 
