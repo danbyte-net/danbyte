@@ -158,6 +158,9 @@ export function prtgIssueLinks(
     case "no_address":
       return target
         ? [
+            <ObjectLink key="ips" object={target} tab="ips">
+              Set a primary address
+            </ObjectLink>,
             <ObjectLink key="obj" object={target} edit>
               Edit {target.kind === "device" ? "device" : "VM"}
             </ObjectLink>,
