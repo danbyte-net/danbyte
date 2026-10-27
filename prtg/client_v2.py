@@ -237,8 +237,19 @@ class PrtgV2Client:
         return id_from_location(resp.headers.get("Location", ""))
 
     def update_device(self, objid, sections: dict) -> None:
-        """``PATCH /devices/{id}`` with whole settings sections."""
-        self._call("PATCH", f"/devices/{objid}", body=sections, ok=(200, 204))
+        """``PATCH /devices/{id}`` with whole settings sections.
+
+        A device created a moment ago answers 404 here too until PRTG has
+        registered it, so that answer is waited out like for sensors."""
+        deadline = time.monotonic() + self.parent_wait_seconds
+        while True:
+            try:
+                self._call("PATCH", f"/devices/{objid}", body=sections, ok=(200, 204))
+                return
+            except PrtgNotFound:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(self.poll_seconds)
 
     def move(self, objid, parent_id) -> None:
         self._call("POST", f"/objects/{objid}/move", body={"parent": str(parent_id)},

@@ -33,6 +33,7 @@ import hashlib
 import hmac
 import logging
 import re
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.utils import timezone
@@ -841,9 +842,39 @@ def ready(change: PrtgChange) -> bool:
     )
 
 
+#: Auto-apply's wait after a row's 1st, 2nd and later failed tries, and
+#: how many failed tries it makes before it leaves the row to a person.
+RETRY_BACKOFF = (timedelta(minutes=2), timedelta(minutes=10), timedelta(minutes=30))
+RETRY_LIMIT = 5
+
+
+def retry_due(change: PrtgChange, now=None) -> bool:
+    """Whether auto-apply may try a row again: never-tried rows always,
+    failed ones after a growing wait, and not at all after RETRY_LIMIT
+    failures in a row. A person's Apply or Retry ignores this."""
+    log = (change.detail or {}).get("log") or []
+    failures = 0
+    for entry in reversed(log):
+        if entry.get("ok"):
+            break
+        failures += 1
+    if not failures:
+        return True
+    if failures >= RETRY_LIMIT:
+        return False
+    last = log[-1].get("at")
+    try:
+        at = datetime.fromisoformat(last)
+    except (TypeError, ValueError):
+        return True
+    wait = RETRY_BACKOFF[min(failures, len(RETRY_BACKOFF)) - 1]
+    return (now or timezone.now()) >= at + wait
+
+
 def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
     """Apply every ready planned row of a connection (or those of ``ids``),
-    one at a time. Returns per-row results."""
+    one at a time. Returns per-row results. Without a user (auto-apply) a
+    failed row waits per :func:`retry_due`."""
     rows = PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED).select_related(
         "device", "virtual_machine", "connection", "connection__tenant"
     ).order_by("kind", "created_at")
@@ -852,6 +883,8 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
     out = []
     for change in rows:
         if not ready(change):
+            continue
+        if user is None and ids is None and not retry_due(change):
             continue
         try:
             r = apply(change, user=user)

@@ -639,6 +639,9 @@ is off, and gated on the PRTG permissions (group *Monitoring*).
 | `vm-states/` | The same for virtual machines. Feeds the VM-list column. |
 | `hook/<token>/` | `POST`, no session: the push receiver above. 202 when accepted. |
 
+**Retries.** Auto-apply picks up every Ready row, old ones included. A row whose apply failed is tried again after 2, 10 and then 30 minutes; after five failed tries in a row it stops and leaves the row as *Failed* for a person to retry. **Retry** in the queue always tries at once.
+
+
 ## Registering devices and VMs
 
 Danbyte can say which of its devices and VMs PRTG should monitor, where in
