@@ -39,6 +39,14 @@ import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
 import { PrtgGroupPicker } from "@/components/prtg/group-picker"
 import { PrtgPolicies } from "@/components/prtg/policies"
 import { PrtgProfiles } from "@/components/prtg/profiles"
+import { PrtgCredentials } from "@/components/prtg/credentials"
+import {
+  GroupLayoutFields,
+  GroupLayoutPreview,
+  PrtgGroupLayoutCard,
+  layoutOf,
+} from "@/components/prtg/group-layout"
+import type { GroupLayoutValue } from "@/components/prtg/group-layout"
 import {
   PrtgChanges,
   needsPerson,
@@ -281,6 +289,13 @@ function PrtgPage() {
                   onDelete={() => setDeleting(conn)}
                 />
               </div>
+              {conn.write_mode !== "none" && (
+                <PrtgGroupLayoutCard
+                  key={`${conn.id}-${conn.updated_at}`}
+                  connection={conn}
+                  canManage={canManage}
+                />
+              )}
               {conn.push_enabled && canManage && (
                 <PushSetup conn={conn} onRotated={refresh} />
               )}
@@ -296,7 +311,10 @@ function PrtgPage() {
             <PrtgPolicies connection={conn} canManage={canManage} />
           )}
           {tab === "profiles" && (
-            <PrtgProfiles connection={conn} canManage={canManage} />
+            <>
+              <PrtgProfiles connection={conn} canManage={canManage} />
+              <PrtgCredentials connection={conn} canManage={canManage} />
+            </>
           )}
           {tab === "adoption" && (
             <PrtgAdoptionRules connection={conn} canManage={canManage} />
@@ -882,6 +900,9 @@ function PrtgConnectionForm({
   const [pruneDevices, setPruneDevices] = useState(
     connection?.prune_devices ?? false
   )
+  const [layout, setLayout] = useState<GroupLayoutValue | null>(
+    connection ? layoutOf(connection) : null
+  )
   const prtgDevices = useQuery({
     queryKey: ["prtg-devices", connection?.id],
     queryFn: () =>
@@ -980,6 +1001,7 @@ function PrtgConnectionForm({
                   tag_site_role: tagSiteRole,
                   auto_apply_registration: autoApply,
                   prune_devices: pruneDevices,
+                  ...(layout ?? {}),
                 }
               : {}),
           }),
@@ -1205,6 +1227,24 @@ function PrtgConnectionForm({
         </FormSection>
       )}
 
+      {connection && layout && connection.write_mode !== "none" && (
+        <FormSection title="Group layout" card>
+          <FormColumns>
+            <FormColumn>
+              <GroupLayoutFields
+                connection={connection}
+                value={layout}
+                onChange={setLayout}
+                errors={fieldErrors}
+              />
+            </FormColumn>
+            <FormColumn>
+              <GroupLayoutPreview connectionId={connection.id} value={layout} />
+            </FormColumn>
+          </FormColumns>
+        </FormSection>
+      )}
+
       {connection && (
         <FormSection title="Writes" card>
           <Field
@@ -1270,7 +1310,7 @@ function PrtgConnectionForm({
               />
               <FormCheckbox
                 label="Propose removing devices"
-                info="A PRTG device Danbyte created whose object leaves PRTG's plan is proposed for removal. Devices Danbyte did not create are never touched."
+                info="A PRTG device Danbyte created whose object leaves PRTG's plan is proposed for removal, and so is an empty group Danbyte made for the group layout. Devices and groups Danbyte did not create are never touched."
                 checked={pruneDevices}
                 onChange={setPruneDevices}
               />

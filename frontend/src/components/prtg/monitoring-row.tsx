@@ -530,6 +530,38 @@ function DetailsEntry({
       value: <Registration entry={e} object={object} />,
     },
     { label: "Planned", value: <Planned entry={e} object={object} /> },
+    ...((e.credential_placement ?? []).length > 0
+      ? [
+          {
+            label: "Credentials",
+            value: (
+              <span className="grid gap-0.5" data-testid="prtg-credentials">
+                {(e.credential_placement ?? []).map((c) => (
+                  <span
+                    key={c.section}
+                    className={
+                      c.mode === "inherit" && c.state?.set === false
+                        ? "text-amber-600 dark:text-amber-400"
+                        : ""
+                    }
+                  >
+                    {c.label}:{" "}
+                    {c.mode === "group"
+                      ? `set on the group${c.credential ? `, ${c.credential}` : ""}`
+                      : c.mode === "device"
+                        ? `set on the device${c.credential ? `, ${c.credential}` : ""}`
+                        : c.state?.set === false
+                          ? "not set on any group above this device"
+                          : c.text
+                            ? c.text.charAt(0).toLowerCase() + c.text.slice(1)
+                            : "inherited"}
+                  </span>
+                ))}
+              </span>
+            ),
+          },
+        ]
+      : []),
   ]
   return (
     <div className="grid gap-2">

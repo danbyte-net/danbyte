@@ -186,6 +186,74 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             for r in rows
         ])
 
+    @action(detail=True, methods=["get"], url_path="layout-preview")
+    def layout_preview(self, request, pk=None):
+        """The group layout for up to 20 of the tenant's devices and VMs,
+        from Danbyte's data and the last group list - nothing is asked of
+        PRTG. ``?layout=`` ``&regions=`` ``&locations=`` ``&root=`` preview
+        a setting before it is saved; each defaults to the stored one."""
+        from .layout import preview, root_of
+
+        conn = self.get_object()
+        q = request.query_params
+        layout = q.get("layout") or conn.group_layout
+        if layout not in dict(PrtgConnection.GROUP_LAYOUT_CHOICES):
+            return Response({"detail": "Unknown layout."}, status=400)
+
+        def flag(name, stored):
+            value = q.get(name)
+            return stored if value is None else value in ("1", "true")
+
+        if q.get("root") is not None:
+            # Previewing an unsaved root; blank is the registration group.
+            objid = q["root"].strip()
+            if objid and not objid.isdigit():
+                return Response({"detail": "A PRTG object id is a number."}, status=400)
+            conn.layout_root_id = objid
+            conn.layout_root_path = objid
+        root = root_of(conn)
+        tenant = conn.tenant
+        devices = rbac.restrict_queryset(
+            Device.objects.filter(tenant=tenant), request.user, tenant, "device", "view",
+        ).select_related("site", "location", "role").order_by("site__name", "name")[:20]
+        objects = list(devices)
+        if len(objects) < 20:
+            vms = rbac.restrict_queryset(
+                VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
+                "virtualmachine", "view",
+            ).select_related("site", "cluster", "device", "role").order_by("name")
+            objects.extend(vms[: 20 - len(objects)])
+        return Response(preview(
+            conn, objects, layout=layout,
+            regions=flag("regions", conn.layout_regions),
+            locations=flag("locations", conn.layout_locations), root=root,
+        ))
+
+    @action(detail=True, methods=["get"], url_path="credential-state")
+    def credential_state(self, request, pk=None):
+        """What PRTG has in effect for credential sections on a probe, group
+        or device, read live: ``?objid=&kind=group|probe|device&sections=a,b``
+        answers ``{objid, sections: {section: {set, inherited, source,
+        text}}}``. Never a value."""
+        from .credentials import describe, read_effective, section_label
+
+        conn = self.get_object()
+        objid = (request.query_params.get("objid") or "").strip()
+        kind = request.query_params.get("kind") or "group"
+        sections = [s for s in (request.query_params.get("sections") or "").split(",") if s]
+        if not objid.isdigit() or kind not in ("group", "probe", "device") or not sections:
+            return Response({"detail": "objid, kind and sections are needed."}, status=400)
+        if not conn.api_key_set:
+            return Response({"objid": objid, "sections": {}, "error": "No API key is set."})
+        state = read_effective(conn, objid, kind, sections[:20])
+        if state is None:
+            return Response({"objid": objid, "sections": {},
+                             "error": "PRTG did not answer through API v2."})
+        return Response({"objid": objid, "sections": {
+            name: {**value, "text": describe(value, section_label(name))}
+            for name, value in state.items()
+        }})
+
     @action(detail=True, methods=["get"], url_path="sensor-kinds")
     def sensor_kinds(self, request, pk=None):
         """The sensor kinds this PRTG offers to add by hand, cached for a

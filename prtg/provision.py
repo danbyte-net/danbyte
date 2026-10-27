@@ -123,8 +123,17 @@ TEXT = {
                           "Remove it in PRTG if it should go.",
     "no_writes": "This PRTG cannot create objects through its API. Name a seed device "
                  "on the connection, or use PRTG 26.2.120 or later.",
+    "group_writes": "Creating and changing groups needs PRTG API v2, from PRTG 26.2.120 "
+                    "on.",
+    "credentials_missing": "{label} credentials are not set on any group above this "
+                           "device. Set them in PRTG, or choose Set on the group or Set on "
+                           "the device for {label} on the profile.",
+    "no_credential": "{label} is set on the {where} by the profile, but Danbyte has no "
+                     "{label} credential to send. Pick one on the profile, or add one on "
+                     "the object's Access tab.",
+    "empty_group": "Danbyte made this group and nothing goes in it any more.",
 }
-_TEXT_ONLY = ("status", "label", "tab")
+_TEXT_ONLY = ("status", "label", "tab", "where")
 
 
 def issue(code: str, **values) -> dict:
@@ -224,6 +233,18 @@ class Context:
         self.register_profile = None
         self._regions: dict = {}
         self._locations: dict = {}
+        #: The group layout's pass state (:class:`LayoutPass`), made on use.
+        self.layout_pass = None
+        #: Whether this pass may ask PRTG what credentials are in effect
+        #: (the full plan); one object's plan uses what the last read kept.
+        self.live = False
+        self.v2 = None
+        self.reads: dict = {}
+
+    def layout(self, conn) -> LayoutPass:
+        if self.layout_pass is None:
+            self.layout_pass = LayoutPass(conn)
+        return self.layout_pass
 
     def region_chain(self, site_id) -> set:
         if not site_id:
@@ -326,6 +347,8 @@ class Want:
     policies: list = field(default_factory=list)
     profiles: list = field(default_factory=list)
     group: dict | None = None
+    #: The group comes from the connection's group layout.
+    layout: bool = False
 
     @property
     def managed(self) -> bool:
@@ -386,16 +409,74 @@ def decide(conn: PrtgConnection, obj, ctx: Context, *, linked: bool,
             if policy.profile_id and policy.profile_id not in seen:
                 seen.add(policy.profile_id)
                 want.profiles.append(policy.profile)
-        lead = next((p for p in matched if p.group_id), None)
-        if lead is not None:
+        lead = next((p for p in matched if p.group_id or p.use_layout), None)
+        if lead is not None and lead.use_layout:
+            want.layout = True
+            want.group = _layout_group(conn, lead)
+        elif lead is not None:
             want.group = {"objid": lead.group_id, "path": lead.group_path,
                           "source": "policy", "policy": lead.name,
                           "policy_id": str(lead.id)}
     if not want.profiles and ctx.register_profile is not None:
         want.profiles.append(ctx.register_profile)
-    if want.group is None:
-        want.group = _register_group(conn)
+    if want.group is None and not want.layout:
+        if conn.group_layout != PrtgConnection.LAYOUT_NONE:
+            want.layout = True
+            want.group = _layout_group(conn)
+        else:
+            want.group = _register_group(conn)
     return want
+
+
+def _layout_group(conn, policy=None) -> dict | None:
+    """The layout's root as a placeholder group, until the planning pass
+    works out the chain under it. None without a root."""
+    from .layout import root_of
+
+    root = root_of(conn)
+    if root is None:
+        return None
+    out = {"objid": root["objid"], "path": root["path"], "kind": root["kind"],
+           "source": "layout", "layout": True, "root": root}
+    if policy is not None:
+        out.update(policy=policy.name, policy_id=str(policy.id))
+    return out
+
+
+class LayoutPass:
+    """The group layout over one planning pass: Danbyte's tree, PRTG's
+    groups, and the group rows proposed so far."""
+
+    def __init__(self, conn):
+        from .layout import Groups, Tree
+
+        self.conn = conn
+        self.tree = Tree(conn.tenant)
+        self.groups = Groups(conn.groups_cache or [])
+        self.proposed: set = set()
+        #: Every PRTG group the layout wants, by object id - kept by pruning.
+        self.used: set = set()
+
+    def place(self, obj, want) -> list:
+        """Turn ``want.group`` (the root) into the object's own group and
+        return the chain's steps."""
+        from .layout import chain, resolve, target
+
+        root = (want.group or {}).get("root")
+        if root is None:
+            return []
+        layout = self.conn.group_layout
+        if layout == PrtgConnection.LAYOUT_NONE:
+            # A policy asked for the layout while the connection has none.
+            layout = PrtgConnection.LAYOUT_SITES
+        nodes = chain(self.conn, obj, self.tree, layout=layout)
+        steps = resolve(root, nodes, self.groups)
+        extra = {k: v for k, v in want.group.items()
+                 if k in ("policy", "policy_id")}
+        want.group = {**target(root, steps), **extra}
+        self.used.add(root["objid"])
+        self.used.update(s.objid for s in steps if s.objid)
+        return steps
 
 
 # ── definitions into sensors ────────────────────────────────────────────────
@@ -668,6 +749,9 @@ def group_issue(want: Want, groups_by_id: dict) -> dict | None:
     extra = {"policy": lead} if lead else {}
     if want.group is None:
         return issue("no_group", **extra)
+    if want.group.get("layout") and not want.group.get("objid"):
+        # A layout group the plan creates first.
+        return None
     if want.group["objid"] not in groups_by_id:
         path = want.group.get("path") or want.group["objid"]
         return issue("group_gone", path=path, **extra)
@@ -747,6 +831,7 @@ def has_work(conn) -> bool:
         or PrtgSensor.objects.filter(connection=conn, tags__icontains=DEF_TAG).exists()
         or PrtgChange.objects.filter(connection=conn, kind__in=PrtgChange.PLANNED).exists()
         or PrtgDeviceLink.objects.filter(connection=conn, created_here=True).exists()
+        or conn.group_links.filter(created_here=True).exists()
     )
 
 
@@ -762,9 +847,7 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
     from .reader import client_for
 
     now = now or timezone.now()
-    counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
-              "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
-              "no_address": 0, "awaiting_link": 0}
+    counts = new_counts()
     if not has_work(conn):
         drop_stale(conn, set(), now)
         return counts
@@ -791,6 +874,7 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
 
     fresh: set = set()
     no_writes = conn.write_mode == PrtgConnection.WRITE_NONE
+    ctx.live = True
     with transaction.atomic():
         for obj in _objects(conn):
             link = links.get(obj.id)
@@ -803,8 +887,281 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
                 waiting=obj.id in waiting, counts=counts, fresh=fresh,
                 no_writes=no_writes,
             )
+        _plan_prune_groups(conn, ctx, groups, parent_of, counts, fresh)
         drop_stale(conn, fresh, now)
     return counts
+
+
+def new_counts() -> dict:
+    return {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
+            "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
+            "no_address": 0, "awaiting_link": 0, "create_group": 0, "rename_group": 0,
+            "remove_group": 0, "group_creds": 0}
+
+
+def group_writes(conn) -> bool:
+    """Whether this PRTG takes group writes: API v2 only."""
+    return conn.write_mode == PrtgConnection.WRITE_V2 or bool(conn.v2_available)
+
+
+def _plan_groups(conn, ctx, steps, counts, fresh) -> None:
+    """The group rows one object's chain needs: ``create_group`` for each
+    missing group, top-down, and ``rename_group`` for a group Danbyte made
+    (found by its tag) whose Danbyte object was renamed. Each once a pass."""
+    from .models import PrtgGroupLink
+
+    lp = ctx.layout(conn)
+    blocked = [] if group_writes(conn) else [issue("group_writes")]
+    for step in steps:
+        if step.key in lp.proposed:
+            continue
+        lp.proposed.add(step.key)
+        node = step.node
+        if not step.exists:
+            counts["create_group"] += 1
+            if blocked:
+                counts["not_applicable"] += 1
+            parent_path = step.path.rsplit(" / ", 1)[0]
+            propose(conn, fresh, {
+                "name": node.name, "kind": node.kind, "object_id": node.object_id,
+                "tag": node.tag, "tags": ["danbyte", node.tag],
+                "parent": {"objid": step.parent_objid, "key": step.parent_key,
+                           "path": parent_path},
+                "path": step.path, "depth": step.depth,
+                "applicable": not blocked, "reason": " ".join(i["text"] for i in blocked),
+                "issues": blocked,
+            }, kind=PrtgChange.CREATE_GROUP, key=step.key)
+            continue
+        made = step.matched_by == "tag"
+        if made and step.current_name != node.name:
+            counts["rename_group"] += 1
+            if blocked:
+                counts["not_applicable"] += 1
+            propose(conn, fresh, {
+                "objid": step.objid, "kind": node.kind, "object_id": node.object_id,
+                "from": step.current_name, "to": node.name, "path": step.path,
+                "depth": step.depth,
+                "applicable": not blocked, "reason": " ".join(i["text"] for i in blocked),
+                "issues": blocked,
+            }, kind=PrtgChange.RENAME_GROUP, key=step.key)
+        # Keep what PRTG has on record, so the writer and pruning know it.
+        PrtgGroupLink.objects.update_or_create(
+            connection=conn, key=step.key,
+            defaults={"tenant": conn.tenant, "objid": step.objid, "name": step.current_name,
+                      "path": step.path[:500], "parent_objid": step.parent_objid,
+                      "kind": node.kind, "object_id": node.object_id, "tag": node.tag},
+        )
+
+
+def _group_kind(conn, objid: str, known: str = "") -> str:
+    """``probe`` or ``group`` for a PRTG object id, from the last group
+    list: API v2 reads and writes probes and groups at different paths."""
+    if known:
+        return known
+    for g in conn.groups_cache or []:
+        if g.get("objid") == str(objid):
+            return g.get("kind") or "group"
+    return "group"
+
+
+def _above(want, steps, conn=None) -> tuple[str, str] | None:
+    """The PRTG object whose settings a new device inherits: its group, or
+    for a layout group not made yet the deepest one that is there."""
+    group = want.group or {}
+    if group.get("objid"):
+        kind = group.get("kind") or (_group_kind(conn, group["objid"]) if conn else "group")
+        return group["objid"], kind
+    for step in reversed(steps):
+        if step.exists:
+            return step.objid, "group"
+    root = group.get("root") or {}
+    if root.get("objid"):
+        return root["objid"], root.get("kind") or "group"
+    return None
+
+
+def _by_profile(entry: dict) -> dict:
+    by = entry.get("by") or {}
+    out = {}
+    if by.get("profile"):
+        out["profile"] = by["profile"]
+    if by.get("policy"):
+        out["policy"] = by["policy"]
+    return out
+
+
+def _inherit_issues(conn, ctx, placement: dict, above, *, kind_hint=None) -> list:
+    """``credentials_missing`` for each section left to inheritance that
+    PRTG has set nowhere above ``above`` - read live in the full plan, from
+    the last read otherwise."""
+    from .credentials import INHERIT, cached_effective, read_effective, section_label
+
+    sections = [s for s, e in placement.items() if e.get("mode", INHERIT) == INHERIT]
+    if not sections or above is None:
+        return []
+    objid, kind = above
+    if ctx.live:
+        state = read_effective(conn, objid, kind_hint or kind, sections, v2=ctx.v2,
+                               cache=ctx.reads) or {}
+    else:
+        state = cached_effective(conn, objid)
+    out = []
+    for name in sections:
+        if (state.get(name) or {}).get("set") is False:
+            out.append(issue("credentials_missing", label=section_label(name),
+                             section=name, **_by_profile(placement[name])))
+    return out
+
+
+def _unplaced(missing: list, placement: dict) -> list:
+    """Drop "Danbyte holds no SNMP profile / Windows login" for a section
+    the profile places with a credential of its own choosing."""
+    from .credentials import GROUP, INHERIT
+
+    section = {"no_snmp": "snmpversiongroup", "no_windows": "windowsconnection",
+               "no_windows_vm": "windowsconnection"}
+    out = []
+    for m in missing:
+        entry = placement.get(section.get(m.get("code"), ""), {})
+        mode = entry.get("mode", INHERIT)
+        if mode == GROUP or (mode != INHERIT and (entry.get("credential")
+                                                  or entry.get("snmp_profile"))):
+            continue
+        out.append(m)
+    return out
+
+
+def _unsaid(placement: dict, missing: list) -> dict:
+    """The placement less sections an issue already speaks for (Danbyte
+    holds no SNMP profile or Windows login): one sentence per problem."""
+    said = {{"no_snmp": "snmpversiongroup", "no_windows": "windowsconnection",
+             "no_windows_vm": "windowsconnection"}.get(m.get("code")) for m in missing}
+    return {k: v for k, v in placement.items() if k not in said}
+
+
+def _device_placement(obj, placement: dict) -> tuple[list, list]:
+    """The sections set on the device itself, by name, and an issue for
+    each Danbyte has nothing to send for."""
+    from .credentials import DEVICE, section_label, values_for
+
+    names, issues = [], []
+    for name, entry in placement.items():
+        if entry.get("mode") != DEVICE:
+            continue
+        values, source = values_for(name, entry, obj)
+        if values:
+            names.append({"section": name, "label": section_label(name), "credential": source})
+        else:
+            issues.append(issue("no_credential", label=section_label(name), where="device",
+                                section=name, **_by_profile(entry)))
+    return names, issues
+
+
+def _credential_name(entry: dict) -> str:
+    from monitoring.models import SnmpProfile
+
+    from .models import PrtgCredential
+
+    if entry.get("credential"):
+        row = PrtgCredential.objects.filter(pk=entry["credential"]).values("name").first()
+        return row["name"] if row else ""
+    if entry.get("snmp_profile"):
+        row = SnmpProfile.objects.filter(pk=entry["snmp_profile"]).values("name").first()
+        return f"SNMP {row['name']}" if row else ""
+    return ""
+
+
+def _placement_detail(placement: dict) -> list:
+    from .credentials import section_label
+
+    return [{"section": name, "label": section_label(name), "mode": entry.get("mode"),
+             "credential": _credential_name(entry), "by": entry.get("by") or {},
+             "entry": {k: v for k, v in entry.items() if k != "by"}}
+            for name, entry in placement.items()]
+
+
+def _plan_group_credentials(conn, obj, want, steps, placement, counts, fresh) -> None:
+    """``group_creds`` for the sections a profile sets on the device's
+    group, when what Danbyte would write differs from what it wrote there
+    last (a keyed hash per section). One row per group, every object's
+    sections merged; the first object's choice for a section wins."""
+    from .credentials import GROUP, section_label, values_for
+    from .models import PrtgGroupLink
+    from .writer import credentials_hash
+
+    entries = {s: e for s, e in placement.items() if e.get("mode") == GROUP}
+    group = want.group or {}
+    if not entries or not (group.get("objid") or group.get("key")):
+        return
+    gkey = group.get("key") or f"objid:{group['objid']}"
+    link = PrtgGroupLink.objects.filter(connection=conn, key=gkey).first()
+    done = dict((link.credential_hashes if link else None) or {})
+    rows = PrtgChange.objects.filter(connection=conn, kind=PrtgChange.GROUP_CREDENTIALS,
+                                     key=f"c:{gkey}"[:64]).first()
+    seen = rows.id in fresh if rows is not None else False
+    detail = dict(rows.detail or {}) if seen else {}
+    sections = {s["section"]: s for s in detail.get("sections") or []}
+    kept = dict(detail.get("entries") or {})
+    issues = list(detail.get("issues") or []) if seen else []
+    for name, entry in entries.items():
+        if name in sections:
+            continue
+        values, source = values_for(name, entry)
+        if not values:
+            issues.append(issue("no_credential", label=section_label(name), where="group",
+                                section=name, **_by_profile(entry)))
+            continue
+        digest = credentials_hash(values)
+        if done.get(name) == digest:
+            continue
+        sections[name] = {"section": name, "label": section_label(name),
+                          "credential": source, "hash": digest}
+        kept[name] = {k: v for k, v in entry.items() if k != "by"}
+    if not sections and not issues:
+        return
+    if not group_writes(conn):
+        issues.append(issue("group_writes"))
+    if not seen:
+        counts["group_creds"] += 1
+        if issues:
+            counts["not_applicable"] += 1
+    path = group.get("path") or ""
+    propose(conn, fresh, {
+        "group": {"objid": group.get("objid", ""), "key": gkey, "path": path,
+                  "kind": _group_kind(conn, group.get("objid", ""), group.get("kind") or ""),
+                  "created_here": bool(link and link.created_here)},
+        "sections": list(sections.values()), "entries": kept,
+        "depth": path.count(" / ") + 1,
+        "applicable": not issues, "reason": " ".join(i["text"] for i in issues),
+        "issues": issues,
+    }, kind=PrtgChange.GROUP_CREDENTIALS, key=f"c:{gkey}"[:64])
+
+
+def _plan_prune_groups(conn, ctx, groups, parent_of, counts, fresh) -> None:
+    """With Propose removing devices on: a group Danbyte made (its tag and
+    its record) that no object wants any more and that holds nothing is
+    proposed for removal."""
+    from .layout import GROUP_TAG
+    from .models import PrtgGroupLink
+
+    if not conn.prune_devices:
+        return
+    used = ctx.layout_pass.used if ctx.layout_pass is not None else set()
+    occupied = set(parent_of.values()) | {str(g.get("parent_id") or "") for g in groups}
+    made = {gl.objid: gl for gl in PrtgGroupLink.objects.filter(
+        connection=conn, created_here=True).exclude(objid="")}
+    for g in groups:
+        if g.get("kind") != "group" or g["objid"] in used or g["objid"] in occupied:
+            continue
+        link = made.get(g["objid"])
+        if link is None or not any(t.startswith(GROUP_TAG) for t in g.get("tags") or []):
+            continue
+        counts["remove_group"] += 1
+        propose(conn, fresh, {
+            "objid": g["objid"], "name": g.get("name", ""), "path": g.get("path", ""),
+            "kind": link.kind, "reason": TEXT["empty_group"], "applicable": True,
+            "depth": g.get("path", "").count(" / "),
+        }, kind=PrtgChange.REMOVE_GROUP, key=link.key)
 
 
 def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent_of,
@@ -831,10 +1188,22 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
         return
     host, source = host_choice(obj) if want.managed else ("", "")
     wanted = sensors_for(want, host) if want.managed else []
+    steps = []
+    if want.managed and want.layout and want.group is not None:
+        steps = ctx.layout(conn).place(obj, want)
+        if not waiting and (link is None or (present and link.created_here)):
+            _plan_groups(conn, ctx, steps, counts, fresh)
+    placement = {}
+    if want.managed:
+        from .credentials import needed_sections, placement_for
+
+        placement = placement_for(want, needed_sections(conn, wanted))
+        if link is None or present:
+            _plan_group_credentials(conn, obj, want, steps, placement, counts, fresh)
     if link is not None and present:
         _plan_linked(conn, obj, link, want, wanted,
                      sensors, parent_of,
-                     groups_by_id, counts, fresh, no_writes)
+                     groups_by_id, counts, fresh, no_writes, ctx=ctx, placement=placement)
         if want.managed:
             _plan_host(conn, obj, link, host, source, counts, fresh, no_writes)
         if want.managed:
@@ -856,11 +1225,17 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     if problem:
         issues.append(problem)
     creds, missing = credential_issues(obj, conn.tenant, wanted)
+    missing = _unplaced(missing, placement)
     issues.extend(missing)
+    on_device, cred_issues = _device_placement(obj, placement)
+    issues.extend(cred_issues)
+    issues.extend(_inherit_issues(conn, ctx, _unsaid(placement, missing),
+                                  _above(want, steps, conn)))
     if no_writes:
         issues.append(issue("no_writes"))
     reasons = [i["text"] for i in issues]
     group = dict(want.group or {})
+    group.pop("root", None)
     found = groups_by_id.get(group.get("objid"))
     if found:
         group.update(path=found["path"], kind=found["kind"])
@@ -873,6 +1248,8 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
         "sensors": [_sensor_detail(i) for i in wanted if not i.get("template")],
         "templates": [i["template"] for i in wanted if i.get("template")],
         "credentials": creds,
+        "placement": _placement_detail(placement),
+        "device_credentials": on_device,
         "tags": ["danbyte", f"danbyte-{obj.id}"],
         "applicable": not reasons, "reason": " ".join(reasons),
         "issues": issues,
@@ -925,9 +1302,7 @@ def plan_object(conn: PrtgConnection, obj, *, now=None) -> dict:
     from datetime import timedelta
 
     now = now or timezone.now()
-    counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
-              "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
-              "no_address": 0, "awaiting_link": 0}
+    counts = new_counts()
     ctx, checked = _prepare(conn)
     parent = _parent(obj)
     link = PrtgDeviceLink.objects.filter(connection=conn, **parent).first()
@@ -1070,7 +1445,7 @@ def _sensor_detail(inst: dict) -> dict:
 
 
 def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id,
-                 counts, fresh, no_writes=False) -> None:
+                 counts, fresh, no_writes=False, *, ctx=None, placement=None) -> None:
     """A linked object: missing required sensors, Danbyte sensors nothing
     wants any more, and a group that differs."""
     claimed: set = set()
@@ -1092,10 +1467,24 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         ) not in present_objids
         if inst["required"] or deleted:
             missing.append((inst, deleted))
+    placement = placement or {}
     for inst, deleted in missing:
         issues = []
         if inst.get("needs"):
             _, issues = credential_issues(obj, conn.tenant, [inst])
+            issues = _unplaced(issues, placement)
+        mine = {}
+        on_device = []
+        if placement:
+            from .credentials import sections_of
+
+            mine = {s: placement[s] for s in sections_of(conn, inst.get("kindid")
+                                                           or inst["kind"]) if s in placement}
+            on_device, found = _device_placement(obj, mine)
+            issues.extend(found)
+            if ctx is not None and mine:
+                issues.extend(_inherit_issues(conn, ctx, _unsaid(mine, issues),
+                                              (link.objid, "device")))
         if no_writes:
             issues.append(issue("no_writes"))
         reasons = [i["text"] for i in issues]
@@ -1112,6 +1501,8 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
             "reason": " ".join(reasons) or ("Deleted in PRTG." if deleted else ""),
             "issues": issues,
             "deleted_in_prtg": deleted,
+            "placement": _placement_detail(mine),
+            "device_credentials": on_device,
         }, **_parent(obj), kind=PrtgChange.ADD_SENSOR, key=inst["key"])
     # Forget sensors Danbyte made that nothing wants and PRTG no longer has.
     wanted_keys = {i["key"] for i in wanted}
@@ -1146,6 +1537,21 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
     target = want.group["objid"]
     current = parent_of.get(link.objid, "")
     if not current or current == target:
+        return
+    if want.layout and not link.created_here:
+        # The layout moves only devices Danbyte created.
+        return
+    if want.layout and not target:
+        # Into a layout group the plan creates first.
+        counts["move"] += 1
+        frm = groups_by_id.get(current)
+        propose(conn, fresh, {
+            "objid": link.objid, "name": link.name,
+            "from": {"objid": current, "path": frm["path"] if frm else link.group_path},
+            "to": {"objid": "", "key": want.group.get("key", ""),
+                   "path": want.group.get("path", ""), "kind": "group"},
+            "applicable": True, "reason": "", "issues": [],
+        }, **_parent(obj), kind=PrtgChange.MOVE_DEVICE, key="")
         return
     if target not in groups_by_id:
         found = group_issue(want, groups_by_id)
@@ -1205,8 +1611,30 @@ def preview(conn: PrtgConnection, obj) -> dict:
             "present": found is not None,
             "sensor": {"objid": found.objid, "name": found.name} if found else None,
         })
+    steps = []
+    if want.managed and want.layout and want.group is not None:
+        steps = ctx.layout(conn).place(obj, want)
+    placement_rows = []
+    if want.managed:
+        from .credentials import (
+            cached_effective,
+            describe,
+            needed_sections,
+            placement_for,
+            section_label,
+        )
+
+        placement = placement_for(want, needed_sections(conn, wanted))
+        above = (link.objid, "device") if link is not None else _above(want, steps, conn)
+        state = cached_effective(conn, above[0]) if above else {}
+        for row in _placement_detail(placement):
+            st = state.get(row["section"]) if row["mode"] == "inherit" else None
+            placement_rows.append({**row, "state": st,
+                                   "text": describe(st, section_label(row["section"]))})
     creds, issues = credential_issues(obj, conn.tenant, wanted)
     group = dict(want.group or {}) or None
+    if group:
+        group.pop("root", None)
     if group and group["objid"] in groups_by_id:
         group.update(path=groups_by_id[group["objid"]]["path"],
                      kind=groups_by_id[group["objid"]]["kind"])
@@ -1286,6 +1714,7 @@ def preview(conn: PrtgConnection, obj) -> dict:
         "profiles": [p.name for p in want.profiles],
         "sensors": rows,
         "credentials": creds,
+        "credential_placement": placement_rows,
         "problems": [i["text"] for i in issues],
         "issues": issues,
         "last_apply": _last_apply(conn, obj, link),

@@ -13,6 +13,7 @@ import type {
   PrtgGroups,
   PrtgPolicy,
   PrtgPolicyScope,
+  PrtgCredentialPlacement,
   PrtgSensorProfile,
   TagOption,
 } from "@/lib/api"
@@ -47,6 +48,7 @@ import { Loading } from "@/components/loading"
 import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 
+import { CredentialPlacementEditor } from "./credentials"
 import { PrtgGroupPicker } from "./group-picker"
 import { PrtgPolicyDetail } from "./policy-detail"
 import { ProfileForm } from "./profiles"
@@ -210,7 +212,9 @@ export function PrtgPolicies({
         header: ({ column }) => <SortHeader column={column} label="Group" />,
         cell: ({ row }) => (
           <span className="text-xs">
-            {row.original.group_path || row.original.group_id}
+            {row.original.use_layout
+              ? "Group layout"
+              : row.original.group_path || row.original.group_id}
           </span>
         ),
       },
@@ -346,6 +350,10 @@ export function PolicyForm({
     policy?.group_id || null
   )
   const [groupPath, setGroupPath] = useState(policy?.group_path ?? "")
+  const [useLayout, setUseLayout] = useState(policy?.use_layout ?? false)
+  const [placement, setPlacement] = useState<PrtgCredentialPlacement>(
+    policy?.credential_placement ?? {}
+  )
   const [priority, setPriority] = useState(String(policy?.priority ?? 100))
   const [enabled, setEnabled] = useState(policy?.enabled ?? true)
 
@@ -366,6 +374,7 @@ export function PolicyForm({
         `/api/prtg/profiles/?connection=${connection.id}`
       ),
   })
+  const chosen = (profiles.data?.results ?? []).find((p) => p.id === profile)
   // The group picker's own list (shared cache): empty means PRTG was never
   // read, which the hint under the picker says.
   const groups = useQuery({
@@ -403,8 +412,10 @@ export function PolicyForm({
         applies_to_devices: devices,
         applies_to_vms: vms,
         profile,
-        group_id: groupId ?? "",
-        group_path: groupPath,
+        group_id: useLayout ? "" : (groupId ?? ""),
+        group_path: useLayout ? "" : groupPath,
+        use_layout: useLayout,
+        credential_placement: placement,
         priority: Number(priority) || 100,
         enabled,
       }
@@ -546,17 +557,27 @@ export function PolicyForm({
           }
         />
         <div className="grid gap-1">
-          <PrtgGroupPicker
-            connectionId={connection.id}
-            value={groupId}
-            path={groupPath}
-            required
-            onChange={(id, path) => {
-              setGroupId(id)
-              setGroupPath(path)
-            }}
-            error={fieldErrors.group_id}
-          />
+          {(connection.group_layout ?? "none") !== "none" && (
+            <FormCheckbox
+              label="Use the group layout"
+              info="Place matched devices by the connection's group layout instead of one group."
+              checked={useLayout}
+              onChange={setUseLayout}
+            />
+          )}
+          {!useLayout && (
+            <PrtgGroupPicker
+              connectionId={connection.id}
+              value={groupId}
+              path={groupPath}
+              required
+              onChange={(id, path) => {
+                setGroupId(id)
+                setGroupPath(path)
+              }}
+              error={fieldErrors.group_id}
+            />
+          )}
           {noGroups && (
             <p className="text-xs text-muted-foreground">
               No groups read yet. Test the connection first.{" "}
@@ -574,6 +595,31 @@ export function PolicyForm({
           onChange={setPriority}
           error={fieldErrors.priority}
         />
+        {(chosen?.credential_sections ?? []).some((s) => s.writable) && (
+          <Field
+            label="Credentials in PRTG"
+            info="Overrides the profile's choice for devices this policy matches."
+            error={
+              (fieldErrors as Record<string, string | undefined>)
+                .credential_placement
+            }
+          >
+            <CredentialPlacementEditor
+              connection={connection}
+              sections={(chosen?.credential_sections ?? []).filter(
+                (s) => s.writable
+              )}
+              value={placement}
+              onChange={setPlacement}
+              target={
+                !useLayout && groupId
+                  ? { objid: groupId, path: groupPath }
+                  : null
+              }
+              allowEmpty
+            />
+          </Field>
+        )}
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
         <FormFooter
           onCancel={onDone}

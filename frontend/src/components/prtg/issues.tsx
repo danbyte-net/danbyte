@@ -113,7 +113,24 @@ export function prtgIssueLinks(
         <ConnectionLink key="conn" />,
       ]
     case "no_writes":
+    case "group_writes":
       return [<ConnectionLink key="conn" label="Connection" />]
+    case "credentials_missing":
+    case "no_credential":
+      return [
+        issue.policy ? (
+          <PolicyEditLink key="policy" id={issue.policy} />
+        ) : issue.profile ? (
+          <Link
+            key="profile"
+            to="/prtg"
+            search={{ tab: "profiles", edit: issue.profile }}
+            className="link"
+          >
+            Credentials on the profile
+          </Link>
+        ) : null,
+      ]
     case "no_match":
       return [
         <PoliciesLink key="policies" />,

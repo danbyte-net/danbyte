@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useNavigate, useSearch } from "@tanstack/react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
@@ -8,6 +9,7 @@ import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type {
   PrtgConnection,
+  PrtgCredentialPlacement,
   PrtgSensorDefinition,
   PrtgSensorKind,
   PrtgSensorProfile,
@@ -39,6 +41,7 @@ import { Loading } from "@/components/loading"
 import { Section } from "@/components/ui/section"
 import { RowActions } from "@/components/row-actions"
 import { SchemaFields } from "./add-sensor"
+import { CredentialPlacementEditor } from "./credentials"
 import {
   SensorKindPicker,
   SensorKindsDialog,
@@ -60,9 +63,26 @@ export function PrtgProfiles({
   canManage: boolean
 }) {
   const qc = useQueryClient()
-  const [editing, setEditing] = useState<PrtgSensorProfile | null>(null)
+  const navigate = useNavigate()
+  // ?edit=<id> opens a profile's editor: a credential issue links here.
+  const search: { edit?: string } = useSearch({ strict: false })
+  const [editingState, setEditingState] = useState<PrtgSensorProfile | null>(
+    null
+  )
   const [adding, setAdding] = useState(false)
   const [deleting, setDeleting] = useState<PrtgSensorProfile | null>(null)
+  const setEditing = (p: PrtgSensorProfile | null) => {
+    setEditingState(p)
+    if (!p && search.edit)
+      void navigate({
+        to: ".",
+        replace: true,
+        search: (prev: Record<string, unknown>) => ({
+          ...prev,
+          edit: undefined,
+        }),
+      })
+  }
 
   const profiles = useQuery({
     queryKey: ["prtg-profiles", connection.id],
@@ -99,6 +119,11 @@ export function PrtgProfiles({
     },
   })
   const rows = profiles.data?.results ?? []
+  const editing =
+    editingState ??
+    (canManage && search.edit
+      ? (rows.find((r) => r.id === search.edit) ?? null)
+      : null)
 
   const columns = useMemo<ColumnDef<PrtgSensorProfile>[]>(
     () => [
@@ -453,6 +478,17 @@ export function ProfileForm({
   const [rows, setRows] = useState<Row[]>(
     (profile?.definitions ?? []).map((d) => ({ ...d, _key: d.id ?? newKey() }))
   )
+  const [placement, setPlacement] = useState<PrtgCredentialPlacement>(
+    profile?.credential_placement ?? {}
+  )
+  // Where a device inherits from when no policy names a group.
+  const rootId = connection.layout_root_id || connection.register_group_id
+  const target = rootId
+    ? {
+        objid: rootId,
+        path: connection.layout_root_path || connection.register_group_path,
+      }
+    : null
 
   const update = (key: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r._key === key ? { ...r, ...patch } : r)))
@@ -492,6 +528,7 @@ export function ProfileForm({
             connection: connection.id,
             name: name.trim(),
             description,
+            credential_placement: placement,
             definitions: rows.map((r) => ({
               ...(r.id ? { id: r.id } : {}),
               kind: r.kind,
@@ -680,6 +717,24 @@ export function ProfileForm({
           onPick={addKinds}
         />
       </div>
+      {profile && (
+        <Field
+          label="Credentials in PRTG"
+          info="Inherit sends nothing and PRTG's own inheritance decides. Set on the group writes the login on the group the device goes under; Set on the device on the device Danbyte creates. Inherit is checked against the registration group or the layout root."
+          error={
+            (fieldErrors as Record<string, string | undefined>)
+              .credential_placement
+          }
+        >
+          <CredentialPlacementEditor
+            connection={connection}
+            sections={profile.credential_sections ?? []}
+            value={placement}
+            onChange={setPlacement}
+            target={target}
+          />
+        </Field>
+      )}
       <FormFooter
         onCancel={onDone}
         submitting={save.isPending}

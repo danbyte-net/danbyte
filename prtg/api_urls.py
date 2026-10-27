@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .hook import PrtgHookView
 from .pins_api import PrtgSensorPinViewSet
 from .registration_api import (
+    PrtgCredentialViewSet,
     PrtgGroupsView,
     PrtgPlanView,
     PrtgPolicyViewSet,
@@ -29,6 +30,7 @@ router.register(r"adoption-rules", PrtgAdoptionRuleViewSet, basename="prtgadopti
 router.register(r"sensor-pins", PrtgSensorPinViewSet, basename="prtgsensorpin")
 router.register(r"policies", PrtgPolicyViewSet, basename="prtgpolicy")
 router.register(r"profiles", PrtgSensorProfileViewSet, basename="prtgsensorprofile")
+router.register(r"credentials", PrtgCredentialViewSet, basename="prtgcredential")
 
 urlpatterns = [
     path("device-status/", PrtgDeviceStatusView.as_view(), name="prtg-device-status"),

@@ -158,6 +158,7 @@ AUDITED_MODELS = [
     "prtg.PrtgPolicy",
     "prtg.PrtgSensorProfile",
     "prtg.PrtgSensorDefinition",
+    "prtg.PrtgCredential",
     "oxidized.OxidizedConnection",
     "api.Service",
     "api.ServiceTemplate",

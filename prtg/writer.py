@@ -481,6 +481,35 @@ def _scan_value(row: dict) -> str:
 # ── credentials ─────────────────────────────────────────────────────────────
 
 
+def snmp_section(profile) -> dict:
+    """An SNMP profile as PRTG's ``snmpversiongroup``, inheritance off."""
+    params = profile.params or {}
+    secret = profile.secret_params or {}
+    snmp: dict = {"_inherited": False}
+    if params.get("port"):
+        snmp["snmpport"] = int(params["port"])
+    if profile.version == "v3":
+        snmp.update({
+            "snmpversion": "V3",
+            "snmpuser": secret.get("username") or params.get("username") or "",
+            "snmpauthmode": AUTH_MODES.get(str(params.get("auth_proto", "sha")).lower(),
+                                           "authpHMACSHA96"),
+            "snmpauthpass": secret.get("auth_key", ""),
+            "snmpencmode": ENC_MODES.get(
+                str(params.get("priv_proto", "aes" if secret.get("priv_key") else "none"))
+                .lower(), "AESPrivProtocol"),
+            "snmpencpass": secret.get("priv_key", ""),
+            "snmpcontext": params.get("context", "") or "",
+        })
+    else:
+        field = "snmpcommv1" if profile.version == "v1" else "snmpcommv2"
+        snmp.update({
+            "snmpversion": "V1" if profile.version == "v1" else "V2",
+            field: secret.get("community") or params.get("community") or "public",
+        })
+    return snmp
+
+
 def credential_sections(obj, tenant) -> tuple[dict, list[str]]:
     """The device settings sections that carry the credentials Danbyte
     holds for ``obj``, and their names for the log (never the secrets)."""
@@ -492,31 +521,7 @@ def credential_sections(obj, tenant) -> tuple[dict, list[str]]:
 
     profile, _ = (resolve_vm_profile if _is_vm(obj) else resolve_device_profile)(obj, tenant)
     if profile is not None:
-        params = profile.params or {}
-        secret = profile.secret_params or {}
-        snmp: dict = {"_inherited": False}
-        if params.get("port"):
-            snmp["snmpport"] = int(params["port"])
-        if profile.version == "v3":
-            snmp.update({
-                "snmpversion": "V3",
-                "snmpuser": secret.get("username") or params.get("username") or "",
-                "snmpauthmode": AUTH_MODES.get(str(params.get("auth_proto", "sha")).lower(),
-                                               "authpHMACSHA96"),
-                "snmpauthpass": secret.get("auth_key", ""),
-                "snmpencmode": ENC_MODES.get(
-                    str(params.get("priv_proto", "aes" if secret.get("priv_key") else "none"))
-                    .lower(), "AESPrivProtocol"),
-                "snmpencpass": secret.get("priv_key", ""),
-                "snmpcontext": params.get("context", "") or "",
-            })
-        else:
-            field = "snmpcommv1" if profile.version == "v1" else "snmpcommv2"
-            snmp.update({
-                "snmpversion": "V1" if profile.version == "v1" else "V2",
-                field: secret.get("community") or params.get("community") or "public",
-            })
-        sections["snmpversiongroup"] = snmp
+        sections["snmpversiongroup"] = snmp_section(profile)
         names.append(f"SNMP {profile.name}")
     from monitoring.models import DeviceCredential
 
@@ -597,7 +602,7 @@ def apply_create_device(w: Writer) -> str:
     obj = _owner(w)
     _need_create(w)
     d = w.detail
-    group = d.get("group") or {}
+    group = layout_target(w, d.get("group") or {})
     if not group.get("objid"):
         raise Refused("No PRTG group to create it in.")
     tag = f"danbyte-{obj.id}"
@@ -652,6 +657,9 @@ def apply_create_device(w: Writer) -> str:
     if w.conn.send_credentials and not w.result.get("credentials"):
         names = send_credentials(w, objid, link)
         w.keep(credentials=names or ["none"])
+    if d.get("placement") and not w.result.get("placed"):
+        names = place_on_device(w, objid, d)
+        w.keep(placed=names or ["none"])
     failures = []
     for inst in d.get("sensors") or []:
         try:
@@ -679,6 +687,9 @@ def apply_add_sensor(w: Writer) -> str:
     inst = dict(w.detail.get("sensor") or {})
     if not inst.get("key"):
         inst["key"] = w.change.key
+    if w.detail.get("device_credentials") and not w.result.get("placed"):
+        names = place_on_device(w, link.objid, w.detail)
+        w.keep(placed=names or ["none"])
     objid = w.create_sensor(link.objid, inst, link)
     w.refresh(link)
     return f"Added {inst.get('name') or sk.label(inst.get('kind', ''))} ({objid}) in PRTG."
@@ -706,7 +717,7 @@ def apply_remove_sensor(w: Writer) -> str:
 def apply_move_device(w: Writer) -> str:
     _owner(w)
     link = _link(w)
-    to = w.detail.get("to") or {}
+    to = layout_target(w, w.detail.get("to") or {})
     if not to.get("objid"):
         raise Refused("No PRTG group to move it to.")
     if w.mode != PrtgConnection.WRITE_V2 and not w.conn.v2_available:
@@ -756,7 +767,213 @@ def apply_remove_device(w: Writer) -> str:
     return f"Removed {name or objid} from PRTG."
 
 
+# ── groups ──────────────────────────────────────────────────────────────────
+
+
+def _need_groups(w: Writer) -> None:
+    if w.mode != PrtgConnection.WRITE_V2 and not w.conn.v2_available:
+        raise Refused("Creating and changing groups needs PRTG API v2.")
+
+
+def _group_link(w: Writer, key: str):
+    from .models import PrtgGroupLink
+
+    return PrtgGroupLink.objects.filter(connection=w.conn, key=key).first() if key else None
+
+
+def layout_target(w: Writer, group: dict) -> dict:
+    """A plan's group with the object id filled in: a layout group created
+    since the plan (by an applied ``create_group``) is found by its key."""
+    group = dict(group or {})
+    if group.get("objid") or not group.get("key"):
+        return group
+    link = _group_link(w, group["key"])
+    if link is None or not link.objid:
+        raise Refused(f"The group {group.get('path') or group['key']} is not created yet; "
+                      "apply its Create group row first.")
+    group.update(objid=link.objid, kind="group")
+    return group
+
+
+def _group_in_prtg(w: Writer, objid: str) -> bool:
+    try:
+        w.v2.settings(objid, "group", ["basic"])
+    except PrtgNotFound:
+        return False
+    return True
+
+
+def _tagged_group(w: Writer, parent: str, tag: str) -> str:
+    """A group under ``parent`` already carrying ``tag`` - made by an
+    earlier attempt whose answer was lost."""
+    for row in w.v2.groups():
+        if str((row.get("parent") or {}).get("id") or "") != str(parent):
+            continue
+        if tag in ((row.get("basic") or {}).get("tags") or []):
+            return str(row.get("id") or "")
+    return ""
+
+
+def apply_create_group(w: Writer) -> str:
+    """A layout group under its parent (a probe, a group, or a group an
+    earlier row created), tagged ``danbyte`` and ``danbyte-group-<kind>-
+    <uuid>``, recorded as made by Danbyte."""
+    from .models import PrtgGroupLink
+
+    _need_groups(w)
+    d = w.detail
+    parent = layout_target(w, d.get("parent") or {})
+    if not parent.get("objid"):
+        raise Refused("No PRTG group or probe to create it under.")
+    tag = str(d.get("tag") or "")
+    objid = str(w.result.get("group") or "")
+    if objid and not _group_in_prtg(w, objid):
+        objid = ""
+    if not objid and tag:
+        objid = _tagged_group(w, parent["objid"], tag)
+        if objid:
+            w.step(f"Found PRTG group {objid} already tagged {tag}.")
+    if not objid:
+        kind = parent.get("kind") or _kind_of(w, parent["objid"])
+        objid = w.v2.create_group(parent["objid"], d.get("name") or "Group",
+                                  d.get("tags") or ["danbyte", tag], parent_kind=kind)
+        w.step(f"Created PRTG group {objid} under {parent.get('path') or parent['objid']}.")
+    w.keep(group=objid)
+    PrtgGroupLink.objects.update_or_create(
+        connection=w.conn, key=w.change.key,
+        defaults={"tenant": w.conn.tenant, "objid": objid, "name": d.get("name") or "",
+                  "path": str(d.get("path") or "")[:500], "parent_objid": parent["objid"],
+                  "kind": d.get("kind") or "", "object_id": d.get("object_id") or "",
+                  "tag": tag, "created_here": True},
+    )
+    _remember_group(w, objid, d.get("name") or "", parent["objid"], d.get("path") or "", tag)
+    return f"Created group {d.get('path') or d.get('name')} in PRTG."
+
+
+def _kind_of(w: Writer, objid: str) -> str:
+    for g in w.conn.groups_cache or []:
+        if g.get("objid") == str(objid):
+            return g.get("kind") or "group"
+    return "group"
+
+
+def _remember_group(w: Writer, objid, name, parent, path, tag) -> None:
+    """Add a group Danbyte just made to the kept group list, so the next
+    plan and the pickers see it before the next read."""
+    groups = [g for g in (w.conn.groups_cache or []) if g.get("objid") != str(objid)]
+    probe = next((g.get("probe") for g in groups if g.get("objid") == str(parent)), "")
+    groups.append({"objid": str(objid), "name": name, "kind": "group", "probe": probe,
+                   "parent_id": str(parent), "path": path, "tags": ["danbyte", tag]})
+    w.conn.groups_cache = sorted(groups, key=lambda g: str(g.get("path", "")).lower())
+    w.conn.save(update_fields=["groups_cache"])
+
+
+def apply_rename_group(w: Writer) -> str:
+    """A new name for a group Danbyte made (it carries Danbyte's tag)."""
+    _need_groups(w)
+    d = w.detail
+    objid = str(d.get("objid") or "")
+    link = _group_link(w, w.change.key)
+    if not objid or link is None or link.objid != objid or not link.tag:
+        raise Refused("Danbyte did not make this group; it is left alone.")
+    name = str(d.get("to") or "").strip()
+    if not name:
+        raise Refused("No name to set.")
+    w.v2.update_group(objid, {"basic": {"name": name}})
+    link.name = name
+    link.save(update_fields=["name"])
+    w.step(f"Renamed group {objid} from {d.get('from')} to {name}.")
+    return f"Renamed group {d.get('from')} to {name} in PRTG."
+
+
+def apply_remove_group(w: Writer) -> str:
+    """Delete an empty group Danbyte made. PRTG deletes a group with
+    everything in it, so one that is not empty now is left alone."""
+    _need_groups(w)
+    link = _group_link(w, w.change.key)
+    objid = str(w.detail.get("objid") or "")
+    if link is None or not link.created_here or link.objid != objid:
+        raise Refused(f"Danbyte did not make group {objid}; it is left alone.")
+    devices = w.classic.devices({"parentid": objid}).rows
+    inside = [g for g in w.v2.groups()
+              if str((g.get("parent") or {}).get("id") or "") == objid]
+    if devices or inside:
+        raise Refused(f"Group {objid} is not empty any more; it is left alone.")
+    gone = not w.v2.delete_group(objid)
+    link.delete()
+    w.conn.groups_cache = [g for g in w.conn.groups_cache or [] if g.get("objid") != objid]
+    w.conn.save(update_fields=["groups_cache"])
+    w.step(f"Deleted group {objid}." if not gone else f"Group {objid} was already gone.")
+    return f"Removed group {w.detail.get('path') or objid} from PRTG."
+
+
+def apply_group_credentials(w: Writer) -> str:
+    """The credential sections a profile sets on a group, each with
+    inheritance off; the keyed hash of each is kept so it is sent again
+    only when it changes. The values are read from Danbyte's store now,
+    never from the row."""
+    from .credentials import values_for
+    from .models import PrtgGroupLink
+
+    _need_groups(w)
+    d = w.detail
+    group = layout_target(w, d.get("group") or {})
+    if not group.get("objid"):
+        raise Refused("No PRTG group to set the credentials on.")
+    sections, names, hashes = {}, [], {}
+    for name, entry in (d.get("entries") or {}).items():
+        values, source = values_for(name, entry)
+        if not values:
+            raise Refused(f"The credential for {name} is gone.")
+        sections.update(values)
+        names.append(source)
+        hashes[name] = credentials_hash(values)
+    if not sections:
+        raise Refused("Nothing to set.")
+    w.v2.update_group(group["objid"], sections, kind=group.get("kind") or "group")
+    key = group.get("key") or f"objid:{group['objid']}"
+    link, _ = PrtgGroupLink.objects.get_or_create(
+        connection=w.conn, key=key,
+        defaults={"tenant": w.conn.tenant, "objid": group["objid"],
+                  "path": str(group.get("path") or "")[:500]},
+    )
+    link.credential_hashes = {**(link.credential_hashes or {}), **hashes}
+    link.save(update_fields=["credential_hashes"])
+    w.step(f"Set credentials on group {group['objid']}: {', '.join(names)}.")
+    return f"Set {', '.join(names)} on {group.get('path') or group['objid']} in PRTG."
+
+
+def place_on_device(w: Writer, objid: str, d: dict) -> list[str]:
+    """The sections a profile sets on the device itself, inheritance off."""
+    from .credentials import DEVICE, values_for
+
+    sections, names = {}, []
+    for row in d.get("placement") or []:
+        if row.get("mode") != DEVICE:
+            continue
+        values, source = values_for(row["section"], row.get("entry") or row, w.obj)
+        if values:
+            sections.update(values)
+            names.append(source)
+    if not sections:
+        return []
+    if w.mode == PrtgConnection.WRITE_V2:
+        w.v2.update_device(objid, sections)
+    else:
+        for section, values in sections.items():
+            for name, value in values.items():
+                if not name.startswith("_"):
+                    w.classic.set_property(objid, name, value)
+            w.classic.set_property(objid, f"{section}_", 0)
+    w.step(f"Set on the device: {', '.join(names)}.")
+    return names
+
+
 APPLY = {
+    PrtgChange.CREATE_GROUP: apply_create_group,
+    PrtgChange.RENAME_GROUP: apply_rename_group,
+    PrtgChange.REMOVE_GROUP: apply_remove_group,
+    PrtgChange.GROUP_CREDENTIALS: apply_group_credentials,
     PrtgChange.CREATE_DEVICE: apply_create_device,
     PrtgChange.ADD_SENSOR: apply_add_sensor,
     PrtgChange.REMOVE_SENSOR: apply_remove_sensor,
@@ -891,11 +1108,11 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
     failed row waits per :func:`retry_due`."""
     rows = PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED).select_related(
         "device", "virtual_machine", "connection", "connection__tenant"
-    ).order_by("kind", "created_at")
+    )
     if ids is not None:
         rows = rows.filter(id__in=ids)
     out = []
-    for change in rows:
+    for change in sorted(rows, key=apply_order):
         if not ready(change):
             continue
         if user is None and ids is None and not retry_due(change):
@@ -910,9 +1127,21 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
             "failed": [r for r in out if not r["ok"]], "results": out}
 
 
-#: The order an object's rows are written in: the device before its sensors.
-_ORDER = {PrtgChange.CREATE_DEVICE: 0, PrtgChange.ADD_SENSOR: 1, PrtgChange.MOVE_DEVICE: 2,
-          PrtgChange.UPDATE_HOST: 3}
+#: The order rows are written in: groups top-down, then devices, then
+#: sensors; removals last, a group after what was in it.
+_ORDER = {
+    PrtgChange.CREATE_GROUP: 0, PrtgChange.RENAME_GROUP: 1, PrtgChange.GROUP_CREDENTIALS: 2,
+    PrtgChange.CREATE_DEVICE: 3, PrtgChange.MOVE_DEVICE: 4, PrtgChange.UPDATE_HOST: 5,
+    PrtgChange.ADD_SENSOR: 6, PrtgChange.REMOVE_SENSOR: 7, PrtgChange.REMOVE_DEVICE: 8,
+    PrtgChange.REMOVE_GROUP: 9,
+}
+
+
+def apply_order(change: PrtgChange) -> tuple:
+    depth = int((change.detail or {}).get("depth") or 0)
+    if change.kind == PrtgChange.REMOVE_GROUP:
+        depth = -depth
+    return (_ORDER.get(change.kind, 10), depth, change.created_at)
 
 
 def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
@@ -923,11 +1152,11 @@ def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
     from .provision import _parent, plan_object
 
     plan_object(conn, obj)
-    rows = sorted(
+    own = list(
         PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **_parent(obj))
-        .select_related("device", "virtual_machine", "connection", "connection__tenant"),
-        key=lambda r: (_ORDER.get(r.kind, 9), r.created_at),
+        .select_related("device", "virtual_machine", "connection", "connection__tenant")
     )
+    rows = sorted([*own, *_groups_for(conn, own)], key=apply_order)
     out = []
     for change in rows:
         if not ready(change):
@@ -940,7 +1169,7 @@ def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
         change.refresh_from_db()
         out.append({"id": str(change.id), "kind": change.kind, **item,
                     "status": change_status(change)})
-        if change.kind == PrtgChange.CREATE_DEVICE and not item["ok"]:
+        if change.kind in (PrtgChange.CREATE_DEVICE, PrtgChange.CREATE_GROUP) and not item["ok"]:
             break
     link = PrtgDeviceLink.objects.filter(connection=conn, **_parent(obj)).first()
     return {
@@ -950,6 +1179,40 @@ def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
         "link": {"id": str(link.id), "objid": link.objid, "name": link.name,
                  "url": conn.device_url(link.objid)} if link else None,
     }
+
+
+def _groups_for(conn: PrtgConnection, rows: list) -> list:
+    """The group rows an object's rows need first: the layout groups its
+    device goes into (with the missing groups above them) and the
+    credentials set on its group."""
+    keys: set = set()
+    targets: set = set()
+    for r in rows:
+        d = r.detail or {}
+        group = d.get("group") if r.kind == PrtgChange.CREATE_DEVICE else d.get("to")
+        if not isinstance(group, dict):
+            continue
+        keys.update(group.get("needs") or [])
+        if group.get("key"):
+            keys.add(group["key"])
+            targets.add(group["key"])
+        elif group.get("objid"):
+            targets.add(f"objid:{group['objid']}")
+    pending = PrtgChange.pending(conn).select_related("connection", "connection__tenant")
+    creates = {c.key: c for c in pending.filter(kind=PrtgChange.CREATE_GROUP)}
+    out, todo = [], list(keys)
+    while todo:
+        key = todo.pop()
+        row = creates.pop(key, None)
+        if row is None:
+            continue
+        out.append(row)
+        parent = ((row.detail or {}).get("parent") or {}).get("key")
+        if parent:
+            todo.append(parent)
+    out.extend(pending.filter(kind=PrtgChange.GROUP_CREDENTIALS,
+                              key__in=[f"c:{t}"[:64] for t in targets]))
+    return out
 
 
 def run_apply_object(connection_id: str, kind: str, object_id: str) -> dict:

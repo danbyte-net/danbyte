@@ -3101,6 +3101,11 @@ class DeviceCredential(TimestampedModel):
         SSH_PASSWORD = "ssh_password", "SSH password"
         SSH_KEY = "ssh_key", "SSH key"
         HTTPS_LOGIN = "https_login", "HTTPS login"
+        #: ``DOMAIN\user`` and a password; what PRTG's WMI sensors use.
+        WINDOWS_LOGIN = "windows_login", "Windows login"
+        #: ``user@realm!tokenid`` and the token secret as the password.
+        PROXMOX = "proxmox", "Proxmox API token"
+        VMWARE = "vmware", "VMware login"
 
     class Provider(models.TextChoices):
         LOCAL = "local", "Local"

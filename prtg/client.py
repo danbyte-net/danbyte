@@ -65,7 +65,7 @@ DEVICE_COLUMNS = (
     "parentid", "active",
 )
 #: ``content=groups`` and ``content=probenode``: where a device can live.
-GROUP_COLUMNS = ("objid", "name", "probe", "parentid", "type", "active")
+GROUP_COLUMNS = ("objid", "name", "probe", "parentid", "type", "active", "tags")
 #: PRTG's root group: probes hang off it, devices never do.
 ROOT_GROUP = 0
 
@@ -476,7 +476,7 @@ class PrtgClient:
 
     def groups_tree(self) -> list[dict]:
         """Every probe and group a device could be put under, as
-        ``{objid, name, kind, path, probe, parent_id}``, in path order.
+        ``{objid, name, kind, path, probe, parent_id, tags}``, in path order.
 
         Two calls: probes (``content=probenode`` filtered to probes - the
         unfiltered content lists other objects too) and groups. The root
@@ -493,6 +493,7 @@ class PrtgClient:
                     "objid": str(row["objid"]), "name": row.get("name", ""),
                     "kind": kind, "probe": row.get("probe", "") or row.get("name", ""),
                     "parent_id": row.get("parent_id"),
+                    "tags": list(row.get("tags") or []),
                 }
 
         def path(objid, seen=()) -> str:
