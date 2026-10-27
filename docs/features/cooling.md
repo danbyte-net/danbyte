@@ -387,7 +387,12 @@ outflow.
 
 Write `cooling_feed_id`, `outflow_id` and `intake_id`; the answer carries
 `cooling_feed` (with its `source`), `outflow` (with its `device`) and
-`intake`. `max_flow_lpm` is a decimal string. A feed's `capacity` gains
+`intake`. A feed or outflow you may not view - another site's - is `null`,
+and the intake carries `upstream_hidden: true`; a feed's `source` you may
+not view is `null`; an intake in an outflow's `served` you may not view is
+`{"id": null, "name": null, "device": null, "hidden": true}`. The device's
+Cooling tab shows these as *Hidden*, and editing such an intake keeps its
+upstream unless you pick another. `max_flow_lpm` is a decimal string. A feed's `capacity` gains
 `basis` (`intakes` or `rack`) and `devices`, and the feed a `flow` object -
 `connected_lpm`, `rated_lpm`, `intakes`. A cooling `affected` device carries
 its `path`, and its `rack` may be null. A device's `cooling_count` counts its

@@ -114,6 +114,26 @@ describe("buildFlowDocument", () => {
     expect(doc.nodes.filter((n) => n.title === "web1")).toHaveLength(1)
   })
 
+  it("draws an end the caller may not view as one Hidden card per side (#453)", () => {
+    const hidden = (kind: FlowEnd["kind"]): FlowEnd => ({
+      kind,
+      id: null,
+      label: "Hidden",
+      device: null,
+      vm: null,
+      hidden: true,
+    })
+    const doc = build([
+      flow("web to far db", WEB, hidden("ip")),
+      flow("app to far net", APP, hidden("prefix")),
+    ])
+    const cards = doc.nodes.filter((n) => n.title === "Hidden")
+    expect(cards).toHaveLength(1)
+    expect(cards[0].lines).toEqual([])
+    expect(doc.links).toHaveLength(2)
+    expect(toSvg(doc, { measure })).toContain("Hidden")
+  })
+
   it("labels each line with its protocol and ports and arrows its direction", () => {
     const doc = build(shopFlows)
     const byId = new Map(doc.links.map((l) => [l.id, l]))

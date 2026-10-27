@@ -53,13 +53,17 @@ export interface ApplicationFlowColumnOpts<
 /** An end's sort and search text: the address, range or prefix, then the
  * device or VM it is assigned to. */
 export function flowEndText(e: FlowEnd): string {
+  if (e.hidden) return "Hidden"
   const host = e.device?.name ?? e.vm?.name
   return host ? `${e.label} ${host}` : e.label
 }
 
 /** One end: the address, range or prefix linked to its page, and the
- * device or VM an address is assigned to after it; "Any" muted. */
+ * device or VM an address is assigned to after it; "Any" muted, and an end
+ * the caller may not view (#453) a muted "Hidden". */
 export function FlowEndCell({ end }: { end: FlowEnd }) {
+  if (end.hidden)
+    return <span className="text-xs text-muted-foreground">Hidden</span>
   if (end.kind === "any" || !end.id)
     return <span className="text-xs text-muted-foreground">Any</span>
   const label = <span className="font-mono text-xs">{end.label}</span>

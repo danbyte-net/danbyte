@@ -2118,13 +2118,16 @@ export type FlowEndKind = "ip" | "range" | "prefix" | "any"
 export type FlowSide = "source" | "destination"
 
 /** One end of a flow, ready to show: the address, range or prefix (or
- * "Any"), with the device or VM an address is assigned to. */
+ * "Any"), with the device or VM an address is assigned to. An end the
+ * caller may not view (another site's, #453) keeps its kind and comes back
+ * `hidden`, with no id, device or VM. */
 export interface FlowEnd {
   kind: FlowEndKind
   id: string | null
   label: string
   device: { id: string; name: string } | null
   vm: { id: string; name: string } | null
+  hidden?: boolean
 }
 
 export interface FlowIpRef {
@@ -3418,6 +3421,7 @@ export interface CoolingDeviceRef {
   id: string
   name: string
   device: { id: string; name: string }
+  hidden?: undefined
 }
 
 interface CoolingComponentBase {
@@ -3441,15 +3445,27 @@ export interface CoolingIntake extends CoolingComponentBase {
   cooling_feed: {
     id: string
     name: string
-    source: { id: string; name: string }
+    /** null when the caller may not view the source (#453). */
+    source: { id: string; name: string } | null
   } | null
   outflow: CoolingDeviceRef | null
+  /** Connected to a feed or outflow the caller may not view (another
+   * site's, #453): `cooling_feed` and `outflow` read null. */
+  upstream_hidden?: boolean
+}
+
+/** An intake an outflow serves that the caller may not view (#453). */
+export interface CoolingHiddenRef {
+  id: null
+  name: null
+  device: null
+  hidden: true
 }
 
 export interface CoolingOutflow extends CoolingComponentBase {
   intake: { id: string; name: string } | null
   /** The intakes on other devices this outflow feeds. */
-  served: CoolingDeviceRef[]
+  served: (CoolingDeviceRef | CoolingHiddenRef)[]
 }
 
 export interface CoolingComponentWritePayload {

@@ -185,15 +185,20 @@ const DIRECTIONS: { value: FlowDirection; label: string }[] = [
   { value: "both", label: FLOW_DIRECTION_LABELS.both },
 ]
 
-type EndState = { kind: FlowEndKind; id: string | null }
+/** `hidden`: an end the caller may not view (#453), kept as it is until
+ * another is picked. */
+type EndState = { kind: FlowEndKind; id: string | null; hidden?: boolean }
 
 function endOf(flow: ApplicationFlow | null, side: FlowSide): EndState {
   const e = flow?.[side]
+  if (e?.hidden) return { kind: e.kind, id: null, hidden: true }
   return e ? { kind: e.kind, id: e.id } : { kind: "ip", id: null }
 }
 
-/** The write keys for one end: the chosen kind's id, the others cleared. */
+/** The write keys for one end: the chosen kind's id, the others cleared;
+ * none for a hidden end, so the server keeps it. */
 export function endPayload(side: FlowSide, end: EndState) {
+  if (end.hidden) return {}
   return {
     [`${side}_ip_id`]: end.kind === "ip" ? end.id : null,
     [`${side}_range_id`]: end.kind === "range" ? end.id : null,
@@ -225,7 +230,11 @@ function FlowEndField({
         }
         options={END_KINDS}
       />
-      {end.kind === "ip" ? (
+      {end.hidden ? (
+        <div className="pt-6 text-sm text-muted-foreground">
+          {error ? <span className="text-destructive">{error}</span> : "Hidden"}
+        </div>
+      ) : end.kind === "ip" ? (
         <IpPicker
           label="Address"
           value={end.id}
@@ -362,7 +371,10 @@ export function ApplicationFlowDialog({
           ports: portless ? "" : ports.trim(),
           direction,
           status_id: statusId,
-          service_id: showService ? serviceId : null,
+          // A hidden destination keeps its service as it is.
+          ...(destination.hidden
+            ? {}
+            : { service_id: showService ? serviceId : null }),
           description: description.trim(),
         },
       }),

@@ -27,6 +27,7 @@ const END_KIND: Record<FlowEnd["kind"], string> = {
 
 /** An end as a link to its object, with its device or VM. */
 function EndText({ end }: { end: FlowEnd }) {
+  if (end.hidden) return <span className="text-muted-foreground">Hidden</span>
   const host = endHost(end)
   const label =
     end.kind === "any" ? (

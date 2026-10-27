@@ -52,7 +52,14 @@ ergonomics on top:
     A row the viewer *may* read never names a related row they can't: an IP
     address shows its prefix, device, interface, switch and VM as empty when
     those belong to another site - in the API, the spreadsheet export and the
-    context line of a search hit.
+    context line of a search hit. The same holds for an application flow
+    whose other end is another site's address, range or prefix: that end
+    reads *Hidden* (no address, DNS name, device or VM) in tables, the
+    Application map, the flow diagram and its PDF, and a flow search does
+    not match on it. A cooling intake connected to another site's feed or
+    CDU outflow shows its upstream as *Hidden*, an outflow the intakes it
+    serves on another site the same way, and a device's cooling path blanks
+    the hops the reader can't open.
 
     Counts on catalog objects count only what the reader may view: a
     platform's devices and virtual machines, a device type's or role's

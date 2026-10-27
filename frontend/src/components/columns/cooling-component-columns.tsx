@@ -141,9 +141,13 @@ function DeviceRef({
   )
 }
 
+const hidden = <span className="text-xs text-muted-foreground">Hidden</span>
+
 /** Where an intake takes coolant from, as text: the feed, or the device and
- * outflow; "" when connected to nothing. */
+ * outflow; "Hidden" when the caller may not view it (#453); "" when
+ * connected to nothing. */
 export function intakeUpstreamText(r: CoolingIntake): string {
+  if (r.upstream_hidden) return "Hidden"
   if (r.cooling_feed) return r.cooling_feed.name
   if (r.outflow) return `${r.outflow.device.name} ${r.outflow.name}`
   return ""
@@ -165,6 +169,7 @@ export function buildCoolingIntakeColumns({
       meta: { label: "Fed from" },
       cell: ({ row }) => {
         const r = row.original
+        if (r.upstream_hidden) return hidden
         if (r.cooling_feed)
           return (
             <Link
@@ -219,9 +224,13 @@ export function buildCoolingOutflowColumns({
         cell: ({ row }) =>
           row.original.served.length ? (
             <span className="flex flex-col gap-0.5">
-              {row.original.served.map((i) => (
-                <DeviceRef key={i.id} device={i.device} name={i.name} />
-              ))}
+              {row.original.served.map((i, n) =>
+                i.hidden ? (
+                  <span key={`hidden-${n}`}>{hidden}</span>
+                ) : (
+                  <DeviceRef key={i.id} device={i.device} name={i.name} />
+                )
+              )}
             </span>
           ) : (
             dash
