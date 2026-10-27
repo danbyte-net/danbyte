@@ -62,7 +62,9 @@ export async function apiStatus<T>(
       headers.set("Content-Type", "application/json")
     }
   }
-  const res = await fetch(path, { credentials: "include", ...init, headers })
+  const res = isMutation
+    ? await fetch(path, { credentials: "include", ...init, headers })
+    : await fetchRead(path, { credentials: "include", ...init, headers })
   // Skip the global handler ONLY for the /api/me/ auth probe - a 401 there is
   // the normal "logged out" signal, not a session that just expired. Match the
   // exact path (query string stripped); `includes("/api/me")` wrongly swallowed
@@ -74,6 +76,56 @@ export async function apiStatus<T>(
   if (!res.ok) throw await apiErrorOf(res, path)
   if (res.status === 204) return { data: undefined as T, status: res.status }
   return { data: (await res.json()) as T, status: res.status }
+}
+
+// Large list pages (#452). The server lets one user have two pages above its
+// default page size (100) in flight and answers the next with 429 and
+// Retry-After. Reads here queue for one of two slots, so a page that loads
+// several lists at once waits its turn instead of drawing 429s, and a 429
+// that still arrives (another tab holds the slots) is retried after the wait.
+export const LARGE_PAGE_ROWS = 100
+export const LARGE_PAGE_SLOTS = 2
+const LARGE_PAGE_RETRIES = 10
+let largeInFlight = 0
+const largeWaiting: (() => void)[] = []
+
+function isLargePage(path: string): boolean {
+  const size = Number(new URL(path, "http://x").searchParams.get("page_size"))
+  return Number.isFinite(size) && size > LARGE_PAGE_ROWS
+}
+
+async function takeLargeSlot(): Promise<void> {
+  if (largeInFlight < LARGE_PAGE_SLOTS) {
+    largeInFlight++
+    return
+  }
+  // Released slots pass straight to the next waiter; the count stays put.
+  await new Promise<void>((resolve) => largeWaiting.push(resolve))
+}
+
+function releaseLargeSlot(): void {
+  const next = largeWaiting.shift()
+  if (next) next()
+  else largeInFlight--
+}
+
+function retryAfterMs(res: Response): number {
+  const s = Number(res.headers.get("Retry-After"))
+  return Math.min(Math.max(Number.isFinite(s) ? s : 1, 1), 30) * 1000
+}
+
+async function fetchRead(path: string, init: RequestInit): Promise<Response> {
+  if (!isLargePage(path)) return fetch(path, init)
+  await takeLargeSlot()
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(path, init)
+      if (res.status !== 429 || attempt >= LARGE_PAGE_RETRIES) return res
+      await new Promise((r) => setTimeout(r, retryAfterMs(res)))
+    }
+  } finally {
+    releaseLargeSlot()
+  }
 }
 
 // The ApiError a failed response carries. Reads the body ONCE as text, then

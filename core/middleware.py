@@ -132,3 +132,99 @@ class RejectNulQueryMiddleware:
                 {"detail": "Query parameters cannot contain NUL characters."}, status=400
             )
         return self.get_response(request)
+
+
+# How long a large-page slot outlives a request that never released it (a
+# worker killed at its timeout skips the `finally`). Above gunicorn's timeout.
+LARGE_PAGE_SLOT_TTL = 120
+LARGE_PAGE_RETRY_AFTER = 2
+
+
+def _large_page_size(request) -> int | None:
+    """The ``page_size`` a list request names, when it is above the default
+    page; ``None`` for every other request."""
+    if request.method not in ("GET", "HEAD") or not (request.path or "").startswith("/api/"):
+        return None
+    raw = request.GET.get("page_size")
+    if not raw:
+        return None
+    try:
+        size = int(raw)
+    except ValueError:
+        return None
+    from django.conf import settings
+
+    return size if size > settings.API_PAGE_SIZE else None
+
+
+def _large_page_owner(request) -> str | None:
+    """Whose slots a request uses: the API token it carries, else the signed-in
+    user. The token is keyed by its hash, so a stray or forged one only ever
+    competes with itself (DRF refuses it right after)."""
+    from rest_framework.authentication import get_authorization_header
+
+    parts = get_authorization_header(request).split()
+    if len(parts) == 2 and parts[0].lower() == b"token":
+        from auth_api.models import hash_api_key
+
+        return "t:" + hash_api_key(parts[1].decode("latin-1"))
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return f"u:{user.pk}"
+    return None
+
+
+class LargePageGuardMiddleware:
+    """At most ``API_LARGE_PAGE_CONCURRENCY`` large list pages in flight per
+    token or user (#452). A page above ``API_PAGE_SIZE`` rows holds a worker
+    for seconds; a handful of them used to hold every worker. Each request
+    takes a slot (a Redis key with a TTL, so a request that dies without
+    letting go frees it anyway) and gives it back in ``finally``. With every
+    slot taken the answer is 429 with ``Retry-After``. Small pages, writes and
+    anonymous requests pass untouched, and so does everything when the cache
+    is unreachable: the guard protects workers, it is no reason to refuse."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if _large_page_size(request) is None:
+            return self.get_response(request)
+        owner = _large_page_owner(request)
+        if owner is None:
+            return self.get_response(request)
+        from django.conf import settings
+
+        slot = None
+        try:
+            for n in range(settings.API_LARGE_PAGE_CONCURRENCY):
+                key = f"api:large-page:{owner}:{n}"
+                if cache.add(key, 1, LARGE_PAGE_SLOT_TTL):
+                    slot = key
+                    break
+            else:
+                return _too_many_large_pages(settings.API_PAGE_SIZE)
+        except Exception:  # noqa: BLE001 - the cache is down: let it through
+            slot = None
+        try:
+            return self.get_response(request)
+        finally:
+            if slot is not None:
+                try:
+                    cache.delete(slot)
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def _too_many_large_pages(page_size: int):
+    from django.http import JsonResponse
+
+    resp = JsonResponse(
+        {"detail": (
+            "Too many large pages at once. Wait for one to finish, or ask for "
+            f"{page_size} rows a page and follow `next`."
+        )},
+        status=429,
+    )
+    resp["Retry-After"] = str(LARGE_PAGE_RETRY_AFTER)
+    return resp

@@ -184,6 +184,8 @@ MIDDLEWARE = [
     "core.middleware.SessionIdleTimeoutMiddleware",
     # A restore holds the whole site behind 503 while it replaces the database.
     "core.middleware.MaintenanceMiddleware",
+    # Two large list pages in flight per token or user; the next is a 429 (#452).
+    "core.middleware.LargePageGuardMiddleware",
     # Captures the request user for the change-log signals.
     "audit.middleware.AuditContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -301,9 +303,43 @@ RQ_QUEUES = {
 # List pagination (#447). A list request without ?page_size= gets API_PAGE_SIZE
 # rows: serializing 10,000 rows held a sync gunicorn worker for seconds, and a
 # few such requests starved every other request, the health check included.
-# ?page_size= may ask for up to API_MAX_PAGE_SIZE rows in one response.
-API_MAX_PAGE_SIZE = 10000
-API_PAGE_SIZE = max(1, min(int(os.getenv("API_PAGE_SIZE", "100")), API_MAX_PAGE_SIZE))
+# ?page_size= may ask for up to API_MAX_PAGE_SIZE rows in one response. The cap
+# was 10,000, and a few such pages still held every worker (#452); the web app
+# never asks for more than 2,000 a request, so that is the default. Both are
+# positive integers and the cap is at least the default page; a bad value
+# refuses to start rather than quietly serving something else.
+#
+# A request asking for more than API_PAGE_SIZE rows is a large page; one token
+# or user may have API_LARGE_PAGE_CONCURRENCY of them in flight, and the next
+# answers 429 with Retry-After until one finishes (#452, core/middleware.py).
+def api_paging(env) -> tuple[int, int, int]:
+    """``(API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_CONCURRENCY)`` from
+    an environment mapping. An unset cap is 2,000, or the default page when a
+    deployment set that higher; a cap set below the default page is refused."""
+    from django.core.exceptions import ImproperlyConfigured
+
+    def positive(name: str, default: int) -> int:
+        raw = str(env.get(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 0
+        if value < 1:
+            raise ImproperlyConfigured(f"{name} must be a positive whole number, not {raw!r}.")
+        return value
+
+    page = positive("API_PAGE_SIZE", 100)
+    cap = positive("API_MAX_PAGE_SIZE", max(2000, page))
+    if cap < page:
+        raise ImproperlyConfigured(
+            f"API_MAX_PAGE_SIZE ({cap}) must be at least API_PAGE_SIZE ({page})."
+        )
+    return page, cap, positive("API_LARGE_PAGE_CONCURRENCY", 2)
+
+
+API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_CONCURRENCY = api_paging(os.environ)
 
 REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
