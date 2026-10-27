@@ -5229,6 +5229,9 @@ class CableViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
     # Tenant + termination validation live in CableSerializer; the base
     # perform_create stamps the tenant (passed into serializer.create).
+    rbac_action_map = {"bulk_create": "add"}
+    #: Most cables one bulk-create may carry - a few full patch panels.
+    BULK_CREATE_MAX = 256
 
     def get_queryset(self):
         from auth_api.drf import _action_for
@@ -5275,6 +5278,72 @@ class CableViewSet(TenantScopedViewSet):
             raise PermissionDenied(
                 "Your cable permission does not cover every termination site."
             )
+
+    @action(detail=False, methods=["post"], url_path="bulk-create")
+    def bulk_create(self, request):
+        """Create several cables in one all-or-nothing request (#454).
+
+        Body: ``{"cables": [<cable payload>, ...]}`` - each item is exactly
+        what ``POST /api/cables/`` takes and is validated the same way. A port
+        named by two items is refused as well. Any error writes nothing and
+        answers 400 with ``cables``: one error object per item, in order
+        (``{}`` for an item that was fine). Success answers 201 with
+        ``{created, results}``.
+        """
+        from types import SimpleNamespace
+
+        self._tenant_or_403()
+        data = request.data if isinstance(request.data, dict) else {}
+        rows = data.get("cables")
+        if not isinstance(rows, list) or not rows:
+            raise ValidationError({"cables": "Send at least one cable."})
+        if len(rows) > self.BULK_CREATE_MAX:
+            raise ValidationError(
+                {"cables": f"Too many at once (max {self.BULK_CREATE_MAX})."}
+            )
+
+        sers, errors = [], []
+        seen: dict = {}
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append({"non_field_errors": ["Expected a cable object."]})
+                continue
+            ser = self.get_serializer(data=row)
+            if not ser.is_valid():
+                errors.append(ser.errors)
+                continue
+            err = {}
+            for side in ("a", "b"):
+                for kind, obj in ser.validated_data[f"_{side}"]:
+                    first = seen.setdefault((kind, obj.pk), i)
+                    if first != i:
+                        err[side] = [f"{obj} is already in cable {first + 1}."]
+            errors.append(err)
+            sers.append(ser)
+        if any(errors):
+            return Response(
+                {"detail": "Nothing was created - fix the marked cables.",
+                 "cables": errors},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+
+        created = []
+        with transaction.atomic():
+            for ser in sers:
+                self.perform_create(ser)
+                created.append(ser.instance.pk)
+                # The single create's post-save scope check, per cable, so a
+                # site-scoped user can't land one end outside their sites.
+                self._assert_write_in_site_scope(
+                    SimpleNamespace(data={"id": str(ser.instance.pk)}), "add"
+                )
+        order = {pk: i for i, pk in enumerate(created)}
+        saved = sorted(self.queryset.filter(pk__in=created), key=lambda c: order[c.pk])
+        return Response(
+            {"created": len(saved),
+             "results": self.get_serializer(saved, many=True).data},
+            status=drf_status.HTTP_201_CREATED,
+        )
 
     @extend_schema(parameters=[MAP_INCLUDE_PARAMETER])
     @action(detail=True, methods=["get"], url_path="trace")

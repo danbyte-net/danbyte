@@ -19,6 +19,7 @@ import { FaceplateView, useHasImagePorts } from "@/components/device-faceplate"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { Field, FormCombobox } from "@/components/forms"
 import { cn } from "@/lib/utils"
+import { PORT_ENDPOINT, PORT_KIND_TABS } from "@/lib/cable-runs"
 
 /** One end of a cable, picked the way people actually patch: look at the
  * panel, click the port. The faceplate is the primary control; the list
@@ -28,19 +29,7 @@ import { cn } from "@/lib/utils"
  * Ports already carrying a cable are shown but not selectable - hiding them
  * would make a 48-port panel lie about which slot is which. */
 
-const KIND_ENDPOINT: Record<
-  Exclude<TerminationKind, "power_feed" | "circuit_termination">,
-  string
-> = {
-  interface: "interfaces",
-  front_port: "front-ports",
-  rear_port: "rear-ports",
-  console_port: "console-ports",
-  console_server_port: "console-server-ports",
-  power_port: "power-ports",
-  power_outlet: "power-outlets",
-  aux_port: "aux-ports",
-}
+const KIND_ENDPOINT = PORT_ENDPOINT
 
 const LABEL_ENDPOINT: Record<TerminationKind, string> = {
   ...KIND_ENDPOINT,
@@ -48,14 +37,7 @@ const LABEL_ENDPOINT: Record<TerminationKind, string> = {
   circuit_termination: "circuit-terminations",
 }
 
-const KIND_TABS: { value: string; label: string }[] = [
-  { value: "interface", label: "Interfaces" },
-  { value: "front_port", label: "Front" },
-  { value: "rear_port", label: "Rear" },
-  { value: "console_port", label: "Console" },
-  { value: "power_port", label: "Power" },
-  { value: "aux_port", label: "Aux" },
-]
+const KIND_TABS = PORT_KIND_TABS
 
 interface PortRow {
   id: string
