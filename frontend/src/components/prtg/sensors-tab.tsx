@@ -65,6 +65,7 @@ import {
   useRefreshWhenLinked,
 } from "./object-state"
 import type { PrtgObjectRef } from "./object-state"
+import { PrtgCoverageStrips } from "./coverage"
 import { useMe } from "@/lib/use-me"
 import {
   MonitoringSourceRow,
@@ -96,6 +97,12 @@ function parentQuery(scope: PrtgScope): string {
 
 function isParent(scope: PrtgScope): scope is PrtgParent {
   return "device" in scope || "virtual_machine" in scope
+}
+
+function objectOf(parent: PrtgParent): PrtgObjectRef {
+  return "device" in parent
+    ? { kind: "device", id: parent.device }
+    : { kind: "virtual_machine", id: parent.virtual_machine }
 }
 
 /** A 404 (integration off) or 403 (no grant on PRTG rows) is "nothing to
@@ -278,6 +285,9 @@ export function PrtgSensorsSection({
             className="min-h-10 rounded-lg border border-border bg-card px-3 py-1.5"
           />
         ))}
+        {parent && (links.data ?? []).length > 0 && (
+          <PrtgCoverageStrips object={objectOf(scope)} />
+        )}
         {rows.length === 0 ? (
           parent ? (
             <PrtgParentStates
@@ -327,10 +337,7 @@ function PrtgParentStates({
   links: PrtgDeviceLink[]
   onAdded: (objids: string[]) => void
 }) {
-  const object: PrtgObjectRef =
-    "device" in parent
-      ? { kind: "device", id: parent.device }
-      : { kind: "virtual_machine", id: parent.virtual_machine }
+  const object = objectOf(parent)
   const plan = usePrtgPlan(object)
   const add = useAddToPrtgNow(object)
   useRefreshWhenLinked(plan.data)

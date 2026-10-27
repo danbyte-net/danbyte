@@ -1194,11 +1194,12 @@ def preview(conn: PrtgConnection, obj) -> dict:
     wanted = sensors_for(want) if want.managed else []
     sensors = list(PrtgSensor.objects.filter(link=link).order_by("name")) if link else []
     claimed: set = set()
-    rows = []
+    rows, matches = [], []
     for inst in wanted:
         found = None if inst.get("template") else find_sensor(inst, sensors, claimed)
         if found is not None:
             claimed.add(found.id)
+        matches.append((inst, found))
         rows.append({
             **_sensor_detail(inst), "template": inst.get("template", ""),
             "present": found is not None,
@@ -1288,6 +1289,142 @@ def preview(conn: PrtgConnection, obj) -> dict:
         "problems": [i["text"] for i in issues],
         "issues": issues,
         "last_apply": _last_apply(conn, obj, link),
+        "coverage": coverage(conn, obj, want, link, matches, sensors, issues, group),
+    }
+
+
+#: Why a wanted sensor is not in PRTG, when no queue row says.
+COVERAGE_TEXT = {
+    "dismissed": "Dismissed in the review queue.",
+    "optional": "Optional: only added with a new PRTG device.",
+    "unplanned": "Not planned yet. The next planning pass proposes it.",
+    "applied": "Applied. It shows after the next status read.",
+}
+
+
+def _sensor_origin(sensor) -> str:
+    """Who made a PRTG sensor no definition wants: ``manual`` (added by
+    hand in Danbyte), ``danbyte`` (an old definition) or ``prtg``."""
+    from .manual import MANUAL_TAG
+
+    tags = sensor.tags or []
+    if MANUAL_TAG in tags:
+        return "manual"
+    if any(t.startswith(DEF_TAG) for t in tags):
+        return "danbyte"
+    return "prtg"
+
+
+def _row_state(row, inst_issues: list) -> dict:
+    """A wanted sensor's state from the queue row that would write it."""
+    from .writer import change_status
+
+    d = row.detail or {}
+    out = {"change_id": str(row.id)}
+    if row.ignored:
+        return {**out, "status": "skipped", "reason": COVERAGE_TEXT["dismissed"]}
+    if d.get("applied"):
+        return {"status": "planned", "reason": COVERAGE_TEXT["applied"]}
+    status = change_status(row)
+    if status == "failed":
+        err = d.get("last_error") or {}
+        return {**out, "status": "failed", "reason": err.get("detail") or "",
+                "issue": err.get("issue")}
+    if status == "attention":
+        found = inst_issues or d.get("issues") or []
+        first = found[0] if found else None
+        return {**out, "status": "waiting",
+                "reason": (first or {}).get("text") or d.get("reason") or "",
+                "issue": first}
+    return {**out, "status": "planned"}
+
+
+def coverage(conn, obj, want: Want, link, matches: list, sensors: list,
+             object_issues: list, group: dict | None = None) -> dict:
+    """Per wanted sensor, where it stands - ``present`` (PRTG has it, by
+    tag or by kind as the planner decides), ``planned`` (a ready queue
+    row), ``failed`` (the last apply failed), ``waiting`` (not applicable
+    yet, with the issue) or ``skipped`` (dismissed, or optional on a device
+    that already exists) - plus the PRTG sensors on the linked device no
+    definition wants, by origin. Read from what :func:`preview` already
+    loaded and one queue query."""
+    profile_of: dict = {}
+    for profile in want.profiles:
+        for defn in profile.definitions.all():
+            profile_of.setdefault(str(defn.id), profile)
+    policy_of: dict = {}
+    for policy in want.policies:
+        if policy.profile_id:
+            policy_of.setdefault(policy.profile_id, policy)
+    queue = {
+        (r.kind, r.key): r
+        for r in PrtgChange.objects.filter(
+            connection=conn, kind__in=(PrtgChange.ADD_SENSOR, PrtgChange.CREATE_DEVICE),
+            **_parent(obj),
+        )
+    }
+    create = queue.get((PrtgChange.CREATE_DEVICE, ""))
+    created = dict(link.created_sensors or {}) if link else {}
+    present_objids = {s.objid for s in sensors}
+    items = []
+    for inst, found in matches:
+        if inst.get("template"):
+            continue
+        profile = profile_of.get(inst["definition"])
+        policy = policy_of.get(profile.id) if profile is not None else None
+        item = {
+            "key": inst["key"], "definition": inst["definition"],
+            "profile": ({"id": str(profile.id), "name": profile.name}
+                        if profile is not None else None),
+            "policy": {"id": str(policy.id), "name": policy.name} if policy else None,
+            "name": inst["name"], "kind": inst["kind"], "kind_label": inst["kind_label"],
+            "required": inst["required"], "interface": inst.get("interface"),
+        }
+        if found is not None:
+            items.append({**item, "status": "present", "sensor_id": str(found.id),
+                          "sensor_objid": found.objid})
+            continue
+        inst_issues = (credential_issues(obj, conn.tenant, [inst])[1]
+                       if inst.get("needs") else [])
+        if link is not None:
+            row = queue.get((PrtgChange.ADD_SENSOR, inst["key"]))
+            deleted = inst["key"] in created and created[inst["key"]].get(
+                "objid"
+            ) not in present_objids
+            if row is not None:
+                state = _row_state(row, inst_issues)
+            elif not inst["required"] and not deleted:
+                state = {"status": "skipped", "reason": COVERAGE_TEXT["optional"]}
+            elif inst_issues:
+                state = {"status": "waiting", "reason": inst_issues[0]["text"],
+                         "issue": inst_issues[0]}
+            else:
+                state = {"status": "waiting", "reason": COVERAGE_TEXT["unplanned"]}
+        elif create is not None:
+            state = _row_state(create, inst_issues)
+        else:
+            first = (inst_issues or object_issues or [None])[0]
+            state = {"status": "waiting",
+                     "reason": first["text"] if first else COVERAGE_TEXT["unplanned"],
+                     "issue": first}
+        items.append({**item, **state})
+    claimed = {i.get("sensor_id") for i in items}
+    extra = [
+        {"sensor_id": str(s.id), "objid": s.objid, "name": s.name,
+         "kind_label": s.kind_label or s.kind, "origin": _sensor_origin(s)}
+        for s in sensors if str(s.id) not in claimed
+    ]
+    return {
+        "policies": [
+            {"id": str(p.id), "name": p.name,
+             "profile": ({"id": str(p.profile_id), "name": p.profile.name}
+                         if p.profile_id else None)}
+            for p in want.policies
+        ],
+        "group": group,
+        "wanted": items,
+        "present": sum(1 for i in items if i["status"] == "present"),
+        "extra": extra,
     }
 
 
