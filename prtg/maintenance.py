@@ -139,6 +139,13 @@ def reconcile(conn, *, client=None, now=None) -> dict:
     for link in links.values():
         window = wanted.get(link.id)
         remote = live.get(link.objid)
+        if link.rule_paused_at is not None:
+            # A retirement rule holds it paused until resumed: a window
+            # neither shortens nor lifts that pause.
+            if link.maintenance_paused_until is not None:
+                _clear(link, "Paused by a retirement rule.")
+            counts["left"] += 1
+            continue
         try:
             if window is None:
                 _end(client, link, remote, now, counts)

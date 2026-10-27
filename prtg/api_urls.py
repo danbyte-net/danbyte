@@ -16,6 +16,7 @@ from .viewsets import (
     PrtgDeviceLinkViewSet,
     PrtgDeviceStatesView,
     PrtgDeviceStatusView,
+    PrtgRetireRuleViewSet,
     PrtgSensorViewSet,
     PrtgVmStatesView,
 )
@@ -28,6 +29,7 @@ router.register(r"changes", PrtgChangeViewSet, basename="prtgchange")
 router.register(r"adoption-rules", PrtgAdoptionRuleViewSet, basename="prtgadoptionrule")
 router.register(r"sensor-pins", PrtgSensorPinViewSet, basename="prtgsensorpin")
 router.register(r"policies", PrtgPolicyViewSet, basename="prtgpolicy")
+router.register(r"retire-rules", PrtgRetireRuleViewSet, basename="prtgretirerule")
 router.register(r"profiles", PrtgSensorProfileViewSet, basename="prtgsensorprofile")
 
 urlpatterns = [

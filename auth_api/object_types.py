@@ -179,6 +179,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("prtg.PrtgHostFacts", "PRTG system information", "Monitoring"),
     ("prtg.PrtgSensorPin", "PRTG sensor pins", "Monitoring"),
     ("prtg.PrtgPolicy", "PRTG policies", "Monitoring"),
+    ("prtg.PrtgRetireRule", "PRTG retirement rules", "Monitoring"),
     ("prtg.PrtgSensorProfile", "PRTG sensor profiles", "Monitoring"),
     ("prtg.PrtgSensorDefinition", "PRTG sensor definitions", "Monitoring"),
     ("oxidized.OxidizedConnection", "Oxidized connections", "Integrations"),

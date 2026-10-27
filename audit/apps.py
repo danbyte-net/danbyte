@@ -156,6 +156,7 @@ AUDITED_MODELS = [
     "prtg.PrtgAdoptionRule",
     "prtg.PrtgSensorPin",
     "prtg.PrtgPolicy",
+    "prtg.PrtgRetireRule",
     "prtg.PrtgSensorProfile",
     "prtg.PrtgSensorDefinition",
     "oxidized.OxidizedConnection",

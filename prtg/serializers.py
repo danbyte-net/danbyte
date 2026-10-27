@@ -16,6 +16,7 @@ from .models import (
     PrtgChange,
     PrtgConnection,
     PrtgDeviceLink,
+    PrtgRetireRule,
     PrtgSensor,
     PrtgSensorProfile,
 )
@@ -102,7 +103,8 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
             "last_plan_at", "last_plan_summary",
             "seed_device_objid", "send_credentials", "send_tags", "tag_site_role",
             "auto_apply_registration",
-            "prune_devices", "write_mode", "write_detail", "write_checked_at",
+            "prune_devices", "delete_default_remove",
+            "write_mode", "write_detail", "write_checked_at",
             "last_apply_at", "last_apply_summary",
             "version", "supported", "v2_available", "last_checked_at", "last_error",
             "last_status_at", "last_status_summary",
@@ -308,6 +310,10 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
     #: How the connection creates objects in PRTG (``v2``, ``seed``,
     #: ``none``, or "" before it was asked): whether sensors can be added.
     write_mode = serializers.CharField(source="connection.write_mode", read_only=True)
+    #: The connection's default for "Also remove from PRTG" in a delete dialog.
+    delete_default_remove = serializers.BooleanField(
+        source="connection.delete_default_remove", read_only=True
+    )
 
     def get_device(self, obj) -> dict | None:
         return _ref(obj.device)
@@ -327,6 +333,7 @@ class PrtgDeviceLinkSerializer(serializers.ModelSerializer):
             "state", "sensor_counts", "status_read_at", "last_seen_at", "url",
             "maintenance_paused_at", "maintenance_paused_until", "maintenance_events",
             "maintenance_note", "last_apply", "paused", "write_mode", "sent_tags",
+            "rule_paused_at", "rule_paused_name", "delete_default_remove",
         ]
         read_only_fields = fields
 
@@ -536,4 +543,65 @@ class PrtgAdoptionRuleSerializer(serializers.ModelSerializer):
                 ipaddress.ip_network(pattern, strict=False)
             except ValueError as exc:
                 raise serializers.ValidationError({"pattern": "Not a valid CIDR."}) from exc
+        return attrs
+
+
+class PrtgRetireRuleSerializer(serializers.ModelSerializer):
+    """What happens in PRTG to a linked object that retires. Statuses and
+    tags are slugs; at least one of either is needed."""
+
+    connection = TenantScopedPrimaryKeyRelatedField(queryset=PrtgConnection.objects.all())
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+
+    class Meta:
+        model = PrtgRetireRule
+        fields = [
+            "id", "connection", "name", "position", "statuses", "tags", "action",
+            "action_display", "allow_auto", "delete_any", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "action_display", "created_at", "updated_at"]
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("A name is needed.")
+        return value
+
+    @staticmethod
+    def _slugs(value):
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise serializers.ValidationError("A list of slugs.")
+        out = []
+        for v in value:
+            v = v.strip()
+            if v and v not in out:
+                out.append(v)
+        return out
+
+    def validate_statuses(self, value):
+        return self._slugs(value)
+
+    def validate_tags(self, value):
+        return self._slugs(value)
+
+    def validate(self, attrs):
+        def get(name, default=None):
+            if name in attrs:
+                return attrs[name]
+            return getattr(self.instance, name, default) if self.instance else default
+
+        errors = {}
+        conn = get("connection")
+        if self.instance is not None and conn is not None and (
+            conn.id != self.instance.connection_id
+        ):
+            errors["connection"] = "A rule stays with its connection."
+        if not get("statuses", []) and not get("tags", []):
+            errors["statuses"] = "Pick a status or a tag to match."
+        if get("action") != PrtgRetireRule.DELETE:
+            # Only a delete can be automatic or reach other devices.
+            attrs["allow_auto"] = False
+            attrs["delete_any"] = False
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs

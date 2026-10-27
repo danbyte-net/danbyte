@@ -156,6 +156,9 @@ class PrtgConnection(TimestampedModel):
     #: longer belongs in PRTG. Devices Danbyte did not create are never
     #: proposed.
     prune_devices = models.BooleanField(default=False, db_default=False)
+    #: Tick "Also remove from PRTG" by default in the device and VM delete
+    #: dialogs. The default only: a delete never touches PRTG unasked.
+    delete_default_remove = models.BooleanField(default=False, db_default=False)
     #: How this PRTG can be written: ``v2`` (API v2 creates objects),
     #: ``seed`` (copies of the seed device), ``none``, or "" before a check.
     WRITE_V2, WRITE_SEED, WRITE_NONE = "v2", "seed", "none"
@@ -425,6 +428,15 @@ class PrtgDeviceLink(ExternalLinkBase):
         max_length=255, blank=True, default="", db_default=""
     )
 
+    # ── what a retirement rule did to the PRTG device ──────────────────
+    #: When Danbyte paused the PRTG device because its object matched a
+    #: retirement rule, and that rule's name. Null when no rule paused it: a
+    #: rule resume is only ever sent for a pause recorded here.
+    rule_paused_at = models.DateTimeField(null=True, blank=True)
+    rule_paused_name = models.CharField(
+        max_length=120, blank=True, default="", db_default=""
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -600,10 +612,15 @@ class PrtgChange(ExternalChangeBase):
     #: A device Danbyte created on a fallback host whose object now has a
     #: stronger one (a primary address set later).
     UPDATE_HOST = "update_host"
-    #: A device Danbyte created whose object no longer belongs in PRTG.
+    #: A device Danbyte created whose object no longer belongs in PRTG - or
+    #: any linked device a retirement rule deletes.
     REMOVE_DEVICE = "remove_device"
+    #: A retirement rule pauses the PRTG device, and resumes it once the
+    #: object no longer matches (:mod:`prtg.retire`).
+    PAUSE_DEVICE = "pause_device"
+    RESUME_DEVICE = "resume_device"
     PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE, UPDATE_HOST,
-               REMOVE_DEVICE)
+               REMOVE_DEVICE, PAUSE_DEVICE, RESUME_DEVICE)
     #: Deletions: applied one at a time by a person, never by "apply all"
     #: or the beat.
     DESTRUCTIVE = (REMOVE_SENSOR, REMOVE_DEVICE)
@@ -617,6 +634,8 @@ class PrtgChange(ExternalChangeBase):
         (MOVE_DEVICE, "Move in PRTG"),
         (UPDATE_HOST, "Update host in PRTG"),
         (REMOVE_DEVICE, "Remove device from PRTG"),
+        (PAUSE_DEVICE, "Pause in PRTG"),
+        (RESUME_DEVICE, "Resume in PRTG"),
     ]
 
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="prtg_changes")
@@ -902,6 +921,60 @@ class PrtgPolicy(TimestampedModel):
         ordering = ["priority", "name"]
         indexes = [
             models.Index(fields=["connection", "enabled"], name="prtg_policy_conn_enabled"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PrtgRetireRule(TimestampedModel):
+    """What happens in PRTG to a linked device or VM that retires: one rule
+    of a connection, matched by the object's status and/or tags.
+
+    Rules are tried in ``position`` order and the first that matches
+    decides (:mod:`prtg.retire`): ``pause`` pauses the PRTG device,
+    ``delete`` deletes it, ``nothing`` leaves it - and stops later rules.
+    Nothing is seeded.
+    """
+
+    PAUSE, DELETE, NOTHING = "pause", "delete", "nothing"
+    ACTION_CHOICES = [
+        (PAUSE, "Pause in PRTG"),
+        (DELETE, "Delete in PRTG"),
+        (NOTHING, "Leave in PRTG"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="prtg_retire_rules"
+    )
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="retire_rules"
+    )
+    #: What the queue and the Monitoring tab call it: "Paused by rule <name>".
+    name = models.CharField(max_length=120)
+    position = models.PositiveSmallIntegerField(default=0, db_default=0)
+    #: Status slugs; the object's status must be one of them. Empty: any.
+    statuses = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    #: Tag slugs; the object must carry one of them. Empty: any.
+    tags = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    action = models.CharField(
+        max_length=8, choices=ACTION_CHOICES, default=PAUSE, db_default=PAUSE
+    )
+    #: Let the beat apply this rule's deletes, with Apply automatically on.
+    #: Off: a delete waits in the review queue for a person.
+    allow_auto = models.BooleanField(default=False, db_default=False)
+    #: Delete PRTG devices Danbyte did not create, too.
+    delete_any = models.BooleanField(default=False, db_default=False)
+
+    class Meta:
+        ordering = ["position", "name"]
+        indexes = [
+            models.Index(fields=["connection", "position"], name="prtg_retire_conn_pos"),
         ]
 
     def __str__(self) -> str:

@@ -33,13 +33,21 @@ from integrations.toggles import IntegrationToggleMixin, integration_enabled
 from monitoring.external.queue import ChangeQueueMixin
 
 from . import status as st
-from .models import PrtgAdoptionRule, PrtgChange, PrtgConnection, PrtgDeviceLink, PrtgSensor
+from .models import (
+    PrtgAdoptionRule,
+    PrtgChange,
+    PrtgConnection,
+    PrtgDeviceLink,
+    PrtgRetireRule,
+    PrtgSensor,
+)
 from .serializers import (
     PrtgAdoptionRuleSerializer,
     PrtgChangeSerializer,
     PrtgConnectionSerializer,
     PrtgDefaultsSerializer,
     PrtgDeviceLinkSerializer,
+    PrtgRetireRuleSerializer,
     PrtgSensorSerializer,
 )
 
@@ -636,6 +644,17 @@ class PrtgAdoptionRuleViewSet(IntegrationToggleMixin, _ByConnection, TenantScope
         .order_by("weight", "pattern")
     )
     serializer_class = PrtgAdoptionRuleSerializer
+
+
+class PrtgRetireRuleViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedViewSet):
+    """What happens in PRTG to a linked device or VM that retires, in order
+    (:mod:`prtg.retire`). The next planning pass applies a change."""
+
+    integration_keys = ("prtg",)
+    queryset = PrtgRetireRule.objects.select_related("connection").order_by(
+        "position", "name"
+    )
+    serializer_class = PrtgRetireRuleSerializer
 
 
 def _visible_devices(request, tenant):
