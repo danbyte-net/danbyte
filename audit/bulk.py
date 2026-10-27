@@ -147,6 +147,26 @@ def log_tag_change(instance, added=(), removed=()) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, user, current_request_id()).save()
 
 
+def log_tag_merge(moved, dropped, source_name: str, target_name: str) -> None:
+    """One UPDATE entry per object a tag merge touched, shaped like
+    :func:`log_tag_change`: ``moved`` objects swapped ``source`` for
+    ``target``; ``dropped`` ones already carried ``target`` and only lost
+    ``source``."""
+    user = current_user()
+    rid = current_request_id()
+    entries = [
+        _entry(obj, ChangeAction.UPDATE,
+               {"tags": {"old": [source_name], "new": [target_name]}}, user, rid)
+        for obj in moved
+    ] + [
+        _entry(obj, ChangeAction.UPDATE,
+               {"tags": {"old": [source_name], "new": None}}, user, rid)
+        for obj in dropped
+    ]
+    if entries:
+        ChangeLogEntry.objects.bulk_create(entries)
+
+
 def log_rail_change(instance, old, new) -> None:
     """Record a change to a cabinet's or cabinet type's DIN rails. They are
     written as a set through their parent, so the change lands on its entry;

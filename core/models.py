@@ -76,6 +76,19 @@ class Tag(TagBase):
             ),
         ]
 
+    def clean(self):
+        super().clean()
+        from core.tags import tag_clash_message, tag_name_clash
+
+        clash = tag_name_clash(self.name, tenant=self.tenant, exclude_pk=self.pk)
+        if clash is not None:
+            raise ValidationError({"name": tag_clash_message(clash)})
+
+    @property
+    def is_global(self) -> bool:
+        """Deployment-global: no tenant, so every tenant sees it."""
+        return self.tenant_id is None
+
     @property
     def text_color(self) -> str:
         """Black or white text for the badge - chosen by sRGB luminance.

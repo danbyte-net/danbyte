@@ -169,7 +169,15 @@ platforms, rack and cabinet types, and the like - read tenant-wide either way.
     tenant's tag names. Tags now belong to the tenant that created them; a
     migration assigned existing tags to the tenant(s) using them (cloning a
     tag that several tenants shared). Old, never-used tags remain visible to
-    all tenants but only a superuser can edit or delete them.
+    all tenants but only a superuser can edit or delete them; pickers mark
+    them with a `global` chip.
+
+    A tag name exists once among what a tenant sees - its tags, its sites'
+    local tags and the global ones (case ignored) - so a site-local tag can't
+    reuse a tenant-wide or global tag's name. Older same-name pairs are
+    resolved with **Merge into…** on the Tags list, which only merges into a
+    tag of the same site, a tenant-wide tag or a global one
+    ([details](../features/tags-and-custom-fields.md#unique-names)).
 
 ## Rollout notes
 

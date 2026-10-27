@@ -18,9 +18,27 @@ additionally be local to one site (`owning_site`).
 | `id` | int | autoincrement | (taggit-managed) |
 | `tenant` | FK → `Tenant` | NULL | NULL = legacy global (superuser-managed) |
 | `owning_site` | FK → `Site` | NULL | NULL = global to the tenant; set = site-local |
-| `name` | char | unique per tenant | The visible label |
+| `name` | char | unique per tenant | The visible label; see [name rule](#name-rule) |
 | `slug` | slug | unique per tenant | URL-safe |
 | `color` | char(7) | `""` | Optional `#xxxxxx` |
+
+## Name rule
+
+The database constraint keeps `name` unique per tenant (the NULL-tenant
+bucket included). On top of it, `TagManageSerializer.validate` and
+`Tag.clean` refuse a create or rename whose name - trimmed, compared
+case-insensitively - already exists among the tags the tenant sees: its own
+(site-local ones included) and the global ones. A global tag is checked
+against every tenant. The error names the clashing tag and its scope. The
+check is forward-only: no constraint or data migration touches existing
+pairs, which are listed by `GET /api/tags/duplicates/` and resolved with
+`POST /api/tags/<id>/merge/ {"into": <id>}` (see
+[Tags & custom fields](../features/tags-and-custom-fields.md#merging-tags)).
+
+`core.tags.find_visible_tag(name, tenant)` is the lookup imports and syncs
+use to reuse an existing tag rather than create a second one of the same name.
+
+Picker and management responses carry `is_global` (`tenant` is NULL).
 
 ## Rendering
 
