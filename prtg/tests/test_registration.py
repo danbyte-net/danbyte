@@ -493,12 +493,84 @@ class ProposalTests(_Plan):
         self.assertEqual(self.changes(PrtgChange.CREATE_DEVICE), [])
         self.assertEqual(len(self.changes(PrtgChange.LINK)), 1)
 
-    def test_no_address_is_counted_not_proposed(self):
-        Device.objects.create(tenant=self.tenant, name="bare", site=self.site)
+    def test_no_address_is_proposed_as_needs_attention_then_ready(self):
+        from prtg.writer import change_status
+
+        d = Device.objects.create(tenant=self.tenant, name="bare", site=self.site)
         policy(self.conn, "all", self.ping)
         counts = self.plan()
         self.assertEqual(counts["no_address"], 1)
-        self.assertEqual(self.changes(PrtgChange.CREATE_DEVICE), [])
+        [c] = self.changes(PrtgChange.CREATE_DEVICE)
+        self.assertFalse(c.detail["applicable"])
+        self.assertEqual(change_status(c), "attention")
+        [blocker] = c.detail["issues"]
+        self.assertEqual(blocker["code"], "no_address")
+        self.assertEqual(blocker["object"], {"kind": "device", "id": str(d.id)})
+        # The fix flips the same row to Ready.
+        ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.12/24",
+                                      prefix=self.prefix, assigned_device=d)
+        self.plan()
+        [again] = self.changes(PrtgChange.CREATE_DEVICE)
+        self.assertEqual(again.id, c.id)
+        self.assertTrue(again.detail["applicable"])
+        self.assertEqual(again.detail["host"], "10.0.0.12")
+        self.assertEqual(again.detail["host_source"], "assigned")
+        self.assertEqual(again.detail["host_note"],
+                         "Host 10.0.0.12 from the first assigned address")
+        d.primary_ip = ip
+        d.save()
+        self.plan()
+        [again] = self.changes(PrtgChange.CREATE_DEVICE)
+        self.assertEqual((again.id, again.detail["host_source"]), (c.id, "primary"))
+
+    def test_save_of_a_blocked_object_says_needs_attention(self):
+        from prtg.provision import plan_after_save
+
+        d = Device.objects.create(tenant=self.tenant, name="bare", site=self.site,
+                                  prtg_sync="always")
+        self.conn.register_group_id, self.conn.register_group_path = LOCAL_PROBE, "Probe"
+        self.conn.save()
+        out = plan_after_save(d)
+        self.assertEqual(out["state"], "attention")
+        self.assertEqual(out["issue"]["code"], "no_address")
+        self.assertEqual(out["object"], {"kind": "device", "id": str(d.id)})
+        [c] = self.changes(PrtgChange.CREATE_DEVICE)
+        self.assertFalse(c.detail["applicable"])
+
+    def test_host_order(self):
+        from prtg.provision import host_choice
+
+        d = Device.objects.create(tenant=self.tenant, name="h", site=self.site)
+        self.assertEqual(host_choice(d), ("", ""))
+        from api.models import Prefix
+
+        iface = Interface.objects.create(device=d, name="eth0")
+        p6 = Prefix.objects.create(tenant=self.tenant, cidr="fd00::/64")
+        v6 = IPAddress.objects.create(tenant=self.tenant, ip_address="fd00::1",
+                                      prefix=p6, assigned_interface=iface,
+                                      dns_name="h.lab.")
+        self.assertEqual(host_choice(d), ("fd00::1", "assigned"))
+        IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.40/24",
+                                 prefix=self.prefix, assigned_interface=iface)
+        low = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.9/24",
+                                       prefix=self.prefix, assigned_device=d)
+        self.assertEqual(host_choice(d), ("10.0.0.9", "assigned"))
+        oob = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.200/24",
+                                       prefix=self.prefix)
+        d.oob_ip = oob
+        d.save()
+        self.assertEqual(host_choice(d), ("10.0.0.200", "oob"))
+        d.primary_ip = low
+        d.save()
+        self.assertEqual(host_choice(d), ("10.0.0.9", "primary"))
+        d.prtg_host = "edge.lab"
+        self.assertEqual(host_choice(d), ("edge.lab", "override"))
+        # Nothing usable left: the DNS name of the first address.
+        d.prtg_host, d.primary_ip, d.oob_ip = "", None, None
+        d.save()
+        IPAddress.objects.filter(tenant=self.tenant).exclude(pk=v6.pk).delete()
+        IPAddress.objects.filter(pk=v6.pk).update(monitoring_excluded=True)
+        self.assertEqual(host_choice(d), ("h.lab", "dns"))
 
     def test_stale_plans_go_and_the_status_read_keeps_them(self):
         d = self.device("edge", "10.0.0.90")

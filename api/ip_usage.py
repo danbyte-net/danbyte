@@ -64,3 +64,24 @@ def address_count(kind: str):
 def addresses_of(kind: str, obj):
     """The addresses ``obj`` uses, in its tenant."""
     return IPAddress.objects.filter(addresses_q(kind, obj), tenant_id=obj.tenant_id)
+
+
+def assigned_addresses(kind: str, obj):
+    """The addresses assigned to ``obj`` or to one of its interfaces, in its
+    tenant, lowest first with IPv4 before IPv6. The address slots are left
+    out: a slot may hold an address assigned elsewhere."""
+    import ipaddress
+
+    direct, via_iface, _slots = _KINDS[kind]
+    rows = IPAddress.objects.filter(
+        Q(**{direct: obj.pk}) | Q(**{via_iface: obj.pk}), tenant_id=obj.tenant_id
+    ).distinct()
+
+    def order(ip):
+        try:
+            addr = ipaddress.ip_address(str(ip.ip_address).split("/")[0])
+        except ValueError:
+            return (9, 0, str(ip.ip_address))
+        return (addr.version, int(addr), "")
+
+    return sorted(rows, key=order)

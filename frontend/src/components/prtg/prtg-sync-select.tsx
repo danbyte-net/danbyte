@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
+import { toast } from "sonner"
 
 import { ApiError } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type { PrtgConnection, PrtgSavePlan, PrtgSync } from "@/lib/api"
 import { FormSelect, FormText } from "@/components/forms"
+import { prtgIssueLinks } from "./issues"
 
 export const PRTG_SYNC_OPTIONS: { value: PrtgSync; label: string }[] = [
   { value: "inherit", label: "Follow policies" },
@@ -50,9 +53,54 @@ export function prtgSaveToast(plan?: PrtgSavePlan | null): string | null {
   if (plan.state === "applying") return "Being added to PRTG"
   if (plan.state === "planned") return "Planned for PRTG"
   if (plan.state === "attention")
-    return "Planned for PRTG; it needs attention first"
+    return plan.issue
+      ? `PRTG needs attention: ${plan.issue.text}`
+      : "PRTG needs attention"
   if (plan.state === "excluded") return "Excluded from PRTG"
   return null
+}
+
+/** Where to fix what blocks the saved object, and its rows in the review
+ * queue. */
+export function PrtgSaveFix({ plan }: { plan: PrtgSavePlan }) {
+  const object = plan.issue?.object ?? plan.object
+  const links = plan.issue
+    ? prtgIssueLinks(plan.issue, object).filter(Boolean)
+    : []
+  return (
+    <span
+      className="inline-flex flex-wrap gap-2 text-foreground"
+      data-testid="prtg-save-fix"
+    >
+      {links}
+      {plan.object && (
+        <Link
+          to="/prtg"
+          search={{ tab: "review", object: plan.object.id }}
+          className="link"
+        >
+          Review queue
+        </Link>
+      )}
+    </span>
+  )
+}
+
+/** The toast after a save that changed the PRTG setting - with attention,
+ * a warning carrying the fix links. False when there is nothing to say. */
+export function showPrtgSaveToast(
+  plan?: PrtgSavePlan | null,
+  fallback?: string
+): boolean {
+  const text = prtgSaveToast(plan) ?? fallback
+  if (!text) return false
+  if (plan?.state === "attention")
+    toast.warning(text, {
+      description: <PrtgSaveFix plan={plan} />,
+      duration: 10_000,
+    })
+  else toast.info(text)
+  return true
 }
 
 /** Whether PRTG should have this device or VM: the policies decide, or the

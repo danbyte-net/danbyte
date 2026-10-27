@@ -769,6 +769,15 @@ type PlannedSensor = {
 }
 type PlannedGroup = { path?: string; objid?: string } | null
 
+/** Which rule chose a planned row's host (`detail.host_source`). */
+const HOST_SOURCE: Record<string, string> = {
+  override: "the PRTG host set on the object",
+  primary: "the primary address",
+  oob: "the OOB address",
+  assigned: "the first assigned address",
+  dns: "the DNS name of its address",
+}
+
 const CREDENTIAL_LABEL: Record<string, string> = {
   snmp: "SNMP",
   windows: "Windows",
@@ -839,6 +848,18 @@ export function PlannedDetail({ change }: { change: PrtgChange }) {
       </span>
     )
   }
+  if (change.kind === "update_host") {
+    const from = (d.from as { host?: string } | undefined) ?? {}
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="font-mono text-xs text-muted-foreground">
+          {from.host ?? ""}
+        </span>
+        <span>→</span>
+        <span className="font-mono text-xs">{String(d.host ?? "")}</span>
+      </span>
+    )
+  }
   if (change.kind === "remove_device")
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
@@ -900,7 +921,17 @@ export function ChangePanel({
         <StatusCell change={c} connection={connection} />
       </PanelSection>
       <PanelSection label="Plan">
-        {d.host ? <PlanText label="Host">{String(d.host)}</PlanText> : null}
+        {d.host ? (
+          <PlanText label="Host">
+            {String(d.host)}
+            {HOST_SOURCE[String(d.host_source ?? "")] && (
+              <span className="text-muted-foreground">
+                {" "}
+                from {HOST_SOURCE[String(d.host_source)]}
+              </span>
+            )}
+          </PlanText>
+        ) : null}
         {groupPath(target) && (
           <PlanText label="Group">{groupPath(target)}</PlanText>
         )}

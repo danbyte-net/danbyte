@@ -352,6 +352,36 @@ class OtherKindsTests(_Writes):
         self.assertEqual(link.group_path, "Network Infrastructure")
 
 
+class UpdateHostTests(_Writes):
+    def test_a_primary_set_later_updates_the_host(self):
+        from api.models import IPAddress
+
+        self.dev.primary_ip = None
+        self.dev.save()
+        link, _ = self.created()
+        self.assertEqual(link.host_source, "assigned")
+        self.assertEqual(self.fake.device(int(link.objid))["host_raw"], "10.0.0.77")
+        ip = IPAddress.objects.create(tenant=self.tenant, ip_address="10.0.0.78/24",
+                                      prefix=self.prefix, assigned_device=self.dev)
+        self.dev.primary_ip = ip
+        self.dev.save()
+        counts = self.read()["plan"]
+        self.assertEqual(counts["update_host"], 1)
+        change = self.row(PrtgChange.UPDATE_HOST)
+        self.assertTrue(change.detail["applicable"])
+        self.assertEqual(change.detail["host_source"], "primary")
+        writer.apply(change)
+        self.assertEqual(self.fake.device(int(link.objid))["host_raw"], "10.0.0.78")
+        link.refresh_from_db()
+        self.assertEqual((link.host, link.host_source), ("10.0.0.78", "primary"))
+        self.assertEqual(self.read()["plan"]["update_host"], 0)
+
+    def test_a_device_created_on_its_primary_is_left_alone(self):
+        link, _ = self.created()
+        self.assertEqual(link.host_source, "primary")
+        self.assertEqual(self.plan()["update_host"], 0)
+
+
 class PruneTests(_Writes):
     def test_gate_and_apply(self):
         link, _ = self.created()

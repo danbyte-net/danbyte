@@ -11,6 +11,8 @@ applying a proposal makes it so. One function per kind:
 * ``remove_sensor`` - deletes a sensor **Danbyte created**; any other is
   refused.
 * ``move_device`` - moves the device to the group its policy names.
+* ``update_host`` - sets the host of a device **Danbyte created** on a
+  fallback host, once its object has a stronger one.
 * ``remove_device`` - deletes a device **Danbyte created**, and the link.
 
 How objects are created depends on the server (:func:`write_mode`): API v2
@@ -630,7 +632,8 @@ def apply_create_device(w: Writer) -> str:
     link.tagged = True
     if created_here:
         link.sent_tags = extra
-    link.save(update_fields=["created_here", "tagged", "sent_tags"])
+        link.host_source = str(d.get("host_source") or "")[:16]
+    link.save(update_fields=["created_here", "tagged", "sent_tags", "host_source"])
     if w.conn.send_credentials and not w.result.get("credentials"):
         names = send_credentials(w, objid, link)
         w.keep(credentials=names or ["none"])
@@ -700,6 +703,30 @@ def apply_move_device(w: Writer) -> str:
     return f"Moved {link.name or link.objid} to {to.get('path') or to['objid']} in PRTG."
 
 
+def apply_update_host(w: Writer) -> str:
+    _owner(w)
+    _need_create(w)
+    link = _link(w)
+    if not link.created_here:
+        raise Refused(
+            f"Danbyte did not create PRTG device {link.objid}; its host is left alone."
+        )
+    if str(w.detail.get("objid") or link.objid) != link.objid:
+        raise Refused("The object is linked to another PRTG device now.")
+    host = str(w.detail.get("host") or "").strip()
+    if not host:
+        raise Refused("No host to set.")
+    if w.mode == PrtgConnection.WRITE_V2:
+        w.v2.update_device(link.objid, {"basic": {"host": host}})
+    else:
+        w.classic.set_property(int(link.objid), "host", host)
+    link.host = host[:255]
+    link.host_source = str(w.detail.get("host_source") or "")[:16]
+    link.save(update_fields=["host", "host_source"])
+    w.step(f"Set the host of device {link.objid} to {host}.")
+    return f"Set the host of {link.name or link.objid} to {host} in PRTG."
+
+
 def apply_remove_device(w: Writer) -> str:
     _owner(w)
     link = _link(w)
@@ -719,6 +746,7 @@ APPLY = {
     PrtgChange.ADD_SENSOR: apply_add_sensor,
     PrtgChange.REMOVE_SENSOR: apply_remove_sensor,
     PrtgChange.MOVE_DEVICE: apply_move_device,
+    PrtgChange.UPDATE_HOST: apply_update_host,
     PrtgChange.REMOVE_DEVICE: apply_remove_device,
 }
 
@@ -836,7 +864,8 @@ def apply_ready(conn: PrtgConnection, *, user=None, ids=None) -> dict:
 
 
 #: The order an object's rows are written in: the device before its sensors.
-_ORDER = {PrtgChange.CREATE_DEVICE: 0, PrtgChange.ADD_SENSOR: 1, PrtgChange.MOVE_DEVICE: 2}
+_ORDER = {PrtgChange.CREATE_DEVICE: 0, PrtgChange.ADD_SENSOR: 1, PrtgChange.MOVE_DEVICE: 2,
+          PrtgChange.UPDATE_HOST: 3}
 
 
 def apply_object(conn: PrtgConnection, obj, *, user=None) -> dict:
