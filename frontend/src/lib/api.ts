@@ -148,7 +148,23 @@ export interface Tag {
   /** Site this catalog entry is scoped to - null means tenant-wide (Global).
    * Only present from the Tags management API. */
   owning_site?: { id: string; name: string } | null
+  /** Deployment-global (no tenant): every tenant sees it. Only present from
+   * the Tags management and picker APIs. */
+  is_global?: boolean
   permissions?: ObjectPerms
+}
+
+/** Tag names used more than once among the tags this tenant sees. */
+export interface TagDuplicates {
+  count: number
+  results: { name: string; ids: number[] }[]
+}
+
+/** POST /api/tags/<id>/merge/ answer. */
+export interface TagMergeResult {
+  moved: number
+  already_tagged: number
+  into: Tag
 }
 
 export interface TagWritePayload {
@@ -675,6 +691,8 @@ export interface TagOption {
   slug: string
   color: string
   text_color: string
+  /** Deployment-global (no tenant) - marked in pickers. */
+  is_global?: boolean
 }
 
 // ─── Write payloads ────────────────────────────────────────────────────

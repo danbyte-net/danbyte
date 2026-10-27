@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown, X } from "lucide-react"
 
-import { type TagOption } from "@/lib/api"
+import type { TagOption } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { useFieldControlProps } from "@/components/ui/field-control"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { GlobalTagChip } from "@/components/cells/global-tag-chip"
 import {
   Command,
   CommandEmpty,
@@ -55,21 +56,23 @@ export function TagMultiSelect({
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       {selected.map((t) => (
-        <ColorBadge
-          key={t.id}
-          name={t.name}
-          color={t.color || undefined}
-          suffix={
-            <button
-              type="button"
-              onClick={() => toggle(t.id)}
-              className="-mr-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-              aria-label={`Remove ${t.name}`}
-            >
-              <X className="h-2.5 w-2.5" />
-            </button>
-          }
-        />
+        <span key={t.id} className="inline-flex items-center gap-1">
+          <ColorBadge
+            name={t.name}
+            color={t.color || undefined}
+            suffix={
+              <button
+                type="button"
+                onClick={() => toggle(t.id)}
+                className="-mr-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                aria-label={`Remove ${t.name}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            }
+          />
+          {t.is_global && <GlobalTagChip />}
+        </span>
       ))}
 
       <Popover modal open={open} onOpenChange={setOpen}>
@@ -96,7 +99,8 @@ export function TagMultiSelect({
                   return (
                     <CommandItem
                       key={t.id}
-                      value={t.name}
+                      // Distinct for a global tag and a tenant tag of one name.
+                      value={t.is_global ? `${t.name} global` : t.name}
                       onSelect={() => toggle(t.id)}
                       className="gap-2"
                     >
@@ -107,6 +111,7 @@ export function TagMultiSelect({
                         )}
                       />
                       <ColorBadge name={t.name} color={t.color || undefined} />
+                      {t.is_global && <GlobalTagChip className="ml-auto" />}
                     </CommandItem>
                   )
                 })}
