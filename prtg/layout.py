@@ -216,7 +216,7 @@ def target(root: dict, steps: list[Step]) -> dict:
 
 
 def preview(conn, objects, *, layout: str, regions: bool, locations: bool,
-            root: dict | None, limit: int = 20) -> dict:
+            root: dict | None, limit: int = 500) -> dict:
     """The layout for up to ``limit`` objects, from Danbyte's data and the
     last group list: ``{root, layout, rows: [{object, path: [{name, kind,
     exists, matched_by}]}], groups: [{path, objects}]}``."""

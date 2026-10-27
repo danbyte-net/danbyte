@@ -196,7 +196,7 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=True, methods=["get"], url_path="layout-preview")
     def layout_preview(self, request, pk=None):
-        """The group layout for up to 20 of the tenant's devices and VMs,
+        """The group layout for up to 500 of the tenant's devices and VMs,
         from Danbyte's data and the last group list - nothing is asked of
         PRTG. ``?layout=`` ``&regions=`` ``&locations=`` ``&root=`` preview
         a setting before it is saved; each defaults to the stored one."""
@@ -221,21 +221,24 @@ class PrtgConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
             conn.layout_root_path = objid
         root = root_of(conn)
         tenant = conn.tenant
+        limit = 500
         devices = rbac.restrict_queryset(
             Device.objects.filter(tenant=tenant), request.user, tenant, "device", "view",
-        ).select_related("site", "location", "role").order_by("site__name", "name")[:20]
-        objects = list(devices)
-        if len(objects) < 20:
-            vms = rbac.restrict_queryset(
-                VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
-                "virtualmachine", "view",
-            ).select_related("site", "cluster", "device", "role").order_by("name")
-            objects.extend(vms[: 20 - len(objects)])
-        return Response(preview(
+        ).select_related("site", "location", "role").order_by("site__name", "name")
+        vms = rbac.restrict_queryset(
+            VirtualMachine.objects.filter(tenant=tenant), request.user, tenant,
+            "virtualmachine", "view",
+        ).select_related("site", "cluster", "device", "role").order_by("name")
+        objects = list(devices[:limit])
+        if len(objects) < limit:
+            objects.extend(vms[: limit - len(objects)])
+        result = preview(
             conn, objects, layout=layout,
             regions=flag("regions", conn.layout_regions),
-            locations=flag("locations", conn.layout_locations), root=root,
-        ))
+            locations=flag("locations", conn.layout_locations), root=root, limit=limit,
+        )
+        result["total"] = devices.count() + vms.count()
+        return Response(result)
 
     @action(detail=True, methods=["get"], url_path="credential-state")
     def credential_state(self, request, pk=None):

@@ -13371,6 +13371,9 @@ export interface PrtgLayoutPreview {
     }[]
   }[]
   groups: { path: string; names: string[]; objects: string[] }[]
+  /** How many devices and VMs the caller may view; the rows cover the
+   * first 500. */
+  total?: number
 }
 
 /** Where a profile puts the credentials one PRTG settings section holds. */

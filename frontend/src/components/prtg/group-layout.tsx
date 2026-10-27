@@ -4,6 +4,7 @@ import { ChevronRight } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import type {
   PrtgConnection,
   PrtgGroupLayout,
@@ -123,7 +124,188 @@ const KIND_LABEL: Record<string, string> = {
   role: "Role",
 }
 
-/** The tree the layout builds for up to 20 of the tenant's objects, from
+type PreviewObject = PrtgLayoutPreview["rows"][number]["object"]
+
+interface TreeNode {
+  name: string
+  kind: string
+  exists: boolean
+  children: TreeNode[]
+  /** Objects that land in this group itself. */
+  objects: PreviewObject[]
+  /** Objects in this group and every group under it. */
+  total: number
+}
+
+/** The preview's rows as the tree PRTG will get under the root. */
+export function layoutTree(data: PrtgLayoutPreview): TreeNode {
+  const root: TreeNode = {
+    name: data.root?.name || data.root?.path || "Root",
+    kind: "root",
+    exists: true,
+    children: [],
+    objects: [],
+    total: 0,
+  }
+  for (const row of data.rows) {
+    let node = root
+    node.total += 1
+    for (const step of row.path) {
+      let child = node.children.find((c) => c.name === step.name)
+      if (!child) {
+        child = {
+          name: step.name,
+          kind: step.kind,
+          exists: step.exists,
+          children: [],
+          objects: [],
+          total: 0,
+        }
+        node.children.push(child)
+      }
+      child.total += 1
+      node = child
+    }
+    node.objects.push(row.object)
+  }
+  const sort = (n: TreeNode) => {
+    n.children.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true })
+    )
+    n.objects.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true })
+    )
+    n.children.forEach(sort)
+  }
+  sort(root)
+  return root
+}
+
+function countLabel(objects: PreviewObject[] | number): string {
+  if (typeof objects === "number")
+    return `${objects} ${objects === 1 ? "object" : "objects"}`
+  const vms = objects.filter((o) => o.kind === "virtual_machine").length
+  const devices = objects.length - vms
+  const parts = []
+  if (devices) parts.push(`${devices} ${devices === 1 ? "device" : "devices"}`)
+  if (vms) parts.push(`${vms} ${vms === 1 ? "VM" : "VMs"}`)
+  return parts.join(", ")
+}
+
+/** What a group's own objects lack, named by the kind of its subgroups. */
+function missingLabel(node: TreeNode): string {
+  const kinds = new Set(node.children.map((c) => c.kind))
+  if (kinds.has("role")) return "No role"
+  if (kinds.has("location")) return "No location"
+  if (kinds.has("site") || kinds.has("region")) return "No site"
+  return "Not placed"
+}
+
+function ObjectList({ objects }: { objects: PreviewObject[] }) {
+  return (
+    <ul className="grid gap-0.5 py-0.5 pl-5">
+      {objects.map((o) => (
+        <li
+          key={`${o.kind}-${o.id}`}
+          className="truncate font-mono text-xs text-muted-foreground"
+        >
+          {o.name}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function TreeRow({
+  label,
+  kind,
+  isNew,
+  count,
+  objects,
+  muted,
+}: {
+  label: string
+  kind?: string
+  isNew?: boolean
+  count: string
+  objects: PreviewObject[]
+  muted?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const canOpen = objects.length > 0
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex min-h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-1 text-left text-xs hover:bg-muted/50 disabled:hover:bg-transparent"
+        onClick={() => setOpen((v) => !v)}
+        disabled={!canOpen}
+        aria-expanded={canOpen ? open : undefined}
+      >
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90",
+            !canOpen && "invisible"
+          )}
+        />
+        <span
+          className={cn(
+            "truncate",
+            muted ? "text-muted-foreground" : "font-medium"
+          )}
+        >
+          {label}
+        </span>
+        {kind && <span className="shrink-0 text-muted-foreground">{kind}</span>}
+        {isNew && (
+          <Badge variant="secondary" className="shrink-0 px-1 py-0 text-[10px]">
+            New group
+          </Badge>
+        )}
+        <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">
+          {count}
+        </span>
+      </button>
+      {open && <ObjectList objects={objects} />}
+    </div>
+  )
+}
+
+function TreeBranch({ node }: { node: TreeNode }) {
+  return (
+    <div className="ml-2 border-l border-border pl-2">
+      {node.children.map((child) => (
+        <div key={child.name}>
+          <TreeRow
+            label={child.name}
+            kind={KIND_LABEL[child.kind]}
+            isNew={!child.exists}
+            count={countLabel(
+              child.children.length ? child.total : child.objects
+            )}
+            objects={child.children.length ? [] : child.objects}
+          />
+          {child.children.length > 0 && <TreeBranch node={child} />}
+        </div>
+      ))}
+      {node.objects.length > 0 && node.children.length > 0 && (
+        <TreeRow
+          label={missingLabel(node)}
+          kind={`stays in ${node.name}`}
+          count={countLabel(node.objects)}
+          objects={node.objects}
+          muted
+        />
+      )}
+      {node.objects.length > 0 && node.children.length === 0 && (
+        <ObjectList objects={node.objects} />
+      )}
+    </div>
+  )
+}
+
+/** The tree the layout builds for the tenant's devices and VMs, from
  * Danbyte's data and PRTG's last group list. */
 export function GroupLayoutPreview({
   connectionId,
@@ -158,35 +340,24 @@ export function GroupLayoutPreview({
         Pick the probe or group to build under.
       </p>
     )
-  const rows = data.rows
+  if (data.rows.length === 0)
+    return <p className="text-xs text-muted-foreground">No devices yet.</p>
+  const tree = layoutTree(data)
+  const total = data.total ?? data.rows.length
   return (
-    <div className="grid gap-1.5" data-testid="prtg-layout-preview">
-      {rows.length === 0 && (
-        <p className="text-xs text-muted-foreground">No devices yet.</p>
+    <div className="grid gap-1" data-testid="prtg-layout-preview">
+      <div className="flex items-center gap-1.5 px-1 text-xs">
+        <span className="font-medium">{tree.name}</span>
+        <span className="ml-auto text-muted-foreground tabular-nums">
+          {countLabel(tree.total)}
+        </span>
+      </div>
+      <TreeBranch node={tree} />
+      {total > data.rows.length && (
+        <p className="px-1 text-xs text-muted-foreground">
+          First {data.rows.length} of {total} devices and VMs.
+        </p>
       )}
-      {rows.map((row) => (
-        <div
-          key={`${row.object.kind}-${row.object.id}`}
-          className="flex min-w-0 flex-wrap items-center gap-1 text-xs"
-        >
-          <span className="text-muted-foreground">
-            {data.root?.name || data.root?.path}
-          </span>
-          {row.path.map((p, i) => (
-            <span key={i} className="inline-flex items-center gap-1">
-              <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              <span className={p.exists ? "" : "font-medium"}>{p.name}</span>
-              {!p.exists && (
-                <Badge variant="secondary" className="px-1 py-0 text-[10px]">
-                  New {KIND_LABEL[p.kind]?.toLowerCase() ?? "group"}
-                </Badge>
-              )}
-            </span>
-          ))}
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
-          <span className="font-mono">{row.object.name}</span>
-        </div>
-      ))}
     </div>
   )
 }

@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { PrtgChange, PrtgConnection, PrtgLayoutPreview } from "@/lib/api"
@@ -43,8 +49,13 @@ const PREVIEW: PrtgLayoutPreview = {
         { name: "Core switches", kind: "role", exists: false, matched_by: "" },
       ],
     },
+    {
+      object: { kind: "device", id: "d2", name: "zz-ap-1" },
+      path: [],
+    },
   ],
   groups: [],
+  total: 600,
 }
 
 beforeEach(() => {
@@ -68,11 +79,16 @@ afterEach(() => {
 describe("PrtgGroupLayoutCard", () => {
   it("previews the tree from Danbyte's data", async () => {
     mountWithRouter(() => <PrtgGroupLayoutCard connection={conn} canManage />)
-    await screen.findByText("sw-core-1")
+    await screen.findByText("Core switches")
     expect(screen.getByText("Denmark")).toBeTruthy()
     expect(screen.getByText("København HQ")).toBeTruthy()
-    expect(screen.getByText("New site")).toBeTruthy()
-    expect(screen.getByText("New role")).toBeTruthy()
+    expect(screen.getAllByText("New group")).toHaveLength(2)
+    expect(screen.getByText("No site")).toBeTruthy()
+    expect(screen.getByText("stays in Local Probe")).toBeTruthy()
+    expect(screen.getByText("First 2 of 600 devices and VMs.")).toBeTruthy()
+    expect(screen.queryByText("sw-core-1")).toBeNull()
+    fireEvent.click(screen.getByText("Core switches"))
+    expect(screen.getByText("sw-core-1")).toBeTruthy()
     const call = apiMock.mock.calls.find(([p]) => p.includes("layout-preview"))
     expect(call?.[0]).toContain("layout=sites_roles")
     await waitFor(() => expect(screen.queryByText("Save")).toBeNull())
