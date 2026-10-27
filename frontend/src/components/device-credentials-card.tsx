@@ -38,7 +38,13 @@ import {
 interface DeviceCredential {
   id: string
   name: string
-  kind: "ssh_password" | "ssh_key" | "https_login"
+  kind:
+    | "ssh_password"
+    | "ssh_key"
+    | "https_login"
+    | "windows_login"
+    | "proxmox"
+    | "vmware"
   username: string
   port: number | null
   secret_managed: boolean
@@ -51,6 +57,9 @@ const KINDS = [
   { value: "ssh_password", label: "SSH password" },
   { value: "ssh_key", label: "SSH key" },
   { value: "https_login", label: "HTTPS login" },
+  { value: "windows_login", label: "Windows login" },
+  { value: "proxmox", label: "Proxmox API token" },
+  { value: "vmware", label: "VMware login" },
 ]
 const KIND_LABEL: Record<string, string> = Object.fromEntries(
   KINDS.map((k) => [k.value, k.label])
@@ -125,9 +134,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-1">
-                {canReveal && c.secret_set && (
-                  <RevealButton id={c.id} />
-                )}
+                {canReveal && c.secret_set && <RevealButton id={c.id} />}
                 {canChange && (
                   <Button
                     size="icon"
@@ -164,10 +171,7 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
           }}
         />
       )}
-      <DeleteDialog
-        credential={deleting}
-        onClose={() => setDeleting(null)}
-      />
+      <DeleteDialog credential={deleting} onClose={() => setDeleting(null)} />
     </div>
   )
 }
@@ -194,7 +198,10 @@ function RevealButton({ id }: { id: string }) {
       >
         <Eye className="h-3.5 w-3.5" />
       </Button>
-      <AlertDialog open={value != null} onOpenChange={(o) => !o && setValue(null)}>
+      <AlertDialog
+        open={value != null}
+        onOpenChange={(o) => !o && setValue(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Revealed secret</AlertDialogTitle>
@@ -338,7 +345,9 @@ function CredentialForm({
             <FormSelect
               label="Kind"
               value={kind}
-              onChange={(v) => setKind((v as DeviceCredential["kind"]) ?? "ssh_password")}
+              onChange={(v) =>
+                setKind((v as DeviceCredential["kind"]) ?? "ssh_password")
+              }
               options={KINDS}
             />
             <FormText
@@ -406,27 +415,29 @@ function CredentialForm({
                 Advanced - reference a secret that already exists in your store.
                 Most people should leave the box above checked instead.
               </p>
-            <FormRow>
-              <FormSelect
-                label="Store"
-                value={provider}
-                onChange={(v) => setProvider((v as "local" | "vault") ?? "local")}
-                options={[
-                  { value: "local", label: "Local" },
-                  { value: "vault", label: "Vault" },
-                ]}
-                disabled={!canExternal}
-              />
-              <FormText
-                label="Path"
-                mono
-                value={path}
-                onChange={setPath}
-                placeholder="kv/data/team/ssh"
-                disabled={!canExternal}
-                error={fieldErrors.secret_path}
-              />
-            </FormRow>
+              <FormRow>
+                <FormSelect
+                  label="Store"
+                  value={provider}
+                  onChange={(v) =>
+                    setProvider((v as "local" | "vault") ?? "local")
+                  }
+                  options={[
+                    { value: "local", label: "Local" },
+                    { value: "vault", label: "Vault" },
+                  ]}
+                  disabled={!canExternal}
+                />
+                <FormText
+                  label="Path"
+                  mono
+                  value={path}
+                  onChange={setPath}
+                  placeholder="kv/data/team/ssh"
+                  disabled={!canExternal}
+                  error={fieldErrors.secret_path}
+                />
+              </FormRow>
             </div>
           )}
 
@@ -462,13 +473,16 @@ function DeleteDialog({
     onError: (e) => apiErrorToast(e, "Couldn't delete the credential"),
   })
   return (
-    <AlertDialog open={credential != null} onOpenChange={(o) => !o && onClose()}>
+    <AlertDialog
+      open={credential != null}
+      onOpenChange={(o) => !o && onClose()}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {credential?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the reference. A managed secret is also deleted from the
-            store; an external one is left in place.
+            This removes the reference. A managed secret is also deleted from
+            the store; an external one is left in place.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -478,7 +492,7 @@ function DeleteDialog({
               e.preventDefault()
               del.mutate()
             }}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="text-destructive-foreground bg-destructive hover:bg-destructive/90"
           >
             {del.isPending ? "Deleting…" : "Delete"}
           </AlertDialogAction>

@@ -13242,6 +13242,14 @@ export interface PrtgConnection {
   register_group_id: string
   register_group_path: string
   groups_read_at: string | null
+  /** Group trees built from Danbyte's sites, locations and roles. */
+  group_layout: PrtgGroupLayout
+  layout_regions: boolean
+  layout_locations: boolean
+  /** The probe or group the layout is built under; "" = the registration
+   * group. */
+  layout_root_id: string
+  layout_root_path: string
   last_plan_at: string | null
   last_plan_summary: Record<string, number | string>
   /** Writing to PRTG. */
@@ -13267,6 +13275,84 @@ export interface PrtgConnection {
 /** Whether PRTG should monitor a device or VM, set on the object. */
 export type PrtgSync = "inherit" | "always" | "never"
 
+export type PrtgGroupLayout = "none" | "sites" | "roles" | "sites_roles"
+
+/** GET /api/prtg/connections/<id>/layout-preview/ */
+export interface PrtgLayoutPreview {
+  root: { objid: string; path: string; name: string; kind: string } | null
+  layout: PrtgGroupLayout
+  rows: {
+    object: { kind: "device" | "virtual_machine"; id: string; name: string }
+    path: {
+      name: string
+      kind: "region" | "site" | "location" | "role"
+      exists: boolean
+      matched_by: "" | "tag" | "name"
+    }[]
+  }[]
+  groups: { path: string; names: string[]; objects: string[] }[]
+}
+
+/** Where a profile puts the credentials one PRTG settings section holds. */
+export type PrtgCredentialMode = "inherit" | "group" | "device"
+
+export interface PrtgCredentialPlacementEntry {
+  mode: PrtgCredentialMode
+  credential?: string
+  snmp_profile?: string
+}
+
+export type PrtgCredentialPlacement = Record<
+  string,
+  PrtgCredentialPlacementEntry
+>
+
+/** A credential section a profile's sensors need. */
+export interface PrtgCredentialSection {
+  section: string
+  label: string
+  /** Danbyte can set it; otherwise only Inherit. */
+  writable: boolean
+  kinds: string[]
+}
+
+/** What PRTG has in effect for a credential section. */
+export interface PrtgCredentialState {
+  set: boolean | null
+  inherited: boolean | null
+  source: string
+  text?: string
+}
+
+/** GET /api/prtg/connections/<id>/credential-state/ */
+export interface PrtgCredentialStates {
+  objid: string
+  sections: Record<string, PrtgCredentialState>
+  error?: string
+}
+
+/** /api/prtg/credentials/ - secrets are write-only. */
+export interface PrtgCredential {
+  id: string
+  connection: string
+  name: string
+  kind: "proxmox" | "vmware" | "windows_login" | "ssh"
+  kind_display: string
+  params: {
+    user?: string
+    realm?: string
+    token_id?: string
+    domain?: string
+    port?: number
+  }
+  description: string
+  password_set: boolean
+  token_secret_set: boolean
+  private_key_set: boolean
+  created_at: string
+  updated_at: string
+}
+
 /** A probe or group a PRTG device can live under. */
 export interface PrtgGroup {
   objid: string
@@ -13275,6 +13361,7 @@ export interface PrtgGroup {
   path: string
   probe: string
   parent_id: string
+  tags?: string[]
 }
 
 /** GET /api/prtg/groups/?connection= */
@@ -13411,6 +13498,8 @@ export interface PrtgSensorProfile {
   description: string
   definitions: PrtgSensorDefinition[]
   policy_count: number
+  credential_placement?: PrtgCredentialPlacement
+  credential_sections?: PrtgCredentialSection[]
   created_at: string
   updated_at: string
 }
@@ -13448,6 +13537,10 @@ export interface PrtgPolicy {
   profile_name: string
   group_id: string
   group_path: string
+  /** Place matched objects by the connection's group layout. */
+  use_layout?: boolean
+  /** Overrides the profiles' credential placement, section by section. */
+  credential_placement?: PrtgCredentialPlacement
   created_at: string
   updated_at: string
   /** Only on GET /api/prtg/policies/<id>/: how many objects it matches. */
@@ -13474,9 +13567,19 @@ export interface PrtgIssue {
     | "not_created_sensor"
     | "no_writes"
     | "snmp_scan"
+    | "group_writes"
+    | "credentials_missing"
+    | "no_credential"
+    | "empty_group"
   text: string
-  /** The policy that decides the group, for no_group / group_gone. */
+  /** The policy that decides the group, for no_group / group_gone; the
+   * policy that places a credential. */
   policy?: string
+  /** The profile that places a credential, for credentials_missing and
+   * no_credential. */
+  profile?: string
+  /** The PRTG settings section a credential issue is about. */
+  section?: string
   /** The object whose tab fixes it. */
   object?: { kind: "device" | "virtual_machine"; id: string }
 }
@@ -13618,6 +13721,16 @@ export interface PrtgPlanEntry {
     sensor: { objid: string; name: string } | null
   }[]
   credentials: { kind: string; name: string; version?: string }[]
+  /** Where each credential section its sensors need is set, and for
+   * Inherit what PRTG had in effect at the last read. */
+  credential_placement?: {
+    section: string
+    label: string
+    mode: PrtgCredentialMode
+    credential: string
+    state: PrtgCredentialState | null
+    text: string
+  }[]
   problems: string[]
   last_apply?: PrtgLastApply | null
   /** The reason as an issue, when the object is left out. */
@@ -13709,6 +13822,10 @@ export interface PrtgChange {
     | "move_device"
     | "update_host"
     | "remove_device"
+    | "create_group"
+    | "rename_group"
+    | "remove_group"
+    | "group_creds"
   kind_display: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null

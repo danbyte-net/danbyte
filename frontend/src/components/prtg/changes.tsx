@@ -532,8 +532,18 @@ function countKinds(rows: PrtgChange[]): [string, number][] {
   return [...out.entries()]
 }
 
+/** A PRTG path ("Local Probe / Denmark / HQ") as the queue shows it. */
+export function treePath(path: unknown): string {
+  return String(path ?? "")
+    .split(" / ")
+    .filter(Boolean)
+    .join(" › ")
+}
+
 function removeSentence(c: PrtgChange): string {
   const d = c.detail
+  if (c.kind === "remove_group")
+    return `Deletes the empty PRTG group ${treePath(d.path) || String(d.objid ?? "")}. Danbyte made it.`
   if (c.kind === "remove_device")
     return `Deletes PRTG device ${String(d.name || d.objid || "")} and its sensors. Danbyte created it.`
   const s = (d.sensor as { name?: string; objid?: string } | undefined) ?? {}
@@ -869,6 +879,48 @@ export function PlannedDetail({ change }: { change: PrtgChange }) {
         <span className="text-muted-foreground">{String(d.reason ?? "")}</span>
       </span>
     )
+  if (change.kind === "create_group")
+    return (
+      <span
+        className="inline-flex flex-wrap items-center gap-1.5 text-[13px]"
+        data-testid="prtg-create-group"
+      >
+        <span>Create group</span>
+        <span className="font-medium">{treePath(d.path)}</span>
+      </span>
+    )
+  if (change.kind === "rename_group")
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="text-muted-foreground">{String(d.from ?? "")}</span>
+        <span>→</span>
+        <span className="font-medium">{String(d.to ?? "")}</span>
+        <span className="text-muted-foreground">{treePath(d.path)}</span>
+      </span>
+    )
+  if (change.kind === "remove_group")
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        <span className="font-medium">{treePath(d.path)}</span>
+        <span className="text-muted-foreground">{String(d.reason ?? "")}</span>
+      </span>
+    )
+  if (change.kind === "group_creds") {
+    const sections =
+      (d.sections as { label: string; credential: string }[] | undefined) ?? []
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+        {sections.map((s) => (
+          <Badge key={s.label} variant="outline">
+            {s.label} {s.credential}
+          </Badge>
+        ))}
+        <span className="text-muted-foreground">
+          on {treePath(groupPath(d.group))}
+        </span>
+      </span>
+    )
+  }
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
       <span className="text-muted-foreground">{groupPath(d.from)}</span>
@@ -904,6 +956,9 @@ export function ChangePanel({
         : []
   const creds =
     (d.credentials as { kind: string; name: string }[] | undefined) ?? []
+  const placed =
+    (d.device_credentials as
+      { label: string; credential: string }[] | undefined) ?? []
   const policies =
     (d.policies as { id: string; name: string }[] | undefined) ?? []
   const profiles = (d.profiles as string[] | undefined) ?? []
@@ -950,6 +1005,21 @@ export function ChangePanel({
           <PlanText label="Credentials">
             {creds
               .map((x) => `${CREDENTIAL_LABEL[x.kind] ?? x.kind} ${x.name}`)
+              .join(", ")}
+          </PlanText>
+        )}
+        {placed.length > 0 && (
+          <PlanText label="On the device">
+            {placed.map((x) => `${x.label} ${x.credential}`).join(", ")}
+          </PlanText>
+        )}
+        {(c.kind === "create_group" || c.kind === "remove_group") && d.path ? (
+          <PlanText label="Path">{treePath(d.path)}</PlanText>
+        ) : null}
+        {c.kind === "group_creds" && (
+          <PlanText label="Sets">
+            {((d.sections as { label: string; credential: string }[]) ?? [])
+              .map((x) => `${x.label} ${x.credential}`)
               .join(", ")}
           </PlanText>
         )}
