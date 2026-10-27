@@ -254,7 +254,9 @@ editor's own local entries under
     sites' devices and VMs - device links (`prtgdevicelink`), sensors
     (`prtgsensor`) and the review queue (`prtgchange`) - so the
     [Sensors tab](prtg.md#sensors) shows to local IT - and the sensor pins
-    (`prtgsensorpin`) of the [Overview's Sensors card](prtg.md#pinned-sensors).
+    (`prtgsensorpin`) of the [Overview's Sensors card](prtg.md#pinned-sensors), and
+    the per-device sensor overrides (`prtgsensoroverride`) of the
+    [Coverage card](prtg.md#sensors).
     PRTG connections stay with administrators.
 
 ### Set it up when you create the user

@@ -52,6 +52,7 @@ from .models import (
     PrtgPolicy,
     PrtgSensor,
     PrtgSensorDefinition,
+    PrtgSensorOverride,
     PrtgSensorProfile,
 )
 
@@ -119,6 +120,7 @@ TEXT = {
     "no_address": "It has no address PRTG can poll. Set a primary address, or the "
                   "host PRTG polls on the object.",
     "unwanted_sensor": "Danbyte made this sensor and no profile wants it any more.",
+    "sensor_off": "Turned off for this device.",
     "not_created_sensor": "It carries a Danbyte tag, but Danbyte did not create it. "
                           "Remove it in PRTG if it should go.",
     "no_writes": "This PRTG cannot create objects through its API. Name a seed device "
@@ -550,6 +552,45 @@ def sensors_for(want: Want, host: str | None = None) -> list[dict]:
     return out
 
 
+# ── per-object overrides ────────────────────────────────────────────────────
+
+
+def overrides_for(conn, obj) -> dict:
+    """The object's sensor overrides on this connection, by definition key."""
+    return {
+        o.definition_key: o
+        for o in PrtgSensorOverride.objects.filter(connection=conn, **_parent(obj))
+        .select_related("created_by")
+    }
+
+
+def split_overrides(wanted: list[dict], overrides: dict) -> tuple[list, list]:
+    """``wanted`` as ``(on, off)``: a sensor turned off for the object is
+    left out of what the plan proposes; one turned on counts as required."""
+    on, off = [], []
+    for inst in wanted:
+        o = overrides.get(inst["key"])
+        if o is None:
+            on.append(inst)
+        elif o.enabled:
+            on.append({**inst, "required": True})
+        else:
+            off.append(inst)
+    return on, off
+
+
+def override_detail(o) -> dict | None:
+    """An override as the coverage row shows it."""
+    if o is None:
+        return None
+    by = o.created_by.get_username() if o.created_by_id and o.created_by else ""
+    return {"enabled": o.enabled, "by": by, "at": o.updated_at, "note": o.note}
+
+
+def _made_here(link, sensor) -> bool:
+    return any(v.get("objid") == sensor.objid for v in (link.created_sensors or {}).values())
+
+
 # ── credentials ─────────────────────────────────────────────────────────────
 
 
@@ -783,6 +824,9 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
     sensors_by_link: dict = {}
     for s in PrtgSensor.objects.filter(connection=conn).order_by("name", "objid"):
         sensors_by_link.setdefault(s.link_id, []).append(s)
+    overrides: dict = {}
+    for o in PrtgSensorOverride.objects.filter(connection=conn):
+        overrides.setdefault(o.device_id or o.virtual_machine_id, {})[o.definition_key] = o
     waiting = set()
     for d, v in PrtgChange.pending(conn).filter(
         kind__in=(PrtgChange.LINK, PrtgChange.AMBIGUOUS)
@@ -801,17 +845,18 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
                 parent_of=parent_of,
                 sensors=sensors_by_link.get(link.id, []) if link else [],
                 waiting=obj.id in waiting, counts=counts, fresh=fresh,
-                no_writes=no_writes,
+                no_writes=no_writes, overrides=overrides.get(obj.id, {}),
             )
         drop_stale(conn, fresh, now)
     return counts
 
 
 def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent_of,
-                 sensors, waiting, counts, fresh, no_writes) -> None:
+                 sensors, waiting, counts, fresh, no_writes, overrides=None) -> None:
     """One object of the planning pass: propose its rows into ``fresh``.
     ``present`` is whether PRTG still has the linked device; ``waiting``
-    whether a link or ambiguity for it waits in the queue."""
+    whether a link or ambiguity for it waits in the queue; ``overrides``
+    the object's sensor overrides by definition key."""
     # A device Danbyte created is still wanted by "register all":
     # register all only skips what was in PRTG already.
     want = decide(conn, obj, ctx,
@@ -830,11 +875,13 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     if want.via == "never":
         return
     host, source = host_choice(obj) if want.managed else ("", "")
-    wanted = sensors_for(want, host) if want.managed else []
+    wanted, off = split_overrides(
+        sensors_for(want, host) if want.managed else [], overrides or {}
+    )
     if link is not None and present:
         _plan_linked(conn, obj, link, want, wanted,
                      sensors, parent_of,
-                     groups_by_id, counts, fresh, no_writes)
+                     groups_by_id, counts, fresh, no_writes, off=off)
         if want.managed:
             _plan_host(conn, obj, link, host, source, counts, fresh, no_writes)
         if want.managed:
@@ -946,6 +993,7 @@ def plan_object(conn: PrtgConnection, obj, *, now=None) -> dict:
             groups_by_id=groups_by_id, parent_of={}, sensors=sensors, waiting=waiting,
             counts=counts, fresh=fresh,
             no_writes=conn.write_mode == PrtgConnection.WRITE_NONE,
+            overrides=overrides_for(conn, obj),
         )
         PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **parent).exclude(
             id__in=fresh
@@ -1070,9 +1118,11 @@ def _sensor_detail(inst: dict) -> dict:
 
 
 def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id,
-                 counts, fresh, no_writes=False) -> None:
+                 counts, fresh, no_writes=False, off=()) -> None:
     """A linked object: missing required sensors, Danbyte sensors nothing
-    wants any more, and a group that differs."""
+    wants any more, and a group that differs. ``off`` are the wanted
+    sensors turned off for the object: never proposed, and one Danbyte
+    made is proposed for removal only when the connection prunes."""
     claimed: set = set()
     missing = []
     created = dict(link.created_sensors or {})
@@ -1124,19 +1174,27 @@ def _plan_linked(conn, obj, link, want, wanted, sensors, parent_of, groups_by_id
         link.save(update_fields=["created_sensors"])
 
     keys = {i["key"] for i in wanted}
+    off_keys = {i["key"] for i in off}
     for s in sensors:
         ours = [t for t in (s.tags or []) if t.startswith(DEF_TAG)]
         if not ours or any(t in keys for t in ours):
             continue
-        counts["remove_sensor"] += 1
         made = any(v.get("objid") == s.objid for v in created.values())
+        turned_off = any(t in off_keys for t in ours)
+        if turned_off and not (made and conn.prune_devices):
+            # Turned off for this object: left in PRTG unless Danbyte made
+            # it and the connection prunes.
+            continue
+        counts["remove_sensor"] += 1
         if not made:
             counts["not_applicable"] += 1
+        reason = (TEXT["sensor_off"] if turned_off
+                  else TEXT["unwanted_sensor"] if made else TEXT["not_created_sensor"])
         propose(conn, fresh, {
             "objid": link.objid, "device_name": link.name,
             "sensor": {"objid": s.objid, "name": s.name, "kind": s.kind_label or s.kind},
             "tag": ours[0],
-            "reason": TEXT["unwanted_sensor"] if made else TEXT["not_created_sensor"],
+            "reason": reason,
             "issues": [] if made else [issue("not_created_sensor")],
             "applicable": made,
         }, **_parent(obj), kind=PrtgChange.REMOVE_SENSOR, key=s.objid)
@@ -1191,18 +1249,35 @@ def preview(conn: PrtgConnection, obj) -> dict:
     want = decide(conn, obj, ctx, linked=link is not None and not link.created_here,
                   checked=checked)
     groups_by_id = {g["objid"]: g for g in (conn.groups_cache or [])}
-    wanted = sensors_for(want) if want.managed else []
+    overrides = overrides_for(conn, obj)
+    every = sensors_for(want) if want.managed else []
+    wanted, off = split_overrides(every, overrides)
+    off_keys = {i["key"] for i in off}
     sensors = list(PrtgSensor.objects.filter(link=link).order_by("name")) if link else []
     claimed: set = set()
-    rows, matches = [], []
+    found_by_key: dict = {}
     for inst in wanted:
         found = None if inst.get("template") else find_sensor(inst, sensors, claimed)
         if found is not None:
             claimed.add(found.id)
+        found_by_key[inst["key"]] = found
+    for inst in off:
+        # One turned off is only still there when a sensor carries its tag.
+        found = next(
+            (s for s in sensors if s.id not in claimed and inst["key"] in (s.tags or [])),
+            None,
+        )
+        if found is not None:
+            claimed.add(found.id)
+        found_by_key[inst["key"]] = found
+    rows, matches = [], []
+    by_key = {i["key"]: i for i in [*wanted, *off]}
+    for inst in (by_key[i["key"]] for i in every):
+        found = found_by_key.get(inst["key"])
         matches.append((inst, found))
         rows.append({
             **_sensor_detail(inst), "template": inst.get("template", ""),
-            "present": found is not None,
+            "present": found is not None, "off": inst["key"] in off_keys,
             "sensor": {"objid": found.objid, "name": found.name} if found else None,
         })
     creds, issues = credential_issues(obj, conn.tenant, wanted)
@@ -1230,14 +1305,17 @@ def preview(conn: PrtgConnection, obj) -> dict:
         {"key": r["key"], "name": r["name"], "kind": r["kind"],
          "kind_label": r["kind_label"], "interface": r["interface"]}
         for r in rows
-        if not r["template"] and not r["present"] and (link is None or r["required"])
+        if not r["template"] and not r["present"] and not r["off"]
+        and (link is None or r["required"])
     ]
-    keys = {r["key"] for r in rows}
+    keys = {r["key"] for r in rows if not r["off"]}
     remove = [
         {"objid": s.objid, "name": s.name, "kind": s.kind_label or s.kind}
         for s in (sensors if want.via != "never" else [])
         if (ours := [t for t in (s.tags or []) if t.startswith(DEF_TAG)])
         and not any(t in keys for t in ours)
+        and (not any(t in off_keys for t in ours)
+             or (conn.prune_devices and _made_here(link, s)))
     ]
     queue = PrtgChange.pending(conn).filter(kind__in=PrtgChange.PLANNED, **_parent(obj))
     move = None
@@ -1289,7 +1367,8 @@ def preview(conn: PrtgConnection, obj) -> dict:
         "problems": [i["text"] for i in issues],
         "issues": issues,
         "last_apply": _last_apply(conn, obj, link),
-        "coverage": coverage(conn, obj, want, link, matches, sensors, issues, group),
+        "coverage": coverage(conn, obj, want, link, matches, sensors, issues, group,
+                             overrides=overrides),
     }
 
 
@@ -1299,6 +1378,9 @@ COVERAGE_TEXT = {
     "optional": "Optional: only added with a new PRTG device.",
     "unplanned": "Not planned yet. The next planning pass proposes it.",
     "applied": "Applied. It shows after the next status read.",
+    "off": "Off for this device.",
+    "off_kept": "Off for this device. Danbyte leaves the sensor in PRTG.",
+    "off_remove": "Off for this device. Removing it waits in the review queue.",
 }
 
 
@@ -1340,14 +1422,17 @@ def _row_state(row, inst_issues: list) -> dict:
 
 
 def coverage(conn, obj, want: Want, link, matches: list, sensors: list,
-             object_issues: list, group: dict | None = None) -> dict:
+             object_issues: list, group: dict | None = None, *,
+             overrides: dict | None = None) -> dict:
     """Per wanted sensor, where it stands - ``present`` (PRTG has it, by
     tag or by kind as the planner decides), ``planned`` (a ready queue
     row), ``failed`` (the last apply failed), ``waiting`` (not applicable
     yet, with the issue) or ``skipped`` (dismissed, or optional on a device
     that already exists) - plus the PRTG sensors on the linked device no
-    definition wants, by origin. Read from what :func:`preview` already
-    loaded and one queue query."""
+    definition wants, by origin. A sensor turned off for the object is
+    ``off``, with ``override`` saying who and when, and is not counted.
+    Read from what :func:`preview` already loaded and one queue query."""
+    overrides = overrides or {}
     profile_of: dict = {}
     for profile in want.profiles:
         for defn in profile.definitions.all():
@@ -1359,7 +1444,9 @@ def coverage(conn, obj, want: Want, link, matches: list, sensors: list,
     queue = {
         (r.kind, r.key): r
         for r in PrtgChange.objects.filter(
-            connection=conn, kind__in=(PrtgChange.ADD_SENSOR, PrtgChange.CREATE_DEVICE),
+            connection=conn,
+            kind__in=(PrtgChange.ADD_SENSOR, PrtgChange.CREATE_DEVICE,
+                      PrtgChange.REMOVE_SENSOR),
             **_parent(obj),
         )
     }
@@ -1379,7 +1466,20 @@ def coverage(conn, obj, want: Want, link, matches: list, sensors: list,
             "policy": {"id": str(policy.id), "name": policy.name} if policy else None,
             "name": inst["name"], "kind": inst["kind"], "kind_label": inst["kind_label"],
             "required": inst["required"], "interface": inst.get("interface"),
+            "override": override_detail(overrides.get(inst["key"])),
         }
+        o = overrides.get(inst["key"])
+        if o is not None and not o.enabled:
+            state = {"status": "off", "reason": COVERAGE_TEXT["off"]}
+            if found is not None:
+                state.update(sensor_id=str(found.id), sensor_objid=found.objid)
+                row = queue.get((PrtgChange.REMOVE_SENSOR, found.objid))
+                if row is not None and not row.ignored:
+                    state.update(reason=COVERAGE_TEXT["off_remove"], change_id=str(row.id))
+                else:
+                    state["reason"] = COVERAGE_TEXT["off_kept"]
+            items.append({**item, **state})
+            continue
         if found is not None:
             items.append({**item, "status": "present", "sensor_id": str(found.id),
                           "sensor_objid": found.objid})

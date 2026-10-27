@@ -906,3 +906,62 @@ class PrtgPolicy(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class PrtgSensorOverride(TimestampedModel):
+    """One wanted sensor turned off - or on - for one device or VM.
+
+    ``definition_key`` is the sensor's ``danbyte-def-`` tag, as the planning
+    pass names a wanted sensor (one per interface for a per-interface kind).
+    Off, the planning pass proposes nothing for it, and proposes removing a
+    sensor Danbyte made for it only when the connection prunes; on, an
+    optional sensor counts as required for this object. No row means the
+    policies decide.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="prtg_sensor_overrides"
+    )
+    connection = models.ForeignKey(
+        PrtgConnection, on_delete=models.CASCADE, related_name="sensor_overrides"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="prtg_sensor_overrides",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE,
+        related_name="prtg_sensor_overrides", null=True, blank=True,
+    )
+    definition_key = models.CharField(max_length=64)
+    enabled = models.BooleanField(default=False, db_default=False)
+    note = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Who set it last.
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["definition_key"]
+        constraints = [
+            _one_parent("prtg_override_one_parent"),
+            models.UniqueConstraint(
+                fields=["device", "definition_key"], name="uniq_prtg_override_device",
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "definition_key"], name="uniq_prtg_override_vm",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["connection", "device"], name="prtg_override_conn_device"),
+            models.Index(fields=["connection", "virtual_machine"], name="prtg_override_conn_vm"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.device_id or self.virtual_machine_id}:{self.definition_key}"
+
+    @property
+    def parent(self):
+        return self.device if self.device_id else self.virtual_machine

@@ -198,6 +198,9 @@ GROUPS = importlib.import_module("auth_api.migrations.0036_site_roles_applicatio
 PRTG = importlib.import_module("auth_api.migrations.0037_site_roles_prtg")
 PINS = importlib.import_module("auth_api.migrations.0038_site_roles_prtg_pins")
 PRTG_FACTS = importlib.import_module("auth_api.migrations.0039_site_roles_prtg_facts")
+PRTG_OVERRIDES = importlib.import_module(
+    "auth_api.migrations.0040_site_roles_prtg_overrides"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -303,7 +306,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(GROUPS.NEW_TYPES)
             | set(PRTG.NEW_TYPES)
             | set(PINS.NEW_TYPES)
-            | set(PRTG_FACTS.NEW_TYPES),
+            | set(PRTG_FACTS.NEW_TYPES)
+            | set(PRTG_OVERRIDES.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -370,6 +374,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 CATALOG_MIGRATION.ROLE_CATALOGS + LATER.NEW_CATALOGS + COOLING.NEW_CATALOGS
                 + APPLICATIONS.NEW_CATALOGS + FLOWS.NEW_CATALOGS + GROUPS.NEW_CATALOGS
                 + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS + PRTG_FACTS.NEW_CATALOGS
+                + PRTG_OVERRIDES.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -457,6 +462,22 @@ class SiteRolePrtgPinUpgradeTests(SiteRoleUpgradeTests):
             self.assertIn("prtghostfacts", perm.object_types, perm.name)
         before = sorted(view.object_types)
         PRTG_FACTS.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+    def test_0040_adds_the_overrides_after_0039(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        for step in (PINS, PRTG_FACTS, PRTG_OVERRIDES):
+            step.forwards(django_apps, None)
+        for perm in (view, edit):
+            perm.refresh_from_db()
+            self.assertIn("prtgsensoroverride", perm.object_types, perm.name)
+        before = sorted(view.object_types)
+        PRTG_OVERRIDES.forwards(django_apps, None)
         view.refresh_from_db()
         custom.refresh_from_db()
         self.assertEqual(sorted(view.object_types), before)

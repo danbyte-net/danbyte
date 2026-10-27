@@ -155,6 +155,7 @@ AUDITED_MODELS = [
     "prtg.PrtgConnection",
     "prtg.PrtgAdoptionRule",
     "prtg.PrtgSensorPin",
+    "prtg.PrtgSensorOverride",
     "prtg.PrtgPolicy",
     "prtg.PrtgSensorProfile",
     "prtg.PrtgSensorDefinition",
