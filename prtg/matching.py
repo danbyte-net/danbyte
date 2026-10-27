@@ -6,8 +6,9 @@ Tried most reliable first, stopping at the first unambiguous hit:
    not break the pairing.
 2. **The tag** ``danbyte-<device uuid>`` on the PRTG device - written by
    Danbyte when it provisions, or by an operator who wants to pin a pairing.
-3. **An address.** PRTG's ``host`` field equals one of the addresses assigned
-   to the device in Danbyte.
+3. **An address.** PRTG's ``host`` field equals one of the addresses the
+   device uses in Danbyte: assigned to it or to one of its interfaces, or in
+   its primary, OOB or secondary slot.
 4. **A DNS name.** ``host`` equals the DNS name of one of those addresses.
 5. **The exact name.** Last, because names collide and get reused.
 
@@ -48,23 +49,47 @@ def _dns(value: str) -> str:
 
 
 def annotate_devices(tenant, devices) -> list:
-    """Each device with ``_prtg_ips`` and ``_prtg_dns``: every address
-    assigned to it in this tenant and their DNS names. One query for all."""
+    """Each device with ``_prtg_ips`` and ``_prtg_dns``: every address it
+    uses in this tenant - assigned to it or to one of its interfaces, or in
+    its primary, OOB or secondary slot - and their DNS names. The same
+    candidates the host PRTG polls is chosen from
+    (:func:`prtg.provision.host_choice`). Two queries for all."""
+    from django.db.models import Q
+
     from api.models import IPAddress
 
     devices = list(devices)
     by_id = {d.id: d for d in devices}
     for d in devices:
         d._prtg_ips, d._prtg_dns = set(), set()
-    rows = IPAddress.objects.filter(
-        tenant=tenant, assigned_device_id__in=list(by_id)
-    ).values_list("assigned_device_id", "ip_address", "dns_name")
-    for device_id, address, dns_name in rows:
-        d = by_id[device_id]
+
+    def add(d, address, dns_name):
         if _address(str(address)):
             d._prtg_ips.add(_address(str(address)))
         if dns_name:
             d._prtg_dns.add(_dns(dns_name))
+
+    if by_id:
+        ids = list(by_id)
+        rows = IPAddress.objects.filter(tenant=tenant).filter(
+            Q(assigned_device_id__in=ids) | Q(assigned_interface__device_id__in=ids)
+        ).values_list("assigned_device_id", "assigned_interface__device_id",
+                      "ip_address", "dns_name")
+        for direct, via_iface, address, dns_name in rows:
+            for device_id in {direct, via_iface} - {None}:
+                if device_id in by_id:
+                    add(by_id[device_id], address, dns_name)
+        slots: dict = {}
+        for d in devices:
+            for attr in ("primary_ip_id", "oob_ip_id", "secondary_ip_id"):
+                if getattr(d, attr, None):
+                    slots.setdefault(getattr(d, attr), []).append(d)
+        if slots:
+            for pk, address, dns_name in IPAddress.objects.filter(
+                tenant=tenant, pk__in=list(slots)
+            ).values_list("pk", "ip_address", "dns_name"):
+                for d in slots[pk]:
+                    add(d, address, dns_name)
     for d in devices:
         _override(d)
     return devices

@@ -369,6 +369,9 @@ class PrtgDeviceLink(ExternalLinkBase):
     name = models.CharField(max_length=255, blank=True, default="", db_default="")
     #: PRTG's "IPv4 address/DNS name" field.
     host = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Which rule chose ``host`` when Danbyte created the device or last
+    #: updated its host (:data:`prtg.provision.HOST_SOURCES`); "" otherwise.
+    host_source = models.CharField(max_length=16, blank=True, default="", db_default="")
     probe_name = models.CharField(max_length=255, blank=True, default="", db_default="")
     group_path = models.CharField(max_length=255, blank=True, default="", db_default="")
     #: The PRTG device's own status code at the last read.
@@ -594,9 +597,13 @@ class PrtgChange(ExternalChangeBase):
     ADD_SENSOR = "add_sensor"
     REMOVE_SENSOR = "remove_sensor"
     MOVE_DEVICE = "move_device"
+    #: A device Danbyte created on a fallback host whose object now has a
+    #: stronger one (a primary address set later).
+    UPDATE_HOST = "update_host"
     #: A device Danbyte created whose object no longer belongs in PRTG.
     REMOVE_DEVICE = "remove_device"
-    PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE, REMOVE_DEVICE)
+    PLANNED = (CREATE_DEVICE, ADD_SENSOR, REMOVE_SENSOR, MOVE_DEVICE, UPDATE_HOST,
+               REMOVE_DEVICE)
     #: Deletions: applied one at a time by a person, never by "apply all"
     #: or the beat.
     DESTRUCTIVE = (REMOVE_SENSOR, REMOVE_DEVICE)
@@ -608,6 +615,7 @@ class PrtgChange(ExternalChangeBase):
         (ADD_SENSOR, "Add sensor in PRTG"),
         (REMOVE_SENSOR, "Remove from PRTG"),
         (MOVE_DEVICE, "Move in PRTG"),
+        (UPDATE_HOST, "Update host in PRTG"),
         (REMOVE_DEVICE, "Remove device from PRTG"),
     ]
 

@@ -116,7 +116,8 @@ TEXT = {
     "no_windows": "Danbyte holds no Windows login for {label}. Add one on its Access tab.",
     "no_windows_vm": "Danbyte holds no Windows logins for VMs yet, so WMI sensors on "
                      "{label} cannot be set up.",
-    "no_address": "It has no primary address. Set one so PRTG can reach it.",
+    "no_address": "It has no address PRTG can poll. Set a primary address, or the "
+                  "host PRTG polls on the object.",
     "unwanted_sensor": "Danbyte made this sensor and no profile wants it any more.",
     "not_created_sensor": "It carries a Danbyte tag, but Danbyte did not create it. "
                           "Remove it in PRTG if it should go.",
@@ -151,14 +152,61 @@ def _parent(obj) -> dict:
     return {"virtual_machine": obj} if _is_vm(obj) else {"device": obj}
 
 
-def host_address(obj) -> str:
-    """What PRTG polls: the object's PRTG host override, else its primary
-    address."""
+#: Which rule chose the host PRTG polls, strongest first, as the row says it.
+HOST_SOURCES = {
+    "override": "the PRTG host set on the object",
+    "primary": "the primary address",
+    "oob": "the OOB address",
+    "assigned": "the first assigned address",
+    "dns": "the DNS name of its address",
+}
+#: Hosts chosen by a fallback: a stronger one later is proposed as
+#: ``update_host`` on a device Danbyte created.
+FALLBACK_SOURCES = ("oob", "assigned", "dns")
+
+
+def _bare(ip) -> str:
+    return str(ip.ip_address).split("/")[0]
+
+
+def host_choice(obj) -> tuple[str, str]:
+    """What PRTG polls and which rule chose it, as ``(host, source)``: the
+    PRTG host override; the primary address; the OOB address; the first
+    address assigned to the object or one of its interfaces (lowest, IPv4
+    before IPv6); with none of those usable, the DNS name of the primary or
+    first address. An address excluded from monitoring is not usable.
+    ``("", "")`` when nothing is left."""
+    from api.ip_usage import assigned_addresses
+
     override = (getattr(obj, "prtg_host", "") or "").strip()
     if override:
-        return override
-    ip = getattr(obj, "primary_ip", None) if obj.primary_ip_id else None
-    return str(ip.ip_address).split("/")[0] if ip is not None else ""
+        return override, "override"
+    primary = getattr(obj, "primary_ip", None) if obj.primary_ip_id else None
+    if primary is not None and not primary.monitoring_excluded:
+        return _bare(primary), "primary"
+    oob = getattr(obj, "oob_ip", None) if getattr(obj, "oob_ip_id", None) else None
+    if oob is not None and not oob.monitoring_excluded:
+        return _bare(oob), "oob"
+    if obj.pk is None:
+        return "", ""
+    assigned = assigned_addresses("vm" if _is_vm(obj) else "device", obj)
+    usable = [ip for ip in assigned if not ip.monitoring_excluded]
+    if usable:
+        return _bare(usable[0]), "assigned"
+    for ip in (primary, *assigned[:1]):
+        dns = ((ip.dns_name if ip is not None else "") or "").strip().rstrip(".")
+        if dns:
+            return dns, "dns"
+    return "", ""
+
+
+def host_address(obj) -> str:
+    """What PRTG polls (:func:`host_choice`)."""
+    return host_choice(obj)[0]
+
+
+def host_note(host: str, source: str) -> str:
+    return f"Host {host} from {HOST_SOURCES[source]}" if host and source else ""
 
 
 # ── matching context ────────────────────────────────────────────────────────
@@ -481,11 +529,12 @@ def _signature(inst: dict) -> str:
                       sort_keys=True, default=str)
 
 
-def sensors_for(want: Want) -> list[dict]:
+def sensors_for(want: Want, host: str | None = None) -> list[dict]:
     """The union of the profiles' definitions, expanded, without the same
     sensor twice: two profiles that both ask for Ping give one Ping."""
     obj = want.obj
-    host = host_address(obj)
+    if host is None:
+        host = host_address(obj)
     ports = None
     out, seen = [], set()
     for profile in want.profiles:
@@ -647,7 +696,8 @@ def _objects(conn):
 
     devices = (
         Device.objects.filter(tenant=conn.tenant)
-        .select_related("primary_ip", "status", "site", "location", "platform", "role")
+        .select_related("primary_ip", "oob_ip", "status", "site", "location", "platform",
+                        "role")
         .prefetch_related("tags")
     )
     vms = (
@@ -713,8 +763,8 @@ def plan(conn: PrtgConnection, device_rows: list | None = None, *, client=None,
 
     now = now or timezone.now()
     counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
-              "move": 0, "remove_device": 0, "not_applicable": 0, "no_address": 0,
-              "awaiting_link": 0}
+              "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
+              "no_address": 0, "awaiting_link": 0}
     if not has_work(conn):
         drop_stale(conn, set(), now)
         return counts
@@ -779,11 +829,14 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
         return
     if want.via == "never":
         return
-    wanted = sensors_for(want) if want.managed else []
+    host, source = host_choice(obj) if want.managed else ("", "")
+    wanted = sensors_for(want, host) if want.managed else []
     if link is not None and present:
         _plan_linked(conn, obj, link, want, wanted,
                      sensors, parent_of,
                      groups_by_id, counts, fresh, no_writes)
+        if want.managed:
+            _plan_host(conn, obj, link, host, source, counts, fresh, no_writes)
         if want.managed:
             counts["scoped"] += 1
         return
@@ -793,11 +846,12 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     if waiting:
         counts["awaiting_link"] += 1
         return
-    host = host_address(obj)
+    # A blocked create is proposed all the same, as Needs attention with
+    # what blocks it, and turns Ready on the pass after the fix.
+    issues = []
     if not host:
         counts["no_address"] += 1
-        return
-    issues = []
+        issues.append(issue("no_address", object=_target(obj)))
     problem = group_issue(want, groups_by_id)
     if problem:
         issues.append(problem)
@@ -811,7 +865,8 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     if found:
         group.update(path=found["path"], kind=found["kind"])
     detail = {
-        "name": obj.name, "host": host, "group": group or None,
+        "name": obj.name, "host": host, "host_source": source,
+        "host_note": host_note(host, source), "group": group or None,
         "via": want.via,
         "policies": [{"id": str(p.id), "name": p.name} for p in want.policies],
         "profiles": [p.name for p in want.profiles],
@@ -827,6 +882,28 @@ def _plan_object(conn, obj, *, link, present, ctx, checked, groups_by_id, parent
     counts["create"] += 1
     propose(conn, fresh, detail, **_parent(obj),
             kind=PrtgChange.CREATE_DEVICE, key="")
+
+
+def _plan_host(conn, obj, link, host, source, counts, fresh, no_writes) -> None:
+    """A device Danbyte created on a fallback host (OOB, first assigned
+    address, DNS name) whose object now has a stronger one - a primary
+    address set later - gets ``update_host``."""
+    if not (link.created_here and host and link.host_source in FALLBACK_SOURCES):
+        return
+    order = list(HOST_SOURCES)
+    if order.index(source) >= order.index(link.host_source) or host == link.host:
+        return
+    issues = [issue("no_writes")] if no_writes else []
+    counts["update_host"] += 1
+    if issues:
+        counts["not_applicable"] += 1
+    propose(conn, fresh, {
+        "objid": link.objid, "name": link.name,
+        "from": {"host": link.host, "source": link.host_source},
+        "host": host, "host_source": source, "host_note": host_note(host, source),
+        "applicable": not issues, "reason": " ".join(i["text"] for i in issues),
+        "issues": issues,
+    }, **_parent(obj), kind=PrtgChange.UPDATE_HOST, key="")
 
 
 
@@ -849,8 +926,8 @@ def plan_object(conn: PrtgConnection, obj, *, now=None) -> dict:
 
     now = now or timezone.now()
     counts = {"scoped": 0, "create": 0, "add_sensor": 0, "remove_sensor": 0,
-              "move": 0, "remove_device": 0, "not_applicable": 0, "no_address": 0,
-              "awaiting_link": 0}
+              "move": 0, "update_host": 0, "remove_device": 0, "not_applicable": 0,
+              "no_address": 0, "awaiting_link": 0}
     ctx, checked = _prepare(conn)
     parent = _parent(obj)
     link = PrtgDeviceLink.objects.filter(connection=conn, **parent).first()
@@ -888,9 +965,10 @@ def plan_after_save(obj) -> dict | None:
     enabled connection of its tenant; with Apply automatically on, queue an
     apply of its ready rows after commit, so the save does not wait on PRTG.
 
-    Returns ``{"state", "connections"}`` for the form's toast - ``state`` is
-    ``applying``, ``planned``, ``attention``, ``excluded`` or ``none`` - or
-    None while the integration is off. Never raises: a save must not fail
+    Returns ``{"state", "connections", "object", "issue"}`` for the form's
+    toast - ``state`` is ``applying``, ``planned``, ``attention``,
+    ``excluded`` or ``none``; ``issue`` the first thing blocking a row that
+    needs attention - or None while the integration is off. Never raises: a save must not fail
     over a plan; the beat plans the object later anyway."""
     from integrations.toggles import integration_enabled
 
@@ -900,6 +978,7 @@ def plan_after_save(obj) -> dict | None:
     if tenant is None or not integration_enabled(tenant, "prtg"):
         return None
     names, applying_now, planned, attention = [], False, False, False
+    first_issue = None
     for conn in PrtgConnection.objects.filter(tenant=tenant, enabled=True).order_by("name"):
         try:
             plan_object(conn, obj)
@@ -912,8 +991,14 @@ def plan_after_save(obj) -> dict | None:
                 applying_now = True
             elif ok:
                 planned = True
-            elif any(not (r.detail or {}).get("applied") for r in rows):
+            elif blocked := [r for r in rows if not (r.detail or {}).get("applied")]:
                 attention = True
+                # The device row first: nothing else lands before it.
+                blocked.sort(key=lambda r: r.kind != PrtgChange.CREATE_DEVICE)
+                for r in blocked:
+                    found = (r.detail or {}).get("issues") or []
+                    if first_issue is None and found:
+                        first_issue = found[0]
         except Exception:  # noqa: BLE001
             log.exception("prtg plan on save failed for %s", obj.pk)
             continue
@@ -928,7 +1013,8 @@ def plan_after_save(obj) -> dict | None:
         state = "attention"
     else:
         state = "none"
-    return {"state": state, "connections": names}
+    return {"state": state, "connections": names, "object": _target(obj),
+            "issue": first_issue if state == "attention" else None}
 
 
 def queue_apply(conn, obj, rows) -> None:
@@ -1129,7 +1215,7 @@ def preview(conn: PrtgConnection, obj) -> dict:
         )
         if problem:
             issues.append(problem)
-        if not host_address(obj):
+        if not host_choice(obj)[0]:
             issues.append(issue("no_address", object=_target(obj)))
 
     # A linked object nothing registers is simply left alone: "nothing
