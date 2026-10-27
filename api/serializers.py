@@ -731,16 +731,44 @@ class TagManageSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin,
     """
 
     usage_count = serializers.SerializerMethodField()
+    is_global = serializers.BooleanField(read_only=True)
 
     def get_usage_count(self, obj) -> int:
         v = getattr(obj, "usage_count_annotated", None)
         return v if v is not None else tagged_count(self.context.get("request"), obj)
 
+    def validate(self, attrs):
+        """A name may exist once among the tags a tenant sees: its own (site-
+        local ones included) and the deployment-global ones; a global tag's
+        name, once across every tenant. Trimmed, case ignored."""
+        attrs = super().validate(attrs)
+        if "name" in attrs:
+            attrs["name"] = (attrs["name"] or "").strip()
+            from core.tags import tag_clash_message, tag_name_clash
+
+            if self.instance is not None:
+                tenant = self.instance.tenant
+            else:
+                from api.views import _get_active_tenant
+
+                request = self.context.get("request")
+                tenant = _get_active_tenant(request) if request is not None else None
+            # No active tenant on a create: the view refuses it anyway, and a
+            # NULL tenant here would wrongly mean "global".
+            clash = None if (self.instance is None and tenant is None) else tag_name_clash(
+                attrs["name"], tenant=tenant,
+                exclude_pk=getattr(self.instance, "pk", None),
+            )
+            if clash is not None:
+                raise serializers.ValidationError({"name": tag_clash_message(clash)})
+        return attrs
+
     class Meta:
         model = Tag
         fields = [
-            "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "usage_count"]
-        read_only_fields = ["id", "slug", "text_color", "usage_count"]
+            "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color",
+            "text_color", "usage_count", "is_global"]
+        read_only_fields = ["id", "slug", "text_color", "usage_count", "is_global"]
 
 
 class SiteMiniSerializer(NumIdModelSerializer):
@@ -1664,7 +1692,12 @@ class VLANPickerSerializer(VLANMiniSerializer):
 
 
 class TagPickerSerializer(TagSerializer):
-    pass
+    # ``is_global``: deployment-global (no tenant) - pickers mark it so a
+    # global tag and a tenant tag of the same name stay distinguishable.
+    is_global = serializers.BooleanField(read_only=True)
+
+    class Meta(TagSerializer.Meta):
+        fields = [*TagSerializer.Meta.fields, "is_global"]
 
 
 class RouteTargetPickerSerializer(RouteTargetMiniSerializer):

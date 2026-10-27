@@ -182,6 +182,7 @@ def _apply_tags(vm, names, colors: dict | None = None) -> None:
     from django.utils.text import slugify
 
     from core.models import Tag
+    from core.tags import find_visible_tag
 
     want = [n.strip() for n in names if n and n.strip()]
     if not want:
@@ -192,12 +193,17 @@ def _apply_tags(vm, names, colors: dict | None = None) -> None:
         color = colors.get(name, "")
         tag = have.get(name)
         if tag is None:
+            # A tag of that name the tenant already sees (its own or a
+            # global one, case ignored) is reused, never doubled.
+            tag = find_visible_tag(name, vm.tenant)
+        if tag is None:
             tag, _ = Tag.objects.get_or_create(
                 tenant=vm.tenant, slug=slugify(name)[:100] or name[:100],
                 defaults={"name": name, "color": color},
             )
+        if tag.pk not in {t.pk for t in have.values()}:
             vm.tags.add(tag)
-        if color and not tag.color:
+        if color and not tag.color and tag.tenant_id is not None:
             tag.color = color
             tag.save(update_fields=["color"])
 

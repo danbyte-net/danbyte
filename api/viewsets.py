@@ -2477,6 +2477,8 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     pagination_class = _PickerPagination
     queryset = Tag.objects.all().order_by(NATURAL_NAME)
     serializer_class = TagManageSerializer
+    # Merging deletes this tag: the row must be deletable by the caller.
+    rbac_action_map = {"merge": "delete"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and self.request.query_params.get("picker") == "1":
@@ -2497,7 +2499,10 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
                 qs = qs.filter(name__icontains=search) | qs.filter(cf_text_q(qs.model, search))
         qs = restrict_for_view(self, qs)
         # The usage panel lists the objects instead; it needs no count.
-        if self.action != "usage" and self.get_serializer_class() is TagManageSerializer:
+        if (
+            self.action not in ("usage", "duplicates", "merge")
+            and self.get_serializer_class() is TagManageSerializer
+        ):
             qs = qs.annotate(usage_count_annotated=tagged_count_expr(self.request))
         return qs
 
@@ -2515,6 +2520,75 @@ class TagViewSet(CatalogLocalityMixin, TenantScopedViewSet):
     def perform_destroy(self, instance):
         self._guard_legacy(instance)
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="duplicates")
+    def duplicates(self, request):
+        """Names used more than once among the tags this tenant sees (trimmed,
+        case ignored) - pairs left from before names were unique, to merge.
+        Returns ``{count, results:[{name, ids}]}``."""
+        from core.tags import duplicate_name_groups
+
+        qs = self.get_queryset().only("id", "name")
+        groups = duplicate_name_groups(qs)
+        return Response({
+            "count": len(groups),
+            "results": [
+                {"name": g[0].name, "ids": [t.pk for t in g]} for g in groups
+            ],
+        })
+
+    @action(detail=True, methods=["post"], url_path="merge")
+    def merge(self, request, pk=None):
+        """``{into: <id>}``: move this tag's objects onto ``into`` and delete
+        this tag. Needs delete on this tag and change on tags; ``into`` must be
+        visible here and of the same scope or wider - the same tenant (this
+        tag's site or tenant-wide) or deployment-global. A global tag merges
+        only into another global tag (superuser)."""
+        from auth_api import rbac
+        from core.tags import merge_tags
+
+        source = self.get_object()  # row-restricted for "delete" (rbac_action_map)
+        self._guard_legacy(source)
+        tenant = _get_active_tenant(request)
+        user = request.user
+        if not user.is_superuser and not rbac.has_action(user, tenant, "tag", "change"):
+            raise PermissionDenied("Merging tags needs the change permission on tags.")
+        into = (request.data or {}).get("into")
+        try:
+            into = int(into)
+        except (TypeError, ValueError):
+            raise ValidationError({"into": "A tag id."}) from None
+        visible = rbac.restrict_queryset(
+            Tag.objects.filter(Q(tenant=tenant) | Q(tenant__isnull=True)),
+            user, tenant, "tag", "view",
+        )
+        target = visible.select_related("owning_site").filter(pk=into).first()
+        if target is None:
+            raise ValidationError({"into": "Not found in this tenant."})
+        if target.pk == source.pk:
+            raise ValidationError({"into": "A tag can't be merged into itself."})
+        if target.tenant_id is not None and target.tenant_id != source.tenant_id:
+            raise ValidationError({
+                "into": "A global tag merges only into another global tag."
+                if source.tenant_id is None
+                else "Tags merge only within one tenant.",
+            })
+        if target.owning_site_id and target.owning_site_id != source.owning_site_id:
+            raise ValidationError({
+                "into": f"{target.name} is local to site {target.owning_site.name}; "
+                "merge into a tag of the same site or a tenant-wide one.",
+            })
+        result = merge_tags(source, target)
+        target = (
+            Tag.objects.filter(pk=target.pk)
+            .annotate(usage_count_annotated=tagged_count_expr(request))
+            .select_related("owning_site")
+            .first()
+        )
+        return Response({
+            **result,
+            "into": TagManageSerializer(target, context={"request": request}).data,
+        })
 
     @action(detail=True, methods=["get"], url_path="usage")
     def usage(self, request, pk=None):

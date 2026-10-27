@@ -26,11 +26,11 @@ import uuid
 from functools import lru_cache
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db.models import F, Q, UniqueConstraint
+from django.db.models import UniqueConstraint
 
 from auth_api.object_types import model_for, registry_payload, slug_for_model
 from core.models import CustomFieldsMixin, TaggableMixin, Tag
-from core.tags import TAGS, tags_of
+from core.tags import TAGS, find_visible_tag, tags_of
 
 from .bulk_import import (
     _SKIP,
@@ -720,12 +720,9 @@ class ModelIOHandler:
             tenant = getattr(obj, "tenant", None)
             tags = []
             for name in tag_names:
-                t = (
-                    Tag.objects.filter(name=name)
-                    .filter(Q(tenant=tenant) | Q(tenant__isnull=True))
-                    .order_by(F("tenant").asc(nulls_last=True))
-                    .first()
-                )
+                # Trimmed, case ignored: "Prod" reuses "prod" (one name per
+                # what a tenant sees).
+                t = find_visible_tag(name, tenant)
                 if t is None:
                     t = Tag(name=name, tenant=tenant)
                     t.save()
