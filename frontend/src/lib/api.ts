@@ -13511,6 +13511,10 @@ export type PrtgRegistrationMode =
 export interface PrtgSavePlan {
   state: "applying" | "planned" | "attention" | "excluded" | "none"
   connections: string[]
+  /** The saved object, for the toast's links. */
+  object?: { kind: "device" | "virtual_machine"; id: string }
+  /** With attention: the first thing blocking its rows. */
+  issue?: PrtgIssue | null
 }
 
 /** POST /api/prtg/changes/apply-object/ - one entry per connection. */
@@ -13701,6 +13705,7 @@ export interface PrtgChange {
     | "add_sensor"
     | "remove_sensor"
     | "move_device"
+    | "update_host"
     | "remove_device"
   kind_display: string
   device: { id: string; name: string } | null

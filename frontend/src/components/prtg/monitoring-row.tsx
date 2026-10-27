@@ -3,7 +3,6 @@ import type { ReactNode } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
-import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type {
@@ -50,7 +49,7 @@ import {
   usePrtgPlan,
   useRefreshWhenLinked,
 } from "./object-state"
-import { prtgSaveToast } from "./prtg-sync-select"
+import { showPrtgSaveToast } from "./prtg-sync-select"
 import type { PrtgParent } from "./sensors-tab"
 
 /**
@@ -251,7 +250,7 @@ export function PrtgDetails({
         { method: "PATCH", body: JSON.stringify({ prtg_sync: "always" }) }
       ),
     onSuccess: (saved) => {
-      toast.success(prtgSaveToast(saved.prtg_plan) ?? "Set to Monitor in PRTG")
+      showPrtgSaveToast(saved.prtg_plan, "Set to Monitor in PRTG")
       void qc.invalidateQueries({ queryKey: ["prtg-plan"] })
       void qc.invalidateQueries({ queryKey: ["prtg-changes"] })
       void qc.invalidateQueries({
