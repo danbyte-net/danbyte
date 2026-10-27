@@ -13331,6 +13331,8 @@ export interface PrtgConnection {
   tag_site_role?: boolean
   auto_apply_registration: boolean
   prune_devices: boolean
+  /** Tick "Also remove from PRTG" by default in the delete dialogs. */
+  delete_default_remove?: boolean
   /** What this PRTG can create: v2, seed (copies), none, or "" before a
    * check. */
   write_mode: "" | "v2" | "seed" | "none"
@@ -13798,6 +13800,45 @@ export interface PrtgDeviceLink {
   /** How the connection creates objects in PRTG: sensors can be added by
    * hand under `v2` and `seed`. */
   write_mode?: "" | "v2" | "seed" | "none"
+  /** Set while a retirement rule holds the PRTG device paused. */
+  rule_paused_at?: string | null
+  rule_paused_name?: string
+  /** The connection's default for "Also remove from PRTG". */
+  delete_default_remove?: boolean
+}
+
+export type PrtgRetireAction = "pause" | "delete" | "nothing"
+
+/** What happens in PRTG to a linked object that retires. */
+export interface PrtgRetireRule {
+  id: string
+  connection: string
+  name: string
+  position: number
+  /** Status slugs: any of them matches. */
+  statuses: string[]
+  /** Tag slugs: any of them matches. */
+  tags: string[]
+  action: PrtgRetireAction
+  action_display: string
+  /** Deletes the beat may apply by itself. */
+  allow_auto: boolean
+  /** Deletes reach PRTG devices Danbyte did not create. */
+  delete_any: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** What a delete did in PRTG, one row per linked PRTG device. */
+export interface PrtgDeleteResult {
+  connection: string
+  objid: string
+  name: string
+  object: string
+  action: "remove" | "pause"
+  ok: boolean
+  queued: boolean
+  detail: string
 }
 
 /** Where an adopted PRTG device lands, by what it looks like. */
@@ -13833,6 +13874,8 @@ export interface PrtgChange {
     | "move_device"
     | "update_host"
     | "remove_device"
+    | "pause_device"
+    | "resume_device"
   kind_display: string
   device: { id: string; name: string } | null
   virtual_machine: { id: string; name: string } | null

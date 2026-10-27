@@ -534,8 +534,12 @@ function countKinds(rows: PrtgChange[]): [string, number][] {
 
 function removeSentence(c: PrtgChange): string {
   const d = c.detail
-  if (c.kind === "remove_device")
-    return `Deletes PRTG device ${String(d.name || d.objid || "")} and its sensors. Danbyte created it.`
+  if (c.kind === "remove_device") {
+    const rule = d.rule as { name?: string } | undefined
+    return `Deletes PRTG device ${String(d.name || d.objid || "")} and its sensors. ${
+      rule?.name ? `Rule ${rule.name}.` : "Danbyte created it."
+    }`
+  }
   const s = (d.sensor as { name?: string; objid?: string } | undefined) ?? {}
   return `Deletes sensor ${s.name ?? ""} (${s.objid ?? c.key}) in PRTG. Danbyte created it.`
 }
@@ -860,7 +864,11 @@ export function PlannedDetail({ change }: { change: PrtgChange }) {
       </span>
     )
   }
-  if (change.kind === "remove_device")
+  if (
+    change.kind === "remove_device" ||
+    change.kind === "pause_device" ||
+    change.kind === "resume_device"
+  )
     return (
       <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
         <span className="font-mono text-xs">

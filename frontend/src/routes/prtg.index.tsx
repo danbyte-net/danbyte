@@ -39,6 +39,7 @@ import { PrtgAdoptionRules } from "@/components/prtg/adoption-rules"
 import { PrtgGroupPicker } from "@/components/prtg/group-picker"
 import { PrtgPolicies } from "@/components/prtg/policies"
 import { PrtgProfiles } from "@/components/prtg/profiles"
+import { PrtgRetireRules } from "@/components/prtg/retire-rules"
 import {
   PrtgChanges,
   needsPerson,
@@ -284,6 +285,7 @@ function PrtgPage() {
               {conn.push_enabled && canManage && (
                 <PushSetup conn={conn} onRotated={refresh} />
               )}
+              <PrtgRetireRules connection={conn} canManage={canManage} />
             </>
           )}
           {tab === "review" && (
@@ -882,6 +884,9 @@ function PrtgConnectionForm({
   const [pruneDevices, setPruneDevices] = useState(
     connection?.prune_devices ?? false
   )
+  const [deleteRemove, setDeleteRemove] = useState(
+    connection?.delete_default_remove ?? false
+  )
   const prtgDevices = useQuery({
     queryKey: ["prtg-devices", connection?.id],
     queryFn: () =>
@@ -980,6 +985,7 @@ function PrtgConnectionForm({
                   tag_site_role: tagSiteRole,
                   auto_apply_registration: autoApply,
                   prune_devices: pruneDevices,
+                  delete_default_remove: deleteRemove,
                 }
               : {}),
           }),
@@ -1264,7 +1270,7 @@ function PrtgConnectionForm({
               )}
               <FormCheckbox
                 label="Apply automatically"
-                info="On: planned devices and their sensors are created in PRTG without a person - after each planning pass, and right after a device or VM is set to Monitor in PRTG. Moves to the group a policy names are applied too. It never removes anything: removals always wait in the Review queue. Off: every planned change waits there for Apply."
+                info="On: planned devices and their sensors are created in PRTG without a person - after each planning pass, and right after a device or VM is set to Monitor in PRTG. Moves to the group a policy names are applied too. It never removes anything, except a retirement rule's delete that allows it. Off: every planned change waits there for Apply."
                 checked={autoApply}
                 onChange={setAutoApply}
               />
@@ -1273,6 +1279,12 @@ function PrtgConnectionForm({
                 info="A PRTG device Danbyte created whose object leaves PRTG's plan is proposed for removal. Devices Danbyte did not create are never touched."
                 checked={pruneDevices}
                 onChange={setPruneDevices}
+              />
+              <FormCheckbox
+                label="Remove from PRTG on delete"
+                info="Ticks Also remove from PRTG by default when a device or VM is deleted. A PRTG device Danbyte did not create is paused instead unless Delete it anyway is picked."
+                checked={deleteRemove}
+                onChange={setDeleteRemove}
               />
             </FormColumn>
           </FormColumns>

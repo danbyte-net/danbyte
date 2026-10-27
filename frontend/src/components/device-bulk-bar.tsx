@@ -2,15 +2,11 @@ import { BulkExport } from "@/components/bulk-export"
 import { AddToSlaButton } from "@/components/monitoring/sla-add"
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Rocket, X } from "lucide-react"
+import { Rocket, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type AutomationTarget,
-  type Device,
-  type DeployRun,
-} from "@/lib/api"
+import { api } from "@/lib/api"
+import type { AutomationTarget, Device, DeployRun } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { PrintLabelButton } from "@/components/print-label-button"
@@ -25,17 +21,28 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
+import { SafeBulkDeleteDialog } from "@/components/safe-bulk-delete-bar"
 
-// Floating action bar for /devices - appears when rows are selected. Today it
-// offers a single bulk action: deploy the selection to an automation target.
-// Danbyte hands off to the runner; it never touches the devices directly.
+// Floating action bar for /devices - appears when rows are selected: deploy
+// the selection to an automation target (Danbyte hands off to the runner; it
+// never touches the devices directly), labels, export, SLA and delete.
 export interface DeviceBulkBarProps {
   selected: Device[]
   onCleared: () => void
+  /** Offer Deploy (default true). */
+  canDeploy?: boolean
+  /** Offer Delete, with "Also remove from PRTG" (default false). */
+  canDelete?: boolean
 }
 
-export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
+export function DeviceBulkBar({
+  selected,
+  onCleared,
+  canDeploy = true,
+  canDelete = false,
+}: DeviceBulkBarProps) {
   const [open, setOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   if (selected.length === 0) return null
   return (
     <>
@@ -45,14 +52,16 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
             {selected.length} selected
           </span>
           <span className="h-4 w-px bg-border" />
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2"
-            onClick={() => setOpen(true)}
-          >
-            <Rocket className="mr-1 h-3 w-3" /> Deploy
-          </Button>
+          {canDeploy && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setOpen(true)}
+            >
+              <Rocket className="mr-1 h-3 w-3" /> Deploy
+            </Button>
+          )}
           <PrintLabelButton
             objectType="device"
             ids={selected.map((d) => d.id)}
@@ -64,6 +73,16 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
             objectType="api.device"
             ids={selected.map((d) => d.id)}
           />
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-destructive hover:text-destructive"
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 className="mr-1 h-3 w-3" /> Delete
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -75,6 +94,17 @@ export function DeviceBulkBar({ selected, onCleared }: DeviceBulkBarProps) {
           </Button>
         </div>
       </div>
+      {deleting && (
+        <SafeBulkDeleteDialog
+          ids={selected.map((d) => d.id)}
+          endpoint="/api/devices/"
+          noun={["device", "devices"]}
+          invalidate={[["devices"], ["devices-picker"], ["prtg-links"]]}
+          prtg
+          onClose={() => setDeleting(false)}
+          onDone={onCleared}
+        />
+      )}
       <DeployDialog
         open={open}
         onOpenChange={setOpen}

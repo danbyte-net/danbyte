@@ -143,6 +143,14 @@ export function PrtgMonitoringRow({
                           Created by Danbyte
                         </Badge>
                       )}
+                      {link.rule_paused_at && (
+                        <Badge
+                          variant="secondary"
+                          className="whitespace-nowrap"
+                        >
+                          Paused by rule {link.rule_paused_name}
+                        </Badge>
+                      )}
                       {pausedUntil(link) && (
                         <Badge
                           variant="secondary"
