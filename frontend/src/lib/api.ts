@@ -13640,6 +13640,52 @@ export interface PrtgPlanEntry {
   reason_issue?: PrtgIssue | null
   /** The problems as issues, with their link targets. */
   issues?: PrtgIssue[]
+  /** Per wanted sensor, where it stands, and the sensors no policy wants. */
+  coverage?: PrtgCoverage
+}
+
+/** Where one sensor a policy wants stands for an object. */
+export type PrtgCoverageStatus =
+  "present" | "planned" | "failed" | "waiting" | "skipped"
+
+/** The plan entry's `coverage`: the sensors the matching policies and
+ * profiles want for the object, and the PRTG sensors none of them wants. */
+export interface PrtgCoverage {
+  policies: {
+    id: string
+    name: string
+    profile: { id: string; name: string } | null
+  }[]
+  group: PrtgPlanEntry["group"]
+  wanted: {
+    key: string
+    definition: string
+    profile: { id: string; name: string } | null
+    policy: { id: string; name: string } | null
+    name: string
+    kind: string
+    kind_label: string
+    required: boolean
+    interface: { id: string; name: string } | null
+    status: PrtgCoverageStatus
+    sensor_id?: string
+    sensor_objid?: string
+    /** The queue row that would write it (or did, and failed). */
+    change_id?: string
+    reason?: string
+    issue?: PrtgIssue | null
+  }[]
+  /** How many of `wanted` PRTG has. */
+  present: number
+  extra: {
+    sensor_id: string
+    objid: string
+    name: string
+    kind_label: string
+    /** manual: added by hand in Danbyte; danbyte: an old definition;
+     * prtg: made in PRTG. */
+    origin: "manual" | "danbyte" | "prtg"
+  }[]
 }
 
 /** GET /api/prtg/connections/defaults/ - what the state map editor needs. */

@@ -181,6 +181,7 @@ beforeEach(() => {
         acknowledged: 0,
         read_at: null,
       })
+    if (path.startsWith("/api/prtg/plan/")) return Promise.resolve([])
     if (path.includes("/channels/")) return Promise.resolve(CHANNELS)
     if (path.includes("/history/"))
       return Promise.resolve({
