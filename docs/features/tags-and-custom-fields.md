@@ -174,7 +174,10 @@ list of those objects: open the list's **Columns** menu and tick it under
 dates by date - and exports with its value as text (an object reference
 exports its name). Anyone who can view the list sees the column; a field local
 to one site is offered only to people who work at that site. See
-[Table columns](table-preferences.md).
+[Table columns](table-preferences.md). On the
+[virtual machine list](virtual-machines.md#editing-several-at-once) the
+selection bar's **Edit** sets custom fields on many VMs at once, one field
+at a time.
 
 !!! note "Required and choice fields are enforced"
     When you save an object, Danbyte checks its custom fields: required fields
