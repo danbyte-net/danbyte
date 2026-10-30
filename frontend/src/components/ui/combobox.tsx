@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useFieldControlProps } from "@/components/ui/field-control"
 import {
@@ -40,6 +41,9 @@ export interface ComboboxOption {
   disabled?: boolean
   /** Muted right-aligned annotation - e.g. the device occupying a unit. */
   hint?: string
+  /** A label chip after the name, here and on the trigger - e.g. `Custom`
+   * on a tenant's own end-of-life product among the fetched ones. */
+  chip?: string
 }
 
 export interface ComboboxProps {
@@ -128,6 +132,11 @@ export function Combobox({
               name={selected.label}
               color={selected.color || undefined}
             />
+          ) : selected?.chip ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <TruncatedText>{selected.label}</TruncatedText>
+              <Badge variant="secondary">{selected.chip}</Badge>
+            </span>
           ) : selected ? (
             // The field is narrow, so a long value still truncates here -
             // hovering (or focusing) shows it in full.
@@ -199,6 +208,7 @@ export function Combobox({
                     ) : (
                       <span className="whitespace-normal">{o.label}</span>
                     )}
+                    {o.chip && <Badge variant="secondary">{o.chip}</Badge>}
                     {o.hint && (
                       <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
                         {o.hint}

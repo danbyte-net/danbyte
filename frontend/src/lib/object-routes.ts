@@ -85,6 +85,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.wirelesslangroup": "/wireless-lan-groups/$id",
   "api.zone": "/zones/$id",
   "compliance.compliancerule": "/compliance-rules/$id",
+  "compliance.eolproduct": "/eol-products/$id",
   "core.tag": "/tags/$id",
   "core.tenant": "/tenants/$id",
   "customization.customfield": "/custom-fields/$id",

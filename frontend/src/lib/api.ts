@@ -2064,8 +2064,12 @@ export interface ApplicationEolDetail extends ApplicationEol {
   in_catalog: boolean | null
   source_label: string | null
   product_label: string | null
-  /** The product's page on the source's site. */
+  /** The product's page on the source's site, or a custom product's link. */
   product_url: string | null
+  /** The product is one of the tenant's own; null without a product. */
+  custom?: boolean | null
+  /** A custom product's id, for its page. */
+  product_id?: string | null
 }
 
 /** An ancestor or child on the application's Hierarchy card. */
@@ -2379,6 +2383,8 @@ export interface EolProductRow {
   name: string
   label: string
   category: string
+  /** One of the tenant's own products (`source` "custom"). */
+  custom?: boolean
 }
 export interface EolRelease {
   name: string
@@ -2386,9 +2392,30 @@ export interface EolRelease {
   release_date: string | null
   support_until: string | null
   eol_date: string | null
+  /** End of extended support, where the product sells it. */
+  extended_until?: string | null
   eol: boolean | null
   lts: boolean
   latest: string
+  /** A custom product's cycles carry their status; a write ignores it. */
+  status?: EolStatus
+}
+
+/** A tenant's own end-of-life product (`/api/eol/custom-products/`). */
+export interface EolCustomProduct {
+  id: string
+  source: "custom"
+  /** The key applications and mappings name it by; fixed once made. */
+  name: string
+  label: string
+  link: string
+  notes: string
+  releases: EolRelease[]
+  cycle_count: number
+  application_count: number
+  platform_count: number
+  created_at: string
+  updated_at: string
 }
 export interface EolSuggestion {
   source: string

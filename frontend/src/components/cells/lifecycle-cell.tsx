@@ -85,6 +85,7 @@ export function LifecycleFlag({
 export const DATE_SOURCE_LABELS: Record<string, string> = {
   entered: "Entered",
   endoflife_date: "endoflife.date",
+  custom: "Custom end-of-life product",
 }
 
 /** What the bar's colour says: the end has passed, it falls inside the

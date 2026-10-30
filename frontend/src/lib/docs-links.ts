@@ -60,6 +60,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/platform-groups": "dcim/device-catalog/",
   "/support-contracts": "features/support-coverage/",
   "/lifecycle": "features/lifecycle-overview/",
+  "/eol-products": "features/end-of-life-data/#custom-products",
   "/racks": "dcim/racks/",
   "/rack-types": "dcim/racks/",
   "/rack-roles": "dcim/racks/",
