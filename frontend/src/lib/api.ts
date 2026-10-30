@@ -12103,13 +12103,28 @@ export interface FloorPlanRoomMismatch {
   can_change: boolean
 }
 
-/** A 409 from a save: a row changed (or deleted) elsewhere. */
+/** A 409 from a save: a row changed (or deleted) elsewhere. A cable's
+ * stored route (`cable_path`) or its length (`cable`) carry the cable's id. */
 export interface FloorPlanConflict {
-  kind: "tile" | "area" | "label"
+  kind: "tile" | "area" | "label" | "cable_path" | "cable"
   id: string
   /** The row as it is now; null when it was deleted. */
-  current: FloorPlanTile | FloorPlanArea | FloorPlanLabel | null
+  current:
+    | FloorPlanTile
+    | FloorPlanArea
+    | FloorPlanLabel
+    | StoredCablePath
+    | CableLengthNow
+    | null
   changed_by: string
+}
+
+/** A cable's length as it is now, in a `cable` conflict. */
+export interface CableLengthNow {
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  version: string
 }
 
 export interface FloorPlanTileWritePayload {
@@ -12618,6 +12633,18 @@ export interface FloorPlanBulkPayload {
     upsert?: CablePathUpsert[]
     delete?: (string | { cable: string; version?: string })[]
   }
+  /** New trays - runs kept from "After placing". `key` is the draft's id
+   * for one, which `tray_order` of the paths saved with it may name. A
+   * tray with no name is called "Run N". */
+  trays?: { create?: BulkTrayCreate[] }
+}
+
+export interface BulkTrayCreate {
+  key: string
+  points: [number, number][]
+  level?: TrayLevel
+  elevation_mm?: number | null
+  name?: string
 }
 
 /** A cable's route to store: routed on the server when `legs` is left out,
@@ -12626,7 +12653,9 @@ export interface FloorPlanBulkPayload {
 export interface CablePathUpsert {
   cable: string
   kind?: StoredCablePath["kind"]
-  legs?: { points: [number, number][] }[]
+  /** A manual leg may carry the height it runs at (a suggested run left
+   * as the cable's own path), for its drops. */
+  legs?: { points: [number, number][]; elevation_mm?: number }[]
   tray_order?: string[]
   /** The stored path's version the route is based on. */
   version?: string
@@ -12642,6 +12671,8 @@ export interface FloorPlanBulkResult {
   labels: FloorPlanLabel[]
   /** The cable paths the save wrote. */
   cable_paths?: StoredCablePath[]
+  /** The trays the save made, by the key each was sent with. */
+  trays?: { key: string; id: string }[]
 }
 
 /** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
@@ -12863,6 +12894,9 @@ export interface CablePathLeg {
   }[]
   /** Free points of a hand-drawn run. */
   waypoints: [number, number][]
+  /** The height (mm) a run with no tray keeps - a suggested run left as
+   * the cable's own path. */
+  elevation_mm?: number
 }
 
 /** A cable's route on a plan, stored (documented) or computed (a preview,
@@ -12904,15 +12938,73 @@ export interface CablePlanRow {
   delta_mm: number | null
   /** A save would fill the length without being asked to replace it. */
   write_length: boolean
+  /** How `route` goes: through trays, along a suggested run, or direct. */
+  via?: CablePlanVia | null
+  /** The suggested runs (`CablePlanSuggestion.key`) the route uses. */
+  suggestions?: string[]
+  /** The cable's updated_at, for a length write's conflict check. */
+  cable_version?: string | null
+  /** With `objects`: the other end - the device and port, or Hidden. */
+  far?: { hidden: boolean; device_name: string | null; port: string | null }[]
+  /** With `objects`: the other end is not on this floor (not routed). */
+  off_floor?: boolean
+}
+
+export type CablePlanVia = "trays" | "suggest" | "direct"
+
+/** A run suggested where no tray joins a cable's ends. */
+export interface CablePlanSuggestion {
+  key: string
+  level: TrayLevel
+  elevation_mm: number
+  /** The whole run, tile centre to tile centre. */
+  points: [number, number][]
+  /** The part a new tray takes; null when nothing new is needed. */
+  run: [number, number][] | null
+  cable_ids: string[]
 }
 
 export interface CablePlanPreview {
   cables: CablePlanRow[]
+  /** Runs suggested for cables no tray path serves (`suggest_runs`). */
+  suggestions?: CablePlanSuggestion[]
   truncated: boolean
   hidden_count: number
   cell_mm: number
   /** The CAD drawing's scale source; "assumed" when it was never set. */
   scale_source: string | null
+}
+
+/** POST /api/floor-plans/<id>/cable-plan/ - what to preview, against the
+ * unsaved draft. */
+export interface CablePlanRequest {
+  cable_ids?: string[]
+  /** What was just placed: its cables to objects on this floor. */
+  objects?: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  positions?: Record<
+    string,
+    { x: number; y: number; width?: number; height?: number }
+  >
+  new_tiles?: {
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    link_kind: string
+    link_id: string
+  }[]
+  removed_tiles?: string[]
+  draft_trays?: {
+    id: string
+    points: [number, number][]
+    level: TrayLevel
+    elevation_mm?: number | null
+  }[]
+  choices?: Record<string, { via: "auto" | CablePlanVia; tray_ids?: string[] }>
+  suggest_runs?: boolean
+  keep_runs?: boolean
+  run_level?: "overhead" | "underfloor"
 }
 
 /** One end of a plan's cable: the device and port, or - on a device the

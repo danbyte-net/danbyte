@@ -132,14 +132,23 @@ class PlanRouter:
 
     ``positions`` overrides tile geometry for a preview of unsaved moves:
     ``{tile_id: {"x", "y", "width"?, "height"?}}`` (tiles of this plan
-    only; anything else is ignored)."""
+    only; anything else is ignored). A preview of an unsaved draft also
+    passes ``new_tiles`` (unsaved tiles, :func:`virtual_tile`), ``removed``
+    (ids of tiles the draft deletes) and ``extra_trays`` (unsaved trays,
+    :func:`virtual_tray`)."""
 
-    def __init__(self, plan, *, positions=None, rules=None):
+    def __init__(self, plan, *, positions=None, rules=None, new_tiles=(), removed=(),
+                 extra_trays=()):
         from core.effective_settings import cable_length_rules
 
         self.plan = plan
         self.cell_mm = plan.cell_mm or 600
-        self.tiles = list(plan.tiles.select_related("rack").order_by("y", "x", "id"))
+        gone = {str(r) for r in removed or ()}
+        self.tiles = [
+            t for t in plan.tiles.select_related("rack", "tile_type").order_by("y", "x", "id")
+            if str(t.pk) not in gone
+        ]
+        self.tiles += list(new_tiles or ())
         for t in self.tiles:
             over = (positions or {}).get(str(t.pk))
             if isinstance(over, dict):
@@ -148,18 +157,15 @@ class PlanRouter:
                     if isinstance(v, (int, float)) and not isinstance(v, bool):
                         setattr(t, key, v)
         self.tile_by_id = {str(t.pk): t for t in self.tiles}
-        self.trays = list(plan.trays.order_by("name", "id"))
-        self.tray_by_id = {str(t.pk): t for t in self.trays}
-        areas = [
+        self.trays = []
+        self.tray_by_id = {}
+        self.elevation = {}
+        self.areas = [
             (r.x, r.y, r.width, r.height, r.plenum_mm)
             for r in plan.raised_floor_areas.all()
         ]
-        self.elevation = {
-            str(t.pk): e
-            for t, e in zip(
-                self.trays, tray_elevations(self.trays, plan.ceiling_mm, areas), strict=True
-            )
-        }
+        self.add_trays([*plan.trays.order_by("name", "id"), *(extra_trays or ())])
+        self._walls = None
         self.rules = rules or cable_length_rules(plan.tenant_id)
         self.device_tile: dict = {}
         self.rack_tile: dict = {}
@@ -173,6 +179,16 @@ class PlanRouter:
                 self.cabinet_tile.setdefault(t.cabinet_id, t)
         self._devices: dict = {}
         self._terms: dict = {}
+
+    def add_trays(self, trays) -> None:
+        """Route through ``trays`` too (saved, or unsaved previews)."""
+        trays = list(trays)
+        self.trays += trays
+        for t, e in zip(
+            trays, tray_elevations(trays, self.plan.ceiling_mm, self.areas), strict=True
+        ):
+            self.tray_by_id[str(t.pk)] = t
+            self.elevation[str(t.pk)] = e
 
     # ── ends ──
 
@@ -337,6 +353,10 @@ class PlanRouter:
         run = polyline_cells(leg["points"]) * self.cell_mm
         ha, hb = a_end["height_mm"], b_end["height_mm"]
         elev = [float(s.get("elevation_mm") or 0) for s in leg.get("trays") or []]
+        if not elev and leg.get("elevation_mm") is not None:
+            # A run with no tray kept at one height (a suggested run left
+            # as a path): up from the port, along, and down again.
+            elev = [float(leg["elevation_mm"])]
         if elev:
             drop_a = abs(elev[0] - ha)
             drop_b = abs(elev[-1] - hb)
@@ -432,13 +452,120 @@ class PlanRouter:
                 raise ValueError("A leg runs from its A tile's centre to its far tile's.")
             spans = self._tray_spans(clean, trays)
             waypoints = clean[1:-1] if kind == "manual" else []
-            legs.append({
+            leg = {
                 "from": self._anchor(a), "to": self._anchor(b),
                 "points": clean, "trays": spans, "waypoints": waypoints,
-            })
+            }
+            height = raw.get("elevation_mm")
+            if height is not None and kind == "manual":
+                if not isinstance(height, (int, float)) or isinstance(height, bool) \
+                        or not -2000 <= height <= 20000:
+                    raise ValueError("elevation_mm is a height in mm, -2000 to 20000.")
+                leg["elevation_mm"] = round(height)
+            legs.append(leg)
         if kind == "trays" and not any(leg["trays"] for leg in legs):
             raise ValueError("The route rides none of the trays named.")
         return self._assemble(cable, kind, legs, pairs, tray_order=order)
+
+    def direct(self, cable) -> dict | None:
+        """``cable`` as direct elbows between its tiles (``kind`` direct)."""
+        pairs = self.pairs(cable)
+        if not pairs:
+            return None
+        legs = [self.direct_leg(a, b) for a, b in pairs]
+        out = self._assemble(cable, "direct", legs, pairs)
+        out["reachable"] = False
+        return out
+
+    # ── suggested runs ──
+
+    @property
+    def walls(self) -> list:
+        if self._walls is None:
+            self._walls = [
+                (w.points or [], w.openings or [])
+                for w in self.plan.walls.only("points", "openings")
+            ]
+        return self._walls
+
+    def _in_raised_floor(self, p) -> bool:
+        return any(x <= p[0] <= x + w and y <= p[1] <= y + h for x, y, w, h, _ in self.areas)
+
+    def suggest(self, a_end, b_end, *, level: str | None = None, runs=()) -> dict | None:
+        """A suggested run between two ends' tiles where no tray connects
+        them (``pathfinding.suggest_run``): the other tiles and the walls
+        (but their doors) are in the way, the trays at the run's level and
+        ``runs`` (polylines suggested earlier in the batch, at that level:
+        ``[(level, points), ...]``) are cheaper to follow. ``level`` is
+        ``overhead`` or ``underfloor``; by default underfloor when both
+        tiles stand on a raised floor and a run fits inside it, else
+        overhead. An underfloor run stays inside the raised floors.
+
+        Answers ``{"level", "elevation_mm", "points", "run"}``: the whole
+        polyline from tile centre to tile centre, and ``run`` the part a
+        new tray would take - outside both tiles, without the stretches
+        along a tray or a run already there (None when nothing is left)."""
+        from .pathfinding import (
+            compress_polyline,
+            lattice_steps,
+            suggest_run,
+            tray_elevation_mm,
+            underfloor_plenum_mm,
+        )
+
+        ta, tb = a_end["tile"], b_end["tile"]
+        a, b = tile_centre(ta), tile_centre(tb)
+        if level is None:
+            raised = self.areas and self._in_raised_floor(a) and self._in_raised_floor(b)
+            levels = ["underfloor", "overhead"] if raised else ["overhead"]
+        else:
+            levels = [level]
+        obstacles = [
+            (t.x, t.y, t.width, t.height)
+            for t in self.tiles
+            if t.pk not in (ta.pk, tb.pk) and not getattr(t.tile_type, "is_zone", False)
+        ]
+        plan = self.plan
+        for lv in levels:
+            if lv == "underfloor" and not self.areas:
+                continue
+            along = [t.points for t in self.trays if t.level == lv and len(t.points or []) >= 2]
+            along += [pts for run_level, pts in runs if run_level == lv]
+            pts = suggest_run(
+                a, b,
+                width=max(plan.grid_width or 0, 1), height=max(plan.grid_height or 0, 1),
+                obstacles=obstacles, walls=self.walls, trays=along,
+                within=[(x, y, w, h) for x, y, w, h, _ in self.areas]
+                if lv == "underfloor" else None,
+            )
+            if pts is None:
+                continue
+            # The lattice nodes it passes, to cut off the parts inside the
+            # end tiles and along what is there already.
+            nodes = _lattice_nodes(pts)
+            inside = (ta.x, ta.y, ta.width, ta.height), (tb.x, tb.y, tb.width, tb.height)
+            i, j = 0, len(nodes) - 1
+            while i < j and _strictly_inside(nodes[i], inside[0]):
+                i += 1
+            while j > i and _strictly_inside(nodes[j], inside[1]):
+                j -= 1
+            cheap = lattice_steps(along)
+            key = _lattice_key
+            while i < j and (*key(nodes[i]), *key(nodes[i + 1])) in cheap:
+                i += 1
+            while j > i and (*key(nodes[j - 1]), *key(nodes[j])) in cheap:
+                j -= 1
+            run = compress_polyline(nodes[i:j + 1]) if j > i else []
+            elevation = tray_elevation_mm(
+                lv, None, plan.ceiling_mm, underfloor_plenum_mm(self.areas, pts),
+            )
+            return {
+                "level": lv,
+                "elevation_mm": round(elevation),
+                "points": [_pt(p) for p in pts],
+                "run": [_pt(p) for p in run] if len(run) >= 2 else None,
+            }
+        return None
 
     # ── staleness ──
 
@@ -491,6 +618,162 @@ class PlanRouter:
             "id", "rack_id", "cabinet_id", "position", "device_type", "device_type__u_height"
         ):
             self._devices[d.pk] = d
+
+
+def _lattice_key(p) -> tuple[int, int]:
+    return (round(p[0] * 2), round(p[1] * 2))
+
+
+def _on_lattice(p) -> bool:
+    return abs(p[0] * 2 - round(p[0] * 2)) < EPS and abs(p[1] * 2 - round(p[1] * 2)) < EPS
+
+
+def _strictly_inside(p, rect) -> bool:
+    x, y, w, h = rect
+    return x + EPS < p[0] < x + w - EPS and y + EPS < p[1] < y + h - EPS
+
+
+def _lattice_nodes(points) -> list:
+    """A polyline's points every half cell along its straight lattice runs
+    (other points as they are)."""
+    out = [tuple(points[0])] if points else []
+    for p, q in zip(points, points[1:], strict=False):
+        if _on_lattice(p) and _on_lattice(q) and (
+            abs(p[0] - q[0]) < EPS or abs(p[1] - q[1]) < EPS
+        ):
+            n = round(_dist(p, q) * 2)
+            for k in range(1, n + 1):
+                out.append((p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n))
+        else:
+            out.append(tuple(q))
+    return out
+
+
+def virtual_tile(key: str, *, x, y, width, height, device_id=None, rack_id=None,
+                 cabinet_id=None):
+    """An unsaved tile of a draft for :class:`PlanRouter` (``key`` is the
+    draft's id for it), linked to one device, rack or cabinet."""
+    from .models import FloorPlanTile
+
+    t = FloorPlanTile(
+        x=x, y=y, width=width, height=height,
+        device_id=device_id, rack_id=rack_id, cabinet_id=cabinet_id,
+    )
+    t.pk = key
+    return t
+
+
+def virtual_tray(key: str, *, points, level="overhead", elevation_mm=None, name=""):
+    """An unsaved tray (a draft's, or a suggested run) for :class:`PlanRouter`."""
+    from .models import FloorPlanTray
+
+    t = FloorPlanTray(name=name or key, points=points, level=level, elevation_mm=elevation_mm)
+    t.pk = key
+    return t
+
+
+#: How a cable may be routed in a preview: ``auto`` through the trays (with
+#: ``suggest`` a run suggested when no tray path joins the ends), ``trays``
+#: through the trays picked, ``suggest`` a suggested run, ``direct`` elbows.
+VIAS = ("auto", "trays", "suggest", "direct")
+
+
+def plan_batch(router: PlanRouter, cables, *, choices=None, suggest: bool = False,
+               keep_runs: bool = True, level: str | None = None) -> tuple[dict, list]:
+    """Route ``cables`` for the ``cable-plan`` preview, each as its choice
+    says (``choices``: ``{cable id: {"via", "tray_ids"?}}``, see
+    :data:`VIAS`; default ``auto``).
+
+    A cable with no tray path, when ``suggest`` (or its choice is
+    ``suggest``), takes a suggested run (:meth:`PlanRouter.suggest`). The
+    cables between one pair of tiles share one suggestion, and a later
+    suggestion in the batch follows an earlier one where it can. With
+    ``keep_runs`` each suggestion is a new tray (``run-N``, listed in the
+    answer) the cable is routed through; without, the run is the cable's
+    own path (``manual``, at the run's height).
+
+    Answers ``({cable pk: route or None}, suggestions)`` where each route
+    carries ``via`` (``trays``, ``suggest``, ``direct``) and, for a
+    suggested one, ``suggestions`` (the keys it uses); a suggestion is
+    ``{"key", "level", "elevation_mm", "points", "run", "cable_ids"}``."""
+    choices = choices or {}
+    out: dict = {}
+    pending = []
+    for cable in cables:
+        choice = choices.get(str(cable.pk)) or {}
+        via = choice.get("via") if choice.get("via") in VIAS else "auto"
+        if via == "direct":
+            route = router.direct(cable)
+        elif via == "trays":
+            route = router.route(cable, tray_ids=choice.get("tray_ids") or [])
+        elif via == "suggest":
+            route = None
+            if router.pairs(cable):
+                pending.append(cable)
+                continue
+        else:
+            route = router.route(cable)
+            if route is not None and not route["reachable"] and suggest:
+                pending.append(cable)
+                continue
+        if route is not None:
+            route["via"] = "trays" if route["reachable"] else "direct"
+        out[cable.pk] = route
+
+    suggestions: list = []
+    by_pair: dict = {}
+    for cable in pending:
+        for a, b in router.pairs(cable):
+            pair = frozenset((str(a["tile"].pk), str(b["tile"].pk)))
+            if pair in by_pair:
+                continue
+            s = router.suggest(
+                a, b, level=level, runs=[(x["level"], x["points"]) for x in suggestions],
+            )
+            if s is not None:
+                s["key"] = f"run-{len(by_pair) + 1}"
+                s["cable_ids"] = []
+                suggestions.append(s)
+            by_pair[pair] = s
+    if keep_runs:
+        router.add_trays(
+            virtual_tray(s["key"], points=s["run"], level=s["level"])
+            for s in suggestions if s["run"]
+        )
+    for cable in pending:
+        pairs = router.pairs(cable)
+        used = [by_pair.get(frozenset((str(a["tile"].pk), str(b["tile"].pk)))) for a, b in pairs]
+        if not any(used):
+            route = router.direct(cable)
+            route["via"] = "direct"
+            out[cable.pk] = route
+            continue
+        route = router.route(cable) if keep_runs else None
+        if route is None or not route["reachable"]:
+            # The run as the cable's own path, at the run's height.
+            legs = []
+            for (a, b), s in zip(pairs, used, strict=True):
+                if s is None:
+                    legs.append(router.direct_leg(a, b))
+                    continue
+                leg = router.direct_leg(a, b)
+                leg["points"] = s["points"]
+                leg["waypoints"] = s["points"][1:-1]
+                leg["elevation_mm"] = s["elevation_mm"]
+                legs.append(leg)
+            route = router._assemble(cable, "manual", legs, pairs)
+            route["reachable"] = False
+        route["via"] = "suggest"
+        keys = {s["key"] for s in used if s}
+        route["suggestions"] = (
+            [k for k in route["tray_order"] if k in keys] if route["kind"] == "trays"
+            else sorted(keys)
+        )
+        for s in used:
+            if s and str(cable.pk) not in s["cable_ids"]:
+                s["cable_ids"].append(str(cable.pk))
+        out[cable.pk] = route
+    return out, suggestions
 
 
 def _on_segment(p, s, e) -> bool:

@@ -33,9 +33,10 @@ import {
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
+import { applyRoutes, draftPlanInput, withDraftRoutes } from "./cable-draft"
 import { DocumentRoutesPanel } from "./document-routes-panel"
 import { CELL } from "./floor-canvas"
-import type { FloorCanvasApi } from "./floor-canvas"
+import type { FloorCanvasApi, FloorCanvasProps } from "./floor-canvas"
 import {
   readFloorHidden,
   visibleShapes,
@@ -57,11 +58,18 @@ import {
   AssignRoomsDialog,
   ConflictDialog,
   PlanEmptyState,
-  RoomPrompt,
   SelectionToolbar,
   useSetRooms,
 } from "./placement-panels"
 import type { RoomPromptState } from "./placement-panels"
+import {
+  AfterPlacingCard,
+  PlaceCablesPanel,
+  placeCablesRequest,
+  routableRows,
+  usePlacedCables,
+} from "./place-cables"
+import type { AfterPlace, PlaceCablesApply } from "./place-cables"
 import type { Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
 import { shapeBounds } from "./shapes"
@@ -83,7 +91,7 @@ import { usePlanMutations } from "./use-plan-mutations"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
 import { useStructureEdits } from "./use-structure-edits"
-import { useTileEdits } from "./use-tile-edits"
+import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
 import { shownLink } from "./shown-link"
 
 /** The floor-plan page's search params (validated by the route). */
@@ -174,7 +182,11 @@ export function FloorPlanEditor({
   const [cablePreviews, setCablePreviews] = useState<
     ReadonlyMap<string, CableRoute> | undefined
   >(undefined)
-  const [roomPrompt, setRoomPrompt] = useState<RoomPromptState | null>(null)
+  // After a drop: the "After placing" card (the room, the cables), and
+  // the Route cables panel with the trays being picked on the plan.
+  const [afterPlace, setAfterPlace] = useState<AfterPlace | null>(null)
+  const [placeCablesOpen, setPlaceCablesOpen] = useState(false)
+  const [trayPick, setTrayPick] = useState<FloorCanvasProps["trayPick"]>()
   const setRooms = useSetRooms(id)
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -202,19 +214,30 @@ export function FloorPlanEditor({
     () => pickVisibleTiles(tiles, hidden),
     [tiles, hidden]
   )
+  // The plan's trays with the runs the draft keeps as new ones, and its
+  // cables with the routes the draft applied - drawn until Save.
+  const cableDraft = ed.draft.cables
+  const planTrays = useMemo(
+    () => (cableDraft.trays.length ? [...trays, ...cableDraft.trays] : trays),
+    [trays, cableDraft.trays]
+  )
+  const drawnCablePaths = useMemo(
+    () => withDraftRoutes(cablePaths, cableDraft),
+    [cablePaths, cableDraft]
+  )
   // Every cable's route on the tiles shown, once per change of the plan's
   // contents: the canvas, the trace and the PDF all draw these.
   const cableRoutes = useCableRoutes(
-    cablePaths,
-    trays,
+    drawnCablePaths,
+    planTrays,
     shownTiles,
     ceilingMm,
     areas
   )
   // The cables drawn and their key, while the links are on.
   const shownCables = useMemo(
-    () => cablePaths.filter((cp) => cableRoutes.has(cp.id)),
-    [cablePaths, cableRoutes]
+    () => drawnCablePaths.filter((cp) => cableRoutes.has(cp.id)),
+    [drawnCablePaths, cableRoutes]
   )
   const cableKey = useMemo(
     () =>
@@ -385,7 +408,32 @@ export function FloorPlanEditor({
       if (ed.mode !== "layout") selectTool("select")
       const placed = edits.placeRows(rows, at, { move })
       setPlaceOpen(false)
-      setRoomPrompt(roomPrompts(placed, ed.shapes)[0] ?? null)
+      setPlaceCablesOpen(false)
+      const objects: AfterPlace["objects"] = []
+      for (const t of placed) {
+        const l = shownLink(t.linked)
+        if (
+          l &&
+          (l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")
+        )
+          objects.push({ kind: l.kind, id: l.id, name: l.name })
+      }
+      // The draft as it is with them placed: what their cables route on.
+      const after = new Map(ed.tiles.map((t) => [t.id, t]))
+      for (const t of placed) after.set(t.id, t)
+      const dirty = new Set(ed.dirtyIds)
+      for (const t of placed) dirty.add(t.id)
+      setAfterPlace({
+        objects,
+        input: draftPlanInput({
+          tiles: [...after.values()],
+          dirtyIds: dirty,
+          deletedIds: ed.deletedIds,
+          cd: ed.draft.cables,
+          isTemp,
+        }),
+        room: roomPrompts(placed, ed.shapes)[0] ?? null,
+      })
     },
     [ed, edits, selectTool]
   )
@@ -417,7 +465,7 @@ export function FloorPlanEditor({
   const applyRoom = (prompt: RoomPromptState) =>
     setRooms.mutate(prompt, {
       onSuccess: () => {
-        setRoomPrompt(null)
+        setAfterPlace((a) => (a ? { ...a, room: null } : a))
         // The placed tiles show the room they now name.
         const ids = new Set(prompt.objects.map((o) => o.id))
         ed.setTiles((prev) =>
@@ -429,7 +477,33 @@ export function FloorPlanEditor({
         )
       },
     })
+  // The cables of what was just placed that may be routed: the card's
+  // count, read once per drop (the panel reads its own).
+  const placedCables = usePlacedCables(
+    id,
+    afterPlace && editing && !placeCablesOpen
+      ? placeCablesRequest(afterPlace)
+      : null
+  )
+  const routableCount = placedCables.data
+    ? routableRows(placedCables.data.cables).length
+    : 0
+  /** Apply the Route cables panel: its ticked routes (and the runs kept
+   * as trays) into the draft, one undo step; Save writes them. */
+  const applyPlacedCables = ({
+    rows,
+    ticks,
+    suggestions,
+  }: PlaceCablesApply) => {
+    ed.draft.setCables((cd) =>
+      applyRoutes(cd, { rows, ticks, suggestions, trays, newId: tempId })
+    )
+    setPlaceCablesOpen(false)
+    setAfterPlace(null)
+  }
   const conflictName = (c: FloorPlanConflict) => {
+    if (c.kind === "cable_path" || c.kind === "cable")
+      return ed.draft.cables.routes[c.id]?.label ?? "Cable"
     const local =
       c.kind === "tile"
         ? tiles.find((t) => t.id === c.id)
@@ -647,7 +721,10 @@ export function FloorPlanEditor({
         onOpenBackground={() => ed.setBackgroundOpen(true)}
         onDocumentRoutes={
           editing && !view3d && cablePaths.length
-            ? () => setDocRoutesOpen(true)
+            ? () => {
+                setPlaceCablesOpen(false)
+                setDocRoutesOpen(true)
+              }
             : undefined
         }
         canUndo={ed.draft.canUndo}
@@ -740,12 +817,15 @@ export function FloorPlanEditor({
               structure={structure}
               prefs={prefs}
               liveState={liveState.data ?? null}
-              trays={trays}
+              trays={planTrays}
               walls={walls}
               areas={areas}
-              cablePaths={cablePaths}
+              cablePaths={drawnCablePaths}
               cableRoutes={cableRoutes}
-              cablePreviews={docRoutesOpen ? cablePreviews : undefined}
+              cablePreviews={
+                docRoutesOpen || placeCablesOpen ? cablePreviews : undefined
+              }
+              trayPick={placeCablesOpen ? trayPick : undefined}
               tileTypes={tileTypes.data?.results ?? []}
               roles={roles.data?.results ?? []}
               popover={popover}
@@ -799,12 +879,19 @@ export function FloorPlanEditor({
               overlays={
                 editing ? (
                   <>
-                    {roomPrompt && (
-                      <RoomPrompt
-                        prompt={roomPrompt}
-                        busy={setRooms.isPending}
-                        onSet={() => applyRoom(roomPrompt)}
-                        onDismiss={() => setRoomPrompt(null)}
+                    {afterPlace && !placeCablesOpen && (
+                      <AfterPlacingCard
+                        room={afterPlace.room}
+                        roomBusy={setRooms.isPending}
+                        onSetRoom={() =>
+                          afterPlace.room && applyRoom(afterPlace.room)
+                        }
+                        cables={routableCount}
+                        onRouteCables={() => {
+                          setDocRoutesOpen(false)
+                          setPlaceCablesOpen(true)
+                        }}
+                        onDismiss={() => setAfterPlace(null)}
                       />
                     )}
                     {data.contentsQuery.isSuccess &&
@@ -819,6 +906,18 @@ export function FloorPlanEditor({
                   </>
                 ) : undefined
               }
+            />
+          )}
+          {editing && !view3d && placeCablesOpen && afterPlace && (
+            <PlaceCablesPanel
+              planId={id}
+              after={afterPlace}
+              tiles={tiles}
+              trays={planTrays}
+              onPreviews={setCablePreviews}
+              onTrayPick={setTrayPick}
+              onApply={applyPlacedCables}
+              onClose={() => setPlaceCablesOpen(false)}
             />
           )}
           {editing && !view3d && docRoutesOpen && (

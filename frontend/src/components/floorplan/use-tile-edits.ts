@@ -18,6 +18,8 @@ import type {
 import { apiErrorToast } from "@/lib/api-toast"
 
 import { resizedRect } from "./cabinet-tile"
+import { cableDraftPayload } from "./cable-draft"
+import type { CableDraft } from "./cable-draft"
 import { findCollision, tileIsZone } from "./floor-canvas"
 import {
   droppedRect,
@@ -453,7 +455,18 @@ export function useTileEdits({
         gone
           .filter((g) => g.startsWith(`${kind}:`))
           .map((g) => g.slice(kind.length + 1))
+      // Cable routes applied from "After placing", and the runs they keep
+      // as new trays - written after the tiles they end on.
+      const cablePart = cableDraftPayload(draft.cables, tiles)
+      if (cablePart.dropped.length)
+        toast.info(
+          `Not routed - an end was removed: ${cablePart.dropped.join(", ")}`
+        )
       const payload: FloorPlanBulkPayload = {
+        ...(cablePart.trays ? { trays: cablePart.trays } : {}),
+        ...(cablePart.cable_paths
+          ? { cable_paths: cablePart.cable_paths }
+          : {}),
         tiles: {
           create: tiles.filter((t) => isTemp(t.id)).map(body),
           update: tiles
@@ -521,12 +534,25 @@ export function useTileEdits({
    * row as it is now (a row deleted elsewhere goes). Then saves again. */
   const resolveConflicts = useCallback(
     (choice: Record<string, "mine" | "theirs">) => {
-      const list = conflicts ?? []
+      // A cable's route or length: keep the draft's (based on the one now)
+      // or take theirs (the route goes from the draft, or its length write).
+      const cableRows = (conflicts ?? []).filter(
+        (c) => c.kind === "cable_path" || c.kind === "cable"
+      )
+      if (cableRows.length)
+        draft.setCables((cd) => resolveCableConflicts(cd, cableRows, choice))
+      const list = (conflicts ?? []).filter(
+        (c) => c.kind !== "cable_path" && c.kind !== "cable"
+      )
       const theirs = list.filter((c) => choice[c.id] === "theirs")
       const mine = list.filter((c) => choice[c.id] !== "theirs")
       const remade = new Map<string, string>()
       for (const c of mine) {
-        if (c.current) rebase.current.set(c.id, c.current.updated_at)
+        if (c.current)
+          rebase.current.set(
+            c.id,
+            (c.current as { updated_at: string }).updated_at
+          )
         else remade.set(c.id, tempId())
       }
       const takeTile = (t: EditTile) => {
@@ -613,3 +639,36 @@ export function useTileEdits({
 }
 
 export type TileEdits = ReturnType<typeof useTileEdits>
+
+/** Settle a 409's cable rows in the cable draft: per cable, "mine" keeps
+ * the route (and length) based on the stored ones now; "theirs" drops the
+ * route (a `cable_path` row) or only the length write (a `cable` row). */
+export function resolveCableConflicts(
+  cd: CableDraft,
+  rows: FloorPlanConflict[],
+  choice: Record<string, "mine" | "theirs">
+): CableDraft {
+  const routes = { ...cd.routes }
+  for (const c of rows) {
+    const r = routes[c.id]
+    if (!r) continue
+    const theirs = choice[c.id] === "theirs"
+    if (c.kind === "cable_path") {
+      if (theirs) {
+        delete routes[c.id]
+        continue
+      }
+      const now = c.current as { version?: string | null } | null
+      const { version: _old, ...rest } = r
+      routes[c.id] = now?.version ? { ...rest, version: now.version } : rest
+    } else {
+      const now = c.current as { version?: string } | null
+      if (theirs) {
+        const { length: _l, cableVersion: _v, ...rest } = r
+        routes[c.id] = rest
+      } else if (now?.version)
+        routes[c.id] = { ...r, cableVersion: now.version }
+    }
+  }
+  return { ...cd, routes }
+}

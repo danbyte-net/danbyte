@@ -1,6 +1,9 @@
 import { useCallback, useReducer, useRef } from "react"
 import type { SetStateAction } from "react"
 
+import { EMPTY_CABLE_DRAFT } from "./cable-draft"
+import type { CableDraft } from "./cable-draft"
+
 /**
  * The floor plan editor's draft with its undo history - the topology map's
  * `view-document.ts` pattern for the plan's tiles and shapes (areas and
@@ -20,6 +23,8 @@ export interface PlanDraft<T, TShape = unknown> {
   shapes: TShape[]
   dirty: ReadonlySet<string>
   deleted: ReadonlySet<string>
+  /** Cable routes applied from "After placing" (cable-draft.ts). */
+  cables: CableDraft
 }
 
 export interface DraftHistory<T, TShape = unknown> {
@@ -47,7 +52,13 @@ export function emptyDraft<T, TShape = unknown>(
   tiles: T[] = [],
   shapes: TShape[] = []
 ): PlanDraft<T, TShape> {
-  return { tiles, shapes, dirty: new Set(), deleted: new Set() }
+  return {
+    tiles,
+    shapes,
+    dirty: new Set(),
+    deleted: new Set(),
+    cables: EMPTY_CABLE_DRAFT,
+  }
 }
 
 export function initDraftHistory<T, TShape = unknown>(
@@ -68,7 +79,8 @@ export function draftReducer<T, TShape = unknown>(
         (next.tiles === h.present.tiles &&
           next.shapes === h.present.shapes &&
           next.dirty === h.present.dirty &&
-          next.deleted === h.present.deleted)
+          next.deleted === h.present.deleted &&
+          next.cables === h.present.cables)
       )
         return h
       if (m.step && m.step === h.step && h.past.length)
@@ -119,6 +131,8 @@ export interface PlanDraftApi<T, TShape = unknown> {
   setShapes: (v: SetStateAction<TShape[]>) => void
   setDirtyIds: (v: SetStateAction<ReadonlySet<string>>) => void
   setDeletedIds: (v: SetStateAction<ReadonlySet<string>>) => void
+  cables: CableDraft
+  setCables: (v: SetStateAction<CableDraft>) => void
   /** Edits until `endGesture` are one step (a drag). */
   beginGesture: () => void
   endGesture: () => void
@@ -200,6 +214,14 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
       }),
     [edit]
   )
+  const setCables = useCallback(
+    (v: SetStateAction<CableDraft>) =>
+      edit((d) => {
+        const cables = resolve(v, d.cables)
+        return cables === d.cables ? d : { ...d, cables }
+      }),
+    [edit]
+  )
   const beginGesture = useCallback(() => {
     const t = tick.current
     t.n += 1
@@ -232,6 +254,8 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
     setShapes,
     setDirtyIds,
     setDeletedIds,
+    cables: h.present.cables,
+    setCables,
     beginGesture,
     endGesture,
     undo,
