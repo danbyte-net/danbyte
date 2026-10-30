@@ -575,6 +575,38 @@ tile keeps its position, size, label, color and object link; only the look
 (and the popover rows configured for that type) follow the new type. Zones
 stay zones.
 
+## Opening a plan
+
+The editor reads everything drawn on a plan in one request,
+`GET /api/floor-plans/<id>/contents/`: every tile, tray, wall and raised-floor
+area, with no page limit, so a plan of several thousand tiles opens whole.
+Before 0.19 the editor read one page of each kind - at most 1,000 tiles and
+500 trays, walls or raised floors - and left the rest off the plan without a
+word. The dashboard's floor-plan widget reads the same request.
+
+```json
+{
+  "version": "2026-10-30T09:14:02.511Z",
+  "tiles": [ … ],
+  "trays": [ … ],
+  "walls": [ … ],
+  "raised_floors": [ … ]
+}
+```
+
+Each list holds rows in the shape its own endpoint returns
+(`/api/floor-plan-tiles/`, `/api/floor-plan-trays/`, `/api/floor-plan-walls/`,
+`/api/floor-plan-raised-floors/`), narrowed the same way: to the active tenant,
+and to the rows the reader may view under each type's own permission and site
+scope. Someone who may view the plan but not its trays gets an empty `trays`.
+`version` is the newest `updated_at` across the rows, `null` for an empty plan.
+The request costs the same number of database queries however large the plan
+is.
+
+Those per-kind endpoints stay, with `?floor_plan=<id>`, for scripts and
+integrations. They page like every list, so read every page or use
+`contents/`.
+
 ## Live state on tiles
 
 The canvas refreshes `GET /api/floor-plans/<id>/state/` every 30 seconds - a

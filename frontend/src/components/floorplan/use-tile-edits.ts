@@ -14,6 +14,7 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { resizedRect } from "./cabinet-tile"
 import { findCollision, tileIsZone } from "./floor-canvas"
 import { moveSelection, rotateSelection } from "./selection"
+import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { EditTile, PlanEditState } from "./use-plan-edit-state"
 
 let tempCounter = 0
@@ -283,7 +284,8 @@ export function useTileEdits({
       draft.load(fresh)
       setMultiSel(new Set())
       setSelectedId(null)
-      qc.invalidateQueries({ queryKey: ["floor-plan-tiles", id] })
+      // The plan's contents - the dashboard widget reads them too.
+      qc.invalidateQueries({ queryKey: floorPlanContentsKey(id) })
       qc.invalidateQueries({ queryKey: ["floor-plan", id] })
       qc.invalidateQueries({ queryKey: ["floor-plans"] })
       // Tile moves change cable endpoints - refresh the routed paths too.

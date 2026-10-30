@@ -373,9 +373,9 @@ export function FloorPlanEditor({
         )}
 
         <div className="relative min-w-0 flex-1">
-          {data.tilesQuery.isError && (
+          {data.contentsQuery.isError && (
             <div className="p-4">
-              <QueryError error={data.tilesQuery.error} />
+              <QueryError error={data.contentsQuery.error} />
             </div>
           )}
           {view3d && (

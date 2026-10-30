@@ -11046,6 +11046,51 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 }
         return Response({"as_of": timezone.now().isoformat(), "tiles": out})
 
+    @action(detail=True, methods=["get"], url_path="contents")
+    def contents(self, request, pk=None):
+        """Everything the 2D editor draws, in one read: every tile, tray, wall
+        and raised-floor area of the plan, unpaginated, each kind narrowed to
+        the rows the reader may view (as its own list endpoint narrows them).
+        Rows keep their list-endpoint shape. ``version`` is the newest
+        ``updated_at`` across them (null for an empty plan). The query count
+        stays flat however many rows the plan holds."""
+        from auth_api import rbac
+
+        plan = self.get_object()
+        tenant = _get_active_tenant(request)
+
+        def visible(qs, slug):
+            return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+        tiles = list(visible(
+            plan.tiles.select_related(
+                "floor_plan", "tile_type", "role_type", "rack", "cabinet",
+                "device", "power_panel", "power_feed", "cooling_source",
+                "linked_floor_plan",
+            ).order_by("y", "x", "id"),
+            "floorplantile",
+        ))
+        trays = list(visible(
+            plan.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+            "floorplantray",
+        ))
+        walls = list(visible(plan.walls.order_by("label", "id"), "floorplanwall"))
+        areas = list(visible(
+            plan.raised_floor_areas.order_by("y", "x", "id"),
+            "floorplanraisedfloorarea",
+        ))
+        stamps = [o.updated_at for rows in (tiles, trays, walls, areas) for o in rows]
+        ctx = {"request": request}
+        return Response({
+            "version": max(stamps).isoformat() if stamps else None,
+            "tiles": FloorPlanTileSerializer(tiles, many=True, context=ctx).data,
+            "trays": FloorPlanTraySerializer(trays, many=True, context=ctx).data,
+            "walls": FloorPlanWallSerializer(walls, many=True, context=ctx).data,
+            "raised_floors": FloorPlanRaisedFloorAreaSerializer(
+                areas, many=True, context=ctx
+            ).data,
+        })
+
     # `route` is a POST (it carries a body) but computes only - view, not change.
     # `drawing_render` asks for a cached server render with layers hidden:
     # what a viewer toggling layers on a large drawing needs. A PDF of the

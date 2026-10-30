@@ -6,15 +6,17 @@ import type {
   DeviceRole,
   FloorPlan,
   FloorPlanCablePath,
+  FloorPlanContents,
   FloorPlanLiveState,
   FloorplanPopoverConfig,
-  FloorPlanTile,
-  FloorPlanTray,
-  FloorPlanWall,
   FloorTileTypeOption,
   Paginated,
-  RaisedFloorArea,
 } from "@/lib/api"
+
+/** The query key of a plan's contents (tiles, trays, walls, raised floors) -
+ * what an edit of any of them invalidates. */
+export const floorPlanContentsKey = (id: string) =>
+  ["floor-plan-contents", id] as const
 
 /** Everything the floor-plan editor reads from the server: the plan, what is
  * drawn on it, the palette catalogs, the live overlay and the sibling floors. */
@@ -23,13 +25,13 @@ export function useFloorPlanData(id: string) {
     queryKey: ["floor-plan", id],
     queryFn: () => api<FloorPlan>(`/api/floor-plans/${id}/`),
   })
-  const tilesQuery = useQuery({
-    queryKey: ["floor-plan-tiles", id],
-    queryFn: () =>
-      api<Paginated<FloorPlanTile>>(
-        `/api/floor-plan-tiles/?floor_plan=${id}&page_size=1000`
-      ),
+  // Tiles, trays, walls and raised floors in one read, every row of them -
+  // a list page would stop at its page size and quietly drop the rest.
+  const contentsQuery = useQuery({
+    queryKey: floorPlanContentsKey(id),
+    queryFn: () => api<FloorPlanContents>(`/api/floor-plans/${id}/contents/`),
   })
+  const contents = contentsQuery.data
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
@@ -67,32 +69,6 @@ export function useFloorPlanData(id: string) {
     enabled: !!locationId,
   })
 
-  const traysQuery = useQuery({
-    queryKey: ["floor-plan-trays", id],
-    queryFn: () =>
-      api<Paginated<FloorPlanTray>>(
-        `/api/floor-plan-trays/?floor_plan=${id}&page_size=500`
-      ),
-  })
-  const trays = traysQuery.data?.results ?? []
-  // Raised-floor areas (Structure mode) - rectangles with a plenum depth.
-  const areasQuery = useQuery({
-    queryKey: ["floor-plan-raised-floors", id],
-    queryFn: () =>
-      api<Paginated<RaisedFloorArea>>(
-        `/api/floor-plan-raised-floors/?floor_plan=${id}&page_size=500`
-      ),
-  })
-  const areas = areasQuery.data?.results ?? []
-  // Walls (Structure mode) - polylines with door openings.
-  const wallsQuery = useQuery({
-    queryKey: ["floor-plan-walls", id],
-    queryFn: () =>
-      api<Paginated<FloorPlanWall>>(
-        `/api/floor-plan-walls/?floor_plan=${id}&page_size=500`
-      ),
-  })
-  const walls = wallsQuery.data?.results ?? []
   const cablePathsQuery = useQuery({
     queryKey: ["floor-plan-cable-paths", id],
     queryFn: () =>
@@ -105,17 +81,19 @@ export function useFloorPlanData(id: string) {
   return {
     planQuery,
     plan: planQuery.data,
-    tilesQuery,
+    contentsQuery,
     /** The saved tiles - undefined until they land. */
-    serverTiles: tilesQuery.data?.results,
+    serverTiles: contents?.tiles,
+    trays: contents?.trays ?? [],
+    // Raised-floor areas (Structure mode) - rectangles with a plenum depth.
+    areas: contents?.raised_floors ?? [],
+    // Walls (Structure mode) - polylines with door openings.
+    walls: contents?.walls ?? [],
     tileTypes,
     roles,
     liveState,
     popoverCfg,
     floors,
-    trays,
-    areas,
-    walls,
     cablePaths,
   }
 }

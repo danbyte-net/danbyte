@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 
+import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { PlanEditState } from "./use-plan-edit-state"
 
 /** Structure and Cables mode edits - raised floors, walls (with their doors)
@@ -44,7 +45,7 @@ export function useStructureEdits({
   } = ed
 
   const invalidateAreas = () => {
-    qc.invalidateQueries({ queryKey: ["floor-plan-raised-floors", id] })
+    qc.invalidateQueries({ queryKey: floorPlanContentsKey(id) })
     qc.invalidateQueries({ queryKey: ["floor-plan-scene", id] })
   }
   const createArea = useMutation({
@@ -108,7 +109,7 @@ export function useStructureEdits({
 
   // ── Walls (instant-save, tray-style) ───────────────────────────────────
   const invalidateWalls = () => {
-    qc.invalidateQueries({ queryKey: ["floor-plan-walls", id] })
+    qc.invalidateQueries({ queryKey: floorPlanContentsKey(id) })
     qc.invalidateQueries({ queryKey: ["floor-plan-scene", id] })
   }
   const createWall = useMutation({
@@ -186,7 +187,7 @@ export function useStructureEdits({
 
   // ── Trays (save immediately per op - no bulk/dirty model like tiles) ────
   const invalidateTrays = () => {
-    qc.invalidateQueries({ queryKey: ["floor-plan-trays", id] })
+    qc.invalidateQueries({ queryKey: floorPlanContentsKey(id) })
     // A cable's route depends on its trays - refresh the routed paths so
     // links don't fall back to point-to-point until a reload.
     qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", id] })
