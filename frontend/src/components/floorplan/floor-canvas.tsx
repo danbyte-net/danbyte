@@ -46,6 +46,7 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { PlanShape } from "./shapes"
+import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
 import type { CableAnchor, CableHoverHit } from "./cable-layer"
@@ -259,6 +260,9 @@ export interface FloorCanvasProps {
     w: number
     h: number
   }) => void
+  /** "Snapshot this room…" on an area's menu: open the Snapshot dialog
+   * for it. */
+  onSnapshotShape?: (id: string) => void
   /** Rows shown but not editable here: on a live view, the ones crossing
    * its edge. Dimmed and inert while editing. */
   lockedIds?: ReadonlySet<string>
@@ -405,6 +409,7 @@ export function FloorCanvas({
   selectedShapeId = null,
   shapeTool = null,
   onSnapshotRect,
+  onSnapshotShape,
   lockedIds,
   clipToGrid = false,
   backgroundFrame = null,
@@ -1819,6 +1824,11 @@ export function FloorCanvas({
               >
                 {s.locked ? "Unlock" : "Lock"}
               </DropdownMenuItem>
+              {s.kind === "area" && onSnapshotShape && (
+                <DropdownMenuItem onSelect={() => onSnapshotShape(s.id)}>
+                  {snapshotAreaLabel(s)}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"

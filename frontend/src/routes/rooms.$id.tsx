@@ -26,6 +26,7 @@ import {
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { AreaPlanTab, useAreaPlan } from "@/components/floorplan/area-plan-tab"
 
 export const Route = createFileRoute("/rooms/$id")({
   component: RoomDetail,
@@ -50,8 +51,17 @@ function RoomDetail() {
 
 function Body({ room: r }: { room: Room }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "devices" | "racks" | "cabinets" | "journal" | "history"
+    | "overview"
+    | "devices"
+    | "racks"
+    | "cabinets"
+    | "plan"
+    | "journal"
+    | "history"
   >("overview")
+  // The Floor plan tab, while the room is drawn on a floor the reader sees.
+  const plan = useAreaPlan("rooms", r.id)
+  const hasPlan = (plan.data?.areas.length ?? 0) > 0
   const { canDo } = useMe()
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<Room | null>(null)
@@ -99,6 +109,7 @@ function Body({ room: r }: { room: Room }) {
         { value: "devices", label: "Devices", count: r.device_count },
         { value: "racks", label: "Racks", count: r.rack_count },
         { value: "cabinets", label: "Cabinets", count: r.cabinet_count },
+        ...(hasPlan ? [{ value: "plan" as const, label: "Floor plan" }] : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -127,6 +138,11 @@ function Body({ room: r }: { room: Room }) {
           emptyText="No cabinets in this room yet."
         />
       </DetailTab>
+      {hasPlan && (
+        <DetailTab value="plan">
+          <AreaPlanTab owner="rooms" id={r.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.room" objectId={r.id} />
       </DetailTab>

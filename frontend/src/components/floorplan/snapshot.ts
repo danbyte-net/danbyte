@@ -1,4 +1,4 @@
-import type { FloorPlan, FloorPlanContents } from "@/lib/api"
+import type { FloorPlan, FloorPlanContents, FloorPlanCrop } from "@/lib/api"
 
 // Snapshots (docs: floor-plans "Snapshots"): a live view shows a rectangle
 // of its source plan and edits the source's objects there; an independent
@@ -68,4 +68,44 @@ export function snapshotLabel(
     : "a deleted plan"
   if (s.kind === "view") return `View of ${name}`
   return s.at ? `Copy of ${name} · ${formatDate(s.at)}` : `Copy of ${name}`
+}
+
+/** The outline a live view made from an area dims around, in the view's
+ * cells; null for any other plan. */
+export function viewMask(
+  plan: Pick<FloorPlan, "kind" | "snapshot">
+): [number, number][] | null {
+  const m = plan.snapshot?.mask
+  return isLiveView(plan) && m && m.length >= 3 ? m : null
+}
+
+/** The menu item that snapshots an area: "Snapshot this room…" for a room,
+ * "…location…" for a location, "…area…" otherwise. */
+export function snapshotAreaLabel(a: {
+  room?: unknown | null
+  location?: unknown | null
+}): string {
+  const what = a.room ? "room" : a.location ? "location" : "area"
+  return `Snapshot this ${what}…`
+}
+
+/** The most cells a snapshot of an area may reach past its box (the
+ * server's MAX_MARGIN). */
+export const MAX_MARGIN = 50
+
+/** The crop a snapshot of an area takes, as the server works it out: the
+ * whole cells holding the area's box, `margin` more on each side, inside
+ * the grid. `box` is the area's bounds in cells (`shapeBounds`). */
+export function areaCrop(
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  margin: number,
+  gridWidth: number,
+  gridHeight: number
+): FloorPlanCrop {
+  const e = 1e-6
+  const x = Math.max(0, Math.floor(box.minX + e) - margin)
+  const y = Math.max(0, Math.floor(box.minY + e) - margin)
+  const x2 = Math.min(gridWidth, Math.ceil(box.maxX - e) + margin)
+  const y2 = Math.min(gridHeight, Math.ceil(box.maxY - e) + margin)
+  return { x, y, w: Math.max(0, x2 - x), h: Math.max(0, y2 - y) }
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowRight,
   BringToFront,
+  Crop,
   DoorOpen,
   Image as ImageIcon,
   Lock,
@@ -52,6 +53,7 @@ import {
 import { tileName } from "./canvas-geometry"
 import { roomAreaAt } from "./placement"
 import type { AreaShape, PlanShape } from "./shapes"
+import { snapshotAreaLabel } from "./snapshot"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import { shownLink } from "./shown-link"
 
@@ -388,11 +390,14 @@ export function SelectionToolbar({
   onChangeShape,
   onRestackShape,
   onDeleteShape,
+  onSnapshotShape,
 }: {
   plan: FloorPlan
   tile: FloorPlanTile | null
   shape: PlanShape | null
   shapes: PlanShape[]
+  /** An area's "Snapshot this room…"; absent where it cannot be taken. */
+  onSnapshotShape?: (id: string) => void
   onTileDisplay: (tile: FloorPlanTile, display: "icon" | "photo") => void
   onRestackTile: (id: string, dir: 1 | -1) => void
   onDeleteTile: (id: string) => void
@@ -519,6 +524,15 @@ export function SelectionToolbar({
           area={shape}
           onChange={(patch) => onChangeShape(shape.id, patch)}
         />
+      )}
+      {shape.kind === "area" && onSnapshotShape && (
+        <BarIconButton
+          label={snapshotAreaLabel(shape)}
+          tipSide="top"
+          onClick={() => onSnapshotShape(shape.id)}
+        >
+          <Crop />
+        </BarIconButton>
       )}
       <BarIconButton
         label="Bring forward"

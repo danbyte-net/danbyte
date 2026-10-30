@@ -788,7 +788,13 @@ it took. Hold ++alt++ to place freely.
 **Viewing.** In View, click an area linked to a room and the map panel opens
 the room: its code, status, location and how many devices, racks and cabinets
 stand in it, with **Open room**. An area linked to a location offers **Open
-location**.
+location**. The room's (or location's) page shows its part of the floor on a
+[**Floor plan** tab](../dcim/rooms.md#floor-plan); its **Open in floor plan**
+opens the floor at `/floorplans/<id>?area=<area id>`, with the area open
+and in view.
+
+**Snapshot.** **Snapshot this room…** on an area's right-click menu or its
+floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 
 ### Labels
 
@@ -1584,6 +1590,40 @@ The snapshot opens. Its header carries a chip - **Copy of HQ · Floor 2 ·
 taken of. On the floor-plan list a floor plan whose floors are all live
 views reads **View of** its source next to its name.
 
+### Of a room, location or area
+
+A snapshot can also be taken of a **room, location or area** drawn on the
+floor instead of a dragged rectangle:
+
+- In Edit, right-click an area - or use its floating toolbar - and choose
+  **Snapshot this room…** (**…location…**, **…area…**).
+- After dragging a rectangle, the dialog's **Of** switches between **The
+  drawn rectangle** and **A room, location or area**, picked from the floor's
+  areas (shown as their colour badges).
+- A room's or location's page: **Make snapshot…** on its
+  [Floor plan tab](../dcim/rooms.md#floor-plan).
+
+The crop is the area's bounding box in whole cells - a turned rectangle's or
+a polygon's box - plus a **Margin** of whole cells on every side (0-50,
+default 0), inside the floor. The name starts as the area's. Only saved areas
+are offered; save the plan first after drawing one.
+
+Both kinds work. A **copy** is made of that rectangle as any copy is. A **live
+view** remembers the area and **follows it**: move, resize or turn the room
+and the view's rectangle moves with it - its grid grows or shrinks to the
+area's new box. The rectangle is worked out from the area each time the view
+is read, not stored and kept up to date, so it follows a change made
+anywhere - the editor, the areas API, a view, an import - and can never fall
+behind. Through the view itself the area, like any row, stays inside the
+view's rectangle - to grow it past the margin, change it on the source.
+Deleting the area leaves the view showing the rectangle the area last gave
+it. **Unlink** forgets the area.
+
+In a view that follows an area, everything outside the area's outline is
+**dimmed**: a turned or polygon room reads as the room inside its box. The
+canvas draws the dimming (so its PNG carries it); the PDF export draws the
+whole rectangle.
+
 ### Independent copy
 
 A plan of its own with the same cell size, ceiling, layout (grid or free)
@@ -1647,7 +1687,7 @@ object, so nothing has to be kept in sync and the two can never disagree.
 
 | Call | |
 |---|---|
-| `POST /api/floor-plans/<id>/snapshot/` | `{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" \| "view", "target": "plan" \| "floor"}`. The crop is whole cells inside the plan. Answers the new plan (201) with `crossing` - the copied objects that crossed the edge, `{"kind", "id", "name"}`. Needs view on the plan and `floorplan · add`; `floor` needs add on its floor plan too. On a view, the crop is in the view's cells. |
+| `POST /api/floor-plans/<id>/snapshot/` | `{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" \| "view", "target": "plan" \| "floor"}`. The crop is whole cells inside the plan. Answers the new plan (201) with `crossing` - the copied objects that crossed the edge, `{"kind", "id", "name"}`. Needs view on the plan and `floorplan · add`; `floor` needs add on its floor plan too. On a view, the crop is in the view's cells. In place of `crop`: `"area_id"` (a room, location or area on the plan you may view) and `"margin"` (whole cells, 0-50, default 0) - the crop is the area's bounding box in whole cells plus the margin, inside the plan (on a view: inside the view's rectangle, 400 when the area misses it). A `view` taken so follows the area. |
 | `POST /api/floor-plans/<id>/unlink/` | A live view becomes an independent copy. Answers the plan with `crossing`. Needs change on the view and view on its source. |
 | `DELETE /api/floor-plans/<id>/` | 409 while live views show the plan: `{"detail", "views": [{"id", "name"}]}`. `DELETE /api/floor-plan-stacks/<id>/` the same. |
 
@@ -1655,7 +1695,9 @@ A plan reads `kind` (`plan` or `view`) and `snapshot` - `null`, or `{"kind":
 "copy" | "view", "source": {"id", "name", "stack"} | null, "crop", "at"}`,
 and on a view `source_grid` (the source's grid, which its background image
 spans). `source` is null when the source is gone or the reader may not view
-it. A view's `grid_width`, `grid_height`, `cell_mm`, `ceiling_mm`,
+it. A view's `crop` is the one it shows now; a view taken of an area also
+reads `area` (`{"id", "name"}`, null once the area is gone), `margin` and
+`mask` (the area's outline in the view's cells, null for other views). A view's `grid_width`, `grid_height`, `cell_mm`, `ceiling_mm`,
 `layout_mode`, `background_image` and `background_opacity` are its source's,
 at the rectangle's size; `PATCH` refuses changing them. A floor in a floor
 plan's `floors` reads `kind` and `view_of` (`{"id", "name"}`).

@@ -215,6 +215,42 @@ describe("a room's page", () => {
     ])
   })
 
+  it("has a Floor plan tab only while the room is drawn on a floor", async () => {
+    const plan = { areas: [] as unknown[], area: null }
+    const base = apiMock.getMockImplementation()!
+    apiMock.mockImplementation((path, init) =>
+      path === "/api/rooms/rm1/plan/" ? Promise.resolve(plan) : base(path, init)
+    )
+    mount("/rooms/rm1")
+    await screen.findByRole("heading", { name: "Comms 210" })
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith("/api/rooms/rm1/plan/")
+    )
+    expect(screen.queryByText("Floor plan")).toBeNull()
+    cleanup()
+    plan.areas = [
+      {
+        id: "a1",
+        name: "Comms 210",
+        color: "#2563eb",
+        floor_plan: { id: "p1", name: "Ground", stack: null },
+      },
+    ]
+    mount("/rooms/rm1")
+    await screen.findByRole("heading", { name: "Comms 210" })
+    await waitFor(() =>
+      expect(screen.getAllByTestId("tab").map((t) => t.textContent)).toEqual([
+        "Overview",
+        "Devices",
+        "Racks",
+        "Cabinets",
+        "Floor plan",
+        "Journal",
+        "Change log",
+      ])
+    )
+  })
+
   it("shows where the room is in its Overview", async () => {
     mount("/rooms/rm1")
     await screen.findByRole("heading", { name: "Comms 210" })

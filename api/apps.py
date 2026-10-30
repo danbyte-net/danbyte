@@ -17,6 +17,10 @@ class ApiConfig(AppConfig):
         from . import flow_requirements
 
         flow_requirements.connect_signals()
+        from . import floor_plan_snapshots
+
+        # A live view following an area keeps its crop when the area goes.
+        floor_plan_snapshots.connect_signals()
         io.register_builtins()
         autodiscover_modules("io")
         # The global search index follows every indexed model's saves/deletes.

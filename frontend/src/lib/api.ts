@@ -12196,15 +12196,55 @@ export interface FloorPlanSnapshotInfo {
   at: string | null
   /** A view's source grid, which its background image spans. */
   source_grid?: { width: number; height: number }
+  /** A view made from a room, location or area: the area it follows (null
+   * otherwise or once the area is gone). */
+  area?: { id: string; name: string } | null
+  /** Cells around the area's box. */
+  margin?: number
+  /** The followed area's outline in the view's cells: outside it reads
+   * dimmed. */
+  mask?: [number, number][] | null
 }
 
-/** POST /api/floor-plans/<id>/snapshot/ */
+/** POST /api/floor-plans/<id>/snapshot/ - a dragged `crop`, or `area_id`
+ * (a room, location or area on the plan) with a `margin` in cells. */
 export interface FloorPlanSnapshotPayload {
   name: string
-  crop: FloorPlanCrop
+  crop?: FloorPlanCrop
+  area_id?: string
+  margin?: number
   mode: "copy" | "view"
   /** "plan": a floor plan of its own; "floor": a new floor of this one. */
   target: "plan" | "floor"
+}
+
+/** GET /api/rooms/<id>/plan/ and /api/locations/<id>/plan/ - the part of a
+ * floor plan a room or location is drawn on. With no area, `areas` is empty
+ * and the rest null. */
+export interface FloorPlanRegion {
+  areas: FloorPlanRegionArea[]
+  area: string | null
+  /** The floor the picked area is on. */
+  floor_plan: FloorPlan | null
+  /** The area's box in whole cells of that floor, with the margin. */
+  crop: FloorPlanCrop | null
+  margin: number
+  /** The area's outline in the crop's cells. */
+  outline: [number, number][] | null
+  /** The rows inside the crop, in its cells. */
+  contents: FloorPlanContents | null
+}
+
+export interface FloorPlanRegionArea {
+  id: string
+  name: string
+  /** The linked room's or location's colour, else the area's own. */
+  color: string
+  floor_plan: {
+    id: string
+    name: string
+    stack: { id: string; name: string } | null
+  }
 }
 
 /** A snapshot or unlink answer: the plan, and what crossed the crop's edge

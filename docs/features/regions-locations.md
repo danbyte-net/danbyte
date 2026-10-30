@@ -192,6 +192,15 @@ floor plan need not have a location at all: a
 site with many buildings, and its areas may stand for any location of the
 site.
 
+When the location is drawn as an [area](floor-plans.md#rooms-and-areas) on a
+floor plan, its page gets a **Floor plan** tab: its part of that floor,
+read-only and live, outside its outline dimmed, with **Open in floor plan**,
+**Make snapshot…** and a switcher when it is drawn on several floors - the
+same tab, rules and permissions as a
+[room's](../dcim/rooms.md#floor-plan). `GET /api/locations/<id>/plan/` reads
+it, as `GET /api/rooms/<id>/plan/` does for a room. The tab shows the areas
+linked to the location itself, not those of its rooms.
+
 ## Tags & custom fields
 
 Need to track something extra on a location - a square footage, an access

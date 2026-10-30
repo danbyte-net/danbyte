@@ -9298,6 +9298,15 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # {"x", "y", "w", "h"} in whole cells of the source.
     crop = models.JSONField(null=True, blank=True)
     snapshot_at = models.DateTimeField(null=True, blank=True)
+    # A live view made from a room, location or area drawn on its source
+    # follows it: its crop is the area's bounding box in whole cells plus
+    # ``source_margin`` cells, worked out on every read. Deleting the area
+    # freezes ``crop`` where it last was (floor_plan_snapshots).
+    source_area = models.ForeignKey(
+        "FloorPlanArea", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="views",
+    )
+    source_margin = models.PositiveSmallIntegerField(default=0, db_default=0)
 
     class Meta:
         ordering = ["name"]
