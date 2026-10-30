@@ -15,11 +15,12 @@ import {
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { DashboardData, NamedDashboard, Paginated } from "@/lib/api"
+import type { NamedDashboard, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { normalizeLayout, packItems } from "@/lib/dashboard-layout"
 import type { DashItem } from "@/lib/dashboard-layout"
 import { usePageTitle } from "@/lib/page-title"
+import { useDashboardData } from "@/lib/use-dashboard-data"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -38,24 +39,26 @@ import {
   DashboardGrid,
   StatBand,
   metaForItem,
+  useIncludeKeys,
   withWidget,
 } from "./board"
 import { DashboardSettingsDialog, scopeQuery } from "./dashboard-settings"
 
-/** Switch between the home layout and every dashboard you can see. */
-export function DashboardSwitcher({ current }: { current: string | null }) {
+/** Switch between the home layout and every dashboard you can see. The
+ * list is read when the menu opens, not with the page: the title is the
+ * board's own name, and most visits never open the menu. */
+export function DashboardSwitcher({ name = "Dashboard" }: { name?: string }) {
+  const [open, setOpen] = useState(false)
   const q = useQuery({
     queryKey: ["dashboards"],
     queryFn: () =>
       api<Paginated<NamedDashboard>>("/api/dashboards/?page_size=200"),
     staleTime: 60_000,
+    enabled: open,
   })
   const rows = q.data?.results ?? []
-  const name = current
-    ? (rows.find((d) => d.id === current)?.name ?? "Dashboard")
-    : "Dashboard"
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -112,14 +115,6 @@ export function NamedBoard({
   const board = q.data
   usePageTitle(board?.name ?? "Dashboard")
   const scope = board ? scopeQuery(board) : ""
-  const data = useQuery({
-    queryKey: ["dashboard", scope],
-    queryFn: () => api<DashboardData>(`/api/dashboard/?${scope}`),
-    enabled: !!board,
-    refetchInterval: board?.refresh_seconds
-      ? board.refresh_seconds * 1000
-      : false,
-  })
   // Widgets that fetch their own data refresh on the same beat.
   useEffect(() => {
     if (!board?.refresh_seconds) return
@@ -158,6 +153,24 @@ export function NamedBoard({
   const [interacting, setInteracting] = useState(false)
   const [settings, setSettings] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // The payload holds what this board's widgets read - the saved layout's,
+  // and any added since while editing.
+  const include = useIncludeKeys(
+    board
+      ? [
+          ...(normalizeLayout(board.layout, metaForItem, []) ?? []),
+          ...items,
+        ].map((i) => i.id)
+      : null
+  )
+  const data = useDashboardData(scope, {
+    include,
+    enabled: !!board && include !== undefined,
+    refetchInterval: board?.refresh_seconds
+      ? board.refresh_seconds * 1000
+      : false,
+  })
   useEffect(() => {
     if (!board) return
     setItems(normalizeLayout(board.layout, metaForItem, []) ?? [])
@@ -269,7 +282,7 @@ export function NamedBoard({
                 {board.name}
               </h1>
             ) : (
-              <DashboardSwitcher current={id} />
+              <DashboardSwitcher name={board.name} />
             )}
             <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               {board.description}

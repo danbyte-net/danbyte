@@ -231,6 +231,50 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
   },
 }
 
+/** The `/api/dashboard/` keys a widget reads, beyond those every payload
+ * carries (counts, check and alert roll-ups, reachable share - the stat
+ * band). The page asks for the keys of the widgets it shows and no more
+ * (`include=`): the server computes nothing for a widget nobody placed. */
+export const WIDGET_KEYS: Partial<Record<WidgetId, (keyof DashboardData)[]>> = {
+  "recent-activity": ["recent_activity"],
+  "recent-prefixes": ["recent_prefixes"],
+  "recent-devices": ["recent_devices"],
+  "recent-ips": ["recent_ips"],
+  "ip-status": ["ip_by_status"],
+  "ip-role": ["ip_by_role"],
+  "ip-scope": ["ip_by_scope"],
+  "prefix-family": ["prefix_by_family"],
+  "prefix-status": ["prefix_by_status"],
+  "top-prefixes": ["top_prefixes"],
+  "device-status": ["device_by_status"],
+  "device-type": ["device_by_type"],
+  "device-site": ["device_by_site"],
+  "device-manufacturer": ["device_by_manufacturer"],
+  flapping: ["flapping"],
+  availability: ["availability_7d"],
+  "alerts-per-day": ["alerts_per_day"],
+  "latency-week": ["latency_by_kind"],
+}
+
+/** What every payload carries, whatever `include` says. */
+export const ALWAYS_KEYS: (keyof DashboardData)[] = [
+  "counts",
+  "check_by_status",
+  "alerts_by_severity",
+  "reachable_pct",
+  "default_widgets",
+  "scope",
+  "frame_hours",
+]
+
+/** The payload keys a layout's widgets read, sorted - the `include` list. */
+export function payloadKeys(itemIds: string[]): string[] {
+  const keys = new Set<string>()
+  for (const id of itemIds)
+    for (const k of WIDGET_KEYS[baseWidgetId(id)] ?? []) keys.add(k)
+  return [...keys].sort()
+}
+
 /** The built-in layout, hand-placed on the 6-column grid rather than flowed:
  * two big anchors up top, the status rings in a band, work queues, then the
  * tables, and the floor plan full-width at the bottom. This is also what

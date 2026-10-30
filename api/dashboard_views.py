@@ -2,7 +2,10 @@
 
 Every dashboard widget reads from this single endpoint so the page is one fetch.
 Aggregations are deliberately cheap (``.count()`` + ``values().annotate()``); the
-only per-instance work is utilisation for the top-8 prefixes.
+only per-instance work is utilisation for the top-8 prefixes. The monitoring
+charts read the rollups, never the raw results, and ``?include=`` limits the
+work to the widgets on show. The query count does not grow with the estate
+(api.tests_dashboard_cost).
 """
 from __future__ import annotations
 
@@ -247,27 +250,50 @@ def _apply_scope(scope, devices, ips, prefixes, tenant):
             from monitoring.sla import member_ip_ids
         except Exception:  # noqa: BLE001
             member_ip_ids = None
-        member_ips = member_ip_ids(scope["sla"]) if member_ip_ids else set()
+        member_ips = member_ip_ids(scope["sla"], tenant=tenant) if member_ip_ids else set()
         ips = ips.filter(pk__in=member_ips)
         devices = devices.filter(ip_addresses__in=member_ips).distinct()
     return devices, ips, prefixes
+
+
+#: The payload keys a caller can ask for by name (``?include=a,b``): each
+#: is one widget's data, computed only when asked for. Without ``include``
+#: every one comes. The counts, the check and alert roll-ups and the
+#: reachable share (the stat band) and the tenant's default layout always
+#: come.
+OPTIONAL_KEYS = (
+    "recent_activity", "recent_prefixes", "recent_devices", "recent_ips",
+    "ip_by_status", "ip_by_role", "ip_by_scope", "prefix_by_family",
+    "prefix_by_status", "top_prefixes", "device_by_status", "device_by_type",
+    "device_by_site", "device_by_manufacturer", "flapping", "availability_7d",
+    "alerts_per_day", "latency_series", "latency_by_kind",
+)
+#: Read together from one rollup query.
+ROLLUP_KEYS = ("availability_7d", "latency_series", "latency_by_kind")
+
+
+def _include(params) -> set:
+    """The optional keys to compute: all of them, or the ``include`` list.
+    A name that is not one of them is a 400."""
+    raw = params.get("include")
+    if raw is None:
+        return set(OPTIONAL_KEYS)
+    want = {k.strip() for k in raw.split(",") if k.strip()}
+    unknown = sorted(want - set(OPTIONAL_KEYS))
+    if unknown:
+        raise serializers.ValidationError(
+            {"include": f"Not a dashboard key: {', '.join(unknown)}."})
+    return want
 
 
 def _empty_dashboard() -> dict:
     """Full-shape payload with everything zeroed/empty. Returned when the user
     has no active tenant (e.g. a freshly created account before a tenant is
     assigned) so the frontend never reads an undefined array/field."""
-    keys = (
-        "recent_activity", "recent_prefixes", "recent_devices", "recent_ips",
-        "ip_by_status", "ip_by_role", "ip_by_scope",
-        "prefix_by_family", "prefix_by_status",
-        "top_prefixes", "device_by_status", "device_by_type", "device_by_site",
-        "device_by_manufacturer", "check_by_status", "alerts_by_severity",
-        "flapping", "alerts_per_day", "latency_series",
-    )
     return {
-        "counts": {}, "reachable_pct": None, "availability_7d": None,
-        **{k: [] for k in keys},
+        "counts": {}, "reachable_pct": None, "check_by_status": [],
+        "alerts_by_severity": [], "default_widgets": [],
+        **{k: None if k == "availability_7d" else [] for k in OPTIONAL_KEYS},
     }
 
 
@@ -275,6 +301,15 @@ def _empty_dashboard() -> dict:
     summary="Batched, tenant-scoped dashboard aggregation payload",
     tags=["dashboard"],
     request=None,
+    parameters=[
+        OpenApiParameter(
+            "include", OpenApiTypes.STR, OpenApiParameter.QUERY,
+            description=(
+                "Comma-separated payload keys to compute (the widgets on show); "
+                "the others come back empty. Omitted: every key."
+            ),
+        ),
+    ],
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
         description=(
@@ -304,6 +339,7 @@ def dashboard_view(request):
     ips = _scoped(IPAddress, "ipaddress", tenant=tenant)
     devices = _scoped(Device, "device", tenant=tenant)
     scope = _scope_params(request.query_params)
+    want = _include(request.query_params)
     if scope:
         devices, ips, prefixes = _apply_scope(scope, devices, ips, prefixes, tenant)
     hours = FRAMES.get(request.query_params.get("frame") or "", 168)
@@ -326,56 +362,6 @@ def dashboard_view(request):
         "static_routes": _scoped(StaticRoute, "staticroute", tenant=tenant).count(),
     }
 
-    # ── IPAM ────────────────────────────────────────────────────────────
-    ip_by_status = _by(ips, "status_id", "status__name", "status__color")
-    ip_by_role = _by(ips, "role_id", "role__name", "role__color")
-    ip_by_scope = _ip_by_scope(ips)
-
-    fam = prefixes.aggregate(
-        v6=Count("id", filter=Q(cidr__contains=":")),
-        v4=Count("id", filter=~Q(cidr__contains=":")),
-    )
-    fam = {"4": fam["v4"] or 0, "6": fam["v6"] or 0}
-    prefix_by_family = [
-        {"key": "4", "name": "IPv4", "count": fam["4"], "color": "var(--chart-1)"},
-        {"key": "6", "name": "IPv6", "count": fam["6"], "color": "var(--chart-3)"},
-    ]
-
-    prefix_by_status = _by(prefixes, "status_id", "status__name", "status__color")
-
-    # Top prefixes by utilisation: the busiest 8, their address counts and
-    # statuses read with them (#299), the CIDR breaking ties so the widget
-    # keeps its order.
-    busiest = list(
-        prefixes.select_related("status")
-        .annotate(ipc=Count("ip_addresses"))
-        .order_by("-ipc", "cidr")[:8]
-    )
-    top_prefixes = [
-        {
-            "id": str(p.id),
-            "cidr": p.cidr,
-            "ip_count": p.ipc,
-            "utilisation_pct": p.utilisation_with(p.ipc),
-        }
-        for p in busiest
-        if p.ipc
-    ]
-
-    # ── DCIM ────────────────────────────────────────────────────────────
-    device_by_status = _by(devices, "status_id", "status__name", "status__color")
-    device_by_type = _by(
-        devices, "device_type_id", "device_type__name", limit=6
-    )
-    device_by_site = _by(
-        devices.exclude(site__isnull=True), "site_id", "site__name", limit=6
-    )
-    device_by_manufacturer = _by(
-        devices.exclude(device_type__manufacturer__isnull=True),
-        "device_type__manufacturer__name",
-        limit=6,
-    )
-
     # ── Monitoring ──────────────────────────────────────────────────────
     # The check/alert roll-ups and the status-change feed describe the
     # monitored OBJECTS (devices/prefixes/IPs - recent activity even carries
@@ -390,31 +376,44 @@ def dashboard_view(request):
         else {"check_by_status": [], "alerts_by_severity": [],
               "reachable_pct": None}
     )
-    monitoring["flapping"] = _flapping(u, tenant, ip_filter) if can_see_monitoring else []
     monitoring.update(
-        _monitoring_charts(request, u, tenant, ip_filter, hours) if can_see_monitoring
-        else {"availability_7d": None, "alerts_per_day": [], "latency_series": []}
+        _monitoring_charts(request, u, tenant, ip_filter, hours, want) if can_see_monitoring
+        else {"availability_7d": None, "alerts_per_day": [], "latency_series": [],
+              "latency_by_kind": []}
     )
+
+    # Each widget's data, computed only when the caller's layout shows it.
+    widgets = {
+        # ── IPAM
+        "ip_by_status": lambda: _by(ips, "status_id", "status__name", "status__color"),
+        "ip_by_role": lambda: _by(ips, "role_id", "role__name", "role__color"),
+        "ip_by_scope": lambda: _ip_by_scope(ips),
+        "prefix_by_family": lambda: _prefix_by_family(prefixes),
+        "prefix_by_status": lambda: _by(
+            prefixes, "status_id", "status__name", "status__color"),
+        "top_prefixes": lambda: _top_prefixes(prefixes),
+        # ── DCIM
+        "device_by_status": lambda: _by(
+            devices, "status_id", "status__name", "status__color"),
+        "device_by_type": lambda: _by(devices, "device_type_id", "device_type__name", limit=6),
+        "device_by_site": lambda: _by(
+            devices.exclude(site__isnull=True), "site_id", "site__name", limit=6),
+        "device_by_manufacturer": lambda: _by(
+            devices.exclude(device_type__manufacturer__isnull=True),
+            "device_type__manufacturer__name", limit=6),
+        # ── Feeds
+        "recent_prefixes": lambda: _recent_prefixes(prefixes),
+        "recent_devices": lambda: _recent_devices(devices),
+        "recent_ips": lambda: _recent_ips(ips),
+        "recent_activity": lambda: (
+            _recent_activity(tenant, ip_filter) if can_see_monitoring else []),
+        "flapping": lambda: _flapping(u, tenant, ip_filter) if can_see_monitoring else [],
+    }
 
     return Response(
         {
             "counts": counts,
-            "recent_activity": (
-                _recent_activity(tenant, ip_filter) if can_see_monitoring else []
-            ),
-            "recent_prefixes": _recent_prefixes(prefixes),
-            "recent_devices": _recent_devices(devices),
-            "recent_ips": _recent_ips(ips),
-            "ip_by_status": ip_by_status,
-            "ip_by_role": ip_by_role,
-            "ip_by_scope": ip_by_scope,
-            "prefix_by_family": prefix_by_family,
-            "prefix_by_status": prefix_by_status,
-            "top_prefixes": top_prefixes,
-            "device_by_status": device_by_status,
-            "device_by_type": device_by_type,
-            "device_by_site": device_by_site,
-            "device_by_manufacturer": device_by_manufacturer,
+            **{key: fn() if key in want else [] for key, fn in widgets.items()},
             # Admin-set default widget layout for new users (empty = built-in).
             "default_widgets": _default_widgets(tenant),
             "scope": scope,
@@ -422,6 +421,37 @@ def dashboard_view(request):
             **monitoring,
         }
     )
+
+
+def _prefix_by_family(prefixes) -> list:
+    fam = prefixes.aggregate(
+        v6=Count("id", filter=Q(cidr__contains=":")),
+        v4=Count("id", filter=~Q(cidr__contains=":")),
+    )
+    return [
+        {"key": "4", "name": "IPv4", "count": fam["v4"] or 0, "color": "var(--chart-1)"},
+        {"key": "6", "name": "IPv6", "count": fam["v6"] or 0, "color": "var(--chart-3)"},
+    ]
+
+
+def _top_prefixes(prefixes) -> list:
+    """The busiest 8 by utilisation, their address counts and statuses read
+    with them (#299), the CIDR breaking ties so the widget keeps its order."""
+    busiest = list(
+        prefixes.select_related("status")
+        .annotate(ipc=Count("ip_addresses"))
+        .order_by("-ipc", "cidr")[:8]
+    )
+    return [
+        {
+            "id": str(p.id),
+            "cidr": p.cidr,
+            "ip_count": p.ipc,
+            "utilisation_pct": p.utilisation_with(p.ipc),
+        }
+        for p in busiest
+        if p.ipc
+    ]
 
 
 def _default_widgets(tenant):
@@ -435,11 +465,16 @@ def _default_widgets(tenant):
 
 
 def _recent_prefixes(prefixes, limit: int = 8) -> list:
-    rows = (
-        prefixes.select_related("site", "status")
-        .annotate(ipc=Count("ip_addresses"))
-        .order_by("-created_at")[:limit]
-    )
+    # The newest few first, then their address counts: annotating the count
+    # on the queryset grouped every prefix in the tenant before the LIMIT.
+    rows = list(prefixes.select_related("site", "status").order_by("-created_at")[:limit])
+    counts = dict(
+        IPAddress.objects.filter(prefix_id__in=[p.id for p in rows])
+        .values("prefix_id").annotate(n=Count("id")).order_by()
+        .values_list("prefix_id", "n")
+    ) if rows else {}
+    for p in rows:
+        p.ipc = counts.get(p.id, 0)
     return [
         {
             "id": str(p.id),
@@ -528,61 +563,89 @@ def _flapping(user, tenant, ip_filter=None, limit: int = 8) -> list:
     return flapping_ips(tenant, limit=limit, viewable_ips=viewable)
 
 
-def _monitoring_charts(request, user, tenant, scoped_ips=None, hours: int = 168) -> dict:
-    """Seven days for the dashboard's widgets: availability (time-weighted
-    from the result buckets, up over up-plus-down), alerts opened against
-    resolved per day, and the estate's p50/p95 latency per hour. Site-aware
-    like the flapping list."""
+def _monitoring_charts(request, user, tenant, scoped_ips=None, hours: int = 168,
+                       want=OPTIONAL_KEYS) -> dict:
+    """The frame for the dashboard's monitoring widgets: availability (time
+    up over time measured), alerts opened against resolved per day, and the
+    p50/p95 latency per check kind - an hour a point up to a week, a day a
+    point beyond. Site-aware like the flapping list.
+
+    Read from the rollups through :mod:`monitoring.figures`, like Explore
+    and the Latency page the widgets link to, so the figures agree: one
+    grouped query per rollup slice. The raw results it used to read are
+    ~600k rows a day on a busy install, and three passes over a week of
+    them - two with a percentile sort - took the page ten seconds and more.
+    Only the keys in ``want`` are computed; the rest come back empty.
+    """
+    empty = {
+        "availability_7d": None, "alerts_per_day": [], "latency_series": [],
+        "latency_by_kind": [],
+    }
     try:
-        from monitoring.charts import (
-            alerts_per_day,
-            latency_by_kind,
-            latency_percentiles,
-            viewer_tz,
-        )
-        from monitoring.models import CheckResult
+        from monitoring.charts import alerts_per_day, viewer_tz
+        from monitoring.figures import CHART_KEYS, add, chart_window, figures, sums
+        from monitoring.rollups import DAY, _floor
     except Exception:  # noqa: BLE001
-        return {
-            "availability_7d": None, "alerts_per_day": [], "latency_series": [],
-            "latency_by_kind": [],
-        }
+        return empty
     from datetime import timedelta
 
-    from django.db.models import Count
     from django.utils import timezone
 
     from .models import IPAddress
 
     q = rbac.row_filter(user, tenant, "ipaddress", "view")
     if q is None:
-        return {
-            "availability_7d": None, "alerts_per_day": [], "latency_series": [],
-            "latency_by_kind": [],
-        }
+        return empty
     ip_filter = None if q is True else IPAddress.objects.filter(tenant=tenant).filter(q)
     if scoped_ips is not None:
         ip_filter = scoped_ips
-    now = timezone.now()
-    since = now - timedelta(hours=hours)
-    bucket = 3600 if hours <= 168 else 86400
-    from monitoring.counting import trim_results
 
-    # Each address counted from its availability reset.
-    results = trim_results(CheckResult.objects.filter(tenant=tenant, timestamp__gte=since),
-                           since=since, tenant_id=tenant.id)
-    if ip_filter is not None:
-        results = results.filter(target_ip__in=ip_filter)
-    by_status = {
-        r["status"]: r["n"] for r in results.values("status").annotate(n=Count("id"))
-    }
-    up = by_status.get("up", 0) + by_status.get("degraded", 0)
-    down = by_status.get("down", 0) + by_status.get("stale", 0)
-    tz = viewer_tz(request, tenant)
+    def narrow(qs):
+        qs = qs.filter(tenant=tenant)
+        return qs if ip_filter is None else qs.filter(target_ip__in=ip_filter)
+
+    now = timezone.now()
+    win = chart_window(hours, now)
+    # Each address counted from its availability reset (rollup_slices).
+    total: dict = {}
+    by_kind: dict = {}
+    estate: dict = {}
+    grouped = (
+        sums(win, narrow, ("kind", "bucket"), only=CHART_KEYS)
+        if set(want) & set(ROLLUP_KEYS) else {}
+    )
+    for (kind, bucket), row in grouped.items():
+        b = _floor(bucket, DAY) if win.daily else bucket
+        add(total, row)
+        add(estate.setdefault(b, {}), row)
+        add(by_kind.setdefault(kind, {}).setdefault(b, {}), row)
+
+    def points(buckets: dict) -> list:
+        out = []
+        for b in sorted(buckets):
+            if not buckets[b].get("lat_n"):
+                continue
+            f = figures(buckets[b])
+            out.append({"t": b.isoformat(), "p50": f["p50"], "p95": f["p95"]})
+        return out
+
+    kinds = [
+        {"kind": k, "samples": int(sum(r.get("lat_n") or 0 for r in buckets.values())),
+         "series": points(buckets)}
+        for k, buckets in by_kind.items()
+    ]
+    kinds = sorted((k for k in kinds if k["samples"]), key=lambda k: (-k["samples"], k["kind"]))
+    availability = figures(total)["availability"] if total else None
     return {
-        "availability_7d": round(100.0 * up / (up + down), 2) if (up + down) else None,
-        "alerts_per_day": alerts_per_day(tenant, since, now, tz, ip_filter),
-        "latency_series": latency_percentiles(results, since, now, bucket),
-        "latency_by_kind": latency_by_kind(results, since, now, bucket),
+        "availability_7d": (
+            round(availability, 2)
+            if availability is not None and "availability_7d" in want else None
+        ),
+        "alerts_per_day": alerts_per_day(
+            tenant, now - timedelta(hours=hours), now, viewer_tz(request, tenant), ip_filter,
+        ) if "alerts_per_day" in want else [],
+        "latency_series": points(estate) if "latency_series" in want else [],
+        "latency_by_kind": kinds if "latency_by_kind" in want else [],
     }
 
 

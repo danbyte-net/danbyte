@@ -776,7 +776,8 @@ The records keep what actually happened: an
 [availability reset](#excluding-an-address) is applied when they are read,
 never written into them, so moving or clearing a reset needs no rebuild.
 Figures read from the records (the checks list, Explore, the SLA status
-columns and latency objectives) count an address from the first whole hour
+columns and latency objectives, and the home dashboard's Availability and
+Latency widgets) count an address from the first whole hour
 after its reset, and from the first whole UTC day for daily records - the
 rest of the reset day comes from its hourly records (a reset on UTC midnight
 counts that day's daily record whole). Hourly records are kept 30 days, so

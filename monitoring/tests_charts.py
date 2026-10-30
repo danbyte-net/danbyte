@@ -239,9 +239,19 @@ class ApiTests(_Base):
         self.assertEqual(b["availability_pct"], 50.0)
         self.assertEqual(len(b["latency_series"]), 1)
         self.assertIn("alerts_series", b)
+        # The dashboard reads the rollups, like Explore: the hour as rolled.
+        from .models import CheckRollupHourly
+        from .rollups import HOUR, _floor
+
+        CheckRollupHourly.objects.create(
+            tenant=self.tenant, target_ip=self.ip, template=self.t, kind="icmp",
+            bucket=_floor(now, HOUR), up_s=60, down_s=60, samples=2,
+            lat_p50=3.0, lat_p95=3.0,
+        )
         d = self.client.get("/api/dashboard/").json()
         self.assertEqual(d["availability_7d"], 50.0)
         self.assertEqual(len(d["latency_series"]), 1)
+        self.assertEqual(d["latency_by_kind"][0]["series"][0]["p50"], 3.0)
         self.assertEqual(d["alerts_per_day"], [])
         t = self.client.get(f"/api/monitoring/ips/{self.ip.id}/timeline/?days=7").json()
         self.assertEqual(len(t["days"]), 8)

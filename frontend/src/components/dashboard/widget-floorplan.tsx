@@ -25,12 +25,26 @@ export function FloorplanWidget({
   editing?: boolean
   onPlanChange?: (id: string) => void
 }) {
+  // The widget draws one plan: the picked one by id (the plan page's own
+  // query, so the two share it), else the first. Every plan is read only
+  // while editing, for the picker - not a hundred plans on each page load.
+  const picked = useQuery({
+    queryKey: ["floor-plan", planId],
+    queryFn: () => api<FloorPlan>(`/api/floor-plans/${planId}/`),
+    enabled: !!planId,
+  })
+  const list = editing || !planId || picked.isError
   const plans = useQuery({
-    queryKey: ["floor-plans", "widget-list"],
-    queryFn: () => api<Paginated<FloorPlan>>("/api/floor-plans/?page_size=100"),
+    queryKey: ["floor-plans", "widget-list", editing ? "all" : "first"],
+    queryFn: () =>
+      api<Paginated<FloorPlan>>(
+        `/api/floor-plans/?page_size=${editing ? 100 : 1}`
+      ),
+    enabled: list,
   })
   const all = plans.data?.results ?? []
-  const plan = (planId && all.find((x) => x.id === planId)) || all[0]
+  const plan =
+    picked.data ?? ((planId && all.find((x) => x.id === planId)) || all[0])
 
   const tiles = useQuery({
     queryKey: ["floor-plan-tiles", plan?.id],
@@ -48,8 +62,10 @@ export function FloorplanWidget({
     refetchInterval: 30_000,
   })
 
-  if (plans.isLoading)
-    return <div className="h-full min-h-40 animate-pulse rounded-md bg-muted/30" />
+  if (planId ? picked.isLoading || (list && plans.isLoading) : plans.isLoading)
+    return (
+      <div className="h-full min-h-40 animate-pulse rounded-md bg-muted/30" />
+    )
 
   if (!plan)
     return (
@@ -77,28 +93,28 @@ export function FloorplanWidget({
         />
       )}
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">
-      <FloorCanvas
-        plan={plan}
-        tiles={tiles.data?.results ?? []}
-        selectedId={null}
-        editable={false}
-        showGrid={false}
-        armed={null}
-        showFov={false}
-        liveState={state.data ?? null}
-        className="h-full w-full"
-      />
-      <div className="pointer-events-none absolute top-2 left-2 rounded-md border border-border bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur">
-        {plan.name}
-      </div>
-      <Link
-        to="/floorplans/$id"
-        params={{ id: plan.id }}
-        className="absolute right-2 bottom-2 z-[5] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
-        title="Open the full floor plan"
-      >
-        Open →
-      </Link>
+        <FloorCanvas
+          plan={plan}
+          tiles={tiles.data?.results ?? []}
+          selectedId={null}
+          editable={false}
+          showGrid={false}
+          armed={null}
+          showFov={false}
+          liveState={state.data ?? null}
+          className="h-full w-full"
+        />
+        <div className="pointer-events-none absolute top-2 left-2 rounded-md border border-border bg-background/85 px-2 py-0.5 text-[11px] font-medium backdrop-blur">
+          {plan.name}
+        </div>
+        <Link
+          to="/floorplans/$id"
+          params={{ id: plan.id }}
+          className="absolute right-2 bottom-2 z-[5] rounded-md border border-border bg-background/85 px-2 py-1 text-[11px] backdrop-blur hover:bg-background"
+          title="Open the full floor plan"
+        >
+          Open →
+        </Link>
       </div>
     </div>
   )

@@ -1817,6 +1817,14 @@ class Alert(TimestampedModel):
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["tenant", "severity", "status"]),
             models.Index(fields=["dedup_key", "status"]),
+            # Alerts are kept: the per-day charts (dashboard, monitoring
+            # overview) read a window of them, not the whole history.
+            models.Index(fields=["tenant", "opened_at"], name="alert_tenant_opened_idx"),
+            models.Index(
+                fields=["tenant", "resolved_at"],
+                condition=models.Q(resolved_at__isnull=False),
+                name="alert_tenant_resolved_idx",
+            ),
         ]
         constraints = [
             # At most one firing alert per condition.

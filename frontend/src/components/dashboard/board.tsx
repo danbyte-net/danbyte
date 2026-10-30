@@ -1,4 +1,4 @@
-import { Suspense } from "react"
+import { Suspense, useEffect, useState } from "react"
 import type { ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import { GripVertical, Plus, X } from "lucide-react"
@@ -25,6 +25,7 @@ import {
   DEFAULT_GRID_LAYOUT,
   baseWidgetId,
   metaFor,
+  payloadKeys,
 } from "@/components/dashboard/catalog"
 import type { WidgetFit, WidgetId } from "@/components/dashboard/catalog"
 import { ROW_HEIGHT, fromRglLayout, toRglLayout } from "@/lib/dashboard-layout"
@@ -37,6 +38,26 @@ import type { DashItem } from "@/lib/dashboard-layout"
 // Layout items may be instances ("floorplan#2"); the catalog is keyed on the
 // base id.
 export const metaForItem = (id: string) => metaFor(baseWidgetId(id))
+
+/**
+ * The `include` list for a board's payload: the keys its widgets read
+ * (`payloadKeys`). It only grows - adding a widget whose data is missing
+ * asks again, removing one does not - and is undefined until `ids` is known
+ * (null), so the payload is not fetched for a layout still loading.
+ */
+export function useIncludeKeys(ids: string[] | null): string | undefined {
+  const [keys, setKeys] = useState<string[] | undefined>(undefined)
+  const want = ids === null ? null : payloadKeys(ids).join(",")
+  useEffect(() => {
+    if (want === null) return
+    setKeys((cur) => {
+      const next = want ? want.split(",") : []
+      if (cur && next.every((k) => cur.includes(k))) return cur
+      return [...new Set([...(cur ?? []), ...next])].sort()
+    })
+  }, [want])
+  return keys?.join(",")
+}
 
 export const builtinLayout = (): DashItem[] =>
   DEFAULT_GRID_LAYOUT.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))
