@@ -537,7 +537,14 @@ and Export shrinks to its icon, so nothing is ever cut off.
 | Nudge | Arrow keys move the selected tile one cell |
 | Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
 | Save | **Save**, or ++ctrl+s++ |
-| Pan / zoom | Drag empty grid / mouse wheel |
+| Pan / zoom | Drag empty grid / mouse wheel. On a touch screen, drag with one finger and pinch with two |
+
+**Pinch zoom.** On a tablet or a touch screen, two fingers zoom the 2D plan
+about the point between them and pan it as they move, within the same zoom
+limits as the wheel. This works for viewers as well as editors, and on the
+dashboard's floor-plan widget. A second finger landing stops what the first
+one started: a tile drag ends where the tile is, and a half-drawn paint or
+selection sweep is dropped.
 
 **Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
 occupied cells is blocked - the tile stays where it was. Background **zones**
@@ -574,6 +581,38 @@ in the inspector - any tile type, or a device role standing in as one. The
 tile keeps its position, size, label, color and object link; only the look
 (and the popover rows configured for that type) follow the new type. Zones
 stay zones.
+
+## Opening a plan
+
+The editor reads everything drawn on a plan in one request,
+`GET /api/floor-plans/<id>/contents/`: every tile, tray, wall and raised-floor
+area, with no page limit, so a plan of several thousand tiles opens whole.
+Before 0.19 the editor read one page of each kind - at most 1,000 tiles and
+500 trays, walls or raised floors - and left the rest off the plan without a
+word. The dashboard's floor-plan widget reads the same request.
+
+```json
+{
+  "version": "2026-10-30T09:14:02.511Z",
+  "tiles": [ … ],
+  "trays": [ … ],
+  "walls": [ … ],
+  "raised_floors": [ … ]
+}
+```
+
+Each list holds rows in the shape its own endpoint returns
+(`/api/floor-plan-tiles/`, `/api/floor-plan-trays/`, `/api/floor-plan-walls/`,
+`/api/floor-plan-raised-floors/`), narrowed the same way: to the active tenant,
+and to the rows the reader may view under each type's own permission and site
+scope. Someone who may view the plan but not its trays gets an empty `trays`.
+`version` is the newest `updated_at` across the rows, `null` for an empty plan.
+The request costs the same number of database queries however large the plan
+is.
+
+Those per-kind endpoints stay, with `?floor_plan=<id>`, for scripts and
+integrations. They page like every list, so read every page or use
+`contents/`.
 
 ## Live state on tiles
 

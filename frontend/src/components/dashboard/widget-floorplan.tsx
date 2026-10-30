@@ -5,7 +5,7 @@ import {
   api,
   type FloorPlan,
   type FloorPlanLiveState,
-  type FloorPlanTile,
+  type FloorPlanContents,
   type Paginated,
 } from "@/lib/api"
 import { FloorCanvas } from "@/components/floorplan/floor-canvas"
@@ -46,12 +46,11 @@ export function FloorplanWidget({
   const plan =
     picked.data ?? ((planId && all.find((x) => x.id === planId)) || all[0])
 
-  const tiles = useQuery({
-    queryKey: ["floor-plan-tiles", plan?.id],
+  // Every tile of the plan - the editor's own read, so the two share a cache.
+  const contents = useQuery({
+    queryKey: ["floor-plan-contents", plan?.id],
     queryFn: () =>
-      api<Paginated<FloorPlanTile>>(
-        `/api/floor-plan-tiles/?floor_plan=${plan!.id}&page_size=1000`
-      ),
+      api<FloorPlanContents>(`/api/floor-plans/${plan!.id}/contents/`),
     enabled: !!plan,
   })
   const state = useQuery({
@@ -95,7 +94,7 @@ export function FloorplanWidget({
       <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-muted/20">
         <FloorCanvas
           plan={plan}
-          tiles={tiles.data?.results ?? []}
+          tiles={contents.data?.tiles ?? []}
           selectedId={null}
           editable={false}
           showGrid={false}

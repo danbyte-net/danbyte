@@ -12133,6 +12133,17 @@ export interface FloorPlanWall {
   updated_at: string
 }
 
+/** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
+ * read, every row (no pagination), each kind as its own list returns it. */
+export interface FloorPlanContents {
+  /** Newest updated_at across the rows; null for an empty plan. */
+  version: string | null
+  tiles: FloorPlanTile[]
+  trays: FloorPlanTray[]
+  walls: FloorPlanWall[]
+  raised_floors: RaisedFloorArea[]
+}
+
 export interface FloorPlanWallWritePayload {
   floor_plan_id?: string
   label?: string
