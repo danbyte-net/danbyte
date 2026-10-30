@@ -10644,11 +10644,18 @@ def _on_plan(item: dict) -> dict:
     return {k: v for k, v in item.items() if k != "floor_plan_id"}
 
 
+#: What a tile's row reads besides itself: its types, its link, the linked
+#: object's room and role, and a device's type (its photo).
+TILE_RELATED = (
+    "floor_plan__stack", "tile_type", "role_type", "rack__room", "rack__role",
+    "cabinet__room", "cabinet__role", "device__room", "device__role",
+    "device__device_type", "power_panel", "power_feed", "cooling_source",
+    "linked_floor_plan",
+)
+
+
 def _plan_tiles(plan):
-    return plan.tiles.select_related(
-        "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
-        "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
-    ).order_by("y", "x", "id")
+    return plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id")
 
 
 def _plan_areas(plan):
@@ -11278,11 +11285,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
 
         tiles = list(visible(
-            plan.tiles.select_related(
-                "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet",
-                "device", "power_panel", "power_feed", "cooling_source",
-                "linked_floor_plan",
-            ).order_by("y", "x", "id"),
+            plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
             "floorplantile",
         ))
         trays = list(visible(
@@ -11313,6 +11316,115 @@ class FloorPlanViewSet(TenantScopedViewSet):
             ).data,
         })
 
+    @action(detail=True, methods=["get"], url_path="placeable")
+    def placeable(self, request, pk=None):
+        """What the editor's Place picker offers: the devices, racks and
+        cabinets of the plan's site the reader may view, ranked (``rank`` 0:
+        in ``?near_room=`` or ``?near_location=`` - the area near the pointer; 1: in
+        the floor's location or one inside it; 2: the rest of the site), each
+        with its room and where it is already placed. ``?q=`` filters by
+        name, ``?kind=device,rack,cabinet`` by kind, ``?unplaced=1`` keeps the
+        floor's objects placed on no plan; ``?limit=`` (default 50, at most
+        200). A device in a rack or a cabinet is placed with it and is not
+        offered."""
+        from auth_api import rbac
+
+        from .floor_plan_placement import PLACEABLE, PLACEABLE_MAX, placeable
+        from .topology_views import _uuid_param
+
+        plan = self.get_object()
+        tenant = self._tenant_or_403()
+        params = request.query_params
+        near_room = near_location = None
+        room_id = _uuid_param(params, "near_room")
+        if room_id:
+            near_room = rbac.restrict_queryset(
+                Room.objects.filter(tenant=tenant, pk=room_id).select_related("location"),
+                request.user, tenant, "room", "view",
+            ).first()
+        loc_id = _uuid_param(params, "near_location")
+        if loc_id:
+            near_location = rbac.restrict_queryset(
+                Location.objects.filter(tenant=tenant, pk=loc_id),
+                request.user, tenant, "location", "view",
+            ).first()
+        kinds = {k for k in (params.get("kind") or "").split(",") if k in PLACEABLE}
+        try:
+            limit = max(1, min(PLACEABLE_MAX, int(params.get("limit") or 50)))
+        except ValueError:
+            limit = 50
+        rows = placeable(
+            plan, request.user, tenant,
+            q=(params.get("q") or "").strip()[:128],
+            kinds=kinds or None,
+            near_room=near_room,
+            near_location=near_location,
+            unplaced=params.get("unplaced") in ("1", "true"),
+            limit=limit,
+        )
+        return Response({"results": rows})
+
+    @action(detail=True, methods=["post"], url_path="assign-rooms")
+    def assign_rooms(self, request, pk=None):
+        """Rooms from the areas drawn on this floor - never set by placing.
+        ``{"dry_run": true}`` (or no ``apply``) lists each placed device,
+        rack or cabinet whose tile stands in a room's area while it names
+        another room, with ``can_change``. ``{"apply": [{"kind", "id"}]}`` sets
+        the room of those listed ones the user may change - each write
+        validated and recorded in the change log like an edit of the object -
+        and answers ``{"applied", "skipped", "objects"}``."""
+        from .floor_plan_placement import room_mismatches
+
+        plan = self.get_object()
+        tenant = self._tenant_or_403()
+        found = room_mismatches(plan, request.user, tenant)
+        apply = request.data.get("apply")
+        if request.data.get("dry_run") in (True, "true", "1", 1) or apply is None:
+            return Response({"objects": found})
+        if not isinstance(apply, list):
+            raise ValidationError({"apply": "A list of {kind, id}."})
+        by_key = {(r["kind"], r["id"]): r for r in found}
+        serializers_for = {
+            "device": (Device, DeviceSerializer),
+            "rack": (Rack, RackSerializer),
+            "cabinet": (Cabinet, CabinetSerializer),
+        }
+        applied, skipped = [], []
+        with transaction.atomic():
+            for item in apply:
+                key = (item.get("kind"), str(item.get("id"))) if isinstance(item, dict) \
+                    else (None, None)
+                row = by_key.get(key)
+                if row is None:
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "Not in a room's area here."})
+                    continue
+                if not row["can_change"]:
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "You may not change it."})
+                    continue
+                model, ser_cls = serializers_for[row["kind"]]
+                obj = model.objects.get(tenant=tenant, pk=row["id"])
+                ser = ser_cls(
+                    obj, data={"room_id": row["area_room"]["id"]}, partial=True,
+                    context={"request": request},
+                )
+                if not ser.is_valid():
+                    skipped.append({"kind": key[0], "id": key[1],
+                                    "reason": "; ".join(
+                                        str(m) for v in ser.errors.values()
+                                        for m in (v if isinstance(v, list) else [v])
+                                    )})
+                    continue
+                ser.save()
+                applied.append({"kind": row["kind"], "id": row["id"],
+                                "room": row["area_room"]})
+        return Response({
+            "applied": applied,
+            "skipped": skipped,
+            "objects": room_mismatches(plan, request.user, tenant),
+        })
+
     # `route` is a POST (it carries a body) but computes only - view, not change.
     # `drawing_render` asks for a cached server render with layers hidden:
     # what a viewer toggling layers on a large drawing needs. A PDF of the
@@ -11324,6 +11436,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "export_pdf_file": "view",
         "bulk": "change",
         "snap_all": "change",
+        # Reads of the site's objects (each by its own view grant), and room
+        # writes checked per object against its own change grant.
+        "placeable": "view",
+        "assign_rooms": "view",
     }
 
     @action(detail=True, methods=["post"], url_path="route")
@@ -11664,10 +11780,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 )
                 ser.is_valid(raise_exception=True)
                 ser.save(floor_plan=plan)
-        tiles = plan.tiles.select_related(
-            "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
-            "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
-        ).order_by("y", "x")
+        tiles = plan.tiles.select_related(*TILE_RELATED).order_by("y", "x")
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
         )
@@ -11681,7 +11794,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ``{"tiles": {create, update, delete}, "areas": {...}, "labels": {...}}``
         (each key optional; an update carries its ``id``) -> the plan's fresh
         ``{"tiles", "areas", "labels"}`` in the contents shape. Deletes run
-        first. At most ``BULK_MAX`` operations."""
+        first. At most ``BULK_MAX`` operations.
+
+        An update - or a delete sent as ``{"id", "version"}`` - may carry the
+        ``version`` (the row's ``updated_at``) it was based on. When a row
+        changed since, nothing is written and the answer is a 409 listing
+        each changed row as it is now (``current`` null when it was deleted).
+        Rows sent without a version are written as before (last one wins)."""
         from django.core.exceptions import ValidationError as DjangoValidationError
 
         plan = self.get_object()
@@ -11717,8 +11836,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         ctx = {"request": request, "floor_plan": plan}
         with transaction.atomic():
+            conflicts = self._bulk_conflicts(request, plan, kinds, specs)
+            if conflicts:
+                return Response(
+                    {"detail": "Changed elsewhere since you opened the plan.",
+                     "conflicts": conflicts},
+                    status=drf_status.HTTP_409_CONFLICT,
+                )
             for key, rel, _ser, _noun in kinds:
                 for pk_ in specs[key]["delete"]:
+                    if isinstance(pk_, dict):
+                        pk_ = pk_.get("id")
                     obj = row(rel, pk_)
                     if obj is not None:
                         obj.delete()
@@ -11729,7 +11857,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     obj = row(rel, item["id"])
                     if obj is None:
                         raise ValidationError({key: f"Unknown {noun} {item['id']}."})
-                    ser = ser_cls(obj, data=_on_plan(item), partial=True, context=ctx)
+                    body = {k: v for k, v in _on_plan(item).items() if k != "version"}
+                    ser = ser_cls(obj, data=body, partial=True, context=ctx)
                     ser.is_valid(raise_exception=True)
                     ser.save()
                 for item in specs[key]["create"]:
@@ -11746,6 +11875,54 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 _plan_labels(plan), many=True, context=ctx
             ).data,
         })
+
+    def _bulk_conflicts(self, request, plan, kinds, specs) -> list:
+        """The rows of a ``bulk/`` save whose stored ``updated_at`` is not the
+        ``version`` sent with them, locked until the save ends."""
+        import uuid as _uuid
+
+        from .floor_plan_placement import changed_by, parse_version
+
+        tenant = _get_active_tenant(request)
+        readers = {"tiles": _plan_tiles, "areas": _plan_areas, "labels": _plan_labels}
+        out = []
+        for key, rel, ser_cls, noun in kinds:
+            based = {}
+            for op in ("update", "delete"):
+                for item in specs[key][op]:
+                    if not isinstance(item, dict) or not item.get("version"):
+                        continue
+                    try:
+                        oid = _uuid.UUID(str(item.get("id")))
+                    except (ValueError, TypeError):
+                        continue
+                    based[oid] = (parse_version(item["version"], key), op)
+            if not based:
+                continue
+            stored = dict(
+                rel.select_for_update().filter(pk__in=list(based))
+                .values_list("pk", "updated_at")
+            )
+            stale = [
+                oid for oid, (stamp, op) in based.items()
+                if (oid not in stored and op == "update")
+                or (oid in stored and stored[oid] != stamp)
+            ]
+            if not stale:
+                continue
+            now = list(readers[key](plan).filter(pk__in=stale))
+            data = {
+                row["id"]: row
+                for row in ser_cls(now, many=True, context={"request": request}).data
+            }
+            for oid in stale:
+                out.append({
+                    "kind": noun,
+                    "id": str(oid),
+                    "current": data.get(str(oid)),
+                    "changed_by": changed_by(tenant, oid),
+                })
+        return out
 
     @action(detail=True, methods=["post"], url_path="snap-all")
     def snap_all(self, request, pk=None):
@@ -12006,14 +12183,58 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
         return Response(self.get_serializer(self._reload(target)).data)
 
 
-class FloorPlanTileViewSet(TenantScopedViewSet):
+class _VersionCheckMixin:
+    """Single writes of a row drawn on a plan may carry the ``version`` (its
+    ``updated_at``) they were based on - in the body, or ``?version=`` on a
+    delete. A row changed since answers 409 with the row as it is now, and
+    nothing is written. Without a version the write goes through as before."""
+
+    def _version_conflict(self, request, instance):
+        from .floor_plan_placement import changed_by, parse_version
+
+        raw = request.query_params.get("version")
+        if raw is None and hasattr(request.data, "get"):
+            raw = request.data.get("version")
+        stamp = parse_version(raw)
+        if stamp is None:
+            return None
+        stored = (
+            type(instance).objects.select_for_update()
+            .filter(pk=instance.pk).values_list("updated_at", flat=True).first()
+        )
+        if stored == stamp:
+            return None
+        return Response(
+            {"detail": "Changed elsewhere since you opened the plan.",
+             "conflicts": [{
+                 "kind": type(instance).__name__.removeprefix("FloorPlan").lower(),
+                 "id": str(instance.pk),
+                 "current": self.get_serializer(instance).data,
+                 "changed_by": changed_by(_get_active_tenant(request), instance.pk),
+             }]},
+            status=drf_status.HTTP_409_CONFLICT,
+        )
+
+    def update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            conflict = self._version_conflict(request, self.get_object())
+            if conflict is not None:
+                return conflict
+            return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        with transaction.atomic():
+            conflict = self._version_conflict(request, self.get_object())
+            if conflict is not None:
+                return conflict
+            return super().destroy(request, *args, **kwargs)
+
+
+class FloorPlanTileViewSet(_VersionCheckMixin, TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
-    queryset = FloorPlanTile.objects.select_related(
-        "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
-        "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
-    ).order_by("y", "x")
+    queryset = FloorPlanTile.objects.select_related(*TILE_RELATED).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
     tenant_field = None
@@ -12099,7 +12320,7 @@ class FloorPlanWallViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class _FloorPlanChildViewSet(TenantScopedViewSet):
+class _FloorPlanChildViewSet(_VersionCheckMixin, TenantScopedViewSet):
     """Rows drawn on a plan - scoped through their plan's tenant, filtered by
     ``?floor_plan=``."""
 
