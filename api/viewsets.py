@@ -117,7 +117,8 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    Region, Location, Room, ConfigBundle, ConfigContext, ExportTemplate, LabelTemplate,
+    Region, Location, LocationType, Room, ConfigBundle, ConfigContext, ExportTemplate,
+    LabelTemplate,
     Document, DocumentCategory,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
@@ -193,7 +194,9 @@ from .serializers import (
     RegionSerializer,
     RegionMiniSerializer,
     LocationSerializer,
-    LocationMiniSerializer,
+    LocationPickerSerializer,
+    LocationTypeMiniSerializer,
+    LocationTypeSerializer,
     RoomSerializer,
     RoomMiniSerializer,
     ConfigContextSerializer,
@@ -9800,11 +9803,11 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":
-            return LocationMiniSerializer
+            return LocationPickerSerializer
         return LocationSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("site", "parent")
+        qs = super().get_queryset().select_related("site", "parent", "location_type")
         # Detail tabs show Devices/Racks/Cabinets counts; annotated so the
         # serializer serves them without an N+1 per row, and narrowed to the
         # rows the reader may view (#438).
@@ -9823,6 +9826,16 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 val = self.request.query_params.get(param)
                 if val:
                     qs = qs.filter(**{field: val})
+            # ?location_type=<id>, or ``none`` for the locations without one.
+            lt = self.request.query_params.get("location_type", "").strip()
+            if lt.lower() == "none":
+                qs = qs.filter(location_type__isnull=True)
+            elif lt:
+                from .topology_views import _uuid_param
+
+                qs = qs.filter(
+                    location_type_id=_uuid_param(self.request.query_params, "location_type")
+                )
         return qs
 
     def destroy(self, request, *args, **kwargs):
@@ -9838,6 +9851,55 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
+
+
+class LocationTypeViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Location types - the editable catalog of what kind of place a location
+    is (Building, Floor, Manhole…). Ships empty. Deleting a type leaves its
+    locations in place without a type."""
+
+    queryset = LocationType.objects.all().order_by(NATURAL_NAME)
+    serializer_class = LocationTypeSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "icon", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return LocationTypeMiniSerializer
+        return LocationTypeSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        if self.get_serializer_class() is LocationTypeSerializer:
+            qs = qs.annotate(location_count_annotated=_visible_n(self, "locations"))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        data = serializer.validated_data
+        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
+        slug = data.get("slug") or slugify(name)
+        if not slug:
+            raise ValidationError({"name": "Give the type a name."})
+        data["slug"] = slug
+        clash = LocationType.objects.filter(tenant=tenant, slug=slug)
+        if serializer.instance is not None:
+            clash = clash.exclude(pk=serializer.instance.pk)
+        if clash.exists():
+            raise ValidationError({"name": "A location type with this name already exists."})
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        self._slug(serializer, self._tenant_or_403())
+        serializer.save()
 
 
 class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):

@@ -21,6 +21,8 @@ export interface SiteMapLayers {
   cables: boolean
   routes: boolean
   regions: boolean
+  /** Building outlines. */
+  outlines: boolean
 }
 
 const ROW =
@@ -85,6 +87,7 @@ export function SiteMapDisplayMenu({
           {layer("cables", "Cables")}
           {layer("routes", "Cable routes")}
           {layer("regions", "Region boundaries")}
+          {layer("outlines", "Outlines")}
           <FormCheckbox
             label="Camera FOV cones"
             checked={showFov}

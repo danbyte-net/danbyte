@@ -5626,13 +5626,60 @@ export interface LocationOption {
   slug: string
 }
 
+/** A location type - the editable catalog of what kind of place a
+ * location is (Building, Floor, Manhole…). Nothing is seeded. */
+export interface LocationType {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  location_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** How a location names its type (and `?picker=1` on /api/location-types/). */
+export interface LocationTypeRef {
+  id: string
+  name: string
+  color: string
+  icon: string
+}
+
+export interface LocationTypeWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  icon?: string
+  description?: string
+}
+
+/** `/api/locations/?picker=1`: `color`/`icon` are what the location is
+ * drawn with - its own, else its type's. */
+export interface LocationPick extends LocationOption {
+  code: string
+  color: string
+  icon: string
+  location_type: LocationTypeRef | null
+  site_id: string
+  parent_id: string | null
+}
+
 export interface Location {
   id: string
   numid: number | null
   name: string
   slug: string
+  /** Short code (A1, B2), or "". */
+  code: string
   site: SiteOption | null
   parent: LocationOption | null
+  location_type: LocationTypeRef | null
   status: StatusMini | null
   /** Badge color (#rrggbb) or "" for the default. */
   color: string
@@ -5652,8 +5699,10 @@ export interface Location {
 export interface LocationWritePayload {
   name: string
   slug?: string
+  code?: string
   site_id: string
   parent_id?: string | null
+  location_type_id?: string | null
   status_id?: string | null
   color?: string
   icon?: string
@@ -12554,6 +12603,72 @@ export interface FloorPlanTrayWritePayload {
   elevation_mm?: number | null
   description?: string
   cable_ids?: string[]
+}
+
+/** A building (or any location) outlined on the Site map. */
+export interface SiteMapOutline {
+  id: string
+  site_id: string
+  location_id: string | null
+  location: {
+    id: string
+    name: string
+    code: string
+    /** What the location is drawn with: its own colour, else its type's. */
+    color: string
+    icon: string
+    location_type: LocationTypeRef | null
+  } | null
+  /** [[lat, lng], …], 3 to 500 points, never closed. */
+  points: [number, number][]
+  label: string
+  color: string
+  z: number
+  locked: boolean
+  /** The label drawn: its own, else the location's code, else its name. */
+  display_label: string
+  /** The colour drawn: its own, else the type's, else the location's; "" =
+   * neutral. */
+  display_color: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SiteMapOutlineWritePayload {
+  site_id?: string
+  location_id?: string | null
+  points?: [number, number][]
+  label?: string
+  color?: string
+  z?: number
+  locked?: boolean
+}
+
+/** `GET /api/site-map-outlines/<id>/drilldown/` - what is inside it. */
+export interface SiteMapOutlineDrilldown {
+  id: string
+  display_label: string
+  display_color: string
+  site: { id: string; name: string }
+  location: SiteMapOutline["location"]
+  /** In the location and under it, as far as the reader may view; null for
+   * an outline with no location. */
+  counts: {
+    locations: number
+    rooms: number
+    racks: number
+    devices: number
+  } | null
+  floor_plans: {
+    id: string
+    name: string
+    location: { id: string; name: string } | null
+    site_wide: boolean
+    floor_count: number
+    first_floor_id: string | null
+  }[]
+  /** The floor "Open floor plan" opens. */
+  open_floor_id: string | null
 }
 
 /** A geographic cable run on the site map - the outside-plant tray. */

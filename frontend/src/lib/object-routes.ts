@@ -48,6 +48,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.ipstatus": "/statuses/$id",
   "api.l2vpn": "/l2vpns/$id",
   "api.location": "/locations/$id",
+  "api.locationtype": "/location-types/$id",
   "api.room": "/rooms/$id",
   "api.manufacturer": "/manufacturers/$id",
   "api.moduletype": "/module-types/$id",

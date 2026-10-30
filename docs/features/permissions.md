@@ -263,7 +263,10 @@ editor's own local entries under
     PRTG connections stay with administrators. Last, they gain device profile
     assignments (`deviceprofileassignment`), and site viewers and silo site
     editors view on [device profiles](device-profiles.md#permissions)
-    (`deviceprofile`).
+    (`deviceprofile`). They also gain the
+    [building outlines](site-map.md#building-outlines) of their sites
+    (`sitemapoutline`), and site viewers and silo site editors view on
+    [location types](regions-locations.md#location-types) (`locationtype`).
 
 ### Set it up when you create the user
 
