@@ -394,7 +394,7 @@ class ReleasedFlowTests(_Fixture):
 
         from django.apps import apps
 
-        mig = importlib.import_module("api.migrations.0228_applicationflow_name_generated")
+        mig = importlib.import_module("api.migrations.0229_applicationflow_name_generated")
         self._detach()
         ApplicationFlow.objects.update(name_generated=False)
         renamed = self.near
