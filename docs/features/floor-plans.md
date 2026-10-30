@@ -114,6 +114,46 @@ The grid also carries a **real-world scale**: a **cell size** in millimetres
 (default 3000). Existing plans keep working untouched; the scale powers the
 3D view, route-length estimation, and the scale bar on printed drawings.
 
+### Plans made from the Site map
+
+**New floor plan** on the [Site map](site-map.md#new-floor-plan-from-this-view)
+makes a site-wide floor plan from an area of the map:
+
+- **Scale** - the plan spans the framed area at true scale. The map is Web
+  Mercator, so the area is measured in metres at its middle latitude (a
+  degree of longitude is shorter the further from the equator); across a
+  campus the difference from one edge to the other is negligible. The grid
+  is that many cells of the chosen cell size, the area grown east and south
+  to whole cells. A grid has at most 512 cells a side, so a larger area
+  gets a larger cell; an area over 2.56 km across is refused - zoom in.
+- **Background** - the area as the map showed it (street map or satellite),
+  stretched exactly over the grid, so a 40 m building is 40 cells of 1 m.
+  The tile attribution is drawn in the image's bottom-right corner and
+  written in the plan's description, as the tiles' licences require.
+  Without readable tiles the plan has no background.
+- **Outlines as areas** - each [building outline](site-map.md#building-outlines)
+  of the plan's site inside the area becomes a polygon area linked to the
+  outline's location, in the outline's colour (its own, else its location
+  type's, else its location's), labelled with the outline's label or the
+  location's code. An outline crossing the edge is cut at it; one with more
+  than 200 points is simplified. Outlines of other sites, and those linked to
+  a location you may not view, are left out.
+
+The plan is an ordinary floor plan from then on: draw on it, add floors,
+replace the background. Its `state.from_map` keeps the box, the tile zoom,
+the basemap and the attribution it was made from.
+
+`POST /api/floor-plans/from-map/` (multipart, or JSON without an image)
+takes `name`, `site_id`, `bbox` (`[south, west, north, east]` in degrees,
+as JSON text in a form), `cell_mm` (50-5000, default 1000, raised to fit),
+`zoom` and `basemap` (`map` or `sat`, for the attribution), and an optional
+`background_image`: a PNG, JPEG or WebP of the box, at most 20 MB, 8,192
+pixels a side and 40 megapixels, stretched over the grid. It answers the
+new floor (201) with `areas_created` and `outlines_skipped` (the labels of
+outlines that did not make a valid area). Needs `floorplan · add` at the
+site; outlines are copied only with `sitemapoutline · view`. The server
+never fetches tiles: the image comes from the browser.
+
 ## CAD drawings
 
 A plan can carry a **CAD drawing** as its background instead of an image: a

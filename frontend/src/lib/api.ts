@@ -12674,6 +12674,13 @@ export interface SiteMapOutline {
   updated_at: string
 }
 
+/** `POST /api/floor-plans/from-map/` - the new site-wide floor, with how
+ * many outlines became areas and the labels of those that could not. */
+export interface FloorPlanFromMap extends FloorPlan {
+  areas_created: number
+  outlines_skipped: string[]
+}
+
 export interface SiteMapOutlineWritePayload {
   site_id?: string
   location_id?: string | null

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import {
   Expand,
   MapPin,
+  MapPlus,
   Maximize,
   PanelRight,
   Pentagon,
@@ -167,6 +168,9 @@ import {
   OutlineInspector,
 } from "@/components/site-map/outline-inspector"
 import { centroid } from "@/components/site-map/outline-geometry"
+import { useFrameTool } from "@/components/site-map/use-frame-tool"
+import { PlanFromMapDialog } from "@/components/site-map/plan-from-map-dialog"
+import type { Bbox } from "@/components/site-map/plan-from-map"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
@@ -460,6 +464,47 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     passive: !!placing,
   })
   const selOutline = selected?.kind === "outline" ? outlineTool.selected : null
+
+  // New floor plan from this view: frame an area (drag, or Enter for the
+  // whole view), then the dialog makes the plan.
+  const canAddPlan = canDo("floorplan", "add")
+  const [framing, setFraming] = useState(false)
+  const [planFrame, setPlanFrame] = useState<{
+    bbox: Bbox
+    zoom: number
+  } | null>(null)
+  useFrameTool({
+    map: mapReady ? mapRef.current : null,
+    active: framing,
+    onFrame: (bbox) => {
+      setFraming(false)
+      setPlanFrame({ bbox, zoom: mapRef.current?.getZoom() ?? 18 })
+    },
+    onCancel: () => setFraming(false),
+  })
+  useEffect(() => {
+    if (mode !== "layout" || placing || outlineTool.drawing) setFraming(false)
+  }, [mode, placing, outlineTool.drawing])
+  // The framed area stays outlined while the dialog is open.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !planFrame) return
+    const { south, west, north, east } = planFrame.bbox
+    const rect = L.rectangle(
+      [
+        [south, west],
+        [north, east],
+      ],
+      {
+        color: "#2563eb",
+        weight: 2,
+        dashArray: "6 4",
+        fillOpacity: 0.08,
+        interactive: false,
+      }
+    ).addTo(map)
+    return () => void rect.remove()
+  }, [planFrame])
   const fitToOutline = (o: SiteMapOutline) => {
     const map = mapRef.current
     if (map && o.points.length >= 3)
@@ -1616,11 +1661,27 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 if (outlineTool.drawing) outlineTool.cancelDraw()
                 else {
                   setPlacing(null)
+                  setFraming(false)
                   outlineTool.startDraw()
                 }
               }}
             >
               <Pentagon /> Outline
+            </BarToggle>
+          )}
+          {editing && canAddPlan && (
+            <BarToggle
+              pressed={framing}
+              onClick={() => {
+                if (framing) setFraming(false)
+                else {
+                  setPlacing(null)
+                  outlineTool.cancelDraw()
+                  setFraming(true)
+                }
+              }}
+            >
+              <MapPlus /> New floor plan
             </BarToggle>
           )}
           <MapSearch
@@ -1818,6 +1879,12 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               )
             </div>
           )}
+          {framing && (
+            <div className="absolute bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+              Drag over the area for the floor plan · Enter for the whole view ·
+              Esc to cancel
+            </div>
+          )}
           {outlineTool.drawing && (
             <div className="absolute bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
               Click the outline&apos;s corners · double-click or Enter to finish
@@ -2011,6 +2078,15 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           defaultSiteId={outlineTool.defaultSiteId}
           onCancel={outlineTool.cancelCreate}
           onCreate={outlineTool.create}
+        />
+
+        <PlanFromMapDialog
+          frame={planFrame}
+          tiles={data.tiles}
+          sites={data.sites}
+          outlines={outlineTool.outlines}
+          basemap={basemap}
+          onClose={() => setPlanFrame(null)}
         />
 
         <MarkerLinkDialog
