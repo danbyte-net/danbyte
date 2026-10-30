@@ -5,6 +5,7 @@ import type { DeviceCoolingPath } from "@/lib/api"
 import { KvCard } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { Section } from "@/components/ui/section"
 import {
   CoolingPathHops,
   CoolingPathStatusBadge,
@@ -18,7 +19,12 @@ export function DeviceCoolingPathCard({ deviceId }: { deviceId: string }) {
     queryFn: () =>
       api<DeviceCoolingPath>(`/api/devices/${deviceId}/cooling-path/`),
   })
-  if (q.isLoading) return <Loading />
+  if (q.isLoading)
+    return (
+      <Section title="Cooling path" boxed>
+        <Loading />
+      </Section>
+    )
   if (q.isError) return <QueryError error={q.error} />
   const paths = q.data?.paths ?? []
   if (paths.length === 0) return null

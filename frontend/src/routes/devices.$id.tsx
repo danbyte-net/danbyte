@@ -96,7 +96,7 @@ import { DeviceDeleteDialog } from "@/components/device-delete-dialog"
 import { DeviceSyncTypeDialog } from "@/components/device-sync-type-dialog"
 import { StatusBadge } from "@/components/status-badge"
 import { ColorBadge } from "@/components/cells/color-badge"
-import { ViolationBadge } from "@/components/compliance/violation-badge"
+import { DeviceViolationBadge } from "@/components/compliance/violation-badge"
 import {
   DeviceDriftBadge,
   DriftDot,
@@ -162,6 +162,7 @@ import {
 } from "@/components/columns/interface-columns"
 import { Loading } from "@/components/loading"
 import { apiErrorToast } from "@/lib/api-toast"
+import { listRowFromCache } from "@/lib/list-row-cache"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { MiniMap } from "@/components/site-map/mini-map"
@@ -282,18 +283,21 @@ export const Route = createFileRoute("/devices/$id")({
 
 function DeviceDetail() {
   const { id } = Route.useParams()
+  const qc = useQueryClient()
   const q = useQuery({
     queryKey: ["device", id],
     queryFn: () => api<Device>(`/api/devices/${id}/`),
+    // Opened from the device list: its row draws the page at once, and the
+    // detail read fills in the tab counts and the stack when it lands.
+    placeholderData: () => listRowFromCache<Device>(qc, ["devices"], id),
   })
-  if (q.isLoading) return <Loading />
+  if (q.isPending) return <Loading />
   if (q.isError)
     return (
       <div className="p-6">
         <QueryError error={q.error} />
       </div>
     )
-  if (!q.data) return null
   return <Body device={q.data} />
 }
 
@@ -413,7 +417,7 @@ function Body({ device: d }: { device: Device }) {
           mono
           badges={
             <>
-              <ViolationBadge objectId={d.id} objectType="device" prominent />
+              <DeviceViolationBadge deviceId={d.id} />
               <DeviceDriftBadge deviceId={d.id} prominent />
               {/* The planned-change pill renders in the DetailShell header,
                   route-derived - same as every other detail page. */}
@@ -1322,7 +1326,10 @@ function DeviceOverview({
       <KvCard title="Device" rows={deviceRows} />
       <KvCard title="Management" rows={managementRows} />
       <KvCard title="Hardware" rows={hardwareRows} />
-      <DeviceCoverageCard deviceId={d.id} />
+      <DeviceCoverageCard
+        deviceId={d.id}
+        expected={(d.coverage?.contracts ?? 0) > 0}
+      />
       <SoftwareSummaryCard parent={{ kind: "device", id: d.id }} />
       <DeviceProfilesCard host={{ kind: "device", id: d.id }} />
       {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
@@ -1369,6 +1376,7 @@ function DeviceOverview({
               deviceId={d.id}
               onHoverState={setPortGlow}
               onPick={openPorts}
+              expected={d.interface_count > 0}
             />
             {locationMap}
             <DeviceMiniTopology deviceId={d.id} />
@@ -1386,6 +1394,7 @@ function DeviceOverview({
             deviceId={d.id}
             onHoverState={setPortGlow}
             onPick={openPorts}
+            expected={d.interface_count > 0}
           />
           {locationMap}
           <DeviceMiniTopology deviceId={d.id} />
@@ -1485,18 +1494,24 @@ function DeviceRackCard({ device }: { device: Device }) {
     staleTime: 60_000,
   })
   if (!rackId || device.position == null) return null
+  const title = (
+    <span>
+      Rack ·{" "}
+      <Link to="/racks/$id" params={{ id: rackId }} className="link">
+        {device.rack!.name}
+      </Link>
+    </span>
+  )
+  // Known from the device: the card holds its place while the rack loads.
+  if (q.isPending)
+    return (
+      <Section title={title} boxed>
+        <Loading />
+      </Section>
+    )
   if (!q.data) return null
   return (
-    <Section
-      title={
-        <span>
-          Rack ·{" "}
-          <Link to="/racks/$id" params={{ id: rackId }} className="link">
-            {device.rack!.name}
-          </Link>
-        </span>
-      }
-    >
+    <Section title={title}>
       <div className="flex gap-6 overflow-x-auto pb-1">
         {(["front", "rear"] as const).map((face) => (
           <div key={face} className="flex flex-col items-center gap-1.5">
@@ -1559,6 +1574,14 @@ function DeviceFrontPanel({
     () => (q.data?.results ?? []).filter((i) => !i.virtual),
     [q.data]
   )
+  // The device says it has ports (or its type a photo): the panel holds its
+  // place while they load instead of popping in and pushing the column down.
+  if (q.isPending)
+    return device.interface_count > 0 || hasTypeImage ? (
+      <Section title="Panel" boxed>
+        <Loading className="min-h-32" />
+      </Section>
+    ) : null
   // Nothing to draw at all - no ports and no type photo.
   if (physical.length === 0 && !hasTypeImage) return null
 

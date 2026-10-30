@@ -8,7 +8,9 @@ import {
 import { CatalogCell } from "@/components/cells/catalog-cell"
 import { SpecSheetButton } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { useQuery } from "@tanstack/react-query"
+import { listRowFromCache } from "@/lib/list-row-cache"
+import { Loading } from "@/components/loading"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
@@ -85,19 +87,22 @@ function formatMemory(mb: number): string {
 
 function VmDetail() {
   const { id } = Route.useParams()
+  const qc = useQueryClient()
   const vm = useQuery({
     queryKey: ["virtual-machine", id],
     queryFn: () => api<VirtualMachine>(`/api/virtual-machines/${id}/`),
+    // Opened from the VM list: its row draws the page at once, and the
+    // detail read fills in the tab counts when it lands.
+    placeholderData: () =>
+      listRowFromCache<VirtualMachine>(qc, ["virtual-machines"], id),
   })
-  if (vm.isLoading)
-    return <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+  if (vm.isPending) return <Loading />
   if (vm.isError)
     return (
       <div className="p-6">
         <QueryError error={vm.error} />
       </div>
     )
-  if (!vm.data) return null
   return <VmDetailBody vm={vm.data} />
 }
 

@@ -110,6 +110,17 @@ device's power ports, and a reload, browser back/forward, or a trip through
 another tab and back all keep your place. An unknown value in either param
 falls back to the default tab instead of showing an empty pane.
 
+The page draws in stages. Opened from the device list, the header and the
+attribute cards appear at once from the list's row, while the device's own
+read (`GET /api/devices/<id>/`) fills in the tab counts and the stack badge.
+The heavier Overview cards - the panel, port utilization, support contracts,
+the rack or cabinet drawing, the cooling path - each load on their own and
+show a loading state in their own place until they do; a tab's content is
+fetched only when the tab is opened. The header's compliance marker reads the
+device's own status (`GET /api/compliance/devices/<id>/`, the
+[per-device compliance page](../features/compliance.md)'s read), not the
+tenant-wide evaluation, unless a list already fetched that.
+
 ### Overview tab
 
 The default tab lays the device's facts out in cards:
@@ -336,7 +347,10 @@ A cable trace opens a front, rear, console or power port on its own sub-tab
 
 `GET /api/devices/<id>/` counts the port tabs as `front_port_count` and
 `rear_port_count`, and the Cooling sub-tab as `cooling_count`; since 0.18 `hardware_count` no longer includes front and
-rear ports. Like the other tab counts they are 0 on the device list.
+rear ports. Like the other tab counts they are 0 on the device list. On the
+detail read every tab count comes from the one query that reads the device,
+so the payload costs the same number of queries however much hangs off it;
+the fields and their values are unchanged.
 
 ### Other tabs
 

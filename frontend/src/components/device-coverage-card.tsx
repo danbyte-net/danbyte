@@ -6,6 +6,7 @@ import type { DeviceCoverage, DeviceCoverageContract } from "@/lib/api"
 import { useDateFormat } from "@/lib/datetime"
 import { Badge } from "@/components/ui/badge"
 import { Section } from "@/components/ui/section"
+import { Loading } from "@/components/loading"
 import { OverviewTable } from "@/components/overview-table"
 import type { SimpleColumn } from "@/components/ui/simple-table"
 import { QueryError } from "@/components/query-error"
@@ -58,10 +59,24 @@ export function CoverageSummary({
   )
 }
 
-export function DeviceCoverageCard({ deviceId }: { deviceId: string }) {
+export function DeviceCoverageCard({
+  deviceId,
+  expected,
+}: {
+  deviceId: string
+  /** The device's payload counts contracts: hold the card's place with the
+   * loading state while they load. */
+  expected?: boolean
+}) {
   const q = useDeviceCoverage(deviceId)
   const { formatDate } = useDateFormat()
   if (q.isError) return <QueryError error={q.error} />
+  if (q.isPending && expected)
+    return (
+      <Section title="Support contracts" boxed>
+        <Loading />
+      </Section>
+    )
   const d = q.data
   if (!d || (d.contracts.length === 0 && d.hidden_contracts === 0)) return null
 
