@@ -1,26 +1,40 @@
 import { useState } from "react"
-import { Trash2, X } from "lucide-react"
+import { Pencil, Trash2, X } from "lucide-react"
 
 import type { VirtualMachine } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { ServerBulkEditDialog } from "@/components/bulk-edit-dialog"
 import { ApplyProfileBulkButton } from "@/components/device-profile-bulk"
 import { SafeBulkDeleteDialog } from "@/components/safe-bulk-delete-bar"
 
+const ENDPOINT = "/api/virtual-machines/"
+const NOUN: [string, string] = ["virtual machine", "virtual machines"]
+const INVALIDATE = [
+  ["virtual-machines"],
+  ["virtual-machines-picker"],
+  ["prtg-links"],
+]
+
 // Floating action bar for /virtual-machines - appears when rows are
-// selected: apply a device profile, delete.
+// selected: edit (the fields the server names), apply a device profile,
+// delete.
 export function VmBulkBar({
   selected,
   onCleared,
+  canEdit = false,
   profiles = false,
   canDelete = false,
 }: {
   selected: VirtualMachine[]
   onCleared: () => void
+  /** Offer Edit. */
+  canEdit?: boolean
   /** Offer Apply profile. */
   profiles?: boolean
   /** Offer Delete, with "Also remove from PRTG". */
   canDelete?: boolean
 }) {
+  const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   if (selected.length === 0) return null
   return (
@@ -31,6 +45,16 @@ export function VmBulkBar({
             {selected.length} selected
           </span>
           <span className="h-4 w-px bg-border" />
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="mr-1 h-3 w-3" /> Edit
+            </Button>
+          )}
           {profiles && (
             <ApplyProfileBulkButton
               kind="vm"
@@ -59,16 +83,25 @@ export function VmBulkBar({
           </Button>
         </div>
       </div>
+      {editing && (
+        <ServerBulkEditDialog
+          endpoint={ENDPOINT}
+          noun={NOUN}
+          ids={selected.map((v) => v.id)}
+          invalidate={INVALIDATE}
+          onClose={() => setEditing(false)}
+          onDone={() => {
+            setEditing(false)
+            onCleared()
+          }}
+        />
+      )}
       {deleting && (
         <SafeBulkDeleteDialog
           ids={selected.map((v) => v.id)}
-          endpoint="/api/virtual-machines/"
-          noun={["virtual machine", "virtual machines"]}
-          invalidate={[
-            ["virtual-machines"],
-            ["virtual-machines-picker"],
-            ["prtg-links"],
-          ]}
+          endpoint={ENDPOINT}
+          noun={NOUN}
+          invalidate={INVALIDATE}
           prtg
           onClose={() => setDeleting(false)}
           onDone={onCleared}

@@ -173,7 +173,7 @@ function VirtualMachinesPage() {
         flexColumn="primary_ip"
         tableId="virtual-machines"
         onSelectedRowsChange={
-          canDelete || canProfiles ? setSelected : undefined
+          canEdit || canDelete || canProfiles ? setSelected : undefined
         }
         selectedRows={selected}
       />
@@ -181,10 +181,11 @@ function VirtualMachinesPage() {
         vm={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-      {(canDelete || canProfiles) && (
+      {(canEdit || canDelete || canProfiles) && (
         <VmBulkBar
           selected={selected}
           onCleared={() => setSelected([])}
+          canEdit={canEdit}
           profiles={canProfiles}
           canDelete={canDelete}
         />
