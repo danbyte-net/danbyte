@@ -193,16 +193,32 @@ const ROWS = [
 
 let rows: PrtgChange[] = ROWS
 
+/** Where a row stands, as the server's ``?state=`` reads it. */
+function stateOf(c: PrtgChange) {
+  return c.ignored ? "dismissed" : c.status === "applied" ? "applied" : "open"
+}
+
+/** The changes list and its counts, as the server answers them. */
+function serve(path: string): unknown {
+  const url = new URL(path, "http://x")
+  if (url.pathname === "/api/prtg/changes/counts/") {
+    const out = { open: 0, applied: 0, dismissed: 0 }
+    for (const c of rows) out[stateOf(c)]++
+    return out
+  }
+  if (url.pathname === "/api/prtg/changes/") {
+    const state = url.searchParams.get("state")
+    const want = state ? state.split(",") : null
+    const results = want ? rows.filter((c) => want.includes(stateOf(c))) : rows
+    return { count: results.length, next: null, previous: null, results }
+  }
+  return {}
+}
+
 beforeEach(() => {
   rows = ROWS
   apiMock.mockReset()
-  apiMock.mockImplementation((path) =>
-    Promise.resolve(
-      path.startsWith("/api/prtg/changes/")
-        ? { count: rows.length, next: null, previous: null, results: rows }
-        : {}
-    )
-  )
+  apiMock.mockImplementation((path) => Promise.resolve(serve(path)))
 })
 afterEach(cleanup)
 
@@ -233,7 +249,10 @@ describe("PrtgChanges adoption rows", () => {
 describe("PrtgChanges planned rows", () => {
   it("shows a status pill per row with Apply beside Dismiss", async () => {
     rows = PLANNED
-    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    mountWithRouter(
+      () => <PrtgChanges connection={CONN} />,
+      ["/?handled=applied"]
+    )
     expect(await screen.findByText("10.0.0.90")).toBeTruthy()
     expect(screen.getByText("in Local Probe / Servers")).toBeTruthy()
     expect(screen.getByText("SNMP lab-v2c")).toBeTruthy()
@@ -290,12 +309,96 @@ describe("PrtgChanges planned rows", () => {
 
   it("opens the plan and its apply log in a side panel", async () => {
     rows = PLANNED
-    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    mountWithRouter(
+      () => <PrtgChanges connection={CONN} />,
+      ["/?handled=applied"]
+    )
     fireEvent.click(await screen.findByText("HTTPS"))
     const panel = await screen.findByRole("complementary", { name: "Change" })
     expect(within(panel).getByText("port 443")).toBeTruthy()
     expect(within(panel).getAllByTestId("prtg-apply-log")).toHaveLength(2)
     expect(within(panel).getByText("Created sensor HTTPS (2120).")).toBeTruthy()
+  })
+})
+
+describe("PrtgChanges handled rows", () => {
+  const DISMISSED: PrtgChange = {
+    ...PLANNED[0],
+    id: "x1",
+    device: { id: "d9", name: "quiet-box" },
+    detail: { ...PLANNED[0].detail, host: "10.0.0.99" },
+    ignored: true,
+  }
+  const handledFacet = () =>
+    screen.getByText("Handled").parentElement!.parentElement!
+
+  it("hides applied and dismissed rows by default, with their counts", async () => {
+    rows = [...PLANNED, DISMISSED]
+    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    expect(await screen.findByText("10.0.0.90")).toBeTruthy()
+    expect(screen.queryByText("HTTPS")).toBeNull()
+    expect(screen.queryByText("10.0.0.99")).toBeNull()
+    expect(apiMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/prtg/changes/?connection=c1&state=open")
+    )
+    const facet = handledFacet()
+    await waitFor(() =>
+      expect(
+        within(facet)
+          .getByRole("checkbox", { name: "Applied" })
+          .closest("label")?.textContent
+      ).toBe("Applied1")
+    )
+    expect(
+      within(facet)
+        .getByRole("checkbox", { name: "Dismissed" })
+        .closest("label")?.textContent
+    ).toBe("Dismissed1")
+    expect(
+      apiMock.mock.calls.some(([p]) => /state=(applied|dismissed)/.test(p))
+    ).toBe(false)
+  })
+
+  it("shows applied and dismissed rows again from the Handled facet", async () => {
+    rows = [...PLANNED, DISMISSED]
+    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    await screen.findByText("10.0.0.90")
+    fireEvent.click(
+      within(handledFacet()).getByRole("checkbox", { name: "Applied" })
+    )
+    expect(await screen.findByText("HTTPS")).toBeTruthy()
+    expect(screen.queryByText("10.0.0.99")).toBeNull()
+    fireEvent.click(
+      within(handledFacet()).getByRole("checkbox", { name: "Dismissed" })
+    )
+    expect(await screen.findByText("10.0.0.99")).toBeTruthy()
+    expect(screen.getByText("HTTPS")).toBeTruthy()
+    expect(apiMock).toHaveBeenCalledWith(
+      expect.stringContaining("state=applied,dismissed")
+    )
+  })
+
+  it("keeps the choice in the URL", async () => {
+    rows = [...PLANNED, DISMISSED]
+    mountWithRouter(
+      () => <PrtgChanges connection={CONN} />,
+      ["/?handled=dismissed"]
+    )
+    expect(await screen.findByText("10.0.0.99")).toBeTruthy()
+    expect(screen.queryByText("HTTPS")).toBeNull()
+  })
+
+  it("keeps the facet when nothing is open", async () => {
+    rows = [PLANNED[2]]
+    mountWithRouter(() => <PrtgChanges connection={CONN} />)
+    expect(await screen.findByText("Nothing to review")).toBeTruthy()
+    fireEvent.click(
+      await within(await screen.findByRole("complementary")).findByRole(
+        "checkbox",
+        { name: "Applied" }
+      )
+    )
+    expect(await screen.findByText("HTTPS")).toBeTruthy()
   })
 })
 

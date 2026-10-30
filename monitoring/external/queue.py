@@ -41,15 +41,23 @@ class ChangeQueueMixin:
         return ()
 
     # ── the queue ───────────────────────────────────────────────────────
-    def get_queryset(self):
+    def queue_rows(self):
+        """The tenant's rows of ``?connection=``, dismissed or not."""
         qs = super().get_queryset()
         params = self.request.query_params if self.request else {}
         conn = params.get("connection")
         if conn:
             qs = qs.filter(connection_id=conn)
-        # The queue by default; `?ignored=1` is the dismissed pile, which
-        # exists so a mis-click is not a permanent silence.
+        return qs
+
+    def filter_queue_state(self, qs, params):
+        """The queue by default; `?ignored=1` is the dismissed pile, which
+        exists so a mis-click is not a permanent silence."""
         return qs.filter(ignored=params.get("ignored") in ("1", "true"))
+
+    def get_queryset(self):
+        params = self.request.query_params if self.request else {}
+        return self.filter_queue_state(self.queue_rows(), params)
 
     @action(detail=True, methods=["post"])
     def restore(self, request, pk=None):

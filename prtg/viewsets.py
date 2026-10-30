@@ -493,6 +493,43 @@ class PrtgDeviceLinkViewSet(IntegrationToggleMixin, _ByConnection, TenantScopedV
         return error or Response(out)
 
 
+#: The queue's rows by where they stand: open (waiting on a person or a
+#: pass), applied (kept a day as *Applied*), dismissed.
+_QUEUE_STATE = {
+    "open": Q(ignored=False) & ~Q(detail__has_key="applied"),
+    "applied": Q(ignored=False, detail__has_key="applied"),
+    "dismissed": Q(ignored=True),
+}
+#: ``?state=`` shorthands.
+_QUEUE_STATE_ALIAS = {"handled": ("applied", "dismissed"), "all": tuple(_QUEUE_STATE)}
+
+
+def _queue_states(raw: str) -> list[str]:
+    """``?state=open,applied`` → the states asked for, in a fixed order."""
+    asked: set[str] = set()
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if part in _QUEUE_STATE_ALIAS:
+            asked.update(_QUEUE_STATE_ALIAS[part])
+        elif part in _QUEUE_STATE:
+            asked.add(part)
+        else:
+            raise ValidationError(
+                {"state": "open, applied, dismissed, handled or all, comma separated."}
+            )
+    if not asked:
+        raise ValidationError({"state": "Name at least one state."})
+    return [s for s in _QUEUE_STATE if s in asked]
+
+
+_QueueCounts = inline_serializer(
+    name="PrtgChangeCounts",
+    fields={k: serializers.IntegerField() for k in _QUEUE_STATE},
+)
+
+
 class PrtgChangeViewSet(
     IntegrationToggleMixin, ChangeQueueMixin, TenantScopedViewSet
 ):
@@ -533,9 +570,34 @@ class PrtgChangeViewSet(
                          "result": (change.detail or {}).get("result") or {}})
 
     def get_queryset(self):
+        return self._narrow(super().get_queryset())
+
+    def filter_queue_state(self, qs, params):
+        """``?state=`` picks rows by where they stand - ``open``,
+        ``applied``, ``dismissed``, comma separated, or ``handled`` (applied
+        and dismissed) or ``all``. It wins over ``?ignored=``; without it the
+        queue is as before (everything not dismissed, or ``?ignored=1``)."""
+        if not params.get("state"):
+            return super().filter_queue_state(qs, params)
+        q = Q()
+        for name in _queue_states(params["state"]):
+            q |= _QUEUE_STATE[name]
+        return qs.filter(q)
+
+    @extend_schema(responses={200: _QueueCounts})
+    @action(detail=False, methods=["get"])
+    def counts(self, request):
+        """How many rows are open, applied and dismissed, for
+        ``?connection=`` and the object filters the list takes, in one
+        query."""
+        qs = self._narrow(self.queue_rows()).order_by()
+        return Response(qs.aggregate(**{
+            name: Count("id", filter=q) for name, q in _QUEUE_STATE.items()
+        }))
+
+    def _narrow(self, qs):
         """``?device=``, ``?virtual_machine=`` or ``?object=`` (either)
         narrow the queue to one object's rows."""
-        qs = super().get_queryset()
         params = self.request.query_params if self.request else {}
         for key in ("device", "virtual_machine"):
             if params.get(key):
@@ -675,7 +737,9 @@ class PrtgChangeViewSet(
         found = set()
         for change in rows:
             found.add(str(change.id))
-            if change.kind == PrtgChange.AMBIGUOUS:
+            if (change.detail or {}).get("applied"):
+                r = {"id": str(change.id), "ok": False, "detail": "Already applied."}
+            elif change.kind == PrtgChange.AMBIGUOUS:
                 r = {"id": str(change.id), "ok": False,
                      "detail": "This proposal needs a decision, not an apply."}
             else:
