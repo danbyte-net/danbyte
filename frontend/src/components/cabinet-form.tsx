@@ -37,6 +37,7 @@ import {
 } from "@/components/cabinet-size-fields"
 import type { CabinetSizeValues } from "@/components/cabinet-size-fields"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { FormRoomCombobox } from "@/components/room-field"
 
 export interface CabinetFormProps {
   cabinet?: Cabinet
@@ -63,6 +64,7 @@ export function CabinetForm({
   const [locationId, setLocationId] = useState<string | null>(
     cabinet?.location?.id ?? null
   )
+  const [roomId, setRoomId] = useState<string | null>(cabinet?.room?.id ?? null)
   const [roleId, setRoleId] = useState<string | null>(cabinet?.role?.id ?? null)
   const [cabinetTypeId, setCabinetTypeId] = useState<string | null>(
     cabinet?.cabinet_type?.id ?? initialCabinetTypeId ?? null
@@ -87,6 +89,7 @@ export function CabinetForm({
     setFacilityId(cabinet.facility_id)
     setSiteId(cabinet.site.id)
     setLocationId(cabinet.location?.id ?? null)
+    setRoomId(cabinet.room?.id ?? null)
     setRoleId(cabinet.role?.id ?? null)
     setCabinetTypeId(cabinet.cabinet_type?.id ?? null)
     setStatusId(cabinet.status?.id ?? null)
@@ -164,6 +167,7 @@ export function CabinetForm({
         facility_id: facilityId.trim(),
         site_id: siteId ?? "",
         location_id: locationId,
+        room_id: roomId,
         role_id: roleId,
         cabinet_type_id: cabinetTypeId,
         status_id: statusId,
@@ -241,6 +245,7 @@ export function CabinetForm({
               onChange={(v) => {
                 setSiteId(v)
                 setLocationId(null) // locations are per-site
+                setRoomId(null)
               }}
               disabled={siteLocked}
               options={sites.options.map((s) => ({
@@ -268,7 +273,10 @@ export function CabinetForm({
               label="Location"
               hint="optional · within the site"
               value={locationId}
-              onChange={setLocationId}
+              onChange={(v) => {
+                setLocationId(v)
+                setRoomId(null) // rooms are per-location
+              }}
               options={(locations.data?.results ?? []).map((l) => ({
                 value: l.id,
                 label: l.name,
@@ -279,6 +287,13 @@ export function CabinetForm({
               emptyText="No locations in this site."
               disabled={!siteId}
               error={fieldErrors.location_id}
+            />
+
+            <FormRoomCombobox
+              locationId={locationId}
+              value={roomId}
+              onChange={setRoomId}
+              error={fieldErrors.room_id}
             />
 
             <FormCombobox

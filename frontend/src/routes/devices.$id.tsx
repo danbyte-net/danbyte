@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { TagList } from "@/components/cells/tag-list"
 import { SiteCell } from "@/components/cells/site-cell"
+import { RoomCell } from "@/components/cells/room-cell"
 import {
   LifecycleBar,
   LifecycleFlag,
@@ -1149,6 +1150,11 @@ function DeviceOverview({
             ) : (
               dash
             ),
+          } satisfies KvRow,
+          {
+            label: "Room",
+            value: <RoomCell room={d.room} />,
+            copy: d.room?.name || undefined,
           } satisfies KvRow,
         ]
       : []),

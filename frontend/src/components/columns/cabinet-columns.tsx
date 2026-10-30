@@ -10,6 +10,7 @@ import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { locationColumn } from "@/components/cells/location-cell"
+import { roomColumn } from "@/components/cells/room-cell"
 import { SiteCell, siteColumn } from "@/components/cells/site-cell"
 import type { SiteVariant } from "@/components/cells/site-cell"
 import { tagsColumn } from "@/components/cells/tag-list"
@@ -31,6 +32,7 @@ export type CabinetColumnId =
   | "name"
   | "site"
   | "location"
+  | "room"
   | "role"
   | "type"
   | "status"
@@ -47,6 +49,7 @@ const CANONICAL_ORDER: CabinetColumnId[] = [
   "name",
   "site",
   "location",
+  "room",
   "role",
   "type",
   "status",
@@ -124,6 +127,7 @@ export function buildCabinetColumns<T extends Cabinet = Cabinet>(
         : siteColumn<T>({ get: (r) => r.site, className: "text-xs" }),
     location: () =>
       locationColumn<T>({ get: (r) => r.location, className: "text-xs" }),
+    room: () => roomColumn<T>({ get: (r) => r.room }),
     role: () => ({
       id: "role",
       header: ({ column }) => <SortHeader column={column} label="Role" />,

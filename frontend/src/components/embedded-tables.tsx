@@ -17,6 +17,7 @@ import type {
   Paginated,
   PowerFeed,
   Rack,
+  Room,
   BGPSession,
   StaticRoute,
   Tunnel,
@@ -46,6 +47,8 @@ import {
   buildRackColumns,
   type RackColumnId,
 } from "@/components/columns/rack-columns"
+import { buildRoomColumns } from "@/components/columns/room-columns"
+import type { RoomColumnId } from "@/components/columns/room-columns"
 import {
   buildBGPSessionColumns,
   buildStaticRouteColumns,
@@ -215,6 +218,7 @@ export function EmbeddedCabinetTable({
           "name",
           "site",
           "location",
+          "room",
           "role",
           "type",
           "status",
@@ -233,6 +237,52 @@ export function EmbeddedCabinetTable({
       flexColumn="name"
       tableId="embedded-cabinets"
       search={searchable ? "Search cabinets…" : undefined}
+    />
+  )
+}
+
+/** Rooms scoped by location / site. Reuses the one room column factory -
+ * the same row the /rooms list draws. `omit` drops the column that repeats
+ * the page's own object (Location on a location's page). */
+export function EmbeddedRoomTable({
+  filter,
+  omit = [],
+  emptyText = "No rooms.",
+  searchable = true,
+}: {
+  filter: Record<string, string>
+  omit?: RoomColumnId[]
+  emptyText?: string
+  /** The search box above the rows; off for a list that stays short. */
+  searchable?: boolean
+}) {
+  const q = useEmbed<Room>("embedded-rooms", "/api/rooms/", filter)
+  const omitKey = omit.join(",")
+  const columns = useMemo<ColumnDef<Room>[]>(
+    () =>
+      buildRoomColumns({
+        include: [
+          "name",
+          "code",
+          "site",
+          "location",
+          "status",
+          "devices",
+          "racks",
+          "cabinets",
+        ],
+        omit: omitKey ? (omitKey.split(",") as RoomColumnId[]) : [],
+      }),
+    [omitKey]
+  )
+  return (
+    <Frame
+      q={q}
+      emptyText={emptyText}
+      columns={columns}
+      flexColumn="name"
+      tableId="embedded-rooms"
+      search={searchable ? "Search rooms…" : undefined}
     />
   )
 }

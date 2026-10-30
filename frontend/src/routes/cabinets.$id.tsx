@@ -10,6 +10,7 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { RoomCell } from "@/components/cells/room-cell"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono } from "@/components/kv-card"
@@ -198,6 +199,7 @@ function CabinetOverview({ cabinet: c }: { cabinet: Cabinet }) {
         dash
       ),
     },
+    { label: "Room", value: <RoomCell room={c.room} /> },
     {
       label: "Role",
       value: c.role ? (

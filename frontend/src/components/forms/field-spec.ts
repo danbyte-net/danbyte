@@ -106,6 +106,7 @@ export interface EditableFieldSpec {
     | "vlan"
     | "vrf"
     | "object"
+    | "color"
   nullable: boolean
   hint?: string
   /** Key into `/api/dcim/choices/`. */
