@@ -535,6 +535,77 @@ class QueueInboxApiTests(_Writes):
             self.api.post("/api/prtg/changes/apply-selected/", {"ids": []},
                           format="json").status_code, 400)
 
+    def _states(self):
+        """One open, one applied and one dismissed row, plus the other
+        tenant's open row."""
+        mk = lambda key, **kw: PrtgChange.objects.create(  # noqa: E731
+            tenant=self.tenant, connection=self.conn, device=self.dev,
+            kind=PrtgChange.ADD_SENSOR, key=key, **kw)
+        return {
+            "open": mk("o", detail={"applicable": True}),
+            "applied": mk("a", detail={"applied": {"at": "x", "by": "y", "detail": "z"}}),
+            "dismissed": mk("d", detail={"applicable": True}, ignored=True),
+        }
+
+    def _ids(self, query):
+        r = self.api.get(f"/api/prtg/changes/?connection={self.conn.id}&{query}")
+        self.assertEqual(r.status_code, 200, r.content)
+        return {x["id"] for x in r.json()["results"]}
+
+    def test_state_filter(self):
+        rows = {k: str(v.id) for k, v in self._states().items()}
+        self.assertEqual(self._ids("state=open"), {rows["open"]})
+        self.assertEqual(self._ids("state=applied"), {rows["applied"]})
+        self.assertEqual(self._ids("state=open,dismissed"),
+                         {rows["open"], rows["dismissed"]})
+        self.assertEqual(self._ids("state=handled"), {rows["applied"], rows["dismissed"]})
+        self.assertEqual(self._ids("state=all"), set(rows.values()))
+        # `state` wins over `ignored`; the old params still mean what they did.
+        self.assertEqual(self._ids("state=open&ignored=1"), {rows["open"]})
+        self.assertEqual(self._ids(""), {rows["open"], rows["applied"]})
+        self.assertEqual(self._ids("ignored=1"), {rows["dismissed"]})
+        r = self.api.get("/api/prtg/changes/?state=closed")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("state", r.json())
+        # Never across the tenant boundary.
+        self.assertNotIn(str(self.foreign.id), self._ids("state=all"))
+        r = self.api.get("/api/prtg/changes/?state=all")
+        self.assertNotIn(str(self.foreign.id), {x["id"] for x in r.json()["results"]})
+
+    def test_counts(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self._states()
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client_counts(f"connection={self.conn.id}")
+        self.assertEqual(r, {"open": 1, "applied": 1, "dismissed": 1})
+        table = PrtgChange._meta.db_table
+        self.assertEqual(sum(1 for q in ctx.captured_queries if table in q["sql"]), 1)
+        # The tenant's rows only; and narrowed like the list.
+        self.assertEqual(self.client_counts(""), {"open": 1, "applied": 1, "dismissed": 1})
+        from api.models import Device
+
+        other = Device.objects.create(tenant=self.tenant, name="other")
+        self.assertEqual(self.client_counts(f"object={other.id}"),
+                         {"open": 0, "applied": 0, "dismissed": 0})
+        self.assertEqual(self.client_counts(f"device={self.dev.id}")["applied"], 1)
+
+    def client_counts(self, query):
+        r = self.api.get(f"/api/prtg/changes/counts/?{query}")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_apply_selected_leaves_handled_rows(self):
+        rows = self._states()
+        r = self.api.post("/api/prtg/changes/apply-selected/", {
+            "ids": [str(rows["applied"].id), str(rows["dismissed"].id)]}, format="json")
+        body = r.json()
+        self.assertEqual(body["applied"], 0)
+        by_id = {x["id"]: x["detail"] for x in body["results"]}
+        self.assertEqual(by_id[str(rows["applied"].id)], "Already applied.")
+        self.assertEqual(by_id[str(rows["dismissed"].id)], "Not found.")
+
     def test_apply_all_skips_removals(self):
         link, _ = self.created()
         PrtgChange.objects.create(
