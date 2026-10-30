@@ -8,22 +8,29 @@ import type {
   RaisedFloorArea,
 } from "@/lib/api"
 
+import {
+  AreaInspector as ShapeAreaInspector,
+  LabelInspector,
+} from "./shape-inspector"
 import { AreaInspector, WallInspector } from "./structure-panels"
 import { TileInspector } from "./tile-inspector"
 import { TrayInspector } from "./tray-panels"
 import type { PlanEditState } from "./use-plan-edit-state"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
+import type { ShapeEdits } from "./use-shape-edits"
 import type { StructureEdits } from "./use-structure-edits"
 import type { TileEdits } from "./use-tile-edits"
 
 /** The editor's right panel for what is selected in the mode in hand: a
- * tile (Layout), a tray (Cables), a wall or a raised floor (Structure). */
+ * tile, an area or a label (Layout), a tray (Cables), a wall or a raised
+ * floor (Structure). */
 export function PlanInspector({
   plan,
   ed,
   edits,
   structure,
   prefs,
+  shapeEdits,
   trays,
   walls,
   areas,
@@ -31,6 +38,7 @@ export function PlanInspector({
   roles,
   openTile,
 }: {
+  shapeEdits: ShapeEdits
   plan: FloorPlan
   ed: PlanEditState
   edits: TileEdits
@@ -56,6 +64,8 @@ export function PlanInspector({
     setTrayEditMode,
     doorArmed,
     setDoorArmed,
+    shapes,
+    selectedShapeId,
   } = ed
   const { changeTile, rotateTile, setTileFacing, fitTile, deleteTile } = edits
   const {
@@ -71,6 +81,21 @@ export function PlanInspector({
   const selected = tiles.find((t) => t.id === selectedId) ?? null
   const selectedTray = trays.find((t) => t.id === selectedTrayId) ?? null
 
+  const shape = shapes.find((s) => s.id === selectedShapeId) ?? null
+  if (mode === "layout" && shape) {
+    const common = {
+      plan,
+      onChange: (patch: Parameters<ShapeEdits["changeShape"]>[1]) =>
+        shapeEdits.changeShape(shape.id, patch),
+      onRestack: (dir: 1 | -1) => shapeEdits.restack(shape.id, dir),
+      onDelete: () => shapeEdits.deleteShape(shape.id),
+    }
+    return shape.kind === "area" ? (
+      <ShapeAreaInspector key={shape.id} area={shape} {...common} />
+    ) : (
+      <LabelInspector key={shape.id} label={shape} {...common} />
+    )
+  }
   if (mode === "layout")
     return (
       selected && (

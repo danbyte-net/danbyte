@@ -12,8 +12,9 @@ import { TilePalette } from "./tile-palette"
 import { TrayRail } from "./tray-panels"
 import type { PlanEditState } from "./use-plan-edit-state"
 
-/** The editor's left rail for the mode in hand: the trays (Cables), raised
- * floors and walls (Structure), or the tile palette (Layout). */
+/** The panel beside the tool rail for the tool in hand: the trays (Cable
+ * trays), raised floors and walls (Walls and raised floors), or the tile
+ * palette (Tiles). The other tools have none. */
 export function PlanRail({
   plan,
   ed,
@@ -103,6 +104,9 @@ export function PlanRail({
         onCancelWallDraw={() => setDrawPoints(null)}
       />
     )
+  // Layout: the tile palette is the Tiles tool's; the drawing tools and
+  // Select work on the plan itself.
+  if (ed.tool !== "tiles") return null
   return (
     <TilePalette
       planId={plan.id}

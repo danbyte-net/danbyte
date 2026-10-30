@@ -12,6 +12,19 @@ import {
   wallSegmentsWithOpenings,
 } from "@/components/floorplan3d/world"
 
+import {
+  labelColor,
+  areaColor,
+  areaName,
+  boxCenter,
+  byZ,
+  labelBox,
+  labelFontCells,
+  polygonCentroid,
+  tileBox,
+  tileQuarter,
+} from "./shapes"
+import type { AreaShape, LabelShape, PlanShape } from "./shapes"
 import { rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -32,7 +45,8 @@ const TRAY_DEFAULT = "#71717a"
 const AREA_DEFAULT = "#71717a"
 
 export interface PlanSvgInput {
-  plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm">
+  plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm"> &
+    Partial<Pick<FloorPlan, "layout_mode">>
   /** The tiles as shown - hidden ones already left out. */
   tiles: FloorPlanTile[]
   walls?: FloorPlanWall[]
@@ -46,11 +60,116 @@ export interface PlanSvgInput {
     color: string
     plenum_mm: number
   }[]
+  /** Rooms, areas and labels as shown - hidden ones already left out. */
+  shapes?: PlanShape[]
   colorBy?: ColorBy
   figures?: ReadonlyMap<string, RackFigures>
   liveState?: FloorPlanLiveState | null
   showZoneLabels?: boolean
   showTrays?: boolean
+}
+
+/** An area as the canvas draws it (shape-layer.tsx). */
+function areaMarkup(a: AreaShape): string {
+  const color = areaColor(a)
+  const name = a.show_name ? areaName(a) : ""
+  const style = {
+    fill: color,
+    "fill-opacity": a.fill_opacity / 100,
+    stroke: color,
+    "stroke-opacity": a.border === "none" ? 0 : 0.6,
+    "stroke-width": 1.5,
+    "stroke-dasharray": a.border === "dashed" ? "8 5" : undefined,
+  }
+  if (a.shape === "polygon") {
+    if (a.points.length < 3) return ""
+    const [cx, cy] = polygonCentroid(a.points)
+    return (
+      el("polygon", {
+        points: a.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" "),
+        "stroke-linejoin": "round",
+        ...style,
+      }) +
+      (name
+        ? text(name, {
+            x: cx * CELL,
+            y: cy * CELL + 4,
+            "text-anchor": "middle",
+            "font-size": 12,
+            "font-weight": 600,
+            fill: color,
+          })
+        : "")
+    )
+  }
+  const [cx, cy] = boxCenter(a)
+  return (
+    `<g${a.rotation ? ` transform="rotate(${a.rotation},${cx * CELL},${cy * CELL})"` : ""}>` +
+    el("rect", {
+      x: a.x * CELL,
+      y: a.y * CELL,
+      width: a.width * CELL,
+      height: a.height * CELL,
+      rx: 3,
+      ...style,
+    }) +
+    (name
+      ? text(name, {
+          x: a.x * CELL + 6,
+          y: a.y * CELL + 15,
+          "font-size": 12,
+          "font-weight": 600,
+          fill: color,
+        })
+      : "") +
+    "</g>"
+  )
+}
+
+/** A label at its real size, in its paper ink. */
+function labelMarkup(l: LabelShape, cellMm: number): string {
+  const box = labelBox(l, cellMm)
+  const [cx, cy] = boxCenter(box)
+  const size = labelFontCells(l.font_mm, cellMm) * CELL
+  const anchor =
+    l.align === "center" ? "middle" : l.align === "right" ? "end" : "start"
+  const tx =
+    l.align === "center"
+      ? (box.x + box.width / 2) * CELL
+      : l.align === "right"
+        ? (box.x + box.width) * CELL - size * 0.3
+        : box.x * CELL + size * 0.3
+  const ink = labelColor(l.color).paper
+  const lines = l.text
+    .split("\n")
+    .map((line, i) =>
+      text(line || " ", {
+        x: tx,
+        y: box.y * CELL + size * 0.15 + size * (i * 1.25 + 1),
+        "text-anchor": anchor,
+        "font-size": size,
+        "font-weight": l.weight === "bold" ? 700 : 400,
+        fill: ink,
+      })
+    )
+    .join("")
+  return (
+    `<g${l.rotation ? ` transform="rotate(${l.rotation},${cx * CELL},${cy * CELL})"` : ""}>` +
+    (l.plate
+      ? el("rect", {
+          x: box.x * CELL,
+          y: box.y * CELL,
+          width: box.width * CELL,
+          height: box.height * CELL,
+          rx: Math.min(6, size * 0.2),
+          fill: "#ffffff",
+          stroke: "#e4e4e7",
+          "stroke-width": 1,
+        })
+      : "") +
+    lines +
+    "</g>"
+  )
 }
 
 const tileName = (t: FloorPlanTile) => t.label || t.linked?.name || ""
@@ -308,6 +427,7 @@ export function planSvg({
   walls = [],
   trays = [],
   areas = [],
+  shapes = [],
   colorBy = "type",
   figures,
   liveState,
@@ -337,13 +457,31 @@ export function planSvg({
     )
   }
   for (const t of tiles) if (isZone(t)) body.push(zoneMarkup(t, showZoneLabels))
+  // Rooms and areas: over the zones, under the tiles.
+  for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
+    body.push(areaMarkup(s))
+  const free = plan.layout_mode === "free"
   for (const t of tiles)
-    if (!isZone(t))
-      body.push(
-        tileMarkup(t, colorBy, figures?.get(t.id), liveState?.tiles[t.id])
+    if (!isZone(t)) {
+      // A free plan's tile turned past its quarter turn (shapes.ts).
+      const r = free ? tileBox(t).rotation : 0
+      const markup = tileMarkup(
+        r ? { ...t, orientation: tileQuarter(t.orientation) } : t,
+        colorBy,
+        figures?.get(t.id),
+        liveState?.tiles[t.id]
       )
+      body.push(
+        r
+          ? `<g transform="rotate(${r},${(t.x + t.width / 2) * CELL},${(t.y + t.height / 2) * CELL})">${markup}</g>`
+          : markup
+      )
+    }
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays) for (const tray of trays) body.push(trayMarkup(tray))
+  // Labels over everything, as on the canvas.
+  for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
+    body.push(labelMarkup(s, plan.cell_mm))
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" ` +
     `width="${w}" height="${h}" font-family="Inter, sans-serif">` +

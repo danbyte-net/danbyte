@@ -30,7 +30,9 @@ import { TilePopover } from "./tile-popover"
 import type { useTilePopover } from "./tile-popover"
 import type { CadDrawingState } from "./use-cad-drawing"
 import type { PlanCapacity } from "./use-plan-capacity"
+import type { PlanShape } from "./shapes"
 import type { PlanEditState } from "./use-plan-edit-state"
+import type { ShapeEdits } from "./use-shape-edits"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
 import type { StructureEdits } from "./use-structure-edits"
 import type { TileEdits } from "./use-tile-edits"
@@ -56,6 +58,9 @@ const AREA_PSEUDO_ENTRY = {
 export function PlanCanvas({
   plan,
   shownTiles,
+  shownShapes,
+  shapeEdits,
+  onOpenShape,
   canEdit,
   ed,
   edits,
@@ -84,6 +89,11 @@ export function PlanCanvas({
 }: {
   plan: FloorPlan
   shownTiles: FloorPlanTile[]
+  /** The areas and labels on show. */
+  shownShapes: PlanShape[]
+  shapeEdits: ShapeEdits
+  /** Viewing: an area or label clicked. */
+  onOpenShape: (shape: PlanShape) => void
   canEdit: boolean
   ed: PlanEditState
   edits: TileEdits
@@ -138,6 +148,8 @@ export function PlanCanvas({
     setSelectedTrayId,
     drawPoints,
     draft,
+    tool,
+    selectedShapeId,
   } = ed
   const {
     changeTile,
@@ -306,6 +318,20 @@ export function PlanCanvas({
           )
         }
         onPickPoint={calibration.active ? calibration.pick : undefined}
+        shapes={shownShapes}
+        selectedShapeId={selectedShapeId}
+        shapeTool={
+          canEdit && (tool === "rect" || tool === "polygon" || tool === "label")
+            ? tool
+            : null
+        }
+        onSelectShape={shapeEdits.select}
+        onChangeShape={shapeEdits.changeShape}
+        onCreateArea={shapeEdits.createArea}
+        onCreateLabel={shapeEdits.createLabel}
+        onDeleteShape={shapeEdits.deleteShape}
+        onRestackShape={shapeEdits.restack}
+        onOpenShape={onOpenShape}
       />
       {cad.drawing?.status === "ready" &&
         (cadSource.mode === "image" || cadSource.error) && (

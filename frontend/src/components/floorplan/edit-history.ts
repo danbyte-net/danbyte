@@ -3,9 +3,10 @@ import type { SetStateAction } from "react"
 
 /**
  * The floor plan editor's draft with its undo history - the topology map's
- * `view-document.ts` pattern for the plan's tiles. The draft is what Save
- * writes in one bulk call: the tiles as edited, which of them changed and
- * which were deleted. Every edit is one step back (at most `HISTORY_LIMIT`);
+ * `view-document.ts` pattern for the plan's tiles and shapes (areas and
+ * labels). The draft is what Save writes in one bulk call: the tiles and
+ * shapes as edited, which of them changed and which were deleted (one set
+ * each, keyed by id - ids never repeat across kinds). Every edit is one step back (at most `HISTORY_LIMIT`);
  * the setters called inside one event handler are one step, and so is a
  * whole drag (`gesture`, sealed when the pointer lifts).
  *
@@ -14,47 +15,58 @@ import type { SetStateAction } from "react"
  */
 export const HISTORY_LIMIT = 100
 
-export interface PlanDraft<T> {
+export interface PlanDraft<T, TShape = unknown> {
   tiles: T[]
+  shapes: TShape[]
   dirty: ReadonlySet<string>
   deleted: ReadonlySet<string>
 }
 
-export interface DraftHistory<T> {
-  past: PlanDraft<T>[]
-  present: PlanDraft<T>
-  future: PlanDraft<T>[]
+export interface DraftHistory<T, TShape = unknown> {
+  past: PlanDraft<T, TShape>[]
+  present: PlanDraft<T, TShape>
+  future: PlanDraft<T, TShape>[]
   /** The coalescing key of the last step. */
   step: string | null
 }
 
-export type DraftMsg<T> =
-  | { kind: "do"; apply: (d: PlanDraft<T>) => PlanDraft<T>; step?: string }
+export type DraftMsg<T, TShape = unknown> =
+  | {
+      kind: "do"
+      apply: (d: PlanDraft<T, TShape>) => PlanDraft<T, TShape>
+      step?: string
+    }
   | { kind: "undo" }
   | { kind: "redo" }
   /** Close the current step: the next edit is a step of its own. */
   | { kind: "seal" }
   /** Fresh data from the server, or after a save: history forgotten. */
-  | { kind: "load"; draft: PlanDraft<T> }
+  | { kind: "load"; draft: PlanDraft<T, TShape> }
 
-export function emptyDraft<T>(tiles: T[] = []): PlanDraft<T> {
-  return { tiles, dirty: new Set(), deleted: new Set() }
+export function emptyDraft<T, TShape = unknown>(
+  tiles: T[] = [],
+  shapes: TShape[] = []
+): PlanDraft<T, TShape> {
+  return { tiles, shapes, dirty: new Set(), deleted: new Set() }
 }
 
-export function initDraftHistory<T>(draft: PlanDraft<T>): DraftHistory<T> {
+export function initDraftHistory<T, TShape = unknown>(
+  draft: PlanDraft<T, TShape>
+): DraftHistory<T, TShape> {
   return { past: [], present: draft, future: [], step: null }
 }
 
-export function draftReducer<T>(
-  h: DraftHistory<T>,
-  m: DraftMsg<T>
-): DraftHistory<T> {
+export function draftReducer<T, TShape = unknown>(
+  h: DraftHistory<T, TShape>,
+  m: DraftMsg<T, TShape>
+): DraftHistory<T, TShape> {
   switch (m.kind) {
     case "do": {
       const next = m.apply(h.present)
       if (
         next === h.present ||
         (next.tiles === h.present.tiles &&
+          next.shapes === h.present.shapes &&
           next.dirty === h.present.dirty &&
           next.deleted === h.present.deleted)
       )
@@ -98,11 +110,13 @@ export function draftReducer<T>(
 const resolve = <TState>(v: SetStateAction<TState>, prev: TState): TState =>
   typeof v === "function" ? (v as (p: TState) => TState)(prev) : v
 
-export interface PlanDraftApi<T> {
+export interface PlanDraftApi<T, TShape = unknown> {
   tiles: T[]
+  shapes: TShape[]
   dirtyIds: ReadonlySet<string>
   deletedIds: ReadonlySet<string>
   setTiles: (v: SetStateAction<T[]>) => void
+  setShapes: (v: SetStateAction<TShape[]>) => void
   setDirtyIds: (v: SetStateAction<ReadonlySet<string>>) => void
   setDeletedIds: (v: SetStateAction<ReadonlySet<string>>) => void
   /** Edits until `endGesture` are one step (a drag). */
@@ -113,13 +127,13 @@ export interface PlanDraftApi<T> {
   canUndo: boolean
   canRedo: boolean
   /** Replace the draft and forget the history. */
-  load: (tiles: T[]) => void
+  load: (tiles: T[], shapes?: TShape[]) => void
 }
 
 /** The page's handle on the draft. */
-export function usePlanDraft<T>(): PlanDraftApi<T> {
-  const [h, send] = useReducer(draftReducer<T>, undefined, () =>
-    initDraftHistory(emptyDraft<T>())
+export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
+  const [h, send] = useReducer(draftReducer<T, TShape>, undefined, () =>
+    initDraftHistory(emptyDraft<T, TShape>())
   )
   const latest = useRef(h)
   latest.current = h
@@ -142,7 +156,7 @@ export function usePlanDraft<T>(): PlanDraftApi<T> {
   }, [])
 
   const edit = useCallback(
-    (apply: (d: PlanDraft<T>) => PlanDraft<T>) =>
+    (apply: (d: PlanDraft<T, TShape>) => PlanDraft<T, TShape>) =>
       send({ kind: "do", apply, step: stepKey() }),
     [stepKey]
   )
@@ -151,6 +165,14 @@ export function usePlanDraft<T>(): PlanDraftApi<T> {
       edit((d) => {
         const tiles = resolve(v, d.tiles)
         return tiles === d.tiles ? d : { ...d, tiles }
+      }),
+    [edit]
+  )
+  const setShapes = useCallback(
+    (v: SetStateAction<TShape[]>) =>
+      edit((d) => {
+        const shapes = resolve(v, d.shapes)
+        return shapes === d.shapes ? d : { ...d, shapes }
       }),
     [edit]
   )
@@ -190,14 +212,17 @@ export function usePlanDraft<T>(): PlanDraftApi<T> {
     return true
   }, [])
   const load = useCallback(
-    (tiles: T[]) => send({ kind: "load", draft: emptyDraft(tiles) }),
+    (tiles: T[], shapes: TShape[] = []) =>
+      send({ kind: "load", draft: emptyDraft(tiles, shapes) }),
     []
   )
   return {
     tiles: h.present.tiles,
+    shapes: h.present.shapes,
     dirtyIds: h.present.dirty,
     deletedIds: h.present.deleted,
     setTiles,
+    setShapes,
     setDirtyIds,
     setDeletedIds,
     beginGesture,

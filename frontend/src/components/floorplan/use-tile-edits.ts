@@ -5,8 +5,11 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   FloorPlan,
+  FloorPlanAreaWritePayload,
+  FloorPlanBulkPayload,
+  FloorPlanBulkResult,
+  FloorPlanLabelWritePayload,
   FloorPlanTile,
-  FloorPlanTilesBulkPayload,
   FloorPlanTileWritePayload,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -14,15 +17,62 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { resizedRect } from "./cabinet-tile"
 import { findCollision, tileIsZone } from "./floor-canvas"
 import { moveSelection, rotateSelection } from "./selection"
+import { shapesOf } from "./shapes"
+import type { PlanShape } from "./shapes"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { EditTile, PlanEditState } from "./use-plan-edit-state"
 
 let tempCounter = 0
-const tempId = () => `new-${++tempCounter}`
+export const tempId = () => `new-${++tempCounter}`
 export const isTemp = (id: string) => id.startsWith("new-")
 
+/** An area as the bulk endpoint takes it. */
+function areaBody(
+  a: Extract<PlanShape, { kind: "area" }>
+): FloorPlanAreaWritePayload {
+  return {
+    shape: a.shape,
+    x: a.x,
+    y: a.y,
+    width: a.width,
+    height: a.height,
+    rotation: a.rotation,
+    points: a.points,
+    room_id: a.room?.id ?? null,
+    location_id: a.location?.id ?? null,
+    label: a.label,
+    color: a.color,
+    fill_opacity: a.fill_opacity,
+    border: a.border,
+    show_name: a.show_name,
+    z: a.z,
+    locked: a.locked,
+  }
+}
+
+/** A label as the bulk endpoint takes it. */
+function labelBody(
+  l: Extract<PlanShape, { kind: "label" }>
+): FloorPlanLabelWritePayload {
+  return {
+    text: l.text,
+    x: l.x,
+    y: l.y,
+    width: l.width,
+    height: l.height,
+    rotation: l.rotation,
+    font_mm: l.font_mm,
+    weight: l.weight,
+    align: l.align,
+    color: l.color,
+    plate: l.plate,
+    z: l.z,
+    locked: l.locked,
+  }
+}
+
 /** Every tile edit the Layout mode makes - on the local draft, which Save
- * writes in one bulk transaction. */
+ * writes in one bulk transaction with the areas and labels. */
 export function useTileEdits({
   id,
   plan,
@@ -33,9 +83,11 @@ export function useTileEdits({
   ed: PlanEditState
 }) {
   const qc = useQueryClient()
+  const free = plan?.layout_mode === "free"
   const {
     draft,
     tiles,
+    shapes,
     dirtyIds,
     deletedIds,
     setTiles,
@@ -61,11 +113,14 @@ export function useTileEdits({
 
   // Geometry edits (canvas drags, nudges, resizes) refuse to stack tiles -
   // the candidate rect must be free of other non-zone tiles. Zones are
-  // background and may overlap anything.
+  // background and may overlap anything. A free plan lets tiles overlap.
   const changeTileGuarded = useCallback(
     (tileId: string, patch: Partial<FloorPlanTile>) => {
       const touchesGeometry =
-        "x" in patch || "y" in patch || "width" in patch || "height" in patch
+        (!free && "x" in patch) ||
+        "y" in patch ||
+        "width" in patch ||
+        "height" in patch
       if (touchesGeometry) {
         const tile = tiles.find((t) => t.id === tileId)
         if (tile && !tileIsZone(tile)) {
@@ -80,7 +135,7 @@ export function useTileEdits({
       }
       changeTile(tileId, patch)
     },
-    [tiles, changeTile]
+    [tiles, changeTile, free]
   )
 
   // The multi-selection as one piece (selection.ts): moved by whole cells,
@@ -132,7 +187,7 @@ export function useTileEdits({
         height: Math.max(1, h),
       }
       // Zones may cover anything; normal tiles never stack.
-      if (!armed.isZone && findCollision(tiles, candidate)) {
+      if (!free && !armed.isZone && findCollision(tiles, candidate)) {
         toast.error("Tiles can't stack - that spot is taken.")
         return
       }
@@ -184,7 +239,7 @@ export function useTileEdits({
       setDirtyIds((prev) => new Set(prev).add(tile.id))
       setSelectedId(tile.id)
     },
-    [armed, plan, tiles]
+    [armed, plan, tiles, free]
   )
 
   const deleteTile = useCallback((tileId: string) => {
@@ -212,21 +267,22 @@ export function useTileEdits({
         x: Math.min(tile.x, Math.max(0, plan.grid_width - width)),
         y: Math.min(tile.y, Math.max(0, plan.grid_height - height)),
       }
-      if (quarter && !tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
+      if (
+        quarter &&
+        !free &&
+        !tileIsZone(tile) &&
+        findCollision(tiles, rect, tile.id)
+      ) {
         toast.error("No room to rotate - a neighbour is in the way.")
         return
       }
       changeTile(tile.id, { orientation, ...rect })
     },
-    [changeTile, plan, tiles]
+    [changeTile, plan, tiles, free]
   )
 
   const rotateTile = useCallback(
-    (tile: EditTile) =>
-      setTileFacing(
-        tile,
-        ((tile.orientation + 90) % 360) as EditTile["orientation"]
-      ),
+    (tile: EditTile) => setTileFacing(tile, (tile.orientation + 90) % 360),
     [setTileFacing]
   )
 
@@ -236,13 +292,13 @@ export function useTileEdits({
     (tile: EditTile, size: { width: number; height: number }) => {
       if (!plan) return
       const rect = resizedRect(tile, size, plan)
-      if (!tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
+      if (!free && !tileIsZone(tile) && findCollision(tiles, rect, tile.id)) {
         toast.error("No room to fit it - a neighbour is in the way.")
         return
       }
       changeTile(tile.id, rect)
     },
-    [changeTile, plan, tiles]
+    [changeTile, plan, tiles, free]
   )
 
   // ── Save (explicit, one bulk transaction) ──────────────────────────────
@@ -267,21 +323,46 @@ export function useTileEdits({
         fov_anchor: t.fov_anchor,
         fov_ptz: t.fov_ptz,
       })
-      const payload: FloorPlanTilesBulkPayload = {
-        create: tiles.filter((t) => isTemp(t.id)).map(body),
-        update: tiles
-          .filter((t) => !isTemp(t.id) && dirtyIds.has(t.id))
-          .map((t) => ({ id: t.id, ...body(t) })),
-        delete: [...deletedIds],
+      const areas = shapes.filter((s) => s.kind === "area")
+      const labels = shapes.filter((s) => s.kind === "label")
+      // Deleted ids are one set: a shape's carries its kind (`area:<id>`,
+      // `label:<id>`), a tile's is bare.
+      const gone = [...deletedIds]
+      const goneOf = (kind: string) =>
+        gone
+          .filter((g) => g.startsWith(`${kind}:`))
+          .map((g) => g.slice(kind.length + 1))
+      const payload: FloorPlanBulkPayload = {
+        tiles: {
+          create: tiles.filter((t) => isTemp(t.id)).map(body),
+          update: tiles
+            .filter((t) => !isTemp(t.id) && dirtyIds.has(t.id))
+            .map((t) => ({ id: t.id, ...body(t) })),
+          delete: gone.filter((g) => !g.includes(":")),
+        },
+        areas: {
+          create: areas.filter((a) => isTemp(a.id)).map(areaBody),
+          update: areas
+            .filter((a) => !isTemp(a.id) && dirtyIds.has(a.id))
+            .map((a) => ({ id: a.id, ...areaBody(a) })),
+          delete: goneOf("area"),
+        },
+        labels: {
+          create: labels.filter((l) => isTemp(l.id)).map(labelBody),
+          update: labels
+            .filter((l) => !isTemp(l.id) && dirtyIds.has(l.id))
+            .map((l) => ({ id: l.id, ...labelBody(l) })),
+          delete: goneOf("label"),
+        },
       }
-      return api<FloorPlanTile[]>(`/api/floor-plans/${id}/tiles/bulk/`, {
+      return api<FloorPlanBulkResult>(`/api/floor-plans/${id}/bulk/`, {
         method: "POST",
         body: JSON.stringify(payload),
       })
     },
     onSuccess: (fresh) => {
-      // New tiles have their real ids now: the history starts again.
-      draft.load(fresh)
+      // New rows have their real ids now: the history starts again.
+      draft.load(fresh.tiles, shapesOf(fresh.areas, fresh.labels))
       setMultiSel(new Set())
       setSelectedId(null)
       // The plan's contents - the dashboard widget reads them too.

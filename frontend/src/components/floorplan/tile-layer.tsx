@@ -63,6 +63,7 @@ export function TileShape({
   figures,
   highlighted = false,
   dimmed = false,
+  grip = true,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -84,6 +85,9 @@ export function TileShape({
   highlighted?: boolean
   /** Left out by the rack table's filter. */
   dimmed?: boolean
+  /** The corner resize grip on a selected tile (a free plan has its own
+   * handles). */
+  grip?: boolean
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
@@ -163,7 +167,7 @@ export function TileShape({
             {name}
           </text>
         )}
-        {selected && editable && (
+        {selected && editable && grip && (
           <rect
             x={w - 7}
             y={h - 7}
@@ -308,7 +312,7 @@ export function TileShape({
           inset={selected && editable ? 9 : 0}
         />
       )}
-      {selected && editable && (
+      {selected && editable && grip && (
         <rect
           x={w - 7}
           y={h - 7}

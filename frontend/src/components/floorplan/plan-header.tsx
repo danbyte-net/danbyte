@@ -26,12 +26,11 @@ import {
   RenameStackDialog,
 } from "./floor-dialogs"
 import { FloorSwitcher } from "./floor-switcher"
-import type { EditorMode } from "./use-plan-edit-state"
 
 type Open = "add" | "manage" | "merge" | "rename" | null
 
-/** The editor's header: which floor plan, which floor, 2D or 3D, which
- * mode. */
+/** The editor's header: which floor plan, which floor, View or Edit, 2D or
+ * 3D. */
 export function PlanHeader({
   plan,
   stack,
@@ -39,19 +38,21 @@ export function PlanHeader({
   canEdit,
   canAdd,
   view3d,
-  mode,
-  onModeChange,
+  editing = false,
+  onEditingChange,
 }: {
   plan: FloorPlan
   /** The floor plan this plan is a floor of, with its floors in order. */
   stack: FloorPlanStack | undefined
   isDirty: boolean
+  /** May change floor plans: offers Edit. */
   canEdit: boolean
   /** May add floors and floor plans (clone, split). */
   canAdd: boolean
   view3d: boolean
-  mode: EditorMode
-  onModeChange: (mode: EditorMode) => void
+  /** Edit is on. */
+  editing?: boolean
+  onEditingChange?: (editing: boolean) => void
 }) {
   const nav = useNavigate()
   const qc = useQueryClient()
@@ -159,10 +160,17 @@ export function PlanHeader({
         </div>
       )}
       <div className="ml-auto flex items-center gap-2">
-        <SegmentedViz plan={plan} view3d={view3d} />
-        {canEdit && !view3d && (
-          <ModeTabs mode={mode} onModeChange={onModeChange} />
+        {canEdit && !view3d && onEditingChange && (
+          <SegmentedTabs<"view" | "edit">
+            value={editing ? "edit" : "view"}
+            onValueChange={(v) => onEditingChange(v === "edit")}
+            items={[
+              { value: "view", label: "View" },
+              { value: "edit", label: "Edit" },
+            ]}
+          />
         )}
+        <SegmentedViz plan={plan} view3d={view3d} />
       </div>
       {stack && (
         <>
@@ -214,26 +222,6 @@ function SegmentedViz({ plan, view3d }: { plan: FloorPlan; view3d: boolean }) {
       items={[
         { value: "2d", label: "2D" },
         { value: "3d", label: "3D" },
-      ]}
-    />
-  )
-}
-
-function ModeTabs({
-  mode,
-  onModeChange,
-}: {
-  mode: EditorMode
-  onModeChange: (mode: EditorMode) => void
-}) {
-  return (
-    <SegmentedTabs<EditorMode>
-      value={mode}
-      onValueChange={onModeChange}
-      items={[
-        { value: "layout", label: "Layout" },
-        { value: "structure", label: "Structure" },
-        { value: "cable", label: "Cables" },
       ]}
     />
   )

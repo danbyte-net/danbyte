@@ -30,6 +30,8 @@ const contents: FloorPlanContents = {
   trays: [],
   walls: [],
   raised_floors: [],
+  areas: [],
+  labels: [],
 }
 
 beforeEach(() => {

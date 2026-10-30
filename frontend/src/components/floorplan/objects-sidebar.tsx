@@ -26,6 +26,8 @@ import {
 import type { CheckFilter } from "@/components/objects-panel"
 import { TruncatedText } from "@/components/ui/truncated-text"
 import { naturalCompare } from "@/lib/natural-sort"
+import { areaColor, areaName } from "@/components/floorplan/shapes"
+import type { PlanShape } from "@/components/floorplan/shapes"
 
 interface Group {
   key: string
@@ -82,7 +84,15 @@ export function ObjectsSidebar({
   hidden = NO_FLOOR_HIDDEN,
   onHiddenChange,
   omitRacks = false,
+  shapes = [],
+  selectedShapeId = null,
+  onPickShape,
 }: {
+  /** The plan's areas and labels (hidden ones included, dimmed). */
+  shapes?: PlanShape[]
+  selectedShapeId?: string | null
+  /** Select + focus an area or a label. */
+  onPickShape?: (shape: PlanShape) => void
   tiles: FloorPlanTile[]
   liveState?: FloorPlanLiveState | null
   selectedId: string | null
@@ -131,6 +141,66 @@ export function ObjectsSidebar({
       first: byRole.at(0)?.tiles.at(0) ?? byType.at(0)?.tiles.at(0),
     }
   }, [tiles, q, status, liveState, omitRacks])
+
+  // Areas and labels: no monitoring of their own, so the status filter
+  // leaves them out.
+  const { areaRows, labelRows } = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const match = (s: string) => !needle || s.toLowerCase().includes(needle)
+    const named = (s: PlanShape) =>
+      s.kind === "area" ? areaName(s) || "Area" : s.text
+    const rows = status ? [] : shapes.filter((s) => match(named(s)))
+    const sort = (a: PlanShape, b: PlanShape) =>
+      naturalCompare(named(a), named(b))
+    return {
+      areaRows: rows.filter((s) => s.kind === "area").sort(sort),
+      labelRows: rows.filter((s) => s.kind === "label").sort(sort),
+    }
+  }, [shapes, q, status])
+
+  const shapeRow = (s: PlanShape) => {
+    const key = s.kind === "area" ? "areas" : "labels"
+    const off = eyes && isHidden(hidden, key, s.id)
+    const name =
+      s.kind === "area" ? areaName(s) : s.text.split("\n")[0] || "Label"
+    return (
+      <div
+        key={s.id}
+        className={cn(
+          "flex items-center gap-1.5 rounded pr-1 hover:bg-muted/60",
+          s.id === selectedShapeId && "bg-muted font-medium",
+          off && "opacity-50"
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => onPickShape?.(s)}
+          className="flex min-w-0 flex-1 px-1.5 py-1 pl-2 text-left text-[13px]"
+        >
+          {s.kind === "area" && (s.room || s.location || s.color) ? (
+            <ColorBadge
+              name={name || "Area"}
+              color={areaColor(s)}
+              className="max-w-52"
+            />
+          ) : name ? (
+            <TruncatedText className="block">{name}</TruncatedText>
+          ) : (
+            <span className="text-muted-foreground">Unnamed</span>
+          )}
+        </button>
+        {eyes && (
+          <VisibilityToggle
+            vis={{
+              shown: !off,
+              onChange: (shown) => toggle(key, s.id, shown),
+              what: name || (s.kind === "area" ? "area" : "label"),
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   const section = (
     label: string,
@@ -244,12 +314,22 @@ export function ObjectsSidebar({
           Racks: in the table below
         </p>
       )}
-      {total === 0 ? (
+      {total + areaRows.length + labelRows.length === 0 ? (
         <ObjectsEmpty filtered={!!q.trim() || !!status} />
       ) : (
         <>
           {section("Device roles", roleGroups, "roleTypes")}
           {section("Tile types", typeGroups, "tileTypes")}
+          {areaRows.length > 0 && (
+            <ObjectsSection heading="Rooms and areas">
+              {areaRows.map(shapeRow)}
+            </ObjectsSection>
+          )}
+          {labelRows.length > 0 && (
+            <ObjectsSection heading="Labels">
+              {labelRows.map(shapeRow)}
+            </ObjectsSection>
+          )}
         </>
       )}
     </ObjectsPanel>
