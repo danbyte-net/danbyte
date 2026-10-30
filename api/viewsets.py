@@ -2514,10 +2514,18 @@ class CustomFieldViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         _slug = ref.model._meta.model_name
         if is_registered(_slug):
             qs = rbac.restrict_queryset(qs, request.user, tenant, _slug, "view")
-        qs = apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})[:20]
+        rows = list(apply_scope_to_queryset(qs, model_slug, field.scope_rules or {})[:20])
+        # A generated flow's name reads masked where an end is hidden (#453).
+        from core.hidden_fields import name_masker
+
+        masker = name_masker(ref.model._meta.label_lower, request.user, tenant)
+        if masker is not None:
+            masker.prime(rows)
         results = []
-        for obj in qs:
+        for obj in rows:
             label = getattr(obj, ref.label_field, None) or str(obj)
+            if masker is not None and masker.masks(obj):
+                label = masker.name(obj)
             results.append({"id": str(obj.pk), "label": str(label)})
         return Response({"results": results, "summary": scope_summary(field.scope_rules or {})})
 

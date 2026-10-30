@@ -466,6 +466,12 @@ class ModelIOHandler:
             row["custom_fields"] = json.dumps(cf) if cf else ""
         for name in hidden:
             row.pop(name, None)
+        # A value the API shows masked (a generated flow's name with an end
+        # the user may not view as Hidden) is the file's value too.
+        if visibility is not None:
+            for name, value in visibility.masked_fields(obj).items():
+                if name in row:
+                    row[name] = "" if value is None else str(value)
         return {c: row.get(c, "") for c in (columns or self.column_names())}
 
     # ── import ────────────────────────────────────────────────────────────
@@ -587,6 +593,14 @@ class ModelIOHandler:
         for name, val in resolved.items():
             check_status_offered(self._fields[name], val, existing)
             setattr(obj, name, val)
+        if existing is not None and request is not None:
+            # A cell that repeats the value the export showed masked (a
+            # generated flow's name) leaves the stored value as it is.
+            visibility = self.field_visibility(request)
+            if visibility is not None:
+                for name, shown in visibility.masked_fields(existing).items():
+                    if name in old and getattr(obj, name, None) == shown:
+                        setattr(obj, name, old[name])
 
         if _has_custom_fields(self.model) and "custom_fields" in row:
             self._apply_custom_fields(obj, existing, row.get("custom_fields"), tenant)

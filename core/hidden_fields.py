@@ -25,6 +25,17 @@ class PermissionHiddenFieldsMixin:
         instance carrying only its tenant (the export asks once per file)."""
         return set()
 
+    def masked_fields(self, obj) -> dict:
+        """``{field: value}`` shown in place of the stored value for this
+        request - a generated flow's name with an end the caller may not
+        view as Hidden (``MASKED_NAMES``). The export reads it too."""
+        return {}
+
+    def masked_columns(self) -> set[str]:
+        """The fields :meth:`masked_fields` may mask for this request: an
+        export refuses a filter on them, which would test the stored value."""
+        return set()
+
     def to_representation(self, obj):
         data = super().to_representation(obj)
         for name in self.hidden_fields(obj):
@@ -32,6 +43,9 @@ class PermissionHiddenFieldsMixin:
                 data[name] = None
             else:
                 data.pop(name, None)
+        for name, value in self.masked_fields(obj).items():
+            if name in data:
+                data[name] = value
         return data
 
 
@@ -106,6 +120,36 @@ GATED_RELATIONS: dict[str, tuple[tuple[str, str], ...]] = {
 #: a template at all while that relation is hidden.
 ROW_TEXT_RELATIONS: dict[str, str] = {"api.supportcoverage": "contract"}
 
+#: Types whose stored name is built from gated relations, so a reader who may
+#: not view one reads the name masked: ``{label: (field, masker)}``. A
+#: generated application flow is named after the hosts at its ends (#453),
+#: and an excluded pair keeps that name as its label. The masker
+#: (``api.flow_names.FlowNames``) is the one answer the API, the export, the
+#: templates, search, custom-field labels and the change log read.
+MASKED_NAMES: dict[str, tuple[str, str]] = {
+    "api.applicationflow": ("name", "api.flow_names.FlowNames"),
+    "api.applicationflowrequirementexclusion": ("label", "api.flow_names.FlowNames"),
+}
+
+
+def name_masker(label: str, user, tenant, viewable=None, memo: dict | None = None):
+    """The masker of ``label``'s names for ``user`` in ``tenant``, or None
+    when the type has none or nothing is masked for this reader. ``memo``
+    keeps one masker per response."""
+    entry = MASKED_NAMES.get(label)
+    if entry is None:
+        return None
+    path = entry[1]
+    if memo is not None and path in memo:
+        return memo[path]
+    from django.utils.module_loading import import_string
+
+    masker = import_string(path)(user, tenant, viewable)
+    masker = masker if masker.active else None
+    if memo is not None:
+        memo[path] = masker
+    return masker
+
 
 def hidden_related_spec(label: str) -> tuple[tuple[str, str, str], ...]:
     """``GATED_RELATIONS[label]`` in the shape ``HiddenRelatedFieldsMixin``
@@ -147,6 +191,7 @@ class RowFieldGate:
         self.tenant = tenant
         self._memo: dict = {}
         self._viewable = None
+        self._names: dict = {}
 
     def _rows(self):
         if self._viewable is None:
@@ -157,6 +202,15 @@ class RowFieldGate:
 
     def fields(self, model) -> set[str]:
         return gated_fields(self.user, self.tenant, model._meta.label_lower, self._memo)
+
+    def _masker(self, model):
+        return name_masker(model._meta.label_lower, self.user, self.tenant, self._rows(),
+                           self._names)
+
+    def _masks(self, obj) -> bool:
+        """Whether ``obj``'s name reads masked (``MASKED_NAMES``)."""
+        masker = self._masker(type(obj))
+        return masker is not None and masker.masks(obj)
 
     @staticmethod
     def _relation(model, name):
@@ -171,6 +225,9 @@ class RowFieldGate:
         """Whether ``obj.<attr>`` is hidden from the user."""
         model = type(obj)
         if attr in self.fields(model):
+            return True
+        named = MASKED_NAMES.get(model._meta.label_lower)
+        if named is not None and attr == named[0] and self._masks(obj):
             return True
         rel = self._relation(model, attr)
         if rel is None:
@@ -189,7 +246,10 @@ class RowFieldGate:
 
     def narrow(self, qs):
         """``qs`` without the rows whose text names a hidden relation
-        (``ROW_TEXT_RELATIONS``)."""
+        (``ROW_TEXT_RELATIONS``) or reads masked (``MASKED_NAMES``)."""
+        masker = self._masker(qs.model)
+        if masker is not None:
+            qs = masker.narrow(qs)
         field = ROW_TEXT_RELATIONS.get(qs.model._meta.label_lower)
         if field is None:
             return qs
@@ -209,6 +269,8 @@ class RowFieldGate:
 
     def hides_row(self, obj) -> bool:
         """Whether ``obj`` itself names a hidden relation in its text."""
+        if self._masks(obj):
+            return True
         field = ROW_TEXT_RELATIONS.get(type(obj)._meta.label_lower)
         return field is not None and self.hides(obj, field)
 
@@ -220,6 +282,13 @@ class RowFieldGate:
                 by_slug.setdefault(slug, set()).add(getattr(obj, f"{field}_id", None))
         for slug, pks in by_slug.items():
             self._rows().prime(slug, pks)
+        by_model: dict = {}
+        for obj in rows:
+            by_model.setdefault(type(obj), []).append(obj)
+        for model, objs in by_model.items():
+            masker = self._masker(model)
+            if masker is not None:
+                masker.prime(objs)
 
 
 def strip_history(data, hidden: set[str]):

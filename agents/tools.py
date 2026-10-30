@@ -316,19 +316,26 @@ def _changes(ctx, type: str = "", id: str = "", since: str = "", limit: int = 20
         if cutoff is not None:
             qs = qs.filter(timestamp__gte=cutoff)
     # A field the object's API hides from this user stays out of its history.
-    from core.hidden_fields import hidden_history_fields
+    from core.hidden_fields import hidden_history_fields, name_masker
 
     hidden = hidden_history_fields(ctx.principal[0], ctx.tenant, model._meta.label_lower)
-    entries = [
-        {
+    rows = list(qs.order_by("-timestamp")[: min(int(limit or 20), ctx.max_rows)])
+    # A generated flow's name reads masked where an end is hidden (#453).
+    masker = name_masker(model._meta.label_lower, ctx.principal[0], ctx.tenant)
+    if masker is not None:
+        masker.prime_history(rows)
+    entries = []
+    for e in rows:
+        changes = {k: v for k, v in (e.changes or {}).items() if k not in hidden}
+        if masker is not None:
+            changes = masker.mask_history(e, {"changes": changes})["changes"]
+        entries.append({
             "at": e.timestamp.isoformat(),
             "who": e.user_name or "system",
             "action": e.action,
             "via": e.via,
-            "changes": {k: v for k, v in (e.changes or {}).items() if k not in hidden},
-        }
-        for e in qs.order_by("-timestamp")[: min(int(limit or 20), ctx.max_rows)]
-    ]
+            "changes": changes,
+        })
     return {"type": slug, "object": found.get("name") or str(found.get("id")),
             "entries": entries, "returned": len(entries)}
 

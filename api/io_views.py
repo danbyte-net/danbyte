@@ -111,14 +111,17 @@ def _refused(handler, request, action):
 
 def _refused_filters(handler, model, visibility, tenant) -> set[str]:
     """Model fields an export may not filter on: the ones it never writes
-    (secrets and their store paths) and the ones the API hides from this
-    user (#387). Filtering on either would answer a yes/no question about a
+    (secrets and their store paths), the ones the API hides from this user
+    (#387) and the ones it may show this user masked (a generated flow's
+    name, #453). Filtering on any would answer a yes/no question about a
     value the user is not shown."""
     from core.secret_fields import is_secret_field
 
     from .bulk_import import _SECRET_REF_FIELDS
 
     out = handler.hidden_columns(visibility, tenant)
+    if visibility is not None:
+        out |= visibility.masked_columns()
     for f in model._meta.concrete_fields:
         if is_secret_field(model, f) or f.name in _SECRET_REF_FIELDS:
             out.add(f.name)

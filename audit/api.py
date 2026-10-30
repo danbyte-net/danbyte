@@ -486,7 +486,27 @@ class ChangeLogSerializer(serializers.ModelSerializer):
                 if key in data:
                     data[key] = strip_history(data[key], hidden)
             data["change_count"] = len(data.get("changes") or {})
+        masker = self._name_masker(obj, memo)
+        if masker is not None:
+            data = masker.mask_history(obj, data)
         return data
+
+    def _name_masker(self, obj, memo):
+        """The masker of ``obj``'s type (a generated flow's name, #453),
+        primed on the page's first entry of that type."""
+        from core.hidden_fields import name_masker
+
+        masker = name_masker(obj.object_type, self.context["request"].user, memo["_tenant"],
+                             memo=memo.setdefault("_names", {}))
+        if masker is not None and id(masker) not in memo.setdefault("_names_primed", set()):
+            memo["_names_primed"].add(id(masker))
+            rows = (
+                list(self.parent.instance)
+                if self.parent is not None and self.parent.instance is not None
+                else [obj]
+            )
+            masker.prime_history(rows)
+        return masker
 
     def get_object_exists(self, obj) -> bool:
         """Whether the entry's target row is still alive - the UI only links
@@ -729,6 +749,19 @@ class ChangeLogViewSet(viewsets.ReadOnlyModelViewSet):
         search = p.get("search")
         if search:
             qs = qs.filter(object_repr__icontains=search)
+            qs = qs.filter(vis) if vis is not None else qs
+            # A generated flow's stored name may name a host the caller
+            # may not view; it matches only as the caller reads it (#453).
+            from core.hidden_fields import MASKED_NAMES, name_masker
+
+            memo: dict = {}
+            done: set = set()
+            for label in MASKED_NAMES:
+                masker = name_masker(label, self.request.user, tenant, memo=memo)
+                if masker is not None and id(masker) not in done:
+                    done.add(id(masker))
+                    qs = masker.narrow_history_search(qs, search)
+            return qs
         return qs.filter(vis) if vis is not None else qs
 
     @action(detail=False, methods=["get"], url_path="users")
@@ -762,6 +795,25 @@ class JournalEntrySerializer(serializers.ModelSerializer):
     def get_can_edit(self, obj) -> bool:
         user = getattr(self.context.get("request"), "user", None)
         return bool(user and (obj.created_by_id == user.id or user.is_superuser))
+
+    def to_representation(self, obj):
+        """A requirement's note on a pair names it by its flow's name: an
+        end the caller may not view reads Hidden there (#453)."""
+        data = super().to_representation(obj)
+        if obj.object_type != "api.applicationflowrequirement":
+            return data
+        from core.hidden_fields import name_masker
+
+        request = self.context.get("request")
+        if request is None:
+            return data
+        memo = self.context.setdefault("_hidden_names", {})
+        if "_tenant" not in memo:
+            memo["_tenant"] = _get_active_tenant(request)
+        masker = name_masker("api.applicationflow", request.user, memo["_tenant"], memo=memo)
+        if masker is not None:
+            data["comments"] = masker.journal_note(obj, data.get("comments") or "")
+        return data
 
 
 class JournalEntryViewSet(viewsets.ModelViewSet):
