@@ -159,10 +159,11 @@ def site_map(request):
         .select_related("location")
         .order_by("name")
     ):
-        plans_by_site.setdefault(fp.location.site_id, [])
-        plan_counts[fp.location.site_id] = plan_counts.get(fp.location.site_id, 0) + 1
-        if len(plans_by_site[fp.location.site_id]) < 5:
-            plans_by_site[fp.location.site_id].append(
+        site_id = fp.site_id or (fp.location.site_id if fp.location_id else None)
+        plans_by_site.setdefault(site_id, [])
+        plan_counts[site_id] = plan_counts.get(site_id, 0) + 1
+        if len(plans_by_site[site_id]) < 5:
+            plans_by_site[site_id].append(
                 {"id": str(fp.id), "name": fp.name}
             )
 

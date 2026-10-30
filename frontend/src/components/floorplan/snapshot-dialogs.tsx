@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { scopeName } from "@/lib/floor-plan-scope"
 
 // The Snapshot tool's dialog (after a rectangle is dragged on the plan) and
 // Unlink, which turns a live view into an independent copy.
@@ -121,7 +122,7 @@ export function SnapshotDialog({
             >
               <Label className="flex items-center gap-2 text-[13px] font-normal whitespace-nowrap">
                 <RadioGroupItem value="plan" />
-                New floor plan at {plan.location.name}
+                New floor plan at {scopeName(plan)}
               </Label>
               {plan.stack && (
                 <Label className="flex items-center gap-2 text-[13px] font-normal whitespace-nowrap">

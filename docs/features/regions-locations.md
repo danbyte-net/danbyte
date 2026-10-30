@@ -151,7 +151,11 @@ of tiles (racks, walls, cooling…) linked to real objects, with one or more
 [floors](floor-plans.md#floors). The Location page's **Floor plan** button
 opens the location's plan, or creates one if none exists yet. A floor may
 sit at a location nested under its floor plan's location, so floors
-modelled as locations (Building A → Level 2) belong to one floor plan.
+modelled as locations (Building A → Level 2) belong to one floor plan. A
+floor plan need not have a location at all: a
+[site-wide floor plan](floor-plans.md#site-wide-floor-plans) maps a whole
+site with many buildings, and its areas may stand for any location of the
+site.
 
 ## Tags & custom fields
 

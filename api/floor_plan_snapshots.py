@@ -727,22 +727,27 @@ def _blank_plan_fields(src, crop: Crop) -> dict:
 def make_snapshot(src, crop: Crop, *, name: str, mode: str, stack=None):
     """``(plan, crossing)``: a new floor plan of ``crop`` of ``src`` - a live
     view (``mode="view"``) or an independent copy. ``stack`` None makes a
-    floor plan of its own named ``name`` at the source's location; else the
-    snapshot is the stack's new top floor. Call inside a transaction."""
+    floor plan of its own named ``name`` at the source's location (site-wide
+    when the source is); else the snapshot is the stack's new top floor.
+    Call inside a transaction."""
     from django.utils import timezone
 
-    from .floor_stacks import next_order
+    from .floor_stacks import location_error, next_order
     from .models import FloorPlan, FloorPlanStack
 
     if stack is None:
         stack = FloorPlanStack.objects.create(
-            tenant_id=src.tenant_id, location_id=src.location_id, name=name,
+            tenant_id=src.tenant_id, site_id=src.site_id, location_id=src.location_id,
+            name=name,
         )
         order = 0
     else:
         order = next_order(stack)
+    # The source's location, unless the target floor plan does not span it.
+    location = src.location if location_error(src.location, stack) is None \
+        else stack.location
     plan = FloorPlan(
-        tenant_id=src.tenant_id, location_id=src.location_id, name=name,
+        tenant_id=src.tenant_id, site_id=stack.site_id, location=location, name=name,
         stack=stack, floor_order=order,
         kind="view" if mode == "view" else "plan", source=src, crop=crop.as_dict(),
         snapshot_at=timezone.now(), **_blank_plan_fields(src, crop),
