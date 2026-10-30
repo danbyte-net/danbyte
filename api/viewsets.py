@@ -59,6 +59,7 @@ from .parsers import ObjectJSONParser
 from .cf_search import cf_text_q
 from . import (
     capacity,
+    detail_counts,
     elevation_pdf,
     floor_plan_pdf,
     ip_usage,
@@ -338,20 +339,7 @@ _RENAME_PATTERN_MAX = 256
 _RENAME_MATCH_TIMEOUT = 0.2
 
 
-def _count_of(model, fk: str):
-    """``COUNT(*)`` of ``model`` rows pointing at the outer row through
-    ``fk``, as a correlated subquery (0 when none) - the shape a list page
-    annotates so a figure per row does not become a query per row."""
-    return Coalesce(
-        Subquery(
-            model.objects.filter(**{fk: OuterRef("pk")})
-            .order_by()
-            .values(fk)
-            .annotate(n=Count("pk"))
-            .values("n")
-        ),
-        0,
-    )
+_count_of = detail_counts.count_of
 
 
 def annotate_dhcp(qs):
@@ -3689,44 +3677,16 @@ class PrtgCleanupDeleteMixin(SafeBulkDeleteMixin):
         return response
 
 
-@extend_schema_view(
-    list=extend_schema(parameters=[
-        OpenApiParameter(
-            name="cooling_method",
-            type=OpenApiTypes.STR,
-            location=OpenApiParameter.QUERY,
-            description=(
-                "The device's effective cooling method - its own, else its "
-                "type's, else air: air, liquid, hybrid or immersion."
-            ),
-        ),
-        OpenApiParameter(
-            name="cooling_mismatch",
-            type=OpenApiTypes.BOOL,
-            location=OpenApiParameter.QUERY,
-            description=(
-                "1: only devices whose rack's cooling capability does not take "
-                "their effective method; 0: the rest."
-            ),
-        ),
-        OpenApiParameter(
-            name="cooling_unconnected",
-            type=OpenApiTypes.BOOL,
-            location=OpenApiParameter.QUERY,
-            description=(
-                "1: only liquid, hybrid or immersion devices with no cooling "
-                "intake connected to a feed or an outflow."
-            ),
-        ),
-        SOFTWARE_TARGET_PARAMETER,
-        *SOFTWARE_VERSION_PARAMETERS,
-    ]),
-)
-class DeviceViewSet(
-    PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin,
-    TenantScopedViewSet,
-):
-    queryset = (
+def _device_rows(*, one: bool = False, counts: bool = False):
+    """The device viewset's base queryset.
+
+    ``one`` reads a single device - the detail read and every one-device
+    route under it (its tabs' endpoints, a write): the address count by index
+    rather than by join (see api.ip_usage), which otherwise hashed every
+    interface in the database for each of them, and no ordering. ``counts``
+    adds the stack and every tab count (api.detail_counts), so the device
+    page's payload is one query plus its prefetches, not two dozen COUNTs."""
+    qs = (
         # select_related every FK the serializer dereferences per row - role,
         # rack, status, platform, location, cluster were method-field lookups
         # doing one query each, so the list ran ~430 extra queries (see the
@@ -3765,7 +3725,7 @@ class DeviceViewSet(
         # page of a hundred devices took a quarter of a second in that join.
         .annotate(
             # Every address the device uses, not only those assigned to it.
-            ip_count_annotated=ip_usage.address_count("device"),
+            ip_count_annotated=ip_usage.address_count("device", one=one),
             interface_count_annotated=_count_of(Interface, "device"),
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
@@ -3775,8 +3735,53 @@ class DeviceViewSet(
             **software_end_annotations("device"),
             install_count_annotated=_count_of(InstalledSoftware, "device"),
         )
-        .all().order_by(NATURAL_NAME)
     )
+    if counts:
+        qs = qs.select_related("virtual_chassis").annotate(**detail_counts.device_annotations())
+    # One row: no ordering to compile or plan.
+    return qs.order_by() if one else qs.all().order_by(NATURAL_NAME)
+
+
+@extend_schema_view(
+    list=extend_schema(parameters=[
+        OpenApiParameter(
+            name="cooling_method",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "The device's effective cooling method - its own, else its "
+                "type's, else air: air, liquid, hybrid or immersion."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_mismatch",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only devices whose rack's cooling capability does not take "
+                "their effective method; 0: the rest."
+            ),
+        ),
+        OpenApiParameter(
+            name="cooling_unconnected",
+            type=OpenApiTypes.BOOL,
+            location=OpenApiParameter.QUERY,
+            description=(
+                "1: only liquid, hybrid or immersion devices with no cooling "
+                "intake connected to a feed or an outflow."
+            ),
+        ),
+        SOFTWARE_TARGET_PARAMETER,
+        *SOFTWARE_VERSION_PARAMETERS,
+    ]),
+)
+class DeviceViewSet(
+    PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin, ImageAttachmentMixin,
+    TenantScopedViewSet,
+):
+    queryset = _device_rows()
+    detail_queryset = _device_rows(one=True, counts=True)
+    one_queryset = _device_rows(one=True)
     # ``?picker=palette`` (the topology diagram builder) lists every device at
     # once, so it starts from its own base: only the columns and joins its rows
     # print, none of the list's per-row count subqueries or tag prefetch.
@@ -4389,6 +4394,10 @@ class DeviceViewSet(
             and self.request.query_params.get("picker") == "palette"
         )
 
+    def _one(self) -> bool:
+        """A route under one device (``/api/devices/<pk>/...``)."""
+        return bool(getattr(self, "kwargs", {}).get(self.lookup_url_kwarg or self.lookup_field))
+
     def get_serializer_class(self):
         if self._palette():
             return DevicePaletteSerializer
@@ -4403,6 +4412,11 @@ class DeviceViewSet(
             # Swap the base only - tenant scoping, RBAC rows and every list
             # filter below apply to the palette exactly as to the list.
             self.queryset = self.palette_queryset
+        elif self.action == "retrieve":
+            # The device page's read: its tab counts in the one query.
+            self.queryset = self.detail_queryset
+        elif self._one():
+            self.queryset = self.one_queryset
         qs = super().get_queryset()
         if self.request:
             from .topology_views import _uuid_list_param, _uuid_param
@@ -6573,6 +6587,10 @@ class VirtualMachineViewSet(
         # Provenance: a synced VM should say so on its own page, and the
         # source's page should be able to list what it syncs.
         latest_src = latest.values("source__name")[:1]
+        # A route under one VM reads the address count by index
+        # (api.ip_usage); the VM page's read also its tab counts in the one
+        # query (api.detail_counts).
+        one = bool(getattr(self, "kwargs", {}).get(self.lookup_url_kwarg or self.lookup_field))
         qs = (
             super()
             .get_queryset()
@@ -6594,7 +6612,7 @@ class VirtualMachineViewSet(
                 **software_end_annotations("virtual_machine"),
                 install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
                 # Every address the VM uses, for its IPs tab (api/ip_usage.py).
-                ip_count_annotated=ip_usage.address_count("vm"),
+                ip_count_annotated=ip_usage.address_count("vm", one=one),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.
@@ -6609,6 +6627,8 @@ class VirtualMachineViewSet(
                 ),
             )
         )
+        if self.action == "retrieve":
+            qs = qs.annotate(**detail_counts.vm_annotations())
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:

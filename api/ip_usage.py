@@ -12,7 +12,7 @@ from __future__ import annotations
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 
-from .models import IPAddress
+from .models import Interface, IPAddress, VMInterface
 
 # Per kind: the direct assignment, the interface assignment (as a path to the
 # interface's owner) and the object's address slots.
@@ -29,10 +29,21 @@ _KINDS = {
     ),
 }
 
+# Per kind: the address's interface key, the interface model and its owner.
+_IFACES = {
+    "device": ("assigned_interface_id", Interface, "device_id"),
+    "vm": ("assigned_vm_interface_id", VMInterface, "vm_id"),
+}
 
-def addresses_q(kind: str, obj=None) -> Q:
+
+def addresses_q(kind: str, obj=None, *, one: bool | None = None) -> Q:
     """``Q`` over IPAddress for the addresses ``obj`` uses. Without ``obj`` it
-    refers to the outer row (``OuterRef``), for a per-row count subquery."""
+    refers to the outer row (``OuterRef``), for a per-row count subquery.
+
+    ``one`` (the default with ``obj``) reads the object's interfaces as an
+    ``IN`` list rather than a join: for one object Postgres then walks the two
+    foreign-key indexes, where the join's OR made it hash every interface in
+    the database. A list keeps the join, which is cheaper over many rows."""
     direct, via_iface, slots = _KINDS[kind]
     if obj is None:
         pk = OuterRef("pk")
@@ -40,18 +51,29 @@ def addresses_q(kind: str, obj=None) -> Q:
     else:
         pk = obj.pk
         slot_refs = [getattr(obj, s) for s in slots if getattr(obj, s)]
-    q = Q(**{direct: pk}) | Q(**{via_iface: pk})
+    if one is None:
+        one = obj is not None
+    if one:
+        fk, model, owner = _IFACES[kind]
+        # Nested one level deeper than the address filter: the outer row is
+        # two queries out.
+        inner = OuterRef(OuterRef("pk")) if obj is None else pk
+        via = Q(**{f"{fk}__in": model.objects.filter(**{owner: inner}).values("pk")})
+    else:
+        via = Q(**{via_iface: pk})
+    q = Q(**{direct: pk}) | via
     for ref in slot_refs:
         q |= Q(pk=ref)
     return q
 
 
-def address_count(kind: str):
+def address_count(kind: str, *, one: bool = False):
     """How many addresses the outer row uses, as one correlated subquery so a
-    list of devices or VMs pays no query per row. Same tenant only."""
+    list of devices or VMs pays no query per row. Same tenant only. ``one``
+    for a single-object read (see :func:`addresses_q`)."""
     return Coalesce(
         Subquery(
-            IPAddress.objects.filter(addresses_q(kind), tenant_id=OuterRef("tenant_id"))
+            IPAddress.objects.filter(addresses_q(kind, one=one), tenant_id=OuterRef("tenant_id"))
             .order_by()
             .values("tenant_id")
             .annotate(n=Count("pk", distinct=True))

@@ -32,6 +32,10 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 
 ## The detail page
 
+Opened from the VM list, the page draws at once from the list's row, and the
+VM's own read (`GET /api/virtual-machines/<id>/`) fills in the tab counts
+when it lands - the counts come from the one query that reads the VM.
+
 The header carries the VM's status, its power state and, when anything
 monitors it, the same monitoring pill as a device's header: the worst state
 across its addresses' checks and PRTG. Hovering it shows each source's state

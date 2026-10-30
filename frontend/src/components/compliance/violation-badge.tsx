@@ -1,13 +1,14 @@
 import { useMemo, type MouseEvent } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { TriangleAlert } from "lucide-react"
 
-import {
-  api,
-  type ComplianceEvaluation,
-  type ComplianceSeverity,
-  type ComplianceViolation,
+import { api } from "@/lib/api"
+import type {
+  ComplianceEvaluation,
+  ComplianceSeverity,
+  ComplianceViolation,
+  DeviceComplianceStatus,
 } from "@/lib/api"
 import {
   Tooltip,
@@ -60,6 +61,9 @@ function buildMap(violations: ComplianceViolation[]) {
   return map
 }
 
+/** How long a compliance answer is reused before it is asked again. */
+const EVALUATION_STALE_MS = 2 * 60_000
+
 /**
  * Shared compliance evaluation, keyed so every <ViolationBadge> on a page
  * dedupes to one request. Returns a Map from object id → its violations.
@@ -70,7 +74,7 @@ export function useViolationMap() {
   const q = useQuery({
     queryKey: ["compliance-evaluate"],
     queryFn: () => api<ComplianceEvaluation>("/api/compliance/evaluate/"),
-    staleTime: 2 * 60_000,
+    staleTime: EVALUATION_STALE_MS,
     // A compliance pass can be heavy; don't refetch on every focus.
     refetchOnWindowFocus: false,
   })
@@ -78,7 +82,14 @@ export function useViolationMap() {
   return useMemo(() => buildMap(q.data?.violations ?? []), [q.data])
 }
 
-function worstSeverity(violations: ComplianceViolation[]): ComplianceSeverity {
+/** What the marker reads of a violation - the shared evaluation's rows and
+ * the per-device status's both carry it. */
+type MarkerViolation = Pick<
+  ComplianceViolation,
+  "rule_id" | "rule_name" | "severity"
+>
+
+function worstSeverity(violations: MarkerViolation[]): ComplianceSeverity {
   return violations.reduce<ComplianceSeverity>(
     (worst, v) =>
       SEVERITY_RANK[v.severity] > SEVERITY_RANK[worst] ? v.severity : worst,
@@ -119,7 +130,77 @@ export function ViolationBadge({
   // shared hook but it dedupes to the same cached query.
   const ownMap = useViolationMap()
   const source = map ?? ownMap
-  const violations = source.get(objectId)
+  return (
+    <ViolationMarker
+      violations={source.get(objectId)}
+      objectId={objectId}
+      objectType={objectType}
+      prominent={prominent}
+      className={className}
+    />
+  )
+}
+
+/**
+ * The device page's hero marker. The shared evaluation runs every rule over
+ * every object in the tenant - megabytes and seconds on a big install - so a
+ * single device asks for its own status (`/api/compliance/devices/<id>/`,
+ * shared with its compliance page) unless a list already fetched the shared
+ * evaluation, which then answers for free.
+ */
+export function DeviceViolationBadge({
+  deviceId,
+  className,
+}: {
+  deviceId: string
+  className?: string
+}) {
+  const qc = useQueryClient()
+  // Only while it is as fresh as the shared hook keeps it.
+  const state = qc.getQueryState<ComplianceEvaluation>(["compliance-evaluate"])
+  const shared =
+    state?.data &&
+    !state.isInvalidated &&
+    Date.now() - state.dataUpdatedAt < EVALUATION_STALE_MS
+      ? state.data
+      : undefined
+  const own = useQuery({
+    queryKey: ["device-compliance", deviceId],
+    queryFn: () =>
+      api<DeviceComplianceStatus>(`/api/compliance/devices/${deviceId}/`),
+    enabled: !shared,
+    staleTime: EVALUATION_STALE_MS,
+    refetchOnWindowFocus: false,
+    // A reader without compliance rights gets a 403: no marker, no retries.
+    retry: false,
+  })
+  const violations = shared
+    ? buildMap(shared.violations).get(deviceId)
+    : own.data?.violations
+  return (
+    <ViolationMarker
+      violations={violations}
+      objectId={deviceId}
+      objectType="device"
+      prominent
+      className={className}
+    />
+  )
+}
+
+function ViolationMarker({
+  violations,
+  objectId,
+  objectType,
+  prominent,
+  className,
+}: {
+  violations: MarkerViolation[] | undefined
+  objectId: string
+  objectType?: string
+  prominent?: boolean
+  className?: string
+}) {
   if (!violations || violations.length === 0) return null
 
   const severity = worstSeverity(violations)
