@@ -247,6 +247,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.PortReservation", "Port reservations", "DCIM"),
     ("api.VirtualChassis", "Virtual chassis", "DCIM"),
     ("api.FloorPlan", "Floor plans", "DCIM"),
+    ("api.FloorPlanStack", "Floor plan stacks", "DCIM"),
     ("api.FloorPlanTile", "Floor-plan tiles", "DCIM"),
     ("api.FloorPlanDrawing", "Floor-plan drawings", "DCIM"),
     ("api.FloorPlanTray", "Floor-plan cable trays", "DCIM"),

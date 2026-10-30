@@ -509,7 +509,9 @@ class SiteRoleRoomUpgradeTests(TestCase):
         return perm
 
     def test_viewer_and_editor_gain_rooms_once_and_hand_built_stay(self):
-        types = set(site_role_types()) - {"room"}
+        # The role as 0043 knew it: types added by later migrations would make
+        # it a hand-built grant to 0043.
+        types = (set(site_role_types()) & ROLES.KNOWN) - {"room"}
         view = self._perm(f"A{SITE_VIEW.VIEW_SUFFIX}", ["view"], types)
         edit = self._perm(f"A{SITE_VIEW.EDIT_SUFFIX}", ["view", "add", "change", "delete"],
                           types)

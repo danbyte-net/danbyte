@@ -10,6 +10,7 @@ import { DrawingExportMenu } from "@/components/drawing-export-menu"
 import { HiddenChip } from "@/components/hidden-chip"
 import { hiddenCount } from "@/components/hidden-objects"
 import { useTheme } from "@/components/theme-provider"
+import { rememberFloor } from "@/lib/floor-plan-stacks"
 import { usePageTitle } from "@/lib/page-title"
 import { useMe } from "@/lib/use-me"
 
@@ -69,7 +70,14 @@ export function FloorPlanEditor({
   const data = useFloorPlanData(id)
   const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
   const { trays, areas, walls, cablePaths } = data
-  usePageTitle(plan?.name ?? null)
+  usePageTitle(
+    plan ? (plan.stack ? `${plan.stack.name} · ${plan.name}` : plan.name) : null
+  )
+  // The floor plan reopens on this floor in this browser.
+  const stackId = plan?.stack?.id
+  useEffect(() => {
+    if (stackId) rememberFloor(stackId, id)
+  }, [stackId, id])
   const { trace: traceParam, viz: vizParam, tile: tileParam } = search
   const view3d = vizParam === "3d"
 
@@ -271,9 +279,10 @@ export function FloorPlanEditor({
       {/* ── Header: which plan, which floor, which mode ──────────────── */}
       <PlanHeader
         plan={plan}
-        floors={data.floors.data?.results}
+        stack={data.stack.data}
         isDirty={isDirty}
         canEdit={canEdit}
+        canAdd={canDo("floorplan", "add")}
         view3d={view3d}
         mode={ed.mode}
         onModeChange={(m) => {

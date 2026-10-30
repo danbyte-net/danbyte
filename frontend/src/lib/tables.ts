@@ -174,7 +174,7 @@ const ROWS: Row[] = [
   ["fiber-cables", "Fiber cables", "DCIM", "/api/cables/"],
   ["port-reservations", "Port reservations", "DCIM", "/api/port-reservations/"],
   ["port-utilization", "Port utilization", "DCIM", null],
-  ["floor-plans", "Floor plans", "DCIM", "/api/floor-plans/"],
+  ["floor-plan-stacks", "Floor plans", "DCIM", "/api/floor-plan-stacks/"],
   ["floor-tile-types", "Floor tile types", "DCIM", "/api/floor-tile-types/"],
   ["embedded-devices", "Devices (embedded)", "DCIM", "/api/devices/", sub],
   ["embedded-device-types", "Device types (embedded)", "DCIM", "/api/device-types/", sub],
