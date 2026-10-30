@@ -38,7 +38,8 @@ The page is a mosaic of tiles:
 - **Monitoring widgets** - **Availability** (seven days, time reachable over
   time measured, as a gauge), **Alerts per day** (opened against resolved, the
   last seven days), **Latency** (median and 95th percentile per hour over
-  the week, one check kind at a time, busiest first), **Flapping** (the checks currently flagged, with a
+  the week, one check kind at a time, busiest first; past a week, one point
+  a day), **Flapping** (the checks currently flagged, with a
   link to confirm them) and **Status history** (the status strips of the
   addresses and devices you pick - the same strip and availability figure
   their Monitoring tabs draw, over 1h to 90d, refreshed every minute; pick
@@ -68,6 +69,36 @@ work the same way. The other charts open where their data lives:
 
 Over a time frame longer than a week, time axes show the date, not the
 weekday, so every point has its own label.
+
+Availability and Latency read the hourly and daily
+[rollups](monitoring.md#rollups), the same records as Explore and the
+Latency view they open, so the figures agree:
+
+- availability is time up over time measured, with stale counted as
+  unmeasured;
+- a latency point is the probe-weighted mean of each check's own median
+  and 95th percentile for that hour;
+- the open hour is as the rollup timer last wrote it, at most five minutes
+  behind.
+
+### What a page load asks for
+
+The dashboard reads its figures in one request, and only the figures the
+widgets on show need. A widget you have not placed costs nothing. Adding one
+while editing fetches its figures; the rest stay on screen meanwhile. Your
+first visit with no layout of your own reads everything once, since the
+tenant's starting layout comes with it.
+
+The rest of the page loads lazily as well:
+
+- the dashboard switcher reads the list of dashboards when you open it;
+- a **Floor plan** widget reads the one plan it shows, and the full list of
+  plans only while you edit the layout, for its picker.
+
+API clients can do the same: `GET /api/dashboard/?include=recent_ips,latency_by_kind`
+computes only those keys and returns the others empty. Without `include`
+every key is computed. The counts, the check and alert totals and the
+reachable share always come. An unknown key is a 400.
 
 ## Customizing it
 
