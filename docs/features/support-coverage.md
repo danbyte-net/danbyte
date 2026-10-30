@@ -124,8 +124,10 @@ device on its status:
 | Expired or not covered | Expired or Not covered |
 | Expiring, expired or not covered | Expiring, Expired or Not covered |
 
-Give the rule a **tag** to judge only the devices that carry it - for example
-`production`.
+To judge only some devices - those tagged `production`, say - give the rule
+a [scope](compliance.md#scope-and-conditions): *Tags is any of production*. A
+rule from before scopes, with its own **tag**, keeps judging only the devices
+with that tag; editing it moves the tag into the scope.
 
 ## Import and export
 
