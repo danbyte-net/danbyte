@@ -1248,8 +1248,14 @@ the cursor **magnetically snaps** to nearby trays so the joins land exactly:
 2. **T-split.** Draw a branch that starts (or ends) on the middle of another
    tray - it snaps to that tray's line, creating a T-junction the cable can
    turn through.
-3. **Crossing.** Two trays that simply cross each other are joined at the
-   crossing automatically - no click needed.
+3. **Crossing.** Two trays at the same level that simply cross each other
+   are joined at the crossing automatically - no click needed. "The same
+   level" means their elevations (set, or derived from the level) are within
+   300 mm. An overhead ladder passing over an underfloor tray is **not** a
+   junction: a cable cannot turn from one onto the other there, and a route
+   that needs that turn comes back unreachable. To take a cable from one
+   level to the other, end one tray on the other (1 or 2) - a snapped vertex
+   is a drop and always joins.
 
 **Editing a tray.** Select a tray (Cables mode) and drag its **body** to move
 the run or a **vertex dot** to reshape - both snap to the grid and
@@ -1295,8 +1301,8 @@ cable in a tray's inspector to **highlight** its run (animated).
 
 **Assigning a cable to several trays** is how branching works: add the cable
 to each tray it passes through (a main run plus a branch, say). The trace
-stitches them at their junctions - including where two trays **cross
-mid-run** - and takes the branch toward the destination.
+stitches them at their junctions - including where two trays at the same
+level **cross mid-run** - and takes the branch toward the destination.
 
 **Tracing a single cable - no Cables mode needed.** With **Display → Cable
 links** on, just **click any cable line** (in Layout *or* Cables mode) to

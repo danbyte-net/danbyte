@@ -388,10 +388,13 @@ export function cableRunPoints(
 
   const trays = scene.trays.filter((t) => cp.tray_ids.includes(t.id))
   const areas = scene.raised_floors
+  // Trays crossing at different heights do not join, as the server routes.
   const route = routeCable(
     a,
     b,
-    trays.map((t) => t.points)
+    trays.map((t) => t.points),
+    undefined,
+    trays.map((t) => Math.round(trayElevationM(plan, t, areas) * 1000))
   )
   // Ride INSIDE the assigned trays - on the basket floor at their (average)
   // elevation, not on the tray datum, which buried every run in the tin.

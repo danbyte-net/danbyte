@@ -4,8 +4,8 @@ import type {
   FloorPlanTray,
 } from "@/lib/api"
 
-import { routeCable } from "./cable-route"
-import type { Pt } from "./cable-route"
+import { routeCable, trayElevationMm } from "./cable-route"
+import type { PlenumRect, Pt } from "./cable-route"
 
 /** Pixel size of one grid cell in world coordinates. */
 export const CELL = 40
@@ -68,19 +68,29 @@ export function findCollision(
 }
 
 /** The routed A↔B points (cell units) of a cable, through its trays. Empty
- * when either endpoint tile is missing. Shared by the render + camera focus. */
+ * when either endpoint tile is missing. Shared by the render + camera focus.
+ * With `levels`, trays crossing at different heights do not join (as the
+ * server routes). */
 export function cableRoutePoints(
   cp: FloorPlanCablePath,
   trays: FloorPlanTray[],
-  tiles: FloorPlanTile[]
+  tiles: FloorPlanTile[],
+  levels?: { ceilingMm: number; areas?: PlenumRect[] }
 ): Pt[] {
   const a = cp.a_tiles[0] ? tileCentreCells(tiles, cp.a_tiles[0]) : null
   const b = cp.b_tiles[0] ? tileCentreCells(tiles, cp.b_tiles[0]) : null
   if (!a || !b) return []
-  const polys = cp.tray_ids
-    .map((tid) => trays.find((tr) => tr.id === tid)?.points)
-    .filter((p): p is [number, number][] => !!p)
-  return routeCable(a, b, polys)
+  const used = cp.tray_ids
+    .map((tid) => trays.find((tr) => tr.id === tid))
+    .filter((tr): tr is FloorPlanTray => !!tr)
+  return routeCable(
+    a,
+    b,
+    used.map((tr) => tr.points),
+    undefined,
+    levels &&
+      used.map((tr) => trayElevationMm(tr, levels.ceilingMm, levels.areas))
+  )
 }
 
 export interface CellPoint {

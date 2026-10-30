@@ -102,6 +102,12 @@ export function FloorPlanEditor({
   const data = useFloorPlanData(id)
   const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
   const { trays, areas, walls, cablePaths } = data
+  // Trays crossing at different heights do not join (cable-route.ts).
+  const ceilingMm = plan?.ceiling_mm
+  const planLevels = useMemo(
+    () => (ceilingMm == null ? undefined : { ceilingMm, areas }),
+    [ceilingMm, areas]
+  )
   usePageTitle(
     plan ? (plan.stack ? `${plan.stack.name} · ${plan.name}` : plan.name) : null
   )
@@ -265,10 +271,10 @@ export function FloorPlanEditor({
     tracedRef.current = traceParam
     prefs.setShowLinksLocal(true)
     ed.setHighlightCableIds([traceParam])
-    const route = cableRoutePoints(cp, trays, tiles)
+    const route = cableRoutePoints(cp, trays, tiles, planLevels)
     if (route.length >= 2)
       requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
-  }, [traceParam, cablePaths, trays, tiles])
+  }, [traceParam, cablePaths, trays, tiles, planLevels])
 
   /** Place rows at a cell point: linked tiles, no type needed. A drop into
    * another room's area asks "Set room to X?" - never sets it itself. */
@@ -401,13 +407,13 @@ export function FloorPlanEditor({
       const pts = cableIds
         .map((cid) => cablePaths.find((c) => c.id === cid))
         .filter((cp): cp is FloorPlanCablePath => !!cp)
-        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles))
+        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles, planLevels))
       if (pts.length >= 2)
         requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
       else if (cableIds.length)
         toast.info("That run isn't routed through a tray on this plan yet.")
     },
-    [cablePaths, trays, shownTiles]
+    [cablePaths, trays, shownTiles, planLevels]
   )
 
   if (planQuery.isLoading) return <Loading />

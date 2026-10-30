@@ -5320,7 +5320,7 @@ class CableViewSet(TenantScopedViewSet):
         from .models import FloorPlan
         from .pathfinding import (
             estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
+            tray_elevations, underfloor_plenum_mm,
         )
 
         cable = self.get_object()
@@ -5351,20 +5351,23 @@ class CableViewSet(TenantScopedViewSet):
         a, b, rack_a, rack_b = resolved
 
         trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
+        # Plenum-aware drops: an underfloor run dives as deep as the raised
+        # floor beneath it, not a constant.
+        area_rects = [
+            (r.x, r.y, r.width, r.height, r.plenum_mm)
+            for r in plan.raised_floor_areas.all()
+        ]
+        # Runs crossing at different heights do not join.
+        result = route_through_trays(
+            a, b, [t.points for t in trays],
+            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
+        )
         if not result.reachable:
             return Response({
                 "reachable": False,
                 "detail": "No tray path connects the two ends on this plan.",
             })
         used = [trays[i] for i in result.tray_indexes]
-
-        # Plenum-aware drops: an underfloor run dives as deep as the raised
-        # floor beneath it, not a constant.
-        area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
-        ]
 
         def _drop(rack, tray):
             if tray is None:
@@ -11453,7 +11456,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         drops + slack)."""
         from .pathfinding import (
             estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
+            tray_elevations, underfloor_plenum_mm,
         )
 
         plan = self.get_object()
@@ -11463,15 +11466,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
         a, b, rack_a, rack_b = ends
 
         trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
-        used = [trays[i] for i in result.tray_indexes]
-
         # Plenum-aware drops: an underfloor run dives as deep as the raised
         # floor beneath it, not a constant.
         area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
+            (r.x, r.y, r.width, r.height, r.plenum_mm)
+            for r in plan.raised_floor_areas.all()
         ]
+        # Runs crossing at different heights do not join.
+        result = route_through_trays(
+            a, b, [t.points for t in trays],
+            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
+        )
+        used = [trays[i] for i in result.tray_indexes]
 
         def _drop(rack, tray):
             if tray is None:
