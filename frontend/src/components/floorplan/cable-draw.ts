@@ -4,6 +4,7 @@ import type {
   FloorPlanTile,
   FloorPlanTray,
   StatusMini,
+  StoredCablePath,
 } from "@/lib/api"
 import { naturalCompare } from "@/lib/natural-sort"
 import { cssColor } from "@/lib/utils"
@@ -64,6 +65,16 @@ export interface CableRoute {
   /** The vertical drops at A and B (mm): rack top to the first and last
    * tray's elevation, 0 for a direct run. */
   dropsMm: [number, number]
+  /** Drawn from a route the server worked out - the cable's stored path,
+   * or a preview - not routed here. */
+  stored?: boolean
+  /** A stored path that is out of date. */
+  stale?: boolean
+  /** The stored or previewed route's length (mm), by the tenant's rules. */
+  lengthMm?: number
+  /** Ends whose tile moved since the path was stored: where the path
+   * ends, and the tile's centre now. */
+  moved?: { at: Pt; now: Pt }[]
 }
 
 export interface RouteContext {
@@ -136,6 +147,14 @@ export function routeOne(
   elevation: (tray: FloorPlanTray) => number | null,
   router: Router = routeCable
 ): CableRoute | null {
+  // A stored path draws as stored, from its first leg, while its tiles are
+  // on the plan - its own ends, which may differ from where the cable's
+  // devices stand now (an out-of-date path).
+  if (cp.path?.legs.length) {
+    const leg = cp.path.legs[0]
+    if (tileById.has(leg.from.tile) && tileById.has(leg.to.tile))
+      return pathRoute(cp.id, cp.path, tileById, trayById)
+  }
   const ta = cp.a_tiles[0] ? tileById.get(cp.a_tiles[0]) : undefined
   const tb = cp.b_tiles[0] ? tileById.get(cp.b_tiles[0]) : undefined
   if (!ta || !tb || ta.id === tb.id) return null
@@ -223,6 +242,76 @@ export function routeOne(
   ])
 }
 
+/**
+ * A route the server worked out - a cable's stored path, or a preview - as
+ * the layer draws it: its first leg's centreline, each stretch along a
+ * tray in that tray's lanes, a direct run in the lanes of every run
+ * between the same two tiles. `moved` lists the ends whose tile is no
+ * longer where the path left it.
+ */
+export function pathRoute(
+  id: string,
+  path: StoredCablePath,
+  tileById: ReadonlyMap<string, FloorPlanTile>,
+  trayById: ReadonlyMap<string, FloorPlanTray>
+): CableRoute | null {
+  const leg = path.legs[0]
+  if (!leg) return null
+  const pts = tidy(leg.points.map((p) => [p[0], p[1]] as Pt))
+  if (pts.length < 2) return null
+  const trays = leg.trays
+    .map((s) => trayById.get(s.id))
+    .filter((t): t is FloorPlanTray => !!t)
+  const flip = leg.from.tile > leg.to.tile
+  const key = flip
+    ? `${leg.to.tile}|${leg.from.tile}`
+    : `${leg.from.tile}|${leg.to.tile}`
+  const segs: RouteSeg[] = []
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = pts[i]
+    const q = pts[i + 1]
+    let group: string | null = null
+    let normal: Pt | null = null
+    for (const tray of trays) {
+      const tp = tray.points as Pt[]
+      for (let s = 0; s < tp.length - 1 && !group; s++) {
+        if (along(p, tp[s], tp[s + 1]) == null) continue
+        if (along(q, tp[s], tp[s + 1]) == null) continue
+        group = `t:${tray.id}:${s}`
+        normal = laneNormal(tp[s], tp[s + 1])
+      }
+      if (group) break
+    }
+    if (!group && path.kind === "direct") {
+      group = `d:${key}:${flip ? pts.length - 2 - i : i}`
+      normal = laneNormal(p, q)
+    }
+    segs.push({ a: p, b: q, group, normal })
+  }
+  const moved: { at: Pt; now: Pt }[] = []
+  for (const end of [leg.from, leg.to]) {
+    const t = tileById.get(end.tile)
+    if (!t) continue
+    const now = tileCentre(t)
+    if (dist(now, end.at) > 1e-3) moved.push({ at: [...end.at], now })
+  }
+  const route = finish(
+    id,
+    pts,
+    segs,
+    leg.trays.map((s) => s.id),
+    path.kind !== "direct",
+    [path.drop_a_mm, path.drop_b_mm]
+  )
+  return {
+    ...route,
+    stored: true,
+    stale: !!path.stale || moved.length > 0,
+    lengthMm: path.length_mm,
+    moved,
+  }
+}
+
 function finish(
   id: string,
   points: Pt[],
@@ -284,12 +373,22 @@ export class CableRouteCache {
     const seen = new Set<string>()
     for (const cp of cablePaths) {
       seen.add(cp.id)
+      const leg = cp.path?.legs[0]
       const key = [
         tileSig(cp.a_tiles[0]),
         tileSig(cp.b_tiles[0]),
         cp.a_top_mm ?? 0,
         cp.b_top_mm ?? 0,
         ...cp.tray_ids.map((id) => `${id}=${sigOf(id)}`),
+        // A stored path: its version and state, its tiles and trays.
+        ...(cp.path && leg
+          ? [
+              `p:${cp.path.version ?? ""}:${cp.path.stale ? 1 : 0}`,
+              tileSig(leg.from.tile),
+              tileSig(leg.to.tile),
+              ...leg.trays.map((s) => `${s.id}=${sigOf(s.id)}`),
+            ]
+          : []),
       ].join("|")
       let hit = this.memo.get(cp.id)
       if (!hit || hit.key !== key) {
@@ -688,23 +787,38 @@ export const CABLE_STATES: CableRouteState[] = [
 ]
 
 /** How a cable's route draws. A route nobody stored is inferred - from
- * its trays, or straight between its tiles; a cable in a planned status
- * draws planned whatever its route. `stored` is the cable's stored path
- * on the plan, when there is one. */
+ * its trays, or straight between its tiles; a stored one is documented,
+ * or stale once out of date; a cable in a planned status draws planned
+ * whatever its route, unless its stored route is out of date. `stored` is
+ * the cable's stored path on the plan, when there is one. (A preview - a
+ * route computed, not saved - draws in its own layer, `preview`.) */
 export function cableRouteState(
   cp: FloorPlanCablePath,
   stored?: { stale?: boolean } | null
 ): CableRouteState {
+  if (stored?.stale) return "stale"
   if (cp.status?.is_planned) return "planned"
-  if (stored) return stored.stale ? "stale" : "documented"
+  if (stored) return "documented"
   return "inferred"
+}
+
+/** The state of a cable as drawn from its route: the route knows whether
+ * it came from a stored path and whether that is out of date. */
+export function drawnRouteState(
+  cp: FloorPlanCablePath,
+  route: CableRoute | undefined
+): CableRouteState {
+  return cableRouteState(cp, route?.stored ? { stale: route.stale } : null)
 }
 
 // ── Length ──────────────────────────────────────────────────────────────────
 
-/** The route's length (m): run × cell size, plus both drops, plus 10 %
- * slack, to 0.1 m - api/pathfinding.py's estimate_length_m. */
+/** The route's length (m). A stored or previewed route's is the server's,
+ * by the tenant's length rules; an inferred one's is run × cell size, plus
+ * both drops, plus 10 % slack, to 0.1 m - the rules' defaults before the
+ * round-up. */
 export function routeLengthM(route: CableRoute, cellMm: number): number {
+  if (route.lengthMm != null) return route.lengthMm / 1000
   const mm = route.runCells * cellMm + route.dropsMm[0] + route.dropsMm[1]
   return Math.round((mm * 1.1) / 100) / 10
 }
@@ -810,7 +924,7 @@ export function cableLegend(
             : "No type",
       color: noneColor,
     })
-  const present = new Set(cablePaths.map((cp) => cableRouteState(cp)))
+  const present = new Set(cablePaths.map((cp) => cableRouteState(cp, cp.path)))
   return {
     mode,
     title: `Cables · ${CABLE_COLOR_BY_LABEL[mode]}`,

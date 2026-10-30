@@ -198,6 +198,92 @@ describe("CableLayer renders", () => {
 const NO_IDS: string[] = []
 const noop = () => {}
 
+describe("CableLayer stored, stale and preview routes", () => {
+  const leg = {
+    from: { end: "A" as const, tile: "r1", device: "d1", at: [1.5, 3.5] },
+    to: { end: "B" as const, tile: "r2", device: "d2", at: [9.5, 3.5] },
+    points: [
+      [1.5, 3.5],
+      [1.5, 2],
+      [9.5, 2],
+      [9.5, 3.5],
+    ],
+    trays: [{ id: "t1", entry: [1.5, 2], exit: [9.5, 2], elevation_mm: 2700 }],
+    waypoints: [],
+  }
+  const path = {
+    kind: "trays" as const,
+    legs: [leg],
+    tray_order: ["t1"],
+    run_mm: 6600,
+    drop_a_mm: 800,
+    drop_b_mm: 800,
+    extra_mm: 0,
+    slack_mm: 820,
+    length_mm: 9000,
+  } as unknown as NonNullable<FloorPlanCablePath["path"]>
+  const strokeOf = (container: HTMLElement, id: string) =>
+    container
+      .querySelector(`[data-cable='${id}'] path:not([stroke=transparent])`)!
+      .getAttribute("stroke-width")
+
+  it("draws a documented route solid and full width, an inferred one thin", () => {
+    const stored = [
+      cable("1", { path: { ...path, version: "v1" } }),
+      cable("2"),
+    ]
+    const r = new draw.CableRouteCache().routes(stored, {
+      trays: [tray],
+      tiles,
+      ceilingMm: 3000,
+    })
+    const { container } = render(
+      layer(2, { cablePaths: stored, routes: r, bundle: false })
+    )
+    expect(strokeOf(container, "1")).toBe(
+      String(draw.CABLE_LINE.documented.width)
+    )
+    expect(strokeOf(container, "2")).toBe(
+      String(draw.CABLE_LINE.inferred.width)
+    )
+  })
+
+  it("marks an out-of-date route's moved end", () => {
+    const moved = [tile("r1", 1, 3), tile("r2", 9, 6)]
+    const stale = [cable("1", { path: { ...path, version: "v1" } })]
+    const r = new draw.CableRouteCache().routes(stale, {
+      trays: [tray],
+      tiles: moved,
+      ceilingMm: 3000,
+    })
+    const { container } = render(layer(2, { cablePaths: stale, routes: r }))
+    const mark = container.querySelector("[data-stale='1']")
+    expect(mark).not.toBeNull()
+    expect(mark!.querySelector("path")!.getAttribute("stroke-dasharray")).toBe(
+      "4 3"
+    )
+  })
+
+  it("draws a preview dotted with its length", () => {
+    const tileById = new Map(tiles.map((t) => [t.id, t]))
+    const preview = draw.pathRoute(
+      "1",
+      path,
+      tileById,
+      new Map([[tray.id, tray]])
+    )!
+    const { container } = render(
+      layer(2, { previews: new Map([["1", preview]]) })
+    )
+    const g = container.querySelector("[data-preview='1']")!
+    const dotted = [...g.querySelectorAll("path")].find(
+      (p) => p.getAttribute("stroke-dasharray") === draw.CABLE_LINE.preview.dash
+    )
+    expect(dotted).toBeTruthy()
+    expect(g.textContent).toBe("9.0 m")
+  })
+})
+
 describe("useCableRoutes", () => {
   it("keeps the routes while the plan's contents stay the same", () => {
     const trays = [tray]

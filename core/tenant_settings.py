@@ -90,6 +90,11 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "capacity_critical_pct",
             # support coverage warning window (#421)
             "coverage_warning_days",
+            # floor-plan cable lengths
+            "cable_slack_pct",
+            "cable_service_loop_mm",
+            "cable_length_step_mm",
+            "cable_standalone_height_mm",
             "updated_at",
         ]
         read_only_fields = ["updated_at", "digest_last_run", "cert_digest_last_run"]

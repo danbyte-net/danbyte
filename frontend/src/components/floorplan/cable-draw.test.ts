@@ -4,9 +4,11 @@ import type {
   FloorPlanCablePath,
   FloorPlanTile,
   FloorPlanTray,
+  StoredCablePath,
 } from "@/lib/api"
 
 import {
+  CABLE_LINE,
   CableRouteCache,
   bundledGroups,
   cableColor,
@@ -14,6 +16,7 @@ import {
   cableLegendEntries,
   cableLod,
   cableRouteState,
+  drawnRouteState,
   endText,
   hasSharedRuns,
   laneOrder,
@@ -21,6 +24,7 @@ import {
   laneSegments,
   layoutCables,
   paperLod,
+  pathRoute,
   routeLengthM,
   storedLengthM,
   typePalette,
@@ -378,5 +382,127 @@ describe("ends and lengths", () => {
     const c = cable("a", "r1", "r2", [], { length: 250, length_unit: "cm" })
     expect(storedLengthM(c)).toBeCloseTo(2.5)
     expect(storedLengthM(cable("b", "r1", "r2"))).toBeNull()
+  })
+})
+
+describe("stored paths", () => {
+  // r1 (1,3) → r2 (9,3) along t1 at y = 2, as the server stored it.
+  const stored = (patch: Partial<StoredCablePath> = {}): StoredCablePath => ({
+    id: "p1",
+    kind: "trays",
+    legs: [
+      {
+        from: { end: "A", tile: "r1", device: "d1", at: [1.5, 3.5] },
+        to: { end: "B", tile: "r2", device: "d2", at: [9.5, 3.5] },
+        points: [
+          [1.5, 3.5],
+          [1.5, 2],
+          [9.5, 2],
+          [9.5, 3.5],
+        ],
+        trays: [
+          { id: "t1", entry: [1.5, 2], exit: [9.5, 2], elevation_mm: 2700 },
+        ],
+        waypoints: [],
+      },
+    ],
+    tray_order: ["t1"],
+    run_mm: 6600,
+    drop_a_mm: 800,
+    drop_b_mm: 800,
+    extra_mm: 0,
+    slack_mm: 820,
+    length_mm: 9000,
+    stale: false,
+    version: "v1",
+    ...patch,
+  })
+
+  it("draws a stored path as stored, documented, with its own length", () => {
+    const cp = cable("c1", "r1", "r2", [], { path: stored() })
+    const r = routesOf([cp]).get("c1")!
+    expect(r.stored).toBe(true)
+    expect(r.stale).toBe(false)
+    expect(r.points).toEqual([
+      [1.5, 3.5],
+      [1.5, 2],
+      [9.5, 2],
+      [9.5, 3.5],
+    ])
+    // Its stretch along the tray shares the tray's lanes.
+    expect(r.segs[1].group).toBe("t:t1:0")
+    expect(r.trayIds).toEqual(["t1"])
+    expect(routeLengthM(r, 600)).toBe(9)
+    expect(drawnRouteState(cp, r)).toBe("documented")
+  })
+
+  it("draws a path stale when the server says so", () => {
+    const cp = cable("c1", "r1", "r2", [], { path: stored({ stale: true }) })
+    const r = routesOf([cp]).get("c1")!
+    expect(drawnRouteState(cp, r)).toBe("stale")
+  })
+
+  it("marks the end whose tile moved since and draws it stale", () => {
+    const moved = [tile("r1", 1, 3), tile("r2", 9, 6), tile("r3", 12, 8)]
+    const cp = cable("c1", "r1", "r2", [], { path: stored() })
+    const r = routesOf([cp], { ...ctx, tiles: moved }).get("c1")!
+    expect(r.stale).toBe(true)
+    expect(r.moved).toEqual([{ at: [9.5, 3.5], now: [9.5, 6.5] }])
+    expect(drawnRouteState(cp, r)).toBe("stale")
+  })
+
+  it("reads stale over a planned status, planned over documented", () => {
+    const planned = {
+      id: "s",
+      name: "Planned",
+      color: "",
+      text_color: "",
+      is_planned: true,
+    }
+    const cp = cable("c1", "r1", "r2", [], { status: planned })
+    expect(cableRouteState(cp, { stale: true })).toBe("stale")
+    expect(cableRouteState(cp, { stale: false })).toBe("planned")
+  })
+
+  it("keeps drawing inferred routes for cables with no stored path", () => {
+    const cp = cable("c1", "r1", "r2", ["t1"])
+    const r = routesOf([cp]).get("c1")!
+    expect(r.stored).toBeUndefined()
+    expect(drawnRouteState(cp, r)).toBe("inferred")
+  })
+
+  it("never routes a stored path here, and takes a new version", () => {
+    const router = vi.fn(routeCable)
+    const cache = new CableRouteCache(router)
+    const cp = cable("c1", "r1", "r2", ["t1"], { path: stored() })
+    const first = cache.routes([cp], ctx).get("c1")
+    expect(cache.routes([{ ...cp }], ctx).get("c1")).toBe(first)
+    const next = { ...cp, path: stored({ version: "v2", length_mm: 9500 }) }
+    expect(cache.routes([next], ctx).get("c1")!.lengthMm).toBe(9500)
+    expect(router).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the inferred route when a stored end is off the plan", () => {
+    const leg = stored().legs[0]
+    const cp = cable("c1", "r1", "r2", ["t1"], {
+      path: stored({ legs: [{ ...leg, to: { ...leg.to, tile: "gone" } }] }),
+    })
+    expect(routesOf([cp]).get("c1")!.stored).toBeUndefined()
+  })
+
+  it("builds a preview from a computed route", () => {
+    const tileById = new Map(tiles.map((t) => [t.id, t]))
+    const trayById = new Map([t1, t2].map((t) => [t.id, t]))
+    const computed = stored({ id: undefined, version: undefined })
+    const p = pathRoute("c1", computed, tileById, trayById)!
+    expect(p.lengthMm).toBe(9000)
+    expect(p.segs[1].group).toBe("t:t1:0")
+  })
+
+  it("has a line style for each state", () => {
+    expect(CABLE_LINE.documented.dash).toBeUndefined()
+    expect(CABLE_LINE.preview.dash).toBeTruthy()
+    expect(CABLE_LINE.inferred.width).toBeLessThan(CABLE_LINE.documented.width)
+    expect(CABLE_LINE.stale.label).toBe("Out of date")
   })
 })

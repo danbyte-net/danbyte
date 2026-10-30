@@ -221,6 +221,8 @@ export interface FloorCanvasProps {
   /** Each cable's route (use-cable-routes.ts), worked out once per change
    * of the plan's contents - never per frame. */
   cableRoutes?: ReadonlyMap<string, CableRoute>
+  /** Routes computed but not saved (Document routes), drawn dotted. */
+  cablePreviews?: ReadonlyMap<string, CableRoute>
   /** What the cables are coloured by. */
   cableColorBy?: CableColorBy
   /** Cable names along the runs, up close. */
@@ -397,6 +399,7 @@ export function FloorCanvas({
   onSelectCable,
   onHighlightCables,
   cableRoutes = NO_ROUTES,
+  cablePreviews,
   cableColorBy = "status",
   showCableLabels = true,
   bundleCables = true,
@@ -1655,6 +1658,7 @@ export function FloorCanvas({
               interactive
               onSelect={selectCable}
               onHover={hoverCable}
+              previews={cablePreviews}
             />
           )}
 

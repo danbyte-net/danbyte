@@ -31,7 +31,9 @@ import {
   hasSharedRuns,
   typePalette,
 } from "./cable-draw"
+import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
+import { DocumentRoutesPanel } from "./document-routes-panel"
 import { CELL } from "./floor-canvas"
 import type { FloorCanvasApi } from "./floor-canvas"
 import {
@@ -167,6 +169,11 @@ export function FloorPlanEditor({
   const [placeOpen, setPlaceOpen] = useState(false)
   const [near, setNear] = useState<NearScope | null>(null)
   const [assignOpen, setAssignOpen] = useState(false)
+  // Document routes: the panel, and the routes it previews on the plan.
+  const [docRoutesOpen, setDocRoutesOpen] = useState(false)
+  const [cablePreviews, setCablePreviews] = useState<
+    ReadonlyMap<string, CableRoute> | undefined
+  >(undefined)
   const [roomPrompt, setRoomPrompt] = useState<RoomPromptState | null>(null)
   const setRooms = useSetRooms(id)
   // Tile popover: hover-preview (delayed) + click-to-pin.
@@ -638,6 +645,11 @@ export function FloorPlanEditor({
         }
         onOpenSettings={() => ed.setSettingsOpen(true)}
         onOpenBackground={() => ed.setBackgroundOpen(true)}
+        onDocumentRoutes={
+          editing && !view3d && cablePaths.length
+            ? () => setDocRoutesOpen(true)
+            : undefined
+        }
         canUndo={ed.draft.canUndo}
         canRedo={ed.draft.canRedo}
         onUndo={() => stepHistory("undo")}
@@ -733,6 +745,7 @@ export function FloorPlanEditor({
               areas={areas}
               cablePaths={cablePaths}
               cableRoutes={cableRoutes}
+              cablePreviews={docRoutesOpen ? cablePreviews : undefined}
               tileTypes={tileTypes.data?.results ?? []}
               roles={roles.data?.results ?? []}
               popover={popover}
@@ -806,6 +819,15 @@ export function FloorPlanEditor({
                   </>
                 ) : undefined
               }
+            />
+          )}
+          {editing && !view3d && docRoutesOpen && (
+            <DocumentRoutesPanel
+              planId={id}
+              tiles={shownTiles}
+              trays={trays}
+              onPreviews={setCablePreviews}
+              onClose={() => setDocRoutesOpen(false)}
             />
           )}
           {!editing &&

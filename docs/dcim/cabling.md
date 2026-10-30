@@ -31,6 +31,14 @@ ports** - so USB console links or video runs are first-class cables.
 4. Save with **Create cable** (or **Enter**), or keep going with **Save and
    add another**.
 
+**Where a length came from.** A length you enter (or import) is yours: a
+cable's route on a floor plan never replaces it unless you tick **Replace
+measured length** for that cable. A route fills a blank length, and keeps a
+length it computed up to date; the API reads which with `length_source`
+(`""` entered, `computed` worked out from a route - read-only). Editing the
+length makes it entered again. See
+[stored routes and lengths](../features/floor-plans.md#stored-routes-and-lengths).
+
 A port can be cabled **only once** - Danbyte rejects connecting a port that's
 already in use, so every connection stays unambiguous.
 

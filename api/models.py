@@ -4466,6 +4466,15 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     length_unit = models.CharField(
         max_length=2, choices=LENGTH_UNITS, default="m", blank=True
     )
+    # Where ``length`` came from: "" is a length a person entered (or
+    # imported), "computed" one a floor-plan route worked out. A route only
+    # fills a blank or computed length unless asked to replace it, and an
+    # edit of the length through the API or a form makes it "" again.
+    LENGTH_SOURCES = [("", "Entered"), ("computed", "Computed")]
+    length_source = models.CharField(
+        max_length=16, choices=LENGTH_SOURCES, blank=True, default="",
+        db_default="",
+    )
     color = models.CharField(
         max_length=7, blank=True, default="",
         help_text="Optional 7-char hex - the physical cable's color.",
@@ -9824,6 +9833,10 @@ class FloorPlanTray(TimestampedModel):
         Cable, blank=True, related_name="trays",
         help_text="The physical cables routed through this tray.",
     )
+    capacity = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="How many cables the run holds. Blank: no limit is known.",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -10011,6 +10024,76 @@ class FloorPlanLabel(TimestampedModel):
 
     def __str__(self) -> str:
         return (self.text or "").splitlines()[0][:64] if self.text else "Label"
+
+
+class FloorPlanCablePath(TimestampedModel):
+    """Where one cable runs on one floor plan: its stored, documented route.
+
+    One row per cable per plan. ``legs`` holds the geometry in the plan's
+    cell units, one leg per far tile (a breakout cable has several)::
+
+        [{"from": {"end": "A", "tile": id, "device": id, "at": [x, y]},
+          "to":   {"end": "B", "tile": id, "device": id, "at": [x, y]},
+          "points": [[x, y], ...],                  # the centreline
+          "trays": [{"id": id, "entry": [x, y], "exit": [x, y],
+                     "elevation_mm": 2700}, ...],   # in travel order
+          "waypoints": [[x, y], ...]}]              # free points, untrayed
+
+    ``from``/``to`` record the tile each end was routed from and its centre
+    then: a tile moved since, or a device now in another rack, makes the
+    path out of date. ``stale`` is also set when a tray it rides changes.
+    The length breakdown is in millimetres; ``length_mm`` is the total the
+    tenant's length rules give (slack, service loops, round-up step).
+
+    Scoped through its plan: ``tenant`` is the plan's (and the cable's).
+    Tray membership (``FloorPlanTray.cables``) stays the record of what is
+    in a tray; ``api/cable_routing.py`` keeps the two in step."""
+
+    KIND_CHOICES = [
+        ("trays", "Through trays"),
+        ("manual", "Manual"),
+        ("direct", "Direct"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="cable_paths"
+    )
+    cable = models.ForeignKey(
+        Cable, on_delete=models.CASCADE, related_name="floor_plan_paths"
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default="trays")
+    legs = models.JSONField(default=list, blank=True)
+    # Tray ids in the order the cable travels them, every leg together.
+    tray_order = models.JSONField(default=list, blank=True)
+    # The tiles the ends were routed from - what a tile's move or removal
+    # looks its paths up by.
+    tile_ids = models.JSONField(default=list, blank=True)
+    run_mm = models.PositiveIntegerField(default=0)
+    drop_a_mm = models.PositiveIntegerField(default=0)
+    drop_b_mm = models.PositiveIntegerField(default=0)
+    # Level changes between trays, and the service loops.
+    extra_mm = models.PositiveIntegerField(default=0)
+    slack_mm = models.PositiveIntegerField(default=0)
+    length_mm = models.PositiveIntegerField(default=0)
+    computed_at = models.DateTimeField(null=True, blank=True)
+    stale = models.BooleanField(default=False, db_default=False)
+
+    class Meta:
+        ordering = ["floor_plan", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["floor_plan", "cable"], name="floorplancablepath_one_per_plan"
+            ),
+        ]
+        indexes = [models.Index(fields=["cable"])]
+
+    def __str__(self) -> str:
+        try:
+            return f"{self.cable} on {self.floor_plan.name}"[:255]
+        except Exception:  # noqa: BLE001 - a row mid-cascade
+            return f"Cable path {self.pk}"
 
 
 class CableRoute(TimestampedModel):

@@ -6060,6 +6060,13 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
         validated_data.pop("a", None)
         validated_data.pop("b", None)
         tags = validated_data.pop("tags", None)
+        # A length edited here is a length a person entered: a floor-plan
+        # route no longer replaces it on its own.
+        if ("length" in validated_data and validated_data["length"] != instance.length) or (
+            "length_unit" in validated_data
+            and validated_data["length_unit"] != instance.length_unit
+        ):
+            instance.length_source = ""
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
@@ -6082,11 +6089,12 @@ class CableSerializer(CustomFieldsSerializerMixin, StatusSerializerMixin, Taggab
     class Meta:
         model = Cable
         fields = ["id", "numid", "label", "type", "type_display", "status", "status_id",
-                  "length", "length_unit", "color", "description",
+                  "length", "length_unit", "length_source", "color", "description",
                   "fiber_count", "strands", "is_fiber",
                   "a_terminations", "b_terminations", "a", "b",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "is_fiber", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "is_fiber", "length_source",
+                            "created_at", "updated_at"]
 
 
 # ─── Custom field definitions ──────────────────────────────────────────────
@@ -11444,7 +11452,7 @@ class FloorPlanTraySerializer(_CableMembersMixin, NumIdModelSerializer):
     class Meta:
         model = FloorPlanTray
         fields = ["id", "floor_plan_id", "name", "kind", "color", "points",
-                  "level", "elevation_mm",
+                  "level", "elevation_mm", "capacity",
                   "description", "cables", "hidden_cable_count", "cable_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "cables", "hidden_cable_count",

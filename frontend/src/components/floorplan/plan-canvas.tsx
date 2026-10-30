@@ -80,6 +80,7 @@ export function PlanCanvas({
   areas,
   cablePaths,
   cableRoutes,
+  cablePreviews,
   tileTypes,
   roles,
   popover,
@@ -133,6 +134,8 @@ export function PlanCanvas({
   cablePaths: FloorPlanCablePath[]
   /** Each cable's route (use-cable-routes.ts). */
   cableRoutes: ReadonlyMap<string, CableRoute>
+  /** Routes computed but not saved, drawn dotted. */
+  cablePreviews?: ReadonlyMap<string, CableRoute>
   tileTypes: Parameters<typeof SelectionBar>[0]["tileTypes"]
   roles: Parameters<typeof SelectionBar>[0]["roles"]
   popover: ReturnType<typeof useTilePopover>
@@ -339,6 +342,7 @@ export function PlanCanvas({
           if (!cid || !cablePopover.pinCurrent()) cablePopover.close()
         }}
         cableRoutes={cableRoutes}
+        cablePreviews={cablePreviews}
         cableColorBy={cableColorBy}
         showCableLabels={showCableLabels}
         bundleCables={bundleCables}

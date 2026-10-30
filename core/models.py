@@ -1249,6 +1249,31 @@ class TenantSettings(TimestampedModel):
         help_text="Coverage ending within this many days reads as Expiring.",
     )
 
+    # ─── floor-plan cable lengths ──────────────────────────────────────────
+    # The rules a cable's length is worked out from its route by. Tenant
+    # only, like the capacity levels. Read through
+    # ``core.effective_settings.cable_length_rules``.
+    cable_slack_pct = models.PositiveSmallIntegerField(
+        default=10, db_default=10,
+        validators=[MaxValueValidator(100)],
+        help_text="Added to a route's length for dressing and termination.",
+    )
+    cable_service_loop_mm = models.PositiveIntegerField(
+        default=0, db_default=0,
+        validators=[MaxValueValidator(20000)],
+        help_text="A service loop left at each end, in millimetres.",
+    )
+    cable_length_step_mm = models.PositiveIntegerField(
+        default=500, db_default=500,
+        validators=[MaxValueValidator(10000)],
+        help_text="Lengths round up to a multiple of this. 0: to the millimetre.",
+    )
+    cable_standalone_height_mm = models.PositiveIntegerField(
+        default=0, db_default=0,
+        validators=[MaxValueValidator(20000)],
+        help_text="Port height of a device standing on its own tile, in millimetres.",
+    )
+
     # ─── first-run onboarding ──────────────────────────────────────────────
     # Per-tenant bookkeeping (like digest_last_run) - not an inheritable
     # override. Set once the first-run wizard is completed or skipped, so it

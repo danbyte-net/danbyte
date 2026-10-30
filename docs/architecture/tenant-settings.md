@@ -41,6 +41,12 @@ plans, the 3D room and the site Capacity tab all colour at the same levels.
 `coverage_warning_days(tenant)` returns the support-coverage warning window
 (`coverage_warning_days`, 90 without a row): coverage ending within it reads
 as Expiring ([support coverage](../features/support-coverage.md)).
+`cable_length_rules(tenant)` returns how a floor-plan route becomes a cable
+length - `{"slack_pct", "service_loop_mm", "step_mm",
+"standalone_height_mm"}` from `cable_slack_pct`, `cable_service_loop_mm`,
+`cable_length_step_mm` and `cable_standalone_height_mm` (10 / 0 / 500 / 0
+without a row; Settings → Floor plans → Cable lengths;
+[stored routes and lengths](../features/floor-plans.md#lengths)).
 
 **Topology card lines have two more layers below the tenant.** What a device
 card on the topology Diagram shows under its name is an ordered list of keys

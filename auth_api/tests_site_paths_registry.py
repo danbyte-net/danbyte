@@ -215,6 +215,9 @@ AREAS = importlib.import_module(
 OUTLINES = importlib.import_module(
     "auth_api.migrations.0046_site_roles_location_types_outlines"
 )
+PATHS = importlib.import_module(
+    "auth_api.migrations.0047_site_roles_floor_plan_cable_paths"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -326,7 +329,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(ROOMS.NEW_TYPES)
             | set(STACKS.NEW_TYPES)
             | set(AREAS.NEW_TYPES)
-            | set(OUTLINES.NEW_TYPES),
+            | set(OUTLINES.NEW_TYPES)
+            | set(PATHS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(

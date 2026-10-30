@@ -35,7 +35,7 @@ import {
   bundleWidth,
   bundledGroups,
   cableColor,
-  cableRouteState,
+  drawnRouteState,
   laneOrder,
   lanePolylines,
   layoutCables,
@@ -210,7 +210,8 @@ function cablesMarkup(c: PlanSvgCables): string {
   }
   const lines = (id: string, traced: boolean) => {
     const cp = byId.get(id)
-    const style = CABLE_LINE[cp ? cableRouteState(cp) : "inferred"]
+    const style =
+      CABLE_LINE[cp ? drawnRouteState(cp, routes.get(id)) : "inferred"]
     const segs = layout.cables.get(id)!
     const polys = traced
       ? lanePolylines(segs)
