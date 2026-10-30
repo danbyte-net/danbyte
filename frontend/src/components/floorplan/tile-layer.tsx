@@ -1,9 +1,10 @@
 import { Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
+import { getLucideIcon } from "@/components/dynamic-icon"
 
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
-import { rackFigures, tileFill, tilePaint } from "./tile-paint"
+import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
 /** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
@@ -184,6 +185,89 @@ export function TileShape({
     )
   }
 
+  // A device or rack shown as its photo: the picture with its aspect kept,
+  // an outline that carries selection and monitoring, the name under it.
+  if (tile.display === "photo" && tile.photo) {
+    return (
+      <g
+        transform={`translate(${tile.x * CELL},${tile.y * CELL})`}
+        opacity={paint.opacity}
+        data-tile={tile.id}
+        data-part="photo-tile"
+        onPointerDown={onPointerDown}
+        onDoubleClick={onDoubleClick}
+        onPointerEnter={onPointerEnter}
+        onPointerLeave={onPointerLeave}
+        style={{ cursor: editable ? "move" : "pointer" }}
+        role="img"
+        aria-label={tileTooltip(tile, live)}
+      >
+        <image
+          href={tile.photo.url}
+          width={w}
+          height={h}
+          preserveAspectRatio="xMidYMid meet"
+        />
+        <rect
+          width={w}
+          height={h}
+          rx={2}
+          fill="transparent"
+          stroke={paint.stroke}
+          strokeOpacity={selected || paint.alarm ? 1 : 0.35}
+          strokeWidth={paint.strokeWidth}
+          strokeDasharray={dashed ? "6 3" : undefined}
+        />
+        {highlighted && (
+          <rect
+            data-part="highlight"
+            x={-2.5}
+            y={-2.5}
+            width={w + 5}
+            height={h + 5}
+            rx={4}
+            fill="none"
+            className="stroke-primary"
+            strokeWidth={2.5}
+            pointerEvents="none"
+          />
+        )}
+        {name && (
+          <text
+            x={w / 2}
+            y={h + 10}
+            textAnchor="middle"
+            fontSize={9}
+            fill="currentColor"
+            opacity={0.8}
+            pointerEvents="none"
+          >
+            {name.length > 40 ? `${name.slice(0, 39)}…` : name}
+          </text>
+        )}
+        {selected && editable && grip && (
+          <rect
+            x={w - 7}
+            y={h - 7}
+            width={12}
+            height={12}
+            rx={2}
+            className="fill-background stroke-foreground/60"
+            strokeWidth={1.5}
+            style={{ cursor: "nwse-resize" }}
+            onPointerDown={onResizeDown}
+          />
+        )}
+      </g>
+    )
+  }
+  // A tile with no type of its own wears its object's role icon.
+  const RoleIcon = (() => {
+    const icon = tileRoleIcon(tile)
+    return icon ? getLucideIcon(icon) : null
+  })()
+  const iconSize = Math.min(14, (h - GUTTER * 2) * 0.32)
+
   return (
     <g
       transform={`translate(${tile.x * CELL},${tile.y * CELL})`}
@@ -248,8 +332,21 @@ export function TileShape({
           color={fill}
         />
       </g>
-      {/* Icons live in the palette rail only - tiles stay clean: color,
-          label, and live state. */}
+      {/* Typed tiles stay clean (colour, label, live state); a tile placed
+          straight from an object wears that object's role icon. */}
+      {RoleIcon && iconSize >= 6 && (
+        <RoleIcon
+          data-part="role-icon"
+          x={GUTTER + 3}
+          y={GUTTER + 3}
+          width={iconSize}
+          height={iconSize}
+          color={fill}
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
       {label && (
         <text
           x={w / 2}

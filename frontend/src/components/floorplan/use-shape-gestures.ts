@@ -431,8 +431,11 @@ export function useShapeGestures({
       const shape =
         d.target.kind === "shape" ? shapeById(d.target.id) : undefined
       const label = shape?.kind === "label" ? shape : null
+      // A photo keeps its proportions unless Shift frees them.
+      const tile = d.target.kind === "tile" ? tileById(d.target.id) : undefined
+      const photo = tile?.display === "photo" && !!tile.photo
       const nb = resizeBox(d.box, d.handle, snapped, {
-        keepAspect: e.shiftKey || !!label,
+        keepAspect: photo ? !e.shiftKey : e.shiftKey || !!label,
         min: label ? 0.05 : undefined,
       })
       if (!fits(nb)) return true

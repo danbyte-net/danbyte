@@ -41,7 +41,10 @@ export function useEditorKeys({
   prefs,
   hiddenTileIds,
   closePopover,
+  onPlaceKey,
 }: {
+  /** P: open the Place picker. */
+  onPlaceKey?: () => void
   /** Edit is on: the plan may be changed from the keyboard. */
   canEdit: boolean
   /** May switch to Edit (E). */
@@ -138,6 +141,19 @@ export function useEditorKeys({
       ) {
         e.preventDefault()
         onToggleEdit?.(!canEdit)
+        return
+      }
+      // P: the Place picker.
+      if (
+        bare &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "p" &&
+        canEdit &&
+        !view3d &&
+        onPlaceKey
+      ) {
+        e.preventDefault()
+        onPlaceKey()
         return
       }
       // The tool keys (V, R, Shift+R, T, G, W, C).
@@ -339,6 +355,7 @@ export function useEditorKeys({
     tool,
     armed,
     canvasApi,
+    onPlaceKey,
   ])
 
   // Ctrl/⌘+Z undoes a tile edit, Shift+Ctrl/⌘+Z or Ctrl+Y redoes it, and

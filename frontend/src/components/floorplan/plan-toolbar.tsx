@@ -72,7 +72,10 @@ export function PlanToolbar({
   isDirty,
   saving,
   onSave,
+  placeSlot,
 }: {
+  /** Edit: the Place picker, first on the bar. */
+  placeSlot?: ReactNode
   plan: FloorPlan
   mode: EditorMode
   view3d: boolean
@@ -107,6 +110,7 @@ export function PlanToolbar({
     // A container, so the overflow into More follows the bar's own width
     // (the app sidebar open or not) rather than the window's.
     <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
+      {placeSlot}
       {mode === "layout" && (
         <TileSearch
           tiles={tiles}

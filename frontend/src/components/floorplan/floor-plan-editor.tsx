@@ -3,7 +3,12 @@ import { toPng } from "html-to-image"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
-import type { FloorPlanCablePath, FloorPlanTile } from "@/lib/api"
+import type {
+  FloorPlanCablePath,
+  FloorPlanConflict,
+  FloorPlanPlaceable,
+  FloorPlanTile,
+} from "@/lib/api"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DrawingExportMenu } from "@/components/drawing-export-menu"
@@ -36,6 +41,19 @@ import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
 import { planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
+import { PlacePicker, UnplacedList } from "./place-picker"
+import { nearScope, roomPrompts } from "./placement"
+import type { NearScope } from "./placement"
+import {
+  AssignRoomsDialog,
+  ConflictDialog,
+  PlanEmptyState,
+  RoomPrompt,
+  SelectionToolbar,
+  useSetRooms,
+} from "./placement-panels"
+import type { RoomPromptState } from "./placement-panels"
+import type { Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
 import { shapeBounds } from "./shapes"
 import { SnapAllDialog } from "./snap-all-dialog"
@@ -101,6 +119,13 @@ export function FloorPlanEditor({
   const [openArea, setOpenArea] = useState<string | null>(null)
   const [snapOpen, setSnapOpen] = useState(false)
   const [leaveEditOpen, setLeaveEditOpen] = useState(false)
+  // Placing: the picker with the room near the pointer when it opened, the
+  // bulk room assignment, and the "Set room to X?" prompt after a drop.
+  const [placeOpen, setPlaceOpen] = useState(false)
+  const [near, setNear] = useState<NearScope | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [roomPrompt, setRoomPrompt] = useState<RoomPromptState | null>(null)
+  const setRooms = useSetRooms(id)
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
   // Resolve the row list for the tile in hand: a tile type with its own list
@@ -245,7 +270,76 @@ export function FloorPlanEditor({
       requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
   }, [traceParam, cablePaths, trays, tiles])
 
+  /** Place rows at a cell point: linked tiles, no type needed. A drop into
+   * another room's area asks "Set room to X?" - never sets it itself. */
+  const placeAt = useCallback(
+    (rows: FloorPlanPlaceable[], at: Pt) => {
+      if (ed.mode !== "layout") selectTool("select")
+      const placed = edits.placeRows(rows, at)
+      setPlaceOpen(false)
+      setRoomPrompt(roomPrompts(placed, ed.shapes)[0] ?? null)
+    },
+    [ed, edits, selectTool]
+  )
+  const placeAtCentre = useCallback(
+    (rows: FloorPlanPlaceable[]) => {
+      if (!plan) return
+      const at = canvasApi.current?.centerCell?.() ?? [
+        plan.grid_width / 2,
+        plan.grid_height / 2,
+      ]
+      placeAt(rows, at)
+    },
+    [plan, placeAt]
+  )
+  const openPlace = useCallback(() => {
+    const api = canvasApi.current
+    setNear(
+      nearScope(
+        ed.shapes,
+        api?.pointerCell?.() ?? null,
+        api?.centerCell?.() ?? null
+      )
+    )
+    setPlaceOpen(true)
+  }, [ed.shapes])
+  const applyRoom = (prompt: RoomPromptState) =>
+    setRooms.mutate(prompt, {
+      onSuccess: () => {
+        setRoomPrompt(null)
+        // The placed tiles show the room they now name.
+        const ids = new Set(prompt.objects.map((o) => o.id))
+        ed.setTiles((prev) =>
+          prev.map((t) =>
+            t.linked && ids.has(t.linked.id)
+              ? { ...t, linked: { ...t.linked, room: prompt.room } }
+              : t
+          )
+        )
+      },
+    })
+  const conflictName = (c: FloorPlanConflict) => {
+    const local =
+      c.kind === "tile"
+        ? tiles.find((t) => t.id === c.id)
+        : ed.shapes.find((sh) => sh.id === c.id)
+    const row = (local ?? c.current) as unknown as Record<
+      string,
+      unknown
+    > | null
+    if (!row) return c.kind
+    const linked = row.linked as { name?: string } | null | undefined
+    return (
+      (row.label as string) ||
+      linked?.name ||
+      (row.text as string) ||
+      ((row.room as { name?: string } | null)?.name ?? "") ||
+      c.kind
+    )
+  }
+
   const { stepHistory } = useEditorKeys({
+    onPlaceKey: openPlace,
     canEdit: editing,
     canToggleEdit: canEdit,
     onToggleEdit: changeEditing,
@@ -424,6 +518,25 @@ export function FloorPlanEditor({
         isDirty={isDirty}
         saving={edits.save.isPending}
         onSave={() => edits.save.mutate()}
+        placeSlot={
+          editing && !view3d ? (
+            <PlacePicker
+              plan={plan}
+              open={placeOpen}
+              onOpenChange={(o) => (o ? openPlace() : setPlaceOpen(false))}
+              near={near}
+              onPlace={placeAtCentre}
+              onShow={(tileId) => {
+                const tile = tiles.find((t) => t.id === tileId)
+                if (!tile) return
+                if (ed.mode !== "layout") selectTool("select")
+                setSelectedId(tile.id)
+                canvasApi.current?.focusTile(tile)
+              }}
+              onAssignRooms={() => setAssignOpen(true)}
+            />
+          ) : undefined
+        }
       />
 
       {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
@@ -505,6 +618,54 @@ export function FloorPlanEditor({
               calibration={calibration}
               theme={theme}
               openTile={openTile}
+              onDropRows={editing ? placeAt : undefined}
+              selectionToolbar={
+                editing ? (
+                  <SelectionToolbar
+                    plan={plan}
+                    tile={
+                      selectedId
+                        ? (tiles.find((t) => t.id === selectedId) ?? null)
+                        : null
+                    }
+                    shape={
+                      ed.shapes.find((sh) => sh.id === ed.selectedShapeId) ??
+                      null
+                    }
+                    shapes={ed.shapes}
+                    onTileDisplay={edits.setTileDisplay}
+                    onRestackTile={edits.restackTile}
+                    onDeleteTile={edits.deleteTile}
+                    onSetRoom={applyRoom}
+                    onChangeShape={shapeEdits.changeShape}
+                    onRestackShape={shapeEdits.restack}
+                    onDeleteShape={shapeEdits.deleteShape}
+                  />
+                ) : undefined
+              }
+              overlays={
+                editing ? (
+                  <>
+                    {roomPrompt && (
+                      <RoomPrompt
+                        prompt={roomPrompt}
+                        busy={setRooms.isPending}
+                        onSet={() => applyRoom(roomPrompt)}
+                        onDismiss={() => setRoomPrompt(null)}
+                      />
+                    )}
+                    {data.contentsQuery.isSuccess &&
+                      tiles.length === 0 &&
+                      ed.shapes.length === 0 &&
+                      ed.tool === "select" && (
+                        <PlanEmptyState
+                          onDrawRoom={() => selectTool("rect")}
+                          onPlace={openPlace}
+                        />
+                      )}
+                  </>
+                ) : undefined
+              }
             />
           )}
           {!editing &&
@@ -555,6 +716,11 @@ export function FloorPlanEditor({
             onHiddenChange={setHiddenPref}
             // While the rack table is open it lists the racks.
             omitRacks={racksOpen}
+            unplaced={
+              editing && !view3d ? (
+                <UnplacedList planId={id} onPlace={placeAtCentre} />
+              ) : undefined
+            }
             shapes={ed.shapes}
             selectedShapeId={editing ? ed.selectedShapeId : openArea}
             onPickShape={(s) => {
@@ -613,6 +779,18 @@ export function FloorPlanEditor({
         traceCablesOnMap={traceCablesOnMap}
         backgroundControls={backgroundControls}
         leaveGuard={leaveGuard}
+      />
+      <AssignRoomsDialog
+        planId={id}
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+      />
+      <ConflictDialog
+        conflicts={edits.conflicts}
+        nameOf={conflictName}
+        saving={edits.save.isPending}
+        onResolve={edits.resolveConflicts}
+        onCancel={edits.dismissConflicts}
       />
       <SnapAllDialog
         planId={plan.id}

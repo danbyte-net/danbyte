@@ -30,8 +30,19 @@ export function tileHidden(t: FloorPlanTile, h: FloorHidden): boolean {
   return (
     h.tiles.includes(t.id) ||
     (!!t.tile_type && h.tileTypes.includes(t.tile_type.id)) ||
-    (!!t.role_type && h.roleTypes.includes(t.role_type.id))
+    (!!t.role_type && h.roleTypes.includes(t.role_type.id)) ||
+    // A tile with no type of its own goes with its object's role.
+    (!t.tile_type &&
+      !t.role_type &&
+      !!t.linked &&
+      h.roleTypes.includes(placedGroupKey(t)))
   )
+}
+
+/** The group a tile with no type of its own falls in (Objects panel, hide):
+ * its object's role, else its kind. */
+export function placedGroupKey(t: FloorPlanTile): string {
+  return t.linked?.role?.id ?? `kind:${t.linked?.kind ?? ""}`
 }
 
 /** The areas and labels the canvas and the exports draw. */

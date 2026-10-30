@@ -1,24 +1,28 @@
-import { useCallback } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import { api } from "@/lib/api"
+import { ApiError, api } from "@/lib/api"
 import type {
   FloorPlan,
   FloorPlanAreaWritePayload,
   FloorPlanBulkPayload,
   FloorPlanBulkResult,
+  FloorPlanConflict,
   FloorPlanLabelWritePayload,
+  FloorPlanPlaceable,
   FloorPlanTile,
   FloorPlanTileWritePayload,
+  FloorTileDisplay,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 
 import { resizedRect } from "./cabinet-tile"
 import { findCollision, tileIsZone } from "./floor-canvas"
+import { linkedTile, placementRects } from "./placement"
 import { moveSelection, rotateSelection } from "./selection"
 import { shapesOf } from "./shapes"
-import type { PlanShape } from "./shapes"
+import type { PlanShape, Pt } from "./shapes"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { EditTile, PlanEditState } from "./use-plan-edit-state"
 
@@ -84,6 +88,11 @@ export function useTileEdits({
 }) {
   const qc = useQueryClient()
   const free = plan?.layout_mode === "free"
+  // A save refused as changed elsewhere (409): the rows, until settled.
+  const [conflicts, setConflicts] = useState<FloorPlanConflict[] | null>(null)
+  const [resave, setResave] = useState(false)
+  // Versions taken over from a conflict ("Keep mine"), by row id.
+  const rebase = useRef(new Map<string, string>())
   const {
     draft,
     tiles,
@@ -242,6 +251,60 @@ export function useTileEdits({
     [armed, plan, tiles, free]
   )
 
+  /** Place devices, racks or cabinets at `at` (cells) - linked tiles with
+   * no type, one step. Answers the tiles placed. */
+  const placeRows = useCallback(
+    (rows: FloorPlanPlaceable[], at: Pt): EditTile[] => {
+      if (!plan || !rows.length) return []
+      const topZ = tiles.reduce((m, t) => Math.max(m, t.z ?? 0), 0)
+      const placed = placementRects(rows, at, plan, tiles).map((p, i) =>
+        linkedTile(
+          p.row,
+          { x: p.x, y: p.y, width: p.width, height: p.height },
+          tempId(),
+          p.display,
+          free ? topZ + 1 + i : 0
+        )
+      )
+      if (placed.length < rows.length)
+        toast.error("No room left on the plan for all of them.")
+      if (!placed.length) return []
+      setTiles((prev) => [...prev, ...placed])
+      setDirtyIds((prev) => {
+        const next = new Set(prev)
+        for (const t of placed) next.add(t.id)
+        return next
+      })
+      setMultiSel(new Set(placed.length > 1 ? placed.map((t) => t.id) : []))
+      setSelectedId(placed.length === 1 ? placed[0].id : null)
+      return placed
+    },
+    [plan, tiles, free]
+  )
+
+  /** Bring a free tile in front of every other (+1) or behind them (-1). */
+  const restackTile = useCallback(
+    (tileId: string, dir: 1 | -1) => {
+      const zs = tiles.filter((t) => t.id !== tileId).map((t) => t.z ?? 0)
+      const z = dir > 0 ? Math.max(0, ...zs) + 1 : Math.min(0, ...zs) - 1
+      changeTile(tileId, { z })
+    },
+    [tiles, changeTile]
+  )
+
+  /** Show a device or rack as its photo or as its box. A free tile turned
+   * to its photo takes the photo's proportions. */
+  const setTileDisplay = useCallback(
+    (tile: EditTile, display: FloorTileDisplay) => {
+      const patch: Partial<FloorPlanTile> = { display }
+      const aspect = tile.photo?.aspect
+      if (display === "photo" && free && aspect)
+        patch.height = Math.round(tile.width * aspect * 1000) / 1000
+      changeTile(tile.id, patch)
+    },
+    [changeTile, free]
+  )
+
   const deleteTile = useCallback((tileId: string) => {
     setTiles((prev) => prev.filter((t) => t.id !== tileId))
     setDirtyIds((prev) => {
@@ -322,7 +385,23 @@ export function useTileEdits({
         fov_direction: t.fov_direction,
         fov_anchor: t.fov_anchor,
         fov_ptz: t.fov_ptz,
+        display: t.display ?? "icon",
+        z: t.z ?? 0,
       })
+      // The version each edit is based on: the row as loaded, or as taken
+      // over in a conflict ("Keep mine").
+      const base = new Map<string, string>()
+      for (const r of [...draft.origin.tiles, ...draft.origin.shapes])
+        base.set(r.id, r.updated_at)
+      for (const [rid, v] of rebase.current) base.set(rid, v)
+      const v = (rid: string) => {
+        const version = base.get(rid)
+        return version ? { version } : {}
+      }
+      const del = (rid: string) => {
+        const version = base.get(rid)
+        return version ? { id: rid, version } : rid
+      }
       const areas = shapes.filter((s) => s.kind === "area")
       const labels = shapes.filter((s) => s.kind === "label")
       // Deleted ids are one set: a shape's carries its kind (`area:<id>`,
@@ -337,22 +416,22 @@ export function useTileEdits({
           create: tiles.filter((t) => isTemp(t.id)).map(body),
           update: tiles
             .filter((t) => !isTemp(t.id) && dirtyIds.has(t.id))
-            .map((t) => ({ id: t.id, ...body(t) })),
-          delete: gone.filter((g) => !g.includes(":")),
+            .map((t) => ({ id: t.id, ...v(t.id), ...body(t) })),
+          delete: gone.filter((g) => !g.includes(":")).map(del),
         },
         areas: {
           create: areas.filter((a) => isTemp(a.id)).map(areaBody),
           update: areas
             .filter((a) => !isTemp(a.id) && dirtyIds.has(a.id))
-            .map((a) => ({ id: a.id, ...areaBody(a) })),
-          delete: goneOf("area"),
+            .map((a) => ({ id: a.id, ...v(a.id), ...areaBody(a) })),
+          delete: goneOf("area").map(del),
         },
         labels: {
           create: labels.filter((l) => isTemp(l.id)).map(labelBody),
           update: labels
             .filter((l) => !isTemp(l.id) && dirtyIds.has(l.id))
-            .map((l) => ({ id: l.id, ...labelBody(l) })),
-          delete: goneOf("label"),
+            .map((l) => ({ id: l.id, ...v(l.id), ...labelBody(l) })),
+          delete: goneOf("label").map(del),
         },
       }
       return api<FloorPlanBulkResult>(`/api/floor-plans/${id}/bulk/`, {
@@ -362,6 +441,8 @@ export function useTileEdits({
     },
     onSuccess: (fresh) => {
       // New rows have their real ids now: the history starts again.
+      rebase.current.clear()
+      setConflicts(null)
       draft.load(fresh.tiles, shapesOf(fresh.areas, fresh.labels))
       setMultiSel(new Set())
       setSelectedId(null)
@@ -375,8 +456,99 @@ export function useTileEdits({
       qc.invalidateQueries({ queryKey: ["floor-plan-racks", id] })
       toast.success("Floor plan saved")
     },
-    onError: (err) => apiErrorToast(err),
+    onError: (err) => {
+      // Changed elsewhere since the plan was opened: nothing was written;
+      // the conflict dialog asks, row by row, whose version stays.
+      const body = err instanceof ApiError ? err.body : null
+      if (
+        err instanceof ApiError &&
+        err.status === 409 &&
+        body &&
+        typeof body === "object" &&
+        "conflicts" in body
+      ) {
+        setConflicts((body as { conflicts: FloorPlanConflict[] }).conflicts)
+        return
+      }
+      apiErrorToast(err)
+    },
   })
+
+  /** Settle a 409: per row, "mine" keeps the edit (based on the row as it
+   * is now - a row deleted elsewhere is made again) and "theirs" takes the
+   * row as it is now (a row deleted elsewhere goes). Then saves again. */
+  const resolveConflicts = useCallback(
+    (choice: Record<string, "mine" | "theirs">) => {
+      const list = conflicts ?? []
+      const theirs = list.filter((c) => choice[c.id] === "theirs")
+      const mine = list.filter((c) => choice[c.id] !== "theirs")
+      const remade = new Map<string, string>()
+      for (const c of mine) {
+        if (c.current) rebase.current.set(c.id, c.current.updated_at)
+        else remade.set(c.id, tempId())
+      }
+      const takeTile = (t: EditTile) => {
+        const c = theirs.find((x) => x.id === t.id && x.kind === "tile")
+        if (c) return c.current ? [c.current as EditTile] : []
+        const nid = remade.get(t.id)
+        return [nid ? { ...t, id: nid } : t]
+      }
+      const takeShape = (sh: PlanShape) => {
+        const c = theirs.find((x) => x.id === sh.id && x.kind === sh.kind)
+        if (c)
+          return c.current
+            ? [{ ...(c.current as object), kind: sh.kind } as PlanShape]
+            : []
+        const nid = remade.get(sh.id)
+        return [nid ? { ...sh, id: nid } : sh]
+      }
+      // A row deleted here but changed there comes back when theirs stays.
+      const back = <T extends { id: string }>(prev: T[], kinds: string[]) =>
+        theirs
+          .filter(
+            (c) =>
+              c.current &&
+              kinds.includes(c.kind) &&
+              !prev.some((r) => r.id === c.id)
+          )
+          .map((c) =>
+            c.kind === "tile"
+              ? (c.current as unknown as T)
+              : ({ ...(c.current as object), kind: c.kind } as unknown as T)
+          )
+      setTiles((prev) => [...prev.flatMap(takeTile), ...back(prev, ["tile"])])
+      ed.setShapes((prev) => [
+        ...prev.flatMap(takeShape),
+        ...back(prev, ["area", "label"]),
+      ])
+      setDirtyIds((prev) => {
+        const next = new Set(prev)
+        for (const c of theirs) next.delete(c.id)
+        for (const [old, nid] of remade) {
+          next.delete(old)
+          next.add(nid)
+        }
+        return next
+      })
+      setDeletedIds((prev) => {
+        const next = new Set(prev)
+        for (const c of theirs) {
+          next.delete(c.id)
+          next.delete(`${c.kind}:${c.id}`)
+        }
+        return next
+      })
+      setConflicts(null)
+      setResave(true)
+    },
+    [conflicts]
+  )
+  // Saved again once the draft holds the choices.
+  useEffect(() => {
+    if (!resave) return
+    setResave(false)
+    save.mutate()
+  }, [resave])
 
   return {
     changeTile,
@@ -388,7 +560,13 @@ export function useTileEdits({
     setTileFacing,
     rotateTile,
     fitTile,
+    placeRows,
+    restackTile,
+    setTileDisplay,
     save,
+    conflicts,
+    resolveConflicts,
+    dismissConflicts: () => setConflicts(null),
   }
 }
 

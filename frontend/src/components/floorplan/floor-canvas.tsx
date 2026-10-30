@@ -4,6 +4,7 @@ import type {
   FloorPlan,
   FloorPlanCablePath,
   FloorPlanLiveState,
+  FloorPlanPlaceable,
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
@@ -38,12 +39,15 @@ import {
   LabelShapeView,
   VertexHandles,
 } from "./shape-layer"
+import { PLACE_MIME } from "./placement"
 import {
+  boxBounds,
   byZ,
   labelBox,
   pointInBox,
   pointInPolygon,
   polygonPatch,
+  shapeBounds,
   tileBox,
   tileQuarter,
 } from "./shapes"
@@ -82,6 +86,10 @@ export interface FloorCanvasApi {
   popPoint?: () => void
   cancelDraw?: () => void
   drawingShape?: () => boolean
+  /** The cell point at the middle of the view, and the one under the
+   * pointer while it is over the plan (the Place picker's "near"). */
+  centerCell?: () => Pt
+  pointerCell?: () => Pt | null
 }
 
 export interface FloorCanvasProps {
@@ -226,6 +234,12 @@ export interface FloorCanvasProps {
   onDeleteShape?: (id: string) => void
   /** Bring forward (+1) or send back (-1). */
   onRestackShape?: (id: string, dir: 1 | -1) => void
+  // ── Placing objects ───────────────────────────────────────────────────
+  /** Rows dragged from the Place picker or the unplaced list were dropped
+   * at this cell point. */
+  onDropRows?: (rows: FloorPlanPlaceable[], at: Pt) => void
+  /** Floats above the one selected tile, area or label (Edit). */
+  selectionToolbar?: React.ReactNode
   className?: string
 }
 
@@ -342,8 +356,12 @@ export function FloorCanvas({
   onOpenShape,
   onDeleteShape,
   onRestackShape,
+  onDropRows,
+  selectionToolbar,
   className,
 }: FloorCanvasProps) {
+  // The cell point under the pointer while it is over the plan.
+  const pointerAt = useRef<Pt | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<DragState | null>(null)
   // Point-pick mode: where the press started, to tell a click from a pan.
@@ -506,6 +524,14 @@ export function FloorCanvas({
     apiRef.current.popPoint = shapeG.popPoint
     apiRef.current.cancelDraw = shapeG.cancelDraw
     apiRef.current.drawingShape = () => !!shapeG.poly
+    apiRef.current.centerCell = () => {
+      const svg = svgRef.current
+      if (!svg) return [plan.grid_width / 2, plan.grid_height / 2]
+      const r = svg.getBoundingClientRect()
+      const w = toWorld(svg, r.left + r.width / 2, r.top + r.height / 2)
+      return [w.x / CELL, w.y / CELL]
+    }
+    apiRef.current.pointerCell = () => pointerAt.current
   })
   // Putting the tool down drops a drawing it left open.
   useEffect(() => {
@@ -808,6 +834,10 @@ export function FloorCanvas({
   }
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (svgRef.current) {
+      const w = toWorld(svgRef.current, e.clientX, e.clientY)
+      pointerAt.current = [w.x / CELL, w.y / CELL]
+    }
     // Areas, labels and free tiles: their own gestures.
     if (shapeG.move(e)) return
     // Tray drawing: trail a dashed preview from the last vertex to the cursor.
@@ -1125,6 +1155,27 @@ export function FloorCanvas({
         "relative h-full w-full overflow-hidden bg-background",
         className
       )}
+      // Rows dragged from the Place picker or the unplaced list.
+      onDragOver={(e) => {
+        if (!onDropRows || !e.dataTransfer.types.includes(PLACE_MIME)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = "copy"
+      }}
+      onDrop={(e) => {
+        if (!onDropRows || !svgRef.current) return
+        const raw = e.dataTransfer.getData(PLACE_MIME)
+        if (!raw) return
+        e.preventDefault()
+        let rows: FloorPlanPlaceable[]
+        try {
+          rows = JSON.parse(raw)
+        } catch {
+          return
+        }
+        if (!Array.isArray(rows) || !rows.length) return
+        const w = toWorld(svgRef.current, e.clientX, e.clientY)
+        onDropRows(rows, [w.x / CELL, w.y / CELL])
+      }}
     >
       <svg
         ref={svgRef}
@@ -1178,6 +1229,7 @@ export function FloorCanvas({
         }}
         onPointerLeave={(e) => {
           pickStart.current = null
+          pointerAt.current = null
           if (pinchUp(e)) return
           handleUp(e)
         }}
@@ -1360,7 +1412,14 @@ export function FloorCanvas({
               />
             ))}
           </g>
-          {tiles.filter((tl) => !tileIsZone(tl)).map(renderTile)}
+          {/* On a free plan tiles may overlap: their z says which is on
+              top. */}
+          {(free
+            ? tiles
+                .filter((tl) => !tileIsZone(tl))
+                .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+            : tiles.filter((tl) => !tileIsZone(tl))
+          ).map(renderTile)}
 
           {showFov &&
             tiles
@@ -1527,6 +1586,12 @@ export function FloorCanvas({
               target={{ kind: "tile", id: selectedTile.id }}
               zoom={t.k}
               gestures={shapeG}
+              // A photo resizes from its corners, keeping its proportions.
+              handles={
+                selectedTile.display === "photo" && selectedTile.photo
+                  ? ["nw", "ne", "se", "sw"]
+                  : undefined
+              }
             />
           )}
           <DrawPreview gestures={shapeG} width={gw} height={gh} zoom={t.k} />
@@ -1562,6 +1627,32 @@ export function FloorCanvas({
       </svg>
 
       {overlay}
+
+      {/* The floating toolbar, just above the selection. */}
+      {(() => {
+        if (!selectionToolbar || !editable || mode !== "layout" || shapeTool)
+          return null
+        let b: ReturnType<typeof boxBounds> | null = null
+        if (selectedShape) b = shapeBounds(selectedShape, plan.cell_mm)
+        else if (selectedId && !multiSelectedIds?.size) {
+          const tl = tiles.find((x) => x.id === selectedId)
+          if (tl) b = boxBounds(tileBox(tl))
+        }
+        if (!b) return null
+        return (
+          <div
+            data-part="selection-toolbar"
+            className="pointer-events-auto absolute z-20 -translate-x-1/2 -translate-y-full"
+            style={{
+              left: ((b.minX + b.maxX) / 2) * CELL * t.k + t.x,
+              top: Math.max(40, b.minY * CELL * t.k + t.y - 10),
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {selectionToolbar}
+          </div>
+        )
+      })()}
 
       {/* An area's or label's menu, and a polygon point's. */}
       <PointerMenu
