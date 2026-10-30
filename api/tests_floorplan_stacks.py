@@ -423,7 +423,7 @@ class StackSiteScopeTests(StackTestCase):
 
     def test_stacks_are_registered_site_bound_and_in_the_site_roles(self):
         self.assertTrue(is_registered("floorplanstack"))
-        self.assertEqual(SITE_PATHS["floorplanstack"], "location__site")
+        self.assertEqual(SITE_PATHS["floorplanstack"], "site|location__site")
         self.assertIn("floorplanstack", site_role_types())
 
 

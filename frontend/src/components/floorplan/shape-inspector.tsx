@@ -16,6 +16,11 @@ import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import {
+  scopeKey,
+  scopeLocationIds,
+  scopeRoomsUrl,
+} from "@/lib/floor-plan-scope"
 import { QuickAddDialog } from "@/components/forms/quick-add"
 import type {
   FloorPlan,
@@ -118,7 +123,7 @@ function AngleField({
 }
 
 /** The locations an area may stand for: the floor's own and those inside
- * it, at its site. */
+ * it, at its site - every location of it on a site-wide floor. */
 function useFloorLocations(plan: FloorPlan) {
   const q = useQuery({
     queryKey: ["locations-of-site", plan.site.id],
@@ -127,18 +132,9 @@ function useFloorLocations(plan: FloorPlan) {
   })
   return useMemo(() => {
     const all = q.data?.results ?? []
-    const inside = new Set([plan.location.id])
-    // Parents before children is not guaranteed: walk until nothing joins.
-    for (let grew = true; grew;) {
-      grew = false
-      for (const l of all)
-        if (l.parent && inside.has(l.parent.id) && !inside.has(l.id)) {
-          inside.add(l.id)
-          grew = true
-        }
-    }
+    const inside = scopeLocationIds(plan, all)
     return all.filter((l) => inside.has(l.id))
-  }, [q.data, plan.location.id])
+  }, [q.data, plan])
 }
 
 type LinkKind = "room" | "location" | "none"
@@ -240,11 +236,8 @@ export function AreaInspector({
 }) {
   // The floor's rooms, its sub-locations' included.
   const rooms = useQuery({
-    queryKey: ["rooms-picker", plan.location.id, "descendants"],
-    queryFn: () =>
-      apiAll<RoomOption>(
-        `/api/rooms/?picker=1&location=${plan.location.id}&include_descendants=1`
-      ),
+    queryKey: ["rooms-picker", scopeKey(plan), "descendants"],
+    queryFn: () => apiAll<RoomOption>(scopeRoomsUrl(plan)),
     staleTime: 5 * 60_000,
   })
   const locations = useFloorLocations(plan)
@@ -265,7 +258,7 @@ export function AreaInspector({
     if (kind === link) return
     onChange({ room: null, location: null })
     if (kind === "location") {
-      const own = locations.find((l) => l.id === plan.location.id)
+      const own = locations.find((l) => l.id === plan.location?.id)
       if (own)
         onChange({
           location: { id: own.id, name: own.name, color: own.color },
@@ -318,12 +311,12 @@ export function AreaInspector({
           searchPlaceholder="Search rooms…"
           emptyText="No rooms in this location."
           quickAdd={
-            canAddRoom ? (
+            canAddRoom && plan.location ? (
               <QuickAddDialog
                 title={`New room in ${plan.location.name}`}
                 endpoint="/api/rooms/"
                 fields={[{ name: "name", label: "Name", required: true }]}
-                fixed={{ location_id: plan.location.id }}
+                fixed={{ location_id: plan.location?.id }}
                 onCreated={(r) => {
                   void qc.invalidateQueries({ queryKey: ["rooms-picker"] })
                   void qc.invalidateQueries({ queryKey: ["rooms"] })

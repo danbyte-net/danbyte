@@ -61,16 +61,19 @@ SITE_PATHS: dict[str, str] = {
     # Its own site, else the VM it lands on (#432) - an end at a provider
     # network bound to a VM interface belongs to that VM's site.
     "circuittermination": "site|vm_interface__vm__site",
-    "floorplan": "location__site",
+    # A floor plan's own site (site-wide plans have no location). The
+    # location's site is the fallback only for a row a process still on the
+    # release before api 0231 wrote during an upgrade, with no site set.
+    "floorplan": "site|location__site",
     # A floor plan stack (its floors) - its API follows the floorplan grant.
-    "floorplanstack": "location__site",
-    "floorplantile": "floor_plan__location__site",
-    "floorplandrawing": "floor_plan__location__site",
-    "floorplantray": "floor_plan__location__site",
-    "floorplanraisedfloorarea": "floor_plan__location__site",
-    "floorplanwall": "floor_plan__location__site",
-    "floorplanarea": "floor_plan__location__site",
-    "floorplanlabel": "floor_plan__location__site",
+    "floorplanstack": "site|location__site",
+    "floorplantile": "floor_plan__site|floor_plan__location__site",
+    "floorplandrawing": "floor_plan__site|floor_plan__location__site",
+    "floorplantray": "floor_plan__site|floor_plan__location__site",
+    "floorplanraisedfloorarea": "floor_plan__site|floor_plan__location__site",
+    "floorplanwall": "floor_plan__site|floor_plan__location__site",
+    "floorplanarea": "floor_plan__site|floor_plan__location__site",
+    "floorplanlabel": "floor_plan__site|floor_plan__location__site",
     # A site's own scope is itself.
     "site": "id",
     # Per-site settings rows - a change grant scoped to sites=[X] makes its

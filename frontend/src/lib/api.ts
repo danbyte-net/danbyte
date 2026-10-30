@@ -5536,7 +5536,8 @@ export interface SiteCapacityTotals {
 export interface SiteCapacityPlan {
   id: string
   name: string
-  location: { id: string; name: string }
+  /** Null for a site-wide floor plan. */
+  location: { id: string; name: string } | null
   grid_width: number
   grid_height: number
   totals: SiteCapacityTotals
@@ -12081,7 +12082,8 @@ export interface FloorPlan {
   numid: number | null
   /** The floor's name ("B1", "Ground", "2"). */
   name: string
-  location: LocationOption
+  /** Null on a site-wide floor. */
+  location: LocationOption | null
   site: SiteOption
   /** The floor plan (stack) this is a floor of. */
   stack: { id: string; name: string } | null
@@ -12172,7 +12174,7 @@ export interface FloorPlanFloor {
   numid: number | null
   name: string
   floor_order: number
-  location_id: string
+  location_id: string | null
   kind?: FloorPlanKind
   /** The plan a live view shows. */
   view_of?: { id: string; name: string } | null
@@ -12184,7 +12186,8 @@ export interface FloorPlanStack {
   id: string
   name: string
   description: string
-  location: LocationOption
+  /** Null for a site-wide floor plan (it spans the whole site). */
+  location: LocationOption | null
   site: SiteOption
   floors: FloorPlanFloor[]
   floor_count: number
@@ -12198,7 +12201,10 @@ export interface FloorPlanStack {
 export interface FloorPlanStackWritePayload {
   name?: string
   description?: string
-  location_id?: string
+  /** Required on create unless location_id gives it; fixed afterwards. */
+  site_id?: string
+  /** Null: the whole site. */
+  location_id?: string | null
   tag_ids?: number[]
 }
 
@@ -12655,7 +12661,10 @@ export interface CableRouting {
 
 export interface FloorPlanWritePayload {
   name?: string
-  location_id?: string
+  /** Required on create unless stack_id or location_id gives it. */
+  site_id?: string
+  /** Null: the whole site. */
+  location_id?: string | null
   stack_id?: string
   floor_order?: number
   grid_width?: number

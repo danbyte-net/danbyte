@@ -39,7 +39,7 @@ def site_capacity(request, site) -> dict:
 
     plans = list(
         rbac.restrict_queryset(
-            FloorPlan.objects.filter(tenant=tenant, location__site=site),
+            FloorPlan.objects.filter(tenant=tenant, site=site),
             user, tenant, "floorplan", "view",
         )
         .select_related("location")
@@ -87,7 +87,9 @@ def site_capacity(request, site) -> dict:
         floor_plans.append({
             "id": str(plan.id),
             "name": plan.name,
-            "location": {"id": str(plan.location_id), "name": plan.location.name},
+            # None: a site-wide floor plan.
+            "location": {"id": str(plan.location_id), "name": plan.location.name}
+            if plan.location_id else None,
             "grid_width": plan.grid_width,
             "grid_height": plan.grid_height,
             "totals": capacity.sum_figures(figures[r.id] for r in plan_racks),

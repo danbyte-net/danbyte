@@ -9117,8 +9117,17 @@ class FloorPlanStack(TimestampedModel, TaggableMixin):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="floor_plan_stacks"
     )
+    # The site the floor plan maps. Every floor plan has one; its location
+    # is optional - a site-wide floor plan (a campus map with many buildings)
+    # has none. A set location belongs to this site. Required by the API and
+    # set by save(); nullable in the database only so a process still on the
+    # previous release can insert during an upgrade (api 0231).
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, null=True, related_name="floor_plan_stacks"
+    )
     location = models.ForeignKey(
-        Location, on_delete=models.CASCADE, related_name="floor_plan_stacks"
+        Location, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="floor_plan_stacks",
     )
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True, default="", db_default="")
@@ -9129,11 +9138,24 @@ class FloorPlanStack(TimestampedModel, TaggableMixin):
             models.UniqueConstraint(
                 fields=["tenant", "location", "name"],
                 name="uniq_floorplanstack_tenant_location_name",
-            )
+            ),
+            # Site-wide floor plans: unique by name per site.
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                condition=models.Q(location__isnull=True),
+                name="uniq_floorplanstack_tenant_site_name_sitewide",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        # Callers that name only a location (older scripts, imports) get its
+        # site.
+        if self.site_id is None and self.location_id is not None:
+            self.site_id = self.location.site_id
+        super().save(*args, **kwargs)
 
 
 class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -9146,8 +9168,14 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="floor_plans"
     )
+    # Always its floor plan's (stack's) site. ``location`` is null on a
+    # site-wide floor: its area links, pickers and placement span the site.
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, null=True, related_name="floor_plans"
+    )
     location = models.ForeignKey(
-        Location, on_delete=models.CASCADE, related_name="floor_plans"
+        Location, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="floor_plans",
     )
     name = models.CharField(max_length=128)
     grid_width = models.PositiveSmallIntegerField(
@@ -9232,30 +9260,52 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 condition=models.Q(stack__isnull=True),
                 name="uniq_floorplan_unstacked_location_name",
             ),
+            models.UniqueConstraint(
+                fields=["tenant", "site", "name"],
+                condition=models.Q(stack__isnull=True, location__isnull=True),
+                name="uniq_floorplan_unstacked_site_name",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.name
 
     def save(self, *args, **kwargs):
+        # The site follows the stack, else the location (callers that name
+        # only a location keep working).
+        if self.site_id is None:
+            if self.stack_id is not None:
+                self.site_id = self.stack.site_id
+            elif self.location_id is not None:
+                self.site_id = self.location.site_id
         # Every new plan is a floor of some floor plan: one created without a
         # stack (an import, an older script) gets a stack of its own, named
         # after it.
         if self._state.adding and self.stack_id is None and self.tenant_id \
-                and self.location_id:
+                and self.site_id:
             self.stack = FloorPlanStack.objects.create(
-                tenant_id=self.tenant_id, location_id=self.location_id,
-                name=unique_stack_name(self.tenant_id, self.location_id, self.name),
+                tenant_id=self.tenant_id, site_id=self.site_id,
+                location_id=self.location_id,
+                name=unique_stack_name(
+                    self.tenant_id, self.location_id, self.name, site_id=self.site_id
+                ),
             )
         super().save(*args, **kwargs)
 
 
-def unique_stack_name(tenant_id, location_id, base: str, exclude=None) -> str:
+def unique_stack_name(tenant_id, location_id, base: str, exclude=None, *,
+                      site_id=None) -> str:
     """``base``, or ``base 2``, ``base 3``… - the first name no floor plan
-    (stack) at that location has yet."""
+    (stack) at that location has yet; with no location, no site-wide floor
+    plan of ``site_id``."""
     maxlen = FloorPlanStack._meta.get_field("name").max_length
     base = (base or "Floor plan")[:maxlen]
-    taken = FloorPlanStack.objects.filter(tenant_id=tenant_id, location_id=location_id)
+    if location_id is not None:
+        taken = FloorPlanStack.objects.filter(tenant_id=tenant_id, location_id=location_id)
+    else:
+        taken = FloorPlanStack.objects.filter(
+            tenant_id=tenant_id, site_id=site_id, location__isnull=True
+        )
     if exclude is not None:
         taken = taken.exclude(pk=exclude)
     names = set(taken.values_list("name", flat=True))

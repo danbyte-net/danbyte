@@ -41,6 +41,7 @@ import {
 } from "@/lib/rack-capacity"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { cn } from "@/lib/utils"
+import { WHOLE_SITE } from "@/lib/floor-plan-scope"
 
 /** The site page shows its Capacity tab when the site has racks and you
  * may view racks. */
@@ -183,7 +184,7 @@ function PlanCard({
             {plan.name}
           </Link>
         </CardTitle>
-        <CardDescription>{plan.location.name}</CardDescription>
+        <CardDescription>{plan.location?.name ?? WHOLE_SITE}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3">
         <Link

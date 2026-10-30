@@ -10356,17 +10356,31 @@ class FloorPlanFloorSerializer(serializers.ModelSerializer):
         fields = ["id", "numid", "name", "floor_order", "location_id", "kind", "view_of"]
 
 
+def _floor_plan_site(obj):
+    """A floor plan's (or a floor's) site: its own, else - for a row a
+    process on an older release wrote during an upgrade - its location's."""
+    if obj.site_id is not None:
+        return obj.site
+    return obj.location.site if obj.location_id is not None else None
+
+
 class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
     """A floor plan (``FloorPlanStack``): a building or hall and its floors in
-    order. ``floors`` holds the floors the reader may view; writes to floors
-    go through the floor-plan endpoints and the stack's ``floors/``,
-    ``reorder/`` and ``merge/`` actions."""
+    order. ``site`` is required; ``location`` is optional - a floor plan with
+    none is site-wide. An older client that sends only ``location_id`` gets
+    that location's site. ``floors`` holds the floors the reader may view;
+    writes to floors go through the floor-plan endpoints and the stack's
+    ``floors/``, ``reorder/`` and ``merge/`` actions."""
 
-    location = LocationMiniSerializer(read_only=True)
+    location = LocationMiniSerializer(read_only=True, allow_null=True)
     location_id = TenantScopedPrimaryKeyRelatedField(
-        source="location", queryset=Location.objects.all(), write_only=True
+        source="location", queryset=Location.objects.all(), write_only=True,
+        required=False, allow_null=True,
     )
     site = serializers.SerializerMethodField()
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True, required=False,
+    )
     floors = serializers.SerializerMethodField()
     floor_count = serializers.SerializerMethodField()
     last_edited = serializers.SerializerMethodField()
@@ -10378,7 +10392,8 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
-        return SiteMiniSerializer(obj.location.site).data
+        site = _floor_plan_site(obj)
+        return SiteMiniSerializer(site).data if site is not None else None
 
     def _floors(self, obj):
         rows = getattr(obj, "visible_floors", None)
@@ -10400,26 +10415,42 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
         return newest.isoformat() if newest else None
 
     def validate(self, attrs):
-        attrs = super().validate(attrs)
-        location = attrs.get("location", getattr(self.instance, "location", None))
-        name = attrs.get("name", getattr(self.instance, "name", None))
-        if location is not None and name:
-            clash = FloorPlanStack.objects.filter(
-                tenant=location.tenant, location=location, name=name
-            )
-            if self.instance is not None:
-                clash = clash.exclude(pk=self.instance.pk)
-            if clash.exists():
-                raise serializers.ValidationError(
-                    {"name": "This location already has a floor plan with that name."}
-                )
-        if self.instance is not None and "location" in attrs \
-                and attrs["location"].pk != self.instance.location_id:
-            from .floor_stacks import within
+        from .floor_stacks import clash_message, in_scope, name_clash
 
-            new = attrs["location"]
-            if any(not within(p.location, new)
-                   for p in self.instance.floors.select_related("location")):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        location = attrs.get("location", getattr(inst, "location", None))
+        old_site = _floor_plan_site(inst) if inst is not None else None
+        site = attrs.get("site", old_site)
+        if inst is not None and "site" in attrs and old_site is not None \
+                and attrs["site"].pk != old_site.pk:
+            raise serializers.ValidationError(
+                {"site_id": "A floor plan stays at its site."}
+            )
+        if site is None:
+            if location is None:
+                raise serializers.ValidationError(
+                    {"site_id": "Pick a site (and a location, or the whole site)."}
+                )
+            site = location.site
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": f"Pick a location at {site.name}, or the whole site."}
+            )
+        attrs["site"] = site
+        name = attrs.get("name", getattr(inst, "name", None))
+        if name and name_clash(
+            site.tenant_id, site.pk, getattr(location, "pk", None), name,
+            exclude=getattr(inst, "pk", None),
+        ):
+            raise serializers.ValidationError(
+                {"name": clash_message(getattr(location, "pk", None))}
+            )
+        if inst is not None and "location" in attrs and location is not None \
+                and location.pk != inst.location_id:
+            probe = FloorPlanStack(site=site, location=location)
+            if any(not in_scope(p.location, probe)
+                   for p in inst.floors.select_related("location")):
                 raise serializers.ValidationError({
                     "location_id": "Every floor's location must be this location "
                                    "or inside it."
@@ -10429,10 +10460,13 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
     class Meta:
         model = FloorPlanStack
         fields = ["id", "name", "description", "location", "location_id", "site",
-                  "floors", "floor_count", "last_edited", "tags", "tag_ids",
+                  "site_id", "floors", "floor_count", "last_edited", "tags", "tag_ids",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "site", "floors", "floor_count", "last_edited",
                             "created_at", "updated_at"]
+        # Name uniqueness (per location, or per site when site-wide) is
+        # checked in validate().
+        validators = []
 
 
 class FloorPlanSerializer(
@@ -10440,10 +10474,16 @@ class FloorPlanSerializer(
 ):
     cf_model = "floorplan"
 
-    location = LocationMiniSerializer(read_only=True)
+    # A floor's site is its floor plan's; its location is optional (none: a
+    # site-wide floor). ``site_id`` is needed on create only when neither a
+    # ``stack_id`` nor a ``location_id`` gives it.
+    location = LocationMiniSerializer(read_only=True, allow_null=True)
     location_id = TenantScopedPrimaryKeyRelatedField(
         source="location", queryset=Location.objects.all(), write_only=True,
-        required=False,
+        required=False, allow_null=True,
+    )
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True, required=False,
     )
     # The floor plan this is a floor of. Omitted on create: a new floor plan
     # of its own, named after this plan.
@@ -10469,9 +10509,8 @@ class FloorPlanSerializer(
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
-        if obj.location_id is None:
-            return None
-        return SiteMiniSerializer(obj.location.site).data
+        site = _floor_plan_site(obj)
+        return SiteMiniSerializer(site).data if site is not None else None
 
     def get_background_image(self, obj) -> str | None:
         return _img_url(self, obj.background_image)
@@ -10585,7 +10624,7 @@ class FloorPlanSerializer(
                   "background_opacity")
 
     def validate(self, attrs):
-        from .floor_stacks import location_error, name_taken
+        from .floor_stacks import clash_message, location_error, name_clash, name_taken
 
         attrs = super().validate(attrs)
         inst = self.instance
@@ -10600,11 +10639,36 @@ class FloorPlanSerializer(
             for k in self.VIEW_FIXED:
                 attrs.pop(k, None)
         stack = attrs.get("stack", getattr(inst, "stack", None))
+        old_site = _floor_plan_site(inst) if inst is not None else None
+        if inst is None and "location" not in attrs and stack is not None:
+            # A new floor of a floor plan takes its location (none for a
+            # site-wide floor plan).
+            attrs["location"] = stack.location
         location = attrs.get("location", getattr(inst, "location", None))
-        if location is None:
-            if stack is None:
-                raise serializers.ValidationError({"location_id": "This field is required."})
-            location = attrs["location"] = stack.location
+        site = attrs.get("site", old_site)
+        if inst is not None and "site" in attrs and old_site is not None \
+                and attrs["site"].pk != old_site.pk:
+            raise serializers.ValidationError(
+                {"site_id": "A floor plan stays at its site."}
+            )
+        if site is None:
+            if stack is not None:
+                site = _floor_plan_site(stack)
+            elif location is not None:
+                site = location.site
+            else:
+                raise serializers.ValidationError(
+                    {"site_id": "Pick a site (and a location, or the whole site)."}
+                )
+        if stack is not None and _floor_plan_site(stack).pk != site.pk:
+            raise serializers.ValidationError(
+                {"stack_id": f"Pick a floor plan at {site.name}."}
+            )
+        if location is not None and location.site_id != site.pk:
+            raise serializers.ValidationError(
+                {"location_id": f"Pick a location at {site.name}, or the whole site."}
+            )
+        attrs["site"] = site
         name = attrs.get("name", getattr(inst, "name", None))
         if (
             inst is not None
@@ -10626,15 +10690,13 @@ class FloorPlanSerializer(
                 )
         elif inst is None and name:
             # A new floor plan of its own: its name is the stack's too.
-            if FloorPlanStack.objects.filter(
-                tenant=location.tenant, location=location, name=name
-            ).exists():
-                raise serializers.ValidationError(
-                    {"name": "This location already has a floor plan with that name."}
-                )
+            loc_id = getattr(location, "pk", None)
+            if name_clash(site.tenant_id, site.pk, loc_id, name):
+                raise serializers.ValidationError({"name": clash_message(loc_id)})
         elif inst is not None and name:
             clash = FloorPlan.objects.filter(
-                tenant=location.tenant, location=location, name=name, stack__isnull=True
+                tenant_id=site.tenant_id, site=site, location=location, name=name,
+                stack__isnull=True,
             ).exclude(pk=inst.pk)
             if clash.exists():
                 raise serializers.ValidationError(
@@ -10648,7 +10710,8 @@ class FloorPlanSerializer(
         stack = validated_data.get("stack")
         if stack is None:
             validated_data["stack"] = FloorPlanStack.objects.create(
-                tenant=validated_data["tenant"], location=validated_data["location"],
+                tenant=validated_data["tenant"], site=validated_data["site"],
+                location=validated_data.get("location"),
                 name=validated_data["name"],
                 description=validated_data.get("description", ""),
             )
@@ -10672,7 +10735,7 @@ class FloorPlanSerializer(
 
     class Meta:
         model = FloorPlan
-        fields = ["id", "numid", "name", "location", "location_id", "site",
+        fields = ["id", "numid", "name", "location", "location_id", "site", "site_id",
                   "stack", "stack_id", "floor_order", "elevation_mm",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
@@ -11399,7 +11462,8 @@ def polygon_is_simple(points) -> bool:
 class FloorPlanAreaSerializer(NumIdModelSerializer):
     """A room, a location or a plain area drawn on a floor: a rectangle
     turned about its centre, or a polygon. Linked to a room or a location of
-    the floor's location (or one inside it), never both."""
+    the floor's location (or one inside it) - of any location of the site on
+    a site-wide floor - never both."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
         source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
@@ -11445,12 +11509,13 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         ).exists()
 
     def validate(self, attrs):
-        from .floor_stacks import within
+        from .floor_stacks import in_scope
 
         attrs = super().validate(attrs)
         inst = self.instance
         get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
         plan = _plan_of(self, attrs)
+        site_wide = plan is not None and plan.location_id is None
 
         room, location = get("room"), get("location")
         if room is not None and location is not None:
@@ -11458,17 +11523,19 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
                 {"room_id": "Link a room or a location, not both."}
             )
         if "room" in attrs and room is not None and plan is not None and (
-            not within(room.location, plan.location) or not self._visible("room", room)
+            not in_scope(room.location, plan) or not self._visible("room", room)
         ):
-            raise serializers.ValidationError(
-                {"room_id": "Pick a room of this floor's location."}
-            )
+            raise serializers.ValidationError({"room_id": (
+                "Pick a room of this floor's site." if site_wide
+                else "Pick a room of this floor's location."
+            )})
         if "location" in attrs and location is not None and plan is not None and (
-            not within(location, plan.location) or not self._visible("location", location)
+            not in_scope(location, plan) or not self._visible("location", location)
         ):
-            raise serializers.ValidationError(
-                {"location_id": "Pick this floor's location or one inside it."}
-            )
+            raise serializers.ValidationError({"location_id": (
+                "Pick a location of this floor's site." if site_wide
+                else "Pick this floor's location or one inside it."
+            )})
 
         shape = get("shape", "rect")
         if shape == "polygon":
