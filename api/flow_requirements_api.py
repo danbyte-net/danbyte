@@ -309,7 +309,8 @@ class ApplicationFlowRequirementSerializer(
         clash = ApplicationFlowRequirement.objects.filter(application=app, name=name)
         if inst is not None:
             clash = clash.exclude(pk=inst.pk)
-        if clash.exists():
+        # A preview saves nothing, so the name it carries may still clash.
+        if not self.context.get("preview") and clash.exists():
             raise serializers.ValidationError(
                 {"name": "This application already has a requirement by that name."}
             )
@@ -461,7 +462,8 @@ class ApplicationFlowRequirementViewSet(SafeBulkDeleteMixin, TenantScopedViewSet
         instance = None
         if data.get("id"):
             instance = self.get_queryset().filter(pk=_uuid(data["id"])).first()
-        ser = self.get_serializer(instance, data=data, partial=instance is not None)
+        ser = self.get_serializer(instance, data=data, partial=instance is not None,
+                                  context={**self.get_serializer_context(), "preview": True})
         ser.is_valid(raise_exception=True)
         tenant = self._tenant_or_403()
         attrs = {k: v for k, v in ser.validated_data.items()
