@@ -18,6 +18,7 @@ import {
   SEVERITY_RANK,
   SeverityBadge,
   TriageBadge,
+  countByType,
   countOf,
   ruleSummary,
 } from "@/components/compliance/compliance-shared"
@@ -84,14 +85,26 @@ export function RuleResult({
     | "open"
     | "acknowledged"
     | "snoozed"
+    | "object_types"
+    | "by_type"
+    | "error"
   >
   enabled?: boolean
 }) {
   if (!enabled) return <Badge variant="outline">Disabled</Badge>
   if (!rule) return <span className="text-muted-foreground">-</span>
+  // A rule that could not be judged never reads as passing.
+  if (rule.error) return <Badge variant="destructive">Broken</Badge>
   if (rule.violations === 0) return <Badge variant="success">OK</Badge>
   const open = rule.open ?? rule.violations
   const triaged = rule.violations - open
+  const multi = (rule.object_types?.length ?? 1) > 1
+  // Several types: per type while nothing is triaged, else the open total.
+  const label = !multi
+    ? countOf(rule.object_type, open)
+    : triaged === 0 && rule.by_type
+      ? countByType(rule.by_type)
+      : `${open.toLocaleString()} ${open === 1 ? "object" : "objects"}`
   return (
     <span className="inline-flex items-center gap-2">
       {open > 0 ? (
@@ -100,9 +113,7 @@ export function RuleResult({
           search={{ tab: "violations", rule: rule.id, state: "open" }}
           className="rounded-[5px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
-          <Badge variant={SEV_VARIANT[rule.severity]}>
-            {countOf(rule.object_type, open)}
-          </Badge>
+          <Badge variant={SEV_VARIANT[rule.severity]}>{label}</Badge>
         </Link>
       ) : (
         <Badge variant="secondary">All triaged</Badge>

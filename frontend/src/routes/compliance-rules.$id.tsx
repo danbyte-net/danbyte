@@ -39,9 +39,13 @@ import { useMe } from "@/lib/use-me"
 import { ObjectLink, RuleResult } from "@/components/columns/compliance-columns"
 import { DeleteRule } from "@/components/compliance/delete-rule-dialog"
 import {
+  OBJECT_TYPE_LABEL,
   SeverityBadge,
   ruleSummary,
 } from "@/components/compliance/compliance-shared"
+import { ExpressionView } from "@/components/compliance/expression-view"
+import { useComplianceFields } from "@/components/compliance/rule-form"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 
 export const Route = createFileRoute("/compliance-rules/$id")({
   component: RuleDetailPage,
@@ -161,7 +165,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <RuleOverview rule={r} />
+        <RuleOverview rule={r} error={violations.data?.result?.error} />
       </DetailTab>
       <DetailTab value="results">
         {r.remediation && (
@@ -177,7 +181,7 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
           violations={violations}
           ruleId={r.id}
           ruleName={r.name}
-          objectType={r.object_type}
+          objectTypes={r.object_types.length ? r.object_types : [r.object_type]}
           enabled={r.enabled}
         />
       </DetailTab>
@@ -202,24 +206,75 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
 
 /** Rule attributes that used to crowd the header, grouped into tables. Only the
  * name, severity and enabled state stay up top. */
-function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
+function RuleOverview({
+  rule: r,
+  error,
+}: {
+  rule: ComplianceRule
+  error?: string | null
+}) {
+  const types = r.object_types.length ? r.object_types : [r.object_type]
+  const fields = useComplianceFields(types).data?.fields ?? []
   const rule: KvRow[] = [
-    { label: "Applies to", value: r.object_type_label },
     { label: "Enabled", value: r.enabled ? "Yes" : "No" },
     {
       label: "Severity",
       value: <SeverityBadge severity={r.severity} />,
     },
+    ...(error
+      ? [
+          {
+            label: "Broken",
+            value: <span className="text-destructive">{error}</span>,
+          },
+        ]
+      : []),
   ]
 
-  const check: KvRow[] = [
-    { label: "Check type", value: r.check_type_display || r.check_type },
-    { label: "Condition", value: mono(ruleSummary(r)) },
-    { label: "Field", value: mono(r.field) },
-    { label: "Pattern", value: mono(r.pattern) },
-    { label: "Tag", value: r.tag || dash },
-    { label: "Custom field", value: mono(r.cf_key) },
+  const appliesTo: KvRow[] = [
+    {
+      label: "Object types",
+      value: types.map((t) => OBJECT_TYPE_LABEL[t] ?? t).join(", "),
+    },
+    {
+      label: "Scope",
+      value: (
+        <ExpressionView
+          expr={r.scope}
+          refs={r.refs}
+          fields={fields}
+          empty="Every object"
+        />
+      ),
+    },
   ]
+
+  const check: KvRow[] =
+    r.check_type === "expression"
+      ? [
+          { label: "Check type", value: r.check_type_display || r.check_type },
+          {
+            label: "Must match",
+            value: (
+              <ExpressionView
+                expr={r.condition}
+                refs={r.refs}
+                fields={fields}
+              />
+            ),
+          },
+        ]
+      : [
+          { label: "Check type", value: r.check_type_display || r.check_type },
+          {
+            label: "Condition",
+            value: mono(ruleSummary({ ...r, scope: null })),
+          },
+          { label: "Field", value: mono(r.field) },
+          { label: "Pattern", value: mono(r.pattern) },
+          { label: "Tag", value: r.tag || dash },
+          { label: "Custom field", value: mono(r.cf_key) },
+        ]
 
   const record: KvRow[] = [
     { label: "Created", value: <TimeCell iso={r.created_at} /> },
@@ -229,6 +284,7 @@ function RuleOverview({ rule: r }: { rule: ComplianceRule }) {
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <KvCard title="Rule" rows={rule} />
+      <KvCard title="Applies to" rows={appliesTo} />
       <KvCard title="Check" rows={check} />
       <KvCard title="Record" rows={record} />
     </div>
@@ -252,15 +308,20 @@ function AffectedObjects({
   violations: q,
   ruleId,
   ruleName,
-  objectType,
+  objectTypes,
   enabled,
 }: {
   violations: ReturnType<typeof useRuleViolations>
   ruleId: string
   ruleName: string
-  objectType: string
+  objectTypes: string[]
   enabled: boolean
 }) {
+  // One table per object type, picked by segmented tabs on a rule of
+  // several; each wears its own type's columns.
+  const [picked, setPicked] = useState(objectTypes[0])
+  const objectType = objectTypes.includes(picked) ? picked : objectTypes[0]
+  const byType = q.data?.result?.by_type
   // The genuine per-type table (prefix/IP/device/…) when we have a factory for
   // this object type; otherwise a generic object + type fallback.
   const { enabled: eolOn } = useEolSettings()
@@ -341,9 +402,22 @@ function AffectedObjects({
           }
         />
       )}
+      {q.data && total > 0 && objectTypes.length > 1 && (
+        <SegmentedTabs
+          className="mb-3"
+          items={objectTypes.map((t) => ({
+            value: t,
+            label: OBJECT_TYPE_LABEL[t] ?? t,
+            count: byType?.[t] ?? null,
+          }))}
+          value={objectType}
+          onValueChange={setPicked}
+        />
+      )}
       {q.data && total > 0 && realColumns ? (
         <DataTable
-          data={q.data.objects}
+          key={objectType}
+          data={q.data.objects_by_type?.[objectType] ?? q.data.objects}
           columns={realColumns}
           flexColumn={AFFECTED_FLEX_COLUMN}
           tableId={`compliance-affected-${objectType}`}
@@ -357,7 +431,7 @@ function AffectedObjects({
         />
       ) : q.data && total > 0 ? (
         <DataTable
-          data={q.data.violations}
+          data={q.data.violations.filter((v) => v.object_type === objectType)}
           columns={fallbackColumns}
           flexColumn="object"
           exportTitle={ruleName}

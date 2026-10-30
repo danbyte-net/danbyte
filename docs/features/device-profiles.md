@@ -17,9 +17,13 @@ says what it *runs*, and a profile can carry several groups.
 
 !!! note "In progress"
     This page covers the catalog, its screens, assignments and the API.
-    Services, Danbyte monitoring, PRTG and Zabbix sections, config contexts,
-    compliance and automatic propagation of profile edits follow. Until then
-    an edited profile reaches its objects on **Re-apply**.
+    Services, Danbyte monitoring, PRTG and Zabbix sections, config contexts
+    and automatic propagation of profile edits follow. Until then an edited
+    profile reaches its objects on **Re-apply**. Compliance rules can already
+    scope and check by profile: the **Device profile** field (a child profile
+    counts as its parent) and **Profile state** (in step, missing items,
+    edited items, pending) - see
+    [Compliance](compliance.md#scope-and-conditions).
 
 ## The profile
 

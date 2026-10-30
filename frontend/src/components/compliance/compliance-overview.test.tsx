@@ -108,10 +108,10 @@ const summary: ComplianceSummary = {
   ],
 }
 
-function show() {
+function show(data: ComplianceSummary = summary) {
   const qc = new QueryClient()
   const query = {
-    data: summary,
+    data,
     isError: false,
   } as unknown as UseQueryResult<ComplianceSummary>
   render(
@@ -145,5 +145,43 @@ describe("the compliance overview", () => {
     show()
     const list = screen.getByRole("list", { name: "offenders" })
     expect(within(list).getByText("sw1")).toBeTruthy()
+  })
+
+  it("counts a rule of several types per type, in words", () => {
+    show({
+      ...summary,
+      rules: [
+        {
+          ...base,
+          id: "m",
+          name: "Owners",
+          severity: "warning",
+          violations: 15,
+          open: 15,
+          check_type: "expression",
+          object_types: ["device", "virtualmachine"],
+          object_type_label: "Device, Virtual machine",
+          by_type: { device: 12, virtualmachine: 3 },
+          error: null,
+          scope: { kind: "cmp", field: "role", cmp: "in", values: ["r1"] },
+          condition: { kind: "empty", field: "cf.owner", negated: true },
+          refs: { r1: { name: "Server", color: "" } },
+        },
+        {
+          ...base,
+          id: "b",
+          name: "Gone role",
+          severity: "critical",
+          violations: 0,
+          open: 0,
+          error: "A referenced device role no longer exists.",
+        },
+      ],
+    })
+    expect(screen.getByText("12 devices, 3 virtual machines")).toBeTruthy()
+    expect(screen.getByText(/role is Server · must: owner set/)).toBeTruthy()
+    // A rule that could not be judged never reads as OK.
+    expect(screen.getByText("Broken")).toBeTruthy()
+    expect(screen.queryByText("OK")).toBeNull()
   })
 })
