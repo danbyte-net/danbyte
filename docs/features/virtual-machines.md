@@ -26,7 +26,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Site** | Its own location, independent of the cluster's - see [Placement](#placement-site-and-host-device). |
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
-| **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
+| **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. Custom fields are checked on save as on devices: a required one must have a value, a choice must be one of its choices, and an object field must point at an object of this tenant. |
 | **Application groups**, **Profiles** | The [application groups](applications.md#application-groups) and [device profiles](device-profiles.md#on-devices-and-vms) it gets, in order, written with the save. |
 | **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). |
 

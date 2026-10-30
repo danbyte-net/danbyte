@@ -6505,7 +6505,9 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
                             "created_at", "updated_at"]
 
 
-class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
+                               TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "virtualmachine"
     # Its own column, Next end of life (vm-columns.tsx).
     list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
                             "device_profiles")

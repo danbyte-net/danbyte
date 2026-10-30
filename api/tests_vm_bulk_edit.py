@@ -255,3 +255,37 @@ class PermissionTests(_Base):
         self.assertIn(r.status_code, (400, 403), r.content)
         self.vm_a.refresh_from_db()
         self.assertEqual(self.vm_a.site, self.site_a)
+
+
+class SingleEditCustomFieldTests(CustomFieldTests):
+    """A single VM save validates custom fields like a device save does."""
+
+    def patch(self, vm, body):
+        return self.client.patch(f"{VMS}{vm.id}/", body, format="json")
+
+    def test_another_tenants_object_is_refused(self):
+        o_site = Site.objects.create(tenant=self.other, name="Theirs")
+        r = self.patch(self.vm_b, {"custom_fields": {
+            "needed": "x", "home": str(o_site.id)}})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("home", r.json()["custom_fields"])
+        self.vm_b.refresh_from_db()
+        self.assertEqual(self.vm_b.custom_fields, {})
+
+    def test_bad_values_are_refused(self):
+        # A key with no definition passes through, as on devices.
+        for cf in ({"needed": "x", "tier": "bronze"}, {"tier": "gold"}):
+            r = self.patch(self.vm_b, {"custom_fields": cf})
+            self.assertEqual(r.status_code, 400, cf)
+
+    def test_a_valid_value_is_saved(self):
+        r = self.patch(self.vm_b, {"custom_fields": {
+            "needed": "x", "home": str(self.site_b.id)}})
+        self.ok(r)
+        self.vm_b.refresh_from_db()
+        self.assertEqual(self.vm_b.custom_fields["home"], str(self.site_b.id))
+
+    def test_a_save_without_custom_fields_leaves_them_alone(self):
+        self.ok(self.patch(self.vm_a, {"description": "kept"}))
+        self.vm_a.refresh_from_db()
+        self.assertEqual(self.vm_a.custom_fields, {"owner": "net", "legacy": "x"})
