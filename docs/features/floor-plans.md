@@ -1291,13 +1291,17 @@ through each one. Hand the PNG to whoever's pulling cable.
   ([permissions](#tenancy-permissions-audit)).
 - **Auto-route**: on a cable's page, the **Auto-route** button computes the
   best path through this plan's tray network (Dijkstra over segments,
-  junctions and same-level crossings), assigns those trays to the cable, and estimates
-  its physical length - horizontal run × cell size, plus the vertical drops
-  between each end rack and its tray, plus 10 % slack. A recorded length is
-  never overwritten (the API accepts `overwrite: true`). Ends farther than
-  ~6 cells from any tray come back *unreachable* rather than pretending a
-  20 m unsupported hop is a route. `POST /api/floor-plans/{id}/route/`
-  previews the same computation without saving.
+  junctions and same-level crossings), stores it as the cable's
+  [route on the plan](#stored-routes-and-lengths), assigns those trays to
+  the cable, and works out its length by the tenant's
+  [length rules](#lengths). A length a person entered is never overwritten
+  (the API accepts `overwrite: true`); a blank or computed one is filled.
+  Ends farther than ~6 cells from any tray come back *unreachable* rather
+  than pretending a 20 m unsupported hop is a route.
+  `POST /api/floor-plans/{id}/route/` previews a route between two objects
+  without saving.
+- **Capacity**: a tray may record how many cables it holds (`capacity`,
+  blank when no limit is known).
 
 #### Routing a cable
 
@@ -1316,6 +1320,11 @@ Changes take effect immediately in the 2D canvas and the 3D room. Routing is
 recorded **per floor plan**, so a cable that crosses plans keeps each plan's
 assignment separately. `GET`/`PUT /api/cables/{id}/routing/?floor_plan=<id>`
 is the same operation over the API; editing requires **change** on the cable.
+When both ends are placed on the plan, a `PUT` also stores the route through
+the trays named - in that order - or the direct run for an empty list, as
+the cable's [stored route](#stored-routes-and-lengths); `GET` lists the
+trays in the stored order, and both answer the stored `path` (null when
+there is none). A length is never written by the routing card.
 - **Level & elevation**: each tray records where it physically lives -
   **Overhead** (the default), **Underfloor**, or **Floor level** - plus an
   optional exact **elevation in mm**. Leave elevation blank and it derives
@@ -1437,11 +1446,14 @@ The line style says how the route is known:
 | **Planned** - long dash | The cable's status is marked **Planned** (Statuses → *Planned*). |
 | **Inferred** - thin, lighter | Worked out from the cable's trays, or straight between its tiles; nothing stored. |
 | **Preview** - dotted | A route being proposed, not saved. |
-| **Out of date** - with a warning mark | A stored route whose end tile has since moved. |
+| **Out of date** - with a warning mark | A stored route whose end tile has since moved, whose device now stands elsewhere, or whose tray changed. |
 
-Until routes can be stored on a plan, every run that is not planned draws
-**inferred**; the documented, preview and out-of-date styles arrive with
-stored routes.
+A cable with a [stored route](#stored-routes-and-lengths) draws that route,
+documented; a cable without one keeps drawing **inferred**. An out-of-date
+route draws where it was stored, with an amber mark at each end whose tile
+moved and a dashed line to where the tile is now; it reads out of date even
+in a planned status. Previews draw only while
+[Document routes](#document-routes) is open, over the plan's own runs.
 
 The cables' **legend** sits in the plan's corner, under the
 [Color by](#color-by) legend and inside the export area: the colours in use
@@ -1471,11 +1483,13 @@ cables that change touches. Panning and zooming route nothing.
 
 **Hover a run** (or reach it with **Tab**) to raise it and open its
 **popover**: the cable's label, status, type, both ends as `device · port`
-(an end on a device you may not view reads **Hidden**), the **stored
-length** and the **route length** the plan works out (run × cell size,
-plus the drops between each end's rack top and its tray, plus 10 % slack,
-as [Auto-route](#cable-trays-cables-mode) computes it) with the difference,
-and the trays it rides. Hover a bundle to list the cables in it.
+(an end on a device you may not view reads **Hidden**), the cable's
+**length** (marked *computed* when a route wrote it) and the **route
+length** with the difference, and the trays it rides. For a stored route the
+route length is the stored one, by the tenant's [length rules](#lengths),
+marked *documented* or *out of date*; for an inferred run the plan works it
+out (run × cell size, plus the drops between each end's rack top and its
+tray, plus 10 % slack). Hover a bundle to list the cables in it.
 
 **Click a run** (or **Enter**) to trace it and pin its popover, with
 **Open cable**: the run is drawn heavier with a halo, and every other cable
@@ -1504,6 +1518,105 @@ centerline, so the lanes read as running *inside* the tray.
 
 **Display → Cable trays** hides/shows the tray layer itself - look at just the
 cable runs, just the trays, or both.
+
+### Stored routes and lengths
+
+A cable's **route** on a plan can be stored: where it runs, the trays it
+rides in the order it travels them, and how long it is. A stored route is
+the documentation - it draws **documented** and its length is the one the
+popover shows - while a cable without one keeps drawing inferred from its
+trays. One route per cable per plan; a cable that crosses plans has one on
+each.
+
+A route is worked out on the server (`api/cable_routing.py`), the same way
+for Auto-route, the Routing card, Document routes and the API:
+
+- **Ends.** Each end resolves to a tile on the plan - the device's own tile,
+  else its rack's or cabinet's - and a **port height**: a racked device at
+  the middle of its rack units (plinth + U position × 44.45 mm), a rack's
+  device with no position at the rack's top, and a device on its own tile or
+  in a cabinet at the tenant's **standalone port height**.
+- **Path.** Through the plan's trays (junctions, T-splits and same-level
+  crossings, as [above](#connecting-trays-junctions-t-splits-crossings)),
+  else a **direct** orthogonal run between the two tiles. A breakout cable
+  has one leg per far tile; its length is its longest leg's.
+- **What is stored.** Per leg: the tile at each end and its centre then, the
+  centreline, each tray with the point the run enters and leaves it by and
+  its elevation, and the free points of a hand-drawn run. With it: the trays
+  in travel order, the length breakdown (run, the drop at each end, level
+  changes and service loops, slack, total) and when it was worked out. The
+  cable's trays on the plan are kept in step with the trays the route rides.
+
+#### Lengths
+
+```
+length = run along the path (cells × cell size)
+       + drop A + drop B      (port height ↔ first and last tray)
+       + level changes        (between trays at different heights)
+       + service loop × 2
+       then + slack %, rounded up to the step
+```
+
+The rules are this tenant's, under **Settings → Floor plans → Cable
+lengths**:
+
+| Setting | Default | |
+|---|---|---|
+| **Slack** | 10 % | Added for dressing and termination. |
+| **Service loop** | 0 mm | Left coiled at each end. |
+| **Round up to** | 500 mm | Lengths round up to a multiple of this; 0 rounds to the millimetre. |
+| **Standalone port height** | 0 mm | Ports of a device on its own tile or in a cabinet. |
+
+A run with no tray stays at the ports' height and climbs only between them.
+Lengths are as right as the plan's scale: with a CAD drawing whose scale
+was never set (`scale_source` *assumed*), Document routes warns
+*Drawing not calibrated - lengths may be wrong*.
+
+**Where a length came from.** A cable's `length_source` is `""` for a length
+a person entered (or imported) and `computed` for one a route wrote. A
+computed length is written only where the length is blank or was computed
+before; replacing a length a person entered takes an explicit tick
+(**Replace measured length**) or `replace_length` / `overwrite` in the API.
+Editing a cable's length on its page or through `/api/cables/` makes it
+entered again. The value is written in the cable's own unit.
+
+#### Out-of-date routes
+
+A stored route goes **out of date** when:
+
+- a tile it ends on is moved, resized or removed (in the editor, through the
+  API, anywhere);
+- a tray it rides is reshaped, raised or lowered, or deleted, or the cable is
+  taken out of it;
+- a device it ends on now stands in another rack or cabinet, or on another
+  tile.
+
+It keeps drawing where it was, marked out of date, until it is routed again
+(Document routes ticks it by default). Moving a tile never rewrites a route
+on its own.
+
+#### Document routes
+
+**More → Document routes…** (editors; save the plan first) routes every
+cable with both ends on this plan and lists them: the cable, the trays it
+would ride (or *Direct*), the computed length and the stored one with the
+difference. Every ticked route is drawn on the plan as a **preview**. Ticked
+by default: routes that are new, out of date or different from the stored
+one, and their length when it is blank or computed. A length a person
+entered shows **Replace measured length**, unticked. **Save N routes**
+stores the ticked ones in one save. A cable you may not change cannot be
+ticked; cables you may not view are not listed.
+
+#### API
+
+| Endpoint | |
+|---|---|
+| `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. |
+| `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
+| `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256; without it, every cable you may view with both ends on the plan, `truncated` when there were more), `positions` (`{tile_id: {x, y, width?, height?}}` - route against unsaved moves) and `tray_ids` (route through only those). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `path` (the stored one), `length`, `length_unit`, `length_source`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`. Plus `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
+| `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. |
+| `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
+| `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`. |
 
 ## Finding things
 
@@ -1660,14 +1773,16 @@ plan's `floors` reads `kind` and `view_of` (`{"id", "name"}`).
 
 On a view, everything that reads a plan's contents reads the source's rows
 inside the rectangle in the view's cells - `contents/`, `state/`, `scene/`
-(the 3D room, without the background image), `cable-paths/`, `route/`,
+(the 3D room, without the background image), `cable-paths/` (stored routes
+translated to the view), `cable-plan/`, `route/`,
 `placeable/` (**On this floor** is inside the rectangle) and `assign-rooms/`.
 In `contents/` each row of a view carries `crosses_edge`. Writes:
 
 - `bulk/` on a view takes rows in the view's cells and writes the source's;
   updates and deletes take only rows wholly inside the view (400 otherwise),
   every row written must stay inside it, and a 409's `current` rows are in
-  the view's cells. `tiles/bulk/`, `snap-all/`, `background/` and the
+  the view's cells. Cable routes in `cable_paths` are in the view's cells
+  too, stored on the source. `tiles/bulk/`, `snap-all/`, `background/` and the
   drawing's writes are refused on a view.
 - The rows' own endpoints (`/api/floor-plan-tiles/`, `-areas/`, `-labels/`,
   `-walls/`, `-trays/`, `-raised-floors/`) take `?via=<view id>`, or a create
@@ -1825,6 +1940,19 @@ grant, so it sees the trays but no cables. Where a plan names cables:
   and each cable added or removed needs **change** on that cable, else the
   save is refused with a `cable_ids` error naming it. Superusers set the
   whole list.
+
+A cable's [stored route](#stored-routes-and-lengths) on a plan is its own
+type, **Floor-plan cable paths** (`floorplancablepath`): scoped through its
+plan's tenant and site, in a site role's types like the plan's trays, and
+audited one row at a time (a path's going out of date is not an edit and is
+not logged). Reading one needs view on it and on its cable - a cable you may
+not view shows no route and is counted hidden. Saving one through `bulk/`
+needs `floorplan · change`, **change** on the cable (else 403, nothing
+written), and add, change or delete on the path; a cable you may not view
+answers as unknown. A length a route writes is audited as an edit of the
+cable. `auto-route/` and `routing/` store routes as edits of the cable, on a
+plan you may view. A live view reads and writes the source's routes in the
+view's cells; a copy snapshot or a clone copies no routes.
 
 ## Popover fields
 

@@ -10,6 +10,7 @@ import type {
   DeviceRole,
   FloorTileTypeOption,
   FloorplanPopoverSettings,
+  TenantSettings,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
+import { FormText } from "@/components/forms"
 import {
   FieldListEditor,
   FieldScopeHeading,
@@ -438,7 +440,119 @@ function FloorplanSettingsPage() {
           </div>
         </div>
       </SettingsCard>
+
+      <CableLengthsCard />
     </div>
+  )
+}
+
+const LENGTH_KEYS = [
+  "cable_slack_pct",
+  "cable_service_loop_mm",
+  "cable_length_step_mm",
+  "cable_standalone_height_mm",
+] as const
+type LengthKey = (typeof LENGTH_KEYS)[number]
+
+/** How a route on a plan becomes a cable length - this tenant's rules
+ * (core.effective_settings.cable_length_rules). */
+function CableLengthsCard() {
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: ["tenant-settings"],
+    queryFn: () => api<TenantSettings>("/api/tenant-settings/"),
+  })
+  const [form, setForm] = useState<Record<LengthKey, string> | null>(null)
+  useEffect(() => {
+    if (q.data)
+      setForm(
+        Object.fromEntries(
+          LENGTH_KEYS.map((k) => [k, String(q.data[k])])
+        ) as Record<LengthKey, string>
+      )
+  }, [q.data])
+  const save = useMutation({
+    mutationFn: (patch: Partial<TenantSettings>) =>
+      api<TenantSettings>("/api/tenant-settings/", {
+        method: "PUT",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(["tenant-settings"], data)
+      qc.invalidateQueries({ queryKey: ["floor-plan-cable-plan"] })
+      toast.success("Cable lengths saved")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  if (q.isError) return <QueryError error={q.error} />
+  if (!q.data || !form) return <Loading />
+  const server = q.data
+  const dirty = LENGTH_KEYS.some((k) => Number(form[k]) !== server[k])
+  const field = (
+    key: LengthKey,
+    label: string,
+    hint: string,
+    info: string,
+    max: number
+  ) => (
+    <FormText
+      label={label}
+      hint={hint}
+      info={info}
+      type="number"
+      min={0}
+      max={max}
+      value={form[key]}
+      onChange={(v) => setForm({ ...form, [key]: v })}
+    />
+  )
+  return (
+    <SettingsCard
+      title="Cable lengths"
+      description="How a cable's route on a plan becomes its length."
+      layout="plain"
+      onSave={() =>
+        save.mutate(
+          Object.fromEntries(
+            LENGTH_KEYS.map((k) => [k, Number(form[k]) || 0])
+          ) as Partial<TenantSettings>
+        )
+      }
+      dirty={dirty}
+      saving={save.isPending}
+      saveLabel="Save cable lengths"
+    >
+      <div className="grid gap-4 sm:max-w-xl sm:grid-cols-2">
+        {field(
+          "cable_slack_pct",
+          "Slack",
+          "%",
+          "Added to the route for dressing and termination.",
+          100
+        )}
+        {field(
+          "cable_service_loop_mm",
+          "Service loop",
+          "mm per end",
+          "Left coiled at each end.",
+          20000
+        )}
+        {field(
+          "cable_length_step_mm",
+          "Round up to",
+          "mm",
+          "Lengths round up to a multiple of this. 0 rounds to the millimetre.",
+          10000
+        )}
+        {field(
+          "cable_standalone_height_mm",
+          "Standalone port height",
+          "mm",
+          "Where the ports of a device on its own tile, or in a cabinet, sit above the floor. A racked device's come from its rack unit.",
+          20000
+        )}
+      </div>
+    </SettingsCard>
   )
 }
 

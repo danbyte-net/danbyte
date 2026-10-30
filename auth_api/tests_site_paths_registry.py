@@ -209,6 +209,9 @@ REQUIREMENTS = importlib.import_module(
 )
 ROOMS = importlib.import_module("auth_api.migrations.0043_site_roles_rooms")
 STACKS = importlib.import_module("auth_api.migrations.0044_site_roles_floor_plan_stacks")
+PATHS = importlib.import_module(
+    "auth_api.migrations.0046_site_roles_floor_plan_cable_paths"
+)
 AREAS = importlib.import_module(
     "auth_api.migrations.0045_site_roles_floor_plan_areas_labels"
 )
@@ -322,7 +325,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(PROFILES.NEW_TYPES)
             | set(ROOMS.NEW_TYPES)
             | set(STACKS.NEW_TYPES)
-            | set(AREAS.NEW_TYPES),
+            | set(AREAS.NEW_TYPES)
+            | set(PATHS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(

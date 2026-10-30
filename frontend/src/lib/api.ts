@@ -4196,6 +4196,8 @@ export interface Cable {
   status: StatusMini | null
   length: string | null
   length_unit: string
+  /** "" a person entered the length; "computed" a floor-plan route did. */
+  length_source?: "" | "computed"
   color: string
   description: string
   /** Optical fibre: number of strands, or null for non-fibre. */
@@ -9791,6 +9793,13 @@ export interface TenantSettings {
   capacity_critical_pct: number
   /** Support coverage ending within this many days reads as Expiring (#421). */
   coverage_warning_days: number
+  /** Floor-plan cable lengths: slack added to a route (%), a service loop
+   * per end (mm), the round-up step (mm, 0 = to the mm) and the port height
+   * of a device on its own tile (mm). */
+  cable_slack_pct: number
+  cable_service_loop_mm: number
+  cable_length_step_mm: number
+  cable_standalone_height_mm: number
   updated_at: string
   deployment_defaults: TenantSettingsDefaults
 }
@@ -12348,6 +12357,8 @@ export interface FloorPlanTray {
   /** Height above finished floor (mm, negative = underfloor). Null derives
    * from level: overhead → ceiling−300, underfloor → −300, floor → 0. */
   elevation_mm: number | null
+  /** How many cables the run holds; null when no limit is known. */
+  capacity?: number | null
   description: string
   /** The cables in it the reader may view. */
   cables: TrayCableMini[]
@@ -12514,12 +12525,34 @@ export interface FloorPlanBulkPayload {
   tiles?: BulkPart<FloorPlanTileWritePayload>
   areas?: BulkPart<FloorPlanAreaWritePayload>
   labels?: BulkPart<FloorPlanLabelWritePayload>
+  cable_paths?: {
+    upsert?: CablePathUpsert[]
+    delete?: (string | { cable: string; version?: string })[]
+  }
+}
+
+/** A cable's route to store: routed on the server when `legs` is left out,
+ * else the legs given (measured on the server). `write_length` fills a
+ * blank or computed length; `replace_length` also one a person entered. */
+export interface CablePathUpsert {
+  cable: string
+  kind?: StoredCablePath["kind"]
+  legs?: { points: [number, number][] }[]
+  tray_order?: string[]
+  /** The stored path's version the route is based on. */
+  version?: string
+  write_length?: boolean
+  replace_length?: boolean
+  /** The cable's updated_at the length write is based on. */
+  cable_version?: string
 }
 
 export interface FloorPlanBulkResult {
   tiles: FloorPlanTile[]
   areas: FloorPlanArea[]
   labels: FloorPlanLabel[]
+  /** The cable paths the save wrote. */
+  cable_paths?: StoredCablePath[]
 }
 
 /** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
@@ -12533,6 +12566,8 @@ export interface FloorPlanContents {
   raised_floors: RaisedFloorArea[]
   areas: FloorPlanArea[]
   labels: FloorPlanLabel[]
+  /** The stored cable routes (documented), each with its `cable`. */
+  cable_paths?: (StoredCablePath & { cable: string })[]
 }
 
 export interface FloorPlanWallWritePayload {
@@ -12623,6 +12658,11 @@ export interface FloorPlanCablePath {
   /** The stored length, in `length_unit`; null when none is recorded. */
   length?: number | null
   length_unit?: string
+  /** Where the length came from: "" a person entered it, "computed" a
+   * floor-plan route worked it out. */
+  length_source?: "" | "computed"
+  /** The cable's stored route on this plan (documented), or null. */
+  path?: StoredCablePath | null
   /** Each end tile's top above the floor (mm): a rack's height, else 0 -
    * the drop term of the route length the plan works out. */
   a_top_mm?: number
@@ -12635,6 +12675,82 @@ export interface FloorPlanCablePath {
   a_points: FloorPlanCableEnd[]
   b_points: FloorPlanCableEnd[]
   tray_ids: string[]
+}
+
+/** Where one leg of a stored route starts or ends: the tile it was routed
+ * from and that tile's centre then (cells). */
+export interface CablePathAnchor {
+  end: "A" | "B"
+  tile: string
+  device: string | null
+  at: [number, number]
+}
+
+/** One leg of a stored route - one per far tile (a breakout has several). */
+export interface CablePathLeg {
+  from: CablePathAnchor
+  to: CablePathAnchor
+  /** The centreline, A to B, in cells. */
+  points: [number, number][]
+  /** The trays it rides, in travel order. */
+  trays: {
+    id: string
+    entry: [number, number]
+    exit: [number, number]
+    elevation_mm: number
+  }[]
+  /** Free points of a hand-drawn run. */
+  waypoints: [number, number][]
+}
+
+/** A cable's route on a plan, stored (documented) or computed (a preview,
+ * without id/version). Lengths in millimetres. */
+export interface StoredCablePath {
+  id?: string
+  kind: "trays" | "manual" | "direct"
+  legs: CablePathLeg[]
+  tray_order: string[]
+  run_mm: number
+  drop_a_mm: number
+  drop_b_mm: number
+  /** Level changes and service loops. */
+  extra_mm: number
+  slack_mm: number
+  /** The total, by the tenant's length rules. */
+  length_mm: number
+  computed_at?: string | null
+  /** Out of date: an end's tile moved, or a tray it rides changed. */
+  stale?: boolean
+  version?: string | null
+}
+
+/** One cable in a route preview - POST /api/floor-plans/<id>/cable-plan/ */
+export interface CablePlanRow {
+  id: string
+  label: string
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  can_change: boolean
+  /** The stored route, if any. */
+  path: StoredCablePath | null
+  /** The computed route; null with `reason` when there is none. */
+  route: StoredCablePath | null
+  reason: string
+  reachable?: boolean
+  /** Computed minus stored length (mm), null without a stored length. */
+  delta_mm: number | null
+  /** A save would fill the length without being asked to replace it. */
+  write_length: boolean
+}
+
+export interface CablePlanPreview {
+  cables: CablePlanRow[]
+  truncated: boolean
+  hidden_count: number
+  cell_mm: number
+  /** The CAD drawing's scale source; "assumed" when it was never set. */
+  scale_source: string | null
 }
 
 /** One end of a plan's cable: the device and port, or - on a device the

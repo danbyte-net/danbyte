@@ -741,6 +741,20 @@
       "keywords": ["popover", "tile", "hover", "fields", "floor plan"]
     },
     {
+      "key": "data.floorplan-cable-lengths",
+      "label": "Cable lengths",
+      "description": "Slack, service loops and rounding of route lengths",
+      "page": "floorplans",
+      "keywords": [
+        "cable",
+        "length",
+        "slack",
+        "service loop",
+        "route",
+        "floor plan"
+      ]
+    },
+    {
       "key": "data.topology-card-lines",
       "label": "Card lines",
       "description": "What a Diagram card shows",

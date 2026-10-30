@@ -23,3 +23,7 @@ class ApiConfig(AppConfig):
         from .search_index import connect_signals
 
         connect_signals()
+        # Stored cable routes go out of date when their tiles or trays move.
+        from . import cable_routing
+
+        cable_routing.connect_signals()

@@ -205,7 +205,12 @@ function CableFacts({
         <PanelRow label="Type">{cp.type_display || cp.type || "-"}</PanelRow>
         <PanelRow label="A">{endText(cp.a_points)}</PanelRow>
         <PanelRow label="B">{endText(cp.b_points)}</PanelRow>
-        <PanelRow label="Length">{formatStoredLength(cp) ?? "-"}</PanelRow>
+        <PanelRow label="Length">
+          {formatStoredLength(cp) ?? "-"}
+          {cp.length != null && cp.length_source === "computed" && (
+            <span className="text-muted-foreground"> · computed</span>
+          )}
+        </PanelRow>
         <PanelRow label="Route">
           {computed == null ? (
             "-"
@@ -217,6 +222,18 @@ function CableFacts({
                   {" "}
                   ({delta > 0 ? "+" : "−"}
                   {formatMetres(Math.abs(delta))})
+                </span>
+              )}
+              {route?.stored && (
+                <span
+                  className={
+                    route.stale
+                      ? "text-amber-700 dark:text-amber-300"
+                      : "text-muted-foreground"
+                  }
+                >
+                  {" · "}
+                  {route.stale ? "out of date" : "documented"}
                 </span>
               )}
             </span>

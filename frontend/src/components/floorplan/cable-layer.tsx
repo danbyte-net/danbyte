@@ -10,7 +10,7 @@ import {
   bundledGroups,
   cableColor,
   cableLod,
-  cableRouteState,
+  drawnRouteState,
   endText,
   formatMetres,
   laneOrder,
@@ -71,6 +71,7 @@ export const CableLayer = memo(function CableLayer({
   interactive,
   onSelect,
   onHover,
+  previews,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -84,6 +85,8 @@ export const CableLayer = memo(function CableLayer({
   interactive: boolean
   onSelect: (id: string | null) => void
   onHover: (hit: CableHoverHit | null, at?: CableAnchor) => void
+  /** Routes computed but not saved, drawn dotted over the plan. */
+  previews?: ReadonlyMap<string, CableRoute>
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -189,7 +192,8 @@ export const CableLayer = memo(function CableLayer({
     { extra = 0, halo = false }: { extra?: number; halo?: boolean } = {}
   ) => {
     const cp = byId.get(id)
-    const style = CABLE_LINE[cp ? cableRouteState(cp) : "inferred"]
+    const style =
+      CABLE_LINE[cp ? drawnRouteState(cp, routes.get(id)) : "inferred"]
     const color = colorOf(id)
     return lines.map((line, i) => {
       const d = roundedPath(px(line), FILLET)
@@ -393,6 +397,75 @@ export const CableLayer = memo(function CableLayer({
     )
   }
 
+  /** An out-of-date route's moved ends: a warning mark where the path
+   * ends, and a dashed connector to where its tile is now. */
+  const staleMarks = (id: string, moved: { at: Pt; now: Pt }[]) => (
+    <g key={`stale-${id}`} data-stale={id} pointerEvents="none">
+      {moved.map((m, i) => (
+        <g key={i}>
+          <path
+            d={`M${m.at[0] * CELL},${m.at[1] * CELL}L${m.now[0] * CELL},${m.now[1] * CELL}`}
+            fill="none"
+            className="stroke-amber-500"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            cx={m.at[0] * CELL}
+            cy={m.at[1] * CELL}
+            r={4.5 / k}
+            className="fill-amber-500"
+            stroke="var(--background)"
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
+      ))}
+    </g>
+  )
+
+  /** A route computed but not saved: dotted in the cable's colour over an
+   * accent outline, with its length at mid-run. */
+  const previewView = (id: string, route: CableRoute) => {
+    const style = CABLE_LINE.preview
+    const color = colorOf(id)
+    const d = roundedPath(px(route.points), FILLET)
+    const mid = longestLegMid(route.points)
+    return (
+      <g key={`preview-${id}`} data-preview={id} pointerEvents="none">
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--primary)"
+          strokeOpacity={0.35}
+          strokeWidth={style.width + 4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        <path
+          d={d}
+          fill="none"
+          stroke={color}
+          strokeOpacity={style.opacity}
+          strokeWidth={style.width}
+          strokeDasharray={style.dash}
+          strokeLinecap={style.cap}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {lod !== "far" &&
+          chip(
+            "len",
+            mid.at,
+            formatMetres(routeLengthM(route, cellMm)),
+            "var(--primary)"
+          )}
+      </g>
+    )
+  }
+
   return (
     <g data-layer="cables" data-lod={lod}>
       {lod !== "far" &&
@@ -424,8 +497,16 @@ export const CableLayer = memo(function CableLayer({
         )
       })}
       {labels}
+      {lod !== "far" &&
+        layout.order.map((id) => {
+          const route = routes.get(id)
+          if (!route?.stale || !route.moved?.length) return null
+          if (dim && !hi.has(id)) return null
+          return staleMarks(id, route.moved)
+        })}
       {[...hov].filter((id) => !hi.has(id)).map((id) => lifted(id, false))}
       {highlightIds.map((id) => lifted(id, true))}
+      {previews && [...previews].map(([id, route]) => previewView(id, route))}
     </g>
   )
 })

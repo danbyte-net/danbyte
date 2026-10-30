@@ -7,6 +7,7 @@ import {
   Maximize,
   PanelBottom,
   PanelRight,
+  Route,
   Settings2,
 } from "lucide-react"
 
@@ -65,6 +66,7 @@ export function PlanToolbar({
   exportMenu,
   onOpenSettings,
   onOpenBackground,
+  onDocumentRoutes,
   canUndo,
   canRedo,
   onUndo,
@@ -98,6 +100,8 @@ export function PlanToolbar({
   exportMenu: ReactNode
   onOpenSettings: () => void
   onOpenBackground: () => void
+  /** Document routes on this plan; absent when the plan cannot. */
+  onDocumentRoutes?: () => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -192,6 +196,11 @@ export function PlanToolbar({
             {canEdit && backgroundControls && (
               <DropdownMenuItem onSelect={onOpenBackground}>
                 <ImageIcon /> Background…
+              </DropdownMenuItem>
+            )}
+            {canEdit && onDocumentRoutes && (
+              <DropdownMenuItem onSelect={onDocumentRoutes} disabled={isDirty}>
+                <Route /> Document routes…
               </DropdownMenuItem>
             )}
             {canEdit && (

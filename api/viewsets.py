@@ -5310,110 +5310,83 @@ class CableViewSet(TenantScopedViewSet):
             return Response({"detail": "strand out of range"}, status=400)
         return Response(cable_strand_path(cable, n))
 
+    def _route_plan(self, request, plan_id):
+        """The tenant's floor plan ``plan_id`` the reader may view - a view's
+        source, since routes live on the source - or None."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .models import FloorPlan
+
+        tenant = _get_active_tenant(self.request)
+        try:
+            qs = FloorPlan.objects.filter(id=plan_id, tenant=tenant)
+            plan = rbac.restrict_queryset(
+                qs, request.user, tenant, "floorplan", "view"
+            ).first()
+        except (DjangoValidationError, ValueError, TypeError):
+            return None
+        if plan is not None and snaps.is_view(plan):
+            plan = plan.source if plan.source_id else None
+        return plan
+
     @action(detail=True, methods=["post"], url_path="auto-route")
     def auto_route(self, request, pk=None):
         """Compute the best tray route for this cable on a floor plan and
-        persist it: the plan's trays on the winning path replace the cable's
-        current trays *on that plan* (other plans' assignments are kept), and
-        the estimated length fills ``length`` when blank (``overwrite: true``
-        replaces a recorded one). Body: ``{"floor_plan": id, "overwrite"?}``."""
-        from .models import FloorPlan
-        from .pathfinding import (
-            estimate_length_m, rack_drop_mm, route_through_trays,
-            tray_elevations, underfloor_plenum_mm,
-        )
+        store it (``api/cable_routing.py``): the cable's path on the plan, and
+        the plan's trays on it replace the cable's trays *on that plan*
+        (other plans' assignments are kept). The computed length fills
+        ``length`` when it is blank or was computed before; ``overwrite:
+        true`` replaces a length a person entered. Body: ``{"floor_plan":
+        id, "overwrite"?}``."""
+        from .cable_routing import PlanRouter, path_data, save_path, write_length
 
         cable = self.get_object()
-        tenant = _get_active_tenant(self.request)
-        plan = FloorPlan.objects.filter(
-            id=(request.data or {}).get("floor_plan"), tenant=tenant
-        ).first()
+        plan = self._route_plan(request, (request.data or {}).get("floor_plan"))
         if plan is None:
             return Response({"detail": "Unknown floor plan."}, status=400)
 
-        # A/B endpoint devices from the cable's own terminations.
-        ends: dict = {"A": None, "B": None}
-        for term in cable.terminations.select_related():
-            dev_id = getattr(term.point, "device_id", None)
-            if dev_id and ends.get(term.end) is None:
-                ends[term.end] = dev_id
+        router = PlanRouter(plan)
+        ends = router.ends(cable)
         if not ends["A"] or not ends["B"]:
             return Response(
-                {"detail": "Both cable ends must terminate on a device."},
+                {"detail": "Both cable ends must terminate on a device placed "
+                           "on this plan."},
                 status=400,
             )
-        resolved, err = _resolve_route_endpoints(plan, {
-            "from": {"kind": "device", "id": str(ends["A"])},
-            "to": {"kind": "device", "id": str(ends["B"])},
-        })
-        if err:
-            return Response({"detail": err}, status=400)
-        a, b, rack_a, rack_b = resolved
-
-        trays = list(plan.trays.all())
-        # Plenum-aware drops: an underfloor run dives as deep as the raised
-        # floor beneath it, not a constant.
-        area_rects = [
-            (r.x, r.y, r.width, r.height, r.plenum_mm)
-            for r in plan.raised_floor_areas.all()
-        ]
-        # Runs crossing at different heights do not join.
-        result = route_through_trays(
-            a, b, [t.points for t in trays],
-            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
-        )
-        if not result.reachable:
-            return Response({
-                "reachable": False,
-                "detail": "No tray path connects the two ends on this plan.",
-            })
-        used = [trays[i] for i in result.tray_indexes]
-
-        def _drop(rack, tray):
-            if tray is None:
-                return 0.0
-            plenum = underfloor_plenum_mm(area_rects, tray.points)
-            return rack_drop_mm(
-                rack.u_height if rack is not None else None,
-                tray.level, tray.elevation_mm, plan.ceiling_mm, plenum,
-            )
-
-        if not used:
-            # Both ends resolved to the same tile (e.g. a same-rack patch): no
-            # tray path is needed. Don't clear existing assignments or write a
-            # bogus 0 m - report it as point-to-point and leave the cable alone.
+        route = router.route(cable)
+        if route is None:
+            # Both ends stand on one tile (a same-rack patch): no route is
+            # needed. Leave the cable alone rather than write a bogus 0 m.
+            c = ends["A"][0]["tile"]
+            centre = [c.x + c.width / 2, c.y + c.height / 2]
             return Response({
                 "reachable": True,
                 "point_to_point": True,
-                "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+                "points": [centre, centre],
                 "tray_ids": [],
                 "tray_names": [],
                 "length_m": None,
                 "length_set": False,
             })
-
-        drop_a = _drop(rack_a, used[0]) if used else 0.0
-        drop_b = _drop(rack_b, used[-1]) if used else 0.0
-        length_m = estimate_length_m(result.run_cells, plan.cell_mm, drop_a, drop_b)
-
+        if not route["reachable"]:
+            return Response({
+                "reachable": False,
+                "detail": "No tray path connects the two ends on this plan.",
+            })
         overwrite = bool((request.data or {}).get("overwrite"))
         with transaction.atomic():
-            # Replace only THIS plan's tray assignments.
-            cable.trays.remove(*cable.trays.filter(floor_plan=plan))
-            cable.trays.add(*used)
-            length_set = False
-            if cable.length is None or overwrite:
-                cable.length = length_m
-                cable.length_unit = "m"
-                cable.save(update_fields=["length", "length_unit"])
-                length_set = True
+            path = save_path(plan, cable, route)
+            length_set = write_length(cable, route["length_mm"], replace=overwrite)
+        names = {str(t.pk): t.name for t in router.trays}
         return Response({
             "reachable": True,
-            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
-            "tray_ids": [str(t.id) for t in used],
-            "tray_names": [t.name for t in used],
-            "length_m": length_m,
+            "points": route["legs"][0]["points"],
+            "tray_ids": route["tray_order"],
+            "tray_names": [names[t] for t in route["tray_order"]],
+            "length_m": route["length_mm"] / 1000,
             "length_set": length_set,
+            "path": path_data(path),
         })
 
     @action(detail=True, methods=["get", "put"], url_path="routing")
@@ -5426,7 +5399,10 @@ class CableViewSet(TenantScopedViewSet):
 
         PUT ``{floor_plan, tray_ids: [...]}`` replaces THIS plan's assignment
         in the given order (other plans' assignments are untouched). An empty
-        list is point-to-point - a legitimate answer, not a no-op.
+        list is point-to-point - a legitimate answer, not a no-op. When both
+        ends are placed on the plan, the route through those trays (or the
+        direct run) is stored as the cable's path there, in travel order;
+        ``path`` answers it (null when there is none).
 
         The auto-route action picks the trays for you; this is the manual
         twin, so an operator can see what a run follows and name the exact
@@ -5434,7 +5410,8 @@ class CableViewSet(TenantScopedViewSet):
         """
         from auth_api import rbac
 
-        from .models import FloorPlan
+        from .cable_routing import PlanRouter, delete_path, path_data, save_path
+        from .models import FloorPlanCablePath
 
         cable = self.get_object()
         tenant = _get_active_tenant(self.request)
@@ -5443,9 +5420,10 @@ class CableViewSet(TenantScopedViewSet):
             if request.method == "GET"
             else (request.data or {}).get("floor_plan")
         )
-        plan = FloorPlan.objects.filter(id=plan_id, tenant=tenant).first()
+        plan = self._route_plan(request, plan_id)
         if plan is None:
             return Response({"detail": "Unknown floor plan."}, status=400)
+        path = None
 
         def shape(trays):
             return [
@@ -5475,18 +5453,30 @@ class CableViewSet(TenantScopedViewSet):
                     {"tray_ids": f"Not a tray on this plan: {unknown[0]}"},
                     status=400,
                 )
-            chosen = [by_id[str(i)] for i in ids]
+            chosen = list({str(t.id): t for t in (by_id[str(i)] for i in ids)}.values())
             with transaction.atomic():
                 cable.trays.remove(*cable.trays.filter(floor_plan=plan))
                 if chosen:
                     cable.trays.add(*chosen)
+                route = PlanRouter(plan).route(cable, tray_ids=[t.id for t in chosen])
+                if route is not None and (route["reachable"] or not chosen):
+                    route["tray_order"] = [str(t.id) for t in chosen]
+                    path = save_path(plan, cable, route, sync_trays=False)
+                else:
+                    delete_path(plan, cable)
         else:
+            path = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
             chosen = [t for t in cable.trays.all() if t.floor_plan_id == plan.id]
+            if path is not None:
+                # The stored travel order, then any other assigned tray.
+                rank = {tid: i for i, tid in enumerate(path.tray_order or [])}
+                chosen.sort(key=lambda t: (rank.get(str(t.id), len(rank)), t.name))
 
         return Response({
             "mode": "trays" if chosen else "point-to-point",
             "trays": shape(chosen),
             "available": shape(plan.trays.all()),
+            "path": path_data(path) if path is not None else None,
         })
 
     @action(detail=True, methods=["get"], url_path="floor-plan")
@@ -11522,6 +11512,24 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     key, pairs, ser_cls(objs, many=True, context=ctx).data, crop
                 )
             stamps += [o.updated_at for o in objs]
+        # Stored cable routes: those the reader may view, of cables they may
+        # view; on a view, those ending on a tile it shows, in its cells.
+        # ``stale`` is the stored flag - cable-paths/ also derives moves.
+        from .cable_routing import path_data
+        from .cable_scope import viewable_cable_ids
+
+        paths = list(visible(src.cable_paths.order_by("created_at", "id"), "floorplancablepath"))
+        seen = viewable_cable_ids(request.user, tenant, {p.cable_id for p in paths})
+        paths = [p for p in paths if p.cable_id in seen]
+        dx = dy = 0
+        if crop is not None:
+            shown = {str(t["id"]) for t in out["tiles"]}
+            paths = [p for p in paths if set(p.tile_ids or []) & shown]
+            dx, dy = -crop.x, -crop.y
+        out["cable_paths"] = [
+            {"cable": str(p.cable_id), **path_data(p, dx=dx, dy=dy)} for p in paths
+        ]
+        stamps += [p.updated_at for p in paths]
         return Response({
             "version": max(stamps).isoformat() if stamps else None,
             **out,
@@ -11657,6 +11665,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
     # plan is a way of looking at it.
     rbac_action_map = {
         "route": "view",
+        "cable_plan": "view",
         "drawing_render": "view",
         "export_pdf": "view",
         "export_pdf_file": "view",
@@ -11731,6 +11740,158 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "length_m": length_m,
             "run_m": round(result.run_cells * plan.cell_mm / 1000, 1),
             "drops_mm": [round(drop_a), round(drop_b)],
+        })
+
+    @action(detail=True, methods=["post"], url_path="cable-plan")
+    def cable_plan(self, request, pk=None):
+        """Preview the routes of cables on this plan - nothing is stored.
+
+        Body (each key optional): ``{"cable_ids": [...], "positions":
+        {tile_id: {x, y, width?, height?}}, "tray_ids": [...]}``. Without
+        ``cable_ids``: every cable the reader may view with both ends placed
+        here (at most ``ROUTE_MAX``; ``truncated`` says when there were
+        more). ``positions`` routes against unsaved tile moves; ``tray_ids``
+        routes through only those trays.
+
+        Per cable: ``route`` (the computed path in the stored shape, or null
+        with ``reason``), ``path`` (the stored one, if any), the cable's
+        ``length`` / ``length_unit`` / ``length_source``, ``delta_mm``
+        (computed minus stored length), ``write_length`` (whether a save
+        would fill the length without being asked to replace it) and
+        ``can_change``. Plus the plan's ``cell_mm`` and ``scale_source``
+        (``assumed`` when a CAD drawing's scale was never set)."""
+        from auth_api import rbac
+
+        from .cable_routing import (
+            ROUTE_MAX,
+            PlanRouter,
+            length_writable,
+            path_data,
+            route_data,
+            stored_length_mm,
+        )
+        from .cable_scope import restrict_cables, viewable_cable_ids
+        from .models import Cable, CableTermination, Device, FloorPlanCablePath
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        body = request.data or {}
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        positions = body.get("positions") or {}
+        if not isinstance(positions, dict):
+            raise ValidationError({"positions": "An object of tile id → {x, y}."})
+        if crop is not None:
+            positions = {
+                k: {**v, **{key: v[key] + d for key, d in (("x", ox), ("y", oy))
+                            if isinstance(v.get(key), (int, float))}}
+                for k, v in positions.items() if isinstance(v, dict)
+            }
+        tray_ids = body.get("tray_ids")
+        if tray_ids is not None and not isinstance(tray_ids, list):
+            raise ValidationError({"tray_ids": "A list of tray ids."})
+
+        router = PlanRouter(plan, positions=positions)
+        ids = body.get("cable_ids")
+        truncated = False
+        if ids is None:
+            # Every cable with both ends on a device placed here.
+            placed = set(router.device_tile)
+            if router.rack_tile or router.cabinet_tile:
+                placed.update(Device.objects.filter(
+                    Q(rack_id__in=router.rack_tile) | Q(cabinet_id__in=router.cabinet_tile)
+                ).values_list("id", flat=True))
+            on_placed = Q()
+            for field in CableTermination.POINT_FIELDS:
+                if field not in ("power_feed", "circuit_termination"):
+                    on_placed |= Q(**{f"{field}__device_id__in": placed})
+            a_ids, b_ids = (
+                set(CableTermination.objects.filter(on_placed, end=end)
+                    .values_list("cable_id", flat=True))
+                for end in ("A", "B")
+            )
+            candidates = set(
+                Cable.objects.filter(tenant=tenant, pk__in=a_ids & b_ids)
+                .values_list("pk", flat=True)
+            )
+        else:
+            if not isinstance(ids, list) or len(ids) > ROUTE_MAX:
+                raise ValidationError(
+                    {"cable_ids": f"A list of at most {ROUTE_MAX} cable ids."}
+                )
+            import uuid as _uuid
+
+            try:
+                wanted = {_uuid.UUID(str(i)) for i in ids}
+            except ValueError:
+                raise ValidationError({"cable_ids": "Cable ids are UUIDs."}) from None
+            candidates = set(
+                Cable.objects.filter(tenant=tenant, pk__in=wanted).values_list("pk", flat=True)
+            )
+        visible = viewable_cable_ids(request.user, tenant, candidates)
+        cables = list(
+            Cable.objects.filter(pk__in=visible).select_related("status")
+            .order_by("created_at", "pk")
+        )
+        if len(cables) > ROUTE_MAX:
+            cables, truncated = cables[:ROUTE_MAX], True
+        router.prime(cables)
+        changeable = set(
+            restrict_cables(
+                Cable.objects.filter(pk__in=[c.pk for c in cables], tenant=tenant),
+                request.user, tenant, "change",
+            ).values_list("pk", flat=True)
+        )
+        stored = {
+            p.cable_id: p
+            for p in rbac.restrict_queryset(
+                FloorPlanCablePath.objects.filter(
+                    floor_plan=plan, cable_id__in=[c.pk for c in cables]
+                ),
+                request.user, tenant, "floorplancablepath", "view",
+            )
+        }
+        router.prime_paths(stored.values())
+        out = []
+        for cable in cables:
+            route = router.route(cable, tray_ids=tray_ids)
+            have = stored_length_mm(cable)
+            row = {
+                "id": str(cable.pk),
+                "label": str(cable),
+                "length": float(cable.length) if cable.length is not None else None,
+                "length_unit": cable.length_unit or "m",
+                "length_source": cable.length_source,
+                "can_change": cable.pk in changeable,
+                "path": (
+                    path_data(stored[cable.pk], stale=router.stale(stored[cable.pk]),
+                              dx=-ox, dy=-oy)
+                    if cable.pk in stored else None
+                ),
+                "route": None,
+                "reason": "",
+                "delta_mm": None,
+                "write_length": False,
+            }
+            if route is None:
+                row["reason"] = (
+                    "Both ends stand on one tile." if router.ends(cable)["A"]
+                    and router.ends(cable)["B"] else "An end is not placed on this plan."
+                )
+            else:
+                row["route"] = route_data(route, dx=-ox, dy=-oy)
+                row["reachable"] = route["reachable"]
+                if have is not None:
+                    row["delta_mm"] = round(route["length_mm"] - have)
+                row["write_length"] = length_writable(cable)
+            out.append(row)
+        drawing = getattr(plan, "drawing", None)
+        return Response({
+            "cables": out,
+            "truncated": truncated,
+            "hidden_count": len(candidates - visible),
+            "cell_mm": plan.cell_mm,
+            "scale_source": drawing.scale_source if drawing is not None else None,
         })
 
     @action(detail=True, methods=["get"], url_path="scene")
@@ -11954,7 +12115,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         rack_tile: dict = {}
         cabinet_tile: dict = {}
         tiles = rbac.restrict_queryset(
-            plan.tiles.all(), user, tenant, "floorplantile", "view"
+            plan.tiles.order_by("y", "x", "id"), user, tenant, "floorplantile", "view"
         )
         shown_trays = None
         if crop is not None:
@@ -11988,7 +12149,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
             touches_placed |= Q(**{f"terminations__{field}__device_id__in": placed_device_ids})
         candidates = set(
             Cable.objects.filter(tenant=tenant)
-            .filter(Q(trays__floor_plan=plan) | touches_placed)
+            .filter(
+                Q(trays__floor_plan=plan) | Q(floor_plan_paths__floor_plan=plan)
+                | touches_placed
+            )
             .values_list("id", flat=True)
         )
         visible = viewable_cable_ids(user, tenant, candidates)
@@ -12059,6 +12223,28 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return {"device": str(dev_id), "port": port,
                     "device_name": device_name.get(dev_id, "")}
 
+        # Stored routes (the documented paths), the ones the reader may view,
+        # with whether each is out of date against the plan as it is now.
+        from .cable_routing import PlanRouter, path_data
+        from .models import FloorPlanCablePath
+
+        stored = {
+            p.cable_id: p
+            for p in rbac.restrict_queryset(
+                FloorPlanCablePath.objects.filter(
+                    floor_plan=plan, cable_id__in=[c.id for c in cables]
+                ),
+                user, tenant, "floorplancablepath", "view",
+            )
+        }
+        stored_data = {}
+        if stored:
+            router = PlanRouter(plan)
+            router.prime_paths(stored.values())
+            dx, dy = (-crop.x, -crop.y) if crop is not None else (0, 0)
+            for cid, p in stored.items():
+                stored_data[cid] = path_data(p, stale=router.stale(p), dx=dx, dy=dy)
+
         result = []
         for cable in cables:
             a_tiles, b_tiles = [], []
@@ -12088,6 +12274,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     } if st is not None else None,
                     "length": float(cable.length) if cable.length is not None else None,
                     "length_unit": cable.length_unit or "m",
+                    "length_source": cable.length_source,
+                    "path": stored_data.get(cable.id),
                     "a_top_mm": tile_top_mm.get(a_tiles[0], 0) if a_tiles else 0,
                     "b_top_mm": tile_top_mm.get(b_tiles[0], 0) if b_tiles else 0,
                     "a_tiles": a_tiles,
@@ -12220,6 +12408,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 parts[op] = rows
                 total += len(rows)
             specs[key] = parts
+        paths_spec = self._cable_paths_spec(request.data.get("cable_paths"))
+        total += len(paths_spec["upsert"]) + len(paths_spec["delete"])
         if total > self.BULK_MAX:
             raise ValidationError(
                 {"detail": f"At most {self.BULK_MAX} changes in one save."}
@@ -12239,13 +12429,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         written = []
         via = cause(f"Through the view {view.name}"[:255]) if crop is not None \
             else contextlib.nullcontext()
+        paths_out: list = []
         with transaction.atomic(), via:
             conflicts = self._bulk_conflicts(request, plan, kinds, specs)
+            conflicts += self._cable_path_conflicts(request, plan, crop, paths_spec)
             if conflicts:
                 if crop is not None:
                     keys = {"tile": "tiles", "area": "areas", "label": "labels"}
                     for c in conflicts:
-                        if c.get("current"):
+                        if c.get("current") and c["kind"] in keys:
                             c["current"] = snaps.shift(
                                 keys[c["kind"]], c["current"], -crop.x, -crop.y
                             )
@@ -12286,6 +12478,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         raise ValidationError({key: [
                             f"{obj} would leave the view. Move it on {plan.name}."
                         ]})
+            # Cable paths last: a route computed here sees the tiles saved.
+            paths_out = self._bulk_cable_paths(request, plan, crop, paths_spec)
         ctx = {"request": request}
         if crop is not None:
             out = {}
@@ -12299,14 +12493,213 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     key, pairs,
                     ser_cls([o for o, _e in pairs], many=True, context=ctx).data, crop,
                 )
-            return Response(out)
-        return Response({
-            "tiles": FloorPlanTileSerializer(_plan_tiles(plan), many=True, context=ctx).data,
-            "areas": FloorPlanAreaSerializer(_plan_areas(plan), many=True, context=ctx).data,
-            "labels": FloorPlanLabelSerializer(
-                _plan_labels(plan), many=True, context=ctx
-            ).data,
-        })
+        else:
+            out = {
+                "tiles": FloorPlanTileSerializer(_plan_tiles(plan), many=True, context=ctx).data,
+                "areas": FloorPlanAreaSerializer(_plan_areas(plan), many=True, context=ctx).data,
+                "labels": FloorPlanLabelSerializer(
+                    _plan_labels(plan), many=True, context=ctx
+                ).data,
+            }
+        # The routes written, when the save carried any.
+        if paths_spec["upsert"] or paths_spec["delete"]:
+            out["cable_paths"] = paths_out
+        return Response(out)
+
+    @staticmethod
+    def _cable_paths_spec(raw) -> dict:
+        """``bulk/``'s ``cable_paths``: ``{"upsert": [...], "delete": [...]}``.
+        An upsert is ``{"cable", "legs"?, "kind"?, "tray_order"?, "version"?,
+        "write_length"?, "replace_length"?, "cable_version"?}``; a delete a
+        cable id or ``{"cable", "version"?}``."""
+        if raw in (None, ""):
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ValidationError({"cable_paths": "An object of upsert/delete lists."})
+        out = {}
+        for op in ("upsert", "delete"):
+            rows = raw.get(op) or []
+            if not isinstance(rows, list):
+                raise ValidationError({"cable_paths": f"{op} must be a list."})
+            norm = []
+            for item in rows:
+                if op == "delete" and not isinstance(item, dict):
+                    item = {"cable": item}
+                if not isinstance(item, dict) or not item.get("cable"):
+                    raise ValidationError({"cable_paths": f"Each {op} names its cable."})
+                norm.append(item)
+            out[op] = norm
+        from .cable_routing import ROUTE_MAX
+
+        if len(out["upsert"]) > ROUTE_MAX:
+            raise ValidationError(
+                {"cable_paths": f"At most {ROUTE_MAX} routes in one save."}
+            )
+        return out
+
+    def _path_cables(self, request, plan, spec) -> dict:
+        """The cables a ``cable_paths`` spec names, by id string: the plan's
+        tenant's cables the user may view. An unknown or unseen one is a 400
+        that reads alike."""
+        import uuid as _uuid
+
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable
+
+        tenant = self._tenant_or_403()
+        ids = {}
+        for op in ("upsert", "delete"):
+            for item in spec[op]:
+                try:
+                    ids[str(item["cable"])] = _uuid.UUID(str(item["cable"]))
+                except ValueError:
+                    raise ValidationError(
+                        {"cable_paths": f"Unknown cable {item['cable']}."}
+                    ) from None
+        if not ids:
+            return {}
+        found = {
+            c.pk: c for c in Cable.objects.filter(tenant=plan.tenant, pk__in=ids.values())
+        }
+        seen = viewable_cable_ids(request.user, tenant, set(found))
+        out = {}
+        for key, pk_ in ids.items():
+            if pk_ not in seen:
+                raise ValidationError({"cable_paths": f"Unknown cable {key}."})
+            out[key] = found[pk_]
+        return out
+
+    def _cable_path_conflicts(self, request, plan, crop, spec) -> list:
+        """The cable paths (and cable lengths) of a ``bulk/`` save changed
+        since the ``version`` sent with them, locked until the save ends."""
+        from .cable_routing import path_data
+        from .floor_plan_placement import changed_by, parse_version
+        from .models import Cable, FloorPlanCablePath
+
+        if not spec["upsert"] and not spec["delete"]:
+            return []
+        cables = self._path_cables(request, plan, spec)
+        tenant = plan.tenant
+        dx, dy = (-crop.x, -crop.y) if crop is not None else (0, 0)
+        stored = {
+            p.cable_id: p
+            for p in FloorPlanCablePath.objects.select_for_update().filter(
+                floor_plan=plan, cable_id__in=[c.pk for c in cables.values()]
+            )
+        }
+        out = []
+        for op in ("upsert", "delete"):
+            for item in spec[op]:
+                cable = cables[str(item["cable"])]
+                stamp = parse_version(item.get("version"), "cable_paths")
+                if stamp is not None:
+                    p = stored.get(cable.pk)
+                    if (p is None and op == "upsert") or (p is not None and p.updated_at != stamp):
+                        out.append({
+                            "kind": "cable_path",
+                            "id": str(cable.pk),
+                            "current": path_data(p, dx=dx, dy=dy) if p is not None else None,
+                            "changed_by": changed_by(tenant, p.pk) if p is not None else "",
+                        })
+                cstamp = parse_version(item.get("cable_version"), "cable_paths")
+                if op == "upsert" and cstamp is not None:
+                    now = Cable.objects.select_for_update().filter(pk=cable.pk).first()
+                    if now is not None and now.updated_at != cstamp:
+                        out.append({
+                            "kind": "cable",
+                            "id": str(cable.pk),
+                            "current": {
+                                "length": float(now.length) if now.length is not None else None,
+                                "length_unit": now.length_unit or "m",
+                                "length_source": now.length_source,
+                                "version": now.updated_at.isoformat(),
+                            },
+                            "changed_by": changed_by(tenant, now.pk),
+                        })
+        return out
+
+    def _bulk_cable_paths(self, request, plan, crop, spec) -> list:
+        """Write a ``bulk/`` save's cable paths (inside its transaction).
+
+        Each cable must be one the user may change, and each path row one
+        they may add, change or delete (``floorplancablepath``). An upsert
+        without ``legs`` is routed here, against the tiles as saved; with
+        ``legs`` (cells; the view's, through a view) the geometry is checked
+        against the plan and measured here - lengths are never taken from
+        the payload. ``write_length`` fills the cable's length when it is
+        blank or computed; ``replace_length`` also replaces one a person
+        entered. Answers the paths written."""
+        from auth_api import rbac
+
+        from .cable_routing import (
+            PlanRouter,
+            delete_path,
+            path_data,
+            save_path,
+            write_length,
+        )
+        from .cable_scope import can_act_on_cable
+        from .models import FloorPlanCablePath
+
+        if not spec["upsert"] and not spec["delete"]:
+            return []
+        user = request.user
+        tenant = self._tenant_or_403()
+        cables = self._path_cables(request, plan, spec)
+        for cable in {c.pk: c for c in cables.values()}.values():
+            if not can_act_on_cable(user, tenant, "change", cable):
+                raise PermissionDenied(f"You may not change {cable}.")
+
+        def allowed(action, row):
+            if not rbac.can_act_on(user, tenant, "floorplancablepath", action, row):
+                raise PermissionDenied(f"You may not {action} the route of {row.cable}.")
+
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        for item in spec["delete"]:
+            cable = cables[str(item["cable"])]
+            row = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
+            if row is not None:
+                allowed("delete", row)
+                delete_path(plan, cable)
+        router = PlanRouter(plan) if spec["upsert"] else None
+        out = []
+        for item in spec["upsert"]:
+            cable = cables[str(item["cable"])]
+            before = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
+            if before is not None:
+                allowed("change", before)
+            if item.get("legs") is None:
+                route = router.route(cable, tray_ids=item.get("tray_order"))
+                if route is None:
+                    raise ValidationError({"cable_paths": [
+                        f"{cable}: both ends must be placed on this plan, on different tiles."
+                    ]})
+            else:
+                legs = item["legs"]
+                if crop is not None and isinstance(legs, list):
+                    legs = [
+                        {**leg, "points": [
+                            [p[0] + ox, p[1] + oy] if isinstance(p, (list, tuple))
+                            and len(p) >= 2 and all(
+                                isinstance(v, (int, float)) and not isinstance(v, bool)
+                                for v in p[:2]
+                            ) else p
+                            for p in (leg.get("points") or [])
+                        ]} if isinstance(leg, dict) else leg
+                        for leg in legs
+                    ]
+                try:
+                    route = router.from_geometry(
+                        cable, item.get("kind") or "trays", legs, item.get("tray_order") or [],
+                    )
+                except ValueError as exc:
+                    raise ValidationError({"cable_paths": [f"{cable}: {exc}"]}) from None
+            row = save_path(plan, cable, route)
+            allowed("change" if before is not None else "add", row)
+            if item.get("write_length") or item.get("replace_length"):
+                write_length(cable, route["length_mm"], replace=bool(item.get("replace_length")))
+            out.append(path_data(row, dx=-ox, dy=-oy))
+        return out
 
     @staticmethod
     def _view_rows_editable(view, plan, crop, kinds, specs, row) -> None:

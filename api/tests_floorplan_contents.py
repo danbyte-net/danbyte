@@ -33,11 +33,12 @@ User = get_user_model()
 
 # Queries for one contents/ read as a superuser - session, user and tenant
 # resolution, the plan, then one per kind plus the trays' cables, and the
-# tile photos (the visible devices and racks, and their images). The same
+# tile photos (the visible devices and racks, and their images), and the
+# stored cable routes. The same
 # for 2 rows of each kind as for 12.
-CONTENTS_QUERIES = 19
+CONTENTS_QUERIES = 20
 
-KINDS = ("tiles", "trays", "walls", "raised_floors", "areas", "labels")
+KINDS = ("tiles", "trays", "walls", "raised_floors", "areas", "labels", "cable_paths")
 
 
 class _Base(APITestCase):
