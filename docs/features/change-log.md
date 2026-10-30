@@ -69,6 +69,17 @@ it - the top-level parts that changed and the size before and after - rather
 than copying the whole layout. Its name still diffs as usual. See
 [saved views](topology.md#saved-views).
 
+### Cause
+
+A change Danbyte derives from another one says why. The flows an
+[application flow requirement](application-flows.md#requirements) writes
+carry a **cause** - *Requirement 'WMS to Broker': WMS client installed on
+wms-07* - shown under the entry's changes, with the user and request of the
+change that triggered them, so the install and the flows it documented
+group together. The nightly sweep's entries read *nightly sweep* and are
+written by the system. Ordinary edits have no cause. The API returns it as
+`cause` on `/api/changelog/`.
+
 Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
 itself, and is named that way - `outpost:probe-1` - with no linked user account,
 because there is no user to link. The name is the whole record of who, which is

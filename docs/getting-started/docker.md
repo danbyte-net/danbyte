@@ -98,7 +98,7 @@ What it runs, at the same cadence as the timers:
 | every minute | dispatch due checks, SNMP drift, Outpost work, alert escalation |
 | every 5 min | materialise check assignments, discover subnets |
 | every 15/30 min | prefix utilisation, hardware health |
-| daily | ACME renewal, retention, stale-IP cleanup, link check, certificate expiry, digest |
+| daily | ACME renewal, retention, stale-IP cleanup, flow requirement sweep, link check, certificate expiry, digest |
 
 `manage.py run_scheduler --list` prints the table. Auto-upgrade is the one timer
 a container does **not** run: the image is the unit of upgrade, so you deploy a

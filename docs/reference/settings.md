@@ -107,6 +107,25 @@ its `Retry-After`), and a
 list page whose tenant holds more says so rather than looking complete (see
 [Very long lists](../features/table-preferences.md#very-long-lists)).
 
+## Application flow requirements
+
+An [application flow requirement](../features/application-flows.md#requirements)
+can mean thousands of generated flows. The requirement dialog's preview
+warns above `FLOW_REQUIREMENT_WARN_PAIRS` flows, and a requirement that
+resolves to more than `FLOW_REQUIREMENT_MAX_PAIRS` is refused: it reads
+*Unresolved* and writes nothing until it is narrowed with pairing or
+address, or this is raised.
+
+| Setting | Env var | Default | Purpose |
+|---|---|---|---|
+| `FLOW_REQUIREMENT_WARN_PAIRS` | `FLOW_REQUIREMENT_WARN_PAIRS` | `500` | The preview warns above this many generated flows for one requirement. A positive whole number. |
+| `FLOW_REQUIREMENT_MAX_PAIRS` | `FLOW_REQUIREMENT_MAX_PAIRS` | `5000` | A requirement resolving to more flows is refused. A positive whole number, at least the warning. |
+
+A value that is not a positive whole number, or a cap below the warning,
+stops the service at start with an error naming the setting. Set them in
+the service environment (`.env`, or the unit's `Environment=`) and restart
+the web service and the workers.
+
 ## DEBUG (default-closed)
 
 `DEBUG` defaults to **`False`** - production must not accidentally run in debug
