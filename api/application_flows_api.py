@@ -149,12 +149,15 @@ class _FlowNamesMixin(PermissionHiddenFieldsMixin):
         names = self._flow_names()
         if names.masks(obj):
             out["name"] = names.name(obj)
+        # The export's column: the pair's key names its rows by id.
+        if names.key_hidden(getattr(obj, "binding_key", "")):
+            out["binding_key"] = None
         return out
 
     def masked_columns(self) -> set[str]:
         out = set(super().masked_columns())
         if self._flow_names().active:
-            out.add("name")
+            out |= {"name", "binding_key"}
         return out
 
 
@@ -336,7 +339,14 @@ class ApplicationFlowSerializer(
         name and application. Changing one needs a detach first; a payload
         that repeats the current value is fine."""
         inst = self.instance
-        if inst is None or not inst.generated:
+        if inst is None:
+            return
+        if not inst.generated:
+            # A detached or released flow keeps its generated name: a payload
+            # that repeats it as this caller reads it (masked) keeps it too.
+            if (inst.name_generated and "name" in attrs and attrs["name"] != inst.name
+                    and attrs["name"] == self._flow_names().name(inst)):
+                attrs.pop("name")
             return
         locked = ["application", "name"]
         for side in SIDES:
@@ -358,7 +368,10 @@ class ApplicationFlowSerializer(
 
     def update(self, instance, validated_data):
         """An edit to a generated row's protocol, ports, direction, status
-        or service is kept as an override."""
+        or service is kept as an override. Renaming a detached or released
+        flow makes the name the user's: it is no longer masked."""
+        if instance.name_generated and validated_data.get("name", instance.name) != instance.name:
+            instance.name_generated = False
         if instance.generated:
             changed = set(instance.overridden_fields or [])
             for name in ("protocol", "ports", "direction", "status", "service"):

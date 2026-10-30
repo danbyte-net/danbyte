@@ -328,9 +328,19 @@ that reader meets the flow:
   pair …*), whose label is the flow's name. A restored pair whose ends
   can no longer be told reads *Hidden* whole.
 
+A detached or released flow is hand-made, but its name is still the one the
+requirement built, so it stays masked the same way. Renaming it makes the
+name yours: from then on it reads as stored.
+
+A pair's `binding_key` names its address, range or prefix and the device or
+VM behind each end by id. Where an end or its host is one you may not view,
+it reads `null` - on the excluded pairs, in the change log's diff and
+snapshots and in the spreadsheet export - and a template cannot print it.
+**Restore** goes by the excluded pair's `id`.
+
 Saving a payload or an import row that repeats the masked name keeps the
 stored one. A superuser, and a reader who may view both ends, read the
-stored name.
+stored name and key.
 
 ## API
 
@@ -377,7 +387,7 @@ by a requirement - detach it first*; `POST <id>/detach/` makes it hand-made,
 | `POST /api/application-flow-requirements/preview/` | The payload of a create (or an edit, with `id`) without saving: `{pairs, hosts, state, detail, warn, refused, warn_at, max, gaps, hidden}`. |
 | `POST …/<id>/resolve/` | Resolve now: `{created, updated, removed, released, gaps, state, pairs}`, or `{job}`. |
 | `GET …/<id>/gaps/` | `{state, detail, gaps: [{side, host, reason}], hidden}`. |
-| `GET`/`POST …/<id>/exclusions/`, `DELETE …/<id>/exclusions/<eid>/` | The excluded pairs; add one by `binding_key`; Restore one. |
+| `GET`/`POST …/<id>/exclusions/`, `DELETE …/<id>/exclusions/<eid>/` | The excluded pairs (`{id, label, binding_key, created_at}`, `binding_key` `null` where it names a row you may not view); add one by `binding_key`; Restore one by its `id`. |
 
 Requirement filters: `?application=`, `?references=<application>` (whose
 *Hosts of* end is that application), `?state=`, `?search=`, and `?device=`

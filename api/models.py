@@ -6651,6 +6651,11 @@ class ApplicationFlow(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
         related_name="flows",
     )
     generated = models.BooleanField(default=False, db_default=False)
+    #: The name was made by a requirement and names the hosts at its ends.
+    #: It outlives a detach or release, so the name stays masked for a
+    #: reader who may not view an end (``api.flow_names``); renaming the
+    #: flow clears it.
+    name_generated = models.BooleanField(default=False, db_default=False)
     #: Which pair of ends the row stands for, deterministic per requirement:
     #: ``<source end>|<destination end>``.
     binding_key = models.CharField(max_length=255, blank=True, default="", db_default="")

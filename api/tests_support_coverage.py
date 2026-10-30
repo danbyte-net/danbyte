@@ -791,6 +791,94 @@ class ImportExportTests(_Base):
         self.assertEqual((rows[0]["contract"], rows[0]["device"]), ("CV-9", "edge-01"))
 
 
+class CoverageHistoryMaskTests(_Base):
+    """A coverage entry's title names its device. Logged while the device
+    was at Site A, it stays readable there after the device moves to Site B:
+    a Site A viewer reads the device as Hidden in it (#453)."""
+
+    separation = False
+
+    def setUp(self):
+        from auth_api.api import assemble_site_role
+        from core.models import DeploymentSettings
+
+        dep = DeploymentSettings.load()
+        dep.enhanced_site_separation = self.separation
+        dep.save(update_fields=["enhanced_site_separation", "updated_at"])
+        super().setUp()
+        self.dev = self.device("edge-b", site=self.site_a)
+        self.c = self.contract("CV-7", end=days(90), devices=[self.dev])
+        self.cov = SupportCoverage.objects.get(contract=self.c, device=self.dev)
+        self.dev.site = self.site_b
+        self.dev.save()
+
+        def user(name, sites):
+            u = User.objects.create_user(name, password="x")
+            UserProfile.objects.create(user=u).tenants.add(self.tenant)
+            assemble_site_role(self.tenant, "viewer", sites, user_ids=[u.id])
+            return u
+
+        self.viewer = user("cov-viewer-a", [self.site_a])
+        self.both = user("cov-viewer-ab", [self.site_a, self.site_b])
+        self._login(self.viewer)
+
+    def history(self):
+        return self.rows(f"/api/changelog/?object_type=api.supportcoverage"
+                         f"&object_id={self.cov.pk}")
+
+    def test_entry_names_the_device_hidden(self):
+        rows = self.history()
+        self.assertTrue(rows)
+        self.assertEqual({r["object_repr"] for r in rows}, {"Coverage of Hidden"})
+        r = self.client.get(f"/api/changelog/{rows[0]['id']}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertNotIn("edge-b", r.content.decode())
+        listed = self.rows("/api/changelog/?object_type=api.supportcoverage")
+        self.assertNotIn("edge-b", str(listed))
+
+    def test_search_does_not_match_the_hidden_device(self):
+        found = self.rows("/api/changelog/?search=edge-b")
+        self.assertFalse([x for x in found if x["object_type"] == "api.supportcoverage"])
+        found = self.rows("/api/changelog/?search=Coverage of")
+        self.assertIn(str(self.cov.pk), {x["object_id"] for x in found})
+        self._login(self.both)
+        found = self.rows("/api/changelog/?search=edge-b")
+        self.assertIn(str(self.cov.pk), {x["object_id"] for x in found})
+
+    def test_reader_of_both_sites_and_superuser_read_the_device(self):
+        for u in (self.both, self.admin):
+            self._login(u)
+            self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of edge-b"})
+
+    def test_stored_history_is_not_rewritten(self):
+        self.history()
+        entry = ChangeLogEntry.objects.get(object_id=str(self.cov.pk))
+        self.assertEqual(entry.object_repr, "Coverage of edge-b")
+
+    def test_older_title_drops_a_hidden_contract(self):
+        # Titles from before #421's rename read "contract → device".
+        ChangeLogEntry.objects.filter(object_id=str(self.cov.pk)).update(
+            object_repr="CV-7 → edge-b")
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of Hidden"})
+        # A reader of every device but no contract reads the device alone.
+        reader = User.objects.create_user("cov-devices", password="x")
+        UserProfile.objects.create(user=reader).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="g", object_types=["supportcoverage", "device"], actions=["view"])
+        perm.users.add(reader)
+        perm.tenants.add(self.tenant)
+        self._login(reader)
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"Coverage of edge-b"})
+        self.assertFalse([x for x in self.rows("/api/changelog/?search=CV-7")
+                          if x["object_type"] == "api.supportcoverage"])
+        self._login(self.admin)
+        self.assertEqual({r["object_repr"] for r in self.history()}, {"CV-7 → edge-b"})
+
+
+class CoverageHistoryMaskSeparationTests(CoverageHistoryMaskTests):
+    separation = True
+
+
 class SiteRoleUpgradeTests(TestCase):
     """auth_api 0030 gives site roles built before #421 the coverage type,
     and their catalog reads the contracts."""
