@@ -8,6 +8,7 @@ import type {
 import { findCollision } from "./canvas-geometry"
 import { byZ, pointInBox, pointInPolygon } from "./shapes"
 import type { AreaShape, PlanShape, Pt } from "./shapes"
+import { shownLink } from "./shown-link"
 
 // Placing devices, racks and cabinets on a floor (the Place picker, the
 // unplaced list): where the new tiles go, which room's area they land in,
@@ -31,7 +32,7 @@ export const placeKey = (kind: string, id: string) => `${kind}:${id}`
 export function placedOnFloor(tiles: FloorPlanTile[]): Map<string, string> {
   const out = new Map<string, string>()
   for (const t of tiles) {
-    const l = t.linked
+    const l = shownLink(t.linked)
     if (
       !l ||
       !(l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")
@@ -300,7 +301,7 @@ export function roomPrompts(
     }
   >()
   for (const t of tiles) {
-    const l = t.linked
+    const l = shownLink(t.linked)
     if (
       !l ||
       !(l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")

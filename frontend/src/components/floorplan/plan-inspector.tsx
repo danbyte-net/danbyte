@@ -128,9 +128,10 @@ export function PlanInspector({
           onFit={(size) => fitTile(selected, size)}
           onDelete={() => deleteTile(selected.id)}
           onOpenContents={
-            selected.linked?.kind === "rack" ||
-            selected.linked?.kind === "cabinet" ||
-            selected.linked?.kind === "device"
+            !selected.linked?.hidden &&
+            (selected.linked?.kind === "rack" ||
+              selected.linked?.kind === "cabinet" ||
+              selected.linked?.kind === "device")
               ? () => openTile(selected)
               : undefined
           }

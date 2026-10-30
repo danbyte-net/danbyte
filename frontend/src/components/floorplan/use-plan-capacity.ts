@@ -64,7 +64,8 @@ export function usePlanCapacity({
     [racks]
   )
   const rackTiles = useMemo(
-    () => tiles.filter((t) => t.linked?.kind === "rack"),
+    // A Hidden rack (another site's) has no figures to colour by.
+    () => tiles.filter((t) => t.linked?.kind === "rack" && !!t.linked.id),
     [tiles]
   )
 
@@ -92,7 +93,7 @@ export function usePlanCapacity({
     () =>
       match
         ? new Set(
-            rackTiles.filter((t) => !match.has(t.linked!.id)).map((t) => t.id)
+            rackTiles.filter((t) => !match.has(t.linked!.id!)).map((t) => t.id)
           )
         : undefined,
     [rackTiles, match]
@@ -114,8 +115,8 @@ export function usePlanCapacity({
     const byRack = new Map<string, RackFigures | null>()
     let alarm = false
     for (const t of rackTiles) {
-      if (!byRack.has(t.linked!.id))
-        byRack.set(t.linked!.id, figures.get(t.id) ?? null)
+      if (!byRack.has(t.linked!.id!))
+        byRack.set(t.linked!.id!, figures.get(t.id) ?? null)
       const check = live?.tiles[t.id]?.check
       if (check && CHECK_COLOR[check]) alarm = true
     }

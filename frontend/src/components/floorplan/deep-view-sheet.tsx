@@ -18,6 +18,7 @@ import { CapacityBar } from "@/components/cells/capacity-bar"
 import { PowerFigure } from "@/components/cells/power-figure"
 import { DeviceMiniTopology } from "@/components/device-mini-topology"
 import { BarTip } from "@/components/map-toolbar"
+import { shownLink } from "./shown-link"
 import { OpenLink } from "@/components/open-link"
 import { QueryError } from "@/components/query-error"
 import { RackElevation } from "@/components/rack-elevation"
@@ -36,7 +37,7 @@ export function DeepViewSheet({
   onClose: () => void
   onTraceCables: (cableIds: string[]) => void
 }) {
-  const linked = tile?.linked ?? null
+  const linked = shownLink(tile?.linked)
   return (
     <Sheet open={!!linked} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
