@@ -14,7 +14,9 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-from core.models import TimestampedModel, Tenant
+from core.models import Tenant, TimestampedModel
+
+from .eol_sources import CUSTOM
 
 
 class CheckType(models.TextChoices):
@@ -172,26 +174,54 @@ class EolSettings(TimestampedModel):
         return "End-of-life settings"
 
 
+#: ``EolProduct.source`` of a product a tenant entered by hand.
+CUSTOM_SOURCE = CUSTOM
+
+
 class EolProduct(TimestampedModel):
-    """One product of a source's catalog with its release cycles, as last
-    fetched or imported. Deployment-wide: the catalog is public data."""
+    """One product with its release cycles. A source's product (``tenant``
+    NULL) is the catalog as last fetched or imported, deployment-wide: the
+    catalog is public data. A custom product (``source="custom"``) belongs
+    to one tenant, is entered by hand, and no refresh or import touches it."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: NULL for a source's product; the owner of a custom one.
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="eol_products",
+        null=True, blank=True,
+    )
     source = models.CharField(max_length=32)
     name = models.CharField(max_length=128)
     label = models.CharField(max_length=200, blank=True, default="")
     category = models.CharField(max_length=64, blank=True, default="")
     aliases = models.JSONField(default=list, blank=True)
     #: Normalised cycles, newest first: ``{name, label, release_date,
-    #: support_until, eol_date, eol, lts, latest}``.
+    #: support_until, eol_date, extended_until, eol, lts, latest}``.
     releases = models.JSONField(default=list, blank=True)
+    #: A custom product's page and notes.
+    link = models.URLField(max_length=500, blank=True, default="", db_default="")
+    notes = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["source", "name"]
+        verbose_name = "end-of-life product"
         constraints = [
             models.UniqueConstraint(
-                fields=["source", "name"], name="uniq_eolproduct_source_name"
-            )
+                fields=["source", "name"], condition=models.Q(tenant__isnull=True),
+                name="uniq_eolproduct_catalog_source_name",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "name"],
+                condition=models.Q(tenant__isnull=False),
+                name="uniq_eolproduct_tenant_name",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(tenant__isnull=True) & ~models.Q(source=CUSTOM_SOURCE))
+                    | models.Q(tenant__isnull=False, source=CUSTOM_SOURCE)
+                ),
+                name="eolproduct_custom_has_tenant",
+            ),
         ]
 
     def __str__(self) -> str:

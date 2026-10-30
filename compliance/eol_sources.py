@@ -4,7 +4,7 @@ A source turns its payload into normalised products::
 
     {"name", "label", "category", "aliases": [...], "releases": [
         {"name", "label", "release_date", "support_until", "eol_date",
-         "eol", "lts", "latest"},
+         "extended_until", "eol", "lts", "latest"},
     ]}
 
 Dates are ISO strings or ``None``; ``eol`` is the source's own flag (``None``
@@ -132,6 +132,7 @@ class EndOfLifeDate(EolSource):
             "release_date": _date(r.get("releaseDate")),
             "support_until": _date(r.get("eoasFrom")),
             "eol_date": _date(r.get("eolFrom")),
+            "extended_until": _date(r.get("eoesFrom")),
             "eol": _flag(r.get("isEol")),
             "lts": bool(r.get("isLts")),
             "latest": str(latest_name or "")[:64],
@@ -147,9 +148,16 @@ def load_json(raw: bytes):
 
 SOURCES: dict[str, EolSource] = {}
 
+#: The source key of a product a tenant enters by hand - never a registered
+#: source, so no refresh or import reaches it.
+CUSTOM = "custom"
+
 
 def register_source(source: EolSource) -> None:
-    """Add a source. Plugins may call this from their registration module."""
+    """Add a source. Plugins may call this from their registration module.
+    ``custom`` is taken: it marks the products tenants enter by hand."""
+    if source.key == CUSTOM:
+        raise ValueError("'custom' is reserved for products entered by hand.")
     SOURCES[source.key] = source
 
 

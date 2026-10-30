@@ -318,6 +318,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # row names its object generically, and the triage endpoint checks that
     # the caller may view each object (see site_paths.SITE_PATHS).
     ("compliance.ComplianceTriage", "Compliance triage", "Governance"),
+    # A tenant's own end-of-life products and their cycles, for what the
+    # public catalog lacks. Tenant-wide like applications and platforms; the
+    # sources' catalog rows (tenant NULL) are not reachable through it.
+    ("compliance.EolProduct", "End-of-life products", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
     # CustomField + CustomFieldGroup live in the `customization` app, not `api` -

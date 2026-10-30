@@ -167,9 +167,8 @@ def _eol_detail(app, cfg, request) -> dict:
     catalog cycles (``other_cycles``), ``unmapped_installs`` (installs no
     cycle took), ``in_catalog`` and the source's and product's names and
     link."""
-    from compliance.eol import date_status
-    from compliance.eol_sources import SOURCES
-    from compliance.models import EolProduct
+    from compliance.eol import date_status, find_product, source_label
+    from compliance.eol_sources import CUSTOM, SOURCES
 
     block = _eol_block(app, cfg)
     f = view_filter(request, InstalledSoftware)
@@ -193,8 +192,8 @@ def _eol_detail(app, cfg, request) -> dict:
     # The cycles with installs first; a stable sort keeps newest first.
     cycles.sort(key=lambda r: r["install_count"] == 0)
     source = SOURCES.get(app.eol_source) if mapped else None
-    product = EolProduct.objects.filter(
-        source=app.eol_source, name=app.eol_product).first() if mapped else None
+    product = find_product(app.eol_source, app.eol_product, app.tenant_id) \
+        if mapped else None
     taken = {m.cycle for m in mappings}
     other = [
         {
@@ -216,10 +215,21 @@ def _eol_detail(app, cfg, request) -> dict:
         "other_cycles": other,
         "unmapped_installs": counts.get(None, 0),
         "in_catalog": (product is not None) if mapped else None,
-        "source_label": source.label if source else None,
+        "source_label": source_label(app.eol_source) if mapped else None,
         "product_label": (product.label or product.name) if product else None,
-        "product_url": (source.product_url(app.eol_product) or None) if source else None,
+        "product_url": _product_url(app, source, product),
+        "custom": app.eol_source == CUSTOM if mapped else None,
+        "product_id": str(product.pk) if product is not None and product.tenant_id else None,
     }
+
+
+def _product_url(app, source, product) -> str | None:
+    """The product's page: the source's, or a custom product's own link."""
+    if source is not None:
+        return source.product_url(app.eol_product) or None
+    if product is not None and product.link:
+        return product.link
+    return None
 
 
 #: How deep the Hierarchy card's tree of children goes.
@@ -606,6 +616,12 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         mfr = _uuid_param(params, "manufacturer")
         if mfr:
             qs = qs.filter(manufacturer_id=mfr)
+        # The applications mapped to one end-of-life product (a custom
+        # product's Applications tab).
+        for key in ("eol_source", "eol_product"):
+            v = params.get(key, "").strip()
+            if v:
+                qs = qs.filter(**{key: v})
         parent = params.get("parent")
         if parent == "none":
             qs = qs.filter(parent__isnull=True)
@@ -679,15 +695,15 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     )
     @action(detail=True, methods=["get", "put", "delete"], url_path="eol")
     def eol(self, request, pk=None):
-        """``PUT {source?, product}`` names the product; each install's
+        """``PUT {source?, product}`` names the product - a source's, or
+        ``source: "custom"`` for one of the tenant's own; each install's
         version picks its cycle. ``DELETE`` clears it. ``GET`` and ``PUT``
         answer the block with each cycle's ``install_count``,
         ``other_cycles``, ``unmapped_installs``, ``in_catalog`` and the
         source's and product's names and link. 404 while end-of-life data is
         off."""
-        from compliance.eol import load_config
+        from compliance.eol import find_product, is_source, load_config
         from compliance.eol_sources import SOURCES
-        from compliance.models import EolProduct
 
         from .applications import set_product
 
@@ -702,11 +718,11 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             data = request.data if isinstance(request.data, dict) else {}
             source = str(data.get("source") or next(iter(SOURCES)))
             name = str(data.get("product") or "").strip()
-            if source not in SOURCES:
+            if not is_source(source):
                 raise ValidationError({"source": "Unknown source."})
             if not name:
                 raise ValidationError({"product": "Pick a product."})
-            if not EolProduct.objects.filter(source=source, name=name).exists():
+            if find_product(source, name, app.tenant_id) is None:
                 raise ValidationError({"product": "Not in the catalog - refresh or import it."})
             set_product(app, source, name)
         app = Application.objects.prefetch_related("eol_mappings").get(pk=app.pk)

@@ -25,7 +25,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .eol_sources import SOURCES, EolSourceError, get_source
+from .eol_sources import CUSTOM, SOURCES, EolSourceError, get_source
 
 log = logging.getLogger("danbyte.eol")
 
@@ -229,36 +229,81 @@ def apply_status_filter(qs, request, prefix: str):
 
 
 def store_catalog(source_key: str, products: list[dict]) -> dict:
-    """Make the cached catalog of ``source_key`` mirror ``products``."""
+    """Make the cached catalog of ``source_key`` mirror ``products``. Only
+    the source's own rows (``tenant`` NULL): a tenant's custom products are
+    never written or deleted here."""
+    from audit.context import suspended
+
     from .models import EolProduct
 
     get_source(source_key)
     by_name = {p["name"]: p for p in products}
     existing = {
-        name: pk for pk, name in EolProduct.objects.filter(
-            source=source_key).values_list("id", "name")
+        p.name: p for p in EolProduct.objects.filter(
+            source=source_key, tenant__isnull=True).only("id", "name")
     }
-    rows = [
-        EolProduct(
-            source=source_key, name=name, label=p["label"],
-            category=p["category"], aliases=p["aliases"], releases=p["releases"],
-        )
-        for name, p in by_name.items()
-    ]
-    gone = [pk for name, pk in existing.items() if name not in by_name]
+    fields = ["label", "category", "aliases", "releases"]
+    now = timezone.now()
+    new, changed = [], []
+    for name, p in by_name.items():
+        row = existing.get(name)
+        if row is None:
+            row = EolProduct(source=source_key, name=name)
+            new.append(row)
+        else:
+            changed.append(row)
+        for f in fields:
+            setattr(row, f, p[f])
+        row.updated_at = now
+    gone = [row.pk for name, row in existing.items() if name not in by_name]
     with transaction.atomic():
-        EolProduct.objects.bulk_create(
-            rows, batch_size=500, update_conflicts=True,
-            unique_fields=["source", "name"],
-            update_fields=["label", "category", "aliases", "releases", "updated_at"],
-        )
+        EolProduct.objects.bulk_create(new, batch_size=500)
+        EolProduct.objects.bulk_update(changed, [*fields, "updated_at"], batch_size=500)
         if gone:
-            EolProduct.objects.filter(id__in=gone).delete()
+            # Cached public data, not a tenant's record: kept out of the
+            # change log like the bulk writes above.
+            with suspended():
+                EolProduct.objects.filter(id__in=gone, tenant__isnull=True).delete()
     return {
         "products": len(by_name),
-        "added": len(set(by_name) - set(existing)),
+        "added": len(new),
         "removed": len(gone),
     }
+
+
+def is_source(key: str) -> bool:
+    """A source key a product may name: a registered source or ``custom``."""
+    return key in SOURCES or key == CUSTOM
+
+
+def source_label(key: str) -> str | None:
+    if key == CUSTOM:
+        return "Custom"
+    src = SOURCES.get(key)
+    return src.label if src else None
+
+
+def products_for(tenant_id):
+    """The products a tenant picks from: every source's catalog and its own
+    custom products - never another tenant's."""
+    from .models import EolProduct
+
+    return EolProduct.objects.filter(Q(tenant__isnull=True) | Q(tenant_id=tenant_id))
+
+
+def find_product(source: str, name: str, tenant_id):
+    """The product ``(source, name)`` as ``tenant_id`` sees it, or None. A
+    custom product is looked up in that tenant alone."""
+    from .models import EolProduct
+
+    if not (source and name):
+        return None
+    qs = EolProduct.objects.filter(source=source, name=name)
+    if source == CUSTOM:
+        qs = qs.filter(tenant_id=tenant_id)
+    else:
+        qs = qs.filter(tenant__isnull=True)
+    return qs.first()
 
 
 def find_release(product, cycle: str) -> dict | None:
@@ -311,20 +356,56 @@ def apply_mappings(source_key: str | None = None) -> dict:
     if source_key:
         mappings = mappings.filter(source=source_key)
     mappings = list(mappings)
-    keys = {(m.source, m.product) for m in mappings}
+    keys = {_product_key(m.source, m.product, m.tenant_id) for m in mappings}
     products = {}
     if keys:
         q = Q()
-        for src, name in keys:
-            q |= Q(source=src, name=name)
-        products = {(p.source, p.name): p for p in EolProduct.objects.filter(q)}
+        for src, name, tenant_id in keys:
+            q |= Q(source=src, name=name, tenant_id=tenant_id)
+        products = {
+            _product_key(p.source, p.name, p.tenant_id): p
+            for p in EolProduct.objects.filter(q)
+        }
     now = timezone.now()
     changed = 0
     for m in mappings:
-        if fill_mapping(m, products.get((m.source, m.product)), now):
+        if fill_mapping(m, products.get(_product_key(m.source, m.product, m.tenant_id)), now):
             m.save()
             changed += 1
     return {"mappings": len(mappings), "changed": changed}
+
+
+def _product_key(source: str, name: str, tenant_id) -> tuple:
+    """How a mapping finds its product: a source's by (source, name), a
+    custom one in the mapping's own tenant."""
+    return (source, name, tenant_id if source == CUSTOM else None)
+
+
+def apply_custom(product) -> dict:
+    """After a custom product's cycles change: redo the cycles of the
+    installs of every application that names it (a version may match a new
+    cycle, or no longer match a removed one) and refill the platform
+    mappings on it - in the product's tenant only, as a refresh would."""
+    from api.applications import set_product
+    from api.models import Application
+
+    from .models import EolMapping
+
+    apps = Application.objects.filter(
+        tenant_id=product.tenant_id, eol_source=CUSTOM, eol_product=product.name)
+    n_apps = 0
+    for app in apps:
+        set_product(app, CUSTOM, product.name)
+        n_apps += 1
+    # The mappings set_product kept, and the platforms', take the new facts.
+    changed = 0
+    for m in EolMapping.objects.filter(
+        tenant_id=product.tenant_id, source=CUSTOM, product=product.name,
+    ):
+        if fill_mapping(m, product):
+            m.save()
+            changed += 1
+    return {"applications": n_apps, "changed": changed}
 
 
 def _set_status(status: str, *, via: str = "", error: str = "", at=None) -> None:

@@ -81,6 +81,7 @@ from compliance.eol_api import (
     eol_refresh,
     eol_settings,
 )
+from compliance.eol_custom import EolCustomProductViewSet
 from core import (
     deployment,
     service_api,
@@ -526,6 +527,8 @@ router.register(r"config-states", DeviceConfigStateViewSet, basename="config-sta
 router.register(r"config-snapshots", DeviceConfigSnapshotViewSet, basename="config-snapshot")
 router.register(r"journal",       JournalEntryViewSet, basename="journal")
 router.register(r"compliance-rules", ComplianceRuleViewSet, basename="compliance-rule")
+router.register(r"eol/custom-products", EolCustomProductViewSet,
+                basename="eol-custom-product")
 router.register(r"users",         UserViewSet,        basename="user")
 router.register(r"groups",        GroupViewSet,       basename="group")
 router.register(r"object-permissions", ObjectPermissionViewSet, basename="object-permission")
