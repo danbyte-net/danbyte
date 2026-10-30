@@ -86,7 +86,8 @@ export function PlanFromObject() {
   if (!canDo("task", "change")) return null
 
   const rows = tasks.data?.results ?? []
-  const canCreate = canDo("task", "add")
+  // The new task is linked to this object, which needs its own right.
+  const canCreate = canDo("task", "add") && canDo("tasklink", "add")
 
   return (
     <Popover
