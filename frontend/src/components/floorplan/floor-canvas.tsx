@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type {
   FloorPlan,
@@ -21,13 +21,7 @@ import { PointerMenu } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 
 import type { Pt } from "./cable-route"
-import {
-  CELL,
-  cableRoutePoints,
-  tileHasFov,
-  tileIsZone,
-  tileName,
-} from "./canvas-geometry"
+import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import { FovCone, TileShape } from "./tile-layer"
 import { tileFill } from "./tile-paint"
@@ -52,7 +46,10 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { PlanShape } from "./shapes"
-import { CableLink, TrayShape } from "./tray-layer"
+import { TrayShape } from "./tray-layer"
+import { CableLayer } from "./cable-layer"
+import type { CableAnchor, CableHoverHit } from "./cable-layer"
+import type { CableColorBy, CableRoute } from "./cable-draw"
 import { usePanZoom } from "./use-pan-zoom"
 import { useShapeGestures } from "./use-shape-gestures"
 import type { ShapeTool } from "./use-shape-gestures"
@@ -76,6 +73,10 @@ export { tileFill }
 
 /** Rows shown but locked here (a live view's edge rows) draw faded. */
 const LOCKED_OPACITY = 0.5
+/** Stable empties, so the memoised cable layer keeps its props. */
+const NO_CABLES: FloorPlanCablePath[] = []
+const NO_IDS: string[] = []
+const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
 
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
@@ -216,6 +217,22 @@ export interface FloorCanvasProps {
   onSelectCable?: (id: string | null) => void
   /** Highlight several cables at once (right-click "trace cables here"). */
   onHighlightCables?: (ids: string[]) => void
+  /** Each cable's route (use-cable-routes.ts), worked out once per change
+   * of the plan's contents - never per frame. */
+  cableRoutes?: ReadonlyMap<string, CableRoute>
+  /** What the cables are coloured by. */
+  cableColorBy?: CableColorBy
+  /** Cable names along the runs, up close. */
+  showCableLabels?: boolean
+  /** Runs sharing a stretch draw as one stroke with a count where their
+   * lanes would not read. */
+  bundleCables?: boolean
+  /** Pointer or keyboard on a cable or a bundle - `at` in the wrapper's
+   * px, for the cable popover. */
+  onHoverCable?: (
+    hit: CableHoverHit | null,
+    at: { x: number; y: number } | null
+  ) => void
   /** Parent-held ref to drive fit/focus from the header (search, fit btn). */
   apiRef?: React.RefObject<FloorCanvasApi | null>
   /** Drawn in world px over the floor and under the grid - the plan's CAD
@@ -370,11 +387,16 @@ export function FloorCanvas({
   onFinishDraw,
   onMoveTray,
   trayEditMode = false,
-  cablePaths = [],
+  cablePaths = NO_CABLES,
   showCableLinks = false,
-  highlightCableIds = [],
+  highlightCableIds = NO_IDS,
   onSelectCable,
   onHighlightCables,
+  cableRoutes = NO_ROUTES,
+  cableColorBy = "status",
+  showCableLabels = true,
+  bundleCables = true,
+  onHoverCable,
   apiRef,
   underlay,
   worldOverlay,
@@ -444,6 +466,41 @@ export function FloorCanvas({
     pinchMove,
     pinchUp,
   } = usePanZoom()
+
+  // The cable layer is memoised; its callbacks must hold still while the
+  // canvas re-renders on every pan frame.
+  const tNow = useRef(t)
+  tNow.current = t
+  const cableProps = useRef({ onSelectCable, onHoverCable })
+  cableProps.current = { onSelectCable, onHoverCable }
+  const selectCable = useCallback(
+    (id: string | null) => cableProps.current.onSelectCable?.(id),
+    []
+  )
+  const hoverCable = useCallback(
+    (hit: CableHoverHit | null, at?: CableAnchor) => {
+      const report = cableProps.current.onHoverCable
+      if (!report) return
+      const rect = svgRef.current?.getBoundingClientRect()
+      if (!hit || !at || !rect) {
+        report(null, null)
+        return
+      }
+      // Not while dragging or panning: a popover chasing the pointer.
+      if (drag.current) return
+      const tt = tNow.current
+      report(
+        hit,
+        "cell" in at
+          ? {
+              x: tt.x + at.cell[0] * CELL * tt.k,
+              y: tt.y + at.cell[1] * CELL * tt.k,
+            }
+          : { x: at.clientX - rect.left, y: at.clientY - rect.top }
+      )
+    },
+    []
+  )
 
   const editing = trayEditMode
   const gw = plan.grid_width * CELL
@@ -1575,41 +1632,26 @@ export function FloorCanvas({
               )
             })}
 
-          {/* Cable A↔B links - routed THROUGH the cable's trays (falls back to
-              a straight line when the cable has no trays). The highlighted
-              cable renders LAST so it sits on top of any it shares a path
-              with; the rest dim so the traced run stands out. Clickable in
-              any mode when the links overlay is on - no Cables mode needed. */}
-          {/* Edit mode hides cables entirely so trays are free to grab. */}
-          {showCableLinks &&
-            !trayEditMode &&
-            [...cablePaths]
-              .sort(
-                (a, b) =>
-                  (highlightCableIds.includes(a.id) ? 1 : 0) -
-                  (highlightCableIds.includes(b.id) ? 1 : 0)
-              )
-              .map((cp) => {
-                const route = cableRoutePoints(cp, trays, tiles, {
-                  ceilingMm: plan.ceiling_mm,
-                  areas: raisedFloors,
-                })
-                if (route.length < 2) return null
-                const hi = highlightCableIds.includes(cp.id)
-                return (
-                  <CableLink
-                    key={cp.id}
-                    route={route}
-                    color={cp.color}
-                    label={cp.label}
-                    type={cp.type}
-                    highlighted={hi}
-                    dimmed={highlightCableIds.length > 0 && !hi}
-                    interactive
-                    onSelect={() => onSelectCable?.(hi ? null : cp.id)}
-                  />
-                )
-              })}
+          {/* Cable A↔B runs (cable-layer.tsx): in lanes along their trays,
+              orthogonal elbows between tiles, bundled where lanes would not
+              read. Clickable in any mode when the links overlay is on - no
+              Cables mode needed. Edit trays hides them so trays are free to
+              grab. */}
+          {showCableLinks && !trayEditMode && (
+            <CableLayer
+              cablePaths={cablePaths}
+              routes={cableRoutes}
+              k={t.k}
+              cellMm={plan.cell_mm}
+              colorBy={cableColorBy}
+              bundle={bundleCables}
+              showLabels={showCableLabels}
+              highlightIds={highlightCableIds}
+              interactive
+              onSelect={selectCable}
+              onHover={hoverCable}
+            />
+          )}
 
           {/* Labels - over the tiles, so "North side" reads over a row. */}
           <g data-layer="labels">

@@ -15,6 +15,19 @@ import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+import {
+  CABLE_COLOR_BY,
+  CABLE_COLOR_BY_LABEL,
+  readCableColorBy,
+} from "./cable-draw"
 import { ColorBySelect } from "./color-by-select"
 import type { PlanViewPrefs, ShellMode3D } from "./use-plan-view-prefs"
 
@@ -34,6 +47,9 @@ export function DisplayMenu({
     showZoneLabels,
     showTrays,
     showCableLinks,
+    cableColorBy,
+    showCableLabels,
+    bundleCables,
     showPhotos,
     showPhotoOutlines,
     show3dU,
@@ -126,6 +142,48 @@ export function DisplayMenu({
             onChange={(v) => setViewPref("show_cable_links", v)}
             className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
           />
+          {showCableLinks && (
+            <>
+              <div className="px-2 pt-1 pb-1.5">
+                <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+                  Color cables by
+                </span>
+                <Select
+                  value={cableColorBy}
+                  onValueChange={(v) =>
+                    setViewPref("cable_color_by", readCableColorBy(v))
+                  }
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full text-xs"
+                    aria-label="Color cables by"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CABLE_COLOR_BY.map((c) => (
+                      <SelectItem key={c} value={c} className="text-xs">
+                        {CABLE_COLOR_BY_LABEL[c]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <FormCheckbox
+                label="Cable labels"
+                checked={showCableLabels}
+                onChange={(v) => setViewPref("show_cable_labels", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+              <FormCheckbox
+                label="Bundle parallel runs"
+                checked={bundleCables}
+                onChange={(v) => setViewPref("bundle_cables", v)}
+                className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+              />
+            </>
+          )}
         </div>
         {view3d && (
           <div className="grid content-start gap-1 border-l border-border pl-3">

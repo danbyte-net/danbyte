@@ -12,6 +12,8 @@ import {
 } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 
+import { readCableColorBy } from "./cable-draw"
+import type { CableColorBy } from "./cable-draw"
 import { readFloorHidden } from "./hidden"
 import type { FloorHidden } from "./hidden"
 import { readColorBy } from "./tile-paint"
@@ -42,6 +44,9 @@ export type ViewPrefKey =
   | "show_3d_names_edge"
   | "color_by"
   | "show_racks"
+  | "cable_color_by"
+  | "show_cable_labels"
+  | "bundle_cables"
 
 /** The plan's view preferences: seeded from plan.state, a session override
  * on top, persisted back to the plan for editors. The 3D effects budget and
@@ -93,6 +98,13 @@ export function usePlanViewPrefs({
   // Color by (#247) and the rack table it opens - plan prefs like the rest.
   const [colorByLocal, setColorByLocal] = useState<ColorBy | null>(null)
   const [showRacksLocal, setShowRacksLocal] = useState<boolean | null>(null)
+  // How the 2D cables draw: their colour, their names, their bundles.
+  const [cableColorByLocal, setCableColorByLocal] =
+    useState<CableColorBy | null>(null)
+  const [cableLabelsLocal, setCableLabelsLocal] = useState<boolean | null>(null)
+  const [bundleCablesLocal, setBundleCablesLocal] = useState<boolean | null>(
+    null
+  )
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -131,6 +143,9 @@ export function usePlanViewPrefs({
     setShell3dLocal(null)
     setColorByLocal(null)
     setShowRacksLocal(null)
+    setCableColorByLocal(null)
+    setCableLabelsLocal(null)
+    setBundleCablesLocal(null)
   }, [id])
 
   // View prefs: seeded from the plan's saved state; editors persist toggles.
@@ -228,12 +243,27 @@ export function usePlanViewPrefs({
   const colorBy = colorByLocal ?? readColorBy(plan?.state.color_by)
   const showRacks =
     showRacksLocal ?? (plan?.state.show_racks as boolean | undefined) ?? true
+  const cableColorBy =
+    cableColorByLocal ?? readCableColorBy(plan?.state.cable_color_by)
+  const showCableLabels =
+    cableLabelsLocal ??
+    (plan?.state.show_cable_labels as boolean | undefined) ??
+    true
+  // Parallel runs bundle by default: a big plan is a hairball otherwise.
+  const bundleCables =
+    bundleCablesLocal ??
+    (plan?.state.bundle_cables as boolean | undefined) ??
+    true
 
   const setViewPref = (
     key: ViewPrefKey,
-    value: boolean | "all" | "selected" | ColorBy
+    value: boolean | "all" | "selected" | ColorBy | CableColorBy
   ) => {
     if (key === "label_fit") setLabelFitLocal(value as boolean)
+    else if (key === "cable_color_by")
+      setCableColorByLocal(value as CableColorBy)
+    else if (key === "show_cable_labels") setCableLabelsLocal(value as boolean)
+    else if (key === "bundle_cables") setBundleCablesLocal(value as boolean)
     else if (key === "color_by") setColorByLocal(value as ColorBy)
     else if (key === "show_racks") setShowRacksLocal(value as boolean)
     else if (key === "show_fov") setShowFovLocal(value as boolean)
@@ -285,6 +315,9 @@ export function usePlanViewPrefs({
     setShellMode,
     colorBy,
     showRacks,
+    cableColorBy,
+    showCableLabels,
+    bundleCables,
     quality3d,
     setQuality3d,
     cableScale,

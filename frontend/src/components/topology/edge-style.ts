@@ -31,7 +31,7 @@ export type CableLook = Pick<
 >
 
 // Deterministic palette per cable type - informational hue, not state.
-const TYPE_PALETTE = [
+export const TYPE_PALETTE = [
   "#0ea5e9",
   "#8b5cf6",
   "#f59e0b",

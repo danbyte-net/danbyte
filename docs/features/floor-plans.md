@@ -1334,26 +1334,108 @@ Auto-picking a cable's trays from its endpoints is the next phase.*
 
 ### Seeing cables A↔B (routed through the trays)
 
-Turn on **Display → Cable links (A↔B)** and every cable routed through a tray
-draws its **physical run** - not a straight line, but the actual path
-**through the trays it's assigned to**. Danbyte resolves each cable's
-terminations to its devices, then to the tile holding that device (or the
-device's rack tile), and routes A→B along the tray network: it enters at the
-nearest tray point, follows the trays - **including T-junctions and across
-several connected trays** - and only straight-lines the short hops from a
-device to the tray. A cable with no trays just draws straight A→B. Click a
-cable in a tray's inspector to **highlight** its run (animated).
+Turn on **Display → Cable links (A↔B)** and every cable on the plan draws
+its **physical run**. Danbyte resolves each cable's terminations to its
+devices, then to the tile holding that device (or the device's rack or
+cabinet tile), and routes A→B along **the trays the cable is assigned to**:
+it enters at the nearest tray point, follows the trays - **including
+T-junctions and across several connected trays** - and squares off the
+short hops between a tile and its tray. A cable with no trays (or whose
+trays do not connect its ends) draws as an **orthogonal elbow** between its
+two tiles, never a diagonal through other tiles.
+
+**What shows a route:** any cable that's either routed through a tray here,
+or has both ends placed on the plan (a device tile, or the device's rack or
+cabinet tile). Only the cables you may view are drawn; a tray's label counts
+the ones in it you may not (`T-03 · 12 · 2 hidden`).
 
 **Assigning a cable to several trays** is how branching works: add the cable
 to each tray it passes through (a main run plus a branch, say). The trace
 stitches them at their junctions - including where two trays at the same
 level **cross mid-run** - and takes the branch toward the destination.
 
-**Tracing a single cable - no Cables mode needed.** With **Display → Cable
-links** on, just **click any cable line** (in Layout *or* Cables mode) to
-trace it: the clicked run jumps to the **front**, brightens with a moving
-dash, and every other cable **dims** so the route reads clearly even where
-several share a tray. Click empty floor to clear.
+#### Lanes and bundles
+
+Cables that share a tray no longer draw on top of each other:
+
+- **Lanes.** Each stretch of tray the runs share is split into parallel
+  lanes inside the tray's width. The lanes are in one order everywhere
+  (by cable label), so two cables keep their sides along the whole run
+  instead of braiding. Cables between the same two tiles share one elbow,
+  in lanes the same way.
+- **Bundles.** Where the lanes would sit closer than a few pixels on
+  screen, the stretch draws as **one thicker stroke with a count** (the
+  squarish badge). Hover it to list its cables; **click it to fan them
+  out** into lanes. **Display → Bundle parallel runs** (on by default)
+  turns bundling off.
+
+#### Colour, styles and the legend
+
+**Display → Color cables by** colours every run from its data:
+
+| Choice | A run's colour |
+|---|---|
+| **Status** (the default) | Its status's colour. |
+| **Cable color** | The physical jacket colour recorded on the cable. |
+| **Type** | A colour per cable type on this plan, handed out in legend order - the most common type first. Types have no catalog colour, so the legend says which is which. |
+
+A cable with nothing to colour it by (no status, no jacket colour, no type)
+draws in the muted foreground. A bundle takes its cables' colour when they
+share one, else the muted foreground.
+
+The line style says how the route is known:
+
+| Style | Meaning |
+|---|---|
+| **Documented** - solid | A route stored for the cable on this plan. |
+| **Planned** - long dash | The cable's status is marked **Planned** (Statuses → *Planned*). |
+| **Inferred** - thin, lighter | Worked out from the cable's trays, or straight between its tiles; nothing stored. |
+| **Preview** - dotted | A route being proposed, not saved. |
+| **Out of date** - with a warning mark | A stored route whose end tile has since moved. |
+
+Until routes can be stored on a plan, every run that is not planned draws
+**inferred**; the documented, preview and out-of-date styles arrive with
+stored routes.
+
+The cables' **legend** sits in the plan's corner, under the
+[Color by](#color-by) legend and inside the export area: the colours in use
+(statuses as their pills, types and jacket colours as short lines), the
+line styles in use, and the bundle.
+
+#### Level of detail
+
+Strokes keep **the same width on screen at every zoom**; what is drawn
+follows how large a cell is on screen:
+
+- **Far** (zoomed out): the trays with their cable counts only - plus a
+  traced run.
+- **Mid**: shared stretches as bundles with counts, single runs as lines,
+  no labels.
+- **Near** (zoomed in): every lane that fits apart, bundles only where the
+  lanes still would not read, and - with **Display → Cable labels** on (the
+  default) - each cable's label along its run where it does not collide
+  with another. A hovered or traced run shows its route length and, up
+  close, its device and port at each end.
+
+The routes are worked out once per change of the plan's contents - a tile
+moved, a tray reshaped, a tray's level changed - and then only for the
+cables that change touches. Panning and zooming route nothing.
+
+#### Hover, trace and the popover
+
+**Hover a run** (or reach it with **Tab**) to raise it and open its
+**popover**: the cable's label, status, type, both ends as `device · port`
+(an end on a device you may not view reads **Hidden**), the **stored
+length** and the **route length** the plan works out (run × cell size,
+plus the drops between each end's rack top and its tray, plus 10 % slack,
+as [Auto-route](#cable-trays-cables-mode) computes it) with the difference,
+and the trays it rides. Hover a bundle to list the cables in it.
+
+**Click a run** (or **Enter**) to trace it and pin its popover, with
+**Open cable**: the run is drawn heavier with a halo, and every other cable
+**dims** so the route reads where several share a tray. Click it again,
+click empty floor, or press **Esc** to clear. No Cables mode is needed - it
+works in any mode while the links are on.
 
 **Trace on map from a cable** - the **cable detail page** has a *Trace on
 map* button that jumps to the plan showing that cable, with its route already
@@ -1366,18 +1448,13 @@ highlight on the plan, and fit the view.
 **Right-click** anywhere on the plan for a quick menu - *Trace cables here*
 (highlight every run touching a tile), *Open*, *Fit to view*, *Clear trace*.
 
-**What shows a route:** any cable that's either routed through a tray, or has
-both ends placed on the plan (a device tile, or the device's rack tile).
-Untrayed cables between two placed devices draw as a straight A↔B line;
-trayed ones follow the trays.
-
 **Where things live:** patch panels are rack-mounted, so they stay *inside
 their rack* (their runs trace from the rack tile) - only floor-level things
 like **drops (wall plates)** and the equipment they serve (a printer, an AP)
 are placed as their own tiles.
 
 Trays render as a **subtle gray channel** (recolor per tray) with no solid
-centerline, so a highlighted cable reads as running *inside* the tray.
+centerline, so the lanes read as running *inside* the tray.
 
 **Display → Cable trays** hides/shows the tray layer itself - look at just the
 cable runs, just the trays, or both.
@@ -1578,8 +1655,9 @@ the same. Needs the floor-plan add permission.
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
 so the export doubles as the builder's pull sheet. The [Color by](#color-by)
-legend is part of the picture too, so a coloured plan explains itself on
-paper.
+legend and the cables' legend are part of the picture too, so a coloured plan
+explains itself on paper. The cables come out as the screen draws them at
+that zoom - lanes, bundles, colours and styles.
 
 **PDF…** asks for the paper - **A4**, **A3**, **Letter** or **Tabloid**,
 portrait or landscape (A3 landscape until you choose) - and makes one sheet
@@ -1588,13 +1666,20 @@ on the server:
 - the whole plan **fitted to the page** - tiles, zones, raised floors, walls,
   trays, rooms, areas and labels as the plan shows them, unsaved edits and hidden tiles included
   as on screen, in the light theme;
+- the **cables**, when the links are on: the same lanes, bundles, colours
+  and line styles as the screen, at the paper's scale. The level of detail
+  comes from the paper - under 10 mm a cell (a 1:200 A3, say) shared
+  stretches print as bundles with counts; above it every lane that is
+  0.6 mm apart prints, with labels. A traced run prints as a static heavier
+  stroke; preview and out-of-date marks are left out;
 - the [CAD drawing](#cad-drawings) under it **in vector**, at its placement
   and opacity, with the layers and text the plan hides left out. A drawing
   over 60,000 shapes on paper is refused - hide some of its layers first. If
   its text is too long to typeset, the text is left out and the sheet says
   so;
 - a footer with a **scale bar** worked out from the plan's cell size (with
-  the ratio, `1:200`), the **Color by legend**, the drawing's source file,
+  the ratio, `1:200`), the **Color by legend**, the **cables' legend**
+  (their colours, then the line styles), the drawing's source file,
   and a **title block**: the plan, its location, site and tenant, the date,
   the Danbyte version and the page.
 
@@ -1603,7 +1688,9 @@ opens it in the browser's viewer to print. The PDF obeys the same limits as
 the [topology PDF](topology.md): one at a time per user, a few at a time on
 the server, and 30 seconds of rendering. Anyone who can view the plan can
 export it: `POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
-paper and the legend (`?print=1` for a five-minute print link).
+paper, the legend and `cable_legend` (rows of `label` and `color`, a line
+row adding `line`: `solid`, `dashed`, `thin` or `bundle`; `?print=1` for a
+five-minute print link).
 
 ## Tenancy, permissions, audit
 
@@ -1650,9 +1737,13 @@ grant, so it sees the trays but no cables. Where a plan names cables:
 
 - `GET /api/floor-plans/{id}/cable-paths/` (the A↔B runs, the trace, the 3D
   room and what the PNG and PDF draw) lists only the cables you may view, and
-  `hidden_count` counts the others. An end on a device you may not view keeps
-  its tile but reads `{"device": null, "port": null, "hidden": true}`; ends
-  on tiles you may not view are left out.
+  `hidden_count` counts the others. Each run carries its `status` (`id`,
+  `name`, `color`, `text_color`, `is_planned`), `type` and `type_display`,
+  `length` and `length_unit`, its end tiles, `a_top_mm` / `b_top_mm` (an end
+  rack's top above the floor, else 0) and its trays. An end names its
+  `device`, `device_name` and `port`; an end on a device you may not view
+  keeps its tile but reads `{"device": null, "port": null, "hidden": true}`;
+  ends on tiles you may not view are left out.
 - A tray's `cables`, in its own API and in `contents/`, lists only the cables
   you may view; `hidden_cable_count` counts the others.
 - Writing a tray's `cable_ids` sets the cables you can see: the ones you

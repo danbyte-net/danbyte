@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest"
 
-import type { FloorPlanTile, FloorPlanWall } from "@/lib/api"
+import type {
+  FloorPlanCablePath,
+  FloorPlanTile,
+  FloorPlanTray,
+  FloorPlanWall,
+} from "@/lib/api"
 
-import { PAPER_INK, planSvg } from "./plan-svg"
+import { CableRouteCache } from "./cable-draw"
+import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
+import type { PlanSvgCables } from "./plan-svg"
 
 // The plan as the PDF export posts it: plan pixels, light colours written
 // out (no theme classes, no currentColor), and only what the PDF sanitiser
@@ -174,5 +181,116 @@ describe("planSvg", () => {
     // 300 mm on a 600 mm cell: half a cell of 40 px.
     expect(lines[0].getAttribute("font-size")).toBe("20")
     expect(svg).not.toContain("class=")
+  })
+})
+
+describe("planSvg cables", () => {
+  const rack = (id: string, x: number) =>
+    tile({ id, x, y: 3, width: 1, height: 1 })
+  const tiles = [rack("r1", 1), rack("r2", 9)]
+  const tray = {
+    id: "t1",
+    name: "T1",
+    kind: "",
+    color: "",
+    points: [
+      [0, 2],
+      [12, 2],
+    ],
+    level: "overhead",
+    elevation_mm: null,
+    cables: [],
+    hidden_cable_count: 0,
+  } as unknown as FloorPlanTray
+  const planned = {
+    id: "s1",
+    name: "Planned",
+    color: "f59e0b",
+    text_color: "#000",
+    is_planned: true,
+  }
+  const cable = (id: string, patch: Partial<FloorPlanCablePath> = {}) =>
+    ({
+      id,
+      label: `C-${id}`,
+      color: "",
+      type: "",
+      a_tiles: ["r1"],
+      b_tiles: ["r2"],
+      a_points: [],
+      b_points: [],
+      tray_ids: ["t1"],
+      ...patch,
+    }) as FloorPlanCablePath
+  const paths = [cable("1"), cable("2"), cable("3", { status: planned })]
+  const routes = new CableRouteCache().routes(paths, {
+    trays: [tray],
+    tiles,
+    ceilingMm: 3000,
+  })
+  const draw = (mmPerPx: number, patch: Partial<PlanSvgCables> = {}) =>
+    parse(
+      planSvg({
+        plan,
+        tiles,
+        trays: [tray],
+        cables: {
+          paths,
+          routes,
+          colorBy: "status",
+          bundle: true,
+          labels: true,
+          mmPerPx,
+          ...patch,
+        },
+      })
+    ).querySelector("[data-layer=cables]")!
+
+  it("fits the plan to the paper as the server does", () => {
+    // A3 landscape: 400 × 251 mm for a 960 × 640 px plan.
+    expect(planPaperScale(plan)).toBeCloseTo(251 / 640, 6)
+    expect(
+      planPaperScale(plan, { size: "a4", orientation: "portrait" })
+    ).toBeCloseTo(190 / 960, 6)
+  })
+
+  it("bundles the shared tray with its count at a small paper scale", () => {
+    const g = draw(0.05) // 2 mm a cell: about 1:300
+    const texts = [...g.querySelectorAll("text")].map((t) => t.textContent)
+    expect(texts).toContain("3")
+    expect(texts).not.toContain("C-1")
+  })
+
+  it("draws lanes, labels and the planned dash up close", () => {
+    const g = draw(0.5) // 20 mm a cell
+    const texts = [...g.querySelectorAll("text")].map((t) => t.textContent)
+    expect(texts).not.toContain("3")
+    expect(texts).toContain("C-1")
+    const dashed = [...g.querySelectorAll("path")].filter((p) =>
+      p.getAttribute("stroke-dasharray")
+    )
+    expect(dashed.length).toBeGreaterThan(0)
+    expect(dashed[0].getAttribute("stroke")).toBe("#f59e0b")
+    // No status: the paper's muted ink, never a theme variable.
+    expect(g.innerHTML).toContain("#71717a")
+    expect(g.innerHTML).not.toContain("var(")
+  })
+
+  it("draws a traced run as a heavier stroke, nothing animated", () => {
+    const plain = draw(0.5)
+    const traced = draw(0.5, { highlight: ["1"] })
+    const widest = (g: Element) =>
+      Math.max(
+        ...[...g.querySelectorAll("path")].map((p) =>
+          Number(p.getAttribute("stroke-width"))
+        )
+      )
+    expect(widest(traced)).toBeGreaterThan(widest(plain))
+    expect(traced.querySelector("animate")).toBeNull()
+  })
+
+  it("leaves the cables out when the links are off", () => {
+    const svg = planSvg({ plan, tiles, trays: [tray] })
+    expect(svg).not.toContain('data-layer="cables"')
   })
 })

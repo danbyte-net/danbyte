@@ -3528,6 +3528,12 @@ class Status(_LabeledChoice):
                    "outage event leaves the open list, the calendar's open "
                    "count, and releases its silence."),
     )
+    is_planned = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text=("Marks the status as planned work, not yet built - a cable "
+                   "in it draws as a planned run (long dash) on floor plans."),
+    )
     excludes_capacity = models.BooleanField(
         default=False,
         help_text=("Ports carrying this status don't count as capacity in "

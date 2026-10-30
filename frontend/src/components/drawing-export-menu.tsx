@@ -69,6 +69,9 @@ export interface DrawingRequest {
   /** The drawing's own name and facts over it: off on the PDF, whose
    * sheet the server titles. */
   heading: boolean
+  /** The PDF's paper, for a drawing that picks its detail from the scale
+   * it prints at; absent for the other files. */
+  paper?: PaperChoice
 }
 
 export interface DrawingBuild {
@@ -178,6 +181,7 @@ export function DrawingExportMenu({
       const drawing = await build({
         fonts: pdf ? [] : await loadFonts(),
         heading: !pdf,
+        paper: pdf ? sheet : undefined,
       })
       if (!drawing) return
       if (pdf) {

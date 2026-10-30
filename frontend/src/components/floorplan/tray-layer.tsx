@@ -1,7 +1,6 @@
 import type { FloorPlanTray } from "@/lib/api"
 
 import { CELL } from "./canvas-geometry"
-import type { Pt } from "./cable-route"
 
 /** Default tray color when the user hasn't picked one - neutral gray. */
 const TRAY_DEFAULT = "#71717a"
@@ -39,6 +38,8 @@ export function TrayShape({
   const pts = tray.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
   const mid = tray.points[Math.floor(tray.points.length / 2)]
   const count = tray.cables.length
+  // Cables in it the reader may not view: counted, never named.
+  const hidden = tray.hidden_cable_count ?? 0
   // Show handles when editing this tray, or (for a quick reshape) when it's
   // the plain selection.
   const showHandles = editable && (editing || selected)
@@ -56,6 +57,7 @@ export function TrayShape({
         {tray.name}
         {tray.kind ? ` · ${tray.kind}` : ""} · {count} cable
         {count === 1 ? "" : "s"}
+        {hidden > 0 ? ` · ${hidden} hidden` : ""}
         {interactive && !editing ? " · double-click to edit shape" : ""}
       </title>
       {/* Channel body - wide + faint. No centerline: the middle stays empty
@@ -130,110 +132,8 @@ export function TrayShape({
       >
         {tray.name}
         {count > 0 ? ` · ${count}` : ""}
+        {hidden > 0 ? ` · ${hidden} hidden` : ""}
       </text>
-    </g>
-  )
-}
-
-/** One cable's physical run, already routed through its trays (cell units).
- * Rendered as a polyline through the tray channels with a dot at each end. */
-export function CableLink({
-  route,
-  color: rawColor,
-  label,
-  type,
-  highlighted,
-  dimmed,
-  interactive,
-  onSelect,
-}: {
-  route: Pt[]
-  color: string
-  label: string
-  type: string
-  highlighted: boolean
-  dimmed: boolean
-  interactive: boolean
-  onSelect: () => void
-}) {
-  if (route.length < 2) return null
-  const color = rawColor || "#0ea5e9"
-  const pts = route.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
-  const a = route[0]
-  const b = route[route.length - 1]
-  const opacity = dimmed ? 0.2 : 1
-  return (
-    <g
-      opacity={opacity}
-      onPointerDown={
-        interactive
-          ? (e) => {
-              e.stopPropagation()
-              onSelect()
-            }
-          : undefined
-      }
-      style={{ cursor: interactive ? "pointer" : "default" }}
-    >
-      <title>
-        {label}
-        {type ? ` · ${type}` : ""} (A↔B)
-      </title>
-      {interactive && (
-        <polyline
-          points={pts}
-          fill="none"
-          stroke="transparent"
-          strokeWidth={14}
-        />
-      )}
-      {/* Highlighted run gets a soft halo so it reads clearly on top of the
-          cables it shares a path with. */}
-      {highlighted && (
-        <polyline
-          points={pts}
-          fill="none"
-          stroke={color}
-          strokeWidth={9}
-          strokeOpacity={0.25}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          pointerEvents="none"
-        />
-      )}
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={color}
-        strokeWidth={highlighted ? 3.5 : 1.5}
-        strokeOpacity={highlighted ? 1 : 0.6}
-        strokeDasharray={highlighted ? "7 5" : undefined}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        pointerEvents="none"
-      >
-        {highlighted && (
-          <animate
-            attributeName="stroke-dashoffset"
-            from="24"
-            to="0"
-            dur="0.7s"
-            repeatCount="indefinite"
-          />
-        )}
-      </polyline>
-      {[a, b].map((p, i) => (
-        <circle
-          key={i}
-          cx={p[0] * CELL}
-          cy={p[1] * CELL}
-          r={highlighted ? 5.5 : 3.5}
-          fill={color}
-          stroke="var(--background)"
-          strokeWidth={1.5}
-          pointerEvents="none"
-        />
-      ))}
     </g>
   )
 }
