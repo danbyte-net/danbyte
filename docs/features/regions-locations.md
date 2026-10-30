@@ -147,9 +147,11 @@ cannot be deleted.
 ## Floor plans
 
 A location can be drawn as a **[floor plan](floor-plans.md)** - a grid canvas
-of tiles (racks, walls, cooling…) linked to real objects. The Location page's
-**Floor plan** button opens the location's plan, or creates one if none
-exists yet.
+of tiles (racks, walls, cooling…) linked to real objects, with one or more
+[floors](floor-plans.md#floors). The Location page's **Floor plan** button
+opens the location's plan, or creates one if none exists yet. A floor may
+sit at a location nested under its floor plan's location, so floors
+modelled as locations (Building A → Level 2) belong to one floor plan.
 
 ## Tags & custom fields
 
