@@ -3,7 +3,12 @@ import { act, renderHook } from "@testing-library/react"
 import type React from "react"
 import { describe, expect, it } from "vitest"
 
-import { pinchTransform, usePanZoom } from "./use-pan-zoom"
+import {
+  MIN_ZOOM,
+  minZoomFor,
+  pinchTransform,
+  usePanZoom,
+} from "./use-pan-zoom"
 
 // Two fingers on a touch screen zoom the plan as the wheel does: about the
 // point between them, inside the same limits, and panning as they move.
@@ -88,5 +93,20 @@ describe("usePanZoom pinch", () => {
     expect(result.current.pinchDown(touch(1, 0, 0, "mouse"))).toBe(false)
     expect(result.current.pinchDown(touch(2, 50, 0, "mouse"))).toBe(false)
     expect(result.current.pinchUp(touch(1, 0, 0, "mouse"))).toBe(false)
+  })
+})
+
+describe("the zoom-out floor", () => {
+  it("keeps the fixed floor for a plan that fits", () => {
+    expect(minZoomFor(null)).toBe(MIN_ZOOM)
+    expect(minZoomFor(0.8)).toBe(MIN_ZOOM)
+  })
+  it("drops to half the fit for a plan too big for it", () => {
+    expect(minZoomFor(0.04)).toBeCloseTo(0.02)
+  })
+  it("lets a pinch go below the fixed floor when given a lower one", () => {
+    const start = { t: { x: 0, y: 0, k: 0.05 }, dist: 100, mid: { x: 0, y: 0 } }
+    expect(pinchTransform(start, 50, { x: 0, y: 0 }, 0.02).k).toBeCloseTo(0.025)
+    expect(pinchTransform(start, 50, { x: 0, y: 0 }).k).toBe(MIN_ZOOM)
   })
 })

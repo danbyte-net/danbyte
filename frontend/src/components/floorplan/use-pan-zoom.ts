@@ -6,8 +6,16 @@ export interface Transform {
   k: number
 }
 
-const MIN_ZOOM = 0.15
+/** The zoom-out floor for a small plan; a plan too big to fit at it gets a
+ * lower one (see `fitTo`). */
+export const MIN_ZOOM = 0.15
 const MAX_ZOOM = 4
+
+/** How far out a plan may zoom once `fitK` fits it on screen: half of that,
+ * and never less room than a small plan gets. */
+export function minZoomFor(fitK: number | null): number {
+  return fitK == null ? MIN_ZOOM : Math.min(MIN_ZOOM, fitK / 2)
+}
 
 interface Point {
   x: number
@@ -30,11 +38,12 @@ export interface PinchStart {
 export function pinchTransform(
   start: PinchStart,
   dist: number,
-  mid: Point
+  mid: Point,
+  minZoom: number = MIN_ZOOM
 ): Transform {
   const k = Math.min(
     MAX_ZOOM,
-    Math.max(MIN_ZOOM, start.t.k * (dist / start.dist))
+    Math.max(minZoom, start.t.k * (dist / start.dist))
   )
   const wx = (start.mid.x - start.t.x) / start.t.k
   const wy = (start.mid.y - start.t.y) / start.t.k
@@ -49,6 +58,9 @@ export function pinchTransform(
  */
 export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
   const [t, setT] = useState<Transform>(initial)
+  // The zoom-out floor: lowered by `fitTo` for a plan too big for the
+  // fixed one, so a whole site can be seen at once.
+  const minZoom = useRef(MIN_ZOOM)
   const tRef = useRef(t)
   tRef.current = t
   const panning = useRef<{
@@ -72,7 +84,7 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
     setT((prev) => {
       const k = Math.min(
         MAX_ZOOM,
-        Math.max(MIN_ZOOM, prev.k * Math.pow(1.0015, -e.deltaY))
+        Math.max(minZoom.current, prev.k * Math.pow(1.0015, -e.deltaY))
       )
       // Keep the world point under the cursor fixed while scaling.
       const wx = (cx - prev.x) / prev.k
@@ -123,13 +135,9 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
       if (!svg) return
       const rect = svg.getBoundingClientRect()
       if (!rect.width || !rect.height) return
-      const k = Math.min(
-        MAX_ZOOM,
-        Math.max(
-          MIN_ZOOM,
-          Math.min((rect.width - 64) / w, (rect.height - 64) / h)
-        )
-      )
+      const fit = Math.min((rect.width - 64) / w, (rect.height - 64) / h)
+      minZoom.current = minZoomFor(fit)
+      const k = Math.min(MAX_ZOOM, Math.max(minZoom.current, fit))
       setT({ k, x: (rect.width - w * k) / 2, y: (rect.height - h * k) / 2 })
     },
     []
@@ -174,7 +182,7 @@ export function usePanZoom(initial: Transform = { x: 40, y: 40, k: 1 }) {
       const start = pinch.current
       if (start && touches.current.size >= 2) {
         const { dist, mid } = spread()
-        setT(pinchTransform(start, dist, mid))
+        setT(pinchTransform(start, dist, mid, minZoom.current))
       }
       return true
     },
