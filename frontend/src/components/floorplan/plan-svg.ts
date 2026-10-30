@@ -18,6 +18,7 @@ import {
 import {
   labelColor,
   areaColor,
+  areaLabelColor,
   areaName,
   boxCenter,
   byZ,
@@ -280,6 +281,7 @@ function cablesMarkup(c: PlanSvgCables): string {
 /** An area as the canvas draws it (shape-layer.tsx). */
 function areaMarkup(a: AreaShape): string {
   const color = areaColor(a)
+  const ink = areaLabelColor(a)
   const name = a.show_name ? areaName(a) : ""
   const style = {
     fill: color,
@@ -305,7 +307,7 @@ function areaMarkup(a: AreaShape): string {
             "text-anchor": "middle",
             "font-size": 12,
             "font-weight": 600,
-            fill: color,
+            fill: ink,
           })
         : "")
     )
@@ -327,7 +329,7 @@ function areaMarkup(a: AreaShape): string {
           y: a.y * CELL + 15,
           "font-size": 12,
           "font-weight": 600,
-          fill: color,
+          fill: ink,
         })
       : "") +
     "</g>"

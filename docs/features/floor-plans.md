@@ -759,7 +759,9 @@ to **Select** and the inspector shows the new area:
   Without that permission the colour shows read-only.
 - **Name** overrides the linked name on the plan.
 - **Fill** (opacity), **Border** (solid, dashed or none), **Show the name**,
-  and the **Rotation** of a rectangle in degrees.
+  and the **Rotation** of a rectangle in degrees. The name is drawn in the
+  area's colour over a light fill, and in black or white - whichever reads -
+  from 50 % fill up, so it never disappears into the fill.
 
 Areas draw over the background, the drawing and the zone tiles, and under
 every other tile. They may overlap - a cage inside a hall is real. Each has a

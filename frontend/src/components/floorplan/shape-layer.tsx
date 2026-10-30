@@ -3,6 +3,7 @@ import {
   HANDLES,
   labelColor,
   areaColor,
+  areaLabelColor,
   areaName,
   boxCenter,
   handlePoint,
@@ -37,6 +38,7 @@ export function AreaShapeView({
   onEdgeDoubleClick?: (seg: number, e: React.MouseEvent) => void
 }) {
   const color = areaColor(area)
+  const ink = areaLabelColor(area)
   const name = area.show_name ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
   const strokeOpacity = area.border === "none" ? 0 : selected ? 0.95 : 0.6
@@ -92,7 +94,7 @@ export function AreaShapeView({
             dominantBaseline="middle"
             fontSize={12}
             fontWeight={600}
-            fill={color}
+            fill={ink}
             pointerEvents="none"
           >
             {name}
@@ -130,7 +132,7 @@ export function AreaShapeView({
           y={px(area.y) + 15}
           fontSize={12}
           fontWeight={600}
-          fill={color}
+          fill={ink}
           pointerEvents="none"
         >
           {name}
