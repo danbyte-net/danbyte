@@ -246,3 +246,7 @@ function asString(v: unknown): string {
   if (v === null || v === undefined) return ""
   return String(v)
 }
+
+/** One custom field as its typed input - the device profile editor keeps
+ * its custom field values row by row with it. */
+export { OneField as CustomFieldInput }

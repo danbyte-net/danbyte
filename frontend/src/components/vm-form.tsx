@@ -32,6 +32,10 @@ import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import {
+  DeviceProfilesField,
+  useHostProfilesDraft,
+} from "@/components/device-profile-assign"
+import {
   ApplicationGroupsField,
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
@@ -67,6 +71,9 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
   const groupsDraft = useHostGroupsDraft(vm ? { kind: "vm", id: vm.id } : null)
+  const profilesDraft = useHostProfilesDraft(
+    vm ? { kind: "vm", id: vm.id } : null
+  )
 
   const [name, setName] = useState(vm?.name ?? "")
   const [clusterId, setClusterId] = useState<string | null>(
@@ -192,6 +199,7 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
       })
       // Application groups (#436): written once the VM saved.
       await groupsDraft.commit({ kind: "vm", id: saved.id })
+      await profilesDraft.commit({ kind: "vm", id: saved.id })
       return saved
     },
     onSuccess: (saved) => {
@@ -481,6 +489,12 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         <ApplicationGroupsField
           value={groupsDraft.ids}
           onChange={groupsDraft.setIds}
+        />
+      )}
+      {profilesDraft.show && (
+        <DeviceProfilesField
+          value={profilesDraft.ids}
+          onChange={profilesDraft.setIds}
         />
       )}
 

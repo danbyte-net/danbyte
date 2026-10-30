@@ -28,6 +28,7 @@ export function OverviewTable<T>({
   data,
   getRowKey,
   footer,
+  actions,
 }: {
   title: React.ReactNode
   count?: number
@@ -37,12 +38,14 @@ export function OverviewTable<T>({
   getRowKey: (row: T, index: number) => React.Key
   /** Under the card: a "View all" link, a hidden-rows note. */
   footer?: React.ReactNode
+  /** Right of the heading: the card's own action (Apply profile). */
+  actions?: React.ReactNode
 }) {
   const last = columns.length - 1
   const width = (i: number) => (i === last ? "w-full" : "whitespace-nowrap")
   const hscroll = useTableScroll()
   return (
-    <Section title={title} count={count} badge={badge}>
+    <Section title={title} count={count} badge={badge} actions={actions}>
       {/* A wide table scrolls sideways with a floating scrollbar and edge
           shadows, as DataTable does (table-scroll.tsx). */}
       <div

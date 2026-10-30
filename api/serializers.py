@@ -94,6 +94,30 @@ def _visible_count(serializer, obj, rel_name: str) -> int:
     return related_count(serializer.context.get("request"), obj, rel_name)
 
 
+def _device_profiles(serializer, obj) -> list[dict]:
+    """A device's or VM's device profiles in order, each with its assignment
+    state - the list column and the Overview's Profiles card. Served from the
+    viewset's prefetch; empty for a reader who may not view assignments."""
+    ctx = serializer.context
+    if "_device_profiles_ok" not in ctx:
+        request = ctx.get("request")
+        ok = False
+        if request is not None:
+            from api.views import _get_active_tenant
+            from auth_api import rbac
+
+            ok = rbac.has_action(request.user, _get_active_tenant(request),
+                                 "deviceprofileassignment", "view")
+        ctx["_device_profiles_ok"] = ok
+    if not ctx["_device_profiles_ok"]:
+        return []
+    return [
+        {"id": str(a.profile_id), "assignment_id": str(a.pk), "name": a.profile.name,
+         "slug": a.profile.slug, "color": a.profile.color, "state": a.state}
+        for a in obj.device_profile_assignments.all()
+    ]
+
+
 def detail_only(default=None):
     """Mark a ``get_*`` method field as detail-page only.
 
@@ -3089,6 +3113,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         "lifecycle_next",
         # Set in the form; the PRTG column shows what PRTG has.
         "prtg_sync", "prtg_plan", "prtg_host",
+        # Its own column, Profiles (device-columns.tsx).
+        "device_profiles",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3111,6 +3137,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     contact_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
     install_count = serializers.SerializerMethodField()
+    # Device profiles in order, with their state.
+    device_profiles = serializers.SerializerMethodField()
     # Support & warranty coverage (#421): {status, end, contracts}, from the
     # list queryset's annotations - no query per row.
     coverage = serializers.SerializerMethodField()
@@ -3630,6 +3658,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         v = getattr(obj, "install_count_annotated", None)
         return v if v is not None else obj.installed_software.count()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_profiles(self, obj) -> list:
+        return _device_profiles(self, obj)
+
     def get_ip_count(self, obj) -> int:
         # The list renders this, so it can't be skipped; served from a queryset
         # annotation when present (DeviceViewSet), else a direct count.
@@ -3762,8 +3794,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "hardware_count", "console_count", "power_count", "cooling_count",
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
-                  "contact_count", "document_count", "install_count", "permissions",
-                  "created_at", "updated_at"]
+                  "contact_count", "document_count", "install_count", "device_profiles",
+                  "permissions", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
                             "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
@@ -6464,7 +6496,8 @@ class VirtualMachineGroupSerializer(TaggableSerializerMixin, NumIdModelSerialize
 
 class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     # Its own column, Next end of life (vm-columns.tsx).
-    list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host")
+    list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
+                            "device_profiles")
     cluster = ClusterMiniSerializer(read_only=True)
     #: What the PRTG plan made of a save that changed prtg_sync; else null.
     prtg_plan = serializers.SerializerMethodField()
@@ -6486,6 +6519,8 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
     routing_count = serializers.SerializerMethodField()
     install_count = serializers.SerializerMethodField()
     ip_count = serializers.SerializerMethodField()
+    # Device profiles in order, with their state.
+    device_profiles = serializers.SerializerMethodField()
 
     def get_install_count(self, obj) -> int:
         """Installed software rows (#436), for the Software tab. Served from
@@ -6502,6 +6537,10 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
         from .ip_usage import addresses_of
 
         return addresses_of("vm", obj).count()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device_profiles(self, obj) -> list:
+        return _device_profiles(self, obj)
 
     @detail_only(0)
     def get_routing_count(self, obj) -> int:
@@ -6643,7 +6682,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, TaggableSerializerMixin, N
                   "interface_count", "disk_count", "service_count",
                   "certificate_count", "routing_count", "install_count",
                   "ip_count",
-                  "primary_ip", "primary_ip_id", "description",
+                  "device_profiles", "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",

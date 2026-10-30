@@ -144,6 +144,9 @@ SITE_PATHS: dict[str, str] = {
     # An application group follows its host the same way (#436); the group
     # and its members are a tenant-wide catalog.
     "applicationgroupassignment": "device__site|virtual_machine__site",
+    # A device profile follows its device or VM the same way; the profile
+    # itself is a tenant-wide catalog.
+    "deviceprofileassignment": "device__site|virtual_machine__site",
     # An application flow belongs to the site of its first end that has one
     # (#163): the source address (its own site, else its prefix's, as an
     # address's site reads), then the destination address, then the

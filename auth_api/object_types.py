@@ -202,6 +202,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ApplicationGroup", "Application groups", "DCIM"),
     ("api.ApplicationGroupMember", "Application group members", "DCIM"),
     ("api.ApplicationGroupAssignment", "Application group assignments", "DCIM"),
+    # Device profiles: a use case given to devices and VMs in one step.
+    ("profiles.DeviceProfile", "Device profiles", "DCIM"),
+    ("profiles.DeviceProfileAssignment", "Device profile assignments", "DCIM"),
     # Application flows (#163).
     ("api.ApplicationFlow", "Application flows", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),

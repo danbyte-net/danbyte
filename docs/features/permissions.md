@@ -233,7 +233,7 @@ their objects use.
 Both roles **read the catalogs** their site's objects point at - device types
 and roles, platforms, manufacturers, statuses, tags, custom fields, VRFs, IP
 roles, rack, cabinet and module types, cluster types, routing policies,
-support contracts (without their cost), applications, application groups and the like - so the pickers in **Add device** and an import by name work. They
+support contracts (without their cost), applications, application groups, device profiles and the like - so the pickers in **Add device** and an import by name work. They
 never change those catalogs: that stays with administrators, or with the site
 editor's own local entries under
 [enhanced site separation](../access/site-separation.md#local-vs-global-catalog-entries).
@@ -257,7 +257,10 @@ editor's own local entries under
     (`prtgsensorpin`) of the [Overview's Sensors card](prtg.md#pinned-sensors), and
     the per-device sensor overrides (`prtgsensoroverride`) of the
     [Coverage card](prtg.md#sensors).
-    PRTG connections stay with administrators.
+    PRTG connections stay with administrators. Last, they gain device profile
+    assignments (`deviceprofileassignment`), and site viewers and silo site
+    editors view on [device profiles](device-profiles.md#permissions)
+    (`deviceprofile`).
 
 ### Set it up when you create the user
 

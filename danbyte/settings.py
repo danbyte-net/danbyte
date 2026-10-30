@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     "zabbix.apps.ZabbixConfig",
     "oxidized.apps.OxidizedConfig",
     "prtg.apps.PrtgConfig",
+    "profiles.apps.ProfilesConfig",
     "search.apps.SearchConfig",
     "monitoring.apps.MonitoringConfig",
     "planning.apps.PlanningConfig",

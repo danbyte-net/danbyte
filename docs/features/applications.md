@@ -176,6 +176,16 @@ application, that group takes the install over instead.
 A group that is assigned anywhere cannot be deleted (409): unassign it first.
 Deleting a device or VM takes its assignments along.
 
+!!! note "In device profiles"
+    A [device profile](device-profiles.md) can name application groups:
+    assigning the profile assigns them, as an ordinary group assignment. A
+    group already on the host is left alone. A group says what a server runs;
+    a profile says what a server is. A group a profile names cannot be
+    deleted (409 naming the profiles). Profiles are applied from the
+    **Profiles** card on a device's or VM's Overview, the **Profiles** field
+    in its form, or **Apply profile** on a selection of the device and VM
+    lists - see [On devices and VMs](device-profiles.md#on-devices-and-vms).
+
 ### Ansible inventory
 
 `/api/inventory/ansible/` gives every host's `danbyte` block two more keys,

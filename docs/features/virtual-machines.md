@@ -27,7 +27,8 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **vCPUs**, **Memory**, **Disk** | Resource sizing. Memory is entered in MB, disk in GB. |
 | **Primary IP** | The address the VM is reached on; monitoring uses it. |
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. |
-| **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). Under it, what happens next (*Planned changes wait in the Review queue* or *Applied automatically*) and **PRTG polls** (`prtg_host`): the address or DNS name PRTG polls instead of the primary address. Changing either plans the VM for PRTG at once; the save says **Planned for PRTG** or **Being added to PRTG**. |
+| **Application groups**, **Profiles** | The [application groups](applications.md#application-groups) and [device profiles](device-profiles.md#on-devices-and-vms) it gets, in order, written with the save. |
+| **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). |
 
 ## The detail page
 
@@ -49,7 +50,9 @@ as a small reading tile; a tile opens the sensor's panel, unpinned on hover),
 the attribute cards,
 a **Software** card under
 *Resources* (the first eight installs, each with its version and end-of-life
-lifetime bar, then **View all N** to the Software tab), the disk list and the
+lifetime bar, then **View all N** to the Software tab), a **Profiles** card
+(its [device profiles](device-profiles.md#on-devices-and-vms) with their
+state, **Re-apply**, unassign and **Apply profile**), the disk list and the
 VM's **Topology** card. Under the platform, **OS support** is its
 [lifetime bar](lifecycle.md#the-lifetime-bar): the platform's effective dates,
 entered or from its [end-of-life](end-of-life-data.md) cycle; VM tables offer

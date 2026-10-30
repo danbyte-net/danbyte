@@ -44,6 +44,7 @@ export function IdMultiSelect({
   emptyText = "Nothing to pick.",
   className,
   footer,
+  ordered,
 }: {
   options: IdOption[]
   value: string[]
@@ -56,6 +57,9 @@ export function IdMultiSelect({
    * without a visible end an operator who does not know what to search for
    * assumes the first screen is all there is. */
   footer?: React.ReactNode
+  /** The order of `value` is a priority: the chips follow it, not the
+   * options' order. */
+  ordered?: boolean
 }) {
   const [open, setOpen] = useState(false)
   // Cleared after each pick. cmdk keeps the query, so choosing one match left
@@ -63,7 +67,14 @@ export function IdMultiSelect({
   // manually emptying the box first.
   const [query, setQuery] = useState("")
   const valueSet = useMemo(() => new Set(value), [value])
-  const selected = options.filter((o) => valueSet.has(o.id))
+  const selected = useMemo(() => {
+    if (!ordered) return options.filter((o) => valueSet.has(o.id))
+    const byId = new Map(options.map((o) => [o.id, o]))
+    return value.flatMap((id) => {
+      const o = byId.get(id)
+      return o ? [o] : []
+    })
+  }, [options, value, valueSet, ordered])
 
   const toggle = (id: string) => {
     onChange(valueSet.has(id) ? value.filter((v) => v !== id) : [...value, id])
