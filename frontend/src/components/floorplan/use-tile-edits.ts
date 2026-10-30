@@ -19,7 +19,13 @@ import { apiErrorToast } from "@/lib/api-toast"
 
 import { resizedRect } from "./cabinet-tile"
 import { findCollision, tileIsZone } from "./floor-canvas"
-import { linkedTile, placementRects } from "./placement"
+import {
+  droppedRect,
+  linkedTile,
+  placeKey,
+  placedOnFloor,
+  placementRects,
+} from "./placement"
 import { moveSelection, rotateSelection } from "./selection"
 import { shapesOf } from "./shapes"
 import type { PlanShape, Pt } from "./shapes"
@@ -252,12 +258,48 @@ export function useTileEdits({
   )
 
   /** Place devices, racks or cabinets at `at` (cells) - linked tiles with
-   * no type, one step. Answers the tiles placed. */
+   * no type, one step. An object already on the floor (saved or in the
+   * draft) is never placed twice: one dropped alone (`move`) moves its
+   * tile to the drop, otherwise it is selected; among several it is
+   * skipped. Answers the tiles placed or moved. */
   const placeRows = useCallback(
-    (rows: FloorPlanPlaceable[], at: Pt): EditTile[] => {
+    (
+      rows: FloorPlanPlaceable[],
+      at: Pt,
+      { move = false }: { move?: boolean } = {}
+    ): EditTile[] => {
       if (!plan || !rows.length) return []
+      const onFloor = placedOnFloor(tiles)
+      const seen = new Set<string>()
+      const fresh: FloorPlanPlaceable[] = []
+      const there: string[] = []
+      for (const row of rows) {
+        const key = placeKey(row.kind, row.id)
+        if (seen.has(key)) continue
+        seen.add(key)
+        const tileId = onFloor.get(key)
+        if (tileId) there.push(tileId)
+        else fresh.push(row)
+      }
+      if (!fresh.length) {
+        if (there.length === 1) {
+          const tile = tiles.find((t) => t.id === there[0])
+          const to = tile && move ? droppedRect(tile, at, plan, tiles) : null
+          if (tile && to) changeTile(tile.id, to)
+          else if (tile && move) toast.error("No room there.")
+          setMultiSel(new Set())
+          setSelectedId(there[0])
+          return tile && to ? [{ ...tile, ...to }] : []
+        }
+        toast.info(`${there.length} already on this floor`)
+        setSelectedId(null)
+        setMultiSel(new Set(there))
+        return []
+      }
+      if (there.length)
+        toast.info(`${there.length} already on this floor, skipped`)
       const topZ = tiles.reduce((m, t) => Math.max(m, t.z ?? 0), 0)
-      const placed = placementRects(rows, at, plan, tiles).map((p, i) =>
+      const placed = placementRects(fresh, at, plan, tiles).map((p, i) =>
         linkedTile(
           p.row,
           { x: p.x, y: p.y, width: p.width, height: p.height },
@@ -266,7 +308,7 @@ export function useTileEdits({
           free ? topZ + 1 + i : 0
         )
       )
-      if (placed.length < rows.length)
+      if (placed.length < fresh.length)
         toast.error("No room left on the plan for all of them.")
       if (!placed.length) return []
       setTiles((prev) => [...prev, ...placed])
@@ -279,7 +321,7 @@ export function useTileEdits({
       setSelectedId(placed.length === 1 ? placed[0].id : null)
       return placed
     },
-    [plan, tiles, free]
+    [plan, tiles, free, changeTile]
   )
 
   /** Bring a free tile in front of every other (+1) or behind them (-1). */

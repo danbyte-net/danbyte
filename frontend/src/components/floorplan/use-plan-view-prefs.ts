@@ -26,6 +26,8 @@ export type ViewPrefKey =
   | "label_fit"
   | "show_fov"
   | "show_zone_labels"
+  | "show_photos"
+  | "show_photo_outlines"
   | "show_trays"
   | "show_cable_links"
   | "show_objects"
@@ -64,6 +66,10 @@ export function usePlanViewPrefs({
   const [showTraysLocal, setShowTraysLocal] = useState<boolean | null>(null)
   const [showLinksLocal, setShowLinksLocal] = useState<boolean | null>(null)
   const [showObjectsLocal, setShowObjectsLocal] = useState<boolean | null>(null)
+  const [showPhotosLocal, setShowPhotosLocal] = useState<boolean | null>(null)
+  const [photoOutlinesLocal, setPhotoOutlinesLocal] = useState<boolean | null>(
+    null
+  )
   // 3D overlay prefs - same persistence pattern as the 2D ones.
   const [show3dULocal, setShow3dULocal] = useState<boolean | null>(null)
   const [show3dNamesLocal, setShow3dNamesLocal] = useState<boolean | null>(null)
@@ -120,6 +126,8 @@ export function usePlanViewPrefs({
     setShowFovLocal(null)
     setShowTraysLocal(null)
     setShowLinksLocal(null)
+    setShowPhotosLocal(null)
+    setPhotoOutlinesLocal(null)
     setShell3dLocal(null)
     setColorByLocal(null)
     setShowRacksLocal(null)
@@ -138,6 +146,16 @@ export function usePlanViewPrefs({
   const showCableLinks =
     showLinksLocal ??
     (plan?.state.show_cable_links as boolean | undefined) ??
+    false
+  // Every device and rack with a photo drawn as it, whatever each tile's
+  // own saved `display` says - a view, not an edit.
+  const showPhotos =
+    showPhotosLocal ?? (plan?.state.show_photos as boolean | undefined) ?? false
+  // A photo tile's coloured outline while it is not selected - off unless
+  // asked for: the photo reads on its own.
+  const showPhotoOutlines =
+    photoOutlinesLocal ??
+    (plan?.state.show_photo_outlines as boolean | undefined) ??
     false
   // The eyes (#hide): a type, a role or one tile off the plan. Lives on the
   // plan like the other view preferences, with the same session override,
@@ -222,6 +240,9 @@ export function usePlanViewPrefs({
     else if (key === "show_zone_labels")
       setShowZoneLabelsLocal(value as boolean)
     else if (key === "show_trays") setShowTraysLocal(value as boolean)
+    else if (key === "show_photos") setShowPhotosLocal(value as boolean)
+    else if (key === "show_photo_outlines")
+      setPhotoOutlinesLocal(value as boolean)
     else if (key === "show_objects") setShowObjectsLocal(value as boolean)
     else if (key === "show_3d_u") setShow3dULocal(value as boolean)
     else if (key === "show_3d_names") setShow3dNamesLocal(value as boolean)
@@ -244,6 +265,8 @@ export function usePlanViewPrefs({
     showZoneLabels,
     showTrays,
     showCableLinks,
+    showPhotos,
+    showPhotoOutlines,
     /** Turn the cable links on for this session only (a trace). */
     setShowLinksLocal,
     hidden,

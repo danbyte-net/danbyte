@@ -91,7 +91,22 @@ export function PlanInspector({
       onDelete: () => shapeEdits.deleteShape(shape.id),
     }
     return shape.kind === "area" ? (
-      <ShapeAreaInspector key={shape.id} area={shape} {...common} />
+      <ShapeAreaInspector
+        key={shape.id}
+        area={shape}
+        {...common}
+        // A room's or location's new colour shows on each of its areas at
+        // once - a repaint, not an edit of the plan.
+        onLinkColour={(kind, id, color) =>
+          ed.setShapes((prev) =>
+            prev.map((s) => {
+              if (s.kind !== "area") return s
+              const ref = s[kind]
+              return ref?.id === id ? { ...s, [kind]: { ...ref, color } } : s
+            })
+          )
+        }
+      />
     ) : (
       <LabelInspector key={shape.id} label={shape} {...common} />
     )

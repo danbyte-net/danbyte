@@ -43,7 +43,7 @@ export function useEditorKeys({
   closePopover,
   onPlaceKey,
 }: {
-  /** P: open the Place picker. */
+  /** P: open the Place picker (switching to Edit first when it is off). */
   onPlaceKey?: () => void
   /** Edit is on: the plan may be changed from the keyboard. */
   canEdit: boolean
@@ -143,16 +143,17 @@ export function useEditorKeys({
         onToggleEdit?.(!canEdit)
         return
       }
-      // P: the Place picker.
+      // P: the Place picker - from View too, for those who may edit.
       if (
         bare &&
         !e.shiftKey &&
         e.key.toLowerCase() === "p" &&
-        canEdit &&
+        (canEdit || canToggleEdit) &&
         !view3d &&
         onPlaceKey
       ) {
         e.preventDefault()
+        if (!canEdit) onToggleEdit?.(true)
         onPlaceKey()
         return
       }
