@@ -239,6 +239,29 @@ describe("point-pick mode and the drawing underlay", () => {
     expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 })
   })
 
+  it("a viewer's click goes to onClickTile; a double-click opens", () => {
+    const onClick = vi.fn()
+    const onOpen = vi.fn()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[tile()]}
+        selectedId={null}
+        editable={false}
+        showGrid
+        armed={null}
+        onOpenTile={onOpen}
+        onClickTile={onClick}
+      />
+    )
+    const g = tileGroup(container)
+    fireEvent.pointerDown(g, { button: 0, clientX: 140, clientY: 90 })
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(onOpen).not.toHaveBeenCalled()
+    fireEvent.doubleClick(g)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+  })
+
   it("draws the underlay before the grid", () => {
     const { container } = render(
       <FloorCanvas

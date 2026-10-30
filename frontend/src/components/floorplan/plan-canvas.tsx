@@ -194,6 +194,7 @@ export function PlanCanvas({
     labelFit,
     showFov,
     showZoneLabels,
+    showPhotoOutlines,
     showTrays,
     showCableLinks,
     setViewPref,
@@ -282,6 +283,14 @@ export function PlanCanvas({
         doorArmed={doorArmed}
         onPlaceDoor={placeDoor}
         onOpenTile={openTile}
+        // A click on a device or rack pins its popover (Trace there, or a
+        // double-click, opens the deep view); without a hover to pin - a
+        // touch - it opens straight away. Other tiles open on a click.
+        onClickTile={(tile) => {
+          const k = tile.linked?.kind
+          if ((k === "device" || k === "rack") && popover.pinCurrent()) return
+          openTile(tile)
+        }}
         exportRef={exportRef}
         liveState={liveState}
         colorBy={colorBy}
@@ -293,6 +302,7 @@ export function PlanCanvas({
         labelFit={labelFit}
         showFov={showFov}
         showZoneLabels={showZoneLabels}
+        photoOutlines={showPhotoOutlines}
         mode={mode}
         trays={trays}
         showTrays={showTrays}

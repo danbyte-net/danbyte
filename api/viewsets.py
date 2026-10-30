@@ -11521,7 +11521,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         the floor's location or one inside it; 2: the rest of the site), each
         with its room and where it is already placed. ``?q=`` filters by
         name, ``?kind=device,rack,cabinet`` by kind, ``?unplaced=1`` keeps the
-        floor's objects placed on no plan; ``?limit=`` (default 50, at most
+        floor's objects placed on no plan (``&include_here=1``: on no other
+        plan, those on this one last); ``?limit=`` (default 50, at most
         200). A device in a rack or a cabinet is placed with it and is not
         offered."""
         from auth_api import rbac
@@ -11558,6 +11559,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             near_room=near_room,
             near_location=near_location,
             unplaced=params.get("unplaced") in ("1", "true"),
+            include_here=params.get("include_here") in ("1", "true"),
             limit=limit,
             view=(src, crop) if crop is not None else None,
         )

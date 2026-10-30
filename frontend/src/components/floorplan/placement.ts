@@ -23,6 +23,64 @@ const ROUTES: Record<FloorPlanPlaceable["kind"], string> = {
 /** The drag payload's MIME type: a list of placeable rows as JSON. */
 export const PLACE_MIME = "application/x-danbyte-place"
 
+/** A placeable object's key: `kind:id`. */
+export const placeKey = (kind: string, id: string) => `${kind}:${id}`
+
+/** The devices, racks and cabinets the editor's tiles link - saved or in
+ * the unsaved draft - each to its (first) tile's id. */
+export function placedOnFloor(tiles: FloorPlanTile[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const t of tiles) {
+    const l = t.linked
+    if (
+      !l ||
+      !(l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")
+    )
+      continue
+    const key = placeKey(l.kind, l.id)
+    if (!out.has(key)) out.set(key, t.id)
+  }
+  return out
+}
+
+/** Display > Photos: every tile with a photo drawn as it. A view - the
+ * tiles' own saved `display` is not changed. */
+export function asPhotos(tiles: FloorPlanTile[]): FloorPlanTile[] {
+  return tiles.map((t) =>
+    t.photo && t.display !== "photo" ? { ...t, display: "photo" } : t
+  )
+}
+
+/** A row as the editor sees it: "on this floor" from its tiles (the draft
+ * included) rather than from the last save. */
+export function withDraftPlacement(
+  row: FloorPlanPlaceable,
+  onFloor: Map<string, string>,
+  plan: Pick<FloorPlan, "id" | "name"> & { stack?: { name: string } | null }
+): FloorPlanPlaceable {
+  const elsewhere = row.placed_on.filter((p) => !p.this_floor)
+  const savedHere = row.placed_on.length - elsewhere.length
+  const tileId = onFloor.get(placeKey(row.kind, row.id))
+  const here = tileId
+    ? [
+        {
+          floor_plan: {
+            id: plan.id,
+            name: plan.name,
+            stack: plan.stack?.name ?? "",
+          },
+          tile_id: tileId,
+          this_floor: true,
+        },
+      ]
+    : []
+  return {
+    ...row,
+    placed_count: Math.max(0, row.placed_count - savedHere) + here.length,
+    placed_on: [...here, ...elsewhere],
+  }
+}
+
 /** Whether the point lies in the area (a turned rectangle or a polygon). */
 export function areaContains(a: AreaShape, p: Pt): boolean {
   if (a.shape === "polygon") return pointInPolygon(p, a.points)
@@ -193,6 +251,35 @@ export function placementRects(
     if (!found) break
   }
   return out
+}
+
+/** Where a tile already on the floor goes when its row is dropped at `at`
+ * (cells): its own size, centred on the drop on a free plan, from the cell
+ * under it on a grid - inside the plan. Null when that lands on another
+ * tile. */
+export function droppedRect(
+  tile: FloorPlanTile,
+  at: Pt,
+  plan: Pick<FloorPlan, "layout_mode" | "grid_width" | "grid_height">,
+  tiles: FloorPlanTile[]
+): { x: number; y: number } | null {
+  const clamp = (v: number, size: number, max: number) =>
+    Math.max(0, Math.min(max - size, v))
+  if (plan.layout_mode === "free") {
+    const r3 = (v: number) => Math.round(v * 1000) / 1000
+    return {
+      x: r3(clamp(at[0] - tile.width / 2, tile.width, plan.grid_width)),
+      y: r3(clamp(at[1] - tile.height / 2, tile.height, plan.grid_height)),
+    }
+  }
+  const rect = {
+    x: clamp(Math.floor(at[0]), tile.width, plan.grid_width),
+    y: clamp(Math.floor(at[1]), tile.height, plan.grid_height),
+    width: tile.width,
+    height: tile.height,
+  }
+  if (findCollision(tiles, rect, tile.id)) return null
+  return { x: rect.x, y: rect.y }
 }
 
 /** Placed objects whose tile stands in a room's area while the object

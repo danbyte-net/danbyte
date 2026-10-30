@@ -17,11 +17,13 @@ import { AreaInspector } from "./shape-inspector"
 import type { AreaShape } from "./shapes"
 
 // An area's Room picker offers "+" to make a room in the floor's location,
-// only to users who may add rooms, and links the area to it.
+// only to users who may add rooms, and links the area to it. A linked
+// area's Room colour is the room's own, changed on the room by those who
+// may change it.
 
 const { apiMock, perms } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
-  perms: { add: true },
+  perms: { add: true, change: true },
 }))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
@@ -33,7 +35,11 @@ vi.mock("@/lib/api-all", () => ({
 vi.mock("@/lib/use-me", () => ({
   useMe: () => ({
     canDo: (type: string, action: string) =>
-      type === "room" && action === "add" ? perms.add : true,
+      type === "room" && action === "add"
+        ? perms.add
+        : action === "change"
+          ? perms.change
+          : true,
   }),
 }))
 Element.prototype.scrollIntoView = () => {}
@@ -78,17 +84,21 @@ const area: AreaShape = {
   updated_at: "",
 }
 
-function inspect() {
+function inspect(
+  shape: AreaShape = area,
+  onLinkColour: (kind: string, id: string, color: string) => void = vi.fn()
+) {
   const onChange = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
       <TooltipProvider>
         <AreaInspector
           plan={plan}
-          area={area}
+          area={shape}
           onChange={onChange}
           onRestack={vi.fn()}
           onDelete={vi.fn()}
+          onLinkColour={onLinkColour}
         />
       </TooltipProvider>
     </QueryClientProvider>
@@ -98,6 +108,7 @@ function inspect() {
 
 beforeEach(() => {
   perms.add = true
+  perms.change = true
   apiMock.mockResolvedValue({ id: "r9", name: "Server room" })
 })
 afterEach(() => {
@@ -137,5 +148,52 @@ describe("making a room from an area", () => {
     expect(
       screen.queryByRole("button", { name: "New room in Hall" })
     ).toBeNull()
+  })
+})
+
+describe("the room colour", () => {
+  const inRoom: AreaShape = {
+    ...area,
+    room: { id: "r1", name: "Room 210", code: "210", color: "#22c55e" },
+  }
+
+  it("is the room's own, changed on the room and repainted", async () => {
+    apiMock.mockResolvedValue({})
+    const onLinkColour = vi.fn()
+    inspect(inRoom, onLinkColour)
+    expect(screen.getByText("Room colour")).toBeTruthy()
+    const hex = screen.getByDisplayValue("#22c55e")
+    fireEvent.change(hex, { target: { value: "#3b82f6" } })
+    fireEvent.keyDown(hex, { key: "Enter" })
+    await waitFor(() => expect(apiMock).toHaveBeenCalled())
+    const [path, init] = apiMock.mock.calls[0]
+    expect(path).toBe("/api/rooms/r1/")
+    expect(init?.method).toBe("PATCH")
+    expect(JSON.parse(String(init?.body))).toEqual({ color: "#3b82f6" })
+    await waitFor(() =>
+      expect(onLinkColour).toHaveBeenCalledWith("room", "r1", "#3b82f6")
+    )
+  })
+
+  it("is read-only without change on the room", () => {
+    perms.change = false
+    inspect(inRoom)
+    expect(screen.getByText("Room colour")).toBeTruthy()
+    expect(screen.queryByDisplayValue("#22c55e")).toBeNull()
+    expect(screen.queryByLabelText("Open color picker")).toBeNull()
+  })
+
+  it("a location link edits the location's colour", async () => {
+    apiMock.mockResolvedValue({})
+    inspect({
+      ...area,
+      location: { id: "l2", name: "Cage", color: "#f97316" },
+    })
+    expect(screen.getByText("Location colour")).toBeTruthy()
+    const hex = screen.getByDisplayValue("#f97316")
+    fireEvent.change(hex, { target: { value: "#000000" } })
+    fireEvent.keyDown(hex, { key: "Enter" })
+    await waitFor(() => expect(apiMock).toHaveBeenCalled())
+    expect(apiMock.mock.calls[0][0]).toBe("/api/locations/l2/")
   })
 })

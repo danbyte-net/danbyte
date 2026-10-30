@@ -144,6 +144,14 @@ tasks linked to that object: title, board, status, assignees, due and priority.
 *completed* or *cancelled*; **All** shows them too. The tab is added by the
 detail-page shell from the URL, so a new detail page gets it without wiring.
 
+**Add task** at the right of the tab's Open/All switch creates a task already
+linked to the object: a title, a board (the first board unless you pick
+another), and optionally a due date and assignees. The task starts in the
+board's leftmost open column, the list and the tab count update in place, and
+the confirmation's **Open** goes to the new task. You stay on the object. The
+button shows only to users who may add both tasks and task links - the link is
+its own permission, and without it the task could be created but not linked.
+
 **Overdue warning.** When a linked task is past due and not closed, an
 *Overdue* row shows under the page header - only to the people whose work it
 is: the task's assignees, or, for a task queued on a team and not yet claimed,
@@ -320,6 +328,10 @@ header to zoom into it. With task-change rights you can **drag a task bar onto
 another day** - the whole span shifts, keeping its length (month view also
 re-dates milestone flags by drag). The view, its anchor and the board all live
 in the URL, so a calendar can be linked.
+
+**Add task** in the header creates a task due on the selected day (today unless
+you picked a day), on the board the calendar is filtered to - the same dialog
+as an object's Tasks tab, without the link.
 
 `GET /api/planning/calendar/?start=&end=[&board=]` returns the same window as
 JSON; `GET /api/planning/calendar.ics?token=<api token>` serves it as an iCal

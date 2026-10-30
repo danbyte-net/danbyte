@@ -44,6 +44,7 @@ import {
   monthCells,
 } from "@/components/planning/calendar-month"
 import { CalendarTimeGrid } from "@/components/planning/calendar-timegrid"
+import { AddTaskButton } from "@/components/planning/add-task"
 import { usePageTitle } from "@/lib/page-title"
 
 const VIEWS = ["month", "week", "day"] as const
@@ -313,6 +314,11 @@ function CalendarPage() {
               ))}
             </SelectContent>
           </Select>
+          {/* A new task lands on the day in view and the board filtered to. */}
+          <AddTaskButton
+            defaultBoard={board ?? null}
+            defaultDueDate={anchorDay}
+          />
         </div>
       </header>
 
