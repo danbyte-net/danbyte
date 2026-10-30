@@ -4,8 +4,9 @@ import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Check, LayoutGrid, Pencil, RotateCcw } from "lucide-react"
 
-import { api, type DashboardData } from "@/lib/api"
+import { api } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDashboardData } from "@/lib/use-dashboard-data"
 import { useMe } from "@/lib/use-me"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,7 @@ import {
   StatBand,
   builtinLayout,
   metaForItem,
+  useIncludeKeys,
   withWidget,
 } from "@/components/dashboard/board"
 import {
@@ -69,10 +71,6 @@ function Dashboard() {
 
 function OwnDashboard() {
   usePageTitle("Dashboard")
-  const q = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => api<DashboardData>("/api/dashboard/"),
-  })
 
   // Honour the user's landing-page preference once per browser session: the
   // first time "/" loads, bounce to their chosen page. Subsequent visits
@@ -109,37 +107,49 @@ function OwnDashboard() {
       /* offline / no tenant - localStorage still has it */
     })
 
-  // Resolve the initial layout once both the server pref and the dashboard
-  // payload (which carries the tenant default) have answered. Precedence:
-  // server pref → localStorage (adopted upward with one PUT) → tenant
-  // default → built-in.
+  // Resolve the initial layout. Precedence: server pref → localStorage
+  // (adopted upward with one PUT) → tenant default → built-in. The first two
+  // are known before the payload, so it is asked for only the keys their
+  // widgets read; the tenant default rides in the payload itself, so a user
+  // with neither gets the whole payload once (#41).
   const resolved = useRef(false)
+  const [whole, setWhole] = useState(false)
+  const include = useIncludeKeys(
+    hydrated && !whole ? items.map((i) => i.id) : null
+  )
+  const q = useDashboardData("", {
+    include: whole ? undefined : include,
+    enabled: whole || include !== undefined,
+  })
   useEffect(() => {
-    if (resolved.current || pref.isLoading || !q.data) return
-    resolved.current = true
+    if (resolved.current || pref.isLoading) return
     const server = normalizeLayout(
       pref.data?.data,
       metaForItem,
       builtinLayout()
     )
-    if (server) {
-      setItems(server)
-    } else {
-      const local = loadLocalLayout()
-      if (local) {
-        setItems(local)
-        void putServer(local) // one-time adoption of the pre-server layout
-      } else {
-        const tenantDefault = normalizeLayout(
-          q.data.default_widgets,
-          metaForItem,
-          builtinLayout()
-        )
-        setItems(tenantDefault ?? builtinLayout())
-      }
+    const local = server ? null : loadLocalLayout()
+    if (server || local) {
+      resolved.current = true
+      setItems((server ?? local)!)
+      if (!server && local) void putServer(local) // one-time adoption
+      setHydrated(true)
+      return
     }
+    if (!whole) {
+      setWhole(true)
+      return
+    }
+    if (!q.data) return
+    resolved.current = true
+    const tenantDefault = normalizeLayout(
+      q.data.default_widgets,
+      metaForItem,
+      builtinLayout()
+    )
+    setItems(tenantDefault ?? builtinLayout())
     setHydrated(true)
-  }, [pref.isLoading, pref.data, q.data])
+  }, [pref.isLoading, pref.data, q.data, whole])
 
   // Debounced persistence: localStorage immediately (cheap, survives
   // refresh), the server after the gesture settles.
@@ -230,7 +240,7 @@ function OwnDashboard() {
       <div className="space-y-4 p-4 md:p-6">
         <header className="flex flex-wrap items-center gap-3">
           <div>
-            <DashboardSwitcher current={null} />
+            <DashboardSwitcher />
             <p className="mt-0.5 text-sm text-muted-foreground">
               Your IPAM &amp; DCIM at a glance.
             </p>
