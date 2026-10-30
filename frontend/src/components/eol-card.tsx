@@ -26,6 +26,12 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useDateFormat } from "@/lib/datetime"
+import {
+  CUSTOM_SOURCE,
+  eolProductOptions,
+  productKey,
+  splitProductKey,
+} from "@/lib/eol-products"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -44,9 +50,13 @@ import { DataTable } from "@/components/data-table"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 
+/** The source a mapping without one names - the first built-in source. */
+const DEFAULT_SOURCE = "endoflife_date"
+
 // "End of life" overview card on the platform page (#8): the endoflife.date
-// product + cycle the platform is mapped to and the cycle's facts. Only
-// rendered while a deployment admin has the feature on (platform.eol != null).
+// (or the tenant's own) product + cycle the platform is mapped to and the
+// cycle's facts. Only rendered while a deployment admin has the feature on
+// (platform.eol != null).
 
 export function EolCard({
   platform,
@@ -83,6 +93,9 @@ export function EolCard({
                 <span className="font-mono text-xs">
                   {info.product} {info.cycle}
                 </span>
+                {info.source === CUSTOM_SOURCE && (
+                  <Badge variant="secondary">Custom</Badge>
+                )}
                 {info.lts && <Badge variant="secondary">LTS</Badge>}
                 {info.missing && (
                   <Badge variant="warning">Not in catalog</Badge>
@@ -152,20 +165,25 @@ function EolMappingDialog({
 }) {
   const qc = useQueryClient()
   const { formatDate } = useDateFormat()
-  const [product, setProduct] = useState<string | null>(info.product ?? null)
+  const [product, setProduct] = useState<string | null>(
+    info.product
+      ? productKey(info.source ?? DEFAULT_SOURCE, info.product)
+      : null
+  )
   const [cycle, setCycle] = useState<string | null>(info.cycle ?? null)
 
   const { catalog, suggestions, productOptions } = useProductOptions(
     "platform",
     platform.id
   )
+  const picked = product ? splitProductKey(product) : null
   const releases = useQuery({
     queryKey: ["eol-product", product],
     queryFn: () =>
       api<EolProductRow & { releases: EolRelease[] }>(
-        `/api/eol/products/endoflife_date/${encodeURIComponent(product!)}/`
+        `/api/eol/products/${encodeURIComponent(picked!.source)}/${encodeURIComponent(picked!.product)}/`
       ),
-    enabled: !!product,
+    enabled: !!picked,
     staleTime: 5 * 60_000,
   })
 
@@ -183,7 +201,7 @@ function EolMappingDialog({
     mutationFn: () =>
       api<EolInfo>(`/api/eol/platforms/${platform.id}/`, {
         method: "PUT",
-        body: JSON.stringify({ product, cycle }),
+        body: JSON.stringify({ ...picked, cycle }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["platform", platform.id] })
@@ -212,7 +230,9 @@ function EolMappingDialog({
             value={product}
             onChange={(v) => {
               setProduct(v)
-              const s = suggestions.find((x) => x.name === v)
+              const s = suggestions.find(
+                (x) => productKey(x.source, x.name) === v
+              )
               setCycle(s?.cycle || null)
             }}
             options={productOptions}
@@ -242,9 +262,9 @@ function EolMappingDialog({
   )
 }
 
-/** The cached catalog as combobox options, the subject's suggestions first
- * under their own heading. Offered, never applied: nothing maps until the
- * form is saved. */
+/** The cached catalog and the tenant's own products as combobox options,
+ * the subject's suggestions first under their own heading. Offered, never
+ * applied: nothing maps until the form is saved. */
 function useProductOptions(kind: "platform" | "application", id: string) {
   const catalog = useQuery({
     queryKey: ["eol-products", kind, id],
@@ -258,25 +278,10 @@ function useProductOptions(kind: "platform" | "application", id: string) {
     () => catalog.data?.suggestions ?? [],
     [catalog.data]
   )
-  const productOptions = useMemo(() => {
-    const suggested = new Set(suggestions.map((s) => s.name))
-    return [
-      ...suggestions.map((s) => ({
-        value: s.name,
-        label: s.label,
-        group: "Suggested",
-        hint: s.name,
-      })),
-      ...(catalog.data?.results ?? [])
-        .filter((p) => !suggested.has(p.name))
-        .map((p) => ({
-          value: p.name,
-          label: p.label,
-          group: "All products",
-          hint: p.name,
-        })),
-    ]
-  }, [catalog.data, suggestions])
+  const productOptions = useMemo(
+    () => eolProductOptions(catalog.data?.results ?? [], suggestions),
+    [catalog.data, suggestions]
+  )
   return { catalog, suggestions, productOptions }
 }
 
@@ -358,7 +363,9 @@ export function ApplicationEolCard({
   if (d && mapped) {
     rows.push({
       label: "Source",
-      value: canManageDeployment ? (
+      value: d.custom ? (
+        <Badge variant="secondary">Custom</Badge>
+      ) : canManageDeployment ? (
         <Link to="/settings/admin" hash={EOL_SETTINGS_HASH} className="link">
           {d.source_label ?? d.source}
         </Link>
@@ -442,7 +449,7 @@ export function ApplicationEolCard({
             {unmap.isPending ? "Removing…" : "Remove"}
           </Button>
         )}
-        {canManageDeployment && mapped && (
+        {canManageDeployment && mapped && !d?.custom && (
           <Button
             variant="ghost"
             size="sm"
@@ -503,6 +510,16 @@ function ProductLink({
       )}
     </>
   )
+  if (detail?.custom && detail.product_id)
+    return (
+      <Link
+        to="/eol-products/$id"
+        params={{ id: detail.product_id }}
+        className="link"
+      >
+        {name}
+      </Link>
+    )
   if (!detail?.product_url) return name
   return (
     <a
@@ -630,8 +647,11 @@ function ApplicationEolDialog({
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }) {
+  const current = application.eol
   const [product, setProduct] = useState<string | null>(
-    application.eol?.product ?? null
+    current?.product
+      ? productKey(current.source ?? DEFAULT_SOURCE, current.product)
+      : null
   )
   const { catalog, productOptions } = useProductOptions(
     "application",
@@ -641,7 +661,7 @@ function ApplicationEolDialog({
     mutationFn: () =>
       api<ApplicationEol>(`/api/applications/${application.id}/eol/`, {
         method: "PUT",
-        body: JSON.stringify({ product }),
+        body: JSON.stringify(splitProductKey(product!)),
       }),
     onSuccess: () => {
       onSaved()

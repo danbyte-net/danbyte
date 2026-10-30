@@ -241,6 +241,7 @@ AUDITED_MODELS = [
     "compliance.ComplianceTriage",
     "compliance.EolSettings",
     "compliance.EolMapping",
+    "compliance.EolProduct",
     # Access: object permissions + public share links.
 ]
 

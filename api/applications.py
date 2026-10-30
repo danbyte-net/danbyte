@@ -15,14 +15,12 @@ from django.db import transaction
 
 
 def _product(application):
-    """The cached catalog product the application names, or None."""
-    if not (application.eol_source and application.eol_product):
-        return None
-    from compliance.models import EolProduct
+    """The product the application names - from a source's cached catalog,
+    or one of its tenant's custom products - or None."""
+    from compliance.eol import find_product
 
-    return EolProduct.objects.filter(
-        source=application.eol_source, name=application.eol_product
-    ).first()
+    return find_product(application.eol_source, application.eol_product,
+                        application.tenant_id)
 
 
 def derive_cycle(application, version: str, product=None) -> str:

@@ -110,8 +110,10 @@ the start the same way.
 The **End of life** card on the application's Overview shows:
 
 - **Source** - *endoflife.date*; for a deployment admin it links to
-  Settings → General → End-of-life data.
-- **Product** - its name, linked to the product's page on endoflife.date.
+  Settings → General → End-of-life data. A
+  [custom product](end-of-life-data.md#custom-products) reads *Custom*.
+- **Product** - its name, linked to the product's page on endoflife.date
+  (a custom product links to its own page).
   A product missing from the cached catalog, or one none of the installs'
   versions match, says so in a line under the card.
 - **Cycles** - each cycle the installs run, with its status, release date,
@@ -120,9 +122,10 @@ The **End of life** card on the application's Overview shows:
   *Unmapped* row counts the installs whose version matched no cycle.
   **All cycles** adds the product's other cycles, muted.
 
-**Change product** opens the product picker; **Remove** clears it. A
-deployment admin also gets **Refresh now**, which fetches the catalog as the
-settings card does. To pin one install to another cycle, edit the install
+**Change product** opens the product picker - the fetched catalog and the
+tenant's own custom products, those marked *Custom*; **Remove** clears it. A
+deployment admin also gets **Refresh now** (not for a custom product), which
+fetches the catalog as the settings card does. To pin one install to another cycle, edit the install
 and set its *Cycle*.
 
 Elsewhere the status links back here: the *End of life* badge on a device's
@@ -251,8 +254,8 @@ the installs are written as you.
 
 | Endpoint | |
 |---|---|
-| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?parent=` (an id, or `none` for the roots), `?ancestor=` (everything under an application, any depth), `?picker=1` (`{id, name, slug, path, depth, child_count}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
-| `/api/applications/<id>/eol/` | `GET`, `PUT {"product"}`, `DELETE`; `404` while end-of-life data is off. `GET` and `PUT` answer `{source, product, cycles, other_cycles, unmapped_installs, in_catalog, source_label, product_label, product_url}`; each cycle carries `install_count`, the installs you may view. |
+| `/api/applications/` | CRUD. `?search=`, `?manufacturer=`, `?eol_source=` and `?eol_product=` (the applications mapped to one end-of-life product), `?parent=` (an id, or `none` for the roots), `?ancestor=` (everything under an application, any depth), `?picker=1` (`{id, name, slug, path, depth, child_count}`). `POST bulk-delete/`. Delete answers `409` while installs, children or flows exist. |
+| `/api/applications/<id>/eol/` | `GET`, `PUT {"product", "source"}` (`source` defaults to `endoflife_date`; `custom` for one of the tenant's own products), `DELETE`; `404` while end-of-life data is off. `GET` and `PUT` answer `{source, product, cycles, other_cycles, unmapped_installs, in_catalog, source_label, product_label, product_url, custom, product_id}`; each cycle carries `install_count`, the installs you may view. `product_id` is a custom product's id. |
 | `/api/installed-software/` | CRUD. `?device=`, `?virtual_machine=`, `?application=`, `?service=`, `?group=`, `?cycle=` (`none` for the installs no cycle took), `?search=`. `POST bulk-delete/`. |
 | `/api/application-groups/` | CRUD. `?search=`, `?application=`, `?device=`, `?virtual_machine=`, `?picker=1` (`{id, name, slug}`). `POST bulk-delete/`. Delete answers `409` while the group is assigned. |
 | `/api/application-group-assignments/` | List, `POST` (assign), `DELETE` (unassign). `?group=`, `?device=`, `?virtual_machine=`. `POST set/` makes a host's groups exactly a list. |
