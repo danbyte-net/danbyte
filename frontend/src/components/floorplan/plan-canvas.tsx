@@ -29,6 +29,7 @@ import type {
   PaletteEntry,
 } from "./floor-canvas"
 import { LinkedObjectLink } from "./linked-object-link"
+import { isLiveView, viewBackgroundFrame } from "./snapshot"
 import { SelectionBar } from "./selection-bar"
 import { TilePopover } from "./tile-popover"
 import type { useTilePopover } from "./tile-popover"
@@ -93,7 +94,13 @@ export function PlanCanvas({
   onDropRows,
   selectionToolbar,
   overlays,
+  onSnapshotRect,
+  lockedIds,
 }: {
+  /** Edit, the Snapshot tool in hand: the dragged rectangle. */
+  onSnapshotRect?: FloorCanvasProps["onSnapshotRect"]
+  /** A live view's rows crossing its edge: shown, not editable here. */
+  lockedIds?: ReadonlySet<string>
   /** Edit: rows dragged from the Place picker or the unplaced list. */
   onDropRows?: FloorCanvasProps["onDropRows"]
   /** Edit: floats above the selection. */
@@ -347,6 +354,10 @@ export function PlanCanvas({
         onOpenShape={onOpenShape}
         onDropRows={onDropRows}
         selectionToolbar={selectionToolbar}
+        onSnapshotRect={onSnapshotRect}
+        lockedIds={lockedIds}
+        clipToGrid={isLiveView(plan)}
+        backgroundFrame={viewBackgroundFrame(plan)}
       />
       {overlays}
       {cad.drawing?.status === "ready" &&
@@ -366,7 +377,7 @@ export function PlanCanvas({
         <CadPanel
           cad={cad}
           plan={plan}
-          canEdit={canEdit}
+          canEdit={canEdit && !isLiveView(plan)}
           onCalibrate={calibration.start}
           onClose={() => setDrawingOpen(false)}
         />

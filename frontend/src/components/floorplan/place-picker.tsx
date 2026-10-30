@@ -52,14 +52,26 @@ export function dragRows(e: React.DragEvent, rows: FloorPlanPlaceable[]) {
   e.dataTransfer.effectAllowed = "copy"
 }
 
-/** Where a row is already placed, as a badge. */
-export function PlacedBadge({ row }: { row: FloorPlanPlaceable }) {
+/** Where a row is already placed, as a badge: "On this floor", or the
+ * other floor's name, with "+N" when it stands on more plans (a copy keeps
+ * its tiles' links, so an object may). */
+export function placedLabel(row: FloorPlanPlaceable): string | null {
   if (!row.placed_count) return null
   const here = row.placed_on.some((p) => p.this_floor)
-  const other = row.placed_on.find((p) => !p.this_floor)
+  const others = row.placed_on.filter((p) => !p.this_floor)
+  const first = here
+    ? "On this floor"
+    : (others[0]?.floor_plan.name ?? "Placed")
+  const more = here ? others.length : Math.max(0, others.length - 1)
+  return more ? `${first} +${more}` : first
+}
+
+export function PlacedBadge({ row }: { row: FloorPlanPlaceable }) {
+  const label = placedLabel(row)
+  if (!label) return null
   return (
     <Badge variant="outline" className="shrink-0">
-      {here ? "On this floor" : (other?.floor_plan.name ?? "Placed")}
+      {label}
     </Badge>
   )
 }

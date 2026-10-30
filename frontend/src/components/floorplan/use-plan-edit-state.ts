@@ -15,7 +15,14 @@ export type EditorMode = "layout" | "cable" | "structure"
 
 /** The tool rail's tools. */
 export type EditorTool =
-  "select" | "rect" | "polygon" | "label" | "tiles" | "structure" | "trays"
+  | "select"
+  | "rect"
+  | "polygon"
+  | "label"
+  | "tiles"
+  | "structure"
+  | "trays"
+  | "snapshot"
 
 /** The canvas mode a tool works in. */
 export const TOOL_MODE: Record<EditorTool, EditorMode> = {
@@ -26,6 +33,7 @@ export const TOOL_MODE: Record<EditorTool, EditorMode> = {
   tiles: "layout",
   structure: "structure",
   trays: "cable",
+  snapshot: "layout",
 }
 
 /** The same rows, as last saved: a refetch that brings nothing new. */

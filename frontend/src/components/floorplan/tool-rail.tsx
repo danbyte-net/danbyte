@@ -1,6 +1,7 @@
 import {
   BrickWall,
   Cable,
+  Crop,
   LayoutGrid,
   MousePointer2,
   Move,
@@ -43,6 +44,7 @@ export const TOOLS: {
     icon: BrickWall,
   },
   { tool: "trays", label: "Cable trays", key: "c", icon: Cable },
+  { tool: "snapshot", label: "Snapshot", key: "s", icon: Crop },
 ]
 
 /** The tool a key picks, if any. */
@@ -58,6 +60,7 @@ export function ToolRail({
   onToolChange,
   free,
   onToggleFree,
+  canToggleFree = true,
 }: {
   tool: EditorTool
   onToolChange: (tool: EditorTool) => void
@@ -65,6 +68,8 @@ export function ToolRail({
   free: boolean
   /** Grid → free at once; free → grid through Snap all. */
   onToggleFree: () => void
+  /** False on a live view: its layout is its source's. */
+  canToggleFree?: boolean
 }) {
   return (
     <nav
@@ -92,18 +97,20 @@ export function ToolRail({
         )
       })}
       <div className="mt-auto" />
-      <BarIconButton
-        label={free ? "Back to the grid…" : "Free placement"}
-        tipSide="right"
-        aria-pressed={free}
-        className={cn(
-          free &&
-            "border-primary/50 bg-accent text-accent-foreground hover:bg-accent"
-        )}
-        onClick={onToggleFree}
-      >
-        <Move />
-      </BarIconButton>
+      {canToggleFree && (
+        <BarIconButton
+          label={free ? "Back to the grid…" : "Free placement"}
+          tipSide="right"
+          aria-pressed={free}
+          className={cn(
+            free &&
+              "border-primary/50 bg-accent text-accent-foreground hover:bg-accent"
+          )}
+          onClick={onToggleFree}
+        >
+          <Move />
+        </BarIconButton>
+      )}
     </nav>
   )
 }

@@ -5,8 +5,8 @@ resource limits and a scrubbed environment), so it imports nothing from
 Django or the rest of the project: only the standard library and ezdxf.
 
     python -I cad_engine.py INPUT.dxf OUT.svg OUT.json [--hidden FILE] [--hide-text]
-        [--extents FILE] [--max-bytes N] [--max-elements N] [--max-text N]
-        [--deadline SECONDS]
+        [--extents FILE] [--clip FILE] [--max-bytes N] [--max-elements N]
+        [--max-text N] [--deadline SECONDS]
 
 What it writes:
 
@@ -24,6 +24,12 @@ What it writes:
 instead of measuring what is drawn. A render with layers hidden passes the
 full drawing's extents, so its viewBox is the full drawing's and it overlays
 the full render exactly, even when the hidden layers sat at an edge.
+
+``--clip`` renders one part of the drawing, a JSON ``{min_x, min_y, max_x,
+max_y}`` in drawing units (a floor-plan snapshot's crop): every shape whose
+box misses it is left out, and the frame is the clip, so the SVG covers just
+that part. Shapes that straddle the edge are kept whole; the viewer clips
+them to the frame.
 
 The SVG is kept under the byte and element caps by a simplification ladder:
 hatches go first, then dimensions, then text, then the shortest strokes. When
@@ -679,20 +685,71 @@ def write(cap: Capture, order: list[str], svg_path: str, max_bytes: int, max_ele
     )
 
 
-def fix_extents(cap: Capture, path: str) -> None:
-    """Frame the drawing by the extents in ``path`` instead of what was
-    drawn: a render with layers left out keeps the full drawing's viewBox."""
+def _read_box(path: str, what: str) -> list[float]:
+    """``[min_x, min_y, max_x, max_y]`` from the JSON file at ``path``."""
     try:
         with open(path, encoding="utf-8") as fh:
             ext = json.load(fh)
         box = [float(ext[k]) for k in ("min_x", "min_y", "max_x", "max_y")]
     except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise Abort(EXIT_UNREADABLE, "The drawing's extents are unreadable.") from exc
+        raise Abort(EXIT_UNREADABLE, f"The drawing's {what} is unreadable.") from exc
     if not all(math.isfinite(v) and abs(v) <= MAX_COORD for v in box) or (
         box[2] < box[0] or box[3] < box[1]
     ):
-        raise Abort(EXIT_UNREADABLE, "The drawing's extents are unreadable.")
-    cap.min_x, cap.min_y, cap.max_x, cap.max_y = box
+        raise Abort(EXIT_UNREADABLE, f"The drawing's {what} is unreadable.")
+    return box
+
+
+def fix_extents(cap: Capture, path: str) -> None:
+    """Frame the drawing by the extents in ``path`` instead of what was
+    drawn: a render with layers left out keeps the full drawing's viewBox."""
+    cap.min_x, cap.min_y, cap.max_x, cap.max_y = _read_box(path, "extents")
+
+
+def _coords_box(coords: list) -> tuple[float, float, float, float] | None:
+    """The bounding box of ['M', x, y, 'L', ...] coordinates."""
+    xs: list[float] = []
+    ys: list[float] = []
+    x = None
+    for v in coords:
+        if isinstance(v, str):
+            x = None
+            continue
+        if x is None:
+            x = v
+            continue
+        xs.append(x)
+        ys.append(v)
+        x = None
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _meets(b, clip) -> bool:
+    return b is not None and b[0] <= clip[2] and b[2] >= clip[0] \
+        and b[1] <= clip[3] and b[3] >= clip[1]
+
+
+def clip_to(cap: Capture, path: str) -> None:
+    """Keep only what meets the clip box in ``path`` and frame the drawing by
+    it: a snapshot's part of the drawing. A shape that straddles the edge is
+    kept whole (the viewer clips it to the frame)."""
+    clip = _read_box(path, "clip")
+    cap.strokes = [s for s in cap.strokes if _meets(_coords_box(s[4]), clip)]
+    cap.fills = [
+        f for f in cap.fills if any(_meets(_coords_box(p), clip) for p in f[4])
+    ]
+    kept = []
+    for t in cap.texts:
+        a, b, _c, _d, ox, oy = t[3]
+        run = t[4] * 0.6 * len(t[5])
+        box = (min(ox, ox + a * run), min(oy, oy + b * run),
+               max(ox, ox + a * run), max(oy, oy + b * run))
+        if _meets(box, clip):
+            kept.append(t)
+    cap.texts = kept
+    cap.min_x, cap.min_y, cap.max_x, cap.max_y = clip
 
 
 UNITS = {
@@ -716,6 +773,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hidden", default="")
     ap.add_argument("--hide-text", action="store_true")
     ap.add_argument("--extents", default="")
+    ap.add_argument("--clip", default="")
     ap.add_argument("--max-bytes", type=int, default=20 * 1024 * 1024)
     ap.add_argument("--max-elements", type=int, default=250_000)
     ap.add_argument("--max-text", type=int, default=2_000_000)
@@ -735,7 +793,9 @@ def main(argv: list[str] | None = None) -> int:
             raise Abort(EXIT_TOO_LARGE, "The drawing expands to too many shapes to render.")
         table = layer_table(doc)
         skipped = render(doc, cap, hidden, args.hide_text)
-        if args.extents:
+        if args.clip:
+            clip_to(cap, args.clip)
+        elif args.extents:
             fix_extents(cap, args.extents)
         if not (math.isfinite(cap.min_x) and math.isfinite(cap.max_x)):
             raise Abort(EXIT_EMPTY, "The drawing's model space has nothing to show.")
