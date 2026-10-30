@@ -370,7 +370,11 @@ export function TileInspector({
           noneLabel="Not linked"
           placeholder="Not linked"
         />
-        {tile.link_kind === "cabinet" ? (
+        {tile.linked?.hidden ? (
+          // Another site's object: nothing to show or pick from here; the
+          // kind above relinks or unlinks the tile.
+          <p className="text-sm text-muted-foreground">Hidden</p>
+        ) : tile.link_kind === "cabinet" ? (
           <CabinetLinkField
             tile={tile}
             siteId={siteId}

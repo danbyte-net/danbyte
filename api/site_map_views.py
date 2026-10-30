@@ -101,18 +101,17 @@ def site_map(request):
     if tenant is None:
         return Response({"detail": "No active tenant."}, status=400)
 
-    from django.db.models import Count
+    from .visible_counts import path_count_expr
 
+    # A site's counts are of the devices and floor plans the caller may view
+    # (#438, #453), as the site's own tabs list them.
     sites_qs = (
         rbac.restrict_queryset(
             Site.objects.filter(tenant=tenant),
             request.user, tenant, "site", "view",
         )
         .select_related("region")
-        .annotate(
-            _devices=Count("device", distinct=True),
-            _floor_plans=Count("locations__floor_plans", distinct=True),
-        )
+        .annotate(_devices=path_count_expr(request, Device, "site"))
         .order_by("name")
     )
     # One editable-set query for the whole map instead of a per-row check.
@@ -151,12 +150,17 @@ def site_map(request):
     # jump-offs (the map → floorplan drill-down, like the plugin's
     # floorplan_link tiles).
     plans_by_site: dict = {}
+    plan_counts: dict = {}
     for fp in (
-        FloorPlan.objects.filter(tenant=tenant)
+        rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant),
+            request.user, tenant, "floorplan", "view",
+        )
         .select_related("location")
         .order_by("name")
     ):
         plans_by_site.setdefault(fp.location.site_id, [])
+        plan_counts[fp.location.site_id] = plan_counts.get(fp.location.site_id, 0) + 1
         if len(plans_by_site[fp.location.site_id]) < 5:
             plans_by_site[fp.location.site_id].append(
                 {"id": str(fp.id), "name": fp.name}
@@ -175,7 +179,7 @@ def site_map(request):
                 if s.region_id else None
             ),
             "device_count": s._devices,
-            "floor_plan_count": s._floor_plans,
+            "floor_plan_count": plan_counts.get(s.id, 0),
             "floor_plans": plans_by_site.get(s.id, []),
             "check": worst_status(site_checks.get(s.id, [])),
             "can_edit": s.id in editable,
@@ -259,9 +263,27 @@ def site_map(request):
         for d in devices_qs
     ]
 
-    # Free markers - the whole tenant's; the marker vocabulary (tile types /
-    # device roles) is tenant data, so no per-row RBAC beyond tenancy (the
-    # same contract as floor-plan tiles).
+    # Free markers - the ones the caller may view, as the marker list
+    # narrows them. A marker's device the caller may not view is not named:
+    # ``device`` null, ``device_hidden`` true (#453).
+    marker_rows = list(
+        rbac.restrict_queryset(
+            SiteMarker.objects.filter(tenant=tenant),
+            request.user, tenant, "sitemarker", "view",
+        )
+        .select_related(
+            "tile_type", "role_type", "device",
+            "device__role", "device__site", "device__status",
+            "device__device_type", "device__primary_ip",
+        )
+        .prefetch_related(Prefetch("device__tags", to_attr=TAGS_ATTR))
+    )
+    marker_devices = rbac.ViewableRows(request.user, tenant)
+    marker_devices.prime("device", {m.device_id for m in marker_rows})
+
+    def marker_device_hidden(m):
+        return m.device_id is not None and not marker_devices.may_view("device", m.device_id)
+
     markers = [
         {
             "id": str(m.id),
@@ -269,7 +291,11 @@ def site_map(request):
             "longitude": float(m.longitude),
             "label": m.label,
             "description": m.description,
-            "device": device_info(m.device) if m.device_id else None,
+            "device": (
+                device_info(m.device)
+                if m.device_id and not marker_device_hidden(m) else None
+            ),
+            "device_hidden": marker_device_hidden(m),
             "type": {
                 "id": str(m.type_obj.id),
                 "name": m.type_obj.name,
@@ -285,13 +311,7 @@ def site_map(request):
             }
             if (m.fov_distance_m and (m.fov_ptz or m.fov_deg)) else None,
         }
-        for m in SiteMarker.objects.filter(tenant=tenant)
-        .select_related(
-            "tile_type", "role_type", "device",
-            "device__role", "device__site", "device__status",
-            "device__device_type", "device__primary_ip",
-        )
-        .prefetch_related(Prefetch("device__tags", to_attr=TAGS_ATTR))
+        for m in marker_rows
     ]
 
     # Region boundaries - OSM-sourced polygons shaded under the markers.
@@ -316,6 +336,18 @@ def site_map(request):
         "markers": markers,
         "regions": regions,
     })
+
+
+def _viewable_links(user, tenant, links) -> list:
+    """The hops of ``links`` whose cable ``user`` may view - the scope of
+    ``/api/cables/`` (#453). A line, its strand walk and its figures are
+    made of these only. A superuser keeps every hop without a query."""
+    if getattr(user, "is_superuser", False):
+        return links
+    from .cable_scope import viewable_cable_ids
+
+    ok = viewable_cable_ids(user, tenant, {hop[0].id for hop in links})
+    return [hop for hop in links if hop[0].id in ok]
 
 
 def _termination_site_id(term):
@@ -373,8 +405,10 @@ def site_map_connections(request):
     - **cables**: physical links whose endpoint devices sit at different
       placed sites, aggregated per site pair (a bundle is one edge).
 
-    Each kind is independently RBAC-scoped, and the embedded sites are
-    intersected with the caller's site-view set. ``?include=capacity`` adds
+    Each kind is independently RBAC-scoped - cables to the ones
+    ``/api/cables/`` lists the caller, also for the capacity walk - and the
+    embedded sites are intersected with the caller's site-view set.
+    ``?include=capacity`` adds
     each edge's speed and the links behind it (``api.site_map_links``).
     """
     from .models import Circuit, Tunnel
@@ -413,6 +447,7 @@ def site_map_connections(request):
             .values("id"),
             through_panels=False,
         )
+    links = _viewable_links(request.user, tenant, links)
     figures = (
         LinkFigures(request.user, tenant, links, cable_view=cable_view is not None)
         if capacity else None
@@ -592,7 +627,7 @@ def _routes_by_cable(tenant) -> dict:
             description=(
                 "Every cable with both endpoints resolvable to a coordinate "
                 "(device coords, else site coords), as a drawable segment; "
-                "RBAC: cable/view and both endpoint devices viewable. With "
+                "RBAC: cables the caller may view and both endpoint devices viewable. With "
                 "`include=capacity`, each cable also carries `capacity`, `links` "
                 "and `link_count`."
             ),
@@ -609,8 +644,8 @@ def site_map_cables(request):
 
     Endpoint resolution per side: the device's own lat/lng if set, else its
     site's lat/lng (campus OSP within one site still draws). A cable is
-    dropped when either side can't resolve. RBAC: ``cable``/``view``.
-    ``?include=capacity`` adds each cable's speed and the end-to-end links
+    dropped when either side can't resolve. RBAC: the cables ``/api/cables/``
+    lists the caller, both ends on devices they may view. ``?include=capacity`` adds each cable's speed and the end-to-end links
     its strands carry (``api.site_map_links``).
     """
     from .topology_views import _links_around, _physical_links
@@ -672,6 +707,7 @@ def site_map_cables(request):
         _physical_links(tenant) if capacity
         else _links_around(tenant, placed, through_panels=False)
     )
+    links = _viewable_links(request.user, tenant, links)
     figures = (
         LinkFigures(request.user, tenant, links, cable_view=True, devices=viewable_devs)
         if capacity else None

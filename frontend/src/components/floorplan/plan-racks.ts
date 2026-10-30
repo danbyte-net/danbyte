@@ -55,7 +55,7 @@ export function planRackRows(
 ): PlanRack[] {
   const byRack = new Map<string, string[]>()
   for (const t of tiles) {
-    if (t.linked?.kind !== "rack") continue
+    if (t.linked?.kind !== "rack" || !t.linked.id) continue
     const ids = byRack.get(t.linked.id) ?? []
     ids.push(t.id)
     byRack.set(t.linked.id, ids)
@@ -96,7 +96,7 @@ export function tileRackFigures(
   const byId = new Map((racks ?? []).map((r) => [r.id, r] as const))
   const out = new Map<string, RackFigures>()
   for (const t of tiles) {
-    if (t.linked?.kind !== "rack") continue
+    if (t.linked?.kind !== "rack" || !t.linked.id) continue
     const fig = rackFigures(byId.get(t.linked.id), rackLive(live, t.id))
     if (fig) out.set(t.id, fig)
   }

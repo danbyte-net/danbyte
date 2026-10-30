@@ -1248,7 +1248,9 @@ export interface SiteMapMarker {
   longitude: number
   label: string
   description: string
+  /** Null with `device_hidden` when the reader may not view the device. */
   device: SiteMapDeviceInfo | null
+  device_hidden?: boolean
   type: {
     id: string
     name: string
@@ -11892,7 +11894,8 @@ export interface SiteMarker {
   longitude: string
   label: string
   description: string
-  device: { id: string; name: string } | null
+  /** A device the reader may not view: `{id: null, name: "Hidden", hidden}`. */
+  device: { id: string | null; name: string; hidden?: true } | null
   /** Exactly one of a floor tile type or a device role - `kind` says which. */
   type: {
     id: string
@@ -11955,9 +11958,13 @@ export interface FloorPlanTile {
   link_kind: "" | FloorPlanLinkKind
   linked: {
     kind: FloorPlanLinkKind
-    id: string
+    /** Null, with `hidden`, when the reader may not view the object. */
+    id: string | null
     name: string
-    route: string
+    route?: string
+    /** An object the reader may not view: name "Hidden", no id, route,
+     * room or role. The tile keeps its place and can't be opened. */
+    hidden?: true
     /** A device, rack or cabinet: the room it names. */
     room?: FloorPlanRoomRef | null
     /** A device, rack or cabinet: its role as it is now - a tile with no

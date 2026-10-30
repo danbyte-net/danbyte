@@ -75,6 +75,7 @@ import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
 import { useStructureEdits } from "./use-structure-edits"
 import { useTileEdits } from "./use-tile-edits"
+import { shownLink } from "./shown-link"
 
 /** The floor-plan page's search params (validated by the route). */
 export interface FloorPlanSearch {
@@ -338,7 +339,7 @@ export function FloorPlanEditor({
         const ids = new Set(prompt.objects.map((o) => o.id))
         ed.setTiles((prev) =>
           prev.map((t) =>
-            t.linked && ids.has(t.linked.id)
+            t.linked?.id && ids.has(t.linked.id)
               ? { ...t, linked: { ...t.linked, room: prompt.room } }
               : t
           )
@@ -399,20 +400,22 @@ export function FloorPlanEditor({
   }
 
   const openTile = (tile: FloorPlanTile) => {
-    if (tile.linked?.kind === "floorplan") {
-      nav({ to: "/floorplans/$id", params: { id: tile.linked.id } })
+    // A Hidden link (another site's object) opens nothing: the tile selects.
+    const linked = shownLink(tile.linked)
+    if (linked?.kind === "floorplan") {
+      nav({ to: "/floorplans/$id", params: { id: linked.id } })
       return
     }
     // Rack/device tiles open the contents + end-to-end trace sheet (from
     // the popover's Trace or a double-click - a click pins the popover).
-    if (tile.linked?.kind === "rack" || tile.linked?.kind === "device") {
+    if (linked?.kind === "rack" || linked?.kind === "device") {
       popover.close()
       ed.setDeepTile(tile)
       return
     }
     // A cabinet tile opens its panel over the canvas - in place of the
     // popover a click pinned on the way.
-    if (tile.linked?.kind === "cabinet") {
+    if (linked?.kind === "cabinet") {
       popover.close()
       ed.setCabinetTileId(tile.id)
       return

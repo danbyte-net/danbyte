@@ -52,6 +52,7 @@ import { tileName } from "./canvas-geometry"
 import { roomAreaAt } from "./placement"
 import type { AreaShape, PlanShape } from "./shapes"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
+import { shownLink } from "./shown-link"
 
 /** Where each kind of object is written. */
 const ENDPOINT: Partial<Record<string, string>> = {
@@ -404,7 +405,7 @@ export function SelectionToolbar({
 }) {
   const free = plan.layout_mode === "free"
   if (tile) {
-    const l = tile.linked
+    const l = shownLink(tile.linked)
     const area =
       l && (l.kind === "device" || l.kind === "rack" || l.kind === "cabinet")
         ? roomAreaAt(shapes, [

@@ -104,6 +104,9 @@ export interface SceneTile {
   /** The linked device's name - labels device tiles like the 2D canvas does
    * (tile label wins, then this). */
   device_name?: string
+  /** Linked to an object the reader may not view: a plain box named
+   * Hidden, no rack or cabinet. */
+  hidden?: boolean
   /** The tile type's / role's name - labels unlinked planning tiles. */
   type_name?: string
   /** Zone tiles of a perforated type draw as grate floor in 3D. Optional so
@@ -119,7 +122,10 @@ export interface SceneTray {
   level: "overhead" | "underfloor" | "floor"
   elevation_mm: number | null
   points: [number, number][]
+  /** The cables in it the reader may view. */
   cable_count: number
+  /** The others, which it names nothing of. */
+  hidden_cable_count?: number
 }
 
 export interface SceneRaisedFloor {

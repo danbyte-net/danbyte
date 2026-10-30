@@ -1,13 +1,16 @@
 import type { FloorPlanTile } from "@/lib/api"
 import { OpenLink } from "@/components/open-link"
+import { shownLink } from "./shown-link"
 
 /** "Open device", "Open rack"… for the linked object - the router link the
- * Maps panels share, so the SPA never reloads. */
+ * Maps panels share, so the SPA never reloads. Nothing for a Hidden one. */
 export function LinkedObjectLink({
-  linked,
+  linked: link,
 }: {
   linked: NonNullable<FloorPlanTile["linked"]>
 }) {
+  const linked = shownLink(link)
+  if (!linked) return null
   const className = "mt-2 w-full"
   const params = { id: linked.id }
   switch (linked.kind) {

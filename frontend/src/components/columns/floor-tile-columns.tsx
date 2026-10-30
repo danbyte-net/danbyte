@@ -179,6 +179,7 @@ export function buildFloorTileColumns<T extends FloorPlanTile = FloorPlanTile>(
       cell: ({ row }) => {
         const l = row.original.linked
         if (!l) return dash
+        if (l.hidden || !l.id) return l.name
         return (
           <Link
             to={LINK_ROUTES[l.kind]}
