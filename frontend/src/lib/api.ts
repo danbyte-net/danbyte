@@ -14150,6 +14150,13 @@ export interface PrtgChange {
 export type PrtgChangeStatus =
   "ready" | "attention" | "applied" | "failed" | "decision"
 
+/** GET /api/prtg/changes/counts/ - the queue's rows by where they stand. */
+export interface PrtgChangeCounts {
+  open: number
+  applied: number
+  dismissed: number
+}
+
 /** One entry of a planned row's apply log (`detail.log`). */
 export interface PrtgApplyLogEntry {
   at: string

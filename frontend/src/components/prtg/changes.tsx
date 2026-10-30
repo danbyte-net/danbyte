@@ -11,6 +11,7 @@ import type {
   PrtgApplyLogEntry,
   PrtgApplyResults,
   PrtgChange,
+  PrtgChangeCounts,
   PrtgChangeStatus,
   PrtgConnection,
   PrtgDecisionCandidate,
@@ -19,9 +20,9 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { useUrlSet } from "@/lib/url-filters"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +31,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { FacetGroup } from "@/components/filter-rail"
 import { Loading } from "@/components/loading"
 import { PanelSection, PanelShell } from "@/components/map-panel"
 import { cn } from "@/lib/utils"
@@ -44,19 +46,33 @@ import { PrtgParentLink, prtgParentName } from "./parent-link"
  * The PRTG review queue as an inbox. Every row has a status - Ready, Needs
  * attention (with where to fix it), Applied (with what PRTG made), Failed
  * (with Retry), Needs a decision, Dismissed - and an Apply beside Dismiss.
+ * Applied and dismissed rows are hidden until the rail's Handled facet
+ * (`?handled=applied,dismissed`) brings them back.
  * Rows are selected for Apply selected / Dismiss selected, and Apply all
  * applicable confirms what it will do. Removals in PRTG are applied one at a
  * time, after a confirmation. Clicking a row opens the whole plan beside the
  * table.
  */
-/** The connection's review queue - shared by the tab and its count. */
+/** The connection's open review queue - shared by the tab and its count.
+ * Applied and dismissed rows are fetched only when asked for. */
 export function usePrtgQueue(connectionId: string, enabled = true) {
   return useQuery({
     enabled,
     queryKey: ["prtg-changes", connectionId, "queue"],
     queryFn: () =>
-      apiAll<PrtgChange>(`/api/prtg/changes/?connection=${connectionId}`),
+      apiAll<PrtgChange>(
+        `/api/prtg/changes/?connection=${connectionId}&state=open`
+      ),
   })
+}
+
+/** Rows already dealt with, which the queue hides until asked. */
+const HANDLED = ["applied", "dismissed"] as const
+
+/** Whether a row still waits on a person or a pass. */
+function isOpen(c: PrtgChange): boolean {
+  const st = rowStatus(c)
+  return st !== "applied" && st !== "dismissed"
 }
 
 /** Rows that need a person: ready, needs attention, needs a decision. */
@@ -79,7 +95,6 @@ export function PrtgChanges({
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canApply = canDo("prtgchange", "change")
-  const [hideDismissed, setHideDismissed] = useState(true)
   const [selected, setSelected] = useState<PrtgChange[]>([])
   const [openId, setOpenId] = useState<string | null>(null)
   const [confirmAll, setConfirmAll] = useState(false)
@@ -100,33 +115,67 @@ export function PrtgChanges({
         ["object" as string]: undefined,
       }),
     })
-  const dismissed = useQuery({
-    queryKey: ["prtg-changes", connection.id, "dismissed"],
+  // ?handled=applied,dismissed brings the rows already dealt with back.
+  const [handledParam, setHandled] = useUrlSet("handled")
+  const handled = HANDLED.filter((h) => handledParam.has(h)).join(",")
+  const handledRows = useQuery({
+    queryKey: ["prtg-changes", connection.id, "handled", handled],
     queryFn: () =>
       apiAll<PrtgChange>(
-        `/api/prtg/changes/?connection=${connection.id}&ignored=1`
+        `/api/prtg/changes/?connection=${connection.id}&state=${handled}`
       ),
-    enabled: !hideDismissed,
+    enabled: handled !== "",
+  })
+  const counts = useQuery({
+    queryKey: ["prtg-changes", connection.id, "counts", objectId ?? ""],
+    queryFn: () =>
+      api<PrtgChangeCounts>(
+        `/api/prtg/changes/counts/?connection=${connection.id}${
+          objectId ? `&object=${objectId}` : ""
+        }`
+      ),
   })
   const rows = useMemo(
     () =>
       [
         ...(queue.data?.results ?? []),
-        ...(hideDismissed ? [] : (dismissed.data?.results ?? [])),
+        ...(handled ? (handledRows.data?.results ?? []) : []),
       ].filter(
         (c) =>
           !objectId ||
           c.device?.id === objectId ||
           c.virtual_machine?.id === objectId
       ),
-    [queue.data, dismissed.data, hideDismissed, objectId]
+    [queue.data, handledRows.data, handled, objectId]
   )
+  const handledTotal =
+    (counts.data?.applied ?? 0) + (counts.data?.dismissed ?? 0)
   const objectName = objectId
     ? prtgParentName(rows[0] ?? { device: null, virtual_machine: null })
     : ""
   // What "Apply all" reaches: the server applies the same rows.
   const applicable = rows.filter(
     (c) => !c.ignored && c.applicable && !c.destructive && c.status === "ready"
+  )
+  const handledFacet = (
+    <FacetGroup
+      label="Handled"
+      facetId="handled"
+      options={HANDLED.map((h) => ({
+        value: h,
+        label: STATUS_LABEL[h],
+        count: counts.data?.[h] ?? 0,
+      }))}
+      selected={handledParam}
+      onToggle={(v) =>
+        setHandled((prev) => {
+          const next = new Set(prev)
+          if (next.has(v)) next.delete(v)
+          else next.add(v)
+          return next
+        })
+      }
+    />
   )
 
   const refresh = () => {
@@ -382,35 +431,29 @@ export function PrtgChanges({
     rail,
     columns: wiredColumns,
     filteredRows,
-  } = useTableFilters(columns, rows)
+  } = useTableFilters(columns, rows, undefined, { railExtras: handledFacet })
   const open = rows.find((r) => r.id === openId) ?? null
   const kinds = countKinds(applicable)
+  // Apply selected reaches open rows only; a dismissed row is dismissed.
+  const selectedOpen = selected.filter(isOpen)
+  const selectedLive = selected.filter((c) => !c.ignored)
 
   return (
     <Section
       title="To review"
       count={queue.data?.results.length ?? 0}
       actions={
-        <>
-          <label className="inline-flex items-center gap-2 text-[13px] whitespace-nowrap">
-            <Checkbox
-              checked={hideDismissed}
-              onCheckedChange={(v) => setHideDismissed(v === true)}
-              aria-label="Hide dismissed"
-            />
-            Hide dismissed
-          </label>
-          {canApply && applicable.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={applyAll.isPending}
-              onClick={() => setConfirmAll(true)}
-            >
-              Apply all applicable
-            </Button>
-          )}
-        </>
+        canApply &&
+        applicable.length > 0 && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={applyAll.isPending}
+            onClick={() => setConfirmAll(true)}
+          >
+            Apply all applicable
+          </Button>
+        )
       }
     >
       {objectId && (
@@ -425,11 +468,9 @@ export function PrtgChanges({
       )}
       {queue.isLoading ? (
         <Loading />
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && handledTotal === 0 ? (
         <EmptyState title="Nothing to review">
-          {hideDismissed
-            ? "Every match was clear and PRTG has what Danbyte plans."
-            : "Nothing dismissed either."}
+          Every match was clear and PRTG has what Danbyte plans.
         </EmptyState>
       ) : (
         <div
@@ -442,18 +483,24 @@ export function PrtgChanges({
         >
           {rail}
           <div className="flex min-w-0 flex-1 flex-col gap-2 p-3">
-            <DataTable
-              tableId="prtg-changes"
-              data={filteredRows}
-              total={filteredRows.length}
-              columns={wiredColumns}
-              flexColumn="detail"
-              searchable
-              searchPlaceholder="Search changes…"
-              onSelectedRowsChange={canApply ? setSelected : undefined}
-              selectedRows={selected}
-              onRowClick={(r) => setOpenId(r.id === openId ? null : r.id)}
-            />
+            {rows.length === 0 ? (
+              <EmptyState title="Nothing to review">
+                Every match was clear and PRTG has what Danbyte plans.
+              </EmptyState>
+            ) : (
+              <DataTable
+                tableId="prtg-changes"
+                data={filteredRows}
+                total={filteredRows.length}
+                columns={wiredColumns}
+                flexColumn="detail"
+                searchable
+                searchPlaceholder="Search changes…"
+                onSelectedRowsChange={canApply ? setSelected : undefined}
+                selectedRows={selected}
+                onRowClick={(r) => setOpenId(r.id === openId ? null : r.id)}
+              />
+            )}
           </div>
           {open && (
             <ChangePanel
@@ -470,8 +517,16 @@ export function PrtgChanges({
           busy={applySelected.isPending || dismissSelected.isPending}
           applying={applySelected.isPending}
           dismissing={dismissSelected.isPending}
-          onApply={() => applySelected.mutate(selected.map((c) => c.id))}
-          onDismiss={() => dismissSelected.mutate(selected.map((c) => c.id))}
+          onApply={() =>
+            selectedOpen.length
+              ? applySelected.mutate(selectedOpen.map((c) => c.id))
+              : toast.info("Nothing to apply.")
+          }
+          onDismiss={() =>
+            selectedLive.length
+              ? dismissSelected.mutate(selectedLive.map((c) => c.id))
+              : toast.info("Nothing to dismiss.")
+          }
           onClear={() => setSelected([])}
         />
       )}
