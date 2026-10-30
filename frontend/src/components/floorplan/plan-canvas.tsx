@@ -438,7 +438,8 @@ export function PlanCanvas({
           popover.target ? liveState?.tiles[popover.target.tile.id] : undefined
         }
         planRack={
-          popover.target?.tile.linked?.kind === "rack"
+          popover.target?.tile.linked?.kind === "rack" &&
+          popover.target.tile.linked.id
             ? capacity.rackById.get(popover.target.tile.linked.id)
             : undefined
         }
@@ -448,9 +449,10 @@ export function PlanCanvas({
           tile.linked ? <LinkedObjectLink linked={tile.linked} /> : null
         }
         renderActions={(tile) =>
-          tile.linked?.kind === "rack" ||
-          tile.linked?.kind === "cabinet" ||
-          tile.linked?.kind === "device" ? (
+          !tile.linked?.hidden &&
+          (tile.linked?.kind === "rack" ||
+            tile.linked?.kind === "cabinet" ||
+            tile.linked?.kind === "device") ? (
             <Button
               variant="outline"
               size="sm"

@@ -1781,6 +1781,27 @@ tile's photo shows only to someone who may view its device or rack; and a
 room set from the prompt or **Set rooms from areas** needs `change` on
 each object and is audited on it.
 
+A tile can link another site's device, rack, cabinet, power panel, power
+feed, cooling source or floor plan. To someone who may view the tile but
+not that object, the tile keeps its place and size and names nothing of
+the object:
+
+- Its `linked` reads `{"kind": "device", "id": null, "name": "Hidden",
+  "hidden": true}`, with no route, room, role or photo. This applies in
+  `contents/`, the tile list and detail, a save's answer (`bulk/`,
+  `tiles/bulk/`, `snap-all/`) and so the PNG and PDF exports.
+- The editor draws it as a plain tile named **Hidden**. It can be moved,
+  relabelled, relinked or unlinked, but not opened, traced or placed by.
+- `scene/` (the 3D room) gives it `hidden: true`, `device_name` *Hidden*,
+  no rack or cabinet and no role colour, and draws a rack's devices only
+  when you may view them.
+- `state/` (the live overlay) leaves it out, and a `snap-all/` collision
+  calls it *Hidden*.
+
+Linking writes the same rule: `link_id` must be an object you may view, or
+it is refused as unknown. A save that sends a tile's own `link_kind` with no
+`link_id` keeps its link, which is how the editor saves a Hidden tile.
+
 Cables on a plan follow the cable grant, as `/api/cables/` does: the tenant,
 the grant's constraints and its sites (a site-limited cable grant covers a
 cable only when every end is at its sites). A site viewer role holds no cable
@@ -1796,7 +1817,9 @@ grant, so it sees the trays but no cables. Where a plan names cables:
   keeps its tile but reads `{"device": null, "port": null, "hidden": true}`;
   ends on tiles you may not view are left out.
 - A tray's `cables`, in its own API and in `contents/`, lists only the cables
-  you may view; `hidden_cable_count` counts the others.
+  you may view; `hidden_cable_count` counts the others. In `scene/`, a tray's
+  `cable_count` counts the cables you may view and `hidden_cable_count` the
+  others.
 - Writing a tray's `cable_ids` sets the cables you can see: the ones you
   cannot see stay in the tray. A cable you may not view answers as unknown,
   and each cable added or removed needs **change** on that cable, else the

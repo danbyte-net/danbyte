@@ -1891,19 +1891,21 @@ export function FloorCanvas({
                       Trace cables here
                     </DropdownMenuItem>
                   )}
-                {ctxMenu.tile.linked && onOpenTile && (
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      onOpenTile(ctxMenu.tile!)
-                      setCtxMenu(null)
-                    }}
-                  >
-                    Open{" "}
-                    {ctxMenu.tile.linked.kind === "floorplan"
-                      ? "plan"
-                      : ctxMenu.tile.linked.kind}
-                  </DropdownMenuItem>
-                )}
+                {ctxMenu.tile.linked &&
+                  !ctxMenu.tile.linked.hidden &&
+                  onOpenTile && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onOpenTile(ctxMenu.tile!)
+                        setCtxMenu(null)
+                      }}
+                    >
+                      Open{" "}
+                      {ctxMenu.tile.linked.kind === "floorplan"
+                        ? "plan"
+                        : ctxMenu.tile.linked.kind}
+                    </DropdownMenuItem>
+                  )}
                 <DropdownMenuSeparator />
               </>
             )}

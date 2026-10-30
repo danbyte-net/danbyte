@@ -15,6 +15,7 @@ import {
   withDraftPlacement,
 } from "./placement"
 import type { AreaShape } from "./shapes"
+import { shownLink } from "./shown-link"
 import { tileFill, tileRoleIcon } from "./tile-paint"
 
 const grid = {
@@ -236,6 +237,33 @@ describe("the room prompt", () => {
 
   it("is nothing when there are no room areas", () => {
     expect(roomPrompts([tile({})], [])).toEqual([])
+  })
+
+  it("never asks for a Hidden object", () => {
+    const hidden = tile({
+      id: "hidden",
+      x: 1,
+      y: 1,
+      linked: { kind: "device", id: null, name: "Hidden", hidden: true },
+    })
+    expect(roomPrompts([hidden], [area()])).toEqual([])
+  })
+})
+
+describe("a Hidden link", () => {
+  const hidden = tile({
+    id: "h",
+    linked: { kind: "device", id: null, name: "Hidden", hidden: true },
+  })
+
+  it("is not placed on the floor", () => {
+    expect([...placedOnFloor([hidden])]).toEqual([])
+  })
+
+  it("is not a link to open", () => {
+    expect(shownLink(hidden.linked)).toBeNull()
+    expect(shownLink(tile({}).linked)?.id).toBe("d1")
+    expect(shownLink(null)).toBeNull()
   })
 })
 

@@ -72,7 +72,14 @@ ergonomics on top:
     reader can't view without naming them. A cooling intake connected to another site's feed or
     CDU outflow shows its upstream as *Hidden*, an outflow the intakes it
     serves on another site the same way, and a device's cooling path blanks
-    the hops the reader can't open.
+    the hops the reader can't open. A floor-plan tile linked to another
+    site's device, rack, cabinet, panel, feed, cooling source or plan keeps
+    its place but reads *Hidden* in the editor, the 3D room, the exports
+    and the API, and can't be opened; a site-map marker's device the reader
+    can't view is left out of the marker, and the map's cable lines and
+    links carry only the cables they may view
+    ([floor plans](../features/floor-plans.md#tenancy-permissions-audit),
+    [site map](../features/site-map.md#permissions)).
 
     Counts on catalog objects count only what the reader may view: a
     platform's devices and virtual machines, a device type's or role's
