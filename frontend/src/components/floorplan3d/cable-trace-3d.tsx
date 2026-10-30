@@ -7,7 +7,11 @@ import { isCameraMoving } from "./camera-motion"
 import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
-import { api, type FloorPlanCablePath } from "@/lib/api"
+import {
+  api,
+  type FloorPlanCableEnd,
+  type FloorPlanCablePath,
+} from "@/lib/api"
 import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
@@ -278,10 +282,11 @@ export function cableRunPoints(
   const endLane = cableLane(cp.id)
 
   const endRun = (
-    points: { device: string; port: string }[],
+    points: FloorPlanCableEnd[],
     tileId: string
   ): EndRun => {
     for (const p of points) {
+      if (p.hidden) continue
       const r = portEndRun(scene, sites, p)
       if (r) return r
     }
@@ -424,10 +429,11 @@ export function cableEndsAnchored(
 ): [boolean, boolean] {
   const sites = deviceSites(scene)
   const one = (
-    points: { device: string; port: string }[],
+    points: FloorPlanCableEnd[],
     tileId: string | undefined
   ) => {
     for (const p of points) {
+      if (p.hidden) continue
       const r = portEndRun(scene, sites, p)
       if (r) return r.anchored
     }

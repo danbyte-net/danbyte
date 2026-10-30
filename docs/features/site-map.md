@@ -396,7 +396,10 @@ channel, routed through the route graph between their endpoint sites. A cable
 bundle whose members all follow real routes drops its abstract arc. Cable
 detail pages gain **Show on site map** (`/site-map?trace=<cableId>`) once the
 cable is routed. Routes are a registered RBAC type (`cableroute`) - users
-without the grant see no plant geography.
+without the grant see no plant geography. A route lists only the cables you
+may view (`hidden_cable_count` counts the others); assigning or removing a
+cable needs **change** on that cable, and saving a route's cables keeps the
+ones you cannot see.
 
 For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
 

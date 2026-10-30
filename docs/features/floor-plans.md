@@ -1194,10 +1194,13 @@ through each one. Hand the PNG to whoever's pulling cable.
   keep both visible).
 - **Assign cables**: select a tray → its inspector lists the cables in it,
   with **Add cable** (searches all cables) and a × to remove. The tray shows
-  its cable count on the canvas and in the rail.
+  its cable count on the canvas and in the rail. It lists only the cables you
+  may view; adding or removing one needs **change** on that cable, and the
+  cables you cannot see stay in the tray when you save
+  ([permissions](#tenancy-permissions-audit)).
 - **Auto-route**: on a cable's page, the **Auto-route** button computes the
   best path through this plan's tray network (Dijkstra over segments,
-  junctions and crossings), assigns those trays to the cable, and estimates
+  junctions and same-level crossings), assigns those trays to the cable, and estimates
   its physical length - horizontal run × cell size, plus the vertical drops
   between each end rack and its tray, plus 10 % slack. A recorded length is
   never overwritten (the API accepts `overwrite: true`). Ends farther than
@@ -1466,6 +1469,24 @@ devices, racks, cabinets - by that kind's view grant and site scope; a
 tile's photo shows only to someone who may view its device or rack; and a
 room set from the prompt or **Assign rooms from areas** needs `change` on
 each object and is audited on it.
+
+Cables on a plan follow the cable grant, as `/api/cables/` does: the tenant,
+the grant's constraints and its sites (a site-limited cable grant covers a
+cable only when every end is at its sites). A site viewer role holds no cable
+grant, so it sees the trays but no cables. Where a plan names cables:
+
+- `GET /api/floor-plans/{id}/cable-paths/` (the A↔B runs, the trace, the 3D
+  room and what the PNG and PDF draw) lists only the cables you may view, and
+  `hidden_count` counts the others. An end on a device you may not view keeps
+  its tile but reads `{"device": null, "port": null, "hidden": true}`; ends
+  on tiles you may not view are left out.
+- A tray's `cables`, in its own API and in `contents/`, lists only the cables
+  you may view; `hidden_cable_count` counts the others.
+- Writing a tray's `cable_ids` sets the cables you can see: the ones you
+  cannot see stay in the tray. A cable you may not view answers as unknown,
+  and each cable added or removed needs **change** on that cable, else the
+  save is refused with a `cable_ids` error naming it. Superusers set the
+  whole list.
 
 ## Popover fields
 
