@@ -10682,7 +10682,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
     floor order; ``?location=``, ``?site=``, ``?search=`` filter."""
 
     queryset = (
-        FloorPlan.objects.select_related("location", "location__site", "drawing", "stack")
+        FloorPlan.objects.select_related(
+            "location", "location__site", "drawing", "stack", "source", "source__stack"
+        )
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
@@ -10720,13 +10722,60 @@ class FloorPlanViewSet(TenantScopedViewSet):
         serializer.save(tenant=self._tenant_or_403())
 
     def perform_destroy(self, instance):
-        """Delete the floor; a floor plan left without floors goes too."""
+        """Delete the floor; a floor plan left without floors goes too.
+        Refused (409) while live views still show it."""
+        from .floor_plan_snapshots import refuse_while_viewed
         from .floor_stacks import drop_if_empty
 
+        refuse_while_viewed([instance])
         stack = instance.stack
         with transaction.atomic():
             instance.delete()
             drop_if_empty(stack)
+
+    # ── Snapshots: live views read and write their source (api/floor_plan_snapshots.py)
+
+    def _resolved(self, plan, action="view"):
+        """``(source, crop)`` of a live view - whose source the reader must
+        be allowed to ``action`` too - or ``(plan, None)`` for a plan."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+
+        src, crop = snaps.resolve(plan)
+        if crop is None:
+            return plan, None
+        tenant = self._tenant_or_403()
+        if src.tenant_id != plan.tenant_id or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=src.pk), self.request.user, tenant,
+            "floorplan", action,
+        ).exists():
+            raise PermissionDenied(
+                f"You may not {action} {src.name}, the plan this view shows."
+            )
+        return src, crop
+
+    @staticmethod
+    def _not_on_view(plan, what="This"):
+        """A view takes its grid, background and drawing from its source:
+        refuse writing them on the view."""
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(plan):
+            src = plan.source.name if plan.source_id else "its source"
+            raise ValidationError(
+                {"detail": f"{what} belongs to {src}, the plan this view shows. "
+                           "Change it there."}
+            )
+
+    @staticmethod
+    def _orphan(plan):
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(plan) and plan.source_id is None:
+            raise ValidationError(
+                {"detail": "The plan this view showed is gone. Unlink or delete the view."}
+            )
 
     def _stack_for(self, request, stack_id, action):
         """The tenant's floor plan ``stack_id`` if the user may ``action`` it
@@ -10784,6 +10833,95 @@ class FloorPlanViewSet(TenantScopedViewSet):
             status=drf_status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["post"], url_path="snapshot")
+    def snapshot(self, request, pk=None):
+        """A rectangle of this plan as a plan of its own:
+        ``{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" | "view",
+        "target": "plan" | "floor"}``. ``copy`` copies what the crop holds
+        (clipped at its edge where the geometry allows, the rest copied whole
+        and listed under ``crossing``), with the background cut to it;
+        ``view`` makes a live view of the crop. ``target`` ``plan`` makes a
+        floor plan of its own at this plan's location, ``floor`` a new floor
+        of this floor plan. Needs view on this plan and ``floorplan · add``.
+        A snapshot of a view is a snapshot of the plan it shows."""
+        from audit.context import cause
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .floor_stacks import name_taken
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            raise PermissionDenied("Not allowed.")
+        plan = self.get_object()
+        self._orphan(plan)
+        body = request.data if hasattr(request.data, "get") else {}
+        mode = body.get("mode")
+        if mode not in ("copy", "view"):
+            raise ValidationError({"mode": ["copy or view."]})
+        target = body.get("target") or "plan"
+        if target not in ("plan", "floor"):
+            raise ValidationError({"target": ["plan or floor."]})
+        maxlen = FloorPlan._meta.get_field("name").max_length or 128
+        name = body.get("name")
+        name = name.strip() if isinstance(name, str) else ""
+        if not name:
+            raise ValidationError({"name": ["Name the snapshot."]})
+        if len(name) > maxlen:
+            raise ValidationError({"name": [f"At most {maxlen} characters."]})
+        src, outer = self._resolved(plan)
+        frame = outer if outer is not None else snaps.Crop(
+            0, 0, plan.grid_width, plan.grid_height
+        )
+        try:
+            crop = snaps.parse_crop(body.get("crop"), frame.w, frame.h)
+        except ValueError as exc:
+            raise ValidationError({"crop": [str(exc)]}) from exc
+        crop = snaps.Crop(crop.x + frame.x, crop.y + frame.y, crop.w, crop.h)
+        stack = None
+        if target == "floor":
+            stack = plan.stack
+            if stack is None:
+                raise ValidationError({"target": ["This plan is not a floor of a floor plan."]})
+            if not rbac.restrict_queryset(
+                FloorPlanStack.objects.filter(pk=stack.pk), request.user, tenant,
+                "floorplan", "add",
+            ).exists():
+                raise PermissionDenied("You may not add floors to this floor plan.")
+            if name_taken(stack, name):
+                raise ValidationError({"name": ["This floor plan already has a floor with that name."]})
+        elif FloorPlanStack.objects.filter(
+            tenant=tenant, location=src.location, name=name
+        ).exists():
+            raise ValidationError({"name": ["This location already has a floor plan with that name."]})
+        with transaction.atomic(), cause(f"Snapshot of {src.name}"[:255]):
+            dst, crossing = snaps.make_snapshot(src, crop, name=name, mode=mode, stack=stack)
+            self._assert_bulk_write_in_site_scope([dst.pk], "add")
+        data = FloorPlanSerializer(dst, context=self.get_serializer_context()).data
+        return Response({**data, "crossing": crossing}, status=drf_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="unlink")
+    def unlink(self, request, pk=None):
+        """Turn a live view into an independent copy of what it shows now:
+        the same plan (id, address, floor), holding copies of the source's
+        objects inside the crop and its own cut of the background. Needs
+        change on the view and view on the source. Cannot be undone."""
+        from audit.context import cause
+
+        from . import floor_plan_snapshots as snaps
+
+        plan = self.get_object()
+        if not snaps.is_view(plan):
+            raise ValidationError({"detail": "This plan is not a view."})
+        if plan.source_id is not None:
+            self._resolved(plan)
+        label = plan.source.name if plan.source_id else "a deleted plan"
+        with transaction.atomic(), cause(f"Unlinked from {label}"[:255]):
+            crossing = snaps.unlink(plan)
+        plan.refresh_from_db()
+        data = FloorPlanSerializer(plan, context=self.get_serializer_context()).data
+        return Response({**data, "crossing": crossing})
+
     @action(detail=True, methods=["post"], url_path="clone")
     def clone(self, request, pk=None):
         """Copy the plan with everything drawn on it: tiles (their object
@@ -10802,6 +10940,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not rbac.has_action(request.user, tenant, "floorplan", "add"):
             return Response({"detail": "Not allowed."}, status=drf_status.HTTP_403_FORBIDDEN)
         src = self.get_object()
+        self._orphan(src)
         maxlen = FloorPlan._meta.get_field("name").max_length or 128
         base = f"{src.name} copy"[:maxlen]
         name, n = base, 2
@@ -10815,6 +10954,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
             n += 1
         skip = {"id", "numid", "name", "background_image", "created_at", "updated_at",
                 "stack", "floor_order"}
+        from . import floor_plan_snapshots as snaps
+
+        if snaps.is_view(src):
+            # A copy of a view copies what it shows from its source.
+            root, crop = self._resolved(src)
+            with transaction.atomic():
+                stack = FloorPlanStack.objects.create(
+                    tenant=tenant, location=src.location, name=name,
+                )
+                dst, _crossing = snaps.make_snapshot(
+                    root, crop, name=name, mode="copy", stack=stack
+                )
+            return Response(
+                FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
+                status=drf_status.HTTP_201_CREATED,
+            )
         with transaction.atomic():
             stack = FloorPlanStack.objects.create(
                 tenant=tenant, location=src.location, name=name,
@@ -10878,7 +11033,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         if request.method == "GET":
+            from . import floor_plan_snapshots as snaps
+
+            if snaps.is_view(plan):
+                src, crop = self._resolved(plan)
+                body = snaps.view_drawing(
+                    plan, src, crop, self.get_serializer_context()
+                ) if crop is not None else None
+                if body is None:
+                    raise NotFound("This plan has no drawing.")
+                return Response(body)
             return self._drawing_response(self._drawing_or_404(plan))
+        self._not_on_view(plan, "The drawing")
         if request.method == "POST":
             return self._drawing_upload(request, plan)
         d = self._drawing_or_404(plan)
@@ -10972,6 +11138,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from .models import FloorPlanDrawing
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if d.source_kind == "dwg":
             try:
@@ -11000,6 +11167,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from .serializers import FloorPlanDrawingCalibrationSerializer
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if request.method == "DELETE":
             d.calibration = None
@@ -11035,6 +11203,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         calibration - the newer choice wins; ``null`` or DELETE trusts the
         file again. A calibration made afterwards still wins over it."""
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if request.method == "DELETE":
             units = None
@@ -11061,6 +11230,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from . import cad_render
 
         plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
         d = self._drawing_or_404(plan)
         if d.status != "ready" or not d.extents:
             return Response({"detail": "The drawing is not processed yet."}, status=409)
@@ -11100,12 +11270,20 @@ class FloorPlanViewSet(TenantScopedViewSet):
         bool}`` returns the cached render (200) or queues one (202); GET
         ``?key=`` reports on it."""
         from . import cad_render
+        from . import floor_plan_snapshots as snaps
         from .serializers import FloorPlanDrawingPlacementSerializer
 
         plan = self.get_object()
-        d = self._drawing_or_404(plan)
+        src, crop = self._resolved(plan)
+        d = self._drawing_or_404(src)
         if d.status != "ready":
             return Response({"detail": "The drawing is not processed yet."}, status=409)
+        clip = None
+        if crop is not None:
+            cut = snaps.drawing_clip(d, src.cell_mm, crop)
+            if cut is None:
+                raise NotFound("This plan has no drawing.")
+            clip = cut[0]
         if request.method == "GET":
             key = request.query_params.get("key", "")
             entry = (d.variants or {}).get(key)
@@ -11121,7 +11299,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         hidden = ser.validated_data.get("hidden_layers", [])
         hide_text = ser.validated_data.get("hide_text", False)
         try:
-            key, entry, queued = cad_render.request_variant(d, hidden, hide_text)
+            key, entry, queued = cad_render.request_variant(d, hidden, hide_text, clip)
         except cad_render.TooManyRenders:
             return Response(
                 {"detail": "Other renders of this drawing are still queued. Try again shortly."},
@@ -11188,12 +11366,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from monitoring.models import CheckState
         from monitoring.rollup import worst_status
 
+        from . import floor_plan_snapshots as snaps
+
         plan = self.get_object()
+        src, crop = self._resolved(plan)
         tiles = list(
-            plan.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
+            src.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
                 "rack", "device__status"
             )
         )
+        if crop is not None:
+            tiles = [t for t, _edge in snaps.in_crop("tiles", tiles, crop)]
         rack_ids = {t.rack_id for t in tiles if t.rack_id}
         # The racks with what their figures read (api.capacity): the poll
         # costs the same however many devices the plan holds.
@@ -11278,42 +11461,53 @@ class FloorPlanViewSet(TenantScopedViewSet):
         stays flat however many rows the plan holds."""
         from auth_api import rbac
 
+        from . import floor_plan_snapshots as snaps
+
         plan = self.get_object()
+        src, crop = self._resolved(plan)
         tenant = _get_active_tenant(request)
 
         def visible(qs, slug):
             return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
 
-        tiles = list(visible(
-            plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
-            "floorplantile",
-        ))
-        trays = list(visible(
-            plan.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
-            "floorplantray",
-        ))
-        walls = list(visible(plan.walls.order_by("label", "id"), "floorplanwall"))
-        areas = list(visible(
-            plan.raised_floor_areas.order_by("y", "x", "id"),
-            "floorplanraisedfloorarea",
-        ))
-        drawn = list(visible(_plan_areas(plan), "floorplanarea"))
-        labels = list(visible(_plan_labels(plan), "floorplanlabel"))
-        stamps = [
-            o.updated_at
-            for rows in (tiles, trays, walls, areas, drawn, labels) for o in rows
-        ]
+        rows = {
+            "tiles": (visible(
+                src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
+                "floorplantile",
+            ), FloorPlanTileSerializer),
+            "trays": (visible(
+                src.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+                "floorplantray",
+            ), FloorPlanTraySerializer),
+            "walls": (visible(src.walls.order_by("label", "id"), "floorplanwall"),
+                      FloorPlanWallSerializer),
+            "raised_floors": (visible(
+                src.raised_floor_areas.order_by("y", "x", "id"),
+                "floorplanraisedfloorarea",
+            ), FloorPlanRaisedFloorAreaSerializer),
+            "areas": (visible(_plan_areas(src), "floorplanarea"), FloorPlanAreaSerializer),
+            "labels": (visible(_plan_labels(src), "floorplanlabel"),
+                       FloorPlanLabelSerializer),
+        }
         ctx = {"request": request}
+        out = {}
+        stamps = []
+        for key, (qs, ser_cls) in rows.items():
+            objs = list(qs)
+            if crop is None:
+                out[key] = ser_cls(objs, many=True, context=ctx).data
+            else:
+                # A live view: the source's rows inside the crop, in the
+                # view's cells; the ones crossing its edge are locked.
+                pairs = snaps.in_crop(key, objs, crop)
+                objs = [o for o, _edge in pairs]
+                out[key] = snaps.view_data(
+                    key, pairs, ser_cls(objs, many=True, context=ctx).data, crop
+                )
+            stamps += [o.updated_at for o in objs]
         return Response({
             "version": max(stamps).isoformat() if stamps else None,
-            "areas": FloorPlanAreaSerializer(drawn, many=True, context=ctx).data,
-            "labels": FloorPlanLabelSerializer(labels, many=True, context=ctx).data,
-            "tiles": FloorPlanTileSerializer(tiles, many=True, context=ctx).data,
-            "trays": FloorPlanTraySerializer(trays, many=True, context=ctx).data,
-            "walls": FloorPlanWallSerializer(walls, many=True, context=ctx).data,
-            "raised_floors": FloorPlanRaisedFloorAreaSerializer(
-                areas, many=True, context=ctx
-            ).data,
+            **out,
         })
 
     @action(detail=True, methods=["get"], url_path="placeable")
@@ -11333,6 +11527,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from .topology_views import _uuid_param
 
         plan = self.get_object()
+        src, crop = self._resolved(plan)
         tenant = self._tenant_or_403()
         params = request.query_params
         near_room = near_location = None
@@ -11361,6 +11556,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             near_location=near_location,
             unplaced=params.get("unplaced") in ("1", "true"),
             limit=limit,
+            view=(src, crop) if crop is not None else None,
         )
         return Response({"results": rows})
 
@@ -11373,11 +11569,21 @@ class FloorPlanViewSet(TenantScopedViewSet):
         the room of those listed ones the user may change - each write
         validated and recorded in the change log like an edit of the object -
         and answers ``{"applied", "skipped", "objects"}``."""
+        from . import floor_plan_snapshots as snaps
         from .floor_plan_placement import room_mismatches
 
         plan = self.get_object()
+        src, crop = self._resolved(plan)
         tenant = self._tenant_or_403()
-        found = room_mismatches(plan, request.user, tenant)
+
+        def mismatches():
+            rows = room_mismatches(src, request.user, tenant)
+            if crop is None:
+                return rows
+            shown = {str(t.pk) for t, _e in snaps.in_crop("tiles", src.tiles.all(), crop)}
+            return [r for r in rows if r["tile_id"] in shown]
+
+        found = mismatches()
         apply = request.data.get("apply")
         if request.data.get("dry_run") in (True, "true", "1", 1) or apply is None:
             return Response({"objects": found})
@@ -11422,7 +11628,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         return Response({
             "applied": applied,
             "skipped": skipped,
-            "objects": room_mismatches(plan, request.user, tenant),
+            "objects": mismatches(),
         })
 
     # `route` is a POST (it carries a body) but computes only - view, not change.
@@ -11440,6 +11646,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # writes checked per object against its own change grant.
         "placeable": "view",
         "assign_rooms": "view",
+        # A snapshot reads this plan (and needs floorplan · add, checked in
+        # the action); unlinking rewrites the view.
+        "snapshot": "view",
+        "unlink": "change",
     }
 
     @action(detail=True, methods=["post"], url_path="route")
@@ -11457,6 +11667,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         )
 
         plan = self.get_object()
+        view_plan = plan
+        plan, crop = self._resolved(plan)
         ends, err = _resolve_route_endpoints(plan, request.data or {})
         if err:
             return Response({"detail": err}, status=400)
@@ -11487,9 +11699,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         length_m = estimate_length_m(
             result.run_cells, plan.cell_mm, drop_a, drop_b
         )
+        dx, dy = (-crop.x, -crop.y) if crop is not None and view_plan is not plan else (0, 0)
         return Response({
             "reachable": result.reachable,
-            "points": [[round(x, 3), round(y, 3)] for x, y in result.points],
+            "points": [[round(x + dx, 3), round(y + dy, 3)] for x, y in result.points],
             "tray_ids": [str(t.id) for t in used],
             "tray_names": [t.name for t in used],
             "length_m": length_m,
@@ -11506,11 +11719,16 @@ class FloorPlanViewSet(TenantScopedViewSet):
         view polls exactly what the 2D canvas polls."""
         from django.utils import timezone
 
+        from . import floor_plan_snapshots as snaps
+
         plan = self.get_object()
-        tiles_qs = plan.tiles.select_related(
+        src, crop = self._resolved(plan)
+        tiles_qs = src.tiles.select_related(
             "tile_type", "role_type", "rack__role", "cabinet__role", "device__role",
             "device__device_type",
         )
+        if crop is not None:
+            tiles_qs = [t for t, _e in snaps.in_crop("tiles", tiles_qs, crop)]
 
         def linked_role_color(t):
             """A tile with no type of its own: its object's role colour."""
@@ -11587,7 +11805,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "points": tr.points,
                 "cable_count": tr.cables.count(),
             }
-            for tr in plan.trays.prefetch_related("cables")
+            for tr in src.trays.prefetch_related("cables")
+            if crop is None or snaps.classify("trays", tr, crop)
         ]
         raised_floors = [
             {
@@ -11596,7 +11815,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "plenum_mm": a.plenum_mm,
                 "label": a.label, "color": a.color,
             }
-            for a in plan.raised_floor_areas.all()
+            for a in src.raised_floor_areas.all()
+            if crop is None or snaps.classify("raised_floors", a, crop)
         ]
         walls = [
             {
@@ -11607,8 +11827,20 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "color": w.color,
                 "openings": w.openings,
             }
-            for w in plan.walls.all()
+            for w in src.walls.all()
+            if crop is None or snaps.classify("walls", w, crop)
         ]
+        background = img(plan.background_image)
+        if crop is not None:
+            # In view cells; the 3D room draws no cut of the source's image.
+            snaps.frame(plan)
+            background = None
+            tiles = [snaps.shift("tiles", t, -crop.x, -crop.y) for t in tiles]
+            raised_floors = [
+                snaps.shift("raised_floors", a, -crop.x, -crop.y) for a in raised_floors
+            ]
+            trays = [snaps.shift("trays", t, -crop.x, -crop.y) for t in trays]
+            walls = [snaps.shift("walls", w, -crop.x, -crop.y) for w in walls]
         return Response({
             "plan": {
                 "id": str(plan.id),
@@ -11617,7 +11849,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "grid_height": plan.grid_height,
                 "cell_mm": plan.cell_mm,
                 "ceiling_mm": plan.ceiling_mm,
-                "background_image": img(plan.background_image),
+                "background_image": background,
                 "background_opacity": plan.background_opacity,
             },
             "tiles": tiles,
@@ -11634,14 +11866,23 @@ class FloorPlanViewSet(TenantScopedViewSet):
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
         when it has no tray)."""
+        from . import floor_plan_snapshots as snaps
         from .models import Cable, CableTermination, Device
 
         plan = self.get_object()
+        plan, crop = self._resolved(plan)
+        shown_trays = None
+        tiles = plan.tiles.all()
+        if crop is not None:
+            tiles = [t for t, _e in snaps.in_crop("tiles", tiles, crop)]
+            shown_trays = {
+                tr.pk for tr, _e in snaps.in_crop("trays", plan.trays.all(), crop)
+            }
         # tile lookups: device / rack / cabinet → tile (first placed wins).
         device_tile: dict = {}
         rack_tile: dict = {}
         cabinet_tile: dict = {}
-        for t in plan.tiles.all():
+        for t in tiles:
             if t.device_id:
                 device_tile.setdefault(t.device_id, str(t.id))
             if t.rack_id:
@@ -11727,6 +11968,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         str(tr.id)
                         for tr in cable.trays.all()
                         if tr.floor_plan_id == plan.id
+                        and (shown_trays is None or tr.id in shown_trays)
                     ],
                 }
             )
@@ -11738,6 +11980,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Upload / clear the blueprint image (multipart). Send a
         `background_image` file to set, or `clear=1` to remove."""
         plan = self.get_object()
+        self._not_on_view(plan, "The background")
         if "background_image" in request.FILES:
             plan.background_image = request.FILES["background_image"]
         if request.data.get("clear"):
@@ -11752,6 +11995,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ``{create: [...], update: [{id, ...}], delete: [ids]}`` → the fresh
         tile list. Deletes run first so a move-recreate can't collide."""
         plan = self.get_object()
+        if plan.kind == "view":
+            raise ValidationError({"detail": "A view saves through bulk/."})
         creates = request.data.get("create") or []
         updates = request.data.get("update") or []
         deletes = request.data.get("delete") or []
@@ -11809,10 +12054,23 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ``version`` (the row's ``updated_at``) it was based on. When a row
         changed since, nothing is written and the answer is a 409 listing
         each changed row as it is now (``current`` null when it was deleted).
-        Rows sent without a version are written as before (last one wins)."""
+        Rows sent without a version are written as before (last one wins).
+
+        Through a live view, rows are in the view's cells and are the
+        source's: updates and deletes take only rows wholly inside the
+        view, every row written must stay inside it, the source must be one
+        the user may change, and the answer is the view's rows."""
+        import contextlib
+
         from django.core.exceptions import ValidationError as DjangoValidationError
 
-        plan = self.get_object()
+        from audit.context import cause
+
+        from . import floor_plan_snapshots as snaps
+
+        view = self.get_object()
+        self._orphan(view)
+        plan, crop = self._resolved(view, "change")
         kinds = (
             ("tiles", plan.tiles, FloorPlanTileSerializer, "tile"),
             ("areas", plan.areas, FloorPlanAreaSerializer, "area"),
@@ -11836,6 +12094,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
             raise ValidationError(
                 {"detail": f"At most {self.BULK_MAX} changes in one save."}
             )
+        if crop is not None:
+            for key, parts in specs.items():
+                parts["create"] = [snaps.shift(key, r, crop.x, crop.y) for r in parts["create"]]
+                parts["update"] = [snaps.shift(key, r, crop.x, crop.y) for r in parts["update"]]
 
         def row(rel, row_pk):
             try:
@@ -11844,14 +12106,26 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 return None
 
         ctx = {"request": request, "floor_plan": plan}
-        with transaction.atomic():
+        written = []
+        via = cause(f"Through the view {view.name}"[:255]) if crop is not None \
+            else contextlib.nullcontext()
+        with transaction.atomic(), via:
             conflicts = self._bulk_conflicts(request, plan, kinds, specs)
             if conflicts:
+                if crop is not None:
+                    keys = {"tile": "tiles", "area": "areas", "label": "labels"}
+                    for c in conflicts:
+                        if c.get("current"):
+                            c["current"] = snaps.shift(
+                                keys[c["kind"]], c["current"], -crop.x, -crop.y
+                            )
                 return Response(
                     {"detail": "Changed elsewhere since you opened the plan.",
                      "conflicts": conflicts},
                     status=drf_status.HTTP_409_CONFLICT,
                 )
+            if crop is not None:
+                self._view_rows_editable(view, plan, crop, kinds, specs, row)
             for key, rel, _ser, _noun in kinds:
                 for pk_ in specs[key]["delete"]:
                     if isinstance(pk_, dict):
@@ -11869,14 +12143,33 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     body = {k: v for k, v in _on_plan(item).items() if k != "version"}
                     ser = ser_cls(obj, data=body, partial=True, context=ctx)
                     ser.is_valid(raise_exception=True)
-                    ser.save()
+                    written.append((key, ser.save()))
                 for item in specs[key]["create"]:
                     if not isinstance(item, dict):
                         raise ValidationError({key: "Each create is an object."})
                     ser = ser_cls(data=_on_plan(item), context=ctx)
                     ser.is_valid(raise_exception=True)
-                    ser.save(floor_plan=plan)
+                    written.append((key, ser.save(floor_plan=plan)))
+            if crop is not None:
+                for key, obj in written:
+                    if snaps.classify(key, obj, crop) != "in":
+                        raise ValidationError({key: [
+                            f"{obj} would leave the view. Move it on {plan.name}."
+                        ]})
         ctx = {"request": request}
+        if crop is not None:
+            out = {}
+            for key, rows, ser_cls in (
+                ("tiles", _plan_tiles(plan), FloorPlanTileSerializer),
+                ("areas", _plan_areas(plan), FloorPlanAreaSerializer),
+                ("labels", _plan_labels(plan), FloorPlanLabelSerializer),
+            ):
+                pairs = snaps.in_crop(key, rows, crop)
+                out[key] = snaps.view_data(
+                    key, pairs,
+                    ser_cls([o for o, _e in pairs], many=True, context=ctx).data, crop,
+                )
+            return Response(out)
         return Response({
             "tiles": FloorPlanTileSerializer(_plan_tiles(plan), many=True, context=ctx).data,
             "areas": FloorPlanAreaSerializer(_plan_areas(plan), many=True, context=ctx).data,
@@ -11884,6 +12177,29 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 _plan_labels(plan), many=True, context=ctx
             ).data,
         })
+
+    @staticmethod
+    def _view_rows_editable(view, plan, crop, kinds, specs, row) -> None:
+        """Through a live view, an update or a delete takes only a row of
+        the source wholly inside the view: one crossing its edge is locked
+        there, one outside it is not the view's."""
+        from . import floor_plan_snapshots as snaps
+
+        for key, rel, _ser, noun in kinds:
+            for op in ("update", "delete"):
+                for item in specs[key][op]:
+                    pk_ = item.get("id") if isinstance(item, dict) else item
+                    obj = row(rel, pk_)
+                    if obj is None:
+                        continue
+                    where = snaps.classify(key, obj, crop)
+                    if where == "edge":
+                        raise ValidationError({key: [
+                            f"{obj} crosses the edge of {view.name}. "
+                            f"Edit it on {plan.name}."
+                        ]})
+                    if where is None:
+                        raise ValidationError({key: [f"Unknown {noun} {pk_}."]})
 
     def _bulk_conflicts(self, request, plan, kinds, specs) -> list:
         """The rows of a ``bulk/`` save whose stored ``updated_at`` is not the
@@ -11941,6 +12257,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         then overlap; without it the tiles are snapped (each audited) and
         the plan's ``layout_mode`` becomes ``grid``."""
         plan = self.get_object()
+        self._not_on_view(plan, "The layout")
         dry = request.data.get("dry_run") in (True, "true", "1", 1)
         tiles = list(_plan_tiles(plan))
         snapped = {t.pk: _snap_tile(t, plan) for t in tiles}
@@ -12035,7 +12352,8 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
         if not self.request:
             return qs
         qs = qs.prefetch_related(
-            Prefetch("floors", queryset=self._floors_qs(), to_attr="visible_floors")
+            Prefetch("floors", queryset=self._floors_qs().select_related("source"),
+                     to_attr="visible_floors")
         )
         params = self.request.query_params
         s = params.get("search", "").strip()
@@ -12067,6 +12385,9 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
         )
         if any(p.pk not in allowed for p in floors):
             raise PermissionDenied("You may not delete every floor of this floor plan.")
+        from .floor_plan_snapshots import refuse_while_viewed
+
+        refuse_while_viewed(floors)
         with transaction.atomic():
             for plan in floors:
                 plan.delete()
@@ -12192,6 +12513,142 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
         return Response(self.get_serializer(self._reload(target)).data)
 
 
+class _ViaViewMixin:
+    """Writes of a row drawn on a plan made through a live view: with
+    ``?via=<view id>`` (or a create whose ``floor_plan_id`` is the view), the
+    payload is in the view's cells. It is moved into the source's cells and
+    written to the source's row with the same serializer, permissions,
+    version check and change log; an update or delete takes only a row
+    wholly inside the view, and the row must stay inside it. The answer is
+    in the view's cells."""
+
+    #: The contents key of the rows (``tiles``, ``walls``...).
+    snapshot_kind = ""
+
+    def _via(self):
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .topology_views import _uuid_param
+
+        request = self.request
+        vid = _uuid_param(request.query_params, "via")
+        if vid is None and self.action == "create" and hasattr(request.data, "get"):
+            try:
+                fp = _uuid.UUID(str(request.data.get("floor_plan_id")))
+            except (TypeError, ValueError):
+                fp = None
+            if fp is not None and FloorPlan.objects.filter(pk=fp, kind="view").exists():
+                vid = fp
+        if vid is None:
+            return None
+        tenant = self._tenant_or_403()
+        view = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, pk=vid, kind="view")
+            .select_related("source"),
+            request.user, tenant, "floorplan", "view",
+        ).first()
+        if view is None:
+            raise ValidationError({"via": ["Unknown view."]})
+        src, crop = snaps.resolve(view)
+        if crop is None:
+            raise ValidationError({"via": ["The plan this view showed is gone."]})
+        if src.tenant_id != tenant.pk or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=src.pk), request.user, tenant, "floorplan", "change"
+        ).exists():
+            raise PermissionDenied(f"You may not change {src.name}, the plan this view shows.")
+        return view, src, crop
+
+    def _view_body(self, crop):
+        from . import floor_plan_snapshots as snaps
+
+        data = self.request.data
+        body = dict(data.items()) if hasattr(data, "items") else {}
+        return snaps.shift(self.snapshot_kind, body, crop.x, crop.y)
+
+    def _view_out(self, data, crop):
+        from . import floor_plan_snapshots as snaps
+
+        return snaps.shift(self.snapshot_kind, data, -crop.x, -crop.y)
+
+    def _stays_in(self, view, src, crop, obj):
+        from . import floor_plan_snapshots as snaps
+
+        if obj.floor_plan_id != src.pk:
+            raise ValidationError({"floor_plan_id": [f"Not a row of {src.name}."]})
+        where = snaps.classify(self.snapshot_kind, obj, crop)
+        if where == "edge":
+            raise ValidationError({"detail": [
+                f"{obj} crosses the edge of {view.name}. Edit it on {src.name}."
+            ]})
+        if where is None:
+            raise ValidationError({"detail": [f"{obj} is outside {view.name}."]})
+
+    def _via_cause(self, view):
+        from audit.context import cause
+
+        return cause(f"Through the view {view.name}"[:255])
+
+    def create(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().create(request, *args, **kwargs)
+        view, src, crop = via
+        body = self._view_body(crop)
+        body["floor_plan_id"] = str(src.pk)
+        with transaction.atomic(), self._via_cause(view):
+            ser = self.get_serializer(data=body)
+            ser.is_valid(raise_exception=True)
+            self.perform_create(ser)
+            self._stays_in(view, src, crop, ser.instance)
+            response = Response(ser.data, status=drf_status.HTTP_201_CREATED)
+            self._assert_write_in_site_scope(response, "add")
+        return Response(self._view_out(ser.data, crop), status=drf_status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().update(request, *args, **kwargs)
+        view, src, crop = via
+        partial = kwargs.pop("partial", False)
+        body = self._view_body(crop)
+        body.pop("floor_plan_id", None)
+        body.pop("version", None)
+        with transaction.atomic(), self._via_cause(view):
+            instance = self.get_object()
+            self._stays_in(view, src, crop, instance)
+            conflict = self._version_conflict(request, instance) \
+                if hasattr(self, "_version_conflict") else None
+            if conflict is not None:
+                for c in conflict.data.get("conflicts", []):
+                    if c.get("current"):
+                        c["current"] = self._view_out(c["current"], crop)
+                return conflict
+            ser = self.get_serializer(instance, data=body, partial=partial)
+            ser.is_valid(raise_exception=True)
+            self.perform_update(ser)
+            self._stays_in(view, src, crop, ser.instance)
+            self._assert_write_in_site_scope(Response(ser.data), "change")
+        return Response(self._view_out(ser.data, crop))
+
+    def destroy(self, request, *args, **kwargs):
+        via = self._via()
+        if via is None:
+            return super().destroy(request, *args, **kwargs)
+        view, src, crop = via
+        with transaction.atomic(), self._via_cause(view):
+            instance = self.get_object()
+            self._stays_in(view, src, crop, instance)
+            conflict = self._version_conflict(request, instance) \
+                if hasattr(self, "_version_conflict") else None
+            if conflict is not None:
+                return conflict
+            self.perform_destroy(instance)
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+
 class _VersionCheckMixin:
     """Single writes of a row drawn on a plan may carry the ``version`` (its
     ``updated_at``) they were based on - in the body, or ``?version=`` on a
@@ -12239,10 +12696,11 @@ class _VersionCheckMixin:
             return super().destroy(request, *args, **kwargs)
 
 
-class FloorPlanTileViewSet(_VersionCheckMixin, TenantScopedViewSet):
+class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
+    snapshot_kind = "tiles"
     queryset = FloorPlanTile.objects.select_related(*TILE_RELATED).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
@@ -12275,9 +12733,10 @@ class FloorPlanTileViewSet(_VersionCheckMixin, TenantScopedViewSet):
         serializer.save()
 
 
-class FloorPlanTrayViewSet(TenantScopedViewSet):
+class FloorPlanTrayViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Tray/conduit runs - scoped through their plan's tenant, like tiles."""
 
+    snapshot_kind = "trays"
     queryset = FloorPlanTray.objects.select_related("floor_plan").prefetch_related(
         "cables"
     ).order_by(NATURAL_NAME)
@@ -12302,11 +12761,12 @@ class FloorPlanTrayViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class FloorPlanWallViewSet(TenantScopedViewSet):
+class FloorPlanWallViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Wall polylines - scoped through their plan's tenant, like trays.
     Render-only geometry in v1: drawn in 2D, extruded in 3D, and deliberately
     NOT part of the cable-routing graph."""
 
+    snapshot_kind = "walls"
     queryset = FloorPlanWall.objects.select_related("floor_plan")
     serializer_class = FloorPlanWallSerializer
     pagination_class = StandardPagination
@@ -12329,7 +12789,7 @@ class FloorPlanWallViewSet(TenantScopedViewSet):
         serializer.save()
 
 
-class _FloorPlanChildViewSet(_VersionCheckMixin, TenantScopedViewSet):
+class _FloorPlanChildViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
     """Rows drawn on a plan - scoped through their plan's tenant, filtered by
     ``?floor_plan=``."""
 
@@ -12363,6 +12823,7 @@ class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
         "floor_plan", "room", "location"
     ).order_by("z", "created_at", "id")
     serializer_class = FloorPlanAreaSerializer
+    snapshot_kind = "areas"
 
 
 class FloorPlanLabelViewSet(_FloorPlanChildViewSet):
@@ -12372,15 +12833,17 @@ class FloorPlanLabelViewSet(_FloorPlanChildViewSet):
         "z", "created_at", "id"
     )
     serializer_class = FloorPlanLabelSerializer
+    snapshot_kind = "labels"
 
 
-class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):
+class FloorPlanRaisedFloorAreaViewSet(_ViaViewMixin, TenantScopedViewSet):
     """Raised-floor rectangles - scoped through their plan's tenant, like
     trays. The plenum depth they carry feeds underfloor tray elevation in the
     3D room and the vertical-drop term in route-length estimation."""
 
     queryset = FloorPlanRaisedFloorArea.objects.select_related("floor_plan")
     serializer_class = FloorPlanRaisedFloorAreaSerializer
+    snapshot_kind = "raised_floors"
     pagination_class = StandardPagination
     tenant_field = None
 

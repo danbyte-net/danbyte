@@ -10339,11 +10339,21 @@ class FloorPlanMiniSerializer(NumIdModelSerializer):
 
 
 class FloorPlanFloorSerializer(serializers.ModelSerializer):
-    """A floor as its floor plan lists it - the switcher's row."""
+    """A floor as its floor plan lists it - the switcher's row. ``view_of``
+    names the plan a live view shows."""
+
+    view_of = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_view_of(self, obj):
+        if obj.kind != "view":
+            return None
+        src = obj.source
+        return {"id": str(src.pk), "name": src.name} if src is not None else None
 
     class Meta:
         model = FloorPlan
-        fields = ["id", "numid", "name", "floor_order", "location_id"]
+        fields = ["id", "numid", "name", "floor_order", "location_id", "kind", "view_of"]
 
 
 class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
@@ -10449,6 +10459,7 @@ class FloorPlanSerializer(
     background_image = serializers.SerializerMethodField()
     tile_count = serializers.SerializerMethodField()
     drawing = serializers.SerializerMethodField()
+    snapshot = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -10496,11 +10507,98 @@ class FloorPlanSerializer(
         st = obj.stack
         return {"id": str(st.pk), "name": st.name} if st is not None else None
 
+    def _source_visible(self, src) -> bool:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        request = self.context.get("request")
+        if request is None:
+            return True
+        tenant = _get_active_tenant(request)
+        return tenant is not None and src.tenant_id == tenant.pk and \
+            rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=src.pk), request.user, tenant, "floorplan", "view"
+            ).exists()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_snapshot(self, obj):
+        """What a snapshot was taken of: ``kind`` (``view``: a live view;
+        ``copy``: an independent copy), ``source`` (``{id, name, stack}``,
+        null when it is gone or hidden from the reader), ``crop`` (in the
+        source's cells), ``at``, and for a view ``source_grid`` (the source's
+        grid, which its background spans). Null for a plan made otherwise."""
+        if obj.kind != "view" and not obj.crop:
+            return None
+        src = obj.source
+        shown = src is not None and self._source_visible(src)
+        out = {
+            "kind": "view" if obj.kind == "view" else "copy",
+            "source": {
+                "id": str(src.pk), "name": src.name,
+                "stack": src.stack.name if src.stack_id else "",
+            } if shown else None,
+            "crop": obj.crop,
+            "at": obj.snapshot_at.isoformat() if obj.snapshot_at else None,
+        }
+        if obj.kind == "view" and src is not None:
+            out["source_grid"] = {"width": src.grid_width, "height": src.grid_height}
+        return out
+
+    def to_representation(self, obj):
+        """A live view is drawn with its source's grid at the crop's size,
+        scale, layout and background, and counts the source's tiles it
+        shows."""
+        data = super().to_representation(obj)
+        if obj.kind != "view" or obj.source_id is None:
+            return data
+        from . import floor_plan_snapshots as snaps
+
+        src, crop = snaps.resolve(obj)
+        data.update({
+            "grid_width": max(1, crop.w), "grid_height": max(1, crop.h),
+            "cell_mm": src.cell_mm, "ceiling_mm": src.ceiling_mm,
+            "layout_mode": src.layout_mode,
+            "background_image": _img_url(self, src.background_image),
+            "background_opacity": src.background_opacity,
+            "tile_count": len(snaps.in_crop("tiles", src.tiles.all(), crop)),
+            "drawing": self._view_drawing(src, crop),
+        })
+        return data
+
+    def _view_drawing(self, src, crop):
+        from . import floor_plan_snapshots as snaps
+
+        try:
+            d = src.drawing
+        except FloorPlan.drawing.RelatedObjectDoesNotExist:
+            return None
+        if d.status == "ready" and snaps.drawing_clip(d, src.cell_mm, crop) is None:
+            return None
+        return {
+            "id": str(d.id), "status": d.status, "source_kind": d.source_kind,
+            "source_name": d.source_name, "rendered_url": None,
+            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+        }
+
+    #: What a live view takes from its source.
+    VIEW_FIXED = ("grid_width", "grid_height", "cell_mm", "ceiling_mm", "layout_mode",
+                  "background_opacity")
+
     def validate(self, attrs):
         from .floor_stacks import location_error, name_taken
 
         attrs = super().validate(attrs)
         inst = self.instance
+        if inst is not None and inst.kind == "view":
+            shown = self.to_representation(inst)
+            fixed = [k for k in self.VIEW_FIXED if k in attrs and attrs[k] != shown.get(k)]
+            if fixed:
+                src = inst.source.name if inst.source_id else "its source"
+                raise serializers.ValidationError({
+                    k: f"A view takes this from {src}. Change it there." for k in fixed
+                })
+            for k in self.VIEW_FIXED:
+                attrs.pop(k, None)
         stack = attrs.get("stack", getattr(inst, "stack", None))
         location = attrs.get("location", getattr(inst, "location", None))
         if location is None:
@@ -10579,11 +10677,12 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
                   "background_opacity", "state", "description", "tile_count",
-                  "drawing",
+                  "drawing", "kind", "snapshot",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "background_image",
-                            "tile_count", "drawing", "created_at", "updated_at"]
+                            "tile_count", "drawing", "kind", "snapshot",
+                            "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own
         # validator for the conditional (stack, name) one would make
         # stack_id required.
@@ -10627,6 +10726,7 @@ class FloorPlanDrawingSerializer(serializers.Serializer):
             "bounds_mm": cad_render.placed_box_mm(d),
             "transform_mm": cad_render.transform_mm(d),
             "fit": cad_render.fit(d, cell) if d.extents else None,
+            "clip": d.clip,
             "processed_at": d.processed_at.isoformat() if d.processed_at else None,
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "updated_at": d.updated_at.isoformat() if d.updated_at else None,
@@ -10771,7 +10871,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
 
     floor_plan = FloorPlanMiniSerializer(read_only=True)
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     tile_type = FloorTileTypeMiniSerializer(read_only=True)
@@ -10952,7 +11052,7 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
     the tray lists the physical cables routed through it."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     points = serializers.JSONField(required=False)
@@ -10996,7 +11096,7 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     v1 walls are documentation geometry; they do not constrain routing."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     points = serializers.JSONField(required=False)
@@ -11082,7 +11182,7 @@ class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
     tray depth in the 3D room and the drop term in route-length estimates."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
 
@@ -11169,7 +11269,7 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
     the floor's location (or one inside it), never both."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     points = serializers.JSONField(required=False)
@@ -11295,7 +11395,7 @@ class FloorPlanLabelSerializer(NumIdModelSerializer):
     millimetres; ``width``/``height`` null size the box to the text."""
 
     floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.all(),
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
         write_only=True, required=False,
     )
     text = serializers.CharField(max_length=500, trim_whitespace=True)

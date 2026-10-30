@@ -492,8 +492,12 @@ def _print_key(user_id, tenant_id) -> str:
 
 
 def _ready_drawing(plan):
+    from . import floor_plan_snapshots as snaps
     from .models import FloorPlanDrawing
 
+    if snaps.is_view(plan):
+        # A live view: the server render of its part of the source's drawing.
+        return snaps.view_drawing_for_pdf(plan)
     d = FloorPlanDrawing.objects.filter(floor_plan=plan, tenant_id=plan.tenant_id).first()
     if d is None or d.status != "ready" or not d.rendered:
         return None
@@ -512,6 +516,9 @@ def export_pdf(request, plan) -> HttpResponse | Response:
     size = paper.get("size", "a3")
     orientation = paper.get("orientation", "landscape")
     title_block = data["title_block"]
+    from . import floor_plan_snapshots as snaps
+
+    snaps.frame(plan)
     title, subtitle = plan_title(plan, plan.tenant.name)
     width = plan.grid_width * CELL
     height = plan.grid_height * CELL

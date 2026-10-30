@@ -39,20 +39,27 @@ export interface FloorPlanStackColumnOpts<
   actions?: ActionsColumnOpts<T>
 }
 
+/** "View of <source>" when every floor of the stack is a live view (a
+ * snapshot made as a floor plan of its own). */
+export function stackViewOf(stack: FloorPlanStack): string | null {
+  const floors = stack.floors
+  if (!floors.length || !floors.every((f) => f.kind === "view")) return null
+  return `View of ${floors[0].view_of?.name ?? "a deleted plan"}`
+}
+
 /** The name, linking to the floor the stack opens on. */
 function StackName({ stack }: { stack: FloorPlanStack }) {
   const floor = entryFloor(stack)
-  if (!floor)
-    return (
-      <Link
-        to="/floorplans/stacks/$id"
-        params={{ id: stack.id }}
-        className="link font-medium"
-      >
-        {stack.name}
-      </Link>
-    )
-  return (
+  const viewOf = stackViewOf(stack)
+  const link = !floor ? (
+    <Link
+      to="/floorplans/stacks/$id"
+      params={{ id: stack.id }}
+      className="link font-medium"
+    >
+      {stack.name}
+    </Link>
+  ) : (
     <Link
       to="/floorplans/$id"
       params={{ id: floor }}
@@ -60,6 +67,13 @@ function StackName({ stack }: { stack: FloorPlanStack }) {
     >
       {stack.name}
     </Link>
+  )
+  if (!viewOf) return link
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {link}
+      <span className="truncate text-xs text-muted-foreground">{viewOf}</span>
+    </span>
   )
 }
 

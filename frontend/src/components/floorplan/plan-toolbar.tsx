@@ -93,7 +93,8 @@ export function PlanToolbar({
   hasRacks: boolean
   drawingOpen: boolean
   onToggleDrawing: () => void
-  backgroundControls: ReactNode
+  /** None on a live view: its background is its source's. */
+  backgroundControls?: ReactNode
   exportMenu: ReactNode
   onOpenSettings: () => void
   onOpenBackground: () => void
@@ -150,7 +151,7 @@ export function PlanToolbar({
           <PanelRight /> Objects
         </BarToggle>
         <DisplayMenu view3d={view3d} prefs={prefs} />
-        {canEdit && (
+        {canEdit && backgroundControls && (
           <Popover>
             <PopoverTrigger asChild>
               <BarMenuTrigger className={WIDE_ONLY}>
@@ -188,7 +189,7 @@ export function PlanToolbar({
               Grid
             </DropdownMenuCheckboxItem>
             {canEdit && <DropdownMenuSeparator />}
-            {canEdit && (
+            {canEdit && backgroundControls && (
               <DropdownMenuItem onSelect={onOpenBackground}>
                 <ImageIcon /> Background…
               </DropdownMenuItem>

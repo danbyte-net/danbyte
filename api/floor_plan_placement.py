@@ -65,13 +65,14 @@ def _ref(obj, *fields):
 
 
 def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
-              near_location=None, unplaced=False, limit=50):
+              near_location=None, unplaced=False, limit=50, view=None):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
     location and the locations inside it, 2 for the rest of the site.
     ``unplaced`` keeps only objects of the floor's location (or its rooms)
     placed on no plan. A device in a rack or a cabinet is placed with it and
-    never offered on its own."""
+    never offered on its own. ``view`` - ``(source, crop)`` when ``plan`` is
+    a live view: "this floor" is then the source's tiles inside the crop."""
     from auth_api import rbac
 
     site_id = plan.location.site_id
@@ -117,6 +118,13 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     rows = rows[:limit]
 
     # Where each candidate already stands: one query per kind present.
+    here_plan, here_tiles = plan.pk, None
+    if view is not None:
+        from .floor_plan_snapshots import in_crop
+
+        src, crop = view
+        here_plan = src.pk
+        here_tiles = {t.pk for t, _e in in_crop("tiles", src.tiles.all(), crop)}
     placed: dict = {}
     for kind, (_model, _slug, link) in PLACEABLE.items():
         ids = [o.pk for k, _l, o in rows if k == kind]
@@ -136,7 +144,8 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
                     "floor_plan": {"id": str(plan_id), "name": plan_name,
                                    "stack": stack_name or ""},
                     "tile_id": str(tile_id),
-                    "this_floor": plan_id == plan.pk,
+                    "this_floor": plan_id == here_plan
+                    and (here_tiles is None or tile_id in here_tiles),
                 })
     photos = object_photos([(k, o) for k, _l, o in rows], user, tenant)
     out = []

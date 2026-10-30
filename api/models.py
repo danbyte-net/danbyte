@@ -9195,6 +9195,21 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     layout_mode = models.CharField(
         max_length=8, choices=LAYOUT_MODES, default="grid", db_default="grid"
     )
+    # Snapshots (api/floor_plan_snapshots.py). "plan": a canvas holding its
+    # own objects. "view": a live view of ``crop`` of ``source`` - it holds
+    # nothing; its contents are the source's objects inside the crop, and an
+    # edit made through it is an edit of those. A copy is a "plan" whose
+    # ``source`` is provenance only. The API refuses to delete a plan that
+    # views still show; SET_NULL covers the cascades that bypass it.
+    KINDS = [("plan", "Plan"), ("view", "View")]
+    kind = models.CharField(max_length=8, choices=KINDS, default="plan", db_default="plan")
+    source = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="snapshots",
+    )
+    # {"x", "y", "w", "h"} in whole cells of the source.
+    crop = models.JSONField(null=True, blank=True)
+    snapshot_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -9311,6 +9326,9 @@ class FloorPlanDrawing(TimestampedModel):
     # Server renders with a set of layers left out, by key (the large-drawing
     # path): {key: {"status", "file", "bytes", "elements", "error", ...}}.
     variants = models.JSONField(default=dict, blank=True)
+    # {"min_x", "min_y", "max_x", "max_y"} in drawing units: a snapshot's copy
+    # renders only this part of the file (cad_engine --clip).
+    clip = models.JSONField(null=True, blank=True)
     processed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

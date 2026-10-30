@@ -411,11 +411,14 @@ def _current(drawing_id, source_name: str):
 
 
 def _render(
-    d, tmp: str, *, hidden=(), hide_text: bool = False, extents: dict | None = None
+    d, tmp: str, *, hidden=(), hide_text: bool = False, extents: dict | None = None,
+    clip: dict | None = None,
 ) -> tuple[dict, bytes]:
     """(engine metadata, sanitised SVG) for drawing ``d``. ValueError with
     the operator's message on any failure. ``extents`` frames the render by
-    those instead of what it draws (a variant uses the full drawing's)."""
+    those instead of what it draws (a variant uses the full drawing's);
+    ``clip`` renders only that box of the drawing, framed by it (a floor-plan
+    snapshot)."""
     from .svg_sanitize import SvgRejected, sanitize_svg
 
     src = os.path.join(tmp, "source")
@@ -442,7 +445,13 @@ def _render(
         argv += ["--hidden", hidden_path]
     if hide_text:
         argv.append("--hide-text")
-    if extents:
+    box = clean_box(clip)
+    if box:
+        clip_path = os.path.join(tmp, "clip.json")
+        with open(clip_path, "w", encoding="utf-8") as fh:
+            json.dump(box, fh)
+        argv += ["--clip", clip_path]
+    elif extents:
         extents_path = os.path.join(tmp, "extents.json")
         with open(extents_path, "w", encoding="utf-8") as fh:
             json.dump({k: extents[k] for k in ("min_x", "min_y", "max_x", "max_y")}, fh)
@@ -477,6 +486,22 @@ def _render(
     return meta, clean
 
 
+def clean_box(box) -> dict | None:
+    """``{min_x, min_y, max_x, max_y}`` as finite floats with max over min,
+    else None: what may be handed to the engine as a clip."""
+    if not isinstance(box, dict):
+        return None
+    try:
+        out = {k: float(box[k]) for k in ("min_x", "min_y", "max_x", "max_y")}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not all(math.isfinite(v) and abs(v) <= 1e12 for v in out.values()):
+        return None
+    if out["max_x"] <= out["min_x"] or out["max_y"] <= out["min_y"]:
+        return None
+    return out
+
+
 def default_placement(layers: list, old: dict | None = None) -> dict:
     """Where a newly processed drawing sits: the old placement's position,
     rotation and opacity when there was one, and the layers the file had off
@@ -500,7 +525,7 @@ def run_render(drawing_id: str, source_name: str) -> None:
         return
     try:
         with tempfile.TemporaryDirectory(prefix="danbyte-cad-") as tmp:
-            meta, svg = _render(d, tmp)
+            meta, svg = _render(d, tmp, clip=d.clip)
     except ValueError as exc:
         _fail(drawing_id, source_name, str(exc))
         return
@@ -549,13 +574,15 @@ def _fail(drawing_id, source_name: str, message: str) -> None:
 # ─── server renders with layers hidden (the large-drawing path) ─────────────
 
 
-def variant_key(d, hidden, hide_text: bool) -> str:
+def variant_key(d, hidden, hide_text: bool, clip: dict | None = None) -> str:
     """Cache key of a render with ``hidden`` layers left out: the hidden set,
-    the text switch and the rendered file it derives from."""
-    body = json.dumps(
-        {"h": sorted(set(hidden)), "t": bool(hide_text), "r": d.rendered.name or ""},
-        separators=(",", ":"),
-    )
+    the text switch, the clip (a live view's part of the drawing) and the
+    rendered file it derives from - so a new render of the source drawing
+    makes every key new."""
+    body = {"h": sorted(set(hidden)), "t": bool(hide_text), "r": d.rendered.name or ""}
+    if clip:
+        body["c"] = [round(clip[k], 6) for k in ("min_x", "min_y", "max_x", "max_y")]
+    body = json.dumps(body, separators=(",", ":"))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:24]
 
 
@@ -576,7 +603,7 @@ def in_flight(stamp: str, now=None) -> bool:
     return at > (now or timezone.now()) - timedelta(seconds=JOB_TIMEOUT)
 
 
-def request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
+def request_variant(d, hidden, hide_text: bool, clip: dict | None = None) -> tuple[str, dict, bool]:
     """``(key, entry, queued)``: the cached render for this hidden set, or a
     newly queued one. Keeps at most MAX_VARIANTS, dropping the oldest.
 
@@ -586,11 +613,11 @@ def request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
     with transaction.atomic():
         locked = type(d).objects.select_for_update().get(pk=d.pk)
         d.variants = locked.variants
-        return _request_variant(d, hidden, hide_text)
+        return _request_variant(d, hidden, hide_text, clean_box(clip))
 
 
-def _request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
-    key = variant_key(d, hidden, hide_text)
+def _request_variant(d, hidden, hide_text: bool, clip=None) -> tuple[str, dict, bool]:
+    key = variant_key(d, hidden, hide_text, clip)
     variants = dict(d.variants or {})
     entry = variants.get(key)
     now = timezone.now()
@@ -616,6 +643,8 @@ def _request_variant(d, hidden, hide_text: bool) -> tuple[str, dict, bool]:
         "at": now.isoformat(), "file": "", "bytes": 0, "elements": 0,
         "simplified": [], "error": "",
     }
+    if clip:
+        entry["clip"] = clip
     variants[key] = entry
     type(d).objects.filter(pk=d.pk).update(variants=variants)
     d.variants = variants
@@ -640,6 +669,7 @@ def run_variant(drawing_id: str, source_name: str, key: str) -> None:
                 d, tmp, hidden=spec.get("hidden_layers") or [],
                 hide_text=bool(spec.get("hide_text")),
                 extents=d.extents if isinstance(d.extents, dict) else None,
+                clip=spec.get("clip"),
             )
         outcome = {"status": "ready", "bytes": len(svg), "elements": meta["elements"],
                    "simplified": meta["simplified"], "error": ""}
