@@ -719,7 +719,7 @@ At its foot, **Free placement** switches the plan between the grid and
 | Nudge | Arrow keys move the selected tile one cell (on a [free plan](#free-placement), ++alt++ + arrow moves a tenth of a cell) |
 | Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
 | Save | **Save**, or ++ctrl+s++ |
-| Pan / zoom | Drag empty grid / mouse wheel. On a touch screen, drag with one finger and pinch with two |
+| Pan / zoom | Drag empty grid / mouse wheel. On a touch screen, drag with one finger and pinch with two. A plan zooms out to half of what fits it on screen, so a large site plan can be seen whole |
 
 **Pinch zoom.** On a tablet or a touch screen, two fingers zoom the 2D plan
 about the point between them and pan it as they move, within the same zoom
