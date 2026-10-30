@@ -9778,6 +9778,12 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
     serializer_class = LocationSerializer
     pagination_class = StandardPagination
 
+    @action(detail=True, methods=["get"], url_path="plan")
+    def plan(self, request, pk=None):
+        """The part of a floor plan this location is drawn on (its page's
+        Floor plan tab): ``area_plan_region``."""
+        return Response(area_plan_region(self, request, "location", self.get_object()))
+
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
         """Colour and icon for many locations at once (#183):
@@ -9921,6 +9927,12 @@ class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):
                 self.request.query_params.get("picker") == "1":
             return RoomMiniSerializer
         return RoomSerializer
+
+    @action(detail=True, methods=["get"], url_path="plan")
+    def plan(self, request, pk=None):
+        """The part of a floor plan this room is drawn on (its page's Floor
+        plan tab): ``area_plan_region``."""
+        return Response(area_plan_region(self, request, "room", self.get_object()))
 
     def get_queryset(self):
         from .topology_views import _uuid_param
@@ -10732,6 +10744,135 @@ def _plan_labels(plan):
     return plan.labels.order_by("z", "created_at", "id")
 
 
+def plan_contents(request, tenant, src, crop=None) -> dict:
+    """What ``contents/`` answers for ``src``: every row of each kind the
+    reader may view, as its list endpoint shapes it, and ``version``. With
+    ``crop`` (a live view, or a room's part of its floor): the rows inside
+    it, in its cells, each with ``crosses_edge``."""
+    from auth_api import rbac
+
+    from . import floor_plan_snapshots as snaps
+
+    def visible(qs, slug):
+        return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
+    rows = {
+        "tiles": (visible(
+            src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
+            "floorplantile",
+        ), FloorPlanTileSerializer),
+        "trays": (visible(
+            src.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+            "floorplantray",
+        ), FloorPlanTraySerializer),
+        "walls": (visible(src.walls.order_by("label", "id"), "floorplanwall"),
+                  FloorPlanWallSerializer),
+        "raised_floors": (visible(
+            src.raised_floor_areas.order_by("y", "x", "id"),
+            "floorplanraisedfloorarea",
+        ), FloorPlanRaisedFloorAreaSerializer),
+        "areas": (visible(_plan_areas(src), "floorplanarea"), FloorPlanAreaSerializer),
+        "labels": (visible(_plan_labels(src), "floorplanlabel"),
+                   FloorPlanLabelSerializer),
+    }
+    ctx = {"request": request}
+    out = {}
+    stamps = []
+    for key, (qs, ser_cls) in rows.items():
+        objs = list(qs)
+        if crop is None:
+            out[key] = ser_cls(objs, many=True, context=ctx).data
+        else:
+            # A live view: the source's rows inside the crop, in the
+            # view's cells; the ones crossing its edge are locked.
+            pairs = snaps.in_crop(key, objs, crop)
+            objs = [o for o, _edge in pairs]
+            out[key] = snaps.view_data(
+                key, pairs, ser_cls(objs, many=True, context=ctx).data, crop
+            )
+        stamps += [o.updated_at for o in objs]
+    return {
+        "version": max(stamps).isoformat() if stamps else None,
+        **out,
+    }
+
+
+def area_plan_region(viewset, request, field: str, obj) -> dict:
+    """``GET /api/rooms/<id>/plan/`` and ``/api/locations/<id>/plan/``: the
+    part of a floor plan a room or location is drawn on, live and read-only,
+    for its page's Floor plan tab.
+
+    ``areas`` lists the areas linked to ``obj`` (``field`` ``room`` or
+    ``location``) on the floors the reader may view, which they may view
+    themselves: ``{id, name, color, floor_plan: {id, name, stack}}``.
+    ``?area=<id>`` (default the first) picks one; ``?margin=`` (cells, 0-50)
+    widens it. Then ``area``, ``floor_plan`` (as ``/api/floor-plans/<id>/``
+    reads it), ``crop`` (the area's bounding box in whole cells of that
+    floor), ``margin``, ``outline`` (the area's outline in the crop's cells)
+    and ``contents`` (as ``contents/`` reads it for that crop: the rows
+    inside, in the crop's cells, a tile linking what the reader may not view
+    reading Hidden). No area: only ``areas``, empty, the rest null."""
+    from auth_api import rbac
+
+    from . import floor_plan_snapshots as snaps
+    from .topology_views import _uuid_param
+
+    tenant = viewset._tenant_or_403()
+    plans = rbac.restrict_queryset(
+        FloorPlan.objects.filter(tenant=tenant).exclude(kind="view"),
+        request.user, tenant, "floorplan", "view",
+    )
+    areas = list(rbac.restrict_queryset(
+        FloorPlanArea.objects.filter(**{field: obj}, floor_plan__in=plans)
+        .select_related("room", "location__location_type", "floor_plan__stack"),
+        request.user, tenant, "floorplanarea", "view",
+    ).order_by("floor_plan__stack__name", "floor_plan__floor_order", "floor_plan__name",
+               "z", "created_at", "id"))
+
+    def row(a):
+        fp = a.floor_plan
+        linked = a.room.color if a.room_id else (
+            a.location.display_color if a.location_id else ""
+        )
+        return {
+            "id": str(a.pk), "name": str(a), "color": linked or a.color or "",
+            "floor_plan": {
+                "id": str(fp.pk), "name": fp.name,
+                "stack": {"id": str(fp.stack_id), "name": fp.stack.name}
+                if fp.stack_id else None,
+            },
+        }
+
+    out = {
+        "areas": [row(a) for a in areas], "area": None, "floor_plan": None,
+        "crop": None, "margin": 0, "outline": None, "contents": None,
+    }
+    if not areas:
+        return out
+    want = _uuid_param(request.query_params, "area")
+    area = next((a for a in areas if str(a.pk) == want), None) if want else areas[0]
+    if area is None:
+        raise NotFound("No such area of this plan.")
+    try:
+        margin = snaps.parse_margin(request.query_params.get("margin"))
+    except ValueError as exc:
+        raise ValidationError({"margin": [str(exc)]}) from exc
+    floor = FloorPlanViewSet.queryset.get(pk=area.floor_plan_id)
+    crop = snaps.area_crop(area, margin, floor.grid_width, floor.grid_height)
+    out.update({
+        "area": str(area.pk),
+        "floor_plan": FloorPlanSerializer(
+            floor, context=viewset.get_serializer_context()
+        ).data,
+        "crop": crop.as_dict(),
+        "margin": margin,
+        "outline": [[snaps._r(x - crop.x), snaps._r(y - crop.y)]
+                    for x, y in snaps.area_outline(area)],
+        "contents": plan_contents(request, tenant, floor, crop),
+    })
+    return out
+
+
 def _snap_tile(t, plan):
     """(x, y, width, height, orientation) of ``t`` on the grid: a quarter
     turn, whole cells at least one wide, inside the plan."""
@@ -10751,7 +10892,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
     queryset = (
         FloorPlan.objects.select_related(
             "site", "location", "location__site", "drawing", "stack", "source",
-            "source__stack",
+            "source__stack", "source_area__room", "source_area__location",
         )
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
@@ -10906,7 +11047,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def snapshot(self, request, pk=None):
         """A rectangle of this plan as a plan of its own:
         ``{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" | "view",
-        "target": "plan" | "floor"}``. ``copy`` copies what the crop holds
+        "target": "plan" | "floor"}`` - or, in place of ``crop``,
+        ``"area_id"`` (a room, location or area drawn on the plan) and
+        ``"margin"`` (cells, 0-50): the area's bounding box in whole cells; a
+        view taken so follows the area as it moves or changes size.
+        ``copy`` copies what the crop holds
         (clipped at its edge where the geometry allows, the rest copied whole
         and listed under ``crossing``), with the background cut to it;
         ``view`` makes a live view of the crop (site-wide plans snapshot to
@@ -10943,11 +11088,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         frame = outer if outer is not None else snaps.Crop(
             0, 0, plan.grid_width, plan.grid_height
         )
-        try:
-            crop = snaps.parse_crop(body.get("crop"), frame.w, frame.h)
-        except ValueError as exc:
-            raise ValidationError({"crop": [str(exc)]}) from exc
-        crop = snaps.Crop(crop.x + frame.x, crop.y + frame.y, crop.w, crop.h)
+        area, margin = None, 0
+        if body.get("area_id") not in (None, ""):
+            area, margin, crop = self._snapshot_area(request, src, frame, body)
+        else:
+            try:
+                crop = snaps.parse_crop(body.get("crop"), frame.w, frame.h)
+            except ValueError as exc:
+                raise ValidationError({"crop": [str(exc)]}) from exc
+            crop = snaps.Crop(crop.x + frame.x, crop.y + frame.y, crop.w, crop.h)
         stack = None
         if target == "floor":
             stack = plan.stack
@@ -10963,10 +11112,43 @@ class FloorPlanViewSet(TenantScopedViewSet):
         elif name_clash(tenant.pk, src.site_id, src.location_id, name):
             raise ValidationError({"name": [clash_message(src.location_id)]})
         with transaction.atomic(), cause(f"Snapshot of {src.name}"[:255]):
-            dst, crossing = snaps.make_snapshot(src, crop, name=name, mode=mode, stack=stack)
+            dst, crossing = snaps.make_snapshot(
+                src, crop, name=name, mode=mode, stack=stack, area=area, margin=margin
+            )
             self._assert_bulk_write_in_site_scope([dst.pk], "add")
         data = FloorPlanSerializer(dst, context=self.get_serializer_context()).data
         return Response({**data, "crossing": crossing}, status=drf_status.HTTP_201_CREATED)
+
+    def _snapshot_area(self, request, src, frame, body):
+        """``(area, margin, crop)`` for a snapshot taken of a room, location
+        or area drawn on ``src``: the area's bounding box in whole cells,
+        ``margin`` more on each side, inside ``frame`` (the view's rectangle
+        when the snapshot is taken through a view). The area must be one of
+        ``src``'s the reader may view."""
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        aid = _uuid_param({"area_id": body.get("area_id")}, "area_id")
+        area = rbac.restrict_queryset(
+            FloorPlanArea.objects.filter(floor_plan=src, floor_plan__tenant=tenant, pk=aid)
+            .select_related("room", "location"),
+            request.user, tenant, "floorplanarea", "view",
+        ).first() if aid else None
+        if area is None:
+            raise ValidationError({"area_id": ["Unknown area on this plan."]})
+        try:
+            margin = snaps.parse_margin(body.get("margin"))
+        except ValueError as exc:
+            raise ValidationError({"margin": [str(exc)]}) from exc
+        c = snaps.area_crop(area, margin, src.grid_width, src.grid_height)
+        x, y = max(c.x, frame.x), max(c.y, frame.y)
+        x2, y2 = min(c.x2, frame.x2), min(c.y2, frame.y2)
+        if x2 - x < 1 or y2 - y < 1:
+            raise ValidationError({"area_id": ["That area is not in this view."]})
+        return area, margin, snaps.Crop(x, y, x2 - x, y2 - y)
 
     @action(detail=True, methods=["post"], url_path="unlink")
     def unlink(self, request, pk=None):
@@ -11539,56 +11721,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         Rows keep their list-endpoint shape. ``version`` is the newest
         ``updated_at`` across them (null for an empty plan). The query count
         stays flat however many rows the plan holds."""
-        from auth_api import rbac
-
-        from . import floor_plan_snapshots as snaps
-
         plan = self.get_object()
         src, crop = self._resolved(plan)
-        tenant = _get_active_tenant(request)
-
-        def visible(qs, slug):
-            return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
-
-        rows = {
-            "tiles": (visible(
-                src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
-                "floorplantile",
-            ), FloorPlanTileSerializer),
-            "trays": (visible(
-                src.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
-                "floorplantray",
-            ), FloorPlanTraySerializer),
-            "walls": (visible(src.walls.order_by("label", "id"), "floorplanwall"),
-                      FloorPlanWallSerializer),
-            "raised_floors": (visible(
-                src.raised_floor_areas.order_by("y", "x", "id"),
-                "floorplanraisedfloorarea",
-            ), FloorPlanRaisedFloorAreaSerializer),
-            "areas": (visible(_plan_areas(src), "floorplanarea"), FloorPlanAreaSerializer),
-            "labels": (visible(_plan_labels(src), "floorplanlabel"),
-                       FloorPlanLabelSerializer),
-        }
-        ctx = {"request": request}
-        out = {}
-        stamps = []
-        for key, (qs, ser_cls) in rows.items():
-            objs = list(qs)
-            if crop is None:
-                out[key] = ser_cls(objs, many=True, context=ctx).data
-            else:
-                # A live view: the source's rows inside the crop, in the
-                # view's cells; the ones crossing its edge are locked.
-                pairs = snaps.in_crop(key, objs, crop)
-                objs = [o for o, _edge in pairs]
-                out[key] = snaps.view_data(
-                    key, pairs, ser_cls(objs, many=True, context=ctx).data, crop
-                )
-            stamps += [o.updated_at for o in objs]
-        return Response({
-            "version": max(stamps).isoformat() if stamps else None,
-            **out,
-        })
+        return Response(plan_contents(request, _get_active_tenant(request), src, crop))
 
     @action(detail=True, methods=["get"], url_path="placeable")
     def placeable(self, request, pk=None):

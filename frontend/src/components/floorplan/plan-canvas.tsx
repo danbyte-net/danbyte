@@ -31,7 +31,8 @@ import type {
   PaletteEntry,
 } from "./floor-canvas"
 import { LinkedObjectLink } from "./linked-object-link"
-import { isLiveView, viewBackgroundFrame } from "./snapshot"
+import { AreaMask } from "./area-mask"
+import { isLiveView, viewBackgroundFrame, viewMask } from "./snapshot"
 import { SelectionBar } from "./selection-bar"
 import { TilePopover } from "./tile-popover"
 import type { useTilePopover } from "./tile-popover"
@@ -98,10 +99,13 @@ export function PlanCanvas({
   selectionToolbar,
   overlays,
   onSnapshotRect,
+  onSnapshotShape,
   lockedIds,
 }: {
   /** Edit, the Snapshot tool in hand: the dragged rectangle. */
   onSnapshotRect?: FloorCanvasProps["onSnapshotRect"]
+  /** Edit: "Snapshot this room…" on an area's menu. */
+  onSnapshotShape?: FloorCanvasProps["onSnapshotShape"]
   /** A live view's rows crossing its edge: shown, not editable here. */
   lockedIds?: ReadonlySet<string>
   /** Edit: rows dragged from the Place picker or the unplaced list. */
@@ -145,6 +149,8 @@ export function PlanCanvas({
   theme: CadTheme
   openTile: (tile: FloorPlanTile) => void
 }) {
+  // A live view made from a room: outside the room reads dimmed.
+  const mask = viewMask(plan)
   const {
     tiles,
     selectedId,
@@ -355,15 +361,23 @@ export function PlanCanvas({
           )
         }
         worldOverlay={
-          calibration.active &&
-          cad.drawing && (
-            <CalibrateMarks
-              drawing={cad.drawing}
-              placement={cad.placement}
-              pxPerMm={cadPxPerMm}
-              points={calibration.points}
-            />
-          )
+          <>
+            {mask && (
+              <AreaMask
+                outline={mask}
+                width={plan.grid_width}
+                height={plan.grid_height}
+              />
+            )}
+            {calibration.active && cad.drawing && (
+              <CalibrateMarks
+                drawing={cad.drawing}
+                placement={cad.placement}
+                pxPerMm={cadPxPerMm}
+                points={calibration.points}
+              />
+            )}
+          </>
         }
         onPickPoint={calibration.active ? calibration.pick : undefined}
         shapes={shownShapes}
@@ -383,6 +397,7 @@ export function PlanCanvas({
         onDropRows={onDropRows}
         selectionToolbar={selectionToolbar}
         onSnapshotRect={onSnapshotRect}
+        onSnapshotShape={onSnapshotShape}
         lockedIds={lockedIds}
         clipToGrid={isLiveView(plan)}
         backgroundFrame={viewBackgroundFrame(plan)}

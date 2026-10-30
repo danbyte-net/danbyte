@@ -97,12 +97,101 @@ def stored_crop(raw) -> Crop | None:
     return Crop(**vals)
 
 
+#: The most cells a crop taken from an area may reach past its box.
+MAX_MARGIN = 50
+
+
+def parse_margin(raw) -> int:
+    """A margin a request asks for: whole cells, 0 to MAX_MARGIN."""
+    if raw in (None, ""):
+        return 0
+    m = _whole(raw)
+    if m is None or m < 0 or m > MAX_MARGIN:
+        raise ValueError(f"A whole number of cells, 0 to {MAX_MARGIN}.")
+    return m
+
+
+def area_crop(area, margin: int, grid_width: int, grid_height: int) -> Crop:
+    """The whole cells holding ``area``'s bounding box (a turned rectangle's
+    or a polygon's), ``margin`` more on every side, inside the grid."""
+    x0, y0, x1, y1 = area_box(area) or (0, 0, 0, 0)
+    x = max(0, math.floor(x0 + EPS) - margin)
+    y = max(0, math.floor(y0 + EPS) - margin)
+    x2 = min(grid_width, math.ceil(x1 - EPS) + margin)
+    y2 = min(grid_height, math.ceil(y1 - EPS) + margin)
+    return Crop(x, y, max(0, x2 - x), max(0, y2 - y))
+
+
+def area_outline(area) -> list[tuple[float, float]]:
+    """``area``'s outline in plan cells: a polygon's points, or a
+    rectangle's four corners turned about its centre."""
+    if area.shape == "polygon":
+        return _points(area.points)
+    cx, cy = area.x + area.width / 2, area.y + area.height / 2
+    out = []
+    for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+        px, py = _rot(dx * area.width / 2, dy * area.height / 2, area.rotation or 0)
+        out.append((_r(cx + px), _r(cy + py)))
+    return out
+
+
+def following(view, source):
+    """The area a live view follows, while it is still on its source."""
+    if not view.source_area_id:
+        return None
+    area = view.source_area
+    if area is None or area.floor_plan_id != source.pk:
+        return None
+    return area
+
+
 def effective_crop(view, source) -> Crop:
-    """The view's crop, clamped to the source's grid as it is now."""
+    """The view's crop, clamped to the source's grid as it is now. A view
+    made from an area follows it: its crop is worked out from the area on
+    every read, so moving or resizing the area - through any endpoint, a
+    view, an import or an undo - moves the view with it and nothing is
+    stored that could fall behind."""
+    area = following(view, source)
+    if area is not None:
+        return area_crop(area, view.source_margin or 0, source.grid_width,
+                         source.grid_height)
     c = stored_crop(view.crop) or Crop(0, 0, 0, 0)
     x2 = min(c.x2, source.grid_width)
     y2 = min(c.y2, source.grid_height)
     return Crop(c.x, c.y, max(0, x2 - c.x), max(0, y2 - c.y))
+
+
+def view_mask(view, source, crop: Crop):
+    """The outline of the area a view follows, in the view's cells - drawn
+    over the view so what lies outside the room reads dimmed. None for a
+    view not made from an area."""
+    area = following(view, source)
+    if area is None:
+        return None
+    return [[_r(x - crop.x), _r(y - crop.y)] for x, y in area_outline(area)]
+
+
+def freeze_followers(area) -> None:
+    """Before ``area`` goes: the views following it keep the crop it gives
+    them now (SET_NULL then leaves them a plain view of that rectangle)."""
+    from .models import FloorPlan
+
+    for v in FloorPlan.objects.filter(source_area=area).select_related("source"):
+        if v.source_id is None:
+            continue
+        c = area_crop(area, v.source_margin or 0, v.source.grid_width, v.source.grid_height)
+        FloorPlan.objects.filter(pk=v.pk).update(crop=c.as_dict())
+
+
+def _area_pre_delete(sender, instance, **kwargs):
+    freeze_followers(instance)
+
+
+def connect_signals() -> None:
+    from django.db.models.signals import pre_delete
+
+    pre_delete.connect(_area_pre_delete, sender="api.FloorPlanArea",
+                       dispatch_uid="api.snapshot_freeze_followers")
 
 
 def is_view(plan) -> bool:
@@ -724,12 +813,14 @@ def _blank_plan_fields(src, crop: Crop) -> dict:
     }
 
 
-def make_snapshot(src, crop: Crop, *, name: str, mode: str, stack=None):
+def make_snapshot(src, crop: Crop, *, name: str, mode: str, stack=None, area=None,
+                  margin: int = 0):
     """``(plan, crossing)``: a new floor plan of ``crop`` of ``src`` - a live
     view (``mode="view"``) or an independent copy. ``stack`` None makes a
     floor plan of its own named ``name`` at the source's location (site-wide
     when the source is); else the snapshot is the stack's new top floor.
-    Call inside a transaction."""
+    A view taken of ``area`` (one of ``src``'s) follows it, ``margin`` cells
+    around its box. Call inside a transaction."""
     from django.utils import timezone
 
     from .floor_stacks import location_error, next_order
@@ -752,6 +843,9 @@ def make_snapshot(src, crop: Crop, *, name: str, mode: str, stack=None):
         kind="view" if mode == "view" else "plan", source=src, crop=crop.as_dict(),
         snapshot_at=timezone.now(), **_blank_plan_fields(src, crop),
     )
+    if mode == "view" and area is not None:
+        plan.source_area = area
+        plan.source_margin = margin
     if mode != "view":
         crop_raster(src, plan, crop)
     plan.save()
@@ -775,6 +869,8 @@ def unlink(view) -> list[dict]:
             setattr(view, k, v)
     view.kind = "plan"
     view.crop = crop.as_dict()
+    view.source_area = None
+    view.source_margin = 0
     crop_raster(src, view, crop)
     view.save()
     crossing = copy_contents(src, view, crop)

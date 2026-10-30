@@ -92,6 +92,9 @@ export interface FloorPlanSearch {
   viz?: "3d"
   /** A tile selected and zoomed onto on arrival ("Show on floor plan"). */
   tile?: string
+  /** A room, location or area opened and zoomed onto on arrival (a room's
+   * Floor plan tab, "Open in floor plan"). */
+  area?: string
 }
 
 /** The floor-plan editor: header, bar, mode rail, the 2D canvas or the 3D
@@ -123,7 +126,12 @@ export function FloorPlanEditor({
   useEffect(() => {
     if (stackId) rememberFloor(stackId, id)
   }, [stackId, id])
-  const { trace: traceParam, viz: vizParam, tile: tileParam } = search
+  const {
+    trace: traceParam,
+    viz: vizParam,
+    tile: tileParam,
+    area: areaParam,
+  } = search
   const view3d = vizParam === "3d"
 
   const ed = usePlanEditState(id, data.serverTiles, data.serverShapes)
@@ -131,8 +139,22 @@ export function FloorPlanEditor({
   // An area opened while viewing (its room in the map panel).
   const [openArea, setOpenArea] = useState<string | null>(null)
   const [snapOpen, setSnapOpen] = useState(false)
-  // The Snapshot tool's rectangle, while its dialog is open.
+  // The Snapshot tool's rectangle, or the area "Snapshot this room…" was
+  // asked of, while its dialog is open.
   const [snapshotCrop, setSnapshotCrop] = useState<FloorPlanCrop | null>(null)
+  const [snapshotArea, setSnapshotArea] = useState<string | null>(null)
+  // The saved areas a snapshot may be taken of (an unsaved one is not on
+  // the server yet).
+  const savedAreas = useMemo(
+    () => (data.serverShapes ?? []).filter((s) => s.kind === "area"),
+    [data.serverShapes]
+  )
+  const snapshotShape = canDo("floorplan", "add")
+    ? (shapeId: string) => {
+        if (savedAreas.some((a) => a.id === shapeId)) setSnapshotArea(shapeId)
+        else toast.info("Save the plan first.")
+      }
+    : undefined
   // A live view: the source's objects, its edge ones locked here.
   const liveView = isLiveView(plan)
   const lockedIds = useMemo(
@@ -300,10 +322,28 @@ export function FloorPlanEditor({
   // when it opens or closes - unless the page arrived focused on a tile or
   // a trace, which keeps its framing.
   useEffect(() => {
-    if (tileParam || traceParam) return
+    if (tileParam || traceParam || areaParam) return
     const frame = requestAnimationFrame(() => canvasApi.current?.fit())
     return () => cancelAnimationFrame(frame)
-  }, [racksOpen, tileParam, traceParam])
+  }, [racksOpen, tileParam, traceParam, areaParam])
+
+  // ?area=<id> → open it (its room in the map panel) and frame it, once the
+  // areas have landed.
+  const areaFocusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!areaParam || areaFocusedRef.current === areaParam || !plan) return
+    const a = ed.shapes.find((s) => s.id === areaParam)
+    if (!a) return
+    areaFocusedRef.current = areaParam
+    setOpenArea(a.id)
+    const b = shapeBounds(a, plan.cell_mm)
+    requestAnimationFrame(() =>
+      canvasApi.current?.focusPoints([
+        [b.minX, b.minY],
+        [b.maxX, b.maxY],
+      ])
+    )
+  }, [areaParam, ed.shapes, plan])
 
   // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
   // "trace on map" link from a cable/rack lands on the run without any clicks.
@@ -717,6 +757,7 @@ export function FloorPlanEditor({
                   : undefined
               }
               lockedIds={liveView ? lockedIds : undefined}
+              onSnapshotShape={editing ? snapshotShape : undefined}
               selectionToolbar={
                 editing ? (
                   <SelectionToolbar
@@ -738,6 +779,7 @@ export function FloorPlanEditor({
                     onChangeShape={shapeEdits.changeShape}
                     onRestackShape={shapeEdits.restack}
                     onDeleteShape={shapeEdits.deleteShape}
+                    onSnapshotShape={snapshotShape}
                   />
                 ) : undefined
               }
@@ -897,7 +939,13 @@ export function FloorPlanEditor({
       <SnapshotDialog
         plan={plan}
         crop={snapshotCrop}
-        onOpenChange={(o) => !o && setSnapshotCrop(null)}
+        areaId={snapshotArea}
+        areas={savedAreas}
+        onOpenChange={(o) => {
+          if (o) return
+          setSnapshotCrop(null)
+          setSnapshotArea(null)
+        }}
         onCreated={(made) => {
           selectTool("select")
           void nav({ to: "/floorplans/$id", params: { id: made.id } })

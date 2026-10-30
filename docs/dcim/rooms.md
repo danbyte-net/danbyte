@@ -36,8 +36,30 @@ every list and page that names it.
 ## The room page
 
 Overview (the room's details, custom fields and photos), then **Devices**,
-**Racks** and **Cabinets** - everything that names the room - then **Journal**
-and **Change log**. The location's page has a **Rooms** tab listing its rooms.
+**Racks** and **Cabinets** - everything that names the room - then **Floor
+plan** (when the room is drawn on one), **Journal** and **Change log**. The
+location's page has a **Rooms** tab listing its rooms.
+
+### Floor plan
+
+When the room is drawn as an [area on a floor plan](../features/floor-plans.md#rooms-and-areas),
+its page gets a **Floor plan** tab: the room's part of that floor - the
+area's bounding box in whole cells - drawn by the floor-plan canvas, read-only
+and live (read again every 30 seconds, rack and monitoring overlays
+included), with everything outside the room's outline dimmed. A turned or
+polygon room shows its box with the outline cut out of the dimming. Pan and
+zoom as on the plan; a click on a tile opens the floor plan on it.
+
+- **Open in floor plan** opens the floor with the room selected and in view.
+- **Make snapshot…** opens the [Snapshot dialog](../features/floor-plans.md#snapshots)
+  for the room: an independent copy, or a live view that follows the room
+  as it is moved or resized.
+- A room drawn on several floors shows a switcher of those floors.
+
+The tab follows the plan's permissions: it is there only when you may view
+the floor plan and its areas, it shows only the rows you may view, and a tile
+linking something you may not view reads **Hidden**. A room drawn on no
+floor (or only on floors you may not view) has no tab.
 
 ## Putting a device, rack or cabinet in a room
 
@@ -103,6 +125,7 @@ room as well as change on the device.
 | `POST /api/rooms/bulk-update/` | Bulk edit; `GET /api/rooms/bulk-edit-fields/` describes the fields. |
 | `POST /api/rooms/bulk-delete/` | Safe bulk delete, with `dry_run`. |
 | `GET/POST /api/rooms/{id}/images/` | Room photos. |
+| `GET /api/rooms/{id}/plan/` | The room's part of a floor plan (the **Floor plan** tab): `areas` - the room's areas on the floors you may view, `{id, name, color, floor_plan: {id, name, stack}}`; `?area=<id>` picks one (default the first) and `?margin=` (cells, 0-50) widens it; then `area`, `floor_plan` (as `GET /api/floor-plans/{id}/` reads it), `crop` (the area's box in whole cells of that floor), `margin`, `outline` (the area's outline in the crop's cells) and `contents` (as `contents/` reads it for the crop: rows inside it, in its cells, with `crosses_edge`). No area: `areas` is empty and the rest null. |
 
 A device, rack or cabinet reads `room` as `{id, name, code, color}` and writes
 `room_id`. A location reads `room_count`.

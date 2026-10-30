@@ -10668,7 +10668,13 @@ class FloorPlanSerializer(
         ``copy``: an independent copy), ``source`` (``{id, name, stack}``,
         null when it is gone or hidden from the reader), ``crop`` (in the
         source's cells), ``at``, and for a view ``source_grid`` (the source's
-        grid, which its background spans). Null for a plan made otherwise."""
+        grid, which its background spans). A view made from a room, location
+        or area reads ``area`` (``{id, name}``, null otherwise or once the
+        area is gone), ``margin`` (cells around its box), ``mask`` (its
+        outline in the view's cells: what lies outside it is drawn dimmed)
+        and the ``crop`` it gives now. Null for a plan made otherwise."""
+        from . import floor_plan_snapshots as snaps
+
         if obj.kind != "view" and not obj.crop:
             return None
         src = obj.source
@@ -10684,6 +10690,12 @@ class FloorPlanSerializer(
         }
         if obj.kind == "view" and src is not None:
             out["source_grid"] = {"width": src.grid_width, "height": src.grid_height}
+            crop = snaps.effective_crop(obj, src)
+            area = snaps.following(obj, src)
+            out["crop"] = crop.as_dict()
+            out["area"] = {"id": str(area.pk), "name": str(area)} if area and shown else None
+            out["margin"] = obj.source_margin or 0
+            out["mask"] = snaps.view_mask(obj, src, crop) if area else None
         return out
 
     def to_representation(self, obj):

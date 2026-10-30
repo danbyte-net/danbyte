@@ -34,6 +34,7 @@ import {
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { AreaPlanTab, useAreaPlan } from "@/components/floorplan/area-plan-tab"
 import { useMe } from "@/lib/use-me"
 
 export const Route = createFileRoute("/locations/$id")({
@@ -80,10 +81,15 @@ function Body({ location: l }: { location: Location }) {
     | "racks"
     | "cabinets"
     | "prefixes"
+    | "plan"
     | "documents"
     | "journal"
     | "history"
   >("overview")
+  // The Floor plan tab, while the location is drawn on a floor the reader
+  // sees.
+  const plan = useAreaPlan("locations", l.id)
+  const hasPlan = (plan.data?.areas.length ?? 0) > 0
 
   return (
     <DetailShell
@@ -182,6 +188,7 @@ function Body({ location: l }: { location: Location }) {
         { value: "racks", label: "Racks", count: l.rack_count },
         { value: "cabinets", label: "Cabinets", count: l.cabinet_count },
         { value: "prefixes", label: "Prefix ranges", count: rows.length },
+        ...(hasPlan ? [{ value: "plan" as const, label: "Floor plan" }] : []),
         { value: "documents", label: "Documents", count: l.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
@@ -276,6 +283,11 @@ function Body({ location: l }: { location: Location }) {
           )}
         </div>
       </DetailTab>
+      {hasPlan && (
+        <DetailTab value="plan">
+          <AreaPlanTab owner="locations" id={l.id} />
+        </DetailTab>
+      )}
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.location" objectId={l.id} />
       </DetailTab>

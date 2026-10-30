@@ -14,6 +14,8 @@ export const Route = createFileRoute("/floorplans/$id")({
     ...(s.viz === "3d" ? { viz: "3d" as const } : {}),
     // ?tile=<id> - arrive zoomed onto one tile ("Show on floor plan").
     ...(typeof s.tile === "string" ? { tile: s.tile } : {}),
+    // ?area=<id> - arrive with a room / area opened ("Open in floor plan").
+    ...(typeof s.area === "string" ? { area: s.area } : {}),
   }),
 })
 
