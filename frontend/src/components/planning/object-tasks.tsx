@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { buildPlanningTaskColumns } from "@/components/columns/planning-task-columns"
+import { AddTaskButton } from "./add-task"
 
 // The object side of planning: which tasks touch this device/prefix/…, and -
 // for the people doing them - which of those are past due. Both are
@@ -75,14 +76,19 @@ export function ObjectTasksPanel({
 
   return (
     <div className="space-y-3">
-      <SegmentedTabs<Scope>
-        value={scope}
-        onValueChange={setScope}
-        items={[
-          { value: "open", label: "Open" },
-          { value: "all", label: "All" },
-        ]}
-      />
+      <div className="flex items-center gap-2">
+        <SegmentedTabs<Scope>
+          value={scope}
+          onValueChange={setScope}
+          items={[
+            { value: "open", label: "Open" },
+            { value: "all", label: "All" },
+          ]}
+        />
+        <div className="ml-auto">
+          <AddTaskButton link={{ objectType, id: objectId }} />
+        </div>
+      </div>
       {q.isLoading ? (
         <Loading />
       ) : q.isError ? (
