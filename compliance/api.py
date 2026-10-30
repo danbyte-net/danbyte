@@ -14,11 +14,21 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from api.viewsets import TenantScopedViewSet
 from api.views import _get_active_tenant
+from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
+from core.expressions import ExpressionError, leaves, regex_error
+from core.expressions import validate as validate_expression
 
-from .engine import detail_for, evaluate, evaluate_for_object
+from .engine import (
+    detail_for,
+    evaluate,
+    evaluate_for_object,
+    preview_rule,
+    type_label,
+    valid_pk,
+)
+from .fields import REF_MODELS, ref_model
 from .models import (
     COVERAGE_OBJECT_TYPES,
     EOL_OBJECT_TYPES,
@@ -57,36 +67,179 @@ def _list_queryset(model):
     return model.objects.all()
 
 
-def _serialize_violating_objects(rule, violations, request):
-    """The failing rows for one rule, serialized with the type's real
-    serializer as its list serializes them, in violation order.
+def _serialize_violating_objects(rule, violations, request) -> dict[str, list]:
+    """The failing rows for one rule, per object type, each serialized with
+    its type's real serializer as its list serializes them, in violation
+    order.
 
     A compliance grant says which rules fail, not what the failing objects
-    hold: the rows are cut to what the caller may view of that type, and a
-    caller who cannot view it gets none. Empty list if the type has no
-    serializer."""
-    entry = _type_registry().get(rule.object_type)
-    if entry is None:
-        return []
-    model, serializer_cls = entry
-    ids = [v["object_id"] for v in violations]
-    if not ids:
-        return []
-    slug = model._meta.model_name
-    if not rbac.has_action(request.user, rule.tenant, slug, "view"):
-        return []
-    qs = rbac.restrict_queryset(
-        _list_queryset(model).filter(tenant=rule.tenant, pk__in=ids),
-        request.user, rule.tenant, slug, "view",
+    hold: the rows are cut to what the caller may view of each type, and a
+    caller who cannot view a type gets none of it."""
+    registry = _type_registry()
+    ids_by_type: dict[str, list[str]] = {}
+    for v in violations:
+        ids_by_type.setdefault(v["object_type"], []).append(v["object_id"])
+    out: dict[str, list] = {}
+    for object_type in rule.types:
+        entry = registry.get(object_type)
+        ids = ids_by_type.get(object_type) or []
+        if entry is None or not ids:
+            out[object_type] = []
+            continue
+        model, serializer_cls = entry
+        slug = model._meta.model_name
+        if not rbac.has_action(request.user, rule.tenant, slug, "view"):
+            out[object_type] = []
+            continue
+        qs = rbac.restrict_queryset(
+            _list_queryset(model).filter(tenant=rule.tenant, pk__in=ids),
+            request.user, rule.tenant, slug, "view",
+        )
+        by_id = {str(obj.pk): obj for obj in qs}
+        ordered = [by_id[i] for i in ids if i in by_id]
+        # A list context, so the detail-only tab counts are skipped exactly as
+        # on the type's own list page.
+        view = SimpleNamespace(action="list", request=request)
+        out[object_type] = serializer_cls(
+            ordered, many=True, context={"request": request, "view": view}
+        ).data
+    return out
+
+
+# ─── Scope and conditions ────────────────────────────────────────────────────
+
+
+def _ast_refs(ast, field_for) -> list[tuple[str, str, str]]:
+    """``(path, ref model key, id)`` for every reference value in ``ast``."""
+    out = []
+    for path, node in leaves(ast):
+        field = field_for(node.get("field"))
+        if field is None or not field.ref or node.get("cmp") not in ("in", "not_in"):
+            continue
+        for i, v in enumerate(node.get("values") or ()):
+            out.append((f"{path}.values.{i}" if path else f"values.{i}", field.ref, v))
+    return out
+
+
+def _tenant_rows(ref: str, tenant, ids):
+    from django.db.models import Q
+
+    model = ref_model(ref)
+    qs = model.objects.filter(pk__in=list(ids))
+    if REF_MODELS[ref].shared_null_tenant:
+        return qs.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
+    return qs.filter(tenant=tenant)
+
+
+def _ref_errors(ast, field_for, tenant, user) -> list[dict]:
+    """Every reference in ``ast`` must be the tenant's - and, for a catalog
+    bound to sites, one the writer may view. One query per catalog."""
+    from auth_api.site_paths import site_path_for
+
+    by_ref: dict[str, list[tuple[str, str]]] = {}
+    for path, ref, value in _ast_refs(ast, field_for):
+        by_ref.setdefault(ref, []).append((path, value))
+    errors = []
+    for ref, items in by_ref.items():
+        qs = _tenant_rows(ref, tenant, {v for _p, v in items})
+        slug = qs.model._meta.model_name
+        if user is not None and site_path_for(slug, tenant) is not None:
+            qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
+        found = {str(pk) for pk in qs.values_list("pk", flat=True)}
+        noun = REF_MODELS[ref].noun
+        for path, value in items:
+            if value not in found:
+                errors.append({"path": path, "detail": f"Not one of this tenant's {noun}s."})
+    return errors
+
+
+def _regex_errors(ast) -> list[dict]:
+    errors = []
+    for path, node in leaves(ast):
+        if node.get("cmp") in ("matches", "not_matches"):
+            problem = regex_error(node.get("value") or "")
+            if problem:
+                errors.append({"path": f"{path}.value" if path else "value",
+                               "detail": problem})
+    return errors
+
+
+def _value_check(field, value) -> str | None:
+    if field.ref and not valid_pk(ref_model(field.ref), value):
+        return "Not a valid id."
+    return None
+
+
+def _is_blank_ast(ast) -> bool:
+    return ast in (None, {}, []) or (
+        isinstance(ast, dict) and ast.get("kind") == "group" and not ast.get("terms")
     )
-    by_id = {str(obj.pk): obj for obj in qs}
-    ordered = [by_id[i] for i in ids if i in by_id]
-    # A list context, so the detail-only tab counts are skipped exactly as
-    # on the type's own list page.
-    view = SimpleNamespace(action="list", request=request)
-    return serializer_cls(
-        ordered, many=True, context={"request": request, "view": view}
-    ).data
+
+
+def refs_for(rules, tenant, user) -> dict:
+    """``{rule id: {ref id: {model, name, color, missing[, hidden]}}}`` for the
+    references in each rule's scope and conditions, so a page draws their
+    badges without a lookup per value. One query per catalog for the rows,
+    and one more where the reader may view only some of them. A row the
+    reader may not view reads as ``{"name": None, "hidden": True}``."""
+    from .fields import Registry
+
+    registry = Registry(tenant)
+    per_rule: dict = {}
+    wanted: dict[str, set[str]] = {}
+    for rule in rules:
+        found = []
+        field_for = registry.field_for(rule.types)
+        for ast in (rule.scope, rule.condition):
+            if ast:
+                found += [(ref, v) for _p, ref, v in _ast_refs(ast, field_for)]
+        per_rule[rule.id] = found
+        for ref, v in found:
+            wanted.setdefault(ref, set()).add(v)
+    rows: dict[str, dict] = {}
+    for ref, ids in wanted.items():
+        ids = {i for i in ids if valid_pk(ref_model(ref), i)}
+        qs = _tenant_rows(ref, tenant, ids)
+        slug = qs.model._meta.model_name
+        decision = rbac.row_filter(user, tenant, slug, "view") if user is not None else True
+        if decision is None:
+            visible = set()
+        elif decision is True:
+            visible = None
+        else:
+            try:
+                visible = {str(pk) for pk in qs.filter(decision).values_list("pk", flat=True)}
+            except Exception:  # noqa: BLE001 - a constraint that doesn't fit: show nothing
+                visible = set()
+        for obj in qs:
+            key = str(obj.pk)
+            if visible is not None and key not in visible:
+                rows[key] = {"model": ref, "name": None, "color": "", "missing": False,
+                             "hidden": True}
+            else:
+                rows[key] = {"model": ref, "name": str(obj),
+                             "color": getattr(obj, "color", "") or "", "missing": False}
+    out = {}
+    for rule in rules:
+        out[str(rule.id)] = {
+            v: rows.get(v, {"model": ref, "name": None, "color": "", "missing": True})
+            for ref, v in per_rule[rule.id]
+        }
+    return out
+
+
+class _RuleListSerializer(serializers.ListSerializer):
+    """Reads the references of a whole page of rules at once."""
+
+    def to_representation(self, data):
+        from django.db.models import Manager
+
+        items = list(data.all() if isinstance(data, Manager) else data)
+        request = self.context.get("request")
+        tenant = _get_active_tenant(request) if request is not None else None
+        if tenant is not None:
+            self.context["refs_cache"] = refs_for(items, tenant, request.user)
+        return [self.child.to_representation(item) for item in items]
 
 
 class ComplianceRuleSerializer(serializers.ModelSerializer):
@@ -94,12 +247,21 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
     check_type_display = serializers.CharField(
         source="get_check_type_display", read_only=True
     )
+    object_type = serializers.CharField(max_length=20, required=False)
+    object_types = serializers.ListField(
+        child=serializers.CharField(max_length=20), required=False,
+    )
+    scope = serializers.JSONField(required=False, allow_null=True)
+    condition = serializers.JSONField(required=False, allow_null=True)
+    refs = serializers.SerializerMethodField()
 
     class Meta:
         model = ComplianceRule
+        list_serializer_class = _RuleListSerializer
         fields = [
             "id", "name", "description", "remediation", "enabled", "severity",
-            "object_type", "object_type_label", "check_type",
+            "object_type", "object_types", "object_type_label", "scope", "condition",
+            "refs", "check_type",
             "check_type_display", "field", "pattern", "tag", "cf_key",
             "eol_fail_on", "coverage_fail_on", "fail_on_unknown", "include_software",
             "created_at", "updated_at",
@@ -107,7 +269,18 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
         read_only_fields = ["created_at", "updated_at"]
 
     def get_object_type_label(self, obj) -> str:
-        return OBJECT_TYPES.get(obj.object_type, obj.object_type)
+        return type_label(obj.types)
+
+    def get_refs(self, obj) -> dict:
+        cache = self.context.get("refs_cache")
+        if cache is not None and str(obj.id) in cache:
+            return cache[str(obj.id)]
+        request = self.context.get("request")
+        tenant = _get_active_tenant(request) if request is not None else obj.tenant
+        if tenant is None:
+            return {}
+        user = getattr(request, "user", None) if request is not None else None
+        return refs_for([obj], tenant, user).get(str(obj.id), {})
 
     def validate_object_type(self, value):
         if value not in OBJECT_TYPES:
@@ -116,8 +289,35 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_object_types(self, value):
+        if not value:
+            raise serializers.ValidationError("Pick at least one object type.")
+        bad = [t for t in value if t not in OBJECT_TYPES]
+        if bad:
+            raise serializers.ValidationError(
+                f"Unknown object type. Pick from: {', '.join(OBJECT_TYPES)}."
+            )
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Each object type once.")
+        return value
+
+    def _types(self, attrs) -> list[str]:
+        if "object_types" in attrs:
+            return list(attrs["object_types"])
+        if "object_type" in attrs:
+            return [attrs["object_type"]]
+        if self.instance is not None:
+            return self.instance.types
+        raise serializers.ValidationError({"object_types": "Pick at least one object type."})
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # A type error is reported on the key the caller wrote.
+        type_key = "object_type" if "object_types" not in attrs and "object_type" in attrs \
+            else "object_types"
+        types = self._types(attrs)
+        attrs["object_types"] = types
+        attrs["object_type"] = types[0]
         ct = attrs.get("check_type", getattr(self.instance, "check_type", None))
         get = lambda k: attrs.get(k, getattr(self.instance, k, ""))  # noqa: E731
         if ct in ("required", "forbidden", "regex") and not get("field"):
@@ -137,17 +337,16 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
             except _re.error as exc:
                 raise serializers.ValidationError(
                     {"pattern": f"Invalid regular expression: {exc}"}
-                )
+                ) from None
         if ct == "required_tag" and not get("tag"):
             raise serializers.ValidationError({"tag": "A tag slug is required."})
         if ct == "required_cf" and not get("cf_key"):
             raise serializers.ValidationError({"cf_key": "A custom-field key is required."})
         if ct == "eol_status":
-            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
-            if ot not in EOL_OBJECT_TYPES:
+            if not set(types) <= set(EOL_OBJECT_TYPES):
                 raise serializers.ValidationError({
-                    "object_type": "An end-of-life check applies to devices or "
-                                   "virtual machines."
+                    type_key: "An end-of-life check applies to devices or "
+                                    "virtual machines."
                 })
             if not get("eol_fail_on"):
                 raise serializers.ValidationError(
@@ -163,64 +362,155 @@ class ComplianceRuleSerializer(serializers.ModelSerializer):
                 {"include_software": "Only an end-of-life check reads installed software."}
             )
         if ct == "coverage":
-            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
-            if ot not in COVERAGE_OBJECT_TYPES:
+            if not set(types) <= set(COVERAGE_OBJECT_TYPES):
                 raise serializers.ValidationError(
-                    {"object_type": "A support coverage check applies to devices."}
+                    {type_key: "A support coverage check applies to devices."}
                 )
             if not get("coverage_fail_on"):
                 raise serializers.ValidationError(
                     {"coverage_fail_on": "Pick what the check fails on."}
                 )
         if ct == "software_target":
-            ot = attrs.get("object_type", getattr(self.instance, "object_type", None))
-            if ot not in SOFTWARE_TARGET_OBJECT_TYPES:
+            if not set(types) <= set(SOFTWARE_TARGET_OBJECT_TYPES):
                 raise serializers.ValidationError({
-                    "object_type": "A software target check applies to devices or "
-                                   "virtual machines."
+                    type_key: "A software target check applies to devices or "
+                                    "virtual machines."
                 })
+        self._validate_expressions(attrs, types, ct)
         return attrs
+
+    def _validate_expressions(self, attrs, types, ct):
+        """Scope and conditions: known fields of the chosen types, operators
+        their kinds take, typed values, references the tenant owns, patterns
+        PostgreSQL compiles, inside the size limits. Errors carry the path of
+        the offending node."""
+        from .fields import Registry
+
+        request = self.context.get("request")
+        tenant = _get_active_tenant(request) if request is not None else None
+        if tenant is None and self.instance is not None:
+            tenant = self.instance.tenant
+        user = getattr(request, "user", None) if request is not None else None
+        registry = Registry(tenant)
+        field_for = registry.field_for(types)
+        errors = {}
+        for key in ("scope", "condition"):
+            ast = attrs[key] if key in attrs else getattr(self.instance, key, None)
+            if key == "condition" and ct != "expression":
+                attrs["condition"] = None
+                continue
+            if _is_blank_ast(ast):
+                if key == "condition":
+                    errors[key] = [{"path": "", "detail": "Add a condition."}]
+                attrs[key] = None
+                continue
+            try:
+                clean = validate_expression(ast, field_for, _value_check)
+            except ExpressionError as exc:
+                errors[key] = exc.errors
+                continue
+            # The references and patterns are checked when written: an edit
+            # that leaves the tree alone (a description, the severity) is not
+            # refused over a site the editor cannot see.
+            problems = (
+                _ref_errors(clean, field_for, tenant, user) + _regex_errors(clean)
+                if key in attrs or self.instance is None else []
+            )
+            if problems:
+                errors[key] = problems
+                continue
+            attrs[key] = clean
+        if errors:
+            raise serializers.ValidationError(errors)
+
+    def update(self, instance, validated_data):
+        """A type taken off the rule takes its triage rows with it, each
+        deleted through the model so the change log records it."""
+        from .models import ComplianceTriage
+
+        before = set(instance.types)
+        rule = super().update(instance, validated_data)
+        removed = before - set(rule.types)
+        if removed:
+            ComplianceTriage.objects.filter(rule=rule, object_type__in=removed).delete()
+        return rule
 
 
 class ComplianceRuleViewSet(TenantScopedViewSet):
     queryset = ComplianceRule.objects.all().order_by("object_type", "name")
     serializer_class = ComplianceRuleSerializer
+    # The preview checks add-or-change itself: it saves nothing, so the gate
+    # only asks that the caller sees rules at all.
+    rbac_action_map = {"preview": "view"}
 
     @action(detail=True, methods=["get"], url_path="violations")
     def violations(self, request, pk=None):
         """Evaluate just this rule → the objects it currently fails.
 
-        Powers the rule detail page's affected-objects table. Reuses the same
-        live engine as the global evaluate, scoped to one rule (and the active
-        tenant via the queryset)."""
+        Powers the rule detail page's Results tab. Reuses the same live engine
+        as the global evaluate, scoped to one rule (and the active tenant via
+        the queryset)."""
         rule = self.get_object()
         result = evaluate(rule.tenant, rules=[rule], scope=_view_scope(request, rule.tenant))
         result.pop("failing_objects", None)
         summary = next(iter(result["rules"]), None)
-        # Serialize the failing objects with their *real* type serializer so the
-        # detail page can render the genuine per-type table (all its columns),
-        # not just an id + repr. One rule targets one object_type → homogeneous.
-        objects = _serialize_violating_objects(
-            rule, result["violations"], request
-        )
+        # Each type's failing rows with its *real* serializer, so the page
+        # draws the genuine per-type table (all its columns), not an id + repr.
+        by_type = _serialize_violating_objects(rule, result["violations"], request)
+        types = rule.types
         return Response({
             "rule": {
                 "id": str(rule.id),
                 "name": rule.name,
                 "severity": rule.severity,
                 "object_type": rule.object_type,
-                "object_type_label": OBJECT_TYPES.get(
-                    rule.object_type, rule.object_type
-                ),
+                "object_types": types,
+                "object_type_label": type_label(types),
                 "enabled": rule.enabled,
             },
             "violations": result["violations"],
-            "objects": objects,
+            "objects": by_type.get(types[0], []) if len(types) == 1 else [],
+            "objects_by_type": by_type,
             "total": summary["violations"] if summary else 0,
             # The rule's whole counts, triage included, and when they were taken.
             "result": summary,
             "evaluated_at": result["evaluated_at"],
         })
+
+    @extend_schema(
+        summary="Try a rule before saving it: counts and a sample per type",
+        tags=["compliance"],
+        request=ComplianceRuleSerializer,
+        responses=OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description="by_type: {type: {in_scope, failing, sample}}, and error.",
+        ),
+    )
+    @action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        """The rule in the body (name optional), judged against what the
+        caller may view - never more, or an expression would count hidden
+        rows. Needs ``compliancerule.add`` or ``change``."""
+        tenant = self._tenant_or_403()
+        if not (rbac.has_action(request.user, tenant, "compliancerule", "add")
+                or rbac.has_action(request.user, tenant, "compliancerule", "change")):
+            return Response(
+                {"detail": "compliancerule.add or compliancerule.change required."},
+                status=403,
+            )
+        data = dict(request.data.items())
+        data["name"] = data.get("name") or "Preview"
+        ser = self.get_serializer(data=data)
+        ser.is_valid(raise_exception=True)
+        fields = {k: v for k, v in ser.validated_data.items()}
+        rule = ComplianceRule(tenant=tenant, **fields)
+
+        def universe(object_type, qs):
+            return rbac.restrict_queryset(
+                qs, request.user, tenant, qs.model._meta.model_name, "view"
+            )
+
+        return Response(preview_rule(tenant, rule, universe))
 
 
 @extend_schema(
@@ -468,6 +758,7 @@ def compliance_device_status(request, device_id):
         return Response({"detail": "Not found."}, status=404)
 
     failed = evaluate_for_object(tenant, "device", device)
+    refs = refs_for(failed, tenant, request.user) if failed else {}
     violations = [
         {
             "rule_id": str(rule.id),
@@ -475,12 +766,7 @@ def compliance_device_status(request, device_id):
             "severity": rule.severity,
             "description": rule.description,
             "remediation": rule.remediation,
-            "check_type": rule.check_type,
-            "field": rule.field,
-            "pattern": rule.pattern,
-            "tag": rule.tag,
-            "cf_key": rule.cf_key,
-            "eol_fail_on": rule.eol_fail_on,
+            **_check_fields(rule, refs),
             "detail": detail_for(rule, device),
         }
         for rule in failed
@@ -509,6 +795,24 @@ def compliance_device_status(request, device_id):
             "violations": violations,
         }
     )
+
+
+def _check_fields(rule, refs: dict) -> dict:
+    """What a page needs to put a rule's check into words."""
+    return {
+        "check_type": rule.check_type,
+        "field": rule.field,
+        "pattern": rule.pattern,
+        "tag": rule.tag,
+        "cf_key": rule.cf_key,
+        "eol_fail_on": rule.eol_fail_on,
+        "coverage_fail_on": rule.coverage_fail_on,
+        "fail_on_unknown": rule.fail_on_unknown,
+        "object_types": rule.types,
+        "scope": rule.scope,
+        "condition": rule.condition,
+        "refs": refs.get(str(rule.id), {}),
+    }
 
 
 def _device_has_config_drift(tenant, device) -> bool:
@@ -594,12 +898,15 @@ def _append_config_drift(result: dict, tenant, scope=None) -> None:
             "id": CONFIG_DRIFT_RULE_ID,
             "name": "Config drift",
             "object_type": "device",
+            "object_types": ["device"],
             "object_type_label": OBJECT_TYPES["device"],
             "severity": "warning",
             "violations": total,
             "open": total,
             "acknowledged": 0,
             "snoozed": 0,
+            "by_type": {"device": total},
+            "error": None,
         }
     )
     result["total_violations"] = result.get("total_violations", 0) + total
@@ -621,6 +928,45 @@ def compliance_object_types(request):
     return Response(
         {"object_types": [{"value": k, "label": v} for k, v in OBJECT_TYPES.items()]}
     )
+
+
+@extend_schema(
+    summary="The fields a rule's scope and conditions can name",
+    tags=["compliance"],
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="object_types",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Comma-separated object types (device,virtualmachine,…).",
+        ),
+    ],
+    responses=OpenApiResponse(
+        response=OpenApiTypes.OBJECT,
+        description="fields: [{key, label, kind, types, ops, ref, choices}].",
+    ),
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compliance_fields(request):
+    """The fields of the chosen types, for the rule builder: each with the
+    types that have it, the operators its kind takes, the catalog its values
+    come from and its choices. Names and shapes only - never a row's data."""
+    from .fields import Registry, payload
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return Response({"detail": "No active tenant selected."}, status=403)
+    if not rbac.has_action(request.user, tenant, "compliancerule", "view"):
+        return Response({"detail": "compliancerule.view required."}, status=403)
+    types = [t for t in (request.query_params.get("object_types") or "").split(",") if t]
+    bad = [t for t in types if t not in OBJECT_TYPES]
+    if bad or len(set(types)) != len(types):
+        return Response({"object_types": f"Pick from: {', '.join(OBJECT_TYPES)}."}, status=400)
+    if not types:
+        types = list(OBJECT_TYPES)
+    return Response({"fields": payload(Registry(tenant), types)})
 
 
 # ─── Summary (the Overview tab) ──────────────────────────────────────────────
@@ -667,20 +1013,18 @@ def compliance_summary(request):
     result = evaluate(tenant, rules=enabled, scope=scope)
     _append_config_drift(result, tenant, scope)
 
+    refs = refs_for(enabled, tenant, request.user) if enabled else {}
     rows = []
     for row in result["rules"]:
         rule = by_id.get(row["id"])
-        rows.append({
-            **row,
-            "check_type": rule.check_type if rule else "",
-            "field": rule.field if rule else "",
-            "pattern": rule.pattern if rule else "",
-            "tag": rule.tag if rule else "",
-            "cf_key": rule.cf_key if rule else "",
-            "eol_fail_on": rule.eol_fail_on if rule else "",
-            "coverage_fail_on": rule.coverage_fail_on if rule else "",
-            "fail_on_unknown": rule.fail_on_unknown if rule else False,
-        })
+        if rule is not None:
+            rows.append({**row, **_check_fields(rule, refs)})
+        else:
+            rows.append({
+                **row, "check_type": "", "field": "", "pattern": "", "tag": "",
+                "cf_key": "", "eol_fail_on": "", "coverage_fail_on": "",
+                "fail_on_unknown": False, "scope": None, "condition": None, "refs": {},
+            })
     # Worst first: open failures by severity, then by how many, then name.
     rows.sort(key=lambda r: (
         -_SEVERITY_RANK.get(r["severity"], 0) if r["open"] else 0,
@@ -834,23 +1178,30 @@ def compliance_triage(request):
     if len(rules) != len(rule_ids):
         raise serializers.ValidationError({"items": "Unknown rule."})
 
-    # Each object must be the tenant's and one the caller may view - checked
-    # per object type, one query each, before anything is written.
+    # Each object must be the tenant's, of one of its rule's types, and one
+    # the caller may view - looked for per object type, one query each, before
+    # anything is written. Object ids are unique across the tables, so an id
+    # names one object whichever type finds it.
     registry = _type_registry()
     objects = {}
+    found_type: dict[str, str] = {}
     wanted: dict[str, set[str]] = {}
     for rid, oid in items:
-        wanted.setdefault(rules[rid].object_type, set()).add(oid)
+        for object_type in rules[rid].types:
+            if object_type in registry:
+                wanted.setdefault(object_type, set()).add(oid)
     for object_type, ids in wanted.items():
         model = registry[object_type][0]
         qs = rbac.restrict_queryset(
             model.objects.filter(tenant=tenant, pk__in=ids),
             request.user, tenant, model._meta.model_name, "view",
         )
-        found = {str(o.pk): o for o in qs}
-        if len(found) != len(ids):
+        for o in qs:
+            objects[str(o.pk)] = o
+            found_type[str(o.pk)] = object_type
+    for rid, oid in items:
+        if found_type.get(oid) not in rules[rid].types:
             raise serializers.ValidationError({"items": "Unknown object."})
-        objects.update(found)
 
     user = request.user
     now = timezone.now()
@@ -876,7 +1227,7 @@ def compliance_triage(request):
             else:
                 if row is None:
                     row = ComplianceTriage(
-                        tenant=tenant, rule=rule, object_type=rule.object_type,
+                        tenant=tenant, rule=rule, object_type=found_type[oid],
                         object_id=obj.pk,
                     )
                 row.object_repr = str(obj)[:120]

@@ -5,6 +5,7 @@
 // Type-only import (erased at compile time - api.ts stays runtime-import-free).
 // The faceplate doc types live beside their algorithms in faceplate-layout.ts.
 import type { FaceplateDoc } from "@/lib/faceplate-layout"
+import type { BuilderOp, Expr } from "@/lib/filter-expr"
 
 const CSRF_COOKIE = "csrftoken"
 
@@ -8777,7 +8778,55 @@ export type ComplianceCheck =
   | "eol_status"
   | "coverage"
   | "software_target"
+  | "expression"
 export type ComplianceSeverity = "critical" | "warning" | "info"
+
+/** A compliance rule's scope or conditions: the advanced filter's AST, with
+ * catalog rows named by id. */
+export type ComplianceExpr = Expr
+
+/** A row a rule's scope or conditions name, as the reader may see it. */
+export interface ComplianceRef {
+  model?: string
+  name: string | null
+  color?: string
+  /** The row is gone: the rule shows as Broken. */
+  missing?: boolean
+  /** The reader may not view the row. */
+  hidden?: boolean
+}
+
+/** One field of GET /api/compliance/fields/. */
+export interface ComplianceField {
+  key: string
+  label: string
+  kind:
+    "string" | "number" | "date" | "bool" | "choice" | "ref" | "tags" | "type"
+  /** The chosen object types that have it. */
+  types: string[]
+  ops: BuilderOp[]
+  ref: {
+    model: string
+    api: string
+    badge: "status" | "color" | ""
+    noun: string
+  } | null
+  choices: { value: string; label: string }[]
+}
+
+/** Response of POST /api/compliance-rules/preview/. */
+export interface CompliancePreview {
+  by_type: Record<
+    string,
+    {
+      in_scope: number
+      failing: number
+      sample: { id: string; repr: string; site_name: string }[]
+    }
+  >
+  error: string | null
+}
+
 export interface ComplianceRule {
   id: string
   name: string
@@ -8786,8 +8835,16 @@ export interface ComplianceRule {
   remediation: string
   enabled: boolean
   severity: ComplianceSeverity
+  /** The first of `object_types`. */
   object_type: string
+  object_types: string[]
   object_type_label: string
+  /** Which objects the rule judges; null = every object of its types. */
+  scope: ComplianceExpr | null
+  /** What a Conditions check requires of each object in scope. */
+  condition: ComplianceExpr | null
+  /** The rows the scope and conditions name, by id. */
+  refs: Record<string, ComplianceRef>
   check_type: ComplianceCheck
   check_type_display: string
   field: string
@@ -8835,7 +8892,12 @@ export interface ComplianceRuleResult {
   id: string
   name: string
   object_type: string
+  object_types?: string[]
   object_type_label?: string
+  /** Failing objects per object type. */
+  by_type?: Record<string, number>
+  /** Why the rule could not be judged (Broken), or null. */
+  error?: string | null
   severity: ComplianceSeverity
   violations: number
   open?: number
@@ -8900,7 +8962,8 @@ export interface ComplianceSummary {
       | "eol_fail_on"
       | "coverage_fail_on"
       | "fail_on_unknown"
-    >)[]
+    > &
+    Partial<Pick<ComplianceRule, "scope" | "condition" | "refs">>)[]
   /** The visible objects failing the most rules. */
   top_offenders: ComplianceOffender[]
 }
@@ -8924,13 +8987,16 @@ export interface ComplianceRuleViolations {
     name: string
     severity: ComplianceSeverity
     object_type: string
+    object_types?: string[]
     object_type_label: string
     enabled: boolean
   }
   violations: ComplianceViolation[]
   /** Failing rows serialized with the type's real serializer - feeds the
-   * genuine per-type table on the rule detail page. */
+   * genuine per-type table on the rule detail page. Single-type rules. */
   objects: Record<string, unknown>[]
+  /** The same, per object type - every rule. */
+  objects_by_type?: Record<string, Record<string, unknown>[]>
   total: number
   /** The rule's whole counts, triage included; null when it is disabled. */
   result?: ComplianceRuleResult | null
@@ -8952,6 +9018,10 @@ export interface DeviceComplianceViolation {
   cf_key: string
   eol_fail_on?: string
   coverage_fail_on?: string
+  fail_on_unknown?: boolean
+  scope?: ComplianceExpr | null
+  condition?: ComplianceExpr | null
+  refs?: Record<string, ComplianceRef>
   detail?: string
 }
 
@@ -11927,9 +11997,15 @@ export interface FloorPlanTilesBulkPayload {
 export interface FloorPlan {
   id: string
   numid: number | null
+  /** The floor's name ("B1", "Ground", "2"). */
   name: string
   location: LocationOption
   site: SiteOption
+  /** The floor plan (stack) this is a floor of. */
+  stack: { id: string; name: string } | null
+  /** Sort key inside the stack, lowest first. */
+  floor_order: number
+  elevation_mm: number | null
   grid_width: number
   grid_height: number
   /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
@@ -11950,6 +12026,39 @@ export interface FloorPlan {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** A floor as its floor plan lists it (the switcher's row). */
+export interface FloorPlanFloor {
+  id: string
+  numid: number | null
+  name: string
+  floor_order: number
+  location_id: string
+}
+
+/** GET /api/floor-plan-stacks/ - a floor plan as users see it: a building or
+ * hall and its floors in order (docs: floor-plans "Floors"). */
+export interface FloorPlanStack {
+  id: string
+  name: string
+  description: string
+  location: LocationOption
+  site: SiteOption
+  floors: FloorPlanFloor[]
+  floor_count: number
+  /** The newest change to the floor plan or one of its floors. */
+  last_edited: string | null
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanStackWritePayload {
+  name?: string
+  description?: string
+  location_id?: string
+  tag_ids?: number[]
 }
 
 export type FloorPlanDrawingStatus = "queued" | "ready" | "failed"
@@ -12255,6 +12364,8 @@ export interface CableRouting {
 export interface FloorPlanWritePayload {
   name?: string
   location_id?: string
+  stack_id?: string
+  floor_order?: number
   grid_width?: number
   grid_height?: number
   cell_mm?: number

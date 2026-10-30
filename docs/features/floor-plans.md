@@ -71,7 +71,9 @@ delete a palette entry.
 ## Creating a plan
 
 **Maps → Floor plans → Add** (or the **Floor plan** button on a Location
-page). A plan belongs to a location, has a grid (default 24×16 cells, up to
+page). A new floor plan belongs to a location and starts with one floor,
+both named as you named it; add more floors from the editor (see
+[Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
 512×512), and can carry an uploaded **background image** - a blueprint or
 photo scaled under the grid with adjustable opacity.
 
@@ -502,13 +504,85 @@ marker's `drift` is null. A single rack's
 
 ## Floors
 
-A location can hold **several plans - its floors**. Name them "Basement",
-"Floor 1", "Floor 2"… and the plan header shows a **floor switcher** (the
-same segmented tabs used everywhere) plus a **+** to add another floor to
-the same location. Switching floors with unsaved edits asks first - the same
+A **floor plan** is a building or a hall, and holds one or more **floors**
+in order, lowest first: "B1", "Ground", "1", "2", "Roof"… Each floor is its
+own canvas, with its own grid, scale, background, CAD drawing, tiles, walls,
+trays and 3D room; the floor plan only groups and orders them. **Maps →
+Floor plans** lists floor plans with their floor count, and opening one
+opens the floor you last viewed in it in this browser, or its lowest floor.
+A floor plan with one floor looks the same as a single plan.
+
+The editor header names the floor plan and shows the **floor switcher**:
+the floors as segmented tabs in order, or a compact **Floor: 2** dropdown
+past six floors. The address is the floor's own (`/floorplans/<floor id>`),
+so a link, a bookmark or a reload lands on the same floor; switching floors
+keeps the 2D or 3D view. Switching with unsaved edits asks first - the same
 guard that covers every other way out of the editor, described under
-[the editor](#the-editor). For click-through navigation *between* plans (e.g. a
-stairwell tile), link a tile to another floor plan.
+[the editor](#the-editor). For click-through navigation *between* floors
+(e.g. a stairwell tile), link a tile to another floor.
+
+With the floor-plan add permission, **+** beside the switcher adds a floor:
+a name, its position (on top, or below a chosen floor), and **Same grid and
+scale as** the floor on screen. Nothing else is asked; the floor's settings
+are the usual plan settings once it exists.
+
+The floor plan's name is a menu (floor-plan change permission):
+
+- **Manage floors…** - drag floors into order, rename them in place, and
+  per floor **Move to floor plan…** (another floor plan at the same site),
+  **Make its own floor plan**, or **Delete…**. Deleting a floor removes
+  everything drawn on it; deleting the last floor removes the floor plan.
+- **Merge floor plans…** - pick other floor plans at the same site; their
+  floors move into this one, after its own, and the emptied floor plans go.
+  Two floors with the same name are refused, listed, until one is renamed.
+- **Rename…** - the floor plan's name and description.
+- **Clone this floor** - see [Cloning a plan](#cloning-a-plan).
+
+Nothing groups, merges or renames floors on its own; each of these is an
+explicit action. A floor name is unique inside its floor plan, so two
+buildings under one location can each have a "1". A floor's location is
+its floor plan's location or a location nested under it, so floors
+modelled as locations (Building A → Level 2) work: a floor may point at
+Level 2 while its floor plan sits at Building A. Moving or merging a floor
+into a floor plan at another location of the site gives it that floor
+plan's location when its own lies outside it. Moving a floor changes
+only which floor plan it is in, its order and that location; its tiles,
+drawing and links stay as they are.
+
+!!! note "Upgrading to 0.19"
+    Before 0.19 the floors of a building were the plans that shared a
+    location. The upgrade makes one floor plan per location holding that
+    location's plans as its floors, in the order the switcher showed them
+    (by name), so the switcher shows the same floors as before. A location
+    with one plan gets a floor plan named after that plan; one with several
+    gets one named after the location. Nothing is merged across locations,
+    renamed or deleted. Split, move or merge floors afterwards to match your
+    buildings.
+
+### Floors API
+
+Floor plans are `/api/floor-plan-stacks/`; their floors stay
+`/api/floor-plans/`, with every endpoint, payload and filter they had.
+
+| Call | Purpose |
+|---|---|
+| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `floors` (id, name, `floor_order`, location id; the floors you may view, in order), `floor_count` and `last_edited`. |
+| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `location_id`, `tag_ids`. A delete takes every floor with it and needs delete on each. |
+| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size and scale. Answers the new floor (201). |
+| `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
+| `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
+| `GET /api/floor-plans/?stack=<id>` | One floor plan's floors, in order. |
+| `POST /api/floor-plans/<id>/move/` | `{"stack_id"}` - to another floor plan at the same site, on top of its floors. |
+| `POST /api/floor-plans/<id>/split/` | `{"name"?}` - make the floor a floor plan of its own (default: the floor's name). Answers the new floor plan (201). |
+
+A floor (`/api/floor-plans/`) gains `stack` (`{id, name}`), `stack_id`
+(write), `floor_order` (lowest first; negative is fine) and `elevation_mm`
+(optional, reserved for a stacked 3D building). A `POST` without
+`stack_id` creates a floor plan of its own named after the plan, as the
+**Add** form does, and needs no other change from a script written before
+0.19; with `stack_id`, `location_id` may be left out (the floor plan's
+location) and the new floor goes on top. Deleting a floor plan's last floor
+deletes the floor plan.
 
 ## The editor
 
@@ -1025,13 +1099,15 @@ cable runs, just the trays, or both.
 
 ## Cloning a plan
 
-The **Clone** action on the floor plans list copies a plan with everything
-drawn on it - tiles (with their rack / device / panel links), cable trays
-(geometry only; the cables routed through the originals stay where they are),
-raised-floor areas and walls, and its [CAD drawing](#cad-drawings) with its
-placement, units and calibration - into the same location as `<name> copy`, and
-opens it. Handy for a second identical floor, or a what-if layout you can throw
-away. Needs the floor-plan add permission.
+**Clone this floor**, in the menu on the floor plan's name, copies the floor
+on screen with everything drawn on it - tiles (with their rack / device /
+panel links), cable trays (geometry only; the cables routed through the
+originals stay where they are), raised-floor areas and walls, and its
+[CAD drawing](#cad-drawings) with its placement, units and calibration - into
+the same location as `<name> copy`, a floor plan of its own, and opens it.
+Handy for a what-if layout you can throw away; **Move to floor plan…** makes
+it a floor of another floor plan. `POST /api/floor-plans/<id>/clone/` does
+the same. Needs the floor-plan add permission.
 
 ## Export
 
@@ -1073,7 +1149,13 @@ Plans, tiles, and tile types are tenant-scoped like everything else; links are
 validated against the active tenant. RBAC object types: **Floor plans**
 (`floorplan`, the plan and its tiles) and **Floor tile types**
 (`floortiletype`, the palette). All three models are audited - every tile
-create/move/delete lands in the [change log](change-log.md). A plan's CAD
+create/move/delete lands in the [change log](change-log.md). A floor plan's
+floors (the stack, **Floor plan stacks** in the change log and the search)
+are audited too, but follow the `floorplan` permission and its site scope:
+viewing, adding floors, ordering, moving, merging and deleting each need the
+matching `floorplan` action, on the floor plans and floors involved. Every
+floor in a move or merge stays at the same site and tenant; a site-limited
+editor works only on the floor plans at their sites. A plan's CAD
 drawing is audited too (**Floor-plan drawings**), but its endpoints and files
 follow the plan's own permission; its files are served only to someone who
 may view the plan, in its tenant, are deleted with it, and are part of a

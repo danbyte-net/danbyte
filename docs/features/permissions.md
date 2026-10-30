@@ -217,8 +217,8 @@ Pick the role, the site(s), and the users or groups to grant it to. Danbyte
 assembles the underlying permissions for you (a site-scoped edit grant plus an
 unscoped read grant for the editor; a single site-scoped read grant for the
 viewer). You can fine-tune or delete those permissions afterwards like any other.
-Site roles built before rooms existed gain them on upgrade; a hand-built
-grant is left alone.
+Site roles built before rooms and floor plan stacks existed gain them on
+upgrade; a hand-built grant is left alone.
 
 Both roles can open the sites they cover. Neither can rename or delete a
 site - that stays with administrators. The roles leave out records synced from

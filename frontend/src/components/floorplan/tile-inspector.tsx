@@ -456,7 +456,9 @@ function LinkTargetPicker({
   const plans = useQuery({
     queryKey: ["floor-plans-picker"],
     queryFn: () =>
-      apiAll<{ id: string; name: string }>("/api/floor-plans/?picker=1"),
+      apiAll<{ id: string; name: string; stack_name: string | null }>(
+        "/api/floor-plans/?picker=1"
+      ),
     enabled: kind === "floorplan",
   })
 
@@ -525,7 +527,13 @@ function LinkTargetPicker({
       onChange={onPick}
       options={(plans.data?.results ?? [])
         .filter((p) => p.id !== planId)
-        .map((p) => ({ value: p.id, label: p.name }))}
+        .map((p) => ({
+          value: p.id,
+          label:
+            p.stack_name && p.stack_name !== p.name
+              ? `${p.stack_name} · ${p.name}`
+              : p.name,
+        }))}
       placeholder="Select a plan…"
       searchPlaceholder="Search plans…"
       emptyText="No other floor plans."

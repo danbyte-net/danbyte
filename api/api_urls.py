@@ -69,6 +69,7 @@ from compliance.api import (
     ComplianceRuleViewSet,
     compliance_device_status,
     compliance_evaluate,
+    compliance_fields,
     compliance_object_types,
     compliance_summary,
     compliance_triage,
@@ -250,6 +251,7 @@ from .viewsets import (
     FHRPGroupViewSet,
     FiberSettingsViewSet,
     FloorPlanRaisedFloorAreaViewSet,
+    FloorPlanStackViewSet,
     FloorPlanTileViewSet,
     FloorPlanTrayViewSet,
     FloorPlanViewSet,
@@ -486,6 +488,7 @@ router.register(r"module-types", ModuleTypeViewSet, basename="module-type")
 router.register(r"topology-views", TopologyViewViewSet, basename="topology-view")
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")
+router.register(r"floor-plan-stacks", FloorPlanStackViewSet, basename="floor-plan-stack")
 router.register(r"floor-plan-tiles", FloorPlanTileViewSet, basename="floor-plan-tile")
 router.register(r"floor-plan-trays", FloorPlanTrayViewSet, basename="floor-plan-tray")
 router.register(
@@ -565,6 +568,7 @@ urlpatterns = [
     path("compliance/summary/", compliance_summary, name="compliance-summary"),
     path("compliance/triage/", compliance_triage, name="compliance-triage"),
     path("compliance/object-types/", compliance_object_types, name="compliance-object-types"),
+    path("compliance/fields/", compliance_fields, name="compliance-fields"),
     path("compliance/devices/<uuid:device_id>/", compliance_device_status,
          name="compliance-device-status"),
     path("eol/settings/", eol_settings, name="eol-settings"),

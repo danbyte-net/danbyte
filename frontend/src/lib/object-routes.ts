@@ -25,6 +25,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.exporttemplate": "/export-templates/$id",
   "api.fhrpgroup": "/fhrp-groups/$id",
   "api.floorplan": "/floorplans/$id",
+  "api.floorplanstack": "/floorplans/stacks/$id",
   "api.floortiletype": "/floor-tile-types/$id",
   "api.interface": "/interfaces/$id",
   "api.ipaddress": "/ips/$id",

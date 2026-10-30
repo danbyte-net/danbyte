@@ -94,7 +94,7 @@ from .models import (
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
     rename_marker_refs,
-    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile, FloorPlanTray,
     FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
@@ -136,6 +136,7 @@ from .serializers import (
     FloorPlanTraySerializer,
     FloorPlanWallSerializer,
     FloorPlanSerializer,
+    FloorPlanStackSerializer,
     FloorPlanTileSerializer,
     SiteMarkerSerializer,
     FloorTileTypeMiniSerializer,
@@ -10636,8 +10637,11 @@ def _clone_drawing(src, dst) -> None:
 
 
 class FloorPlanViewSet(TenantScopedViewSet):
+    """Floor plans' floors. ``?stack=<id>`` lists one floor plan's floors in
+    floor order; ``?location=``, ``?site=``, ``?search=`` filter."""
+
     queryset = (
-        FloorPlan.objects.select_related("location", "location__site", "drawing")
+        FloorPlan.objects.select_related("location", "location__site", "drawing", "stack")
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
     )
@@ -10662,6 +10666,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(location__site_id=site)
+            from .topology_views import _uuid_param
+
+            stack = _uuid_param(self.request.query_params, "stack")
+            if stack:
+                qs = qs.filter(stack_id=stack).order_by("floor_order", NATURAL_NAME, "pk")
         if self.get_serializer_class() is FloorPlanSerializer:
             qs = qs.annotate(tile_count_annotated=_visible_n(self, "tiles"))
         return qs
@@ -10669,12 +10678,78 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def perform_create(self, serializer):
         serializer.save(tenant=self._tenant_or_403())
 
+    def perform_destroy(self, instance):
+        """Delete the floor; a floor plan left without floors goes too."""
+        from .floor_stacks import drop_if_empty
+
+        stack = instance.stack
+        with transaction.atomic():
+            instance.delete()
+            drop_if_empty(stack)
+
+    def _stack_for(self, request, stack_id, action):
+        """The tenant's floor plan ``stack_id`` if the user may ``action`` it
+        (floor plans follow the ``floorplan`` permission), else a 400 that
+        reads like an unknown id."""
+        from auth_api import rbac
+
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        sid = _uuid_param({"stack_id": stack_id}, "stack_id") if stack_id else None
+        qs = FloorPlanStack.objects.filter(tenant=tenant, pk=sid) if sid else \
+            FloorPlanStack.objects.none()
+        stack = rbac.restrict_queryset(
+            qs.select_related("location", "location__site"),
+            request.user, tenant, "floorplan", action,
+        ).first()
+        if stack is None:
+            raise ValidationError({"stack_id": ["Unknown floor plan."]})
+        return stack
+
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, pk=None):
+        """Move this floor to another floor plan at the same site, on top of
+        its floors: ``{"stack_id": "<id>"}``. The floor plan it leaves goes
+        when it has no floors left."""
+        from .floor_stacks import move_floor
+
+        plan = self.get_object()
+        target = self._stack_for(request, request.data.get("stack_id"), "change")
+        with transaction.atomic():
+            move_floor(plan, target)
+            self._assert_bulk_write_in_site_scope([plan.pk])
+        plan.refresh_from_db()
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=["post"], url_path="split")
+    def split(self, request, pk=None):
+        """Make this floor a floor plan of its own: ``{"name": "…"}``
+        (optional; default the floor's name). Answers the new floor plan."""
+        from auth_api import rbac
+
+        from .floor_stacks import split_floor
+
+        tenant = self._tenant_or_403()
+        if not rbac.has_action(request.user, tenant, "floorplan", "add"):
+            raise PermissionDenied("Not allowed.")
+        plan = self.get_object()
+        name = request.data.get("name")
+        with transaction.atomic():
+            stack = split_floor(plan, name if isinstance(name, str) else None)
+            self._assert_bulk_write_in_site_scope([plan.pk])
+        return Response(
+            FloorPlanStackSerializer(stack, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["post"], url_path="clone")
     def clone(self, request, pk=None):
         """Copy the plan with everything drawn on it: tiles (their object
         links included), trays (geometry only - the cables routed through the
         originals stay where they are), raised-floor areas and walls. The
-        copy lands in the same location as "<name> copy"."""
+        copy lands in the same location as "<name> copy", a floor plan of its
+        own (move it into another with ``move/``)."""
         import os
 
         from django.core.files.base import ContentFile
@@ -10691,13 +10766,19 @@ class FloorPlanViewSet(TenantScopedViewSet):
         name, n = base, 2
         while FloorPlan.objects.filter(
             tenant=tenant, location=src.location, name=name
+        ).exists() or FloorPlanStack.objects.filter(
+            tenant=tenant, location=src.location, name=name
         ).exists():
             suffix = f" {n}"
             name = base[: maxlen - len(suffix)] + suffix
             n += 1
-        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at"}
+        skip = {"id", "numid", "name", "background_image", "created_at", "updated_at",
+                "stack", "floor_order"}
         with transaction.atomic():
-            dst = FloorPlan(tenant=tenant, location=src.location, name=name)
+            stack = FloorPlanStack.objects.create(
+                tenant=tenant, location=src.location, name=name,
+            )
+            dst = FloorPlan(tenant=tenant, location=src.location, name=name, stack=stack)
             for f in FloorPlan._meta.concrete_fields:
                 if f.name in skip or f.name in ("tenant", "location"):
                     continue
@@ -11565,6 +11646,195 @@ class SiteMarkerViewSet(TenantScopedViewSet):
             if tile_type:
                 qs = qs.filter(tile_type_id=tile_type)
         return qs
+
+
+class FloorPlanStackViewSet(TenantScopedViewSet):
+    """Floor plans as users see them - a building or hall and its floors
+    (``FloorPlanStack``). Follows the ``floorplan`` permission and its site
+    scope. Filters: ``?location=``, ``?site=``, ``?tag=<slug>``, ``?search=``
+    (also matches floor names). Actions: ``floors/`` adds a floor,
+    ``reorder/`` orders them, ``merge/`` moves other floor plans' floors in;
+    a delete takes the floors with it."""
+
+    queryset = (
+        FloorPlanStack.objects.select_related("location", "location__site")
+        .prefetch_related(TAGS)
+        .order_by(NATURAL_NAME, "pk")
+    )
+    serializer_class = FloorPlanStackSerializer
+    pagination_class = StandardPagination
+    rbac_object_type = "floorplan"
+    rbac_action_map = {"floors": "add", "reorder": "change", "merge": "change"}
+
+    def _floors_qs(self, action="view"):
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(self.request)
+        qs = FloorPlan.objects.filter(tenant=tenant).order_by("floor_order", "name", "pk")
+        return rbac.restrict_queryset(qs, self.request.user, tenant, "floorplan", action)
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = super().get_queryset()
+        if not self.request:
+            return qs
+        qs = qs.prefetch_related(
+            Prefetch("floors", queryset=self._floors_qs(), to_attr="visible_floors")
+        )
+        params = self.request.query_params
+        s = params.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(name__icontains=s) | Q(description__icontains=s)
+                | Q(pk__in=self._floors_qs().filter(name__icontains=s).values("stack_id"))
+            )
+        location = _uuid_param(params, "location")
+        if location:
+            qs = qs.filter(location_id=location)
+        site = _uuid_param(params, "site")
+        if site:
+            qs = qs.filter(location__site_id=site)
+        tag_slugs = [t for t in params.getlist("tag") if t]
+        for slug in tag_slugs:
+            qs = qs.filter(tags__slug=slug)
+        if tag_slugs:
+            qs = qs.distinct()
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        """Delete the floor plan and every floor of it. Refused when one of
+        its floors is outside what the user may delete."""
+        stack = self.get_object()
+        floors = list(FloorPlan.objects.filter(stack=stack))
+        allowed = set(
+            self._floors_qs("delete").filter(stack=stack).values_list("pk", flat=True)
+        )
+        if any(p.pk not in allowed for p in floors):
+            raise PermissionDenied("You may not delete every floor of this floor plan.")
+        with transaction.atomic():
+            for plan in floors:
+                plan.delete()
+            stack.delete()
+        return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+    def _reload(self, stack):
+        return self.get_queryset().get(pk=stack.pk)
+
+    @action(detail=True, methods=["post"], url_path="floors")
+    def floors(self, request, pk=None):
+        """Add a floor: ``{"name", "position"?, "copy_from"?}``. ``position``
+        is its place in the floor order (0 = lowest; default on top);
+        ``copy_from`` (a floor of this floor plan) lends its grid size and
+        scale. Answers the new floor."""
+        from auth_api import rbac
+
+        from .floor_stacks import add_floor
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        # "add" leaves the row unrestricted: the floor plan must be one the
+        # user may see, and the new floor one they may add (site scope).
+        stack = rbac.restrict_queryset(
+            FloorPlanStack.objects.filter(tenant=tenant), request.user, tenant,
+            "floorplan", "view",
+        ).filter(pk=self.get_object().pk).first()
+        if stack is None:
+            raise NotFound()
+        body = request.data
+        position = body.get("position")
+        if position is not None:
+            try:
+                position = int(position)
+            except (TypeError, ValueError):
+                raise ValidationError({"position": ["A whole number."]}) from None
+        copy_from = None
+        if body.get("copy_from"):
+            cid = _uuid_param({"copy_from": body.get("copy_from")}, "copy_from")
+            copy_from = self._floors_qs().filter(pk=cid, stack=stack).first() if cid else None
+            if copy_from is None:
+                raise ValidationError({"copy_from": ["Pick a floor of this floor plan."]})
+        name = body.get("name")
+        with transaction.atomic():
+            plan = add_floor(stack, name if isinstance(name, str) else "",
+                             position=position, copy_from=copy_from)
+            if not rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=plan.pk), request.user, tenant,
+                "floorplan", "add",
+            ).exists():
+                raise PermissionDenied(
+                    "The created or updated object is outside your permission scope."
+                )
+        plan = FloorPlan.objects.select_related("location", "location__site", "stack") \
+            .get(pk=plan.pk)
+        return Response(
+            FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
+            status=drf_status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"], url_path="reorder")
+    def reorder(self, request, pk=None):
+        """Order the floors: ``{"order": [<every floor id, lowest first>]}``."""
+        from .floor_stacks import reorder
+
+        stack = self.get_object()
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            raise ValidationError({"order": ["A list of floor ids."]})
+        allowed = set(self._floors_qs("change").filter(stack=stack).values_list("pk", flat=True))
+        if FloorPlan.objects.filter(stack=stack).exclude(pk__in=allowed).exists():
+            raise PermissionDenied("You may not change every floor of this floor plan.")
+        reorder(stack, order)
+        return Response(self.get_serializer(self._reload(stack)).data)
+
+    @action(detail=True, methods=["post"], url_path="merge")
+    def merge(self, request, pk=None):
+        """Move every floor of other floor plans at the same site into this
+        one: ``{"stacks": [<ids>]}``. Refused, with the clashes listed, when
+        two floors would share a name. The emptied floor plans go."""
+        from auth_api import rbac
+
+        from .floor_stacks import merge_stacks
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        target = self.get_object()
+        raw = request.data.get("stacks")
+        if not isinstance(raw, list) or not raw:
+            raise ValidationError({"stacks": ["Pick at least one other floor plan."]})
+        ids = set()
+        for x in raw:
+            sid = _uuid_param({"id": x}, "id") if isinstance(x, str) else None
+            if not sid:
+                raise ValidationError({"stacks": ["Unknown floor plan."]})
+            ids.add(sid)
+        sources = list(
+            rbac.restrict_queryset(
+                FloorPlanStack.objects.filter(tenant=tenant, pk__in=ids)
+                .select_related("location", "location__site"),
+                request.user, tenant, "floorplan", "change",
+            ).order_by(NATURAL_NAME, "pk")
+        )
+        if len(sources) != len(ids):
+            raise ValidationError({"stacks": ["Unknown floor plan."]})
+        moving = FloorPlan.objects.filter(stack__in=sources)
+        allowed = set(
+            self._floors_qs("change").filter(stack__in=sources).values_list("pk", flat=True)
+        )
+        if moving.exclude(pk__in=allowed).exists():
+            raise PermissionDenied("You may not change every floor of those floor plans.")
+        moved = list(moving.values_list("pk", flat=True))
+        with transaction.atomic():
+            merge_stacks(target, sources)
+            self._assert_bulk_write_in_site_scope([target.pk])
+            if not rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk__in=moved), request.user, tenant,
+                "floorplan", "change",
+            ).count() == len(moved):
+                raise PermissionDenied(
+                    "This update would move objects outside your permission scope."
+                )
+        return Response(self.get_serializer(self._reload(target)).data)
 
 
 class FloorPlanTileViewSet(TenantScopedViewSet):

@@ -211,6 +211,11 @@ is past or ending by the same rule - an install's entered *End of support*,
 else its cycle's end of life. It applies to *End of life* and *Support ending
 or ended*; the violation names the installs.
 
+A [scope](compliance.md#scope-and-conditions) narrows which objects the check
+judges - "production servers must not be end of life" is the scope *Device
+role is any of Server* and *Tags is any of production* with this check. One
+rule can cover devices and virtual machines together.
+
 The failures show up as ordinary violations - the Compliance page, the
 violation markers on the device list, and each device's compliance page. While
 the feature is off these rules report nothing.

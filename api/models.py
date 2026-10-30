@@ -9097,9 +9097,39 @@ class FloorTileType(NumIdMixin, TimestampedModel):
         return self.name
 
 
+class FloorPlanStack(TimestampedModel, TaggableMixin):
+    """A floor plan as an operator sees it: one building or hall and its
+    floors, in order. Each floor is a ``FloorPlan`` (the canvas); the stack
+    only groups and orders them. Shown in the UI as "Floor plan"."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_stacks"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.CASCADE, related_name="floor_plan_stacks"
+    )
+    name = models.CharField(max_length=128)
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = [natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "location", "name"],
+                name="uniq_floorplanstack_tenant_location_name",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """The physical layout of a Location (a room/floor): a grid of placed
-    tiles, optionally over an uploaded blueprint image."""
+    """One floor of a floor plan: the physical layout of a Location as a grid
+    of placed tiles, optionally over an uploaded blueprint image. ``stack``
+    is the floor plan it is a floor of; ``name`` is the floor's own name
+    ("B1", "Ground", "2")."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -9141,18 +9171,67 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # same trick as TopologyView.state, so it evolves without migrations.
     state = models.JSONField(default=dict, blank=True)
     description = models.TextField(blank=True, default="")
+    # The floor plan this is a floor of. RESTRICT: a stack goes only with its
+    # floors (the stack endpoint deletes them first; a location or tenant
+    # delete takes both). Null only for a plan outside any stack.
+    stack = models.ForeignKey(
+        FloorPlanStack, on_delete=models.RESTRICT, null=True, blank=True,
+        related_name="floors",
+    )
+    # Sort key inside the stack, lowest first (negative for basements is fine).
+    floor_order = models.SmallIntegerField(default=0, db_default=0)
+    # Height of the floor above the site's reference level; reserved for a
+    # stacked 3D building.
+    elevation_mm = models.IntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]
         constraints = [
+            # A floor name is unique inside its floor plan, so two buildings
+            # under one location can each have a "1".
+            models.UniqueConstraint(
+                fields=["stack", "name"],
+                condition=models.Q(stack__isnull=False),
+                name="uniq_floorplan_stack_name",
+            ),
             models.UniqueConstraint(
                 fields=["tenant", "location", "name"],
-                name="uniq_floorplan_tenant_location_name",
-            )
+                condition=models.Q(stack__isnull=True),
+                name="uniq_floorplan_unstacked_location_name",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.name
+
+    def save(self, *args, **kwargs):
+        # Every new plan is a floor of some floor plan: one created without a
+        # stack (an import, an older script) gets a stack of its own, named
+        # after it.
+        if self._state.adding and self.stack_id is None and self.tenant_id \
+                and self.location_id:
+            self.stack = FloorPlanStack.objects.create(
+                tenant_id=self.tenant_id, location_id=self.location_id,
+                name=unique_stack_name(self.tenant_id, self.location_id, self.name),
+            )
+        super().save(*args, **kwargs)
+
+
+def unique_stack_name(tenant_id, location_id, base: str, exclude=None) -> str:
+    """``base``, or ``base 2``, ``base 3``… - the first name no floor plan
+    (stack) at that location has yet."""
+    maxlen = FloorPlanStack._meta.get_field("name").max_length
+    base = (base or "Floor plan")[:maxlen]
+    taken = FloorPlanStack.objects.filter(tenant_id=tenant_id, location_id=location_id)
+    if exclude is not None:
+        taken = taken.exclude(pk=exclude)
+    names = set(taken.values_list("name", flat=True))
+    name, n = base, 2
+    while name in names:
+        suffix = f" {n}"
+        name = base[: maxlen - len(suffix)] + suffix
+        n += 1
+    return name
 
 
 def _cad_upload_to(instance, filename: str) -> str:
