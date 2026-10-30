@@ -157,7 +157,7 @@ export function useEditorKeys({
         onPlaceKey()
         return
       }
-      // The tool keys (V, R, Shift+R, T, G, W, C).
+      // The tool keys (V, R, Shift+R, T, G, W, C, S).
       if (bare && canEdit && !view3d && selectTool) {
         const t = toolForKey(e.key, e.shiftKey)
         if (t) {

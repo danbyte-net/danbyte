@@ -74,6 +74,9 @@ export {
 export type { CellPoint, PaletteEntry } from "./canvas-geometry"
 export { tileFill }
 
+/** Rows shown but locked here (a live view's edge rows) draw faded. */
+const LOCKED_OPACITY = 0.5
+
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
   fit: () => void
@@ -230,6 +233,28 @@ export interface FloorCanvasProps {
   selectedShapeId?: string | null
   /** A drawing tool in hand: presses draw instead of selecting. */
   shapeTool?: ShapeTool | null
+  // ── Snapshots ─────────────────────────────────────────────────────────
+  /** The Snapshot tool in hand: a drag on the plan sweeps a rectangle of
+   * whole cells, reported on release. */
+  onSnapshotRect?: (rect: {
+    x: number
+    y: number
+    w: number
+    h: number
+  }) => void
+  /** Rows shown but not editable here: on a live view, the ones crossing
+   * its edge. Dimmed and inert while editing. */
+  lockedIds?: ReadonlySet<string>
+  /** Clip everything to the grid (a live view's objects run past it). */
+  clipToGrid?: boolean
+  /** Where the background image spans, in cells, when it is not the grid
+   * (a live view shows its part of the source's image). */
+  backgroundFrame?: {
+    x: number
+    y: number
+    width: number
+    height: number
+  } | null
   onSelectShape?: (id: string | null) => void
   onChangeShape?: (id: string, patch: Partial<PlanShape>) => void
   onCreateArea?: (geom: NewAreaGeometry) => void
@@ -263,6 +288,7 @@ type DragState =
   | { mode: "resize"; id: string; origin: CellPoint }
   | { mode: "paint"; start: CellPoint; end: CellPoint }
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
+  | { mode: "snapshot"; start: CellPoint; end: CellPoint }
   | { mode: "area-move"; id: string; grabDx: number; grabDy: number }
   | { mode: "area-resize"; id: string; origin: CellPoint }
   | {
@@ -356,6 +382,10 @@ export function FloorCanvas({
   shapes = [],
   selectedShapeId = null,
   shapeTool = null,
+  onSnapshotRect,
+  lockedIds,
+  clipToGrid = false,
+  backgroundFrame = null,
   onSelectShape,
   onChangeShape,
   onCreateArea,
@@ -424,7 +454,11 @@ export function FloorCanvas({
   const free = plan.layout_mode === "free"
   // Areas and labels answer the pointer in Layout mode only.
   // A palette type armed paints tiles over them.
-  const shapesLive = mode === "layout" && !editing && !(editable && armed)
+  const snapshotting = editable && !!onSnapshotRect
+  const shapesLive =
+    mode === "layout" && !editing && !(editable && armed) && !snapshotting
+  /** Shown, but not to be edited here (a live view's edge rows). */
+  const isLocked = (id: string) => editable && !!lockedIds?.has(id)
   const shapeG = useShapeGestures({
     svgRef,
     toWorld,
@@ -636,7 +670,10 @@ export function FloorCanvas({
     // A drawing tool (area, polygon, label) draws wherever it is pressed.
     if (mode === "layout" && shapeG.drawDown(e)) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    if (editable && !armed && e.shiftKey && onMarquee) {
+    if (snapshotting) {
+      const c = toCell(e)
+      drag.current = { mode: "snapshot", start: c, end: c }
+    } else if (editable && !armed && e.shiftKey && onMarquee) {
       // Shift-drag = selection sweep. Plain drag stays panning, so the
       // marquee never fights the hand tool.
       const c = toCell(e)
@@ -660,7 +697,9 @@ export function FloorCanvas({
     // In cable/structure mode (or while editing a tray) tiles are inert.
     if (mode === "cable" || mode === "structure" || editing) return
     // A drawing tool draws over the tile (the press reaches the plan).
-    if (editable && shapeTool) return
+    if (editable && (shapeTool || snapshotting)) return
+    // Locked here (a live view's edge row): the press pans instead.
+    if (isLocked(tile.id)) return
     e.stopPropagation()
     if (!editable) {
       if (onClickTile) onClickTile(tile)
@@ -741,7 +780,7 @@ export function FloorCanvas({
 
   // Grab a tray body → select it; in edit mode, arm a whole-tray move.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
     onSelectTray?.(tray.id)
     if (!editable || !trayEditMode) return
@@ -806,7 +845,7 @@ export function FloorCanvas({
 
   // Grab a wall body → select it; in Structure mode, arm a whole-run move.
   const handleWallDown = (wall: FloorPlanWall, e: React.PointerEvent) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || isLocked(wall.id)) return
     e.stopPropagation()
     onSelectWall?.(wall.id)
     if (!editable) return
@@ -989,6 +1028,9 @@ export function FloorCanvas({
     } else if (d.mode === "marquee") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onMarquee?.(paintRect(d.start, d.end))
+    } else if (d.mode === "snapshot") {
+      paintPreview.current?.setAttribute("visibility", "hidden")
+      onSnapshotRect?.(paintRect(d.start, d.end))
     } else if (d.mode === "area-move" || d.mode === "area-resize") {
       setAreaDraft((draft) => {
         if (draft && draft.id === d.id) {
@@ -1034,7 +1076,11 @@ export function FloorCanvas({
     if (d.mode === "pan") endPan()
     else if (d.mode === "move" || d.mode === "resize" || d.mode === "group")
       onGestureEnd?.()
-    else if (d.mode === "paint" || d.mode === "marquee")
+    else if (
+      d.mode === "paint" ||
+      d.mode === "marquee" ||
+      d.mode === "snapshot"
+    )
       paintPreview.current?.setAttribute("visibility", "hidden")
     setAreaDraft(null)
     setTrayDraft(null)
@@ -1119,7 +1165,10 @@ export function FloorCanvas({
       // (and movable) even when fully covered by racks.
       <g
         key={tile.id}
-        pointerEvents={mode === "structure" ? "none" : undefined}
+        pointerEvents={
+          mode === "structure" || isLocked(tile.id) ? "none" : undefined
+        }
+        opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
         transform={
           residual
             ? `rotate(${residual},${(tile.x + tile.width / 2) * CELL},${(tile.y + tile.height / 2) * CELL})`
@@ -1250,6 +1299,7 @@ export function FloorCanvas({
         style={{
           cursor:
             (armed && editable) ||
+            snapshotting ||
             drawing ||
             onPickPoint ||
             (editable && mode === "layout" && shapeTool)
@@ -1272,14 +1322,26 @@ export function FloorCanvas({
             />
           </pattern>
         </defs>
-        <g transform={`translate(${t.x},${t.y}) scale(${t.k})`}>
+        {clipToGrid && (
+          <defs>
+            <clipPath id={`fp-grid-clip-${plan.id}`}>
+              <rect width={gw} height={gh} />
+            </clipPath>
+          </defs>
+        )}
+        <g
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+          clipPath={clipToGrid ? `url(#fp-grid-clip-${plan.id})` : undefined}
+        >
           {/* Floor surface */}
           <rect width={gw} height={gh} className="fill-muted/30" rx={4} />
           {plan.background_image && (
             <image
               href={plan.background_image}
-              width={gw}
-              height={gh}
+              x={(backgroundFrame?.x ?? 0) * CELL}
+              y={(backgroundFrame?.y ?? 0) * CELL}
+              width={backgroundFrame ? backgroundFrame.width * CELL : gw}
+              height={backgroundFrame ? backgroundFrame.height * CELL : gh}
               opacity={plan.background_opacity / 100}
               preserveAspectRatio="none"
             />
@@ -1318,27 +1380,30 @@ export function FloorCanvas({
             return (
               <g
                 key={a.id}
+                opacity={isLocked(a.id) ? LOCKED_OPACITY : undefined}
                 onPointerDown={
-                  mode === "structure" && editable
-                    ? (e) => {
-                        if (e.button !== 0) return
-                        e.stopPropagation()
-                        onSelectArea?.(a.id)
-                        e.currentTarget.setPointerCapture(e.pointerId)
-                        const c = toCell(e)
-                        drag.current = {
-                          mode: "area-move",
-                          id: a.id,
-                          grabDx: c.x - a.x,
-                          grabDy: c.y - a.y,
-                        }
-                      }
-                    : mode === "structure"
+                  isLocked(a.id)
+                    ? undefined
+                    : mode === "structure" && editable
                       ? (e) => {
+                          if (e.button !== 0) return
                           e.stopPropagation()
                           onSelectArea?.(a.id)
+                          e.currentTarget.setPointerCapture(e.pointerId)
+                          const c = toCell(e)
+                          drag.current = {
+                            mode: "area-move",
+                            id: a.id,
+                            grabDx: c.x - a.x,
+                            grabDy: c.y - a.y,
+                          }
                         }
-                      : undefined
+                      : mode === "structure"
+                        ? (e) => {
+                            e.stopPropagation()
+                            onSelectArea?.(a.id)
+                          }
+                        : undefined
                 }
                 style={{
                   cursor:
@@ -1347,7 +1412,8 @@ export function FloorCanvas({
                         ? "move"
                         : "pointer"
                       : undefined,
-                  pointerEvents: mode === "structure" ? "auto" : "none",
+                  pointerEvents:
+                    mode === "structure" && !isLocked(a.id) ? "auto" : "none",
                 }}
               >
                 <rect
@@ -1411,7 +1477,7 @@ export function FloorCanvas({
                 key={a.id}
                 area={a}
                 selected={a.id === selectedShapeId}
-                interactive={shapesLive}
+                interactive={shapesLive && !isLocked(a.id)}
                 onPointerDown={(e) => shapeG.shapeDown(a, e)}
                 onEdgeDoubleClick={
                   editable && a.id === selectedShapeId
@@ -1451,8 +1517,10 @@ export function FloorCanvas({
               }
               cellMM={plan.cell_mm}
               selected={w.id === selectedWallId}
-              interactive={mode === "structure" && !drawing}
-              editable={editable && mode === "structure" && !drawing}
+              interactive={mode === "structure" && !drawing && !isLocked(w.id)}
+              editable={
+                editable && mode === "structure" && !drawing && !isLocked(w.id)
+              }
               doorArmed={doorArmed}
               onPointerDown={(e) => handleWallDown(w, e)}
               onSegmentClick={(seg, e) => handleWallSegmentClick(w, seg, e)}
@@ -1475,12 +1543,18 @@ export function FloorCanvas({
                       : tray
                   }
                   selected={tray.id === selectedTrayId}
-                  interactive={mode === "cable" && !drawing}
+                  interactive={
+                    mode === "cable" && !drawing && !isLocked(tray.id)
+                  }
                   editable={
-                    editable && mode === "cable" && !drawing && trayEditMode
+                    editable &&
+                    mode === "cable" &&
+                    !drawing &&
+                    trayEditMode &&
+                    !isLocked(tray.id)
                   }
                   editing={isEditing}
-                  dimmed={false}
+                  dimmed={isLocked(tray.id)}
                   onPointerDown={(e) => handleTrayDown(tray, e)}
                   onDoubleClick={() => onSelectTray?.(tray.id)}
                   onVertexDown={(index, e) => handleVertexDown(tray, index, e)}
@@ -1541,7 +1615,7 @@ export function FloorCanvas({
                 key={l.id}
                 label={l}
                 cellMm={plan.cell_mm}
-                interactive={shapesLive && editable}
+                interactive={shapesLive && editable && !isLocked(l.id)}
                 onPointerDown={(e) => shapeG.shapeDown(l, e)}
               />
             ))}

@@ -65,15 +65,17 @@ def _ref(obj, *fields):
 
 
 def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
-              near_location=None, unplaced=False, include_here=False, limit=50):
+              near_location=None, unplaced=False, include_here=False, limit=50,
+              view=None):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
     location and the locations inside it, 2 for the rest of the site.
     ``unplaced`` keeps only objects of the floor's location (or its rooms)
-    placed on no plan; with ``include_here`` a tile on ``plan`` itself does
-    not count, those objects coming last - the editor weighs them against
-    its unsaved draft. A device in a rack or a cabinet is placed with it and
-    never offered on its own."""
+    placed on no plan; with ``include_here`` a tile on this floor does not
+    count, those objects coming last - the editor weighs them against its
+    unsaved draft. A device in a rack or a cabinet is placed with it and
+    never offered on its own. ``view`` - ``(source, crop)`` when ``plan`` is
+    a live view: "this floor" is then the source's tiles inside the crop."""
     from auth_api import rbac
 
     site_id = plan.location.site_id
@@ -88,6 +90,7 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     visible_plans = rbac.restrict_queryset(
         plan.__class__.objects.filter(tenant=tenant), user, tenant, "floorplan", "view"
     )
+    here_floor = view[0] if view is not None else plan
     rows = []
     for kind, (model, slug, link) in PLACEABLE.items():
         if kinds and kind not in kinds:
@@ -105,8 +108,8 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
                 Q(location_id__in=floor_locs) | Q(room__location_id__in=floor_locs)
             )
             if include_here:
-                qs = qs.exclude(Exists(tiles.exclude(floor_plan=plan))).annotate(
-                    here=Exists(tiles.filter(floor_plan=plan))
+                qs = qs.exclude(Exists(tiles.exclude(floor_plan=here_floor))).annotate(
+                    here=Exists(tiles.filter(floor_plan=here_floor))
                 )
                 here_first = ("here",)
             else:
@@ -130,6 +133,13 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     rows = rows[:limit]
 
     # Where each candidate already stands: one query per kind present.
+    here_plan, here_tiles = plan.pk, None
+    if view is not None:
+        from .floor_plan_snapshots import in_crop
+
+        src, crop = view
+        here_plan = src.pk
+        here_tiles = {t.pk for t, _e in in_crop("tiles", src.tiles.all(), crop)}
     placed: dict = {}
     for kind, (_model, _slug, link) in PLACEABLE.items():
         ids = [o.pk for k, _l, o in rows if k == kind]
@@ -149,7 +159,8 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
                     "floor_plan": {"id": str(plan_id), "name": plan_name,
                                    "stack": stack_name or ""},
                     "tile_id": str(tile_id),
-                    "this_floor": plan_id == plan.pk,
+                    "this_floor": plan_id == here_plan
+                    and (here_tiles is None or tile_id in here_tiles),
                 })
     photos = object_photos([(k, o) for k, _l, o in rows], user, tenant)
     out = []

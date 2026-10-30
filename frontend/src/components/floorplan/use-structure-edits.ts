@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 
+import { viaQuery } from "./snapshot"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { PlanEditState } from "./use-plan-edit-state"
 
@@ -32,6 +33,8 @@ export function useStructureEdits({
   ed: PlanEditState
 }) {
   const qc = useQueryClient()
+  // On a live view the rows are its source's: each write says so.
+  const via = viaQuery(plan)
   const {
     areaArmed,
     setAreaArmed,
@@ -50,7 +53,7 @@ export function useStructureEdits({
   }
   const createArea = useMutation({
     mutationFn: (rect: { x: number; y: number; w: number; h: number }) =>
-      api<RaisedFloorArea>("/api/floor-plan-raised-floors/", {
+      api<RaisedFloorArea>(`/api/floor-plan-raised-floors/${via}`, {
         method: "POST",
         body: JSON.stringify({
           floor_plan_id: id,
@@ -75,7 +78,7 @@ export function useStructureEdits({
       areaId: string
       body: Partial<RaisedFloorArea>
     }) =>
-      api<RaisedFloorArea>(`/api/floor-plan-raised-floors/${areaId}/`, {
+      api<RaisedFloorArea>(`/api/floor-plan-raised-floors/${areaId}/${via}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
@@ -89,7 +92,7 @@ export function useStructureEdits({
   })
   const deleteArea = useMutation({
     mutationFn: (areaId: string) =>
-      api<void>(`/api/floor-plan-raised-floors/${areaId}/`, {
+      api<void>(`/api/floor-plan-raised-floors/${areaId}/${via}`, {
         method: "DELETE",
       }),
     onSuccess: () => {
@@ -114,7 +117,7 @@ export function useStructureEdits({
   }
   const createWall = useMutation({
     mutationFn: (payload: FloorPlanWallWritePayload) =>
-      api<FloorPlanWall>("/api/floor-plan-walls/", {
+      api<FloorPlanWall>(`/api/floor-plan-walls/${via}`, {
         method: "POST",
         body: JSON.stringify({ ...payload, floor_plan_id: id }),
       }),
@@ -133,7 +136,7 @@ export function useStructureEdits({
       wallId: string
       body: FloorPlanWallWritePayload
     }) =>
-      api<FloorPlanWall>(`/api/floor-plan-walls/${wallId}/`, {
+      api<FloorPlanWall>(`/api/floor-plan-walls/${wallId}/${via}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
@@ -147,7 +150,7 @@ export function useStructureEdits({
   })
   const deleteWall = useMutation({
     mutationFn: (wallId: string) =>
-      api<void>(`/api/floor-plan-walls/${wallId}/`, { method: "DELETE" }),
+      api<void>(`/api/floor-plan-walls/${wallId}/${via}`, { method: "DELETE" }),
     onSuccess: () => {
       invalidateWalls()
       setSelectedWallId(null)
@@ -194,7 +197,7 @@ export function useStructureEdits({
   }
   const createTray = useMutation({
     mutationFn: (payload: FloorPlanTrayWritePayload) =>
-      api<FloorPlanTray>("/api/floor-plan-trays/", {
+      api<FloorPlanTray>(`/api/floor-plan-trays/${via}`, {
         method: "POST",
         body: JSON.stringify({ ...payload, floor_plan_id: id }),
       }),
@@ -213,7 +216,7 @@ export function useStructureEdits({
       trayId: string
       patch: FloorPlanTrayWritePayload
     }) =>
-      api<FloorPlanTray>(`/api/floor-plan-trays/${trayId}/`, {
+      api<FloorPlanTray>(`/api/floor-plan-trays/${trayId}/${via}`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),
@@ -222,7 +225,7 @@ export function useStructureEdits({
   })
   const deleteTray = useMutation({
     mutationFn: (trayId: string) =>
-      api<void>(`/api/floor-plan-trays/${trayId}/`, { method: "DELETE" }),
+      api<void>(`/api/floor-plan-trays/${trayId}/${via}`, { method: "DELETE" }),
     onSuccess: () => {
       invalidateTrays()
       setSelectedTrayId(null)
