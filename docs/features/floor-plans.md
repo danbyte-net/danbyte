@@ -708,6 +708,12 @@ to **Select** and the inspector shows the new area:
   its name - and shows its name; a plain area takes a colour of its own.
   Linking never changes anything about the room or the devices standing in
   it: a device's room is set on the device.
+- **Room colour** (or **Location colour**) is the linked room's or
+  location's own colour, not the area's. With permission to change the room
+  (or location) you can change it here: it is written to the room itself -
+  checked and logged like an edit on the room's page - and every area of
+  that room, on every floor, and its badge everywhere take the new colour.
+  Without that permission the colour shows read-only.
 - **Name** overrides the linked name on the plan.
 - **Fill** (opacity), **Border** (solid, dashed or none), **Show the name**,
   and the **Rotation** of a rectangle in degrees.
