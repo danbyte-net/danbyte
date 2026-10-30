@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0230_floor_plan_snapshots'),
+        ('api', '0231_floor_plan_site'),
     ]
 
     operations = [
