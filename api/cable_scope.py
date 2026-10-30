@@ -117,3 +117,18 @@ def can_act_on_cable(user, tenant, action: str, cable) -> bool:
     return restrict_cables(
         Cable.objects.filter(pk=cable.pk, tenant=tenant), user, tenant, action
     ).exists()
+
+
+def viewable_cable_ids(user, tenant, pks) -> set:
+    """Of ``pks``, the cables ``user`` may view in ``tenant``: the rows
+    ``/api/cables/`` lists. A superuser sees every one without a query.
+    Floor plans, trays and cable routes name only these."""
+    pks = {pk for pk in pks if pk is not None}
+    if not pks:
+        return set()
+    if getattr(user, "is_superuser", False):
+        return pks
+    if tenant is None:
+        return set()
+    qs = Cable.objects.filter(pk__in=pks, tenant=tenant)
+    return set(restrict_cables(qs, user, tenant, "view").values_list("pk", flat=True))

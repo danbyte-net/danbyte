@@ -5320,7 +5320,7 @@ class CableViewSet(TenantScopedViewSet):
         from .models import FloorPlan
         from .pathfinding import (
             estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
+            tray_elevations, underfloor_plenum_mm,
         )
 
         cable = self.get_object()
@@ -5351,20 +5351,23 @@ class CableViewSet(TenantScopedViewSet):
         a, b, rack_a, rack_b = resolved
 
         trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
+        # Plenum-aware drops: an underfloor run dives as deep as the raised
+        # floor beneath it, not a constant.
+        area_rects = [
+            (r.x, r.y, r.width, r.height, r.plenum_mm)
+            for r in plan.raised_floor_areas.all()
+        ]
+        # Runs crossing at different heights do not join.
+        result = route_through_trays(
+            a, b, [t.points for t in trays],
+            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
+        )
         if not result.reachable:
             return Response({
                 "reachable": False,
                 "detail": "No tray path connects the two ends on this plan.",
             })
         used = [trays[i] for i in result.tray_indexes]
-
-        # Plenum-aware drops: an underfloor run dives as deep as the raised
-        # floor beneath it, not a constant.
-        area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
-        ]
 
         def _drop(rack, tray):
             if tray is None:
@@ -11665,7 +11668,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         drops + slack)."""
         from .pathfinding import (
             estimate_length_m, rack_drop_mm, route_through_trays,
-            underfloor_plenum_mm,
+            tray_elevations, underfloor_plenum_mm,
         )
 
         plan = self.get_object()
@@ -11677,15 +11680,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
         a, b, rack_a, rack_b = ends
 
         trays = list(plan.trays.all())
-        result = route_through_trays(a, b, [t.points for t in trays])
-        used = [trays[i] for i in result.tray_indexes]
-
         # Plenum-aware drops: an underfloor run dives as deep as the raised
         # floor beneath it, not a constant.
         area_rects = [
-            (a.x, a.y, a.width, a.height, a.plenum_mm)
-            for a in plan.raised_floor_areas.all()
+            (r.x, r.y, r.width, r.height, r.plenum_mm)
+            for r in plan.raised_floor_areas.all()
         ]
+        # Runs crossing at different heights do not join.
+        result = route_through_trays(
+            a, b, [t.points for t in trays],
+            elevations=tray_elevations(trays, plan.ceiling_mm, area_rects),
+        )
+        used = [trays[i] for i in result.tray_indexes]
 
         def _drop(rack, tray):
             if tray is None:
@@ -11867,23 +11873,40 @@ class FloorPlanViewSet(TenantScopedViewSet):
         device-linked tile, else the device's rack or cabinet tile - so the canvas can
         draw the physical A↔B run. Includes cables routed through a tray here,
         AND any cable whose ends are both placed on the plan (drawn straight
-        when it has no tray)."""
+        when it has no tray).
+
+        Only the cables the reader may view are listed - the scope of
+        ``/api/cables/`` (tenant, cable grants and their sites);
+        ``hidden_count`` counts the others. An end on a device the reader may
+        not view keeps its tile but reads ``{"device": null, "port": null,
+        "hidden": true}`` (#453). Only tiles the reader may view are named.
+        The query count does not grow with the cables."""
+        from django.db.models import Prefetch
+
+        from auth_api import rbac
+
         from . import floor_plan_snapshots as snaps
+        from .cable_scope import viewable_cable_ids
         from .models import Cable, CableTermination, Device
 
         plan = self.get_object()
         plan, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        user = request.user
+        # tile lookups: device / rack / cabinet → tile (first placed wins),
+        # over the tiles the reader may view, as contents/ lists them.
+        device_tile: dict = {}
+        rack_tile: dict = {}
+        cabinet_tile: dict = {}
+        tiles = rbac.restrict_queryset(
+            plan.tiles.all(), user, tenant, "floorplantile", "view"
+        )
         shown_trays = None
-        tiles = plan.tiles.all()
         if crop is not None:
             tiles = [t for t, _e in snaps.in_crop("tiles", tiles, crop)]
             shown_trays = {
                 tr.pk for tr, _e in snaps.in_crop("trays", plan.trays.all(), crop)
             }
-        # tile lookups: device / rack / cabinet → tile (first placed wins).
-        device_tile: dict = {}
-        rack_tile: dict = {}
-        cabinet_tile: dict = {}
         for t in tiles:
             if t.device_id:
                 device_tile.setdefault(t.device_id, str(t.id))
@@ -11908,10 +11931,26 @@ class FloorPlanViewSet(TenantScopedViewSet):
             if field in ("power_feed", "circuit_termination"):
                 continue  # neither hangs off a device
             touches_placed |= Q(**{f"terminations__{field}__device_id__in": placed_device_ids})
-        cables = (
-            Cable.objects.filter(Q(trays__floor_plan=plan) | touches_placed)
-            .distinct()
-            .prefetch_related("terminations", "trays")
+        candidates = set(
+            Cable.objects.filter(tenant=tenant)
+            .filter(Q(trays__floor_plan=plan) | touches_placed)
+            .values_list("id", flat=True)
+        )
+        visible = viewable_cable_ids(user, tenant, candidates)
+        # Each end's port comes in the termination's own query: term.point
+        # over a bare prefetch read one query per termination.
+        cables = list(
+            Cable.objects.filter(pk__in=visible)
+            .order_by("created_at", "pk")
+            .prefetch_related(
+                Prefetch(
+                    "terminations",
+                    queryset=CableTermination.objects.select_related(
+                        *CableTermination.POINT_FIELDS
+                    ),
+                ),
+                "trays",
+            )
         )
         # Devices we may need a rack for (those not directly tiled).
         wanted_devices = set()
@@ -11933,6 +11972,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 id__in=wanted_devices
             ).values_list("id", "rack_id", "cabinet_id")
         }
+        # An end on a device the reader may not view is named Hidden.
+        viewable = None if user.is_superuser else rbac.ViewableRows(user, tenant)
+        if viewable is not None:
+            viewable.prime("device", wanted_devices)
 
         def tile_for(dev_id):
             if dev_id is None:
@@ -11944,6 +11987,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 return rack_tile[rack_id]
             return cabinet_tile.get(cabinet_id) if cabinet_id else None
 
+        def point_for(dev_id, port):
+            if viewable is not None and not viewable.may_view("device", dev_id):
+                return {"device": None, "port": None, "hidden": True}
+            return {"device": str(dev_id), "port": port}
+
         result = []
         for cable in cables:
             a_tiles, b_tiles = [], []
@@ -11953,9 +12001,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 if tile_id is None:
                     continue
                 (a_tiles if end == "A" else b_tiles).append(tile_id)
-                (a_points if end == "A" else b_points).append(
-                    {"device": str(dev_id), "port": port}
-                )
+                (a_points if end == "A" else b_points).append(point_for(dev_id, port))
             result.append(
                 {
                     "id": str(cable.id),
@@ -11974,7 +12020,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     ],
                 }
             )
-        return Response({"cables": result})
+        return Response({"cables": result, "hidden_count": len(candidates - visible)})
 
     @action(detail=True, methods=["post"], url_path="background",
             parser_classes=[MultiPartParser, FormParser])

@@ -1,0 +1,213 @@
+{
+  "about": "Shared by api/tests_pathfinding.py (route_through_trays) and cable-route.test.ts (routeCable): the two routers must agree. Coordinates in cells, elevations in mm; levels=false routes without elevations (the site map). run is the path length in cells; trays_used the tray indexes the path rides (server only).",
+  "cases": [
+    {
+      "name": "same-level crossing joins",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 0],
+            [5, 10]
+          ],
+          "elevation_mm": 2700
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 12
+    },
+    {
+      "name": "crossing within 300 mm joins",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 0],
+            [5, 10]
+          ],
+          "elevation_mm": 2400
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 12
+    },
+    {
+      "name": "overhead over underfloor is not a junction",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 0],
+            [5, 10]
+          ],
+          "elevation_mm": -300
+        }
+      ],
+      "reachable": false,
+      "trays_used": [],
+      "run": 8.485281
+    },
+    {
+      "name": "a vertex dropped onto another level joins",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 5],
+            [5, 10]
+          ],
+          "elevation_mm": -300
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 12
+    },
+    {
+      "name": "the other level is no shortcut",
+      "a": [0, 4],
+      "b": [10, 4],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [3, 5],
+            [3, 15],
+            [7, 15],
+            [7, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [2, 8],
+            [8, 8]
+          ],
+          "elevation_mm": -300
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 32
+    },
+    {
+      "name": "an unknown elevation joins every crossing",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": true,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 0],
+            [5, 10]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 12
+    },
+    {
+      "name": "without levels every crossing joins",
+      "a": [0, 4],
+      "b": [6, 10],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [5, 0],
+            [5, 10]
+          ],
+          "elevation_mm": -300
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 12
+    },
+    {
+      "name": "without levels the crossing is a shortcut",
+      "a": [0, 4],
+      "b": [10, 4],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [3, 5],
+            [3, 15],
+            [7, 15],
+            [7, 5],
+            [10, 5]
+          ],
+          "elevation_mm": 2700
+        },
+        {
+          "points": [
+            [2, 8],
+            [8, 8]
+          ],
+          "elevation_mm": -300
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0, 1],
+      "run": 18
+    }
+  ]
+}

@@ -1239,10 +1239,13 @@ through each one. Hand the PNG to whoever's pulling cable.
   keep both visible).
 - **Assign cables**: select a tray → its inspector lists the cables in it,
   with **Add cable** (searches all cables) and a × to remove. The tray shows
-  its cable count on the canvas and in the rail.
+  its cable count on the canvas and in the rail. It lists only the cables you
+  may view; adding or removing one needs **change** on that cable, and the
+  cables you cannot see stay in the tray when you save
+  ([permissions](#tenancy-permissions-audit)).
 - **Auto-route**: on a cable's page, the **Auto-route** button computes the
   best path through this plan's tray network (Dijkstra over segments,
-  junctions and crossings), assigns those trays to the cable, and estimates
+  junctions and same-level crossings), assigns those trays to the cable, and estimates
   its physical length - horizontal run × cell size, plus the vertical drops
   between each end rack and its tray, plus 10 % slack. A recorded length is
   never overwritten (the API accepts `overwrite: true`). Ends farther than
@@ -1290,8 +1293,14 @@ the cursor **magnetically snaps** to nearby trays so the joins land exactly:
 2. **T-split.** Draw a branch that starts (or ends) on the middle of another
    tray - it snaps to that tray's line, creating a T-junction the cable can
    turn through.
-3. **Crossing.** Two trays that simply cross each other are joined at the
-   crossing automatically - no click needed.
+3. **Crossing.** Two trays at the same level that simply cross each other
+   are joined at the crossing automatically - no click needed. "The same
+   level" means their elevations (set, or derived from the level) are within
+   300 mm. An overhead ladder passing over an underfloor tray is **not** a
+   junction: a cable cannot turn from one onto the other there, and a route
+   that needs that turn comes back unreachable. To take a cable from one
+   level to the other, end one tray on the other (1 or 2) - a snapped vertex
+   is a drop and always joins.
 
 **Editing a tray.** Select a tray (Cables mode) and drag its **body** to move
 the run or a **vertex dot** to reshape - both snap to the grid and
@@ -1337,8 +1346,8 @@ cable in a tray's inspector to **highlight** its run (animated).
 
 **Assigning a cable to several trays** is how branching works: add the cable
 to each tray it passes through (a main run plus a branch, say). The trace
-stitches them at their junctions - including where two trays **cross
-mid-run** - and takes the branch toward the destination.
+stitches them at their junctions - including where two trays at the same
+level **cross mid-run** - and takes the branch toward the destination.
 
 **Tracing a single cable - no Cables mode needed.** With **Display → Cable
 links** on, just **click any cable line** (in Layout *or* Cables mode) to
@@ -1633,6 +1642,24 @@ devices, racks, cabinets - by that kind's view grant and site scope; a
 tile's photo shows only to someone who may view its device or rack; and a
 room set from the prompt or **Set rooms from areas** needs `change` on
 each object and is audited on it.
+
+Cables on a plan follow the cable grant, as `/api/cables/` does: the tenant,
+the grant's constraints and its sites (a site-limited cable grant covers a
+cable only when every end is at its sites). A site viewer role holds no cable
+grant, so it sees the trays but no cables. Where a plan names cables:
+
+- `GET /api/floor-plans/{id}/cable-paths/` (the A↔B runs, the trace, the 3D
+  room and what the PNG and PDF draw) lists only the cables you may view, and
+  `hidden_count` counts the others. An end on a device you may not view keeps
+  its tile but reads `{"device": null, "port": null, "hidden": true}`; ends
+  on tiles you may not view are left out.
+- A tray's `cables`, in its own API and in `contents/`, lists only the cables
+  you may view; `hidden_cable_count` counts the others.
+- Writing a tray's `cable_ids` sets the cables you can see: the ones you
+  cannot see stay in the tray. A cable you may not view answers as unknown,
+  and each cable added or removed needs **change** on that cable, else the
+  save is refused with a `cable_ids` error naming it. Superusers set the
+  whole list.
 
 ## Popover fields
 

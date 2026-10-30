@@ -1590,7 +1590,10 @@ export function FloorCanvas({
                   (highlightCableIds.includes(b.id) ? 1 : 0)
               )
               .map((cp) => {
-                const route = cableRoutePoints(cp, trays, tiles)
+                const route = cableRoutePoints(cp, trays, tiles, {
+                  ceilingMm: plan.ceiling_mm,
+                  areas: raisedFloors,
+                })
                 if (route.length < 2) return null
                 const hi = highlightCableIds.includes(cp.id)
                 return (
