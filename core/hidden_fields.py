@@ -123,12 +123,17 @@ ROW_TEXT_RELATIONS: dict[str, str] = {"api.supportcoverage": "contract"}
 #: Types whose stored name is built from gated relations, so a reader who may
 #: not view one reads the name masked: ``{label: (field, masker)}``. A
 #: generated application flow is named after the hosts at its ends (#453),
-#: and an excluded pair keeps that name as its label. The masker
-#: (``api.flow_names.FlowNames``) is the one answer the API, the export, the
-#: templates, search, custom-field labels and the change log read.
-MASKED_NAMES: dict[str, tuple[str, str]] = {
+#: also once detached or released, and an excluded pair keeps that name as
+#: its label. The masker (``api.flow_names.FlowNames``) is the one answer the
+#: API, the export, the templates, search, custom-field labels and the change
+#: log read; its ``hidden_attrs`` are what else a template may not print (a
+#: pair's ``binding_key``, which names its rows by id). A support coverage
+#: row has no name field, but the change log titles it after its device
+#: (``api.coverage_names.CoverageNames``).
+MASKED_NAMES: dict[str, tuple[str | None, str]] = {
     "api.applicationflow": ("name", "api.flow_names.FlowNames"),
     "api.applicationflowrequirementexclusion": ("label", "api.flow_names.FlowNames"),
+    "api.supportcoverage": (None, "api.coverage_names.CoverageNames"),
 }
 
 
@@ -227,8 +232,12 @@ class RowFieldGate:
         if attr in self.fields(model):
             return True
         named = MASKED_NAMES.get(model._meta.label_lower)
-        if named is not None and attr == named[0] and self._masks(obj):
-            return True
+        if named is not None:
+            masker = self._masker(model)
+            if masker is not None and (
+                (attr == named[0] and masker.masks(obj)) or attr in masker.hidden_attrs(obj)
+            ):
+                return True
         rel = self._relation(model, attr)
         if rel is None:
             return False

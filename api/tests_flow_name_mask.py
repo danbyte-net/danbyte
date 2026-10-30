@@ -292,7 +292,236 @@ class AgentTests(_Fixture):
         self.assertTrue(any("name" in e["changes"] for e in entries))
 
 
+class ReleasedFlowTests(_Fixture):
+    """A detached or released flow is hand-made, but its name was built from
+    the hosts at its ends: it reads masked until someone renames it."""
+
+    def _detach(self):
+        self.login(self.admin)
+        r = self.client.post(f"{FLOWS}{self.far.pk}/detach/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.far.refresh_from_db()
+        self.assertFalse(self.far.generated)
+        self.assertTrue(self.far.name_generated)
+        self.login(self.viewer)
+
+    def _release(self):
+        self.far.overridden_fields = ["ports"]
+        self.far.ports = "5671"
+        self.far.save()
+        fr.release_all(self.req)
+        self.far.refresh_from_db()
+        self.assertEqual((self.far.generated, self.far.requirement_id), (False, None))
+        self.assertTrue(self.far.name_generated)
+
+    def _reads(self, user=None):
+        if user is not None:
+            self.login(user)
+        return self.get(f"{FLOWS}{self.far.pk}/").json()["name"]
+
+    def test_a_detached_flow_reads_masked_everywhere(self):
+        self._detach()
+        self.assertEqual(self._reads(), self.masked)
+        rows = self.get(f"{FLOWS}?picker=1&application={self.wms.pk}").json()["results"]
+        self.assertMasked(json.dumps(rows))
+        self.assertFalse(self.get(f"{FLOWS}?search=broker-b").json()["results"])
+        r = self.get(f"/api/changelog/?object_type=api.applicationflow&object_id={self.far.pk}")
+        self.assertMasked(r.content.decode())
+        self.assertTrue(all(x["object_repr"] == self.masked for x in r.json()["results"]))
+        found = self.get("/api/changelog/?search=broker-b").json()["results"]
+        self.assertFalse([x for x in found if x["object_type"] == "api.applicationflow"])
+        r = self.get("/api/io/applicationflow/export/?fmt=json")
+        self.assertMasked(b"".join(r.streaming_content).decode())
+
+    def test_a_released_flow_reads_masked(self):
+        self._release()
+        self.assertEqual(self._reads(), self.masked)
+        r = self.get(f"/api/changelog/?object_type=api.applicationflow&object_id={self.far.pk}")
+        self.assertMasked(r.content.decode())
+
+    def test_reader_of_both_sites_and_superuser_read_the_name(self):
+        self._detach()
+        self.assertEqual(self._reads(self.both), self.far.name)
+        self.assertEqual(self._reads(self.admin), self.far.name)
+
+    def test_renaming_takes_the_name(self):
+        self._detach()
+        self.login(self.admin)
+        r = self.client.patch(f"{FLOWS}{self.far.pk}/", {"name": "Broker uplink"},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.far.refresh_from_db()
+        self.assertFalse(self.far.name_generated)
+        self.assertEqual(self._reads(self.viewer), "Broker uplink")
+        # The rename's own entry: the old name stays masked, the new one is
+        # the user's.
+        rows = self.get(f"/api/changelog/?object_type=api.applicationflow"
+                        f"&object_id={self.far.pk}").json()["results"]
+        renamed = next(x for x in rows if "name" in x["changes"])
+        self.assertEqual(renamed["changes"]["name"],
+                         {"old": self.masked, "new": "Broker uplink"})
+
+    def test_repeating_the_masked_name_keeps_it(self):
+        self._detach()
+        editor = self._user("editor-a", [self.site_a])
+        perm = ObjectPermission.objects.create(
+            name="flows-a", object_types=["applicationflow"], actions=["change"],
+            enabled=True)
+        perm.tenants.add(self.tenant)
+        perm.users.add(editor)
+        perm.sites.add(self.site_a)
+        self.login(editor)
+        r = self.client.patch(f"{FLOWS}{self.far.pk}/",
+                              {"name": self.masked, "description": "y"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["name"], self.masked)
+        kept = ApplicationFlow.objects.get(pk=self.far.pk)
+        self.assertEqual((kept.name, kept.name_generated, kept.description),
+                         (self.far.name, True, "y"))
+
+    def test_history_written_before_the_flag_reads_masked(self):
+        self._detach()
+        for e in ChangeLogEntry.objects.filter(object_id=str(self.far.pk)):
+            for snap in (e.pre_change, e.post_change):
+                if isinstance(snap, dict):
+                    snap.pop("name_generated", None)
+            e.save(update_fields=["pre_change", "post_change"])
+        r = self.get(f"/api/changelog/?object_type=api.applicationflow&object_id={self.far.pk}")
+        self.assertMasked(r.content.decode())
+
+    def test_migration_marks_detached_and_released_flows(self):
+        import importlib
+
+        from django.apps import apps
+
+        mig = importlib.import_module("api.migrations.0228_applicationflow_name_generated")
+        self._detach()
+        ApplicationFlow.objects.update(name_generated=False)
+        renamed = self.near
+        self.login(self.admin)
+        r = self.client.post(f"{FLOWS}{renamed.pk}/detach/")
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.patch(f"{FLOWS}{renamed.pk}/", {"name": "mine → there"},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        ApplicationFlow.objects.update(name_generated=False)
+        mig.mark_generated_names(apps, None)
+        self.far.refresh_from_db()
+        renamed.refresh_from_db()
+        self.assertTrue(self.far.name_generated)
+        self.assertFalse(renamed.name_generated)
+        self.assertTrue(all(ApplicationFlow.objects.filter(generated=True)
+                            .values_list("name_generated", flat=True)))
+
+
+class BindingKeyTests(_Fixture):
+    """A pair's binding key names its address and device by id: a reader who
+    may not view one reads it as null, and Restore goes by the exclusion's
+    id."""
+
+    def setUp(self):
+        super().setUp()
+        self.key = self.far.binding_key
+        self.ids = {str(self.broker_b.pk), str(self.broker_b.primary_ip_id)}
+        self.assertTrue(all(i in self.key for i in self.ids))
+
+    def assertNoIds(self, text):
+        for i in self.ids:
+            self.assertNotIn(i, text)
+
+    def _exclude(self):
+        self.login(self.admin)
+        r = self.client.delete(f"{FLOWS}{self.far.pk}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        self.login(self.viewer)
+
+    def test_excluded_pair_key_is_null(self):
+        self._exclude()
+        r = self.get(f"{REQS}{self.req.pk}/")
+        self.assertNoIds(r.content.decode())
+        (row,) = r.json()["exclusions"]
+        self.assertIsNone(row["binding_key"])
+        self.assertTrue(row["id"])
+        (row,) = self.get(f"{REQS}{self.req.pk}/exclusions/").json()
+        self.assertIsNone(row["binding_key"])
+        for user in (self.both, self.admin):
+            self.login(user)
+            (row,) = self.get(f"{REQS}{self.req.pk}/exclusions/").json()
+            self.assertEqual(row["binding_key"], self.key)
+
+    def test_restore_goes_by_the_exclusion_id(self):
+        self._exclude()
+        (row,) = self.get(f"{REQS}{self.req.pk}/exclusions/").json()
+        self.login(self.admin)
+        r = self.client.delete(f"{REQS}{self.req.pk}/exclusions/{row['id']}/")
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertTrue(ApplicationFlow.objects.filter(requirement=self.req,
+                                                       binding_key=self.key).exists())
+
+    def test_change_log_nulls_the_key(self):
+        self._exclude()
+        url = f"/api/changelog/?object_type=api.applicationflow&object_id={self.far.pk}"
+        rows = self.get(url).json()["results"]
+        self.assertTrue(rows)
+        for row in rows:
+            detail = self.get(f"/api/changelog/{row['id']}/")
+            self.assertNoIds(detail.content.decode())
+            for snap in (detail.json()["pre_change"], detail.json()["post_change"]):
+                if snap:
+                    self.assertIsNone(snap["binding_key"])
+        self.as_both()
+        row = self.get(url).json()["results"][-1]
+        detail = self.get(f"/api/changelog/{row['id']}/").json()
+        self.assertEqual(detail["post_change"]["binding_key"], self.key)
+
+    def test_excluded_pair_entry_nulls_the_key(self):
+        # Excluded pairs are not a grantable type: the masker answers for
+        # whoever reads their entries.
+        from api.flow_names import FlowNames
+
+        self._exclude()
+        entry = ChangeLogEntry.objects.get(
+            object_type="api.applicationflowrequirementexclusion")
+        data = {"object_repr": entry.object_repr, "changes": dict(entry.changes or {}),
+                "post_change": dict(entry.post_change)}
+        shown = FlowNames(self.viewer, self.tenant).mask_history(entry, dict(data))
+        self.assertIsNone(shown["post_change"]["binding_key"])
+        self.assertNoIds(json.dumps(shown, default=str))
+        kept = FlowNames(self.both, self.tenant).mask_history(entry, dict(data))
+        self.assertEqual(kept["post_change"]["binding_key"], self.key)
+
+    def test_export_leaves_the_key_out(self):
+        r = self.get("/api/io/applicationflow/export/?fmt=json")
+        body = b"".join(r.streaming_content).decode()
+        self.assertNoIds(body)
+        far = next(x for x in json.loads(body) if x["id"] == str(self.far.pk))
+        self.assertEqual(far["binding_key"], "")
+        near = next(x for x in json.loads(body) if x["id"] == str(self.near.pk))
+        self.assertEqual(near["binding_key"], self.near.binding_key)
+        self.as_both()
+        r = self.get("/api/io/applicationflow/export/?fmt=json")
+        self.assertIn(self.key, b"".join(r.streaming_content).decode())
+
+    def test_export_template_cannot_print_the_key(self):
+        tmpl = ExportTemplate(tenant=self.tenant, name="t",
+                              object_type="applicationflowrequirement",
+                              template_code="{% for r in objects %}"
+                                            "{% for e in r.exclusions.all() %}"
+                                            "{{ e.binding_key }};{% endfor %}{% endfor %}")
+        self._exclude()
+        self.assertNoIds(render_export_template(tmpl, self.tenant, self.viewer))
+        self.assertIn(self.key, render_export_template(tmpl, self.tenant, self.both))
+
+
 class ChangeLogSeparationTests(ChangeLogTests):
+    separation = True
+
+
+class ReleasedFlowSeparationTests(ReleasedFlowTests):
+    separation = True
+
+
+class BindingKeySeparationTests(BindingKeyTests):
     separation = True
 
 

@@ -154,7 +154,11 @@ the devices. The one-click site roles include Support coverage.
 
 A contract's device count, its `?device=` filter and the dashboard widget's
 site filter count only the devices you can see. A coverage row whose contract
-you can't see shows no contract, in the API and the export.
+you can't see shows no contract, in the API and the export. Its change-log
+entry is titled *Coverage of* its device; once the device is at a site you
+can't view (or is gone), the entry reads *Coverage of Hidden* and a search
+of the log does not match the device's name - see
+[change log](change-log.md).
 
 ### Cost
 

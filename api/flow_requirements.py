@@ -440,7 +440,8 @@ def _journal(tenant_id, object_type: str, obj, text: str, kind: str = "info") ->
 
 
 def _release(flow, req_name: str) -> None:
-    """Keep an edited row as a hand-made flow."""
+    """Keep an edited row as a hand-made flow. Its name stays the generated
+    one (``name_generated``) until someone renames it."""
     flow.requirement = None
     flow.generated = False
     flow.binding_key = ""
@@ -475,7 +476,8 @@ def _apply(req, wanted: dict) -> dict:
         flow = existing.get(key)
         if flow is None:
             new = ApplicationFlow(tenant_id=req.tenant_id, application_id=req.application_id,
-                                  requirement=req, generated=True, binding_key=key, **spec)
+                                  requirement=req, generated=True, name_generated=True,
+                                  binding_key=key, **spec)
             try:
                 with transaction.atomic():
                     new.save()
@@ -496,6 +498,9 @@ def _apply(req, wanted: dict) -> dict:
         if not flow.generated:
             flow.generated = True
             changed.append("generated")
+        if not flow.name_generated:
+            flow.name_generated = True
+            changed.append("name_generated")
         if changed:
             try:
                 with transaction.atomic():

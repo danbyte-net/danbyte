@@ -26,12 +26,20 @@ diff, the snapshots and the API. In the API its value is `null`, with
 `hidden_related`. For a user with limited access, a deleted related object
 also shows as hidden, since its scope can no longer be checked.
 
-A generated application flow is named after the hosts at its ends. When you
-can't view one of them, its entries name it as the flow's API does - *WMS to
-Broker: wms-1 → Hidden* - in the entry, its `name` diff and snapshots, and
-a search of the log; see
-[application flows](application-flows.md#permissions). The stored entry is
-unchanged.
+A generated application flow is named after the hosts at its ends, and
+keeps that name after it is detached or released until someone renames it.
+When you can't view one of them, its entries name it as the flow's API does
+- *WMS to Broker: wms-1 → Hidden* - in the entry, its `name` diff and
+snapshots, and a search of the log, and its `binding_key` (which names the
+ends by id) is `null`; see
+[application flows](application-flows.md#permissions).
+
+A support coverage entry is titled after its device (*Coverage of edge-01*;
+older entries read *contract → device*). When you can't view that device -
+it has since moved to another site, or is gone - the entry reads *Coverage
+of Hidden*, on the global page and the object's tab, and a search of the
+log does not match the device's name; an older title leaves out a contract
+you can't view. The stored entry is unchanged.
 
 !!! note "Change log vs. journal"
     The change log is the *automatic* record of what changed. A

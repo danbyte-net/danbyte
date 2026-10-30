@@ -2405,10 +2405,12 @@ export interface RequirementEnd {
   hidden: boolean
 }
 
+/** An excluded pair. Restore goes by `id`; `binding_key` is null when it
+ * names an address or host you may not view (#453). */
 export interface FlowRequirementExclusion {
   id: string
   label: string
-  binding_key: string
+  binding_key: string | null
   created_at: string
 }
 

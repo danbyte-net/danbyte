@@ -226,10 +226,10 @@ class ApplicationFlowRequirementSerializer(
         if rows is None:
             rows = obj.exclusions.all()
         # A pair's label is its flow's name: an end the caller can't view
-        # reads Hidden there (api.flow_names).
+        # reads Hidden there, and its key, which names it by id, is null
+        # (api.flow_names). Restore goes by the exclusion's id.
         names = FlowNames.for_context(self.context, self._viewable())
-        return [{"id": str(e.pk), "label": names.exclusion_label(e),
-                 "binding_key": e.binding_key, "created_at": e.created_at} for e in rows]
+        return exclusion_rows(rows, names)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_host(self, obj):
@@ -494,10 +494,7 @@ class ApplicationFlowRequirementViewSet(SafeBulkDeleteMixin, TenantScopedViewSet
             label = str(request.data.get("label") or key)[:255]
             exclude_pair(req, key, label, request.user)
         rows = ApplicationFlowRequirementExclusion.objects.filter(requirement=req)
-        names = FlowNames(request.user, _tenant_from(self))
-        return Response([{"id": str(e.pk), "label": names.exclusion_label(e),
-                          "binding_key": e.binding_key, "created_at": e.created_at}
-                         for e in rows])
+        return Response(exclusion_rows(rows, FlowNames(request.user, _tenant_from(self))))
 
     @extend_schema(request=None, responses={204: None})
     @action(detail=True, methods=["delete"], url_path=r"exclusions/(?P<eid>[^/.]+)")
@@ -515,6 +512,15 @@ class ApplicationFlowRequirementViewSet(SafeBulkDeleteMixin, TenantScopedViewSet
                         f"Restored the excluded pair {label}.")
         self._resolved(req, "excluded pair restored")
         return Response(status=drf_status.HTTP_204_NO_CONTENT)
+
+
+def exclusion_rows(rows, names: FlowNames) -> list[dict]:
+    """A requirement's excluded pairs as ``names``' reader may read them."""
+    rows = list(rows)
+    names.prime_keys(e.binding_key for e in rows)
+    return [{"id": str(e.pk), "label": names.exclusion_label(e),
+             "binding_key": names.binding_key(e.binding_key), "created_at": e.created_at}
+            for e in rows]
 
 
 def exclude_pair(req, key: str, label: str, user, *, verb: str = "Excluded") -> None:

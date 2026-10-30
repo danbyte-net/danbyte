@@ -61,7 +61,12 @@ ergonomics on top:
     generated is an ordinary flow with the same rule, and its name reads
     *Hidden* where it names the hidden host - in the API, its picker, the
     export, templates, search, custom-field labels, the change log and the
-    requirement's excluded pairs and journal; the requirement itself is a
+    requirement's excluded pairs and journal - also once the flow is
+    detached or released, until someone renames it. A pair's
+    `binding_key`, which names its address and host by id, reads `null`
+    there. A support coverage entry in the change log names its device
+    as *Hidden* once the device is at a site the reader can't view. The
+    requirement itself is a
     tenant-wide catalog the site roles read, its fixed ends hidden the same
     way, and its list of hosts without an address counts the hosts the
     reader can't view without naming them. A cooling intake connected to another site's feed or
