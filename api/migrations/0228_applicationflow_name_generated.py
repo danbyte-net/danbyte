@@ -62,7 +62,7 @@ def mark_generated_names(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0226_floor_plan_stacks"),
+        ("api", "0227_floor_plan_areas_labels"),
         ("audit", "0014_changelogentry_cause"),
     ]
 
