@@ -323,8 +323,19 @@ export function FloorCanvas({
     tile: FloorPlanTile | null
     vertex?: { trayId: string; index: number }
   } | null>(null)
-  const { t, setT, onWheel, startPan, movePan, endPan, toWorld, fitTo } =
-    usePanZoom()
+  const {
+    t,
+    setT,
+    onWheel,
+    startPan,
+    movePan,
+    endPan,
+    toWorld,
+    fitTo,
+    pinchDown,
+    pinchMove,
+    pinchUp,
+  } = usePanZoom()
 
   const editing = trayEditMode
   const gw = plan.grid_width * CELL
@@ -850,6 +861,24 @@ export function FloorCanvas({
     }
   }
 
+  // A pinch takes over from whatever one finger began: the drag stops where
+  // it is, a paint or sweep is dropped rather than committed, a structure
+  // drag snaps back, and an open undo step closes.
+  const cancelDrag = () => {
+    const d = drag.current
+    drag.current = null
+    pickStart.current = null
+    if (!d) return
+    if (d.mode === "pan") endPan()
+    else if (d.mode === "move" || d.mode === "resize" || d.mode === "group")
+      onGestureEnd?.()
+    else if (d.mode === "paint" || d.mode === "marquee")
+      paintPreview.current?.setAttribute("visibility", "hidden")
+    setAreaDraft(null)
+    setTrayDraft(null)
+    setWallDraft(null)
+  }
+
   // Right-click → a small menu; hit-test which non-zone tile is under it.
   const handleContextMenu = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault()
@@ -912,27 +941,41 @@ export function FloorCanvas({
         ref={svgRef}
         className="h-full w-full touch-none text-foreground select-none"
         onWheel={onWheel}
-        onPointerDownCapture={
-          onPickPoint
-            ? (e) => {
-                // Picking owns the press: nothing under it selects, moves
-                // or paints. A drag still pans the plan.
-                if (e.button !== 0) return
-                e.stopPropagation()
-                setCtxMenu(null)
-                e.currentTarget.setPointerCapture(e.pointerId)
-                drag.current = { mode: "pan" }
-                startPan(e)
-                pickStart.current = { x: e.clientX, y: e.clientY }
-              }
-            : undefined
-        }
+        onPointerDownCapture={(e) => {
+          // A second finger turns the touch into a pinch: it owns the
+          // press, and what the first finger started stops where it is.
+          if (pinchDown(e)) {
+            e.stopPropagation()
+            e.currentTarget.setPointerCapture(e.pointerId)
+            setCtxMenu(null)
+            cancelDrag()
+            return
+          }
+          if (!onPickPoint) return
+          // Picking owns the press: nothing under it selects, moves
+          // or paints. A drag still pans the plan.
+          if (e.button !== 0) return
+          e.stopPropagation()
+          setCtxMenu(null)
+          e.currentTarget.setPointerCapture(e.pointerId)
+          drag.current = { mode: "pan" }
+          startPan(e)
+          pickStart.current = { x: e.clientX, y: e.clientY }
+        }}
         onPointerDown={(e) => {
           setCtxMenu(null)
           handleBackgroundDown(e)
         }}
-        onPointerMove={handleMove}
+        onPointerMove={(e) => {
+          if (pinchMove(e)) return
+          handleMove(e)
+        }}
+        onPointerCancel={pinchUp}
         onPointerUp={(e) => {
+          if (pinchUp(e)) {
+            pickStart.current = null
+            return
+          }
           const start = pickStart.current
           pickStart.current = null
           if (
@@ -944,8 +987,9 @@ export function FloorCanvas({
             onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY))
           handleUp()
         }}
-        onPointerLeave={() => {
+        onPointerLeave={(e) => {
           pickStart.current = null
+          if (pinchUp(e)) return
           handleUp()
         }}
         onDoubleClick={() => drawing && onFinishDraw?.()}

@@ -537,7 +537,14 @@ and Export shrinks to its icon, so nothing is ever cut off.
 | Nudge | Arrow keys move the selected tile one cell |
 | Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
 | Save | **Save**, or ++ctrl+s++ |
-| Pan / zoom | Drag empty grid / mouse wheel |
+| Pan / zoom | Drag empty grid / mouse wheel. On a touch screen, drag with one finger and pinch with two |
+
+**Pinch zoom.** On a tablet or a touch screen, two fingers zoom the 2D plan
+about the point between them and pan it as they move, within the same zoom
+limits as the wheel. This works for viewers as well as editors, and on the
+dashboard's floor-plan widget. A second finger landing stops what the first
+one started: a tile drag ends where the tile is, and a half-drawn paint or
+selection sweep is dropped.
 
 **Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
 occupied cells is blocked - the tile stays where it was. Background **zones**
