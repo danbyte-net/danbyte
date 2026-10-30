@@ -616,6 +616,7 @@ Layout / Structure / Cables tabs of 0.18:
 | Tiles | ++g++ | The tile palette (Tiles / Background tabs) |
 | Walls and raised floors | ++w++ | What the Structure tab did: [raised floors](#raised-floors-structure-mode) and [walls](#walls-doors-structure-mode) |
 | Cable trays | ++c++ | What the Cables tab did: [trays](#cable-trays-cables-mode) |
+| Snapshot | ++s++ | Drag a rectangle: a [snapshot](#snapshots) of that part of the floor |
 
 At its foot, **Free placement** switches the plan between the grid and
 [free placement](#free-placement).
@@ -758,7 +759,7 @@ rotation. Labels draw over the tiles.
 |---|---|
 | ++e++ | View / Edit |
 | ++p++ | Place… |
-| ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ | The tools |
+| ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label |
 | ++ctrl+bracketleft++ / ++ctrl+bracketright++ | Send back / bring forward |
@@ -1397,6 +1398,122 @@ cable runs, just the trays, or both.
     panel's heading (*Contents & trace*) reads the same figure. Large figures
     read in kW.
 
+## Snapshots
+
+A snapshot is a rectangle of a floor as a plan of its own: one room of a
+hall, one cage, the corner a contractor needs. In Edit, the **Snapshot** tool
+(++s++) drags the rectangle on whole cells; on release a dialog asks for:
+
+- **Name**.
+- **Goes to**: a **new floor plan** at the floor's location, or a **new
+  floor** of this floor plan (on top of its floors).
+- **Kind**: an **Independent copy**, or **Keep in sync (live view)**.
+
+The snapshot opens. Its header carries a chip - **Copy of HQ · Floor 2 ·
+30 Oct 2026** or **View of HQ · Floor 2** - linking back to the plan it was
+taken of. On the floor-plan list a floor plan whose floors are all live
+views reads **View of** its source next to its name.
+
+### Independent copy
+
+A plan of its own with the same cell size, ceiling, layout (grid or free)
+and display settings, its grid the size of the rectangle. Everything inside
+the rectangle is copied and moved so the rectangle's corner is the new
+plan's origin: tiles (with their rack, device, cabinet or other links),
+rooms, areas, labels, walls (with their doors), cable trays (geometry only,
+as a [clone](#cloning-a-plan) copies them) and raised floors.
+
+What crosses the rectangle's edge is cut where its shape allows it:
+
+| Crossing the edge | Copied |
+|---|---|
+| Unlinked tile at a quarter turn, raised floor, upright room or area | Cut to the rectangle |
+| Polygon area | Cut to the rectangle |
+| Wall, cable tray | Cut where it crosses; a part that leaves and comes back becomes two runs (a tray's second run is named `<name> (2)`). A door is kept when it lies wholly inside |
+| Linked tile, tile at any other angle, turned area, label | Copied whole, past the edge, and listed after the copy is made |
+
+A linked tile keeps its link, so the rack or device then stands on two
+plans: the Place picker and **Not placed** show both (**On this floor +1**).
+
+The background image is cut to the rectangle's share of the image. A CAD
+drawing is copied with its file (as Clone does) and rendered again for the
+rectangle's part only - shapes that miss it are left out, shapes on its edge
+are clipped where they are drawn - by the same background job, sandbox,
+limits and caps as an upload. Its placement, units, calibration, layers and
+**Reprocess** work as for any drawing.
+
+### Live view
+
+A live view stores no objects of its own: it shows the plan it was taken of
+inside the rectangle, as it is now. Change a rack there and the view shows
+it; change it in the view and it changes there. There is one copy of every
+object, so nothing has to be kept in sync and the two can never disagree.
+
+- **Editing through a view** edits the source's objects: the same Save, the
+  same [conflict check](#when-someone-else-saved-first) and the same change
+  log, each entry noting **Through the view &lt;name&gt;**. It needs
+  `floorplan · change` on the source as well as on the view, and reading a
+  view needs view on both.
+- An object crossing the view's edge is drawn cut at the edge, faded, and
+  **locked** in the view: move or change it on the source. Nothing drawn or
+  moved in the view may cross its edge.
+- The view takes its cell size, ceiling, layout and background from the
+  source: no background upload, grid size, cell size or free-placement
+  switch of its own. Its name, floor, location and display settings are its
+  own. A source that shrinks past the rectangle shows the part still inside
+  it.
+- Background: the source's image, cut to the rectangle as it is drawn. A
+  CAD drawing is rendered on the server for the rectangle's part and kept;
+  a new file, or reprocessing it, on the source renders it again.
+- A snapshot of a live view is taken of its source.
+- **Unlink…**, in the menu on the floor plan's name, turns a view into an
+  independent copy of what it shows at that moment - the same plan, address
+  and floor. It cannot be undone; the change log records it.
+- Deleting a view leaves its source alone. **Deleting a plan that live views
+  still show is refused**, naming the views: unlink or delete them first.
+  The same holds for deleting the floor plan the source is a floor of.
+
+### Snapshots API
+
+| Call | |
+|---|---|
+| `POST /api/floor-plans/<id>/snapshot/` | `{"name", "crop": {"x", "y", "w", "h"}, "mode": "copy" \| "view", "target": "plan" \| "floor"}`. The crop is whole cells inside the plan. Answers the new plan (201) with `crossing` - the copied objects that crossed the edge, `{"kind", "id", "name"}`. Needs view on the plan and `floorplan · add`; `floor` needs add on its floor plan too. On a view, the crop is in the view's cells. |
+| `POST /api/floor-plans/<id>/unlink/` | A live view becomes an independent copy. Answers the plan with `crossing`. Needs change on the view and view on its source. |
+| `DELETE /api/floor-plans/<id>/` | 409 while live views show the plan: `{"detail", "views": [{"id", "name"}]}`. `DELETE /api/floor-plan-stacks/<id>/` the same. |
+
+A plan reads `kind` (`plan` or `view`) and `snapshot` - `null`, or `{"kind":
+"copy" | "view", "source": {"id", "name", "stack"} | null, "crop", "at"}`,
+and on a view `source_grid` (the source's grid, which its background image
+spans). `source` is null when the source is gone or the reader may not view
+it. A view's `grid_width`, `grid_height`, `cell_mm`, `ceiling_mm`,
+`layout_mode`, `background_image` and `background_opacity` are its source's,
+at the rectangle's size; `PATCH` refuses changing them. A floor in a floor
+plan's `floors` reads `kind` and `view_of` (`{"id", "name"}`).
+
+On a view, everything that reads a plan's contents reads the source's rows
+inside the rectangle in the view's cells - `contents/`, `state/`, `scene/`
+(the 3D room, without the background image), `cable-paths/`, `route/`,
+`placeable/` (**On this floor** is inside the rectangle) and `assign-rooms/`.
+In `contents/` each row of a view carries `crosses_edge`. Writes:
+
+- `bulk/` on a view takes rows in the view's cells and writes the source's;
+  updates and deletes take only rows wholly inside the view (400 otherwise),
+  every row written must stay inside it, and a 409's `current` rows are in
+  the view's cells. `tiles/bulk/`, `snap-all/`, `background/` and the
+  drawing's writes are refused on a view.
+- The rows' own endpoints (`/api/floor-plan-tiles/`, `-areas/`, `-labels/`,
+  `-walls/`, `-trays/`, `-raised-floors/`) take `?via=<view id>`, or a create
+  whose `floor_plan_id` is the view: the body is in the view's cells, the
+  row written is the source's, under the same rules, and the answer is in
+  the view's cells. No row is ever stored on a view.
+- `GET …/drawing/` on a view answers the source's drawing with the view's
+  render: `clip` (its part, in drawing units), `rendered_url` once rendered
+  (`status` `queued` until then), and its own `size`, `placement` and
+  `transform_mm`. `…/drawing/render/` on a view renders that part with
+  layers left out.
+
+A drawing record reads `clip`: the part of the file it renders, or `null`.
+
 ## Cloning a plan
 
 **Clone this floor**, in the menu on the floor plan's name, copies the floor
@@ -1468,6 +1585,12 @@ scoped through their plan's tenant and its location's site, audited one row
 at a time, and in a site role's types like the plan's walls. Reading them in
 `contents/` follows their own view grant; the editor's **Save** (`bulk/`)
 needs `floorplan · change`.
+
+A [snapshot](#snapshots) follows the floor plan's rules: making one needs
+view on the plan and `floorplan · add`, and it stays at the plan's site and
+tenant. A live view is read and written with the grants of both the view
+and the plan it shows, and every edit through it is audited on the source's
+objects; making and unlinking one are in the change log.
 
 Placing reads and writes the objects themselves under their own grants:
 the Place picker (`placeable/`) needs view on the plan and lists each kind -
@@ -1552,5 +1675,6 @@ wall-plate ("drop") tiles with port assignments.
 !!! note "New in 0.19"
     View and Edit, the tool rail, rooms, areas and labels drawn on a floor,
     free placement, the Place picker with rooms near the pointer, devices in
-    their role's look or as their photo, and a save that asks before it
-    overwrites someone else's change.
+    their role's look or as their photo, a save that asks before it
+    overwrites someone else's change, and snapshots: a rectangle of a floor
+    as an independent copy or a live view.

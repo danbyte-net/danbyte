@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { FloorPlan, FloorPlanStack } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDateFormat } from "@/lib/datetime"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -26,8 +27,10 @@ import {
   RenameStackDialog,
 } from "./floor-dialogs"
 import { FloorSwitcher } from "./floor-switcher"
+import { isLiveView, snapshotLabel } from "./snapshot"
+import { UnlinkViewDialog } from "./snapshot-dialogs"
 
-type Open = "add" | "manage" | "merge" | "rename" | null
+type Open = "add" | "manage" | "merge" | "rename" | "unlink" | null
 
 /** The editor's header: which floor plan, which floor, View or Edit, 2D or
  * 3D. */
@@ -79,6 +82,7 @@ export function PlanHeader({
   })
   const title = stack?.name ?? plan.stack?.name ?? plan.name
   const menu = canEdit && stack
+  const view = isLiveView(plan)
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
       <BarTip tip="Floor plans">
@@ -110,6 +114,11 @@ export function PlanHeader({
               <DropdownMenuItem onSelect={() => setOpen("rename")}>
                 Rename…
               </DropdownMenuItem>
+              {view && (
+                <DropdownMenuItem onSelect={() => setOpen("unlink")}>
+                  Unlink…
+                </DropdownMenuItem>
+              )}
               {canAdd && (
                 <>
                   <DropdownMenuSeparator />
@@ -134,6 +143,7 @@ export function PlanHeader({
           cells
         </p>
       </div>
+      {plan.snapshot && <SnapshotChip plan={plan} />}
       {isDirty && <Badge variant="secondary">Edited</Badge>}
       {(floors.length > 1 || (canAdd && stack)) && (
         <div className="ml-4 flex min-w-0 items-center gap-1">
@@ -197,9 +207,40 @@ export function PlanHeader({
             onOpenChange={(o) => setOpen(o ? "rename" : null)}
             stack={stack}
           />
+          {view && (
+            <UnlinkViewDialog
+              plan={plan}
+              open={open === "unlink"}
+              onOpenChange={(o) => setOpen(o ? "unlink" : null)}
+            />
+          )}
         </>
       )}
     </header>
+  )
+}
+
+/** "View of HQ · Floor 2" (a live view) or "Copy of HQ · Floor 2 · <date>",
+ * linking to the source. */
+function SnapshotChip({ plan }: { plan: FloorPlan }) {
+  const { formatDate } = useDateFormat()
+  const label = snapshotLabel(plan, formatDate)
+  const sourceId = plan.snapshot?.source?.id
+  if (!label) return null
+  return (
+    <Badge variant="outline" className="shrink-0">
+      {sourceId ? (
+        <Link
+          to="/floorplans/$id"
+          params={{ id: sourceId }}
+          className="hover:underline"
+        >
+          {label}
+        </Link>
+      ) : (
+        label
+      )}
+    </Badge>
   )
 }
 

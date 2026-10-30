@@ -12103,10 +12103,52 @@ export interface FloorPlan {
   /** The plan's CAD drawing, when it has one (docs: floor-plans "CAD
    * drawings"). The full record is GET …/drawing/. */
   drawing: FloorPlanDrawingSummary | null
+  /** "view": a live view of a rectangle of another plan - it holds nothing,
+   * shows the source's objects there and edits them. */
+  kind?: FloorPlanKind
+  /** What the plan was snapshotted from; null for a plan made otherwise. */
+  snapshot?: FloorPlanSnapshotInfo | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanKind = "plan" | "view"
+
+/** A rectangle of a plan in whole cells. */
+export interface FloorPlanCrop {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface FloorPlanSnapshotInfo {
+  /** "view": a live view; "copy": an independent copy. */
+  kind: "view" | "copy"
+  /** Null when the source is gone or the reader may not view it. */
+  source: { id: string; name: string; stack: string } | null
+  /** In the source's cells. */
+  crop: FloorPlanCrop | null
+  at: string | null
+  /** A view's source grid, which its background image spans. */
+  source_grid?: { width: number; height: number }
+}
+
+/** POST /api/floor-plans/<id>/snapshot/ */
+export interface FloorPlanSnapshotPayload {
+  name: string
+  crop: FloorPlanCrop
+  mode: "copy" | "view"
+  /** "plan": a floor plan of its own; "floor": a new floor of this one. */
+  target: "plan" | "floor"
+}
+
+/** A snapshot or unlink answer: the plan, and what crossed the crop's edge
+ * and was copied whole. */
+export interface FloorPlanSnapshotResult extends FloorPlan {
+  crossing: { kind: "tile" | "area" | "label"; id: string; name: string }[]
 }
 
 export type FloorPlanLayoutMode = "grid" | "free"
@@ -12127,6 +12169,9 @@ export interface FloorPlanFloor {
   name: string
   floor_order: number
   location_id: string
+  kind?: FloorPlanKind
+  /** The plan a live view shows. */
+  view_of?: { id: string; name: string } | null
 }
 
 /** GET /api/floor-plan-stacks/ - a floor plan as users see it: a building or
@@ -12193,6 +12238,11 @@ export interface FloorPlanDrawingPlacement {
 
 /** GET /api/floor-plans/<id>/drawing/ */
 export interface FloorPlanDrawing extends FloorPlanDrawingSummary {
+  /** The part of the file a snapshot renders (drawing units); null for a
+   * whole drawing. */
+  clip?: { min_x: number; min_y: number; max_x: number; max_y: number } | null
+  /** On a live view: the plan whose drawing this is. */
+  view_of?: { id: string; name: string }
   error: string
   source_bytes: number
   source_url: string | null

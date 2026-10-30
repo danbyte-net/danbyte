@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import type {
   FloorPlanCablePath,
   FloorPlanConflict,
+  FloorPlanCrop,
   FloorPlanPlaceable,
   FloorPlanTile,
 } from "@/lib/api"
@@ -57,6 +58,8 @@ import type { Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
 import { shapeBounds } from "./shapes"
 import { SnapAllDialog } from "./snap-all-dialog"
+import { edgeIds, isLiveView } from "./snapshot"
+import { SnapshotDialog } from "./snapshot-dialogs"
 import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
 import { ToolRail } from "./tool-rail"
 import { useCadDrawing } from "./use-cad-drawing"
@@ -124,6 +127,14 @@ export function FloorPlanEditor({
   // An area opened while viewing (its room in the map panel).
   const [openArea, setOpenArea] = useState<string | null>(null)
   const [snapOpen, setSnapOpen] = useState(false)
+  // The Snapshot tool's rectangle, while its dialog is open.
+  const [snapshotCrop, setSnapshotCrop] = useState<FloorPlanCrop | null>(null)
+  // A live view: the source's objects, its edge ones locked here.
+  const liveView = isLiveView(plan)
+  const lockedIds = useMemo(
+    () => edgeIds(data.contentsQuery.data),
+    [data.contentsQuery.data]
+  )
   const [leaveEditOpen, setLeaveEditOpen] = useState(false)
   // Placing: the picker with the room near the pointer when it opened, the
   // bulk room assignment, and the "Set room to X?" prompt after a drop.
@@ -225,7 +236,8 @@ export function FloorPlanEditor({
   })
   // The plan's CAD drawing: placement saved as it changes (an editor) or
   // kept on screen (a viewer's layer choices), drawn under the grid.
-  const cad = useCadDrawing(plan, canEdit)
+  // A view's drawing is its source's: layer choices stay on screen.
+  const cad = useCadDrawing(plan, canEdit && !liveView)
   const cadSource = useCadSource(id, cad.drawing, cad.placement)
   const cadPxPerMm = CELL / (plan?.cell_mm || 600)
   const calibration = useCadCalibration(
@@ -479,7 +491,7 @@ export function FloorPlanEditor({
         hasRacks={capacity.hasRacks}
         drawingOpen={ed.drawingOpen}
         onToggleDrawing={() => ed.setDrawingOpen((o) => !o)}
-        backgroundControls={backgroundControls}
+        backgroundControls={liveView ? undefined : backgroundControls}
         exportMenu={
           <DrawingExportMenu
             name={plan.name}
@@ -553,6 +565,7 @@ export function FloorPlanEditor({
             onToolChange={selectTool}
             free={plan.layout_mode === "free"}
             onToggleFree={toggleFree}
+            canToggleFree={!liveView}
           />
         )}
         {editing && !view3d && (
@@ -625,6 +638,12 @@ export function FloorPlanEditor({
               theme={theme}
               openTile={openTile}
               onDropRows={editing ? placeAt : undefined}
+              onSnapshotRect={
+                editing && ed.tool === "snapshot"
+                  ? (r) => setSnapshotCrop(r)
+                  : undefined
+              }
+              lockedIds={liveView ? lockedIds : undefined}
               selectionToolbar={
                 editing ? (
                   <SelectionToolbar
@@ -797,6 +816,15 @@ export function FloorPlanEditor({
         saving={edits.save.isPending}
         onResolve={edits.resolveConflicts}
         onCancel={edits.dismissConflicts}
+      />
+      <SnapshotDialog
+        plan={plan}
+        crop={snapshotCrop}
+        onOpenChange={(o) => !o && setSnapshotCrop(null)}
+        onCreated={(made) => {
+          selectTool("select")
+          void nav({ to: "/floorplans/$id", params: { id: made.id } })
+        }}
       />
       <SnapAllDialog
         planId={plan.id}
