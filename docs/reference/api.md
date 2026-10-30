@@ -236,15 +236,17 @@ row is checked as its own `PATCH` would be, and the error names the row
 settings."]}`). Text is trimmed and booleans read as a `PATCH` reads them.
 One bad value refuses the whole call: nothing is written.
 
-A list that declares its bulk-edit fields (the routing lists, virtual
-machines) also answers `GET <list>/bulk-edit-fields/` with `{"fields":
-[...], "tags": true, "custom_fields": null}`: the keys its `bulk-update/`
-accepts, each described as `/api/editable-fields/` describes a field (an
-object field carries the `endpoint` to pick it from). Its `bulk-update/`
-answers `409` when the values would make two rows the same (a static
-route's path), and its `bulk-delete/` keeps a row that other records still
-reference, with the reason in `skipped` - see
-[Routing](../features/routing.md#editing-and-deleting-several-at-once).
+A list that declares its bulk-edit fields (the routing lists, platforms
+and virtual machines) also answers `GET <list>/bulk-edit-fields/` with
+`{"fields": [...], "tags": true, "custom_fields": null}`: the keys its
+`bulk-update/` accepts, each described as `/api/editable-fields/` describes
+a field (an object field carries the `endpoint` to pick it from). Its
+`bulk-update/` answers `409` when the values would make two rows the same
+(a static route's path). The routing lists' `bulk-delete/` keeps a row that
+other records still reference, with the reason in `skipped` - see
+[Routing](../features/routing.md#editing-and-deleting-several-at-once);
+platforms keep one a device, virtual machine or device profile uses - see
+[Platforms](../dcim/device-catalog.md#platforms-bulk).
 
 Where `custom_fields` names a model (`"virtualmachine"`), `bulk-update/`
 also takes `fields.custom_fields`: an object of custom-field keys and their
@@ -255,8 +257,8 @@ model's custom fields, or clearing a required one, answers `400` under
 [Virtual machines](../features/virtual-machines.md#editing-several-at-once).
 
 The lists that preview a delete (circuits, wireless, virtual chassis, power
-panels and feeds) answer `bulk-delete/` with `{deleted, deleted_ids,
-skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
+panels and feeds, platforms) answer `bulk-delete/` with `{deleted,
+deleted_ids, skipped: [{id, name, reason}], impact: [{label, count}], released: [{label,
 count}], notes: [{id, name, label, detail}], dry_run}`. `skipped` are the
 rows kept because something still uses them; `impact` counts everything else
 the delete removes, including a cable left with no port on one end; `notes`

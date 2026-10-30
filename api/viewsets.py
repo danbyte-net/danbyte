@@ -237,7 +237,6 @@ from .serializers import (
     DeviceRoleSerializer,
     PlatformGroupMiniSerializer,
     PlatformGroupSerializer,
-    PlatformSerializer,
     NATRuleSerializer,
     ServiceSerializer,
     ServiceTemplateSerializer,
@@ -7656,76 +7655,6 @@ class PlatformGroupViewSet(TenantScopedViewSet):
                 status=drf_status.HTTP_409_CONFLICT,
             )
         return super().destroy(request, *args, **kwargs)
-
-
-class PlatformViewSet(DeviceRoleViewSet):
-    queryset = Platform.objects.all().order_by(NATURAL_NAME)
-    serializer_class = PlatformSerializer
-
-    def get_serializer_class(self):
-        if self.action == "list" and self.request and \
-                self.request.query_params.get("picker") == "1":
-            from .serializers import PlatformMiniSerializer
-            return PlatformMiniSerializer
-        return PlatformSerializer
-
-    def get_queryset(self):
-        qs = TenantScopedViewSet.get_queryset(self).select_related(
-            "manufacturer", "group", "eol_mapping", "config_template"
-        ).prefetch_related(TAGS)
-        if self.request:
-            s = self.request.query_params.get("search", "").strip()
-            if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(description__icontains=s) | qs.filter(cf_text_q(qs.model, s))
-            g = self.request.query_params.get("group")
-            if g:
-                qs = qs.filter(group_id=g)
-            lc = self.request.query_params.get("lifecycle")
-            if lc:
-                qs = _apply_lifecycle_filter(qs, lc)
-            from compliance.eol import apply_status_filter
-
-            qs = apply_status_filter(qs, self.request, "eol_mapping__")
-        if getattr(self, "action", None) in ("list", "retrieve"):
-            # One query for the list's VM counts, not one per platform.
-            qs = qs.annotate(
-                device_count_annotated=_visible_n(self, "devices"),
-                vm_count_annotated=_visible_n(self, "virtual_machines"),
-            )
-        return qs.order_by(NATURAL_NAME)
-
-    def _slug(self, serializer, tenant):
-        data = serializer.validated_data
-        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
-        slug = data.get("slug") or slugify(name)
-        data["slug"] = slug
-        clash = Platform.objects.filter(tenant=tenant, slug=slug)
-        if serializer.instance is not None:
-            clash = clash.exclude(pk=serializer.instance.pk)
-        if clash.exists():
-            raise ValidationError({"slug": "Name already in use."})
-
-    def perform_create(self, serializer):
-        super().perform_create(serializer)
-        if serializer.instance.version_pattern:
-            software_versions.enqueue_reextract(serializer.instance)
-
-    def perform_update(self, serializer):
-        before = serializer.instance.version_pattern
-        super().perform_update(serializer)
-        # A new pattern reads the stored sysDescr again (#451).
-        if serializer.instance.version_pattern != before:
-            software_versions.enqueue_reextract(serializer.instance)
-
-    def destroy(self, request, *args, **kwargs):
-        obj = self.get_object()
-        n = obj.devices.count() + obj.virtual_machines.count()
-        if n:
-            return Response(
-                {"detail": f"{n} object{'s' if n != 1 else ''} use this platform."},
-                status=drf_status.HTTP_409_CONFLICT,
-            )
-        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
 
 
 # ─── Services ────────────────────────────────────────────────────────────────
