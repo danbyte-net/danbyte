@@ -250,6 +250,7 @@ from .viewsets import (
     FHRPGroupViewSet,
     FiberSettingsViewSet,
     FloorPlanRaisedFloorAreaViewSet,
+    FloorPlanStackViewSet,
     FloorPlanTileViewSet,
     FloorPlanTrayViewSet,
     FloorPlanViewSet,
@@ -486,6 +487,7 @@ router.register(r"module-types", ModuleTypeViewSet, basename="module-type")
 router.register(r"topology-views", TopologyViewViewSet, basename="topology-view")
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")
+router.register(r"floor-plan-stacks", FloorPlanStackViewSet, basename="floor-plan-stack")
 router.register(r"floor-plan-tiles", FloorPlanTileViewSet, basename="floor-plan-tile")
 router.register(r"floor-plan-trays", FloorPlanTrayViewSet, basename="floor-plan-tray")
 router.register(

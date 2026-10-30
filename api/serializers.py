@@ -42,7 +42,8 @@ from .models import (
     ImageAttachment,
     Document, DocumentCategory,
     FiberSettings,
-    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanTile, FloorPlanTray,
+    FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile,
+    FloorPlanTray,
     FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -10333,6 +10334,93 @@ class FloorPlanMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "grid_width", "grid_height"]
 
 
+class FloorPlanFloorSerializer(serializers.ModelSerializer):
+    """A floor as its floor plan lists it - the switcher's row."""
+
+    class Meta:
+        model = FloorPlan
+        fields = ["id", "numid", "name", "floor_order", "location_id"]
+
+
+class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSerializer):
+    """A floor plan (``FloorPlanStack``): a building or hall and its floors in
+    order. ``floors`` holds the floors the reader may view; writes to floors
+    go through the floor-plan endpoints and the stack's ``floors/``,
+    ``reorder/`` and ``merge/`` actions."""
+
+    location = LocationMiniSerializer(read_only=True)
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(), write_only=True
+    )
+    site = serializers.SerializerMethodField()
+    floors = serializers.SerializerMethodField()
+    floor_count = serializers.SerializerMethodField()
+    last_edited = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        return SiteMiniSerializer(obj.location.site).data
+
+    def _floors(self, obj):
+        rows = getattr(obj, "visible_floors", None)
+        if rows is None:
+            rows = list(obj.floors.order_by("floor_order", "name", "pk"))
+        return rows
+
+    @extend_schema_field(FloorPlanFloorSerializer(many=True))
+    def get_floors(self, obj):
+        return FloorPlanFloorSerializer(self._floors(obj), many=True).data
+
+    def get_floor_count(self, obj) -> int:
+        return len(self._floors(obj))
+
+    def get_last_edited(self, obj) -> str | None:
+        """The newest change to the floor plan or one of its floors."""
+        times = [obj.updated_at, *(p.updated_at for p in self._floors(obj))]
+        newest = max((t for t in times if t is not None), default=None)
+        return newest.isoformat() if newest else None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        location = attrs.get("location", getattr(self.instance, "location", None))
+        name = attrs.get("name", getattr(self.instance, "name", None))
+        if location is not None and name:
+            clash = FloorPlanStack.objects.filter(
+                tenant=location.tenant, location=location, name=name
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"name": "This location already has a floor plan with that name."}
+                )
+        if self.instance is not None and "location" in attrs \
+                and attrs["location"].pk != self.instance.location_id:
+            from .floor_stacks import within
+
+            new = attrs["location"]
+            if any(not within(p.location, new)
+                   for p in self.instance.floors.select_related("location")):
+                raise serializers.ValidationError({
+                    "location_id": "Every floor's location must be this location "
+                                   "or inside it."
+                })
+        return attrs
+
+    class Meta:
+        model = FloorPlanStack
+        fields = ["id", "name", "description", "location", "location_id", "site",
+                  "floors", "floor_count", "last_edited", "tags", "tag_ids",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "site", "floors", "floor_count", "last_edited",
+                            "created_at", "updated_at"]
+
+
 class FloorPlanSerializer(
     CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
 ):
@@ -10340,7 +10428,18 @@ class FloorPlanSerializer(
 
     location = LocationMiniSerializer(read_only=True)
     location_id = TenantScopedPrimaryKeyRelatedField(
-        source="location", queryset=Location.objects.all(), write_only=True
+        source="location", queryset=Location.objects.all(), write_only=True,
+        required=False,
+    )
+    # The floor plan this is a floor of. Omitted on create: a new floor plan
+    # of its own, named after this plan.
+    stack = serializers.SerializerMethodField()
+    stack_id = TenantScopedPrimaryKeyRelatedField(
+        source="stack", queryset=FloorPlanStack.objects.all(), write_only=True,
+        required=False,
+    )
+    floor_order = serializers.IntegerField(
+        required=False, min_value=-32768, max_value=32767
     )
     site = serializers.SerializerMethodField()
     background_image = serializers.SerializerMethodField()
@@ -10388,26 +10487,82 @@ class FloorPlanSerializer(
             raise serializers.ValidationError("state must be an object")
         return v
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_stack(self, obj):
+        st = obj.stack
+        return {"id": str(st.pk), "name": st.name} if st is not None else None
+
     def validate(self, attrs):
+        from .floor_stacks import location_error, name_taken
+
         attrs = super().validate(attrs)
-        # Friendly duplicate check ahead of the DB unique constraint.
-        location = attrs.get("location", getattr(self.instance, "location", None))
-        name = attrs.get("name", getattr(self.instance, "name", None))
-        if location is not None and name:
-            clash = FloorPlan.objects.filter(
+        inst = self.instance
+        stack = attrs.get("stack", getattr(inst, "stack", None))
+        location = attrs.get("location", getattr(inst, "location", None))
+        if location is None:
+            if stack is None:
+                raise serializers.ValidationError({"location_id": "This field is required."})
+            location = attrs["location"] = stack.location
+        name = attrs.get("name", getattr(inst, "name", None))
+        if stack is not None:
+            err = location_error(location, stack)
+            if err:
+                key = "stack_id" if "stack" in attrs else "location_id"
+                raise serializers.ValidationError({key: err})
+            if name and name_taken(stack, name, exclude=getattr(inst, "pk", None)):
+                raise serializers.ValidationError(
+                    {"name": "This floor plan already has a floor with that name."}
+                )
+        elif inst is None and name:
+            # A new floor plan of its own: its name is the stack's too.
+            if FloorPlanStack.objects.filter(
                 tenant=location.tenant, location=location, name=name
-            )
-            if self.instance is not None:
-                clash = clash.exclude(pk=self.instance.pk)
+            ).exists():
+                raise serializers.ValidationError(
+                    {"name": "This location already has a floor plan with that name."}
+                )
+        elif inst is not None and name:
+            clash = FloorPlan.objects.filter(
+                tenant=location.tenant, location=location, name=name, stack__isnull=True
+            ).exclude(pk=inst.pk)
             if clash.exists():
                 raise serializers.ValidationError(
                     {"name": "This location already has a plan with that name."}
                 )
         return attrs
 
+    def create(self, validated_data):
+        from .floor_stacks import next_order
+
+        stack = validated_data.get("stack")
+        if stack is None:
+            validated_data["stack"] = FloorPlanStack.objects.create(
+                tenant=validated_data["tenant"], location=validated_data["location"],
+                name=validated_data["name"],
+                description=validated_data.get("description", ""),
+            )
+            validated_data.setdefault("floor_order", 0)
+        else:
+            validated_data.setdefault("floor_order", next_order(stack))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        from .floor_stacks import drop_if_empty, next_order
+
+        old = instance.stack
+        new = validated_data.get("stack", old)
+        moved = new is not None and (old is None or new.pk != old.pk)
+        if moved and "floor_order" not in validated_data:
+            validated_data["floor_order"] = next_order(new, exclude=instance.pk)
+        instance = super().update(instance, validated_data)
+        if moved:
+            drop_if_empty(old)
+        return instance
+
     class Meta:
         model = FloorPlan
         fields = ["id", "numid", "name", "location", "location_id", "site",
+                  "stack", "stack_id", "floor_order", "elevation_mm",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "background_image",
                   "background_opacity", "state", "description", "tile_count",
@@ -10416,6 +10571,10 @@ class FloorPlanSerializer(
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "background_image",
                             "tile_count", "drawing", "created_at", "updated_at"]
+        # The floor-name constraints are checked in validate(); DRF's own
+        # validator for the conditional (stack, name) one would make
+        # stack_id required.
+        validators = []
 
 
 class FloorPlanDrawingSerializer(serializers.Serializer):

@@ -62,6 +62,8 @@ SITE_PATHS: dict[str, str] = {
     # network bound to a VM interface belongs to that VM's site.
     "circuittermination": "site|vm_interface__vm__site",
     "floorplan": "location__site",
+    # A floor plan stack (its floors) - its API follows the floorplan grant.
+    "floorplanstack": "location__site",
     "floorplantile": "floor_plan__location__site",
     "floorplandrawing": "floor_plan__location__site",
     "floorplantray": "floor_plan__location__site",

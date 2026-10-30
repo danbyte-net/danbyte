@@ -172,6 +172,7 @@ AUDITED_MODELS = [
     "api.ServiceTemplate",
     "api.DeviceTypeService",
     "api.FloorTileType",
+    "api.FloorPlanStack",
     "api.FloorPlan",
     "api.FloorPlanTile",
     "api.FloorPlanDrawing",
