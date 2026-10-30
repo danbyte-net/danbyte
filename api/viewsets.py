@@ -117,7 +117,7 @@ from .models import (
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
-    Region, Location, ConfigBundle, ConfigContext, ExportTemplate, LabelTemplate,
+    Region, Location, Room, ConfigBundle, ConfigContext, ExportTemplate, LabelTemplate,
     Document, DocumentCategory,
     materialize_device_components, resolve_config_template,
     sync_positional_interface_names,
@@ -191,6 +191,8 @@ from .serializers import (
     RegionMiniSerializer,
     LocationSerializer,
     LocationMiniSerializer,
+    RoomSerializer,
+    RoomMiniSerializer,
     ConfigContextSerializer,
     ConfigBundleSerializer,
     ExportTemplateSerializer,
@@ -3707,7 +3709,7 @@ def _device_rows(*, one: bool = False, counts: bool = False):
         # without their bodies - a page is up to 10,000 rows and the row only
         # shows the name.
         .prefetch_related(
-            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail",
+            TAGS, "secondary_ip", "oob_ip", "cabinet", "din_rail", "room",
             # Device profiles, in order, for the Profiles column and card.
             "device_profile_assignments__profile",
             *(
@@ -3821,12 +3823,12 @@ class DeviceViewSet(
     )
     editable_fk_fields = {
         "status_id": Status, "role_id": DeviceRole, "platform_id": Platform,
-        "site_id": Site, "location_id": Location, "rack_id": Rack,
+        "site_id": Site, "location_id": Location, "room_id": Room, "rack_id": Rack,
     }
     # Name/serial/asset-tag/IPs are identity; rack placement is left blank so the
     # clone doesn't fight for the source's rack unit. Carry type/role/site/etc.
     clone_fields = (
-        "device_type", "role", "platform", "status", "site", "location",
+        "device_type", "role", "platform", "status", "site", "location", "room",
         "cluster", "airflow", "cooling_method", "description", "comments",
         "topology_card", "topology_photo_size",
     )
@@ -4460,7 +4462,8 @@ class DeviceViewSet(
             racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
             if racks:
                 qs = qs.filter(rack_id__in=racks)
-            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id")):
+            for key, field in (("cabinet", "cabinet_id"), ("din_rail", "din_rail_id"),
+                               ("room", "room_id")):
                 v = _uuid_param(self.request.query_params, key)
                 if v:
                     qs = qs.filter(**{field: v})
@@ -6947,7 +6950,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related(
-                "site", "site__region", "location", "role", "status",
+                "site", "site__region", "location", "room", "role", "status",
                 "cabinet_type__manufacturer",
             )
             .prefetch_related(TAGS, "rails")
@@ -6963,6 +6966,7 @@ class CabinetViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                     | Q(description__icontains=s) | cf_text_q(qs.model, s)
                 )
             for param, field in (("site", "site_id"), ("location", "location_id"),
+                                 ("room", "room_id"),
                                  ("role", "role_id"), ("status", "status_id"),
                                  ("cabinet_type", "cabinet_type_id")):
                 value = _uuid_param(params, param)
@@ -7142,7 +7146,8 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related(
-                "site", "site__region", "role", "location", "rack_type__manufacturer"
+                "site", "site__region", "role", "location", "room",
+                "rack_type__manufacturer",
             )
             .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
@@ -7164,6 +7169,11 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             location = self.request.query_params.get("location")
             if location:
                 qs = qs.filter(location_id=location)
+            from .topology_views import _uuid_param
+
+            room = _uuid_param(self.request.query_params, "room")
+            if room:
+                qs = qs.filter(room_id=room)
             role = self.request.query_params.get("role")
             if role:
                 qs = qs.filter(role_id=role)
@@ -9788,6 +9798,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             device_count_annotated=_visible_n(self, "devices"),
             rack_count_annotated=_visible_n(self, "racks"),
             cabinet_count_annotated=_visible_n(self, "cabinets"),
+            room_count_annotated=_visible_n(self, "rooms"),
         )
         if self.request:
             s = self.request.query_params.get("search", "").strip()
@@ -9807,7 +9818,87 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 {"detail": "This location has sub-locations - delete them first."},
                 status=drf_status.HTTP_409_CONFLICT,
             )
+        if obj.rooms.exists():
+            return Response(
+                {"detail": "This location has rooms - delete or move them first."},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
         return super().destroy(request, *args, **kwargs)
+
+
+class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):
+    """Rooms inside a location (Region → Site → Location → Room). Filters:
+    ``?site=``, ``?location=`` (with ``include_descendants=1`` the rooms of
+    its sub-locations too), ``?status=``, ``?tag=<slug>``, ``?search=``;
+    ``?picker=1`` answers the mini rows."""
+
+    queryset = Room.objects.all().order_by(
+        natural("location__site__name"), natural("location__name"), NATURAL_NAME
+    )
+    serializer_class = RoomSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("status_id", "color", "description"), custom_fields=True)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return RoomMiniSerializer
+        return RoomSerializer
+
+    def get_queryset(self):
+        from .topology_views import _uuid_param
+
+        qs = (
+            super().get_queryset()
+            .select_related("location", "location__site", "status")
+            .prefetch_related(TAGS)
+            .annotate(
+                device_count_annotated=_visible_n(self, "devices"),
+                rack_count_annotated=_visible_n(self, "racks"),
+                cabinet_count_annotated=_visible_n(self, "cabinets"),
+            )
+        )
+        if not self.request:
+            return qs
+        params = self.request.query_params
+        s = params.get("search", "").strip()
+        if s:
+            qs = qs.filter(
+                Q(name__icontains=s) | Q(code__icontains=s)
+                | Q(description__icontains=s) | cf_text_q(qs.model, s)
+            )
+        site = _uuid_param(params, "site")
+        if site:
+            qs = qs.filter(location__site_id=site)
+        location = _uuid_param(params, "location")
+        if location:
+            if params.get("include_descendants") in ("1", "true"):
+                qs = qs.filter(location_id__in=_location_subtree(location))
+            else:
+                qs = qs.filter(location_id=location)
+        status = _uuid_param(params, "status")
+        if status:
+            qs = qs.filter(status_id=status)
+        # ?tag=<slug> (repeatable) - AND, as on the device list.
+        tag_slugs = [t for t in params.getlist("tag") if t]
+        for slug in tag_slugs:
+            qs = qs.filter(tags__slug=slug)
+        if tag_slugs:
+            qs = qs.distinct()
+        return qs
+
+
+def _location_subtree(location_id) -> set:
+    """``location_id`` and every location nested under it."""
+    ids = {location_id}
+    frontier = {location_id}
+    while frontier:
+        frontier = set(
+            Location.objects.filter(parent_id__in=frontier)
+            .exclude(pk__in=ids).values_list("pk", flat=True)
+        ) - ids
+        ids |= frontier
+    return ids
 
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────

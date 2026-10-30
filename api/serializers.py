@@ -26,6 +26,7 @@ from core.tags import tags_of
 from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
+from .rooms import reconcile_room
 from .models import (
     Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
@@ -56,7 +57,7 @@ from .models import (
     CoolingIntake, CoolingIntakeTemplate, CoolingOutflow, CoolingOutflowTemplate,
     PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
-    Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType,
+    Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType, Room,
     RackTypeAccessory, RearPort,
     RearPortTemplate, Region, RIR, RouteTarget, Service, ServiceTemplate,
     SiteMarker,
@@ -225,6 +226,8 @@ class NumIdModelSerializer(serializers.ModelSerializer):
     # numeric suffix instead; Locations do, since a campus site can hold a
     # "Rack room" in each building.
     slug_autofill_unique = False
+    # The fields a suffixed slug is unique within, where the model has them.
+    slug_autofill_scope = ("tenant", "site")
 
     def _fill_blank_slug(self, attrs):
         """Derive a slug from the name when the caller left it blank. A
@@ -248,7 +251,7 @@ class NumIdModelSerializer(serializers.ModelSerializer):
         )
         base = slugify(source)[:100] or "item"
         scope = {}
-        for field in ("tenant", "site"):
+        for field in self.slug_autofill_scope:
             if any(f.name == field for f in model._meta.concrete_fields):
                 value = attrs.get(field) or getattr(self.instance, field, None)
                 if value is None and field == "tenant":
@@ -3223,6 +3226,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     cluster_id = TenantScopedPrimaryKeyRelatedField(
         source="cluster", queryset=Cluster.objects.all(),
         write_only=True, required=False, allow_null=True,
@@ -3333,6 +3341,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         return {"id": str(loc.id), "name": loc.name} if loc else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_cluster(self, obj):
         c = obj.cluster
         return {"id": str(c.id), "name": c.name} if c else None
@@ -3435,6 +3447,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                 )
 
         inst = self.instance
+        # The room first: a room alone gives the device its location.
+        reconcile_room(attrs, inst, self.context.get("request"))
 
         def changed(*fields):
             # A create sets everything; an update counts a field only when it
@@ -3783,7 +3797,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "mount", "mount_offset_mm", "mount_span_u",
                   "u_height", "rack_width",
                   "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
-                  "location", "location_id", "cluster", "cluster_id",
+                  "location", "location_id", "room", "room_id", "cluster", "cluster_id",
                   "virtual_chassis", "virtual_chassis_id",
                   "vc_position", "vc_priority", "vc_renamed_interfaces",
                   "image_ports",
@@ -6987,6 +7001,11 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
@@ -7001,8 +7020,13 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         l = obj.location
         return {"id": str(l.id), "name": l.name} if l else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        reconcile_room(attrs, self.instance, self.context.get("request"))
         # A rack's location must live in the rack's site.
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
@@ -7195,7 +7219,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
         model = Rack
         fields = ["id", "numid", "name", "facility_id", "site", "site_id", "role",
                   "role_id", "rack_type", "rack_type_id", "create_accessories",
-                  "status", "status_id", "location", "location_id",
+                  "status", "status_id", "location", "location_id", "room", "room_id",
                   "width", "u_height",
                   "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit", "max_power_w",
@@ -7410,6 +7434,11 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     role = CabinetRoleMiniSerializer(read_only=True)
     role_id = TenantScopedPrimaryKeyRelatedField(
         source="role", queryset=CabinetRole.objects.all(),
@@ -7434,6 +7463,10 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
         loc = obj.location
         return {"id": str(loc.id), "name": loc.name} if loc else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        return room_ref(obj.room)
+
     def get_document_count(self, obj) -> int:
         n = getattr(obj, "document_n", None)
         if n is not None:
@@ -7446,6 +7479,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        reconcile_room(attrs, self.instance, self.context.get("request"))
         location = attrs.get("location", getattr(self.instance, "location", None))
         site = attrs.get("site", getattr(self.instance, "site", None))
         if location is not None and site is not None and location.site_id != site.id:
@@ -7533,7 +7567,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
     class Meta:
         model = Cabinet
         fields = ["id", "name", "facility_id", "site", "site_id",
-                  "location", "location_id", "role", "role_id",
+                  "location", "location_id", "room", "room_id", "role", "role_id",
                   "cabinet_type", "cabinet_type_id", "status", "status_id",
                   *CABINET_SIZE_FIELDS, "rails", "description", "document_count",
                   "device_count",
@@ -9566,6 +9600,7 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     device_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
     cabinet_count = serializers.SerializerMethodField()
+    room_count = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
 
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -9590,6 +9625,10 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     def get_cabinet_count(self, obj) -> int:
         v = getattr(obj, "cabinet_count_annotated", None)
         return v if v is not None else _visible_count(self, obj, "cabinets")
+
+    def get_room_count(self, obj) -> int:
+        v = getattr(obj, "room_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "rooms")
 
     def get_document_count(self, obj) -> int:
         return Document.objects.filter(
@@ -9616,10 +9655,113 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
                   "status", "status_id", "color", "icon", "description",
                   "child_count",
-                  "device_count", "rack_count", "cabinet_count", "document_count",
+                  "device_count", "rack_count", "cabinet_count", "room_count",
+                  "document_count",
                   "created_at", "updated_at"]
         read_only_fields = ["id",  "child_count", "document_count",
                             "created_at", "updated_at"]
+
+
+# ─── Rooms (Region → Site → Location → Room) ─────────────────────────────────
+class RoomMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Room
+        fields = ["id", "name", "slug", "code", "color", "location_id"]
+
+
+def room_ref(room) -> dict | None:
+    """How a device, rack or cabinet names its room: id, name, code and
+    colour, for the ColorBadge."""
+    if room is None:
+        return None
+    return {"id": str(room.id), "name": room.name, "code": room.code, "color": room.color}
+
+
+class RoomSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
+                     TaggableSerializerMixin, NumIdModelSerializer):
+    cf_model = "room"
+    # Two buildings can each hold a "Room 210": the slug is unique per
+    # location, suffixed only on a clash there.
+    slug_autofill_unique = True
+    slug_autofill_scope = ("tenant", "location")
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    location = serializers.SerializerMethodField()
+    site = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(), write_only=True,
+    )
+    tags = TagSerializer(many=True, read_only=True)
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", queryset=Tag.objects.all(),
+        write_only=True, required=False, many=True,
+    )
+    device_count = serializers.SerializerMethodField()
+    rack_count = serializers.SerializerMethodField()
+    cabinet_count = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        return {"id": str(loc.id), "name": loc.name, "color": loc.color, "icon": loc.icon}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = obj.location.site
+        return {"id": str(site.id), "name": site.name}
+
+    def get_device_count(self, obj) -> int:
+        v = getattr(obj, "device_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "devices")
+
+    def get_rack_count(self, obj) -> int:
+        v = getattr(obj, "rack_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "racks")
+
+    def get_cabinet_count(self, obj) -> int:
+        v = getattr(obj, "cabinet_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "cabinets")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        location = attrs.get("location", getattr(inst, "location", None))
+        name = attrs.get("name", getattr(inst, "name", None))
+        if location is not None and name:
+            clash = Room.objects.filter(location=location, name=name)
+            if inst is not None:
+                clash = clash.exclude(pk=inst.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"name": f"{location.name} already has a room with this name."}
+                )
+        slug = attrs.get("slug")
+        if location is not None and slug:
+            clash = Room.objects.filter(location=location, slug=slug)
+            if inst is not None:
+                clash = clash.exclude(pk=inst.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"slug": f"{location.name} already has a room with this slug."}
+                )
+        if inst is not None and "location" in attrs and attrs["location"].pk != inst.location_id:
+            # What stands in it is in its location: it moves out first.
+            if inst.devices.exists() or inst.racks.exists() or inst.cabinets.exists():
+                raise serializers.ValidationError({"location_id": (
+                    "Devices, racks or cabinets are in this room - move them out first."
+                )})
+        return attrs
+
+    class Meta:
+        model = Room
+        fields = ["id", "name", "slug", "code", "location", "location_id", "site",
+                  "status", "status_id", "color", "description",
+                  "device_count", "rack_count", "cabinet_count",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+        # Name and slug per location are checked in validate(), with a
+        # message that names the clash; the constraints still guard the table.
+        validators = []
 
 
 # ─── Config Contexts ─────────────────────────────────────────────────────────

@@ -295,6 +295,7 @@ from .viewsets import (
     RearPortViewSet,
     RegionViewSet,
     RIRViewSet,
+    RoomViewSet,
     RouteTargetViewSet,
     ServiceTemplateViewSet,
     ServiceViewSet,
@@ -336,6 +337,7 @@ router.register(r"route-targets", RouteTargetViewSet, basename="route-target")
 router.register(r"sites",         SiteViewSet,        basename="site")
 router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
+router.register(r"rooms",         RoomViewSet,        basename="room")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")
 router.register(r"config-bundles", ConfigBundleViewSet, basename="config-bundle")

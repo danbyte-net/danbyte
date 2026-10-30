@@ -99,7 +99,7 @@ class EditableField:
 
     key: str            # the payload key = the model attname ("enabled", "status_id")
     label: str
-    kind: str           # text|int|bool|choice|options|status|bytes|vlan|vrf|object
+    kind: str           # text|int|bool|choice|options|status|bytes|vlan|vrf|object|color
     nullable: bool
     hint: str = ""
     choices: str | None = None                 # /api/dcim/choices/ list key
@@ -238,6 +238,9 @@ def _describe(model, key: str, target_model=None, *, is_fk=False) -> EditableFie
                 options=[{"value": v, "label": str(text)} for v, text in flat],
                 **common,
             )
+        if f.name == "color" and getattr(f, "max_length", None) == 7:
+            # A hex swatch: the dialog offers the forms' colour picker.
+            return EditableField(kind="color", **common)
         source = SUGGESTION_SOURCES.get((label, f.name))
         return EditableField(
             kind="text", suggestions=source() if source else None, **common,

@@ -134,6 +134,8 @@ for _e in [
                    route="/sites/$id"),
     ReferenceModel("location", "Locations", "api.Location",
                    "/api/locations/", route="/locations/$id"),
+    ReferenceModel("room", "Rooms", "api.Room", "/api/rooms/",
+                   route="/rooms/$id"),
     ReferenceModel("region", "Regions", "api.Region", "/api/regions/",
                    route="/regions/$id"),
     ReferenceModel("tenant", "Tenants", "core.Tenant", "/api/tenants/",

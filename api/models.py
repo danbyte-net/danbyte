@@ -2343,6 +2343,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="devices",
         help_text="Physical location within the site (building / floor / room).",
     )
+    # The room it stands in, inside its location; never set from placement.
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="devices",
+    )
     cluster = models.ForeignKey(
         "Cluster", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="devices",
@@ -2484,6 +2489,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 class ImageAttachment(TimestampedModel):
@@ -5495,6 +5505,10 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="racks",
         help_text="Physical location within the site (building / floor / room).",
     )
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="racks",
+    )
     width = models.PositiveSmallIntegerField(
         choices=WIDTH_CHOICES, default=19, help_text="Rail-to-rail width, inches."
     )
@@ -5563,6 +5577,11 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
@@ -5799,6 +5818,10 @@ class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "Location", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="cabinets",
     )
+    room = models.ForeignKey(
+        "Room", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cabinets",
+    )
     role = models.ForeignKey(
         CabinetRole, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="cabinets",
@@ -5843,6 +5866,11 @@ class Cabinet(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return self.name
+
+    def clean(self):
+        from .rooms import clean_room
+
+        clean_room(self)
 
 
 DIN_PROFILE_CHOICES = [("ts35", "TS 35"), ("ts15", "TS 15"), ("g32", "G 32")]
@@ -8528,6 +8556,56 @@ class Location(NumIdMixin, TimestampedModel):
                     {"parent": "A location can't be its own ancestor."}
                 )
             node = node.parent
+
+
+class Room(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A room inside a location (Region → Site → Location → Room). Devices,
+    racks and cabinets name the room they stand in; the room's site is its
+    location's. Locations nested as rooms before this existed stay as they
+    are."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="rooms"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.PROTECT, related_name="rooms"
+    )
+    name = models.CharField(max_length=128)
+    # Derived from the name when left blank (the API suffixes a clash).
+    slug = models.SlugField(max_length=128, blank=True)
+    code = models.CharField(
+        max_length=32, blank=True, default="", db_default="",
+        help_text="The room's number or code on the door (e.g. 210, B1-07).",
+    )
+    status = models.ForeignKey(
+        "Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="rooms",
+    )
+    color = models.CharField(max_length=7, blank=True, default="", db_default="")
+    description = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = [natural("location__name"), natural("name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "location", "slug"],
+                name="uniq_room_tenant_location_slug",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "location", "name"],
+                name="uniq_room_tenant_location_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def clean(self):
+        if not self.slug:
+            from django.utils.text import slugify
+
+            self.slug = slugify(self.name)[:128]
 
 
 # ─── Config Contexts (layered JSON merged onto devices/VMs) ──────────────────

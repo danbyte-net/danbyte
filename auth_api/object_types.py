@@ -96,6 +96,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # SITE_PATHS["sitesettings"] = "site".
     ("core.SiteSettings", "Site settings", "Organization"),
     ("api.Location", "Locations", "Organization"),
+    ("api.Room", "Rooms", "Organization"),
     ("api.Contact", "Contacts", "Organization"),
     ("api.ContactGroup", "Contact groups", "Organization"),
     ("api.ContactRole", "Contact roles", "Organization"),
