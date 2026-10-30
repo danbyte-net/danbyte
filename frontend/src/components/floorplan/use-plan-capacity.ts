@@ -139,3 +139,5 @@ export function usePlanCapacity({
     dimTileIds,
   }
 }
+
+export type PlanCapacity = ReturnType<typeof usePlanCapacity>

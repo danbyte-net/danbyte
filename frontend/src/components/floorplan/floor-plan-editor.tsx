@@ -1,0 +1,510 @@
+import { useNavigate } from "@tanstack/react-router"
+import { toPng } from "html-to-image"
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import { toast } from "sonner"
+
+import type { FloorPlanCablePath, FloorPlanTile } from "@/lib/api"
+import { Loading } from "@/components/loading"
+import { QueryError } from "@/components/query-error"
+import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { HiddenChip } from "@/components/hidden-chip"
+import { hiddenCount } from "@/components/hidden-objects"
+import { useTheme } from "@/components/theme-provider"
+import { usePageTitle } from "@/lib/page-title"
+import { useMe } from "@/lib/use-me"
+
+import { BackgroundControls } from "./background-controls"
+import { useCadCalibration } from "./cad-calibrate"
+import { useCadFloorImage, useCadSource } from "./cad-layer"
+import { ColorByLegend, colorByLegendEntries } from "./color-by-legend"
+import { CELL, cableRoutePoints } from "./floor-canvas"
+import type { FloorCanvasApi } from "./floor-canvas"
+import { readFloorHidden, visibleTiles as pickVisibleTiles } from "./hidden"
+import { ObjectsSidebar } from "./objects-sidebar"
+import { PlanCanvas } from "./plan-canvas"
+import { PlanDialogs } from "./plan-dialogs"
+import { PlanHeader } from "./plan-header"
+import { PlanInspector } from "./plan-inspector"
+import { PlanRail } from "./plan-rail"
+import { PlanScene3D } from "./plan-scene-3d"
+import { planSvg } from "./plan-svg"
+import { PlanToolbar } from "./plan-toolbar"
+import { RackTablePanel } from "./rack-table-panel"
+import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
+import { useCadDrawing } from "./use-cad-drawing"
+import { useEditorKeys } from "./use-editor-keys"
+import { useFloorPlanData } from "./use-floor-plan-data"
+import { useLeaveGuard } from "./use-leave-guard"
+import { popoverShowsPorts, usePlanCapacity } from "./use-plan-capacity"
+import { usePlanEditState } from "./use-plan-edit-state"
+import { usePlanMutations } from "./use-plan-mutations"
+import { usePlanViewPrefs } from "./use-plan-view-prefs"
+import { useStructureEdits } from "./use-structure-edits"
+import { useTileEdits } from "./use-tile-edits"
+
+/** The floor-plan page's search params (validated by the route). */
+export interface FloorPlanSearch {
+  /** A cable's route highlighted and fitted on arrival. */
+  trace?: string
+  /** "3d" opens straight into the 3D room. */
+  viz?: "3d"
+  /** A tile selected and zoomed onto on arrival ("Show on floor plan"). */
+  tile?: string
+}
+
+/** The floor-plan editor: header, bar, mode rail, the 2D canvas or the 3D
+ * room, the inspector or Objects panel, the rack table, and the dialogs. */
+export function FloorPlanEditor({
+  id,
+  search,
+}: {
+  id: string
+  search: FloorPlanSearch
+}) {
+  const nav = useNavigate()
+  const { canDo, humanIds } = useMe()
+  const { theme } = useTheme()
+  const canEdit = canDo("floorplan", "change")
+
+  const data = useFloorPlanData(id)
+  const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
+  const { trays, areas, walls, cablePaths } = data
+  usePageTitle(plan?.name ?? null)
+  const { trace: traceParam, viz: vizParam, tile: tileParam } = search
+  const view3d = vizParam === "3d"
+
+  const ed = usePlanEditState(id, data.serverTiles)
+  const { tiles, isDirty, selectedId, setSelectedId } = ed
+  // Tile popover: hover-preview (delayed) + click-to-pin.
+  const popover = useTilePopover()
+  // Resolve the row list for the tile in hand: a tile type with its own list
+  // wins, otherwise it INHERITS the global one (absence = inherit, so the two
+  // can never drift apart).
+  const popoverFields = useMemo(() => {
+    const cfg = popoverCfg.data
+    if (!cfg) return DEFAULT_POPOVER_FIELDS
+    const slug = popover.target?.tile.tile_type?.slug
+    return (slug && cfg.tile_overrides[slug]) || cfg.fields
+  }, [popoverCfg.data, popover.target])
+  const canvasApi = useRef<FloorCanvasApi | null>(null)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  const leaveGuard = useLeaveGuard(isDirty, ed.isDirtyRef)
+  const { uploadBackground, patchPlan } = usePlanMutations(id)
+  const prefs = usePlanViewPrefs({ id, plan, canEdit, patchPlan })
+  const { hidden, setHiddenPref, colorBy, showRacks, showObjects } = prefs
+  const edits = useTileEdits({ id, plan, ed })
+  const structure = useStructureEdits({ id, plan, walls, ed })
+
+  const shownTiles = useMemo(
+    () => pickVisibleTiles(tiles, hidden),
+    [tiles, hidden]
+  )
+  const hiddenTileIds = useMemo(
+    () =>
+      new Set(tiles.filter((t) => !shownTiles.includes(t)).map((t) => t.id)),
+    [tiles, shownTiles]
+  )
+  // A tile that just went off the plan cannot stay selected - the keyboard
+  // nudge and delete act on the selection, and nobody should edit what they
+  // cannot see.
+  useEffect(() => {
+    if (selectedId && hiddenTileIds.has(selectedId)) setSelectedId(null)
+  }, [selectedId, hiddenTileIds])
+
+  const capacity = usePlanCapacity({
+    planId: id,
+    tiles: shownTiles,
+    live: liveState.data ?? null,
+    colorBy,
+    wantPorts: popoverShowsPorts(popoverCfg.data),
+  })
+  // The plan's CAD drawing: placement saved as it changes (an editor) or
+  // kept on screen (a viewer's layer choices), drawn under the grid.
+  const cad = useCadDrawing(plan, canEdit)
+  const cadSource = useCadSource(id, cad.drawing, cad.placement)
+  const cadPxPerMm = CELL / (plan?.cell_mm || 600)
+  const calibration = useCadCalibration(
+    id,
+    cad.drawing,
+    cad.placement,
+    cadPxPerMm
+  )
+  const cadFloorUrl = useCadFloorImage(
+    cad.drawing,
+    cadSource,
+    cad.placement,
+    view3d && cad.drawing?.status === "ready"
+  )
+  const racksOpen = colorBy !== "type" && showRacks && capacity.hasRacks
+  // The table takes the plan's lower part: fit the plan to the room left
+  // when it opens or closes - unless the page arrived focused on a tile or
+  // a trace, which keeps its framing.
+  useEffect(() => {
+    if (tileParam || traceParam) return
+    const frame = requestAnimationFrame(() => canvasApi.current?.fit())
+    return () => cancelAnimationFrame(frame)
+  }, [racksOpen, tileParam, traceParam])
+
+  // ?trace=<cableId> → highlight that cable + fit the view to its route, so a
+  // "trace on map" link from a cable/rack lands on the run without any clicks.
+  // ?tile=<id> → select it and zoom in on it, once the tiles have landed.
+  const focusedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!tileParam || focusedRef.current === tileParam) return
+    const tile = tiles.find((t) => t.id === tileParam)
+    if (!tile) return
+    focusedRef.current = tileParam
+    setSelectedId(tile.id)
+    requestAnimationFrame(() => canvasApi.current?.focusTile(tile, 2.5))
+  }, [tileParam, tiles])
+
+  const tracedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!traceParam || tracedRef.current === traceParam) return
+    const cp = cablePaths.find((c) => c.id === traceParam)
+    if (!cp) return // paths not loaded yet - the effect re-runs when they land
+    tracedRef.current = traceParam
+    prefs.setShowLinksLocal(true)
+    ed.setHighlightCableIds([traceParam])
+    const route = cableRoutePoints(cp, trays, tiles)
+    if (route.length >= 2)
+      requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
+  }, [traceParam, cablePaths, trays, tiles])
+
+  const { stepHistory } = useEditorKeys({
+    canEdit,
+    view3d,
+    traceParam,
+    tracedRef,
+    plan,
+    ed,
+    edits,
+    structure,
+    prefs,
+    hiddenTileIds,
+    closePopover: popover.close,
+  })
+
+  const exportPng = async () => {
+    if (!exportRef.current || !plan) return
+    const url = await toPng(exportRef.current, {
+      backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
+      pixelRatio: 2,
+    })
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${plan.name}.png`
+    a.click()
+  }
+
+  const openTile = (tile: FloorPlanTile) => {
+    if (tile.linked?.kind === "floorplan") {
+      nav({ to: "/floorplans/$id", params: { id: tile.linked.id } })
+      return
+    }
+    // Rack/device tiles open the contents + end-to-end trace sheet.
+    if (tile.linked?.kind === "rack" || tile.linked?.kind === "device") {
+      ed.setDeepTile(tile)
+      return
+    }
+    // A cabinet tile opens its panel over the canvas - in place of the
+    // popover a click pinned on the way.
+    if (tile.linked?.kind === "cabinet") {
+      popover.close()
+      ed.setCabinetTileId(tile.id)
+      return
+    }
+    setSelectedId(tile.id)
+  }
+
+  // From a device's paths in the deep-view: close the sheet and highlight one
+  // cable, or a whole run (all its cables), on the plan - no Cables mode.
+  const traceCablesOnMap = useCallback(
+    (cableIds: string[]) => {
+      ed.setDeepTile(null)
+      ed.setCabinetTileId(null)
+      prefs.setShowLinksLocal(true)
+      ed.setHighlightCableIds(cableIds)
+      const pts = cableIds
+        .map((cid) => cablePaths.find((c) => c.id === cid))
+        .filter((cp): cp is FloorPlanCablePath => !!cp)
+        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles))
+      if (pts.length >= 2)
+        requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
+      else if (cableIds.length)
+        toast.info("That run isn't routed through a tray on this plan yet.")
+    },
+    [cablePaths, trays, shownTiles]
+  )
+
+  if (planQuery.isLoading) return <Loading />
+  if (planQuery.isError) return <QueryError error={planQuery.error} />
+  if (!plan) return null
+
+  // The key to the Color by, in the corner of the 2D plan - inside its
+  // export area - and of the 3D room.
+  const colorLegend = colorBy !== "type" && capacity.hasRacks && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <ColorByLegend
+        colorBy={colorBy}
+        figures={capacity.legend.figures}
+        alarm={capacity.legend.alarm}
+      />
+    </div>
+  )
+
+  // The background image's controls: a popover off the header on a wide
+  // screen, a dialog from More on a narrow one.
+  const backgroundControls = (
+    <BackgroundControls
+      plan={plan}
+      cad={cad}
+      uploadBackground={uploadBackground}
+      patchPlan={patchPlan}
+      onImageOverDrawing={ed.setPendingImage}
+    />
+  )
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* ── Header: which plan, which floor, which mode ──────────────── */}
+      <PlanHeader
+        plan={plan}
+        floors={data.floors.data?.results}
+        isDirty={isDirty}
+        canEdit={canEdit}
+        view3d={view3d}
+        mode={ed.mode}
+        onModeChange={(m) => {
+          ed.setMode(m)
+          setSelectedId(null)
+          ed.setSelectedTrayId(null)
+          ed.setArmed(null)
+          ed.setDrawPoints(null)
+          ed.setSelectedAreaId(null)
+          ed.setAreaArmed(false)
+          ed.setMultiSel(new Set())
+          // Leaving Cables mode must exit tray-edit - otherwise Layout
+          // mode stays frozen (tiles unselectable, cables hidden).
+          ed.setTrayEditMode(false)
+        }}
+      />
+
+      {/* ── Second bar: find and view on the left, the panel, display and
+          file actions on the right. */}
+      <PlanToolbar
+        plan={plan}
+        mode={ed.mode}
+        view3d={view3d}
+        canEdit={canEdit}
+        tiles={shownTiles}
+        search={ed.search}
+        onSearchChange={ed.setSearch}
+        onPickTile={(tile) => {
+          setSelectedId(tile.id)
+          canvasApi.current?.focusTile(tile)
+        }}
+        onFit={() => canvasApi.current?.fit()}
+        showGrid={ed.showGrid}
+        onShowGridChange={ed.setShowGrid}
+        prefs={prefs}
+        hasRacks={capacity.hasRacks}
+        drawingOpen={ed.drawingOpen}
+        onToggleDrawing={() => ed.setDrawingOpen((o) => !o)}
+        backgroundControls={backgroundControls}
+        exportMenu={
+          <DrawingExportMenu
+            name={plan.name}
+            build={async () => ({
+              svg: planSvg({
+                plan,
+                tiles: shownTiles,
+                walls,
+                trays,
+                areas,
+                colorBy,
+                figures: capacity.figures,
+                liveState: liveState.data ?? null,
+                showZoneLabels: prefs.showZoneLabels,
+                showTrays: prefs.showTrays,
+              }),
+              missing: 0,
+            })}
+            pdfUrl={`/api/floor-plans/${plan.id}/export/pdf/`}
+            paperKey="floorplan:export"
+            defaultPaper={{ size: "a3", orientation: "landscape" }}
+            snapshot={view3d ? undefined : exportPng}
+            svg={false}
+            pdfExtra={() => ({
+              legend: capacity.hasRacks
+                ? colorByLegendEntries(
+                    colorBy,
+                    capacity.legend.figures,
+                    capacity.legend.alarm
+                  )
+                : null,
+            })}
+          />
+        }
+        onOpenSettings={() => ed.setSettingsOpen(true)}
+        onOpenBackground={() => ed.setBackgroundOpen(true)}
+        canUndo={ed.draft.canUndo}
+        canRedo={ed.draft.canRedo}
+        onUndo={() => stepHistory("undo")}
+        onRedo={() => stepHistory("redo")}
+        isDirty={isDirty}
+        saving={edits.save.isPending}
+        onSave={() => edits.save.mutate()}
+      />
+
+      {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
+      <div className="flex min-h-0 flex-1">
+        {canEdit && (
+          <PlanRail
+            plan={plan}
+            ed={ed}
+            trays={trays}
+            walls={walls}
+            areas={areas}
+            tileTypes={tileTypes.data?.results}
+            roles={roles.data?.results}
+          />
+        )}
+
+        <div className="relative min-w-0 flex-1">
+          {data.tilesQuery.isError && (
+            <div className="p-4">
+              <QueryError error={data.tilesQuery.error} />
+            </div>
+          )}
+          {view3d && (
+            <PlanScene3D
+              plan={plan}
+              liveState={liveState.data ?? null}
+              hiddenTileIds={hiddenTileIds}
+              traceCableId={traceParam ?? null}
+              prefs={prefs}
+              capacity={capacity}
+              rackFocus={ed.rackFocus3d}
+              cad={cad}
+              cadFloorUrl={cadFloorUrl}
+              colorLegend={colorLegend}
+              showHint={ed.show3dHint}
+              onDismissHint={() => ed.setShow3dHint(false)}
+            />
+          )}
+          {!view3d && (
+            <PlanCanvas
+              plan={plan}
+              shownTiles={shownTiles}
+              canEdit={canEdit}
+              ed={ed}
+              edits={edits}
+              structure={structure}
+              prefs={prefs}
+              liveState={liveState.data ?? null}
+              trays={trays}
+              walls={walls}
+              areas={areas}
+              cablePaths={cablePaths}
+              tileTypes={tileTypes.data?.results ?? []}
+              roles={roles.data?.results ?? []}
+              popover={popover}
+              popoverFields={popoverFields}
+              capacity={capacity}
+              racksOpen={racksOpen}
+              colorLegend={colorLegend}
+              canvasApi={canvasApi}
+              exportRef={exportRef}
+              cad={cad}
+              cadSource={cadSource}
+              cadPxPerMm={cadPxPerMm}
+              calibration={calibration}
+              theme={theme}
+              openTile={openTile}
+            />
+          )}
+        </div>
+
+        {canEdit && (
+          <PlanInspector
+            plan={plan}
+            ed={ed}
+            edits={edits}
+            structure={structure}
+            prefs={prefs}
+            trays={trays}
+            walls={walls}
+            areas={areas}
+            tileTypes={tileTypes.data?.results ?? []}
+            roles={roles.data?.results ?? []}
+            openTile={openTile}
+          />
+        )}
+        {/* Outermost right aside, so it coexists with whichever inspector is
+            open rather than fighting it for the gutter. */}
+        {!showObjects && (
+          <HiddenChip
+            count={hiddenCount(hidden)}
+            onShowAll={() => setHiddenPref(readFloorHidden(undefined))}
+          />
+        )}
+        {showObjects && (
+          <ObjectsSidebar
+            tiles={tiles}
+            liveState={liveState.data ?? null}
+            selectedId={selectedId}
+            onPick={(tile) => {
+              if (hiddenTileIds.has(tile.id)) return
+              setSelectedId(tile.id)
+              canvasApi.current?.focusTile(tile)
+            }}
+            hidden={hidden}
+            onHiddenChange={setHiddenPref}
+            // While the rack table is open it lists the racks.
+            omitRacks={racksOpen}
+          />
+        )}
+      </div>
+
+      {/* The plan's racks while it is coloured by them: under the plan,
+          the width of the page, its height dragged from its top edge. */}
+      {racksOpen && (
+        <RackTablePanel
+          racks={capacity.rows}
+          loading={capacity.query.isLoading}
+          error={capacity.query.error}
+          humanIds={humanIds}
+          onHover={(r) => capacity.setPointRackId(r?.id ?? null)}
+          onFocus={(r) => {
+            const tile = shownTiles.find((t) => t.id === r.tileIds[0])
+            if (!tile) return
+            if (view3d) {
+              ed.setRackFocus3d((cur) => ({
+                tileId: tile.id,
+                n: (cur?.n ?? 0) + 1,
+              }))
+              return
+            }
+            setSelectedId(tile.id)
+            canvasApi.current?.focusTile(tile, 2)
+          }}
+          onMatchChange={capacity.setMatch}
+          onClose={() => prefs.setViewPref("show_racks", false)}
+        />
+      )}
+
+      <PlanDialogs
+        plan={plan}
+        ed={ed}
+        cad={cad}
+        uploadBackground={uploadBackground}
+        createTray={structure.createTray}
+        traceCablesOnMap={traceCablesOnMap}
+        backgroundControls={backgroundControls}
+        leaveGuard={leaveGuard}
+      />
+    </div>
+  )
+}
