@@ -136,6 +136,14 @@ and devices that live there.
     A site's free-text **location** field is just an address line. The structured
     building → floor → room tree is what you build with **locations**.
 
+## Rooms
+
+A location can hold [**rooms**](../dcim/rooms.md) - the comms room, Room 210 -
+that devices, racks and cabinets name as the room they stand in. The
+location's page lists them on its **Rooms** tab, with **Add room**. Locations
+you already nest as rooms stay as they are. A location that still has rooms
+cannot be deleted.
+
 ## Floor plans
 
 A location can be drawn as a **[floor plan](floor-plans.md)** - a grid canvas

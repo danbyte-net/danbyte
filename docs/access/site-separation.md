@@ -67,7 +67,8 @@ ergonomics on top:
     role's racks, a status's usage, a region's sites, and the like. So do a
     tag's usage, a contact's or contact role's assignments, a custom-field
     group's fields, the circuits on a provider network, a cluster's or VM
-    group's virtual machines, a location's devices, racks and cabinets, a
+    group's virtual machines, a location's devices, racks, cabinets and
+    rooms, a room's devices, racks and cabinets, a
     cabinet's devices, a floor plan's tiles, an L2VPN's VTEPs, a module
     type's interface templates, and the sub-groups of regions, platform
     groups and contact groups. A tenant's sites, prefixes, VLANs and IP
