@@ -9,6 +9,8 @@
   this floor while the object names another room (or none). Rooms are never
   set from a placement; the editor offers the change and a write applies it.
 * ``tile_photos`` - the photo a device or rack tile shows as its icon.
+* ``TileLinks`` - which tiles link an object the reader may not view, read
+  as Hidden (#453).
 * ``version_conflicts`` - the per-object check behind a 409 on save.
 """
 from __future__ import annotations
@@ -364,6 +366,61 @@ def object_photos(objects, user, tenant) -> dict:
             if photo:
                 out[(kind, pk)] = photo
     return out
+
+
+# ── What a tile links ──────────────────────────────────────────────────────
+
+#: What a tile whose link the reader may not view reads as (#453).
+HIDDEN = "Hidden"
+
+
+def tile_link(tile):
+    """``(kind, pk)`` of the object ``tile`` links, or ``(None, None)``.
+    The link kinds are the objects' RBAC slugs."""
+    for kind, field in FloorPlanTile.LINK_FIELDS.items():
+        pk = getattr(tile, f"{field}_id", None)
+        if pk is not None:
+            return kind, pk
+    return None, None
+
+
+def hidden_link(kind) -> dict:
+    """The ``linked`` of a tile whose object the reader may not view."""
+    return {"kind": kind, "id": None, "name": HIDDEN, "hidden": True}
+
+
+class TileLinks:
+    """Which tiles link an object the reader may not view (#453). A tile on
+    a plan they may view can link a device, rack, cabinet, panel, feed,
+    cooling source or floor plan of another site; it keeps its geometry and
+    names nothing of the object. ``prime`` answers a page of tiles in one
+    query per kind present; a superuser, or a reader who sees every row of a
+    kind, costs none."""
+
+    def __init__(self, user, tenant):
+        from auth_api import rbac
+
+        self.viewable = (
+            None if user is None or getattr(user, "is_superuser", False)
+            else rbac.ViewableRows(user, tenant)
+        )
+
+    def prime(self, tiles) -> None:
+        if self.viewable is None:
+            return
+        by_kind: dict = {}
+        for t in tiles:
+            kind, pk = tile_link(t)
+            if kind is not None:
+                by_kind.setdefault(kind, set()).add(pk)
+        for kind, pks in by_kind.items():
+            self.viewable.prime(kind, pks)
+
+    def hidden(self, tile) -> bool:
+        if self.viewable is None:
+            return False
+        kind, pk = tile_link(tile)
+        return kind is not None and not self.viewable.may_view(kind, pk)
 
 
 def tile_photos(tiles, user, tenant) -> dict:

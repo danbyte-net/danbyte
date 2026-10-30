@@ -281,7 +281,9 @@ function SiteMarkersSection({ typeId }: { typeId: string }) {
             id: "device",
             header: "Device",
             cell: (m) =>
-              m.device ? (
+              m.device && !m.device.id ? (
+                m.device.name
+              ) : m.device?.id ? (
                 <Link
                   to="/devices/$id"
                   params={{ id: m.device.id }}

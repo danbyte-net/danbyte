@@ -10349,8 +10349,36 @@ class SiteMarkerSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_device(self, obj):
-        d = obj.device
-        return {"id": str(d.id), "name": d.name} if d else None
+        """The marker's device; one the reader may not view reads
+        ``{id: null, name: "Hidden", hidden: true}`` (#453)."""
+        if obj.device_id is None:
+            return None
+        viewable = self._viewable_devices(obj)
+        if viewable is not None and not viewable.may_view("device", obj.device_id):
+            return {"id": None, "name": "Hidden", "hidden": True}
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    def _viewable_devices(self, obj):
+        """A ``ViewableRows`` for the request, primed once with the devices
+        of every row a list serialises; None without a request or for a
+        superuser."""
+        if not hasattr(self, "_marker_devices"):
+            request = self.context.get("request") if self.context else None
+            user = getattr(request, "user", None)
+            self._marker_devices = None
+            if user is not None and not getattr(user, "is_superuser", False):
+                from api.views import _get_active_tenant
+                from auth_api import rbac
+
+                self._marker_devices = rbac.ViewableRows(user, _get_active_tenant(request))
+                parent = getattr(self, "parent", None)
+                rows = (
+                    parent.instance
+                    if isinstance(parent, serializers.ListSerializer)
+                    and isinstance(parent.instance, list) else [obj]
+                )
+                self._marker_devices.prime("device", {r.device_id for r in rows})
+        return self._marker_devices
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_type(self, obj):
@@ -10961,13 +10989,34 @@ def _r3(v: float) -> float:
 
 
 class _FloorPlanTileListSerializer(serializers.ListSerializer):
-    """Many tiles: their photos are looked up once for the whole list."""
+    """Many tiles: their photos, and which links the reader may view, are
+    looked up once for the whole list."""
 
     def to_representation(self, data):
         rows = list(data.all() if hasattr(data, "all") else data)
         if "tile_photos" not in self.context:
             self.context["tile_photos"] = _tile_photos_for(rows, self.context)
+        links = _tile_links_for(self.context)
+        if links is not None:
+            links.prime(rows)
         return super().to_representation(rows)
+
+
+def _tile_links_for(context):
+    """The request's :class:`~api.floor_plan_placement.TileLinks`, made once
+    per serialisation; None without a request (an internal read names every
+    link)."""
+    if "tile_links" not in context:
+        from api.views import _get_active_tenant
+
+        from .floor_plan_placement import TileLinks
+
+        request = context.get("request")
+        context["tile_links"] = (
+            None if request is None
+            else TileLinks(request.user, _get_active_tenant(request))
+        )
+    return context["tile_links"]
 
 
 def _tile_photos_for(tiles, context) -> dict:
@@ -10984,9 +11033,12 @@ def _tile_photos_for(tiles, context) -> dict:
 
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
-    (resolved to the right FK, tenant-checked - the CableSerializer
-    reference-kind approach) and read back as a compact ``linked`` object
-    ``{kind, id, name, route}`` for the canvas to render + deep-link."""
+    (resolved to the right FK, tenant-checked, and to an object the writer
+    may view - the CableSerializer reference-kind approach) and read back as
+    a compact ``linked`` object ``{kind, id, name, route}`` for the canvas to
+    render + deep-link. A link the reader may not view reads
+    ``{kind, id: null, name: "Hidden", hidden: true}`` (#453); a write that
+    sends the tile's ``link_kind`` with no ``link_id`` keeps its link."""
 
     _LINK_MODELS = {
         "rack": Rack,
@@ -11032,9 +11084,16 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_linked(self, obj):
         field = FloorPlanTile.LINK_FIELDS.get(obj.link_kind)
-        target = getattr(obj, field) if field else None
-        if target is None:
+        if not field or getattr(obj, f"{field}_id") is None:
             return None
+        links = _tile_links_for(self.context)
+        if links is not None and links.hidden(obj):
+            # An object the reader may not view (#453): the tile keeps its
+            # place and names nothing of it - no id, name, route, room or role.
+            from .floor_plan_placement import hidden_link
+
+            return hidden_link(obj.link_kind)
+        target = getattr(obj, field)
         out = {
             "kind": obj.link_kind,
             "id": str(target.pk),
@@ -11081,6 +11140,17 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
             )
         self._check_geometry(attrs)
 
+        # A tile's own kind sent with no id keeps its link: the editor saves
+        # a tile whose object the writer may not view that way (#453).
+        if (
+            self.instance is not None
+            and not attrs.get("link_id")
+            and attrs.get("link_kind")
+            and attrs["link_kind"] == self.instance.link_kind
+            and self.instance.linked_object is not None
+        ):
+            attrs.pop("link_id", None)
+            attrs.pop("link_kind")
         # Resolve the link when the payload touches it.
         if "link_kind" in attrs or "link_id" in attrs:
             kind = attrs.get("link_kind") or ""
@@ -11109,6 +11179,16 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     raise serializers.ValidationError(
                         {"link_id": "Pick an object in the current tenant."}
                     )
+                # An object the writer may not view answers as unknown - but
+                # the tile's own link stays, as it is.
+                current = getattr(self.instance, FloorPlanTile.LINK_FIELDS[kind] + "_id", None)
+                if request is not None and obj.pk != current:
+                    from auth_api import rbac
+
+                    if not rbac.can_act_on(request.user, tenant, kind, "view", obj):
+                        raise serializers.ValidationError(
+                            {"link_id": f"Unknown {kind} {link_id}."}
+                        )
                 plan = attrs.get(
                     "floor_plan", getattr(self.instance, "floor_plan", None)
                 )

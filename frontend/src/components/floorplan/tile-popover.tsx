@@ -41,6 +41,7 @@ import {
   hasCoolingData,
   hasPowerData,
 } from "@/lib/rack-capacity"
+import { shownLink } from "./shown-link"
 
 type LiveTile = FloorPlanLiveState["tiles"][string]
 
@@ -493,7 +494,9 @@ export const POPOVER_FIELDS: Record<string, PopoverField> = {
     // than a faceplate. Renders the type's photo when it has mapped ports,
     // else the drawn panel - the same choice the device page makes.
     render: ({ tile, linked }) =>
-      tile.linked?.kind === "device" && linked?.device_type?.id ? (
+      tile.linked?.kind === "device" &&
+      tile.linked.id &&
+      linked?.device_type?.id ? (
         <TileFaceplate
           deviceId={tile.linked.id}
           deviceTypeId={linked.device_type.id}
@@ -613,7 +616,8 @@ export interface HoverTarget {
  * rack twice costs one request, and the popover re-renders when it lands.
  */
 function useLinkedDetail(tile: FloorPlanTile | undefined, needed: boolean) {
-  const linked = tile?.linked
+  // A Hidden link has nothing to fetch.
+  const linked = shownLink(tile?.linked)
   const base = linked ? DETAIL_ENDPOINT[linked.kind] : undefined
   const enabled = !!(needed && base && linked)
   const detail = useQuery({

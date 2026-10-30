@@ -11431,21 +11431,29 @@ class FloorPlanViewSet(TenantScopedViewSet):
         and the worst monitoring status across the rack's devices' IPs;
         device tiles → object status + monitoring rollup. The canvas
         polls/refetches this to paint overlays without re-reading the whole
-        plan."""
+        plan. Only the tiles the reader may view whose object they may view
+        are answered (#453)."""
         from django.utils import timezone
 
+        from auth_api import rbac
         from monitoring.models import CheckState
         from monitoring.rollup import worst_status
 
         from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import TileLinks
 
         plan = self.get_object()
         src, crop = self._resolved(plan)
-        tiles = list(
+        tenant = _get_active_tenant(request)
+        tiles = list(rbac.restrict_queryset(
             src.tiles.exclude(rack=None, device=None, cabinet=None).select_related(
                 "rack", "device__status"
-            )
-        )
+            ),
+            request.user, tenant, "floorplantile", "view",
+        ))
+        links = TileLinks(request.user, tenant)
+        links.prime(tiles)
+        tiles = [t for t in tiles if not links.hidden(t)]
         if crop is not None:
             tiles = [t for t, _edge in snaps.in_crop("tiles", tiles, crop)]
         rack_ids = {t.rack_id for t in tiles if t.rack_id}
@@ -11793,36 +11801,62 @@ class FloorPlanViewSet(TenantScopedViewSet):
         dimensions, every tile (racks carrying their racked devices' geometry +
         face images), and the trays at their elevations. Static structure only -
         live status keeps coming from the sibling ``state`` action, so the 3D
-        view polls exactly what the 2D canvas polls."""
+        view polls exactly what the 2D canvas polls.
+
+        Each kind is narrowed to the rows the reader may view, as ``contents/``
+        narrows it, and a rack's devices to the ones they may view. A tile
+        whose object they may not view keeps its box and reads ``hidden``,
+        ``device_name`` Hidden, no rack or cabinet and no role colour (#453);
+        a tray's ``cable_count`` counts the cables they may view and
+        ``hidden_cable_count`` the others."""
         from django.utils import timezone
 
+        from auth_api import rbac
+
         from . import floor_plan_snapshots as snaps
+        from .cable_scope import viewable_cable_ids
+        from .floor_plan_placement import HIDDEN, TileLinks
 
         plan = self.get_object()
         src, crop = self._resolved(plan)
-        tiles_qs = src.tiles.select_related(
+        tenant = _get_active_tenant(request)
+        user = request.user
+
+        def visible(qs, slug):
+            return rbac.restrict_queryset(qs, user, tenant, slug, "view")
+
+        tiles_qs = list(visible(src.tiles.select_related(
             "tile_type", "role_type", "rack__role", "cabinet__role", "device__role",
             "device__device_type",
-        )
+        ), "floorplantile"))
         if crop is not None:
             tiles_qs = [t for t, _e in snaps.in_crop("tiles", tiles_qs, crop)]
+        links = TileLinks(user, tenant)
+        links.prime(tiles_qs)
+        hidden_tiles = {t.pk for t in tiles_qs if links.hidden(t)}
 
         def linked_role_color(t):
             """A tile with no type of its own: its object's role colour."""
+            if t.pk in hidden_tiles:
+                return ""
             obj = t.device if t.device_id else t.rack if t.rack_id else \
                 t.cabinet if t.cabinet_id else None
             role = getattr(obj, "role", None) if obj is not None else None
             return role.color if role is not None else ""
 
-        rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
+        shown = [t for t in tiles_qs if t.pk not in hidden_tiles]
+        rack_ids = {t.rack_id for t in shown if t.rack_id}
+        viewable_devices = visible(Device.objects.filter(tenant=tenant), "device")
         cabinet_counts = dict(
-            Device.objects.filter(cabinet_id__in={t.cabinet_id for t in tiles_qs if t.cabinet_id})
+            viewable_devices.filter(cabinet_id__in={t.cabinet_id for t in shown if t.cabinet_id})
             .order_by().values("cabinet_id").annotate(n=Count("id"))
             .values_list("cabinet_id", "n")
         )
         # Racks, their devices and the feed each PDU hangs off: the geometry
         # a rack page's 3D view draws too (api.scene_geo).
-        racks = scene_geo.load_racks(Rack.objects.filter(id__in=rack_ids))
+        racks = scene_geo.load_racks(
+            Rack.objects.filter(id__in=rack_ids), devices=viewable_devices
+        )
         feed_types = scene_geo.power_feed_types(racks.values())
         img = scene_geo.image_url(request)
 
@@ -11846,7 +11880,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # The linked device's name - the 2D canvas labels device tiles
                 # with it (tileName: label || linked.name) and the 3D room's
                 # ghost boxes want the same fallback.
-                "device_name": t.device.name if t.device_id else "",
+                "device_name": (
+                    HIDDEN if t.device_id and t.pk in hidden_tiles
+                    else t.device.name if t.device_id else ""
+                ),
+                "hidden": t.pk in hidden_tiles,
                 # The type's name, so the 3D room can label unlinked tiles
                 # ("build in advance": planned massing before objects exist).
                 "type_name": (
@@ -11867,10 +11905,19 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 ),
                 "rack": rack_geo(racks[t.rack_id])
                 if t.rack_id and t.rack_id in racks else None,
-                "cabinet": cabinet_geo(t.cabinet) if t.cabinet_id else None,
+                "cabinet": cabinet_geo(t.cabinet)
+                if t.cabinet_id and t.pk not in hidden_tiles else None,
             }
             for t in tiles_qs
         ]
+        tray_rows = [
+            tr for tr in visible(src.trays.prefetch_related("cables"), "floorplantray")
+            if crop is None or snaps.classify("trays", tr, crop)
+        ]
+        tray_cables = {tr.pk: {c.pk for c in tr.cables.all()} for tr in tray_rows}
+        seen_cables = viewable_cable_ids(
+            user, tenant, set().union(*tray_cables.values())
+        )
         trays = [
             {
                 "id": str(tr.id),
@@ -11880,10 +11927,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "level": tr.level,
                 "elevation_mm": tr.elevation_mm,
                 "points": tr.points,
-                "cable_count": tr.cables.count(),
+                "cable_count": len(tray_cables[tr.pk] & seen_cables),
+                "hidden_cable_count": len(tray_cables[tr.pk] - seen_cables),
             }
-            for tr in src.trays.prefetch_related("cables")
-            if crop is None or snaps.classify("trays", tr, crop)
+            for tr in tray_rows
         ]
         raised_floors = [
             {
@@ -11892,7 +11939,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "plenum_mm": a.plenum_mm,
                 "label": a.label, "color": a.color,
             }
-            for a in src.raised_floor_areas.all()
+            for a in visible(src.raised_floor_areas.all(), "floorplanraisedfloorarea")
             if crop is None or snaps.classify("raised_floors", a, crop)
         ]
         walls = [
@@ -11904,7 +11951,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "color": w.color,
                 "openings": w.openings,
             }
-            for w in src.walls.all()
+            for w in visible(src.walls.all(), "floorplanwall")
             if crop is None or snaps.classify("walls", w, crop)
         ]
         background = img(plan.background_image)
@@ -12390,9 +12437,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 bx, by, bw, bh, _ = snapped[b.pk]
                 if ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah:
                     hits.update((a.pk, b.pk))
+        from .floor_plan_placement import HIDDEN, TileLinks
+
+        # A collision names a tile by its label, else its object - Hidden
+        # when the user may not view that object (#453).
+        links = TileLinks(request.user, _get_active_tenant(request))
+        clashing = [t for t in solid if t.pk in hits]
+        links.prime(clashing)
         collisions = [
-            {"id": str(t.pk), "name": t.label or str(t.linked_object or "") or str(t)}
-            for t in solid if t.pk in hits
+            {"id": str(t.pk), "name": t.label or (
+                HIDDEN if links.hidden(t) else str(t.linked_object or "")
+            ) or str(t)}
+            for t in clashing
         ]
         if dry:
             return Response({
@@ -12816,6 +12872,26 @@ class _VersionCheckMixin:
             return super().destroy(request, *args, **kwargs)
 
 
+_TILE_LINK_SLUGS = {
+    "rack": "rack", "cabinet": "cabinet", "device": "device",
+    "cooling_source": "coolingsource",
+}
+
+
+def _may_view_link(user, tenant, slug: str, pk: str) -> bool:
+    """Whether ``user`` may view the linked object a tile filter names. A
+    malformed id is simply not viewable."""
+    import uuid
+
+    from auth_api import rbac
+
+    try:
+        key = uuid.UUID(str(pk))
+    except ValueError:
+        return False
+    return rbac.ViewableRows(user, tenant).may_view(slug, key)
+
+
 class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
@@ -12844,6 +12920,11 @@ class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSe
             ):
                 val = self.request.query_params.get(param)
                 if val:
+                    # "Where is this object placed" answers nothing about an
+                    # object the reader may not view (#453).
+                    slug = _TILE_LINK_SLUGS.get(param)
+                    if slug and not _may_view_link(self.request.user, tenant, slug, val):
+                        return qs.none()
                     qs = qs.filter(**{field: val})
         return restrict_for_view(self, qs)
 

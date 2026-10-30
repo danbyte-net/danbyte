@@ -572,6 +572,27 @@ tunnels and each site pair's cables, as
 describes. Each kind needs its own view permission, and both sites must be
 ones you can view.
 
+### Permissions
+
+Everything on the map is what you may view, each kind by its own grant and
+site scope:
+
+- **Sites** count only the devices and floor plans you may view, and list
+  only those floor plans.
+- **Markers** are the ones the marker list shows you (`sitemarker`, by its
+  device's site). A marker whose device you may not view keeps its place,
+  label and type but reads `device: null` and `device_hidden: true` on the
+  map, and `{"id": null, "name": "Hidden", "hidden": true}` in
+  `/api/site-markers/`.
+- **Cables** are the ones `/api/cables/` lists you: the cable grant's
+  constraints and sites apply, not just having the grant. A cable line
+  needs both ends on devices you may view; a cable bundle between two sites,
+  its link facts and its speed are made only of cables you may view, and so
+  is a circuit's walk to the ports it is cabled to. A route lists only
+  the cables you may view.
+- **Circuits** and **tunnels** follow their own view grants. An end on a
+  device or VM you may not view reads `restricted` with no device or port.
+
 ### Link speed: `?include=capacity` {#link-speed}
 
 Both line endpoints take `?include=capacity`, and each line then also
