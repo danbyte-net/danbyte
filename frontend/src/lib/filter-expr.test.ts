@@ -7,10 +7,15 @@ import {
   evaluate,
   format,
   fromBuilder,
+  fromTree,
+  fromTreeWithPaths,
+  nodeForPath,
   parse,
   toBuilder,
-  type Expr,
+  toTree,
+  treeDepth,
 } from "./filter-expr"
+import type { Expr, TreeGroup } from "./filter-expr"
 
 const rows = [
   {
@@ -213,5 +218,90 @@ describe("group view", () => {
     expect(toGroups(parse("a = 1 and (b = 2 or c = 3)"))).toBeNull()
     expect(toGroups(parse("a = 1 and b = 2"))).toHaveLength(1)
     expect(toGroups(null)).toEqual([[]])
+  })
+})
+
+describe("in and matches", () => {
+  it("parses, formats and re-parses lists and patterns", () => {
+    const ast = parse('tags in (core, "edge one") and name not matches "^edge"')
+    expect(ast).toEqual({
+      kind: "group",
+      op: "and",
+      terms: [
+        { kind: "cmp", field: "tags", cmp: "in", values: ["core", "edge one"] },
+        { kind: "cmp", field: "name", cmp: "not_matches", value: "^edge" },
+      ],
+    })
+    expect(format(ast)).toBe(
+      'tags in (core, "edge one") and name not matches "^edge"'
+    )
+    expect(parse(format(ast))).toEqual(ast)
+    expect(parse("site.name not in (CPH-01)")).toEqual({
+      kind: "cmp",
+      field: "site.name",
+      cmp: "not_in",
+      values: ["CPH-01"],
+    })
+  })
+
+  it("evaluates any-of, none-of and regular expressions", () => {
+    expect(match("site.name in (cph-01, x)")).toEqual(["core-sw1"])
+    expect(match("tags not in (core)")).toEqual(["edge-fw2"])
+    expect(match('name matches "^core-"')).toEqual(["core-sw1"])
+    // Case-sensitive, like PostgreSQL's ~.
+    expect(match('name matches "^CORE"')).toEqual([])
+    expect(match('name not matches "sw"')).toEqual(["edge-fw2"])
+    // A broken pattern matches nothing rather than throwing.
+    expect(match('name matches "("')).toEqual([])
+  })
+
+  it("rejects a list without its parentheses", () => {
+    expect(() => parse("tags in core")).toThrow(/Expected "\("/)
+  })
+})
+
+describe("tree view", () => {
+  const strip = (g: TreeGroup | null): unknown =>
+    g && {
+      op: g.op,
+      items: g.items.map((i) =>
+        i.kind === "group"
+          ? strip(i)
+          : { field: i.field, cmp: i.cmp, value: i.value, values: i.values }
+      ),
+    }
+
+  it("round-trips nested groups", () => {
+    const src = "a = 1 and (b = 2 or (c in (x, y) and d is empty))"
+    const tree = toTree(parse(src))!
+    expect(treeDepth(tree)).toBe(3)
+    expect(fromTree(tree)).toEqual(parse(src))
+    expect(parse(format(fromTree(tree)))).toEqual(parse(src))
+  })
+
+  it("declines nesting deeper than it shows", () => {
+    const deep = parse("a = 1 and (b = 2 or (c = 3 and (d = 4 or e = 5)))")
+    expect(toTree(deep, 3)).toBeNull()
+    expect(toTree(deep, 4)).not.toBeNull()
+  })
+
+  it("drops rows without a field and collapses groups of one", () => {
+    const tree = toTree(parse("a = 1 and (b = 2 or c = 3)"))!
+    const inner = tree.items[1] as TreeGroup
+    inner.items[1] = { ...inner.items[1], field: "" } as never
+    expect(format(fromTree(tree))).toBe("a = 1 and b = 2")
+    expect(strip(toTree(null))).toEqual({ op: "and", items: [] })
+  })
+
+  it("maps a server error path back to its row", () => {
+    const tree = toTree(parse("a = 1 or (b in (x) and c = 2)"))!
+    const { expr, paths } = fromTreeWithPaths(tree)
+    expect(expr).not.toBeNull()
+    const group = tree.items[1] as TreeGroup
+    expect(nodeForPath(paths, "terms.1.terms.0.values.0")).toBe(
+      group.items[0].id
+    )
+    expect(nodeForPath(paths, "terms.0.value")).toBe(tree.items[0].id)
+    expect(nodeForPath(paths, "")).toBe(tree.id)
   })
 })

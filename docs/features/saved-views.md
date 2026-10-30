@@ -59,22 +59,32 @@ there's no per-model filter language to learn or maintain.
 The **Advanced** entry at the top of every filter rail holds one expression per
 list, edited two ways over the same definition:
 
-- a **builder** - bordered groups of *field · operator · value* rows. Rows in
-  a group must all match (**And** adds one); groups combine with **Or**, so
-  `a or (b and c)` reads exactly as it looks. Fields come from the list's own
-  rows - every value a row carries, two levels deep, including ones named like
-  ids (`vlan_id`, `facility_id`); only raw object ids are left out - and the
-  value box carries a picker (the chevron on its right) listing the values
-  actually present in the loaded rows - pick one or type freely. The ⓘ next
-  to the dialog title is the operator reference;
-- a **typed expression** in a small grammar, for conditions the builder can't
-  express (mixed and/or with parentheses):
+- a **builder** - *field · operator · value* rows in groups. Each group
+  matches **All** or **Any** of its rows (the toggle at its top);
+  **+ Condition** adds a row and **+ Group** a nested group, up to three
+  levels, so `a or (b and (c or d))` reads exactly as it looks. Fields come
+  from the list's own rows - every value a row carries, two levels deep,
+  including ones named like ids (`vlan_id`, `facility_id`); only raw object
+  ids are left out - and the value box carries a picker (the chevron on its
+  right) listing the values actually present in the loaded rows - pick one
+  or type freely. **is any of** / **is none of** take several values,
+  comma-separated, and **matches** / **doesn't match** a regular expression.
+  The ⓘ next to the dialog title is the operator reference;
+- a **typed expression** in a small grammar, for anything deeper than the
+  builder shows:
 
 ```
 status = active and (site.name ~ cph or tags ~ core)
 due_date < 2026-09-01 and assignees is not empty
 weight > 100 or description is empty
+tags in (core, edge) and name not matches "^lab-"
 ```
+
+`in` compares with each listed value (case-insensitive, like `=`); on a list
+field such as tags it matches when any element is one of them, and `not in`
+when none is. `matches` is a regular expression and is case-sensitive.
+Compliance rules build their scope and conditions with this same builder
+(see [Compliance](compliance.md#scope-and-conditions)).
 
 ### Managing saved filters
 
