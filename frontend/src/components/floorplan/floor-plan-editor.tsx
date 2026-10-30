@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type {
-  FloorPlanCablePath,
   FloorPlanConflict,
   FloorPlanCrop,
   FloorPlanPlaceable,
@@ -26,7 +25,14 @@ import { BackgroundControls } from "./background-controls"
 import { useCadCalibration } from "./cad-calibrate"
 import { useCadFloorImage, useCadSource } from "./cad-layer"
 import { ColorByLegend, colorByLegendEntries } from "./color-by-legend"
-import { CELL, cableRoutePoints } from "./floor-canvas"
+import {
+  cableLegend,
+  cableLegendEntries,
+  hasSharedRuns,
+  typePalette,
+} from "./cable-draw"
+import { CableLegend } from "./cable-legend"
+import { CELL } from "./floor-canvas"
 import type { FloorCanvasApi } from "./floor-canvas"
 import {
   readFloorHidden,
@@ -40,7 +46,7 @@ import { PlanHeader } from "./plan-header"
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
-import { planSvg } from "./plan-svg"
+import { planPaperScale, planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
 import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
@@ -62,6 +68,7 @@ import { edgeIds, isLiveView } from "./snapshot"
 import { SnapshotDialog } from "./snapshot-dialogs"
 import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
 import { ToolRail } from "./tool-rail"
+import { useCableRoutes } from "./use-cable-routes"
 import { useCadDrawing } from "./use-cad-drawing"
 import { useEditMode } from "./use-edit-mode"
 import { useEditorKeys } from "./use-editor-keys"
@@ -108,10 +115,6 @@ export function FloorPlanEditor({
   const { trays, areas, walls, cablePaths } = data
   // Trays crossing at different heights do not join (cable-route.ts).
   const ceilingMm = plan?.ceiling_mm
-  const planLevels = useMemo(
-    () => (ceilingMm == null ? undefined : { ceilingMm, areas }),
-    [ceilingMm, areas]
-  )
   usePageTitle(
     plan ? (plan.stack ? `${plan.stack.name} · ${plan.name}` : plan.name) : null
   )
@@ -169,6 +172,39 @@ export function FloorPlanEditor({
   const shownTiles = useMemo(
     () => pickVisibleTiles(tiles, hidden),
     [tiles, hidden]
+  )
+  // Every cable's route on the tiles shown, once per change of the plan's
+  // contents: the canvas, the trace and the PDF all draw these.
+  const cableRoutes = useCableRoutes(
+    cablePaths,
+    trays,
+    shownTiles,
+    ceilingMm,
+    areas
+  )
+  // The cables drawn and their key, while the links are on.
+  const shownCables = useMemo(
+    () => cablePaths.filter((cp) => cableRoutes.has(cp.id)),
+    [cablePaths, cableRoutes]
+  )
+  const cableKey = useMemo(
+    () =>
+      prefs.showCableLinks && shownCables.length
+        ? cableLegend(
+            shownCables,
+            prefs.cableColorBy,
+            typePalette(cablePaths),
+            { bundles: prefs.bundleCables && hasSharedRuns(cableRoutes) }
+          )
+        : null,
+    [
+      prefs.showCableLinks,
+      prefs.cableColorBy,
+      prefs.bundleCables,
+      shownCables,
+      cablePaths,
+      cableRoutes,
+    ]
   )
   // Display > Photos: each tile with a photo drawn as it, its own saved
   // `display` untouched (the edits keep reading `tiles`).
@@ -290,10 +326,10 @@ export function FloorPlanEditor({
     tracedRef.current = traceParam
     prefs.setShowLinksLocal(true)
     ed.setHighlightCableIds([traceParam])
-    const route = cableRoutePoints(cp, trays, tiles, planLevels)
+    const route = cableRoutes.get(cp.id)?.points ?? []
     if (route.length >= 2)
       requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
-  }, [traceParam, cablePaths, trays, tiles, planLevels])
+  }, [traceParam, cablePaths, cableRoutes])
 
   /** Place rows at a cell point: linked tiles, no type needed. A drop into
    * another room's area asks "Set room to X?" - never sets it itself. */
@@ -431,16 +467,13 @@ export function FloorPlanEditor({
       ed.setCabinetTileId(null)
       prefs.setShowLinksLocal(true)
       ed.setHighlightCableIds(cableIds)
-      const pts = cableIds
-        .map((cid) => cablePaths.find((c) => c.id === cid))
-        .filter((cp): cp is FloorPlanCablePath => !!cp)
-        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles, planLevels))
+      const pts = cableIds.flatMap((cid) => cableRoutes.get(cid)?.points ?? [])
       if (pts.length >= 2)
         requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
       else if (cableIds.length)
         toast.info("That run isn't routed through a tray on this plan yet.")
     },
-    [cablePaths, trays, shownTiles, planLevels]
+    [cableRoutes]
   )
 
   if (planQuery.isLoading) return <Loading />
@@ -448,14 +481,23 @@ export function FloorPlanEditor({
   if (!plan) return null
 
   // The key to the Color by, in the corner of the 2D plan - inside its
-  // export area - and of the 3D room.
-  const colorLegend = colorBy !== "type" && capacity.hasRacks && (
+  // export area - and of the 3D room. The 2D plan adds its cables' key.
+  const rackLegend = colorBy !== "type" && capacity.hasRacks && (
+    <ColorByLegend
+      colorBy={colorBy}
+      figures={capacity.legend.figures}
+      alarm={capacity.legend.alarm}
+    />
+  )
+  const colorLegend = rackLegend && (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-      <ColorByLegend
-        colorBy={colorBy}
-        figures={capacity.legend.figures}
-        alarm={capacity.legend.alarm}
-      />
+      {rackLegend}
+    </div>
+  )
+  const planLegend = (rackLegend || cableKey) && (
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
+      {rackLegend}
+      {cableKey && <CableLegend legend={cableKey} />}
     </div>
   )
 
@@ -510,7 +552,7 @@ export function FloorPlanEditor({
         exportMenu={
           <DrawingExportMenu
             name={plan.name}
-            build={async () => ({
+            build={async ({ paper }) => ({
               svg: planSvg({
                 plan,
                 tiles: shownTiles,
@@ -523,6 +565,17 @@ export function FloorPlanEditor({
                 liveState: liveState.data ?? null,
                 showZoneLabels: prefs.showZoneLabels,
                 showTrays: prefs.showTrays,
+                cables: prefs.showCableLinks
+                  ? {
+                      paths: shownCables,
+                      routes: cableRoutes,
+                      colorBy: prefs.cableColorBy,
+                      bundle: prefs.bundleCables,
+                      labels: prefs.showCableLabels,
+                      highlight: ed.highlightCableIds,
+                      mmPerPx: planPaperScale(plan, paper),
+                    }
+                  : undefined,
               }),
               missing: 0,
             })}
@@ -539,6 +592,7 @@ export function FloorPlanEditor({
                     capacity.legend.alarm
                   )
                 : null,
+              cable_legend: cableKey ? cableLegendEntries(cableKey) : null,
             })}
           />
         }
@@ -638,13 +692,14 @@ export function FloorPlanEditor({
               walls={walls}
               areas={areas}
               cablePaths={cablePaths}
+              cableRoutes={cableRoutes}
               tileTypes={tileTypes.data?.results ?? []}
               roles={roles.data?.results ?? []}
               popover={popover}
               popoverFields={popoverFields}
               capacity={capacity}
               racksOpen={racksOpen}
-              colorLegend={colorLegend}
+              colorLegend={planLegend}
               canvasApi={canvasApi}
               exportRef={exportRef}
               cad={cad}

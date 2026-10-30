@@ -175,8 +175,13 @@ describe("DrawingExportMenu", () => {
       svg: SVG,
       paper: { size: "a3", orientation: "landscape" },
     })
-    // The server titles the sheet; the PDF has its own fonts.
-    expect(build).toHaveBeenCalledWith({ fonts: [], heading: false })
+    // The server titles the sheet; the PDF has its own fonts. The drawing
+    // knows its paper, to pick its detail from the scale.
+    expect(build).toHaveBeenCalledWith({
+      fonts: [],
+      heading: false,
+      paper: { size: "a3", orientation: "landscape" },
+    })
     expect(clicks[0].getAttribute("href")).toBe(`${LINK}?download=1`)
     expect(clicks[0].download).toBe(`r12-elevation-${day()}.pdf`)
     // Remembered, and shown where Print uses it.

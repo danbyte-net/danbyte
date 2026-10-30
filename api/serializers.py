@@ -2258,7 +2258,7 @@ class StatusSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Nu
             "owning_site", "owning_site_id", "permissions", "id", "name", "slug", "color", "text_color", "description",
                   "weight", "available_to", "default_for",
                   "is_available", "requires_note",
-                  "suppresses_alerts", "is_closed", "monitoring_state",
+                  "suppresses_alerts", "is_closed", "is_planned", "monitoring_state",
                   "usage_count", "ip_count", "created_at", "updated_at"]
         read_only_fields = ["id", "text_color", "usage_count", "ip_count", "created_at",
                             "updated_at"]
@@ -2292,7 +2292,7 @@ class StatusPickerSerializer(NumIdModelSerializer):
         fields = ["id", "name", "slug", "color", "text_color",
                   "available_to", "default_for", "is_available",
                   "requires_note", "suppresses_alerts", "is_closed",
-                  "monitoring_state", "weight"]
+                  "is_planned", "monitoring_state", "weight"]
 
 
 class IPRolePickerSerializer(NumIdModelSerializer):

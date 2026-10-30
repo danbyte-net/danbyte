@@ -1090,6 +1090,9 @@ export interface Status {
   requires_note: boolean
   suppresses_alerts: boolean
   is_closed: boolean
+  /** Planned work, not yet built: a cable in it draws as a planned run on
+   * floor plans. */
+  is_planned: boolean
   /** The check state this status speaks for, "" when it is not a monitoring
    * status. See MONITORING_STATES. */
   monitoring_state: string
@@ -1113,6 +1116,7 @@ export interface StatusWritePayload {
   requires_note?: boolean
   suppresses_alerts?: boolean
   is_closed?: boolean
+  is_planned?: boolean
   monitoring_state?: string
 }
 
@@ -12612,6 +12616,17 @@ export interface FloorPlanCablePath {
   label: string
   color: string
   type: string
+  /** The type's display name ("Cat6"), "" without a type. */
+  type_display?: string
+  /** The cable's status, with whether it means planned work. */
+  status?: (StatusMini & { is_planned: boolean }) | null
+  /** The stored length, in `length_unit`; null when none is recorded. */
+  length?: number | null
+  length_unit?: string
+  /** Each end tile's top above the floor (mm): a rack's height, else 0 -
+   * the drop term of the route length the plan works out. */
+  a_top_mm?: number
+  b_top_mm?: number
   /** Tile ids at each end (device tile, else the device's rack tile). */
   a_tiles: string[]
   b_tiles: string[]
@@ -12625,7 +12640,13 @@ export interface FloorPlanCablePath {
 /** One end of a plan's cable: the device and port, or - on a device the
  * reader may not view (#453) - nothing but `hidden`. */
 export type FloorPlanCableEnd =
-  | { device: string; port: string; hidden?: undefined }
+  | {
+      device: string
+      port: string
+      /** The device's name. */
+      device_name?: string
+      hidden?: undefined
+    }
   | { device: null; port: null; hidden: true }
 
 /** A tray as the routing editor sees it. */

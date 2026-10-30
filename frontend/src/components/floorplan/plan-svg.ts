@@ -1,11 +1,14 @@
 import type {
   FloorPlan,
+  FloorPlanCablePath,
   FloorPlanLiveState,
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
 } from "@/lib/api"
 import { el, text } from "@/lib/diagram/markup"
+import { PAPERS, SHEET } from "@/lib/diagram/sheet"
+import type { PaperChoice } from "@/lib/diagram/sheet"
 import {
   WALL_THICKNESS_M,
   wallDoorSpans,
@@ -25,6 +28,24 @@ import {
   tileQuarter,
 } from "./shapes"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import {
+  CABLE_LINE,
+  CABLE_NONE_PAPER,
+  bundleWidth,
+  bundledGroups,
+  cableColor,
+  cableRouteState,
+  laneOrder,
+  lanePolylines,
+  layoutCables,
+  longestLegMid,
+  paperLod,
+  roundedPath,
+  sharedColor,
+  typePalette,
+} from "./cable-draw"
+import type { CableColorBy, CableRoute } from "./cable-draw"
+import type { Pt } from "./cable-route"
 import { rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -67,6 +88,193 @@ export interface PlanSvgInput {
   liveState?: FloorPlanLiveState | null
   showZoneLabels?: boolean
   showTrays?: boolean
+  /** The cables, drawn as the canvas draws them at the paper's scale. */
+  cables?: PlanSvgCables
+}
+
+/** The cables for the drawing: the runs, their routes (use-cable-routes.ts)
+ * and how the plan shows them. */
+export interface PlanSvgCables {
+  paths: readonly FloorPlanCablePath[]
+  routes: ReadonlyMap<string, CableRoute>
+  colorBy: CableColorBy
+  bundle: boolean
+  labels: boolean
+  /** Traced runs: a static heavier stroke (no animation on paper). */
+  highlight?: readonly string[]
+  /** Paper mm per plan px (planPaperScale). */
+  mmPerPx: number
+}
+
+/** api/floor_plan_pdf.py's footer under the plan (mm). */
+const PDF_FOOTER_MM = 22
+const PDF_GAP_MM = 4
+
+/** Paper mm per plan px when the PDF fits the plan to `paper` with its
+ * title block - floor_plan_pdf.py's plan_sheet. */
+export function planPaperScale(
+  plan: Pick<FloorPlan, "grid_width" | "grid_height">,
+  paper: PaperChoice = { size: "a3", orientation: "landscape" }
+): number {
+  let [pw, ph] = PAPERS[paper.size]
+  if (paper.orientation === "portrait") [pw, ph] = [ph, pw]
+  const aw = pw - 2 * SHEET.MARGIN
+  const ah = ph - 2 * SHEET.MARGIN - PDF_FOOTER_MM - PDF_GAP_MM
+  const w = Math.max(plan.grid_width * CELL, 1)
+  const h = Math.max(plan.grid_height * CELL, 1)
+  return Math.min(aw / w, ah / h)
+}
+
+/** One screen px of the canvas's strokes, on paper (mm). */
+const MM_PER_SCREEN_PX = 0.18
+/** Lanes closer than this on paper merge into a bundle (mm). */
+const PAPER_LANE_MIN_MM = 0.6
+
+/** The cables at the paper's scale: lanes, bundles with their counts, the
+ * colours and line styles of the canvas. Inferred runs stay thin and
+ * light; traced runs are a heavier stroke. No preview or stale marks. */
+function cablesMarkup(c: PlanSvgCables): string {
+  const routes = c.routes
+  const byId = new Map(c.paths.map((cp) => [cp.id, cp]))
+  const palette = typePalette(c.paths)
+  const layout = layoutCables(routes, laneOrder(c.paths, routes))
+  const mmPerCell = CELL * c.mmPerPx
+  const lod = paperLod(mmPerCell)
+  const bundled = bundledGroups(layout, {
+    lod,
+    bundle: c.bundle,
+    minGapCells: PAPER_LANE_MIN_MM / mmPerCell,
+  })
+  const hi = new Set(c.highlight ?? [])
+  const w = (screenPx: number) => (screenPx * MM_PER_SCREEN_PX) / c.mmPerPx
+  const fontPx = 2.2 / c.mmPerPx
+  const colorOf = (id: string) => {
+    const cp = byId.get(id)
+    return (cp && cableColor(cp, c.colorBy, palette)) || CABLE_NONE_PAPER
+  }
+  const toPx = (pts: readonly Pt[]): Pt[] =>
+    pts.map(([x, y]) => [x * CELL, y * CELL])
+  const chip = (at: Pt, label: string, color: string) => {
+    const cw = label.length * fontPx * 0.6 + fontPx * 0.8
+    const ch = fontPx * 1.5
+    return (
+      el("rect", {
+        x: at[0] * CELL - cw / 2,
+        y: at[1] * CELL - ch / 2,
+        width: cw,
+        height: ch,
+        rx: ch * 0.2,
+        fill: "#ffffff",
+        stroke: color,
+        "stroke-width": w(1),
+      }) +
+      text(label, {
+        x: at[0] * CELL,
+        y: at[1] * CELL + fontPx * 0.35,
+        "text-anchor": "middle",
+        "font-size": fontPx,
+        fill: PAPER_INK,
+      })
+    )
+  }
+  const parts: string[] = []
+  for (const key of bundled) {
+    const g = layout.groups.get(key)!
+    const color =
+      sharedColor(
+        g.members.map((id) => {
+          const cp = byId.get(id)
+          return cp ? cableColor(cp, c.colorBy, palette) : null
+        })
+      ) ?? CABLE_NONE_PAPER
+    parts.push(
+      el("path", {
+        d: roundedPath(toPx([g.a, g.b]), 0),
+        fill: "none",
+        stroke: color,
+        "stroke-opacity": 0.85,
+        "stroke-width": w(bundleWidth(g.members.length)),
+        "stroke-linecap": "round",
+      })
+    )
+    const len = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) * mmPerCell
+    if (len >= 6)
+      parts.push(
+        chip(
+          [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2],
+          String(g.members.length),
+          color
+        )
+      )
+  }
+  const lines = (id: string, traced: boolean) => {
+    const cp = byId.get(id)
+    const style = CABLE_LINE[cp ? cableRouteState(cp) : "inferred"]
+    const segs = layout.cables.get(id)!
+    const polys = traced
+      ? lanePolylines(segs)
+      : lanePolylines(segs, (s) => !!s.group && bundled.has(s.group))
+    const color = colorOf(id)
+    return polys
+      .map((poly) =>
+        el("path", {
+          d: roundedPath(toPx(poly), 6),
+          fill: "none",
+          stroke: color,
+          "stroke-opacity": traced ? 1 : style.opacity,
+          "stroke-width": w(style.width + (traced ? 1.5 : 0)),
+          "stroke-dasharray": style.dash
+            ? style.dash
+                .split(" ")
+                .map((n) => +(w(Number(n)) || 0).toFixed(2))
+                .join(" ")
+            : undefined,
+          "stroke-linecap": style.cap,
+          "stroke-linejoin": "round",
+        })
+      )
+      .join("")
+  }
+  for (const id of layout.order) if (!hi.has(id)) parts.push(lines(id, false))
+  // Names along the runs, at near detail, where they do not collide.
+  if (c.labels && lod === "near") {
+    const boxes: { x: number; y: number; w: number; h: number }[] = []
+    for (const id of layout.order) {
+      const cp = byId.get(id)
+      const polys = lanePolylines(
+        layout.cables.get(id)!,
+        (s) => !!s.group && bundled.has(s.group)
+      )
+      if (!cp || !polys.length) continue
+      const best = polys
+        .map((p) => longestLegMid(p))
+        .sort((x, y) => y.len - x.len)[0]
+      if (best.len * mmPerCell < 15) continue
+      const bw = (cp.label.length * fontPx * 0.6 + fontPx) / CELL
+      const bh = (fontPx * 1.5) / CELL
+      const box = {
+        x: best.at[0] - bw / 2,
+        y: best.at[1] - bh / 2,
+        w: bw,
+        h: bh,
+      }
+      if (
+        boxes.some(
+          (b) =>
+            b.x < box.x + box.w &&
+            box.x < b.x + b.w &&
+            b.y < box.y + box.h &&
+            box.y < b.y + b.h
+        )
+      )
+        continue
+      boxes.push(box)
+      parts.push(chip(best.at, cp.label, colorOf(id)))
+    }
+  }
+  for (const id of c.highlight ?? [])
+    if (layout.cables.has(id)) parts.push(lines(id, true))
+  return `<g data-layer="cables">${parts.join("")}</g>`
 }
 
 /** An area as the canvas draws it (shape-layer.tsx). */
@@ -433,6 +641,7 @@ export function planSvg({
   liveState,
   showZoneLabels = true,
   showTrays = true,
+  cables,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
@@ -479,6 +688,7 @@ export function planSvg({
     }
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays) for (const tray of trays) body.push(trayMarkup(tray))
+  if (cables) body.push(cablesMarkup(cables))
   // Labels over everything, as on the canvas.
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm))

@@ -11941,7 +11941,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         from . import floor_plan_snapshots as snaps
         from .cable_scope import viewable_cable_ids
-        from .models import Cable, CableTermination, Device
+        from .models import Cable, CableTermination, Device, Rack
+        from .pathfinding import RACK_PLINTH_MM, U_PITCH_MM
 
         plan = self.get_object()
         plan, crop = self._resolved(plan)
@@ -11995,6 +11996,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # over a bare prefetch read one query per termination.
         cables = list(
             Cable.objects.filter(pk__in=visible)
+            .select_related("status")
             .order_by("created_at", "pk")
             .prefetch_related(
                 Prefetch(
@@ -12020,11 +12022,21 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 # the exact photo-port quad on the device face.
                 terms.append((term.end, dev_id, getattr(point, "name", "")))
             term_cache[cable.id] = terms
-        device_home = {
-            d: (rack_id, cabinet_id)
-            for d, rack_id, cabinet_id in Device.objects.filter(
-                id__in=wanted_devices
-            ).values_list("id", "rack_id", "cabinet_id")
+        device_home = {}
+        device_name = {}
+        for d, rack_id, cabinet_id, name in Device.objects.filter(
+            id__in=wanted_devices
+        ).values_list("id", "rack_id", "cabinet_id", "name"):
+            device_home[d] = (rack_id, cabinet_id)
+            device_name[d] = name or ""
+        # A rack tile's top (mm above the floor): the drop term of the
+        # route length the canvas works out (pathfinding.rack_drop_mm).
+        tile_top_mm = {
+            rack_tile[r]: round(u * U_PITCH_MM + RACK_PLINTH_MM)
+            for r, u in Rack.objects.filter(id__in=rack_tile).values_list(
+                "id", "u_height"
+            )
+            if u is not None
         }
         # An end on a device the reader may not view is named Hidden.
         viewable = None if user.is_superuser else rbac.ViewableRows(user, tenant)
@@ -12044,7 +12056,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         def point_for(dev_id, port):
             if viewable is not None and not viewable.may_view("device", dev_id):
                 return {"device": None, "port": None, "hidden": True}
-            return {"device": str(dev_id), "port": port}
+            return {"device": str(dev_id), "port": port,
+                    "device_name": device_name.get(dev_id, "")}
 
         result = []
         for cable in cables:
@@ -12056,14 +12069,29 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     continue
                 (a_tiles if end == "A" else b_tiles).append(tile_id)
                 (a_points if end == "A" else b_points).append(point_for(dev_id, port))
+            a_tiles = list(dict.fromkeys(a_tiles))
+            b_tiles = list(dict.fromkeys(b_tiles))
+            st = cable.status
             result.append(
                 {
                     "id": str(cable.id),
                     "label": str(cable),
                     "color": cable.color,
                     "type": cable.type,
-                    "a_tiles": list(dict.fromkeys(a_tiles)),
-                    "b_tiles": list(dict.fromkeys(b_tiles)),
+                    "type_display": cable.get_type_display() if cable.type else "",
+                    "status": {
+                        "id": str(st.id),
+                        "name": st.name,
+                        "color": st.color,
+                        "text_color": st.text_color,
+                        "is_planned": st.is_planned,
+                    } if st is not None else None,
+                    "length": float(cable.length) if cable.length is not None else None,
+                    "length_unit": cable.length_unit or "m",
+                    "a_top_mm": tile_top_mm.get(a_tiles[0], 0) if a_tiles else 0,
+                    "b_top_mm": tile_top_mm.get(b_tiles[0], 0) if b_tiles else 0,
+                    "a_tiles": a_tiles,
+                    "b_tiles": b_tiles,
                     "a_points": a_points,
                     "b_points": b_points,
                     "tray_ids": [

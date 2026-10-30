@@ -41,6 +41,10 @@ does:
 | **Suppresses alerts** | An event in this status silences monitoring alerts for its impacted devices. |
 | **Closes the event** | An event in this status counts as finished and releases its silence. |
 
+**Planned** marks a status as planned work, not yet built: a cable in it
+draws as a planned run (long dash) on [floor plans](floor-plans.md#colour-styles-and-the-legend).
+No status is planned until you tick it; `is_planned` in the API.
+
 The built-in statuses your tenant had in use (Active, Reserved, …) are seeded
 on upgrade and merged - so the *Active* you used on IPs becomes the *Active*
 your devices and prefixes use too. Manage them all under **Statuses**.

@@ -21,6 +21,8 @@ import { CadPanel } from "./cad-panel"
 import { CalibrateBar, CalibrateMarks } from "./cad-calibrate"
 import type { CadCalibration } from "./cad-calibrate"
 import { CabinetPanel } from "./cabinet-panel"
+import type { CableRoute } from "./cable-draw"
+import { CablePopover, useCablePopover } from "./cable-popover"
 import { CanvasHints } from "./canvas-hints"
 import { FloorCanvas, tileIsZone } from "./floor-canvas"
 import type {
@@ -76,6 +78,7 @@ export function PlanCanvas({
   walls,
   areas,
   cablePaths,
+  cableRoutes,
   tileTypes,
   roles,
   popover,
@@ -124,6 +127,8 @@ export function PlanCanvas({
   walls: FloorPlanWall[]
   areas: RaisedFloorArea[]
   cablePaths: FloorPlanCablePath[]
+  /** Each cable's route (use-cable-routes.ts). */
+  cableRoutes: ReadonlyMap<string, CableRoute>
   tileTypes: Parameters<typeof SelectionBar>[0]["tileTypes"]
   roles: Parameters<typeof SelectionBar>[0]["roles"]
   popover: ReturnType<typeof useTilePopover>
@@ -197,8 +202,13 @@ export function PlanCanvas({
     showPhotoOutlines,
     showTrays,
     showCableLinks,
+    cableColorBy,
+    showCableLabels,
+    bundleCables,
     setViewPref,
   } = prefs
+  // The cable popover: a hover previews a run, a click pins it.
+  const cablePopover = useCablePopover()
 
   // The panel follows its tile - its label as edited, and gone with the
   // tile, its cabinet link or its eye.
@@ -318,7 +328,15 @@ export function PlanCanvas({
         cablePaths={cablePaths}
         showCableLinks={showCableLinks}
         highlightCableIds={highlightCableIds}
-        onSelectCable={(cid) => setHighlightCableIds(cid ? [cid] : [])}
+        onSelectCable={(cid) => {
+          setHighlightCableIds(cid ? [cid] : [])
+          if (!cid || !cablePopover.pinCurrent()) cablePopover.close()
+        }}
+        cableRoutes={cableRoutes}
+        cableColorBy={cableColorBy}
+        showCableLabels={showCableLabels}
+        bundleCables={bundleCables}
+        onHoverCable={cablePopover.onHover}
         onHighlightCables={(ids) => {
           setHighlightCableIds(ids)
           if (ids.length && !showCableLinks)
@@ -453,6 +471,14 @@ export function PlanCanvas({
             </Button>
           ) : null
         }
+      />
+      <CablePopover
+        target={showCableLinks ? cablePopover.target : null}
+        cablePaths={cablePaths}
+        routes={cableRoutes}
+        trays={trays}
+        cellMm={plan.cell_mm}
+        onOpenChange={(open) => !open && cablePopover.close()}
       />
       {cabinetPanelTile && (
         <CabinetPanel

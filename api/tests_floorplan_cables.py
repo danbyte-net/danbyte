@@ -211,6 +211,62 @@ class HiddenFarEndTests(_Fixture):
         text = r.content.decode()
         self.assertNotIn("eth-secret", text)
         self.assertNotIn(str(self.far.pk), text)
+        # The end the reader may view is named for the cable popover; the
+        # hidden one names nothing.
+        self.assertEqual(cross["a_points"][0]["device_name"], "sw-a1")
+        self.assertNotIn("far-b", text)
+
+
+class CablePathDrawingTests(_Fixture):
+    """What the 2D drawing reads off each run: its status (and whether it
+    means planned work), its type's name, its stored length, and how high
+    each end's rack is - the drop in the length its route works out."""
+
+    def setUp(self):
+        super().setUp()
+        self.login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_status_type_and_length(self):
+        from .models import Status
+
+        planned = Status.objects.create(
+            tenant=self.tenant, name="Pulling", slug="pulling", color="f59e0b",
+            is_planned=True,
+        )
+        self.local.status = planned
+        self.local.type = "cat6"
+        self.local.length = 12.5
+        self.local.length_unit = "m"
+        self.local.save()
+        rows = {c["label"]: c for c in self.paths().json()["cables"]}
+        local = rows["L-1"]
+        self.assertEqual(local["status"]["name"], "Pulling")
+        self.assertEqual(local["status"]["color"], "f59e0b")
+        self.assertIs(local["status"]["is_planned"], True)
+        self.assertEqual(local["type"], "cat6")
+        self.assertEqual(local["type_display"], self.local.get_type_display())
+        self.assertEqual(local["length"], 12.5)
+        self.assertEqual(local["length_unit"], "m")
+
+    def test_end_heights(self):
+        rack = Rack.objects.get(name="R1")
+        rows = {c["label"]: c for c in self.paths().json()["cables"]}
+        cross = rows["X-SECRET"]
+        # A rack tile: its top above the floor; a device tile: the floor.
+        self.assertEqual(cross["a_top_mm"], round(rack.u_height * 44.45 + 100))
+        self.assertEqual(cross["b_top_mm"], 0)
+        self.assertEqual(cross["b_points"][0]["device_name"], "far-b")
+
+    def test_is_planned_defaults_off(self):
+        from .models import Status
+
+        self.assertFalse(Status.objects.filter(tenant=self.tenant, is_planned=True).exists())
+        r = self.client.patch(
+            f"/api/statuses/{Status.objects.filter(tenant=self.tenant).first().pk}/",
+            {"is_planned": True}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIs(r.json()["is_planned"], True)
 
 
 class SeparationSiteViewerTests(SiteViewerTests):

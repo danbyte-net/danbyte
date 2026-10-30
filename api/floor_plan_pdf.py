@@ -1,8 +1,9 @@
 """Floor plans as PDF: ``POST /api/floor-plans/{id}/export/pdf/``.
 
 The page draws the plan as an SVG (``frontend/src/components/floorplan/
-plan-svg.ts``: tiles, zones, raised floors, walls and trays, light-themed)
-and posts it with the paper and the Color by legend. The plan's CAD drawing
+plan-svg.ts``: tiles, zones, raised floors, walls, trays and the cables in
+their lanes and bundles, light-themed) and posts it with the paper, the
+Color by legend and the cables' legend. The plan's CAD drawing
 is not posted: it is read here from the plan's own rendered file, in vector,
 with the layers and text the plan hides left out, and laid under the posted
 drawing at its placement - the transform the canvas uses
@@ -220,6 +221,15 @@ def _bar_html(bar: dict) -> str:
     )
 
 
+#: A cable legend row's line: (border width mm, style, opacity).
+_LINES = {
+    "solid": (0.4, "solid", 1),
+    "dashed": (0.4, "dashed", 1),
+    "thin": (0.25, "solid", 0.6),
+    "bundle": (0.9, "solid", 0.85),
+}
+
+
 def _legend_html(legend: dict | None) -> str:
     if not legend or not legend.get("items"):
         return ""
@@ -228,9 +238,17 @@ def _legend_html(legend: dict | None) -> str:
         r, g, b = (int(c[i : i + 2], 16) for i in (1, 3, 5))
         return f"background:rgba({r},{g},{b},0.35);border-color:{c}"
 
+    def line(c: str, kind: str) -> str:
+        # A cable's line style, keyed as a line (validated choices only).
+        width, style, opacity = _LINES[kind]
+        return (f"<i class='ln' style='border-top:{width}mm {style} {c};"
+                f"opacity:{opacity}'></i>")
+
     rows = "".join(
-        f"<span class='li'><i style='{swatch(row['color'])}'></i>"
-        f"{escape(row['label'])}</span>"
+        "<span class='li'>"
+        + (line(row["color"], row["line"]) if row.get("line")
+           else f"<i style='{swatch(row['color'])}'></i>")
+        + f"{escape(row['label'])}</span>"
         for row in legend["items"]
     )
     return (
@@ -240,7 +258,8 @@ def _legend_html(legend: dict | None) -> str:
 
 
 def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict | None,
-               legend: dict | None, generated: dt.datetime, title_block: bool) -> str:
+               legend: dict | None, generated: dt.datetime, title_block: bool,
+               cable_legend: dict | None = None) -> str:
     from danbyte import __version__
 
     pw, ph = sheet["page"]
@@ -250,7 +269,11 @@ def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict
     footer = ""
     if title_block:
         small = " · ".join((stamp(generated), f"Danbyte {__version__}", "Page 1 / 1"))
-        left = (_bar_html(bar) if bar else "") + _legend_html(legend)
+        left = (
+            (_bar_html(bar) if bar else "")
+            + _legend_html(legend)
+            + _legend_html(cable_legend)
+        )
         if credit:
             left += f"<div class='credit'>{escape(credit)}</div>"
         footer = (
@@ -287,6 +310,7 @@ def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict
         ".li{display:inline-block;margin-right:3mm;white-space:nowrap}"
         ".li i{display:inline-block;width:3.5mm;height:2.2mm;border:0.25mm solid;"
         "border-radius:0.5mm;margin-right:1mm;vertical-align:-0.3mm}"
+        ".li i.ln{height:0;border:0;border-radius:0;vertical-align:0.6mm}"
         ".credit{margin-top:0.8mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
         f".block{{position:absolute;right:0;bottom:0;"
         f"width:{mm(min(TITLE_W_MM, aw))};height:{mm(14)};"
@@ -450,6 +474,8 @@ def compose(plan_svg: bytes, *, width: float, height: float, cad: etree._Element
 class _LegendItemSerializer(serializers.Serializer):
     label = serializers.CharField(max_length=80)
     color = serializers.RegexField(_HEX, max_length=7)
+    #: A cable legend row keys a line style rather than a fill.
+    line = serializers.ChoiceField(choices=sorted(_LINES), required=False)
 
     def validate_color(self, v):
         r, g, b = (round(c * 255) for c in _rgb(v))
@@ -475,6 +501,10 @@ class FloorPlanPdfRequestSerializer(serializers.Serializer):
         required=False, default=True, help_text="Lay the plan's CAD drawing under it."
     )
     legend = _LegendSerializer(required=False, allow_null=True)
+    cable_legend = _LegendSerializer(
+        required=False, allow_null=True,
+        help_text="The cables' colours and line styles, as the plan's legend reads.",
+    )
 
 
 class FloorPlanPdfLinkSerializer(serializers.Serializer):
@@ -559,6 +589,7 @@ def export_pdf(request, plan) -> HttpResponse | Response:
             credit=line,
             bar=bar,
             legend=data.get("legend"),
+            cable_legend=data.get("cable_legend"),
             generated=generated,
             title_block=title_block,
         )
