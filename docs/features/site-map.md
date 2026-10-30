@@ -43,15 +43,18 @@ for a popup with counts and a jump-off to the site or device page.
 
 The page is a clone of the floor-plan editor's shell:
 
-- **Header** - View / Layout / Cables tabs, a *Find on map…* search (sites, devices,
-  markers - jump + select), **Fit to view**, the **Satellite** toggle, the
+- **Header** - View / Layout / Cables tabs, the **Outline** tool in Layout
+  mode ([building outlines](#building-outlines)), a *Find on map…* search
+  (sites, devices, markers, and outlines by their label or location name -
+  jump + select), **Fit to view**, the **Satellite** toggle, the
   **Objects** sidebar toggle, and a **Display** menu in three parts:
     - **Layers** - Sites, Devices, Links, Cables, Cable routes, Region
-      boundaries, Camera FOV cones, and Stack nearby markers. Links are
-      circuits and tunnels; **Cables** toggles the plain cable lines
+      boundaries, Outlines, Camera FOV cones, and Stack nearby markers. Links
+      are circuits and tunnels; **Cables** toggles the plain cable lines
       separately, so a map can show just the carrier picture.
-    - **Labels** - **Names** (the site and device name chips) and **Speed**
-      (each line's speed on the line, see [Link speed](#link-speed-on-the-map)).
+    - **Labels** - **Names** (the site and device name chips, and the
+      outlines' labels) and **Speed** (each line's speed on the line, see
+      [Link speed](#link-speed-on-the-map)).
     - **Color by** - **Type**, **Status**, **Speed** or **Utilization**,
       for the lines.
 - **Left palette rail** (Edit mode) - tabbed **Sites / Markers**, exactly
@@ -76,8 +79,9 @@ The page is a clone of the floor-plan editor's shell:
   [floor plans](floor-plans.md) and the [topology map](topology.md) open:
   one *Search…* box over foldable groups - sites by region (a flat list
   until regions are in use), devices by role (each role headed by its color
-  badge), markers, links grouped by kind, and a **Regions** list (regions
-  with a stored boundary; click one to fit the map to it). Click a row to
+  badge), markers, building **Outlines** (click one to fit the map to it),
+  links grouped by kind, and a **Regions** list (regions with a stored
+  boundary; click one to fit the map to it). Click a row to
   fly to it; Enter in the search box jumps to the first hit. Every
   site/device row carries its monitoring status pill, a **Problems** section
   at the top collects everything down or degraded (worst first), and the
@@ -199,8 +203,9 @@ Every site can carry a **marker color** and a **Lucide icon**, set on the site
 form (*Marker color* / *Marker icon*, next to the coordinates). The map pin
 takes the color and shows the icon inside it; with nothing set, the pin is the
 theme color with a standard building glyph. The same pair exists on locations - there they color the location's badge
-on list and detail pages (locations have no coordinates, so nothing changes on
-the map), and give the upcoming topology views a grouping color to work with.
+on list and detail pages, and a location's
+[outline](#building-outlines) when its type has no color. A location with
+neither takes its [type's](regions-locations.md#location-types).
 
 To color many at once, tick them in the **Sites**, **Regions** or
 **Locations** list and choose **Edit** in the bar that appears: sites and
@@ -403,6 +408,56 @@ ones you cannot see.
 
 For splice closures and PON splitters, see [fibre](../dcim/fiber.md).
 
+## Building outlines
+
+A campus is more than pins: draw each building's footprint on the map and
+link it to the [location](regions-locations.md#add-a-location) it is. An
+outline is a filled polygon with a label; clicking it opens what is inside.
+
+**Draw one** - switch to **Layout** and click **Outline** in the header.
+Click the building's corners, then double-click or press ++enter++ to
+finish (++esc++ cancels). A small dialog asks for the **site** (the nearest
+site you may edit is picked), the **location** and an optional **label**,
+and creates it. The **+** beside the Location picker makes a new location at
+that site there and then - typed *Building* when your
+[location types](regions-locations.md#location-types) have one.
+
+**Reshape and edit** - in Layout mode, click an outline to select it: drag a
+point to move it, click a side's **＋** to add a point, right-click a point
+to remove it (three always stay) - the same moves as a
+[cable route](#cables-mode-routes-for-the-outside-plant). The inspector on
+the right links the **location** (the locations of the outline's site, as
+their color badges), sets a **label**, a **color** of its own, and
+**Locked** - a locked outline shows no handles, so it can't be moved by
+accident. ++delete++ removes the selected outline. An outline that would
+cross itself is refused.
+
+**What it shows:**
+
+| | Comes from |
+|---|---|
+| **Color** | The outline's own color, else its location's [type](regions-locations.md#location-types) color, else the location's color, else neutral grey. |
+| **Label** | The outline's own label, else the location's **code** (`A1`), else its name. Shown with **Display → Labels → Names**; with Names off, on hover and selection only. |
+
+**Drill down** - in View mode, hovering an outline lights it up; clicking it
+opens its panel: the location's type and code, how many **sub-locations,
+rooms, racks and devices** are in it and under it (those you may view), and
+its **floor plans** - the floor plans of the location and of the locations
+inside it, then the site's [site-wide plans](floor-plans.md#site-wide-floor-plans).
+**Open floor plan** opens the first floor of the location's own floor plan
+(else of the site-wide one), **Open location** its page.
+
+Outlines are listed in the **Objects** sidebar and found by **Find on map**,
+by label, location name or code. **Display → Layers → Outlines** hides them
+all; hiding a site in the sidebar hides its outlines too.
+
+**Permissions** - outlines are their own type, **Site-map outlines**
+(`sitemapoutline`), scoped to their site like devices and audited in the
+change log. [Site roles](permissions.md#site-roles-local-it-in-one-click)
+include them. An outline linked to a location you may not view is not shown
+to you at all - not its shape, not its label; linking one needs view on the
+location, and the location must be at the outline's site.
+
 ## Placing a site from its address
 
 Besides dragging a pin in Layout mode or typing coordinates, the site form
@@ -497,6 +552,14 @@ sites (all of them - unplaced ones carry `null` coordinates so the edit panel
 can offer them) and every device with coordinates. Site coordinates are plain
 fields on the Site resource (`latitude` / `longitude`, decimal degrees), so
 they're scriptable like everything else.
+
+Building outlines are `/api/site-map-outlines/` (`?site=`, `?location=`):
+`points` is a list of 3 to 500 `[lat, lng]` pairs (not closed - the last
+point joins the first; a repeated closing point is dropped), with
+`site_id`, `location_id`, `label`, `color`, `z` and `locked`. Each row also
+carries `display_label` and `display_color`, as the map draws them.
+`GET /api/site-map-outlines/<id>/drilldown/` returns the panel's counts,
+floor plans and `open_floor_id`.
 
 `GET /api/site-map/cables/` returns every cable with two placeable ends. An
 end carries the point it draws at, its `device_id` and its `site_id` - a

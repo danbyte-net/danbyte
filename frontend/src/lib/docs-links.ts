@@ -22,6 +22,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/tenants": "models/tenant/",
   "/sites": "features/regions-locations/",
   "/locations": "features/regions-locations/",
+  "/location-types": "features/regions-locations/",
   "/rooms": "dcim/rooms/",
   "/regions": "features/regions-locations/",
   "/contacts": "features/contacts/",

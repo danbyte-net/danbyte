@@ -82,6 +82,7 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.iprole",
   "api.ipsecprofile",
   "api.location",
+  "api.locationtype",
   "api.macaddress",
   "api.manufacturer",
   "api.module",

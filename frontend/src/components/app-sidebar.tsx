@@ -93,6 +93,7 @@ import {
   Wrench,
   Zap,
   ListFilter,
+  Shapes,
 } from "lucide-react"
 
 import {
@@ -425,6 +426,12 @@ export const sections: NavSection[] = [
             url: "/locations",
             icon: FolderTree,
             objectType: "location",
+          },
+          {
+            title: "Location types",
+            url: "/location-types",
+            icon: Shapes,
+            objectType: "locationtype",
           },
           {
             title: "Rooms",
