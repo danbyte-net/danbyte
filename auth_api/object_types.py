@@ -207,6 +207,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("profiles.DeviceProfileAssignment", "Device profile assignments", "DCIM"),
     # Application flows (#163).
     ("api.ApplicationFlow", "Application flows", "DCIM"),
+    # Flows with variable ends ("the hosts of an application"); the resolver
+    # documents them as generated flows. A tenant-wide catalog; the
+    # exclusions are part of their requirement.
+    ("api.ApplicationFlowRequirement", "Application flow requirements", "DCIM"),
     ("api.Manufacturer", "Manufacturers", "DCIM"),
     # Support & warranty coverage (#421).
     ("api.SupportContract", "Support contracts", "DCIM"),

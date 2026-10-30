@@ -171,6 +171,7 @@ from .csp_views import csp_report
 from .dashboard_views import dashboard_view
 from .dcim_choices import dcim_choices_view
 from .editable_fields import editable_fields_view
+from .flow_requirements_api import ApplicationFlowRequirementViewSet
 from .inventory_views import ansible_inventory
 from .io_views import (
     io_export_view,
@@ -405,6 +406,8 @@ router.register(r"application-groups", ApplicationGroupViewSet, basename="applic
 router.register(r"application-group-assignments", ApplicationGroupAssignmentViewSet,
                 basename="application-group-assignment")
 router.register(r"application-flows", ApplicationFlowViewSet, basename="application-flow")
+router.register(r"application-flow-requirements", ApplicationFlowRequirementViewSet,
+                basename="application-flow-requirement")
 router.register(r"nat-rules",     NATRuleViewSet,     basename="natrule")
 # Routing - on this router (not a mounted app router) so bulk edit, planned
 # changes, CSV IO and the assistant's router walk all see the types.

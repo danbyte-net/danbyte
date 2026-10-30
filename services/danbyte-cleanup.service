@@ -1,5 +1,5 @@
 [Unit]
-Description=Danbyte stale discovered-IP cleanup (opt-in)
+Description=Danbyte stale discovered-IP cleanup (opt-in) and flow requirement sweep
 After=network.target
 Wants=danbyte-infra.service
 
@@ -8,6 +8,7 @@ Type=oneshot
 WorkingDirectory=%h/danbyte
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/danbyte/.venv/bin/python manage.py cleanup_stale_ips
+ExecStart=%h/danbyte/.venv/bin/python manage.py reconcile_flow_requirements
 
 # Triggered daily by danbyte-cleanup.timer.
 # Logs: journalctl --user -fu danbyte-cleanup
