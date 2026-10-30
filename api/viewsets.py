@@ -11508,9 +11508,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         plan = self.get_object()
         tiles_qs = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "cabinet", "device__role",
+            "tile_type", "role_type", "rack__role", "cabinet__role", "device__role",
             "device__device_type",
         )
+
+        def linked_role_color(t):
+            """A tile with no type of its own: its object's role colour."""
+            obj = t.device if t.device_id else t.rack if t.rack_id else \
+                t.cabinet if t.cabinet_id else None
+            role = getattr(obj, "role", None) if obj is not None else None
+            return role.color if role is not None else ""
+
         rack_ids = {t.rack_id for t in tiles_qs if t.rack_id}
         cabinet_counts = dict(
             Device.objects.filter(cabinet_id__in={t.cabinet_id for t in tiles_qs if t.cabinet_id})
@@ -11553,7 +11561,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "color": (
                     (t.tile_type.color if t.tile_type_id else "")
                     or (t.role_type.color if t.role_type_id else "")
-                    or t.color or ""
+                    or t.color
+                    or ("" if t.tile_type_id or t.role_type_id else linked_role_color(t))
                 ),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
                 # Perforated zone types render as grate floor in 3D - the

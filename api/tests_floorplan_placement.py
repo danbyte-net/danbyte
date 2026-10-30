@@ -401,6 +401,14 @@ class RoleLookTests(_Base):
         self.assertEqual(tile["tile_type"]["id"], str(tt.id))
         self.assertEqual(tile["linked"]["role"]["name"], "Access")
 
+    def test_the_3d_room_paints_it_in_the_role_colour(self):
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=0, y=0, device=self.dev, link_kind="device"
+        )
+        r = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["tiles"][0]["color"], "#0ea5e9")
+
     def test_a_rack_reads_its_rack_role(self):
         from .models import RackRole
 
