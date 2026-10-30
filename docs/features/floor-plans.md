@@ -696,7 +696,9 @@ to **Select** and the inspector shows the new area:
 
 - **Stands for** - a **Room** of this floor's location (or of a location
   inside it), a **Location** (this floor's or one inside it), or **Just an
-  area**. Rooms and locations are offered as their colour badges. A linked
+  area**. Rooms and locations are offered as their colour badges; **+**
+  next to the Room picker makes a new room in this floor's location and
+  links the area to it (needs permission to add rooms). A linked
   area wears the room's or location's colour - from its data, never from
   its name - and shows its name; a plain area takes a colour of its own.
   Linking never changes anything about the room or the devices standing in

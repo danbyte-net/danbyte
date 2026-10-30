@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlignCenter,
   AlignLeft,
@@ -13,6 +13,8 @@ import {
 } from "lucide-react"
 
 import { apiAll } from "@/lib/api-all"
+import { useMe } from "@/lib/use-me"
+import { QuickAddDialog } from "@/components/forms/quick-add"
 import type {
   FloorPlan,
   FloorPlanAreaBorder,
@@ -164,6 +166,9 @@ export function AreaInspector({
     staleTime: 5 * 60_000,
   })
   const locations = useFloorLocations(plan)
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const canAddRoom = canDo("room", "add")
   const linked: LinkKind = area.room
     ? "room"
     : area.location
@@ -230,6 +235,23 @@ export function AreaInspector({
           placeholder="Select a room…"
           searchPlaceholder="Search rooms…"
           emptyText="No rooms in this location."
+          quickAdd={
+            canAddRoom ? (
+              <QuickAddDialog
+                title={`New room in ${plan.location.name}`}
+                endpoint="/api/rooms/"
+                fields={[{ name: "name", label: "Name", required: true }]}
+                fixed={{ location_id: plan.location.id }}
+                onCreated={(r) => {
+                  void qc.invalidateQueries({ queryKey: ["rooms-picker"] })
+                  void qc.invalidateQueries({ queryKey: ["rooms"] })
+                  onChange({
+                    room: { id: r.id, name: r.name, code: "", color: "" },
+                  })
+                }}
+              />
+            ) : undefined
+          }
         />
       )}
       {link === "location" && (
