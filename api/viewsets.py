@@ -12838,6 +12838,26 @@ class _VersionCheckMixin:
             return super().destroy(request, *args, **kwargs)
 
 
+_TILE_LINK_SLUGS = {
+    "rack": "rack", "cabinet": "cabinet", "device": "device",
+    "cooling_source": "coolingsource",
+}
+
+
+def _may_view_link(user, tenant, slug: str, pk: str) -> bool:
+    """Whether ``user`` may view the linked object a tile filter names. A
+    malformed id is simply not viewable."""
+    import uuid
+
+    from auth_api import rbac
+
+    try:
+        key = uuid.UUID(str(pk))
+    except ValueError:
+        return False
+    return rbac.ViewableRows(user, tenant).may_view(slug, key)
+
+
 class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSet):
     """Tiles are scoped through their plan's tenant (they carry no tenant FK
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
@@ -12866,6 +12886,11 @@ class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSe
             ):
                 val = self.request.query_params.get(param)
                 if val:
+                    # "Where is this object placed" answers nothing about an
+                    # object the reader may not view (#453).
+                    slug = _TILE_LINK_SLUGS.get(param)
+                    if slug and not _may_view_link(self.request.user, tenant, slug, val):
+                        return qs.none()
                     qs = qs.filter(**{field: val})
         return restrict_for_view(self, qs)
 
