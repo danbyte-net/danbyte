@@ -223,6 +223,13 @@ class SiteViewerTests(_Fixture):
         self.assertEqual(tray["cable_count"], 0)
         self.assertEqual(tray["hidden_cable_count"], 2)
 
+    def test_tile_filter_by_a_hidden_object_answers_nothing(self):
+        r = self.get(f"/api/floor-plan-tiles/?device={self.far.pk}")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["count"], 0)
+        r = self.get("/api/floor-plan-tiles/?device=not-a-uuid")
+        self.assertEqual(r.json()["count"], 0)
+
     def test_state_skips_hidden_tiles(self):
         tiles = self.get(f"/api/floor-plans/{self.plan.id}/state/").json()["tiles"]
         self.assertIn(str(self.own_tile.id), tiles)
@@ -272,6 +279,10 @@ class BothSitesViewerTests(_Fixture):
         tiles = {t["id"]: t for t in scene["tiles"]}
         self.assertEqual(tiles[str(self.far_tile.id)]["device_name"], "far-b")
         self.assertEqual(tiles[str(self.rack_b_tile.id)]["rack"]["name"], "rack-b")
+
+    def test_tile_filter_by_a_viewable_object(self):
+        r = self.get(f"/api/floor-plan-tiles/?device={self.far.pk}")
+        self.assertEqual(r.json()["count"], 1)
 
 
 class SeparationBothSitesViewerTests(BothSitesViewerTests):
