@@ -35,6 +35,7 @@ export function DisplayMenu({
     showTrays,
     showCableLinks,
     showPhotos,
+    showPhotoOutlines,
     show3dU,
     show3dNames,
     names3dScope,
@@ -104,6 +105,12 @@ export function DisplayMenu({
             label="Photos"
             checked={showPhotos}
             onChange={(v) => setViewPref("show_photos", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
+          <FormCheckbox
+            label="Photo outlines"
+            checked={showPhotoOutlines}
+            onChange={(v) => setViewPref("show_photo_outlines", v)}
             className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
           />
           <div className="my-1 h-px bg-border" />

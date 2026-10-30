@@ -118,7 +118,7 @@ describe("the room prompt", () => {
   })
 })
 
-describe("Assign rooms from areas", () => {
+describe("Set rooms from areas", () => {
   it("lists the mismatches and applies only the ticked ones", async () => {
     apiMock.mockImplementation(async (_path, init) => {
       const body = JSON.parse(String(init?.body))
@@ -158,11 +158,12 @@ describe("Assign rooms from areas", () => {
     })
     wrap(<AssignRoomsDialog planId="p1" open onOpenChange={() => {}} />)
     await screen.findByText("sw1")
+    expect(screen.getByText("Set rooms from areas")).toBeTruthy()
     // What the user may not change is never ticked.
     const locked = screen.getByLabelText("locked")
     expect(locked.hasAttribute("disabled")).toBe(true)
     fireEvent.click(screen.getByLabelText("R1"))
-    fireEvent.click(screen.getByRole("button", { name: "Assign 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Set 1" }))
     await waitFor(() =>
       expect(apiMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     )

@@ -10,7 +10,8 @@ import { DisplayMenu } from "./display-menu"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
 
 // Display > Photos: a plan view preference, saved with the others for an
-// editor, that draws every tile with a photo as it.
+// editor, that draws every tile with a photo as it; Photo outlines, off
+// until asked for, outlines them.
 
 vi.mock("@/lib/use-me", () => ({ useMe: () => ({}) }))
 Element.prototype.scrollIntoView = () => {}
@@ -56,6 +57,20 @@ describe("Display > Photos", () => {
     expect(screen.getByTestId("photos").textContent).toBe("true")
     expect(mutate).toHaveBeenCalledWith({
       state: { show_fov: false, show_photos: true },
+    })
+  })
+
+  it("Photo outlines is off by default and saved like the rest", async () => {
+    const mutate = vi.fn()
+    render(<Harness mutate={mutate} />)
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    const box = await screen.findByLabelText("Photo outlines")
+    expect(
+      box.getAttribute("aria-checked") ?? box.getAttribute("data-state")
+    ).toMatch(/false|unchecked/)
+    fireEvent.click(box)
+    expect(mutate).toHaveBeenCalledWith({
+      state: { show_fov: false, show_photo_outlines: true },
     })
   })
 })

@@ -143,14 +143,55 @@ describe("the Place picker", () => {
     const groups = [...document.querySelectorAll("[data-group]")].map((g) =>
       g.getAttribute("data-group")
     )
-    expect(groups).toEqual(["In Room 210", "In Building A", "Elsewhere"])
+    expect(groups).toEqual([
+      "In Room 210",
+      "In Building A",
+      "Elsewhere",
+      "On this floor",
+    ])
+  })
+
+  /** Unfold the "On this floor" group at the foot. */
+  const unfoldPlaced = () =>
+    fireEvent.click(screen.getByRole("button", { name: /On this floor/ }))
+
+  it("does not suggest what is already on this floor; it waits folded", async () => {
+    openPicker()
+    await screen.findByText("sw-room")
+    const near = document.querySelector('[data-group="In Room 210"]')!
+    expect(within(near as HTMLElement).queryByText("sw-here")).toBeNull()
+    expect(screen.queryByText("sw-here")).toBeNull()
+    const fold = screen.getByRole("button", { name: /On this floor/ })
+    expect(fold.getAttribute("aria-expanded")).toBe("false")
+    expect(fold.textContent).toContain("1")
+    unfoldPlaced()
+    expect(screen.getByText("sw-here")).toBeTruthy()
+    // Placed on another floor: still offered, with that floor's name.
+    expect(screen.getByText("R9")).toBeTruthy()
+  })
+
+  it("a search finds what is on this floor, marked, and a click selects it", async () => {
+    const props = openPicker()
+    await screen.findByText("sw-room")
+    fireEvent.change(screen.getByLabelText("Find"), {
+      target: { value: "here" },
+    })
+    const here = (await screen.findByText("sw-here")).closest(
+      "[data-placeable]"
+    ) as HTMLElement
+    expect(within(here).getByText("On this floor")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /On this floor/ })).toBeNull()
+    fireEvent.click(screen.getByText("sw-here"))
+    expect(props.onShow).toHaveBeenCalledWith("t9")
   })
 
   it("shows each row's room and where it is placed", async () => {
     openPicker()
-    const here = (await screen.findByText("sw-here")).closest(
-      "[data-placeable]"
-    ) as HTMLElement
+    await screen.findByText("sw-room")
+    unfoldPlaced()
+    const here = screen
+      .getByText("sw-here")
+      .closest("[data-placeable]") as HTMLElement
     expect(within(here).getByText("On this floor")).toBeTruthy()
     expect(within(here).getByText("Room 210")).toBeTruthy()
     const rack = screen
@@ -163,6 +204,7 @@ describe("the Place picker", () => {
     const props = openPicker()
     fireEvent.click(await screen.findByText("sw-room"))
     expect(props.onPlace).toHaveBeenCalledWith([ROWS[0]])
+    unfoldPlaced()
     fireEvent.click(screen.getByText("sw-here"))
     expect(props.onShow).toHaveBeenCalledWith("t9")
   })
@@ -190,9 +232,13 @@ describe("the Place picker", () => {
     const props = openPicker({
       onFloor: new Map([...SAVED, ["device:a", "new-1"]]),
     })
-    const el = (await screen.findByText("sw-room")).closest(
-      "[data-placeable]"
-    ) as HTMLElement
+    await screen.findByText("sw-floor")
+    // Placed a moment ago: no longer suggested near the pointer.
+    expect(screen.queryByText("sw-room")).toBeNull()
+    unfoldPlaced()
+    const el = screen
+      .getByText("sw-room")
+      .closest("[data-placeable]") as HTMLElement
     expect(within(el).getByText("On this floor")).toBeTruthy()
     fireEvent.click(screen.getByText("sw-room"))
     expect(props.onShow).toHaveBeenCalledWith("new-1")

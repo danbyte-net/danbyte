@@ -385,8 +385,10 @@ export function FloorPlanEditor({
       nav({ to: "/floorplans/$id", params: { id: tile.linked.id } })
       return
     }
-    // Rack/device tiles open the contents + end-to-end trace sheet.
+    // Rack/device tiles open the contents + end-to-end trace sheet (from
+    // the popover's Trace or a double-click - a click pins the popover).
     if (tile.linked?.kind === "rack" || tile.linked?.kind === "device") {
+      popover.close()
       ed.setDeepTile(tile)
       return
     }

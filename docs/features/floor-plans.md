@@ -674,9 +674,9 @@ change rather than an exit, so neither is guarded.
 Under **Display**: **Color by** heads the menu - see [below](#color-by);
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
-**Camera FOV cones** shows/hides the camera wedges; and **Photos** draws
-every device and rack tile that has a photo as its photo (see
-[Photos](#photos)).
+**Camera FOV cones** shows/hides the camera wedges; **Photos** draws
+every device and rack tile that has a photo as its photo, and **Photo
+outlines** gives photo tiles their coloured outline (see [Photos](#photos)).
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
@@ -851,6 +851,11 @@ object placed a moment ago is on this floor at once, and one whose tile was
 deleted is not. A device mounted in a rack or a cabinet is placed with it
 and is not listed.
 
+What already stands on this floor is not suggested: it leaves the **In**
+groups and waits, folded, in **On this floor** at the foot of the list, with
+its count. A search by name finds it in its group, marked **On this floor**.
+Objects placed on another floor stay listed, with that floor's name.
+
 An object stands once on a floor:
 
 - **Click** a row: the object is placed in the middle of the view. A row
@@ -902,10 +907,11 @@ change log), or dismissed with ×. Setting a room also sets the object's
 location to the room's, as any room edit does ([Rooms](../dcim/rooms.md)).
 
 The same offer sits in the floating toolbar of a selected tile standing in
-another room's area. **Place… → Assign rooms from areas…** lists every
+another room's area. **Place… → Set rooms from areas…** (its (i) says
+what it does) lists every
 placed object of the floor whose tile centre lies in a room's area while the
 object names another room - the topmost room area when they overlap -, with
-its room and the area's room. Tick the ones to change and **Assign**; an
+its room and the area's room. Tick the ones to change and **Set**; an
 object you may not change is listed but cannot be ticked. Areas linked to a
 location, and plain areas, are not used.
 
@@ -918,9 +924,10 @@ toolbar (**Show as tile** goes back); a tile just placed from the picker
 offers it at once, before the save. Without a photo the button is greyed
 out, and its tooltip says where one comes from: an image on the device (or
 rack), or a front image on its device type. The photo keeps its proportions
-inside the tile, with a thin outline that carries the selection, monitoring
-and planned status, and the name under it. On a grid plan the photo fits
-the tile's cells; the tile keeps its size. On a free plan, placing an object
+inside the tile, with the name under it. Selected, it is outlined; the
+coloured outline that carries monitoring and planned status shows on the
+other photo tiles only with **Display → Photo outlines** (off by default).
+On a grid plan the photo fits the tile's cells; the tile keeps its size. On a free plan, placing an object
 that has a photo places it as its photo at the device type's real width (one
 cell when the type has none); the corner handles resize it with its
 proportions kept (++shift++ frees them), the turn handle turns it, and
@@ -1095,8 +1102,9 @@ and tag, and its advanced filter reaches custom fields.
 
 ## Rack & device deep view
 
-Click a rack tile (or its **Contents & trace** button) to open a side panel
-with the rack's capacity, its **real elevation** (front/rear, role-colored),
+A click on a rack or device tile pins its popover; its **Contents & trace**
+(a device: **Trace**) button, a double-click or right-click → Open opens a
+side panel with the rack's capacity, its **real elevation** (front/rear, role-colored),
 and the device list - each device has an **End-to-end** button that shows its
 cable paths through patch panels to the far end, the same trace view as the
 device page. Device tiles open the end-to-end view directly.
@@ -1111,7 +1119,10 @@ right-click → Open.
 
 Click a tile to see what it is and jump to the linked object (**Open rack**,
 **Open device**…, the same link every map panel uses).
-Rack, cabinet and device tiles open the deep view; a tile linked to **another floor
+A click on a rack or device tile pins its popover, where **Contents & trace**
+(**Trace** for a device) opens the deep view, as a double-click does; on a
+touch screen, with no hover to pin, a tap opens it straight away. A cabinet
+tile opens its panel on a click; a tile linked to **another floor
 plan** navigates into it on click - use this to nest a cage or suite plan
 inside a hall plan.
 
@@ -1491,7 +1502,7 @@ Placing reads and writes the objects themselves under their own grants:
 the Place picker (`placeable/`) needs view on the plan and lists each kind -
 devices, racks, cabinets - by that kind's view grant and site scope; a
 tile's photo shows only to someone who may view its device or rack; and a
-room set from the prompt or **Assign rooms from areas** needs `change` on
+room set from the prompt or **Set rooms from areas** needs `change` on
 each object and is audited on it.
 
 ## Popover fields
