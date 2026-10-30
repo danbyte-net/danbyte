@@ -2099,6 +2099,8 @@ export interface Application extends ApplicationMini {
   child_count: number
   /** Flows the reader may view (#163). */
   flow_count: number
+  /** The application's flow requirements. */
+  requirement_count?: number
   created_at: string
   updated_at: string
 }
@@ -2352,10 +2354,124 @@ export interface ApplicationFlow {
   direction_display: string
   status: StatusMini | null
   service: { id: string; name: string } | null
+  /** The requirement that made the row; null on a hand-made flow. */
+  requirement: { id: string; name: string } | null
+  generated: boolean
+  /** Fields edited on a generated row; its requirement leaves them. */
+  overridden_fields: FlowOverride[]
+  /** The installs behind a generated row's host ends (null when hidden). */
+  source_install: FlowInstallRef | null
+  destination_install: FlowInstallRef | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FlowOverride =
+  "protocol" | "ports" | "direction" | "status" | "service"
+
+export interface FlowInstallRef {
+  id: string
+  application: string
+  version: string
+  host: { kind: "device" | "vm"; id: string; name: string }
+}
+
+// ─── Application flow requirements ─────────────────────────────────────
+
+export type RequirementEndKind =
+  "self" | "app" | "ip" | "range" | "prefix" | "any"
+export type RequirementAddress = "primary" | "service" | "role" | "all"
+export type RequirementFamily = "any" | "ipv4" | "ipv6"
+export type RequirementPairing = "all" | "same_site"
+export type RequirementState =
+  "pending" | "resolved" | "partial" | "unresolved" | "idle"
+
+/** One end of a requirement, ready to show. A fixed end the caller may not
+ * view comes back `hidden` (#453). */
+export interface RequirementEnd {
+  kind: RequirementEndKind
+  id: string | null
+  label: string
+  application: { id: string; name: string } | null
+  address: RequirementAddress | null
+  address_role: { id: string; name: string; color: string } | null
+  hidden: boolean
+}
+
+export interface FlowRequirementExclusion {
+  id: string
+  label: string
+  binding_key: string
+  created_at: string
+}
+
+/** A requirement on one host (`?device=` / `?vm=`): its flows there and
+ * why it is missing some. */
+export interface FlowRequirementHost {
+  flows: number
+  reason: string
+  state: RequirementState
+}
+
+export interface FlowRequirement {
+  id: string
+  application: { id: string; name: string; slug: string }
+  name: string
+  description: string
+  source: RequirementEnd
+  destination: RequirementEnd
+  source_kind: RequirementEndKind
+  destination_kind: RequirementEndKind
+  source_address: RequirementAddress | ""
+  destination_address: RequirementAddress | ""
+  family: RequirementFamily
+  pairing: RequirementPairing
+  protocol: FlowProtocol
+  protocol_display: string
+  ports: string
+  direction: FlowDirection
+  direction_display: string
+  status: StatusMini | null
+  state: RequirementState
+  state_detail: string
+  generated_count: number
+  gap_count: number
+  resolved_at: string | null
+  exclusions: FlowRequirementExclusion[]
+  host: FlowRequirementHost | null
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface FlowRequirementGap {
+  side: FlowSide
+  host: { kind: "device" | "vm"; id: string; name: string }
+  reason: string
+}
+
+export interface FlowRequirementGaps {
+  state: RequirementState
+  detail: string
+  gaps: FlowRequirementGap[]
+  /** Hosts without an address the caller may not view - counted only. */
+  hidden: number
+}
+
+export interface FlowRequirementPreview {
+  pairs: number
+  hosts: number
+  state: RequirementState
+  detail: string
+  warn: boolean
+  refused: boolean
+  warn_at: number
+  max: number
+  gaps: FlowRequirementGap[]
+  hidden: number
 }
 
 export interface EolSettings {
@@ -8880,6 +8996,9 @@ export interface ChangeLogEntry {
   request_id: string
   /** How the change arrived: "ui", "api", "system", or "" on old rows. */
   via: string
+  /** Why a derived write happened ("Requirement 'WMS to Broker': install
+   * added on wms-07"); blank for ordinary edits. */
+  cause?: string
   /** Full row snapshots - only present on the detail endpoint. Pre is null
    * for a create, post is null for a delete. */
   pre_change?: Record<string, unknown> | null
