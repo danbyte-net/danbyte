@@ -44,7 +44,9 @@ for a popup with counts and a jump-off to the site or device page.
 The page is a clone of the floor-plan editor's shell:
 
 - **Header** - View / Layout / Cables tabs, the **Outline** tool in Layout
-  mode ([building outlines](#building-outlines)), a *Find on map…* search
+  mode ([building outlines](#building-outlines)), **New floor plan** in
+  Layout mode ([a floor plan from the map](#new-floor-plan-from-this-view)),
+  a *Find on map…* search
   (sites, devices, markers, and outlines by their label or location name -
   jump + select), **Fit to view**, the **Satellite** toggle, the
   **Objects** sidebar toggle, and a **Display** menu in three parts:
@@ -458,6 +460,38 @@ include them. An outline linked to a location you may not view is not shown
 to you at all - not its shape, not its label; linking one needs view on the
 location, and the location must be at the outline's site.
 
+## New floor plan from this view
+
+A campus plan can start from the map: in **Layout** mode, **New floor
+plan** in the header (needs permission to add floor plans) lets you frame
+the area - drag a rectangle over it, or press ++enter++ for the whole view
+(++esc++ cancels). A dialog asks for:
+
+| | |
+|---|---|
+| **Name** | The floor plan's name; it must be unique among the site's site-wide floor plans. |
+| **Site** | The site whose outlines and pins are in the framed area, else pick one. |
+| **Cell size** | 1 m by default. Raised when the area would need more than 512 cells across; the line under the fields shows the grid and its size in metres. |
+| **Background** | **Map** or **Satellite**, from the tile servers set under [Map tiles](#map-tiles-read-this-before-heavy-use). |
+
+**Create** draws the framed area from the tiles into one image, in your
+browser, at the map's zoom (lowered when the image would be over 4,096
+pixels a side), with the tile attribution in its bottom-right corner. It
+makes a [site-wide floor plan](floor-plans.md#site-wide-floor-plans) of
+that size at true scale with the image as its background, copies the
+site's [building outlines](#building-outlines) inside the area onto it as
+areas linked to the same locations, and opens it. See
+[Plans made from the Site map](floor-plans.md#plans-made-from-the-site-map)
+for the scale, the attribution and the areas.
+
+**When the tiles can't be read** - on an isolated network, or from a tile
+server that does not allow pages to read its tiles - the dialog says so and
+offers **Create without background**: the same plan with the outlines and
+no image. Reading tiles needs the tile server to send
+`Access-Control-Allow-Origin` (OpenStreetMap's and Esri's do); for a
+self-hosted tile server, add the header there. Danbyte's server never
+fetches tiles for this either.
+
 ## Placing a site from its address
 
 Besides dragging a pin in Layout mode or typing coordinates, the site form
@@ -543,7 +577,9 @@ attribution string; nearly every provider requires one.
     can't reach a tile server (a fully isolated network) does the map fall
     back to a plain background - markers, placement, and popups still work.
     For real tiles there, self-host a tile server on the isolated network and
-    point the Map tiles setting at it.
+    point the Map tiles setting at it. A
+    [floor plan made from the map](#new-floor-plan-from-this-view) is drawn
+    from the same tiles in the browser too.
 
 ## API
 
@@ -560,6 +596,9 @@ point joins the first; a repeated closing point is dropped), with
 carries `display_label` and `display_color`, as the map draws them.
 `GET /api/site-map-outlines/<id>/drilldown/` returns the panel's counts,
 floor plans and `open_floor_id`.
+
+`POST /api/floor-plans/from-map/` makes a floor plan from a box of the map;
+see [its API](floor-plans.md#plans-made-from-the-site-map).
 
 `GET /api/site-map/cables/` returns every cable with two placeable ends. An
 end carries the point it draws at, its `device_id` and its `site_id` - a

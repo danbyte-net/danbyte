@@ -46,6 +46,7 @@ from .bulk_update import (  # noqa: F401
 )
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
+from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
 from .pagination import StandardResultsSetPagination
 from .visible_counts import (
@@ -11741,7 +11742,24 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # the action); unlinking rewrites the view.
         "snapshot": "view",
         "unlink": "change",
+        "from_map": "add",
     }
+
+    @extend_schema(
+        summary="A site-wide floor plan from a view of the Site map",
+        request={"multipart/form-data": FromMapRequestSerializer,
+                 "application/json": FromMapRequestSerializer},
+        responses={201: FloorPlanSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="from-map",
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
+    def from_map(self, request):
+        """A site-wide floor plan spanning ``bbox`` at true scale, with the
+        browser's render of the view as its background and the site's
+        building outlines inside it as areas (api/floor_plan_from_map.py)."""
+        from .floor_plan_from_map import create_from_map
+
+        return Response(create_from_map(self, request), status=drf_status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="route")
     def route(self, request, pk=None):
