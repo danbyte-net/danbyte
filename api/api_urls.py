@@ -182,6 +182,7 @@ from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
+from .platforms_api import PlatformViewSet
 from .presence_views import (
     presence_heartbeat,
     presence_leave,
@@ -275,7 +276,6 @@ from .viewsets import (
     ModuleViewSet,
     NATRuleViewSet,
     PlatformGroupViewSet,
-    PlatformViewSet,
     PortReservationViewSet,
     PowerFeedViewSet,
     PowerOutletTemplateViewSet,
