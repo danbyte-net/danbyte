@@ -10,7 +10,7 @@ export interface GridTile {
   y: number
   width: number
   height: number
-  orientation: 0 | 90 | 180 | 270
+  orientation: number
   tile_type?: { is_zone?: boolean } | null
 }
 
@@ -136,7 +136,7 @@ export function rotateSelection<T extends GridTile>(
       y: ny + u,
       width: t.height,
       height: t.width,
-      orientation: ((t.orientation + 90) % 360) as GridTile["orientation"],
+      orientation: (t.orientation + 90) % 360,
     })
   }
   return settle(tiles, ids, patches, grid)

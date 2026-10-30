@@ -250,6 +250,8 @@ from .viewsets import (
     FHRPGroupAssignmentViewSet,
     FHRPGroupViewSet,
     FiberSettingsViewSet,
+    FloorPlanAreaViewSet,
+    FloorPlanLabelViewSet,
     FloorPlanRaisedFloorAreaViewSet,
     FloorPlanStackViewSet,
     FloorPlanTileViewSet,
@@ -498,6 +500,12 @@ router.register(
 )
 router.register(
     r"floor-plan-walls", FloorPlanWallViewSet, basename="floor-plan-wall"
+)
+router.register(
+    r"floor-plan-areas", FloorPlanAreaViewSet, basename="floor-plan-area"
+)
+router.register(
+    r"floor-plan-labels", FloorPlanLabelViewSet, basename="floor-plan-label"
 )
 router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")

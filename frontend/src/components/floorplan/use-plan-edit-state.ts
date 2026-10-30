@@ -4,15 +4,35 @@ import type { FloorPlanTile } from "@/lib/api"
 
 import { usePlanDraft } from "./edit-history"
 import type { PaletteEntry } from "./floor-canvas"
+import type { PlanShape } from "./shapes"
 
 /** Local editing shape - server tiles plus unsaved ones (temp ids). */
 export type EditTile = FloorPlanTile
 
-/** The editor's mode tabs: layout (tiles), structure, cables (trays). */
+/** What the canvas edits: layout (tiles, areas, labels), structure (walls,
+ * raised floors), cables (trays). The tool in hand picks it. */
 export type EditorMode = "layout" | "cable" | "structure"
 
-/** The same tiles, as last saved: a refetch that brings nothing new. */
-const sameTiles = (a: FloorPlanTile[], b: FloorPlanTile[]) =>
+/** The tool rail's tools. */
+export type EditorTool =
+  "select" | "rect" | "polygon" | "label" | "tiles" | "structure" | "trays"
+
+/** The canvas mode a tool works in. */
+export const TOOL_MODE: Record<EditorTool, EditorMode> = {
+  select: "layout",
+  rect: "layout",
+  polygon: "layout",
+  label: "layout",
+  tiles: "layout",
+  structure: "structure",
+  trays: "cable",
+}
+
+/** The same rows, as last saved: a refetch that brings nothing new. */
+const sameRows = (
+  a: readonly { id: string; updated_at: string }[],
+  b: readonly { id: string; updated_at: string }[]
+) =>
   a.length === b.length &&
   a.every((t, i) => t.id === b[i].id && t.updated_at === b[i].updated_at)
 
@@ -22,15 +42,28 @@ const sameTiles = (a: FloorPlanTile[], b: FloorPlanTile[]) =>
  * server tiles whenever nothing is unsaved. */
 export function usePlanEditState(
   id: string,
-  serverTiles: FloorPlanTile[] | undefined
+  serverTiles: FloorPlanTile[] | undefined,
+  serverShapes: PlanShape[] | undefined
 ) {
   // ── Local editing state ────────────────────────────────────────────────
-  // The tiles as edited, which changed and which went: the draft Save
-  // writes, with its undo history (edit-history.ts).
-  const draft = usePlanDraft<EditTile>()
-  const { tiles, dirtyIds, deletedIds, setTiles, setDirtyIds, setDeletedIds } =
-    draft
+  // The tiles, areas and labels as edited, which changed and which went:
+  // the draft Save writes, with its undo history (edit-history.ts).
+  const draft = usePlanDraft<EditTile, PlanShape>()
+  const {
+    tiles,
+    shapes,
+    dirtyIds,
+    deletedIds,
+    setTiles,
+    setShapes,
+    setDirtyIds,
+    setDeletedIds,
+  } = draft
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // The area or label selected (one at a time; a tile selection clears it).
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
+  // The tool in hand (Edit only) - the rail's tools.
+  const [tool, setTool] = useState<EditorTool>("select")
   const [armed, setArmed] = useState<PaletteEntry | null>(null)
   // Structure mode: arm-to-draw a raised-floor rectangle + selection.
   const [areaArmed, setAreaArmed] = useState(false)
@@ -84,6 +117,8 @@ export function usePlanEditState(
     draft.load([])
     setMultiSel(new Set())
     setSelectedId(null)
+    setSelectedShapeId(null)
+    setTool("select")
     setArmed(null)
     setDeepTile(null)
     setCabinetTileId(null)
@@ -108,10 +143,12 @@ export function usePlanEditState(
   useEffect(() => {
     if (serverTiles && !isDirtyRef.current) {
       const fresh = serverTiles
-      if (!sameTiles(draft.tiles, fresh)) draft.load(fresh)
+      const freshShapes = serverShapes ?? []
+      if (!sameRows(draft.tiles, fresh) || !sameRows(draft.shapes, freshShapes))
+        draft.load(fresh, freshShapes)
     }
     // Only fresh data hydrates; the draft is read, not watched.
-  }, [serverTiles])
+  }, [serverTiles, serverShapes])
 
   // A step that removed a selected tile (undoing its placement) drops it
   // from the selection.
@@ -124,19 +161,30 @@ export function usePlanEditState(
     )
     if (ids.size) setSelectedId((cur) => (cur && !ids.has(cur) ? null : cur))
   }, [tiles])
+  useEffect(() => {
+    setSelectedShapeId((cur) =>
+      cur && !shapes.some((s) => s.id === cur) ? null : cur
+    )
+  }, [shapes])
 
   return {
     draft,
     tiles,
+    shapes,
     dirtyIds,
     deletedIds,
     setTiles,
+    setShapes,
     setDirtyIds,
     setDeletedIds,
     isDirty,
     isDirtyRef,
     selectedId,
     setSelectedId,
+    selectedShapeId,
+    setSelectedShapeId,
+    tool,
+    setTool,
     armed,
     setArmed,
     areaArmed,

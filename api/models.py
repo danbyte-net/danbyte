@@ -9188,6 +9188,13 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # Height of the floor above the site's reference level; reserved for a
     # stacked 3D building.
     elevation_mm = models.IntegerField(null=True, blank=True)
+    # "grid": tiles on whole cells at quarter turns, never stacked (the plan
+    # as it always was). "free": any position, size and angle, objects may
+    # overlap. Back to grid only through snap-all.
+    LAYOUT_MODES = [("grid", "Grid"), ("free", "Free")]
+    layout_mode = models.CharField(
+        max_length=8, choices=LAYOUT_MODES, default="grid", db_default="grid"
+    )
 
     class Meta:
         ordering = ["name"]
@@ -9352,7 +9359,6 @@ class FloorPlanTile(TimestampedModel):
         ("reserved", "Reserved"),
         ("decommissioning", "Decommissioning"),
     ]
-    ORIENTATION_CHOICES = [(0, "0°"), (90, "90°"), (180, "180°"), (270, "270°")]
     # link_kind → FK field name; exactly the reference-kind approach the
     # topology map + CableSerializer use.
     LINK_FIELDS = {
@@ -9369,13 +9375,14 @@ class FloorPlanTile(TimestampedModel):
     floor_plan = models.ForeignKey(
         FloorPlan, on_delete=models.CASCADE, related_name="tiles"
     )
-    x = models.PositiveSmallIntegerField()
-    y = models.PositiveSmallIntegerField()
-    width = models.PositiveSmallIntegerField(
-        default=1, validators=[MinValueValidator(1), MaxValueValidator(512)]
+    # Cell units. Whole cells on a grid plan; any value on a free one.
+    x = models.FloatField(validators=[MinValueValidator(0)])
+    y = models.FloatField(validators=[MinValueValidator(0)])
+    width = models.FloatField(
+        default=1, validators=[MinValueValidator(0.01), MaxValueValidator(512)]
     )
-    height = models.PositiveSmallIntegerField(
-        default=1, validators=[MinValueValidator(1), MaxValueValidator(512)]
+    height = models.FloatField(
+        default=1, validators=[MinValueValidator(0.01), MaxValueValidator(512)]
     )
     tile_type = models.ForeignKey(
         FloorTileType,
@@ -9391,8 +9398,9 @@ class FloorPlanTile(TimestampedModel):
         blank=True,
         related_name="floor_tiles",
     )
+    # Degrees. Quarter turns on a grid plan; any whole degree on a free one.
     orientation = models.PositiveSmallIntegerField(
-        choices=ORIENTATION_CHOICES, default=0
+        default=0, validators=[MaxValueValidator(359)]
     )
     label = models.CharField(max_length=64, blank=True, default="")
     color = models.CharField(max_length=7, blank=True, default="")
@@ -9479,11 +9487,22 @@ class FloorPlanTile(TimestampedModel):
         indexes = [models.Index(fields=["floor_plan"])]
         constraints = [
             models.CheckConstraint(
-                name="floorplantile_exactly_one_type",
-                # Exactly one of tile_type / role_type.
+                name="floorplantile_type_or_link",
+                # Exactly one of tile_type / role_type - or neither on a tile
+                # linked to an object, which draws from that object.
                 check=(
                     models.Q(tile_type__isnull=False, role_type__isnull=True)
                     | models.Q(tile_type__isnull=True, role_type__isnull=False)
+                    | models.Q(
+                        models.Q(tile_type__isnull=True, role_type__isnull=True),
+                        models.Q(rack__isnull=False)
+                        | models.Q(cabinet__isnull=False)
+                        | models.Q(device__isnull=False)
+                        | models.Q(power_panel__isnull=False)
+                        | models.Q(power_feed__isnull=False)
+                        | models.Q(cooling_source__isnull=False)
+                        | models.Q(linked_floor_plan__isnull=False),
+                    )
                 ),
             ),
             models.CheckConstraint(
@@ -9743,6 +9762,109 @@ class FloorPlanWall(TimestampedModel):
 
     def __str__(self) -> str:
         return self.label or f"wall ({len(self.points or [])} pts)"
+
+
+class FloorPlanArea(TimestampedModel):
+    """A room, a location or a plain area drawn on one floor: a rectangle
+    (turned about its centre) or a polygon, in cell units. Its colour is the
+    linked room's or location's, else its own. Drawn under the tiles, over
+    the background and zone tiles; areas may overlap (a cage in a hall)."""
+
+    SHAPES = [("rect", "Rectangle"), ("polygon", "Polygon")]
+    BORDERS = [("solid", "Solid"), ("dashed", "Dashed"), ("none", "None")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="areas"
+    )
+    shape = models.CharField(max_length=8, choices=SHAPES, default="rect")
+    # The rectangle's box (top-left, unturned); a polygon's bounding box.
+    x = models.FloatField(default=0)
+    y = models.FloatField(default=0)
+    width = models.FloatField(default=1)
+    height = models.FloatField(default=1)
+    rotation = models.FloatField(
+        default=0, help_text="Degrees about the centre (rectangles only)."
+    )
+    # [[x, y], ...] in cell units (polygons only).
+    points = models.JSONField(default=list, blank=True)
+    room = models.ForeignKey(
+        Room, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floor_plan_areas",
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floor_plan_areas",
+    )
+    label = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Shown in place of the linked room's or location's name.",
+    )
+    color = models.CharField(max_length=7, blank=True, default="")
+    fill_opacity = models.PositiveSmallIntegerField(
+        default=15, validators=[MaxValueValidator(100)], help_text="Percent."
+    )
+    border = models.CharField(max_length=8, choices=BORDERS, default="solid")
+    show_name = models.BooleanField(default=True)
+    z = models.SmallIntegerField(default=0, help_text="Draw order among areas.")
+    locked = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["floor_plan"])]
+        constraints = [
+            models.CheckConstraint(
+                name="floorplanarea_room_or_location",
+                check=models.Q(room__isnull=True) | models.Q(location__isnull=True),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.label or (str(self.room) if self.room_id else "") or (
+            str(self.location) if self.location_id else ""
+        ) or "Area"
+
+
+class FloorPlanLabel(TimestampedModel):
+    """Free text on a floor ("North side", "Loading dock"). Its size is the
+    text height on the floor in millimetres, so it scales with the plan."""
+
+    WEIGHTS = [("normal", "Normal"), ("bold", "Bold")]
+    ALIGNS = [("left", "Left"), ("center", "Center"), ("right", "Right")]
+    # Palette tokens the client maps to theme colours; blank = the ink.
+    COLORS = [
+        ("", "Default"), ("muted", "Muted"), ("red", "Red"), ("amber", "Amber"),
+        ("green", "Green"), ("blue", "Blue"), ("violet", "Violet"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    floor_plan = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, related_name="labels"
+    )
+    text = models.TextField()
+    x = models.FloatField(default=0)
+    y = models.FloatField(default=0)
+    # Null = sized to the text.
+    width = models.FloatField(null=True, blank=True)
+    height = models.FloatField(null=True, blank=True)
+    rotation = models.FloatField(default=0)
+    font_mm = models.PositiveSmallIntegerField(
+        default=300, validators=[MinValueValidator(20), MaxValueValidator(5000)],
+        help_text="Text height on the floor, in millimetres.",
+    )
+    weight = models.CharField(max_length=8, choices=WEIGHTS, default="normal")
+    align = models.CharField(max_length=8, choices=ALIGNS, default="left")
+    color = models.CharField(max_length=16, choices=COLORS, blank=True, default="")
+    plate = models.BooleanField(default=False)
+    z = models.SmallIntegerField(default=0)
+    locked = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["floor_plan"])]
+
+    def __str__(self) -> str:
+        return (self.text or "").splitlines()[0][:64] if self.text else "Label"
 
 
 class CableRoute(TimestampedModel):

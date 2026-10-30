@@ -11946,7 +11946,9 @@ export interface FloorPlanTile {
     is_patch_panel: boolean
     has_fov: boolean
   } | null
-  orientation: 0 | 90 | 180 | 270
+  /** Degrees: 0/90/180/270 on a grid plan, any whole degree 0-359 on a
+   * free plan. */
+  orientation: number
   label: string
   color: string
   status: FloorTileStatus
@@ -12012,6 +12014,9 @@ export interface FloorPlan {
   grid_height: number
   /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
   cell_mm: number
+  /** "grid": tiles on whole cells at quarter turns; "free": any position,
+   * size and angle. Back to grid only through snap-all/. */
+  layout_mode: FloorPlanLayoutMode
   /** Room ceiling height (mm). */
   ceiling_mm: number
   /** Relative /media/… URL for the blueprint under the grid, or null. */
@@ -12028,6 +12033,17 @@ export interface FloorPlan {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export type FloorPlanLayoutMode = "grid" | "free"
+
+/** POST /api/floor-plans/<id>/snap-all/ - the tiles a free plan moves to go
+ * back onto the grid; `dry_run` changes nothing. */
+export interface FloorPlanSnapAllResult {
+  layout_mode: FloorPlanLayoutMode
+  moved: number
+  collisions: { id: string; name: string }[]
+  tiles?: FloorPlanTile[]
 }
 
 /** A floor as its floor plan lists it (the switcher's row). */
@@ -12244,6 +12260,122 @@ export interface FloorPlanWall {
   updated_at: string
 }
 
+export type FloorPlanAreaBorder = "solid" | "dashed" | "none"
+
+/** A room, a location or a plain area drawn on a floor: a rotated rectangle
+ * or a polygon, under the tiles (docs: floor-plans "Rooms, areas and
+ * labels"). Coordinates are cell units. */
+export interface FloorPlanArea {
+  id: string
+  shape: "rect" | "polygon"
+  /** The rectangle (polygon: its bounding box, read-only). */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Degrees about the rectangle's centre; 0 for a polygon. */
+  rotation: number
+  /** [[x, y], …] - a polygon's outline; [] for a rectangle. */
+  points: [number, number][]
+  room: { id: string; name: string; code: string; color: string } | null
+  location: { id: string; name: string; color: string } | null
+  /** Overrides the linked object's name. */
+  label: string
+  /** Blank: the room's or location's colour. */
+  color: string
+  fill_opacity: number
+  border: FloorPlanAreaBorder
+  show_name: boolean
+  z: number
+  locked: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanAreaWritePayload {
+  floor_plan_id?: string
+  shape?: FloorPlanArea["shape"]
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  rotation?: number
+  points?: [number, number][]
+  room_id?: string | null
+  location_id?: string | null
+  label?: string
+  color?: string
+  fill_opacity?: number
+  border?: FloorPlanAreaBorder
+  show_name?: boolean
+  z?: number
+  locked?: boolean
+}
+
+/** The palette a label's colour comes from; "" is the theme's ink. */
+export type FloorPlanLabelColor =
+  "" | "muted" | "red" | "amber" | "green" | "blue" | "violet"
+
+/** Free text on a floor ("North side", "Loading dock"). Its size is the
+ * text's height on the floor in millimetres, so it scales with the plan. */
+export interface FloorPlanLabel {
+  id: string
+  text: string
+  x: number
+  y: number
+  /** null: sized to the text. */
+  width: number | null
+  height: number | null
+  rotation: number
+  font_mm: number
+  weight: "normal" | "bold"
+  align: "left" | "center" | "right"
+  color: FloorPlanLabelColor
+  /** An opaque chip behind the text, so it reads over lines. */
+  plate: boolean
+  z: number
+  locked: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanLabelWritePayload {
+  floor_plan_id?: string
+  text?: string
+  x?: number
+  y?: number
+  width?: number | null
+  height?: number | null
+  rotation?: number
+  font_mm?: number
+  weight?: FloorPlanLabel["weight"]
+  align?: FloorPlanLabel["align"]
+  color?: FloorPlanLabelColor
+  plate?: boolean
+  z?: number
+  locked?: boolean
+}
+
+interface BulkPart<T> {
+  create?: T[]
+  update?: (T & { id: string })[]
+  delete?: string[]
+}
+
+/** POST /api/floor-plans/<id>/bulk/ - tiles, areas and labels in one
+ * transaction; the fresh lists come back. */
+export interface FloorPlanBulkPayload {
+  tiles?: BulkPart<FloorPlanTileWritePayload>
+  areas?: BulkPart<FloorPlanAreaWritePayload>
+  labels?: BulkPart<FloorPlanLabelWritePayload>
+}
+
+export interface FloorPlanBulkResult {
+  tiles: FloorPlanTile[]
+  areas: FloorPlanArea[]
+  labels: FloorPlanLabel[]
+}
+
 /** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
  * read, every row (no pagination), each kind as its own list returns it. */
 export interface FloorPlanContents {
@@ -12253,6 +12385,8 @@ export interface FloorPlanContents {
   trays: FloorPlanTray[]
   walls: FloorPlanWall[]
   raised_floors: RaisedFloorArea[]
+  areas: FloorPlanArea[]
+  labels: FloorPlanLabel[]
 }
 
 export interface FloorPlanWallWritePayload {
@@ -12374,6 +12508,7 @@ export interface FloorPlanWritePayload {
   ceiling_mm?: number
   background_opacity?: number
   state?: Record<string, unknown>
+  layout_mode?: FloorPlanLayoutMode
   description?: string
   tag_ids?: number[]
 }

@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { PointerMenu } from "@/components/pointer-menu"
 import { cn } from "@/lib/utils"
 
 import type { Pt } from "./cable-route"
@@ -30,8 +31,28 @@ import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import { FovCone, TileShape } from "./tile-layer"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
+import {
+  AreaShapeView,
+  BoxHandles,
+  DrawPreview,
+  LabelShapeView,
+  VertexHandles,
+} from "./shape-layer"
+import {
+  byZ,
+  labelBox,
+  pointInBox,
+  pointInPolygon,
+  polygonPatch,
+  tileBox,
+  tileQuarter,
+} from "./shapes"
+import type { PlanShape } from "./shapes"
 import { CableLink, TrayShape } from "./tray-layer"
 import { usePanZoom } from "./use-pan-zoom"
+import { useShapeGestures } from "./use-shape-gestures"
+import type { ShapeTool } from "./use-shape-gestures"
+import type { NewAreaGeometry } from "./use-shape-edits"
 import { WallShape } from "./wall-layer"
 
 // The plan's geometry and its rules live in canvas-geometry.ts and each layer
@@ -55,6 +76,12 @@ export interface FloorCanvasApi {
   focusTile: (tile: FloorPlanTile, zoom?: number) => void
   /** Fit the view to a set of cell-unit points (e.g. a cable's route). */
   focusPoints: (points: Pt[]) => void
+  /** The polygon being drawn: close it (Enter), take back its last point
+   * (Backspace), or drop it (Esc). `drawingShape` says whether one is. */
+  finishPolygon?: () => boolean
+  popPoint?: () => void
+  cancelDraw?: () => void
+  drawingShape?: () => boolean
 }
 
 export interface FloorCanvasProps {
@@ -183,6 +210,22 @@ export interface FloorCanvasProps {
   /** Point-pick mode (drawing calibration): a click anywhere reports its
    * world px point instead of selecting or painting; a drag still pans. */
   onPickPoint?: (pt: { x: number; y: number }) => void
+  // ── Areas and labels; free placement ─────────────────────────────────
+  /** Areas and labels as shown (hidden ones left out). Areas draw over the
+   * zones and under the tiles, labels over the tiles. */
+  shapes?: PlanShape[]
+  selectedShapeId?: string | null
+  /** A drawing tool in hand: presses draw instead of selecting. */
+  shapeTool?: ShapeTool | null
+  onSelectShape?: (id: string | null) => void
+  onChangeShape?: (id: string, patch: Partial<PlanShape>) => void
+  onCreateArea?: (geom: NewAreaGeometry) => void
+  onCreateLabel?: (at: { x: number; y: number }) => void
+  /** Viewing: an area or label clicked. */
+  onOpenShape?: (shape: PlanShape) => void
+  onDeleteShape?: (id: string) => void
+  /** Bring forward (+1) or send back (-1). */
+  onRestackShape?: (id: string, dir: 1 | -1) => void
   className?: string
 }
 
@@ -289,6 +332,16 @@ export function FloorCanvas({
   underlay,
   worldOverlay,
   onPickPoint,
+  shapes = [],
+  selectedShapeId = null,
+  shapeTool = null,
+  onSelectShape,
+  onChangeShape,
+  onCreateArea,
+  onCreateLabel,
+  onOpenShape,
+  onDeleteShape,
+  onRestackShape,
   className,
 }: FloorCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -342,6 +395,49 @@ export function FloorCanvas({
   const gh = plan.grid_height * CELL
   // Cable mode draws trays; Structure mode draws walls - same polyline rig.
   const drawing = (mode === "cable" || mode === "structure") && !!drawPoints
+  // A free plan: tiles move smoothly, turn to any angle, may overlap.
+  const free = plan.layout_mode === "free"
+  // Areas and labels answer the pointer in Layout mode only.
+  // A palette type armed paints tiles over them.
+  const shapesLive = mode === "layout" && !editing && !(editable && armed)
+  const shapeG = useShapeGestures({
+    svgRef,
+    toWorld,
+    zoom: t.k,
+    plan,
+    shapes,
+    tiles,
+    tool: mode === "layout" ? shapeTool : null,
+    editable,
+    selectedShapeId,
+    onSelectShape,
+    onChangeShape,
+    onCreateArea,
+    onCreateLabel,
+    onOpenShape,
+    onChangeTile,
+    onGestureStart,
+    onGestureEnd,
+    startPan: (e) => {
+      svgRef.current?.setPointerCapture(e.pointerId)
+      drag.current = { mode: "pan" }
+      startPan(e)
+    },
+  })
+  // Right-click on an area, a label or a polygon's point.
+  const [shapeMenu, setShapeMenu] = useState<{
+    x: number
+    y: number
+    id: string
+    vertex?: number
+  } | null>(null)
+  const areas = shapes.filter((s) => s.kind === "area").sort(byZ)
+  const labels = shapes.filter((s) => s.kind === "label").sort(byZ)
+  const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
+  const selectedTile =
+    free && editable && mode === "layout" && selectedId
+      ? (tiles.find((x) => x.id === selectedId) ?? null)
+      : null
 
   // Fit the grid on first mount (and when the plan changes identity).
   useEffect(() => {
@@ -402,6 +498,19 @@ export function FloorCanvas({
       },
     }
   }, [apiRef, fitTo, setT, gw, gh])
+  // The polygon tool's keys (Enter, Backspace, Esc) reach it through the
+  // same handle; refreshed each render, as the drawing is state.
+  useEffect(() => {
+    if (!apiRef?.current) return
+    apiRef.current.finishPolygon = shapeG.finishPolygon
+    apiRef.current.popPoint = shapeG.popPoint
+    apiRef.current.cancelDraw = shapeG.cancelDraw
+    apiRef.current.drawingShape = () => !!shapeG.poly
+  })
+  // Putting the tool down drops a drawing it left open.
+  useEffect(() => {
+    if (shapeTool !== "polygon") shapeG.cancelDraw()
+  }, [shapeTool])
 
   const toCell = (e: React.PointerEvent): CellPoint => {
     const w = toWorld(svgRef.current!, e.clientX, e.clientY)
@@ -491,6 +600,8 @@ export function FloorCanvas({
       onAddDrawPoint?.(toLattice(e))
       return
     }
+    // A drawing tool (area, polygon, label) draws wherever it is pressed.
+    if (mode === "layout" && shapeG.drawDown(e)) return
     e.currentTarget.setPointerCapture(e.pointerId)
     if (editable && !armed && e.shiftKey && onMarquee) {
       // Shift-drag = selection sweep. Plain drag stays panning, so the
@@ -507,6 +618,7 @@ export function FloorCanvas({
       onSelectArea?.(null)
       onSelectWall?.(null)
       onSelectCable?.(null)
+      onSelectShape?.(null)
     }
   }
 
@@ -514,6 +626,8 @@ export function FloorCanvas({
     if (e.button !== 0) return
     // In cable/structure mode (or while editing a tray) tiles are inert.
     if (mode === "cable" || mode === "structure" || editing) return
+    // A drawing tool draws over the tile (the press reaches the plan).
+    if (editable && shapeTool) return
     e.stopPropagation()
     if (!editable) {
       onOpenTile?.(tile)
@@ -555,6 +669,12 @@ export function FloorCanvas({
       return
     }
     onSelect?.(tile.id)
+    onSelectShape?.(null)
+    // A free plan drags tiles smoothly (snapping as areas do).
+    if (free && !armed) {
+      shapeG.tileDown(tile, e)
+      return
+    }
     const c = toCell(e)
     drag.current = {
       mode: "move",
@@ -688,6 +808,8 @@ export function FloorCanvas({
   }
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    // Areas, labels and free tiles: their own gestures.
+    if (shapeG.move(e)) return
     // Tray drawing: trail a dashed preview from the last vertex to the cursor.
     if (drawPoints) {
       const [cx, cy] = toLattice(e)
@@ -811,7 +933,8 @@ export function FloorCanvas({
     }
   }
 
-  const handleUp = () => {
+  const handleUp = (e?: React.PointerEvent) => {
+    if (e && shapeG.up(e)) return
     const d = drag.current
     drag.current = null
     if (!d) return
@@ -865,6 +988,7 @@ export function FloorCanvas({
   // it is, a paint or sweep is dropped rather than committed, a structure
   // drag snaps back, and an open undo step closes.
   const cancelDrag = () => {
+    shapeG.cancel()
     const d = drag.current
     drag.current = null
     pickStart.current = null
@@ -887,6 +1011,24 @@ export function FloorCanvas({
     const rect = svg.getBoundingClientRect()
     const wx = (e.clientX - rect.left - t.x) / t.k / CELL
     const wy = (e.clientY - rect.top - t.y) / t.k / CELL
+    // Editing: a label or an area under the pointer gets its own menu
+    // (forward, back, delete) - labels first, they draw on top.
+    if (editable && mode === "layout") {
+      const shapeHit = [
+        ...labels.slice().reverse(),
+        ...areas.slice().reverse(),
+      ].find((s) => {
+        if (s.kind === "area" && s.shape === "polygon")
+          return pointInPolygon([wx, wy], s.points)
+        const b = s.kind === "label" ? labelBox(s, plan.cell_mm) : s
+        return pointInBox([wx, wy], b)
+      })
+      if (shapeHit) {
+        setShapeMenu({ x: e.clientX, y: e.clientY, id: shapeHit.id })
+        onSelectShape?.(shapeHit.id)
+        return
+      }
+    }
     const hit = [...tiles]
       .reverse()
       .find(
@@ -924,6 +1066,53 @@ export function FloorCanvas({
         (cp) => cp.a_tiles.includes(tileId) || cp.b_tiles.includes(tileId)
       )
       .map((cp) => cp.id)
+
+  /** One tile on the plan. */
+  const renderTile = (tile: FloorPlanTile) => {
+    // A free plan draws a tile turned by what its angle has beyond
+    // its quarter turn (shapes.ts tileResidual).
+    const residual = free ? tileBox(tile).rotation : 0
+    const shown = residual
+      ? { ...tile, orientation: tileQuarter(tile.orientation) }
+      : tile
+    return (
+      // In Structure mode tiles are context, not targets - they pass
+      // pointer events through so an area underneath stays reachable
+      // (and movable) even when fully covered by racks.
+      <g
+        key={tile.id}
+        pointerEvents={mode === "structure" ? "none" : undefined}
+        transform={
+          residual
+            ? `rotate(${residual},${(tile.x + tile.width / 2) * CELL},${(tile.y + tile.height / 2) * CELL})`
+            : undefined
+        }
+      >
+        <TileShape
+          tile={shown}
+          grip={!free}
+          selected={tile.id === selectedId || !!multiSelectedIds?.has(tile.id)}
+          editable={editable}
+          labelFit={labelFit}
+          showZoneLabels={showZoneLabels}
+          live={liveState?.tiles[tile.id]}
+          colorBy={colorBy}
+          figures={figures?.get(tile.id)}
+          highlighted={!!highlightTileIds?.has(tile.id)}
+          dimmed={!!dimTileIds?.has(tile.id)}
+          onPointerDown={(e) => handleTileDown(tile, e)}
+          onResizeDown={(e) => handleResizeDown(tile, e)}
+          // In Cables mode a double-click finishes a tray draw - don't
+          // also open the tile's deep-view underneath it.
+          onDoubleClick={() => {
+            if (mode !== "cable") onOpenTile?.(tile)
+          }}
+          onPointerEnter={(e) => reportHover(tile, e)}
+          onPointerLeave={() => onHoverTile?.(null, null)}
+        />
+      </g>
+    )
+  }
 
   return (
     <div
@@ -985,18 +1174,24 @@ export function FloorCanvas({
             Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
           )
             onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY))
-          handleUp()
+          handleUp(e)
         }}
         onPointerLeave={(e) => {
           pickStart.current = null
           if (pinchUp(e)) return
-          handleUp()
+          handleUp(e)
         }}
-        onDoubleClick={() => drawing && onFinishDraw?.()}
+        onDoubleClick={() => {
+          if (drawing) onFinishDraw?.()
+          else if (shapeG.poly) shapeG.finishPolygon()
+        }}
         onContextMenu={handleContextMenu}
         style={{
           cursor:
-            (armed && editable) || drawing || onPickPoint
+            (armed && editable) ||
+            drawing ||
+            onPickPoint ||
+            (editable && mode === "layout" && shapeTool)
               ? "crosshair"
               : "grab",
         }}
@@ -1146,43 +1341,26 @@ export function FloorCanvas({
             )
           })}
 
-          {/* Zones first (background), then normal tiles, then FOV cones. */}
-          {[
-            ...tiles.filter(tileIsZone),
-            ...tiles.filter((tl) => !tileIsZone(tl)),
-          ].map((tile) => (
-            // In Structure mode tiles are context, not targets - they pass
-            // pointer events through so an area underneath stays reachable
-            // (and movable) even when fully covered by racks.
-            <g
-              key={tile.id}
-              pointerEvents={mode === "structure" ? "none" : undefined}
-            >
-              <TileShape
-                tile={tile}
-                selected={
-                  tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+          {/* Zones first (background), then areas (rooms), then normal
+              tiles, then FOV cones. */}
+          {tiles.filter(tileIsZone).map(renderTile)}
+          <g data-layer="areas">
+            {areas.map((a) => (
+              <AreaShapeView
+                key={a.id}
+                area={a}
+                selected={a.id === selectedShapeId}
+                interactive={shapesLive}
+                onPointerDown={(e) => shapeG.shapeDown(a, e)}
+                onEdgeDoubleClick={
+                  editable && a.id === selectedShapeId
+                    ? (seg, e) => shapeG.addVertex(a.id, seg, e)
+                    : undefined
                 }
-                editable={editable}
-                labelFit={labelFit}
-                showZoneLabels={showZoneLabels}
-                live={liveState?.tiles[tile.id]}
-                colorBy={colorBy}
-                figures={figures?.get(tile.id)}
-                highlighted={!!highlightTileIds?.has(tile.id)}
-                dimmed={!!dimTileIds?.has(tile.id)}
-                onPointerDown={(e) => handleTileDown(tile, e)}
-                onResizeDown={(e) => handleResizeDown(tile, e)}
-                // In Cables mode a double-click finishes a tray draw - don't
-                // also open the tile's deep-view underneath it.
-                onDoubleClick={() => {
-                  if (mode !== "cable") onOpenTile?.(tile)
-                }}
-                onPointerEnter={(e) => reportHover(tile, e)}
-                onPointerLeave={() => onHoverTile?.(null, null)}
               />
-            </g>
-          ))}
+            ))}
+          </g>
+          {tiles.filter((tl) => !tileIsZone(tl)).map(renderTile)}
 
           {showFov &&
             tiles
@@ -1288,6 +1466,71 @@ export function FloorCanvas({
                 )
               })}
 
+          {/* Labels - over the tiles, so "North side" reads over a row. */}
+          <g data-layer="labels">
+            {labels.map((l) => (
+              <LabelShapeView
+                key={l.id}
+                label={l}
+                cellMm={plan.cell_mm}
+                interactive={shapesLive && editable}
+                onPointerDown={(e) => shapeG.shapeDown(l, e)}
+              />
+            ))}
+          </g>
+
+          {/* The selection's handles: a box (area, label, free tile) turns
+              and resizes; a polygon drags its points. */}
+          {editable &&
+            mode === "layout" &&
+            !shapeTool &&
+            selectedShape &&
+            !selectedShape.locked &&
+            (selectedShape.kind === "area" &&
+            selectedShape.shape === "polygon" ? (
+              <VertexHandles
+                area={selectedShape}
+                zoom={t.k}
+                gestures={shapeG}
+                onVertexMenu={(index, e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setShapeMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    id: selectedShape.id,
+                    vertex: index,
+                  })
+                }}
+              />
+            ) : (
+              <BoxHandles
+                box={
+                  selectedShape.kind === "label"
+                    ? labelBox(selectedShape, plan.cell_mm)
+                    : selectedShape
+                }
+                target={{ kind: "shape", id: selectedShape.id }}
+                zoom={t.k}
+                gestures={shapeG}
+                // A label's box follows its text: its corners scale it.
+                handles={
+                  selectedShape.kind === "label"
+                    ? ["nw", "ne", "se", "sw"]
+                    : undefined
+                }
+              />
+            ))}
+          {selectedTile && !multiSelectedIds?.size && (
+            <BoxHandles
+              box={tileBox(selectedTile)}
+              target={{ kind: "tile", id: selectedTile.id }}
+              zoom={t.k}
+              gestures={shapeG}
+            />
+          )}
+          <DrawPreview gestures={shapeG} width={gw} height={gh} zoom={t.k} />
+
           {/* In-progress tray preview (imperatively positioned) */}
           {drawing && (
             <polyline
@@ -1319,6 +1562,55 @@ export function FloorCanvas({
       </svg>
 
       {overlay}
+
+      {/* An area's or label's menu, and a polygon point's. */}
+      <PointerMenu
+        menu={shapeMenu}
+        onClose={() => setShapeMenu(null)}
+        label="Shape"
+        keys={(m) => ({ Delete: () => onDeleteShape?.(m.id) })}
+      >
+        {(m) => {
+          const s = shapes.find((x) => x.id === m.id)
+          if (!s) return null
+          if (m.vertex !== undefined && s.kind === "area")
+            return (
+              <DropdownMenuItem
+                disabled={s.points.length <= 3}
+                onSelect={() =>
+                  onChangeShape?.(
+                    s.id,
+                    polygonPatch(s.points.filter((_, i) => i !== m.vertex))
+                  )
+                }
+              >
+                Remove point
+              </DropdownMenuItem>
+            )
+          return (
+            <>
+              <DropdownMenuItem onSelect={() => onRestackShape?.(s.id, 1)}>
+                Bring forward
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onRestackShape?.(s.id, -1)}>
+                Send back
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onChangeShape?.(s.id, { locked: !s.locked })}
+              >
+                {s.locked ? "Unlock" : "Lock"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => onDeleteShape?.(s.id)}
+              >
+                Delete
+              </DropdownMenuItem>
+            </>
+          )
+        }}
+      </PointerMenu>
 
       {/* Right-click menu - a small, extensible action list.
           The trigger is a zero-size anchor parked at the pointer (the same trick
