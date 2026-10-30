@@ -2,10 +2,13 @@ import type { QueryClient } from "@tanstack/react-query"
 
 import { Badge } from "@/components/ui/badge"
 import type {
+  ComplianceExpr,
+  ComplianceRef,
   ComplianceRule,
   ComplianceSeverity,
   ComplianceTriageState,
 } from "@/lib/api"
+import { isListExpr } from "@/lib/filter-expr"
 import { cn } from "@/lib/utils"
 
 /** A rule's severity → its Badge variant. One badge per severity. */
@@ -57,6 +60,37 @@ export function countOf(objectType: string, n: number): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`
 }
 
+/** "12 devices, 3 virtual machines" - a rule's failures per object type,
+ * the types with none left out (all of them when nothing fails). */
+export function countByType(byType: Record<string, number>): string {
+  const entries = Object.entries(byType)
+  const failing = entries.filter(([, n]) => n > 0)
+  return (failing.length ? failing : entries.slice(0, 1))
+    .map(([t, n]) => countOf(t, n))
+    .join(", ")
+}
+
+/** The object types a rule applies to, as one line ("Device, Virtual
+ * machine"). */
+export function typesLabel(types: string[]): string {
+  return types.map((t) => OBJECT_TYPE_LABEL[t] ?? t).join(", ")
+}
+
+/** An object type's label, or the key itself for one this page lacks. */
+export function typeName(t: string): string {
+  return (OBJECT_TYPE_LABEL as Record<string, string | undefined>)[t] ?? t
+}
+
+export const OBJECT_TYPE_LABEL: Record<string, string> = {
+  prefix: "Prefix",
+  ipaddress: "IP address",
+  device: "Device",
+  vlan: "VLAN",
+  vrf: "VRF",
+  site: "Site",
+  virtualmachine: "Virtual machine",
+}
+
 export function SeverityBadge({
   severity,
   className,
@@ -95,6 +129,58 @@ export function TriageBadge({
   )
 }
 
+const SCALAR_WORDS: Record<string, string> = {
+  "=": "is",
+  "!=": "is not",
+  "~": "contains",
+  "!~": "lacks",
+  ">": ">",
+  "<": "<",
+  ">=": ">=",
+  "<=": "<=",
+}
+
+function fieldWord(key: string): string {
+  if (key.startsWith("cf.")) return key.slice(3)
+  if (key === "type") return "type"
+  return key.replace(/_/g, " ")
+}
+
+/** A scope or conditions in a few words: "role is Server and owner set".
+ * Catalog rows read by name from the rule's `refs`. */
+export function exprSummary(
+  e: ComplianceExpr | null | undefined,
+  refs: Record<string, ComplianceRef> = {},
+  parent?: "and" | "or"
+): string {
+  if (!e) return ""
+  if (e.kind === "group") {
+    const inner = e.terms
+      .map((t) => exprSummary(t, refs, e.op))
+      .join(` ${e.op} `)
+    return parent && parent !== e.op ? `(${inner})` : inner
+  }
+  const label = fieldWord(e.field)
+  if (e.kind === "empty") return `${label} ${e.negated ? "set" : "empty"}`
+  if (isListExpr(e)) {
+    const names = e.values.map((v) => {
+      const ref = refs[v] as ComplianceRef | undefined
+      if (!ref) return OBJECT_TYPE_LABEL[v] ?? v
+      if (ref.hidden) return "hidden"
+      if (ref.missing) return "deleted"
+      return ref.name ?? v
+    })
+    const list = names.join(e.cmp === "in" ? " or " : " nor ")
+    if (e.field === "tags")
+      return `${e.cmp === "in" ? "tag" : "no tag"} ${list}`
+    return `${label} ${e.cmp === "in" ? "is" : "is not"} ${list}`
+  }
+  const scalar = e
+  if (scalar.cmp === "matches") return `${label} ~ /${scalar.value}/`
+  if (scalar.cmp === "not_matches") return `${label} !~ /${scalar.value}/`
+  return `${label} ${SCALAR_WORDS[scalar.cmp] ?? scalar.cmp} ${scalar.value}`
+}
+
 export function ruleSummary(
   r: Pick<ComplianceRule, "field" | "pattern" | "tag" | "cf_key"> & {
     eol_fail_on?: string
@@ -102,9 +188,19 @@ export function ruleSummary(
     fail_on_unknown?: boolean
     check_type: string
     check_type_display?: string
+    scope?: ComplianceExpr | null
+    condition?: ComplianceExpr | null
+    refs?: Record<string, ComplianceRef>
   }
 ): string {
+  const check = checkSummary(r)
+  return r.scope ? `${exprSummary(r.scope, r.refs)} · ${check}` : check
+}
+
+function checkSummary(r: Parameters<typeof ruleSummary>[0]): string {
   switch (r.check_type) {
+    case "expression":
+      return `must: ${exprSummary(r.condition, r.refs)}`
     case "required":
       return `${r.field} must be set`
     case "forbidden":

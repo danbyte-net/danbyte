@@ -130,7 +130,8 @@ Where it shows:
   version; see [Versions view](lifecycle-overview.md#versions-view).
 - **Compliance** - a [Software target check](compliance.md#check-types) turns
   off-target objects into violations, with `Running 17.9.4a, target 17.9.5`
-  as the reason.
+  as the reason. Its [scope](compliance.md#scope-and-conditions) picks which
+  devices and VMs it judges (a role, a site, a profile, …).
 
 An integration that fills a version also stamps `software_version_seen_at`.
 A version a person types (in the form or the API) drops the stamp, and no

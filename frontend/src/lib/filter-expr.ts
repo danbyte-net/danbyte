@@ -7,25 +7,38 @@
 //   expr    := term ("or" term)*
 //   term    := clause ("and" clause)*
 //   clause  := "(" expr ")" | field cmp value | field "is" ["not"] "empty"
+//            | field ["not"] "in" "(" value ("," value)* ")"
+//            | field ["not"] "matches" value
 //   cmp     := "=" | "!=" | "~" | "!~" | ">" | "<" | ">=" | "<="
 //   field   := dotted identifier            e.g. status.name, due_date, tags
 //   value   := "quoted string" | bare-word | number
 //
-//   status.name = active and (site.name ~ "cph" or tags ~ core)
+//   status.name = active and (site.name ~ "cph" or tags in (core, edge))
 //
 // Comparison semantics: string compares are case-insensitive; `~` is
-// substring containment; `>`/`<` compare numerically when both sides are
-// numeric, else lexically (which makes ISO dates work). A path that lands on
-// an object compares against its `name`/`slug`/`title`; a path that lands on
-// an array matches when ANY element does.
+// substring containment; `in` is equality with any listed value; `matches`
+// is a regular expression (case-sensitive, like PostgreSQL's `~`); `>`/`<`
+// compare numerically when both sides are numeric, else lexically (which
+// makes ISO dates work). A path that lands on an object compares against its
+// `name`/`slug`/`title`; a path that lands on an array matches when ANY
+// element does, and a negative comparison only when EVERY element does.
+//
+// The same AST is a compliance rule's scope and conditions, compiled to SQL
+// by core/expressions.py. There, `in` values are ids.
 
 // ─── AST ────────────────────────────────────────────────────────────────
 
 export type Cmp = "=" | "!=" | "~" | "!~" | ">" | "<" | ">=" | "<="
+/** Regular-expression comparisons. */
+export type RegexCmp = "matches" | "not_matches"
+/** Comparisons against a list of values. */
+export type ListCmp = "in" | "not_in"
+export type ScalarCmp = Cmp | RegexCmp
 
 export type Expr =
   | { kind: "group"; op: "and" | "or"; terms: Expr[] }
-  | { kind: "cmp"; field: string; cmp: Cmp; value: string }
+  | { kind: "cmp"; field: string; cmp: ScalarCmp; value: string }
+  | { kind: "cmp"; field: string; cmp: ListCmp; values: string[] }
   | { kind: "empty"; field: string; negated: boolean }
 
 export const CMP_LABELS: Record<Cmp, string> = {
@@ -39,6 +52,30 @@ export const CMP_LABELS: Record<Cmp, string> = {
   "<=": "<=",
 }
 
+/** Every operator the builder offers, by its id. */
+export type BuilderOp = Cmp | RegexCmp | ListCmp | "empty" | "not_empty"
+
+export const OP_LABELS: Record<BuilderOp, string> = {
+  ...CMP_LABELS,
+  in: "is any of",
+  not_in: "is none of",
+  matches: "matches",
+  not_matches: "doesn't match",
+  empty: "is empty",
+  not_empty: "is not empty",
+}
+
+export type ListExpr = Extract<Expr, { cmp: ListCmp }>
+export type ScalarExpr = Extract<Expr, { cmp: ScalarCmp }>
+
+/** An `in` / `not in` comparison. */
+export const isListExpr = (e: Expr): e is ListExpr =>
+  e.kind === "cmp" && (e.cmp === "in" || e.cmp === "not_in")
+
+export const isListOp = (op: string): op is ListCmp =>
+  op === "in" || op === "not_in"
+export const isEmptyOp = (op: string) => op === "empty" || op === "not_empty"
+
 // ─── Tokenizer ──────────────────────────────────────────────────────────
 
 type Token =
@@ -47,6 +84,7 @@ type Token =
   | { t: "cmp"; v: Cmp; pos: number }
   | { t: "("; pos: number }
   | { t: ")"; pos: number }
+  | { t: ","; pos: number }
 
 const WORD_RE = /^[A-Za-z0-9_.@+/:-]+/
 
@@ -59,7 +97,7 @@ function tokenize(src: string): Token[] {
       i++
       continue
     }
-    if (c === "(" || c === ")") {
+    if (c === "(" || c === ")" || c === ",") {
       out.push({ t: c, pos: i })
       i++
       continue
@@ -134,7 +172,8 @@ export function parse(src: string): Expr | null {
   const tokens = tokenize(src)
   let i = 0
 
-  const peek = () => tokens[i]
+  // Past the last token there is none: the type says so.
+  const peek = (): Token | undefined => tokens[i]
   const isWord = (v: string) =>
     peek()?.t === "word" && (peek() as { v: string }).v.toLowerCase() === v
 
@@ -184,6 +223,32 @@ export function parse(src: string): Expr | null {
       }
       i = save // plain "is" → treat as "=" sugar below
     }
+    // "field [not] in (a, b)" and "field [not] matches value".
+    const save = i
+    let not = false
+    if (isWord("not")) {
+      not = true
+      i++
+    }
+    if (isWord("in")) {
+      i++
+      return {
+        kind: "cmp",
+        field,
+        cmp: not ? "not_in" : "in",
+        values: list(),
+      }
+    }
+    if (isWord("matches")) {
+      i++
+      return {
+        kind: "cmp",
+        field,
+        cmp: not ? "not_matches" : "matches",
+        value: value(),
+      }
+    }
+    i = save
     const op = peek()
     if (op?.t === "word" && op.v.toLowerCase() === "is") {
       i++
@@ -200,6 +265,31 @@ export function parse(src: string): Expr | null {
       )
     i++
     return { kind: "cmp", field, cmp: op.v, value: value() }
+  }
+
+  function list(): string[] {
+    const open = peek()
+    if (open?.t !== "(")
+      throw new ParseError('Expected "(" after in', open?.pos ?? src.length)
+    i++
+    const out: string[] = []
+    if (peek()?.t === ")") {
+      i++
+      return out
+    }
+    for (;;) {
+      out.push(value())
+      const next = peek()
+      if (next?.t === ",") {
+        i++
+        continue
+      }
+      if (next?.t === ")") {
+        i++
+        return out
+      }
+      throw new ParseError('Expected "," or ")"', next?.pos ?? src.length)
+    }
   }
 
   function value(): string {
@@ -224,8 +314,16 @@ function quoteIfNeeded(v: string): string {
 
 export function format(expr: Expr | null, parent?: "and" | "or"): string {
   if (!expr) return ""
-  if (expr.kind === "cmp")
-    return `${expr.field} ${expr.cmp} ${quoteIfNeeded(expr.value)}`
+  if (isListExpr(expr))
+    return `${expr.field} ${expr.cmp === "in" ? "in" : "not in"} (${expr.values
+      .map(quoteIfNeeded)
+      .join(", ")})`
+  if (expr.kind === "cmp") {
+    const e = expr
+    if (e.cmp === "matches" || e.cmp === "not_matches")
+      return `${e.field} ${e.cmp === "matches" ? "matches" : "not matches"} ${quoteIfNeeded(e.value)}`
+    return `${e.field} ${e.cmp} ${quoteIfNeeded(e.value)}`
+  }
   if (expr.kind === "empty")
     return `${expr.field} is ${expr.negated ? "not " : ""}empty`
   const inner = expr.terms.map((t) => format(t, expr.op)).join(` ${expr.op} `)
@@ -274,6 +372,14 @@ function scalarOf(v: unknown): unknown {
   return v
 }
 
+function regexOf(pattern: string): RegExp | null {
+  try {
+    return new RegExp(pattern)
+  } catch {
+    return null
+  }
+}
+
 function compare(actual: unknown, cmp: Cmp, wanted: string): boolean {
   if (actual === null || actual === undefined || actual === "") return false
   if (typeof actual === "boolean") {
@@ -316,13 +422,29 @@ export function evaluate(expr: Expr, row: unknown): boolean {
     )
     return expr.negated ? has : !has
   }
+  const present = values.filter(
+    (v) => v !== null && v !== undefined && v !== ""
+  )
+  if (isListExpr(expr)) {
+    const wanted = expr.values.map((w) => w.toLowerCase())
+    const hit = present.some((v) => wanted.includes(String(v).toLowerCase()))
+    return expr.cmp === "in" ? hit : !hit
+  }
+  const scalar = expr
+  if (scalar.cmp === "matches" || scalar.cmp === "not_matches") {
+    const re = regexOf(scalar.value)
+    const hit = !!re && present.some((v) => re.test(String(v)))
+    return scalar.cmp === "matches" ? hit : !hit
+  }
+  const cmp = scalar.cmp
+  const wanted = scalar.value
   // Negative comparisons must hold for every element ("tags !~ core" means no
   // tag contains it); positive ones for any.
-  if (expr.cmp === "!=" || expr.cmp === "!~") {
+  if (cmp === "!=" || cmp === "!~") {
     if (values.length === 0) return true
-    return values.every((v) => compare(v, expr.cmp, expr.value))
+    return values.every((v) => compare(v, cmp, wanted))
   }
-  return values.some((v) => compare(v, expr.cmp, expr.value))
+  return values.some((v) => compare(v, cmp, wanted))
 }
 
 // ─── Field discovery (for the builder + completion) ─────────────────────
@@ -410,8 +532,28 @@ export function discoverFields(rows: unknown[]): FieldInfo[] {
 
 export interface BuilderRule {
   field: string
-  cmp: Cmp | "empty" | "not_empty"
+  cmp: BuilderOp
   value: string
+  /** The values of an `in` / `not in` rule. */
+  values?: string[]
+}
+
+function ruleOfExpr(e: Expr): BuilderRule | null {
+  if (e.kind === "empty")
+    return { field: e.field, cmp: e.negated ? "not_empty" : "empty", value: "" }
+  if (e.kind !== "cmp") return null
+  if (isListExpr(e))
+    return { field: e.field, cmp: e.cmp, value: "", values: [...e.values] }
+  const scalar = e
+  return { field: scalar.field, cmp: scalar.cmp, value: scalar.value }
+}
+
+function exprOfRule(r: BuilderRule): Expr {
+  if (r.cmp === "empty" || r.cmp === "not_empty")
+    return { kind: "empty", field: r.field, negated: r.cmp === "not_empty" }
+  if (r.cmp === "in" || r.cmp === "not_in")
+    return { kind: "cmp", field: r.field, cmp: r.cmp, values: r.values ?? [] }
+  return { kind: "cmp", field: r.field, cmp: r.cmp, value: r.value }
 }
 
 /** A flat (single-combinator) view of the AST, or null when the expression
@@ -419,16 +561,7 @@ export interface BuilderRule {
 export function toBuilder(
   expr: Expr | null
 ): { op: "and" | "or"; rules: BuilderRule[] } | null {
-  const ruleOf = (e: Expr): BuilderRule | null => {
-    if (e.kind === "cmp") return { field: e.field, cmp: e.cmp, value: e.value }
-    if (e.kind === "empty")
-      return {
-        field: e.field,
-        cmp: e.negated ? "not_empty" : "empty",
-        value: "",
-      }
-    return null
-  }
+  const ruleOf = ruleOfExpr
   if (!expr) return { op: "and", rules: [] }
   const single = ruleOf(expr)
   if (single) return { op: "and", rules: [single] }
@@ -446,17 +579,7 @@ export function fromBuilder(
   op: "and" | "or",
   rules: BuilderRule[]
 ): Expr | null {
-  const terms: Expr[] = rules
-    .filter((r) => r.field)
-    .map((r) =>
-      r.cmp === "empty" || r.cmp === "not_empty"
-        ? {
-            kind: "empty" as const,
-            field: r.field,
-            negated: r.cmp === "not_empty",
-          }
-        : { kind: "cmp" as const, field: r.field, cmp: r.cmp, value: r.value }
-    )
+  const terms: Expr[] = rules.filter((r) => r.field).map(exprOfRule)
   if (terms.length === 0) return null
   return terms.length === 1 ? terms[0] : { kind: "group", op, terms }
 }
@@ -465,12 +588,7 @@ export function fromBuilder(
  * shape "a or (b and c)" that the flat builder couldn't show. Null only for
  * genuinely deeper nesting (an `or` inside an `and` inside an `or`, …). */
 export function toGroups(expr: Expr | null): BuilderRule[][] | null {
-  const ruleOf = (e: Expr): BuilderRule | null =>
-    e.kind === "cmp"
-      ? { field: e.field, cmp: e.cmp, value: e.value }
-      : e.kind === "empty"
-        ? { field: e.field, cmp: e.negated ? "not_empty" : "empty", value: "" }
-        : null
+  const ruleOf = ruleOfExpr
   const groupOf = (e: Expr): BuilderRule[] | null => {
     const single = ruleOf(e)
     if (single) return [single]
@@ -505,4 +623,125 @@ export function fromGroups(groups: BuilderRule[][]): Expr | null {
   }
   if (terms.length === 0) return null
   return terms.length === 1 ? terms[0] : { kind: "group", op: "or", terms }
+}
+
+// ─── Tree view of an AST (the nested builder) ───────────────────────────
+
+export interface TreeRule extends BuilderRule {
+  kind: "rule"
+  id: number
+}
+export interface TreeGroup {
+  kind: "group"
+  id: number
+  op: "and" | "or"
+  items: TreeNode[]
+}
+export type TreeNode = TreeRule | TreeGroup
+
+let lastId = 0
+/** A fresh id for a builder row or group (stable while it is edited). */
+export const treeId = () => ++lastId
+
+export const blankRule = (): TreeRule => ({
+  kind: "rule",
+  id: treeId(),
+  field: "",
+  cmp: "=",
+  value: "",
+})
+
+export const blankGroup = (
+  op: "and" | "or" = "and",
+  items: TreeNode[] = [blankRule()]
+): TreeGroup => ({ kind: "group", id: treeId(), op, items })
+
+/** The builder's tree for an expression: groups at most `maxGroups` deep
+ * (the root counts), or null when it nests deeper - the text editor still
+ * shows it. A single condition sits in an "and" root. */
+export function toTree(expr: Expr | null, maxGroups = 3): TreeGroup | null {
+  const node = (e: Expr, level: number): TreeNode | null => {
+    if (e.kind !== "group") {
+      const r = ruleOfExpr(e)
+      return r ? { kind: "rule", id: treeId(), ...r } : null
+    }
+    if (level > maxGroups) return null
+    const items: TreeNode[] = []
+    for (const t of e.terms) {
+      const n = node(t, level + 1)
+      if (!n) return null
+      items.push(n)
+    }
+    return { kind: "group", id: treeId(), op: e.op, items }
+  }
+  if (!expr) return { kind: "group", id: treeId(), op: "and", items: [] }
+  if (expr.kind !== "group") {
+    const r = node(expr, 1)
+    return r ? { kind: "group", id: treeId(), op: "and", items: [r] } : null
+  }
+  const root = node(expr, 1)
+  return root && root.kind === "group" ? root : null
+}
+
+/** How many groups deep the tree goes, the root included. */
+export function treeDepth(group: TreeGroup): number {
+  let deepest = 0
+  for (const it of group.items)
+    if (it.kind === "group") deepest = Math.max(deepest, treeDepth(it))
+  return 1 + deepest
+}
+
+/** The expression a tree describes, plus which builder row or group each
+ * node of it came from, by its dotted path (`terms.1.terms.0`) - so an error
+ * the server reports against a path lands on the right row. Rows without a
+ * field and groups left empty are dropped; a group of one is its one term. */
+export function fromTreeWithPaths(group: TreeGroup): {
+  expr: Expr | null
+  paths: Map<string, number>
+} {
+  const origin = new WeakMap<object, number>()
+  const build = (n: TreeNode): Expr | null => {
+    if (n.kind === "rule") {
+      if (!n.field) return null
+      const e = exprOfRule(n)
+      origin.set(e, n.id)
+      return e
+    }
+    const terms = n.items.map(build).filter((t): t is Expr => t !== null)
+    if (terms.length === 0) return null
+    if (terms.length === 1) return terms[0]
+    const e: Expr = { kind: "group", op: n.op, terms }
+    origin.set(e, n.id)
+    return e
+  }
+  const expr = build(group)
+  const paths = new Map<string, number>()
+  const walk = (e: Expr, path: string) => {
+    const id = origin.get(e)
+    if (id !== undefined) paths.set(path, id)
+    if (e.kind === "group")
+      e.terms.forEach((t, i) =>
+        walk(t, path ? `${path}.terms.${i}` : `terms.${i}`)
+      )
+  }
+  if (expr) walk(expr, "")
+  return { expr, paths }
+}
+
+export function fromTree(group: TreeGroup): Expr | null {
+  return fromTreeWithPaths(group).expr
+}
+
+/** The builder row or group an error path points at: the longest known
+ * prefix of it (`terms.1.values.0` → the row at `terms.1`). */
+export function nodeForPath(
+  paths: Map<string, number>,
+  path: string
+): number | undefined {
+  const parts = path ? path.split(".") : []
+  for (let n = parts.length; n >= 0; n--) {
+    const id = paths.get(parts.slice(0, n).join("."))
+    if (id !== undefined) return id
+  }
+  return undefined
 }
