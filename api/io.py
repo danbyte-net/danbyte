@@ -1003,3 +1003,8 @@ def register_builtins() -> None:
                  "source_ip": "ip_address", "destination_ip": "ip_address",
                  "source_prefix": "cidr", "destination_prefix": "cidr"},
     ))
+    # Rooms (floor plans P1b): a room by its name in its location. The slug
+    # is derived, so a row without one never lands on another room there.
+    from .models import Room
+
+    register_io(_handler(Room, natural_key=["location", "name"], fk_keys={"location": "name"}))

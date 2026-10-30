@@ -108,6 +108,7 @@ const LISTS: Record<
     api: "/api/ipsec-profiles/",
   },
   location: { label: "Locations", to: "/locations", api: "/api/locations/" },
+  room: { label: "Rooms", to: "/rooms", api: "/api/rooms/" },
   macaddress: { label: "MAC addresses", to: "/macs", api: "/api/macs/" },
   maintenanceevent: {
     label: "Maintenance",

@@ -51,6 +51,7 @@ AUDITED_MODELS = [
     "api.TunnelTermination",
     "api.Region",
     "api.Location",
+    "api.Room",
     "api.ConfigContext",
     "api.ExportTemplate",
     "api.ConfigBundle",

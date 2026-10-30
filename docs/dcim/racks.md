@@ -122,7 +122,8 @@ takes:
 - **Devices going along**: everything racked in it - positioned, half-width
   and side-mounted alike - plus the devices installed in their device bays.
   Each keeps its U position, face and rail; its site and location become the
-  rack's. Without a location, the old one is cleared.
+  rack's. Without a location, the old one is cleared. The [room](rooms.md) of
+  the rack and of each device is cleared: a room is at the old site.
 - **Cleared**: a floor-plan tile at the old site that places the rack or one
   of its devices loses its link. The tile itself stays on the plan.
 - **Blocking the move**: anything still tied to the old site. The move is
@@ -512,8 +513,9 @@ red when over. Types without a weight contribute nothing, so the number is a
 floor, not a guarantee.
 
 Racks can carry a **location** (building / floor / room within their
-site) - the Locations page's **Rack elevations** button then shows exactly
-the racks in that room, and `/api/racks/?location=` filters likewise. The
+site) and a [**room**](rooms.md) in it - the Locations page's **Rack
+elevations** button then shows exactly the racks in that location, and
+`/api/racks/?location=` and `?room=` filter likewise. The
 wall reads the devices of all its racks in one request:
 `/api/devices/?rack=` takes one rack id or several, comma-separated. A
 location can also be drawn as a [floor plan](../features/floor-plans.md),

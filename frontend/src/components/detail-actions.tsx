@@ -35,6 +35,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   "circuit-types": "circuittype",
   providers: "provider",
   locations: "location",
+  rooms: "room",
   regions: "region",
   clusters: "cluster",
   "cluster-types": "clustertype",

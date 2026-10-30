@@ -20,7 +20,8 @@ the rack, its devices, their components, IP and MAC addresses (#407) and
 routing rows (#409). Cleared:
 a floor-plan tile that places the rack or one of its devices on a plan of
 another site. Updated: each device's site and location, and the site a port
-reservation on a moving port carries.
+reservation on a moving port carries. The room of the rack and of each
+device stays behind: a room is in one location, at the old site.
 
 A reason names an object only when the caller may view it; otherwise it says
 "a device", "another site" and so on (#404).
@@ -634,11 +635,13 @@ def apply(p: Plan) -> None:
     for d in p.devices:
         d.site = site
         d.location = location
-        d.save(update_fields=["site", "location", "updated_at"])
+        d.room = None
+        d.save(update_fields=["site", "location", "room", "updated_at"])
     rack = p.rack
     rack.site = site
     rack.location = location
-    rack.save(update_fields=["site", "location", "updated_at"])
+    rack.room = None
+    rack.save(update_fields=["site", "location", "room", "updated_at"])
     ids = p.device_ids
     for tile in p.tiles:
         if tile.rack_id == rack.pk:

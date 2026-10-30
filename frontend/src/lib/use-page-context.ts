@@ -8,6 +8,7 @@ const ROUTE_TYPES: Record<string, string> = {
   "virtual-machines": "virtual machine",
   sites: "site",
   locations: "location",
+  rooms: "room",
   racks: "rack",
   cabinets: "cabinet",
   prefixes: "prefix",

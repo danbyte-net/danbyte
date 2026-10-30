@@ -1051,6 +1051,7 @@ export const STATUSABLE_MODELS: { value: string; label: string }[] = [
   { value: "wirelesslan", label: "Wireless LANs" },
   { value: "tunnel", label: "Tunnels" },
   { value: "location", label: "Locations" },
+  { value: "room", label: "Rooms" },
   { value: "inventoryitem", label: "Inventory items" },
   { value: "maintenanceevent", label: "Maintenance & outage events" },
   { value: "natrule", label: "NAT rules" },
@@ -1733,6 +1734,8 @@ export interface Device {
   latitude: string | null
   longitude: string | null
   location: { id: string; name: string } | null
+  /** The room it stands in, inside its location. */
+  room?: RoomRef | null
   cluster: { id: string; name: string } | null
   virtual_chassis: {
     id: string
@@ -1849,6 +1852,7 @@ export interface DeviceWritePayload {
   latitude?: string | null
   longitude?: string | null
   location_id?: string | null
+  room_id?: string | null
   cluster_id?: string | null
   virtual_chassis_id?: string | null
   vc_position?: number | null
@@ -2728,6 +2732,7 @@ export interface Rack {
   rack_type: RackTypeOption | null
   status: StatusMini | null
   location: { id: string; name: string } | null
+  room?: RoomRef | null
   width: RackWidth
   max_weight: string | null
   max_weight_unit: string
@@ -2773,6 +2778,7 @@ export interface Rack {
 
 export interface RackWritePayload {
   location_id?: string | null
+  room_id?: string | null
   max_weight?: string | null
   max_weight_unit?: string
   max_power_w?: number | null
@@ -2973,6 +2979,7 @@ export interface Cabinet extends CabinetSizes {
   facility_id: string
   site: SiteRegionMini
   location: { id: string; name: string } | null
+  room?: RoomRef | null
   role: CabinetRoleOption | null
   cabinet_type: CabinetTypeOption | null
   status: StatusMini | null
@@ -3046,6 +3053,7 @@ export interface CabinetWritePayload {
   facility_id?: string
   site_id: string
   location_id?: string | null
+  room_id?: string | null
   role_id?: string | null
   cabinet_type_id?: string | null
   status_id?: string | null
@@ -5625,6 +5633,7 @@ export interface Location {
   device_count: number
   rack_count: number
   cabinet_count: number
+  room_count: number
   document_count: number
   created_at: string
   updated_at: string
@@ -5639,6 +5648,56 @@ export interface LocationWritePayload {
   color?: string
   icon?: string
   description?: string
+}
+
+// ─── Rooms (Region → Site → Location → Room) ────────────────────────────────
+
+/** How a device, rack or cabinet names its room. */
+export interface RoomRef {
+  id: string
+  name: string
+  code: string
+  /** Badge color (#rrggbb) or "" for the default. */
+  color: string
+}
+
+/** A `?picker=1` row. */
+export interface RoomOption extends RoomRef {
+  slug: string
+  location_id: string
+}
+
+export interface Room {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** The number or code on the door, e.g. "210". */
+  code: string
+  location: { id: string; name: string; color: string; icon: string }
+  site: { id: string; name: string }
+  status: StatusMini | null
+  color: string
+  description: string
+  device_count: number
+  rack_count: number
+  cabinet_count: number
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface RoomWritePayload {
+  name: string
+  slug?: string
+  code?: string
+  location_id: string
+  status_id?: string | null
+  color?: string
+  description?: string
+  tag_ids?: number[]
+  custom_fields?: Record<string, unknown>
 }
 
 // ─── Virtualization: cluster types / groups / clusters ──────────────────────

@@ -103,6 +103,7 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.rearport",
   "api.region",
   "api.rir",
+  "api.room",
   "api.routetarget",
   "api.service",
   "api.servicetemplate",

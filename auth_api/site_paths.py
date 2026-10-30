@@ -32,6 +32,8 @@ SITE_PATHS: dict[str, str] = {
     "powerpanel": "site",
     "coolingsource": "site",
     "location": "site",
+    # A room's site is its location's (floor plans P1b).
+    "room": "location__site",
     # Indirect (one hop).
     "powerfeed": "power_panel__site",
     "coolingfeed": "source__site",

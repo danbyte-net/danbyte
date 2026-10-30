@@ -62,6 +62,7 @@ nav = [
     { "Device profiles"   = "features/device-profiles.md" },
     { "Racks"             = "dcim/racks.md" },
     { "Cabinets"          = "dcim/cabinets.md" },
+    { "Rooms"             = "dcim/rooms.md" },
     { "Interfaces"        = "dcim/interfaces.md" },
     { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
     { "Assigning IP addresses" = "dcim/ip-assignment.md" },

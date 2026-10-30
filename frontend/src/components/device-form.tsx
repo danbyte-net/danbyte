@@ -67,6 +67,7 @@ import {
   useHostGroupsDraft,
 } from "@/components/application-group-assign"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { FormRoomCombobox } from "@/components/room-field"
 import { MonitoringEngineField } from "@/components/monitoring-engine-field"
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import {
@@ -245,6 +246,7 @@ export function DeviceForm({
   const [locationId, setLocationId] = useState<string | null>(
     seed?.location?.id ?? null
   )
+  const [roomId, setRoomId] = useState<string | null>(seed?.room?.id ?? null)
   const [clusterId, setClusterId] = useState<string | null>(
     seed?.cluster?.id ?? null
   )
@@ -310,6 +312,7 @@ export function DeviceForm({
     setPrtgSync(device.prtg_sync ?? "inherit")
     setPrtgHost(device.prtg_host ?? "")
     setLocationId(device.location?.id ?? null)
+    setRoomId(device.room?.id ?? null)
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
     setCoolingMethod(device.cooling_method ?? "")
@@ -602,6 +605,7 @@ export function DeviceForm({
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
         location_id: locationId,
+        room_id: roomId,
         cluster_id: clusterId,
         config_template_id: configTemplateId,
         virtual_chassis_id: vcId,
@@ -906,7 +910,10 @@ export function DeviceForm({
                     label="Location"
                     hint="optional"
                     value={locationId}
-                    onChange={setLocationId}
+                    onChange={(v) => {
+                      setLocationId(v)
+                      setRoomId(null) // rooms are per-location
+                    }}
                     options={(locations.data?.results ?? []).map((l) => ({
                       value: l.id,
                       label: l.name,
@@ -936,6 +943,14 @@ export function DeviceForm({
                   />
                 )}
               </div>
+            )}
+            {visibility.location && (
+              <FormRoomCombobox
+                locationId={locationId}
+                value={roomId}
+                onChange={setRoomId}
+                error={fieldErrors.room_id}
+              />
             )}
 
             {(visibility.latitude || visibility.longitude) && (

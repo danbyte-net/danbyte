@@ -29,6 +29,7 @@ STATUSABLE_MODELS = [
     ("tunnel", "Tunnels"),
     ("l2vpn", "L2VPNs"),
     ("location", "Locations"),
+    ("room", "Rooms"),
     ("inventoryitem", "Inventory items"),
     ("maintenanceevent", "Maintenance & outage events"),
     ("natrule", "NAT rules"),
@@ -136,6 +137,7 @@ STATUS_MODEL_SEEDS = [
     ("wirelesslan", "WirelessLAN", "active"),
     ("tunnel", "Tunnel", "active"),
     ("location", "Location", "active"),
+    ("room", "Room", "active"),
     ("inventoryitem", "InventoryItem", "active"),
     ("vlan", "VLAN", "active"),
     ("applicationflow", "ApplicationFlow", "active"),
@@ -183,6 +185,8 @@ STATUS_MODEL_VALUES = {
     # VLANs (#172): in use, held for a rollout, or on the way out.
     "vlan": ["active", "reserved", "deprecated"],
     "location": ["active", "planned", "decommissioning", "retired"],
+    # Rooms (floor plans P1b) take the location vocabulary.
+    "room": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
     "inventoryitem": ["active", "planned", "failed", "spare", "empty"],

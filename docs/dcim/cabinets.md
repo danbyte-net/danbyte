@@ -15,7 +15,8 @@ rack of a different height.
 1. Open **DCIM → Cabinets** and click **Add cabinet**.
 2. Name it and pick its **site**. Names are unique per site, like rack names.
 3. Optionally pick a [**cabinet type**](#cabinet-types), a
-   [**role**](#cabinet-roles), a **location** within the site, a **status**,
+   [**role**](#cabinet-roles), a **location** within the site and a
+   [**room**](rooms.md) in it, a **status**,
    tags and a **facility ID** (the label on the door, e.g. `=UH1+K1`).
 4. Give the **mounting plate** size - the plate the rails are fixed to - and,
    if you know it, the **outer** width, height and depth of the box.
@@ -273,7 +274,7 @@ shared by the whole tenant.
 
 | Endpoint | What |
 |---|---|
-| `/api/cabinets/` | Cabinets. Filters: `site`, `location`, `role`, `status`, `cabinet_type`, `search` (name, facility ID, description, custom fields). |
+| `/api/cabinets/` | Cabinets. Filters: `site`, `location`, `room`, `role`, `status`, `cabinet_type`, `search` (name, facility ID, description, custom fields). |
 | `/api/cabinet-types/` | Cabinet types. Filters: `manufacturer`, `search`. |
 | `/api/cabinet-roles/` | Cabinet roles. Filter: `search`. |
 

@@ -25,6 +25,7 @@ import { portsUsed, useRackPortState } from "@/lib/rack-port-state"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { RoomCell } from "@/components/cells/room-cell"
 import { CoolingFigure, PowerFigure } from "@/components/cells/power-figure"
 import { CoolingMethodText } from "@/components/cells/cooling-cell"
 import { Badge } from "@/components/ui/badge"
@@ -446,6 +447,7 @@ function RackOverview({ rack: r }: { rack: Rack }) {
         dash
       ),
     },
+    { label: "Room", value: <RoomCell room={r.room} /> },
   ]
   const capacityRows: KvRow[] = [
     { label: "Height", value: <span className="num">{r.u_height}U</span> },

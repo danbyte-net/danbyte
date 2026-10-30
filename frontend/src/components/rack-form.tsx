@@ -30,6 +30,7 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
+import { FormRoomCombobox } from "@/components/room-field"
 import { CoolingFields } from "@/components/cooling-fields"
 import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
@@ -72,6 +73,7 @@ export function RackForm({
   const [locationId, setLocationId] = useState<string | null>(
     rack?.location?.id ?? null
   )
+  const [roomId, setRoomId] = useState<string | null>(rack?.room?.id ?? null)
   const [statusId, setStatusId] = useState<string | null>(
     rack?.status?.id ?? null
   )
@@ -132,6 +134,7 @@ export function RackForm({
     setRoleId(rack.role?.id ?? null)
     setRackTypeId(rack.rack_type?.id ?? null)
     setLocationId(rack.location?.id ?? null)
+    setRoomId(rack.room?.id ?? null)
     setStatusId(rack.status?.id ?? null)
     setWidth(rack.width)
     setUHeight(String(rack.u_height))
@@ -234,6 +237,7 @@ export function RackForm({
         create_accessories:
           !isEdit && createAccessories && !!rackTypeId && canStamp,
         location_id: locationId,
+        room_id: roomId,
         status_id: statusId,
         width,
         u_height: uHeight.trim() === "" ? 42 : Number(uHeight),
@@ -316,6 +320,7 @@ export function RackForm({
               onChange={(v) => {
                 setSiteId(v)
                 setLocationId(null) // locations are per-site
+                setRoomId(null)
               }}
               disabled={siteLocked}
               options={sites.options.map((s) => ({
@@ -343,7 +348,10 @@ export function RackForm({
               label="Location"
               hint="optional · within the site"
               value={locationId}
-              onChange={setLocationId}
+              onChange={(v) => {
+                setLocationId(v)
+                setRoomId(null) // rooms are per-location
+              }}
               options={(locations.data?.results ?? []).map((l) => ({
                 value: l.id,
                 label: l.name,
@@ -354,6 +362,13 @@ export function RackForm({
               emptyText="No locations in this site."
               disabled={!siteId}
               error={fieldErrors.location_id}
+            />
+
+            <FormRoomCombobox
+              locationId={locationId}
+              value={roomId}
+              onChange={setRoomId}
+              error={fieldErrors.room_id}
             />
 
             <FormCombobox

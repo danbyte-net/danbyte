@@ -207,6 +207,7 @@ PROFILES = importlib.import_module("auth_api.migrations.0041_site_roles_device_p
 REQUIREMENTS = importlib.import_module(
     "auth_api.migrations.0042_site_roles_flow_requirements"
 )
+ROOMS = importlib.import_module("auth_api.migrations.0043_site_roles_rooms")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -314,7 +315,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(PINS.NEW_TYPES)
             | set(PRTG_FACTS.NEW_TYPES)
             | set(PRTG_OVERRIDES.NEW_TYPES)
-            | set(PROFILES.NEW_TYPES),
+            | set(PROFILES.NEW_TYPES)
+            | set(ROOMS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(

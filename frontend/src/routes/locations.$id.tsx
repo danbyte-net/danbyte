@@ -25,6 +25,7 @@ import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import {
   EmbeddedCabinetTable,
   EmbeddedRackTable,
+  EmbeddedRoomTable,
 } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -69,6 +70,7 @@ function Body({ location: l }: { location: Location }) {
   const columns = useMemo<ColumnDef<Prefix>[]>(() => buildColumns(), [])
   const [tab, setTab] = useUrlTab<
     | "overview"
+    | "rooms"
     | "devices"
     | "racks"
     | "cabinets"
@@ -151,6 +153,7 @@ function Body({ location: l }: { location: Location }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "rooms", label: "Rooms", count: l.room_count },
         { value: "devices", label: "Devices", count: l.device_count },
         { value: "racks", label: "Racks", count: l.rack_count },
         { value: "cabinets", label: "Cabinets", count: l.cabinet_count },
@@ -164,6 +167,27 @@ function Body({ location: l }: { location: Location }) {
     >
       <DetailTab value="overview">
         <LocationOverview location={l} humanIds={humanIds} />
+      </DetailTab>
+      <DetailTab value="rooms">
+        <div className="space-y-3">
+          {canDo("room", "add") && (
+            <div className="flex justify-end">
+              <Button size="sm" asChild>
+                <Link
+                  to="/rooms/new"
+                  search={{ site: l.site?.id ?? undefined, location: l.id }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add room
+                </Link>
+              </Button>
+            </div>
+          )}
+          <EmbeddedRoomTable
+            filter={{ location: l.id }}
+            omit={["site", "location"]}
+            emptyText="No rooms in this location yet."
+          />
+        </div>
       </DetailTab>
       <DetailTab value="devices">
         <EmbeddedDeviceTable

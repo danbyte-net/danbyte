@@ -28,6 +28,8 @@ export function toFieldSpec(f: EditableFieldSpec): BulkFieldSpec | null {
       return { ...base, kind: f.kind, suggestions: f.suggestions }
     case "bytes":
       return { ...base, kind: "bytes" }
+    case "color":
+      return { ...base, kind: "color" }
     case "choice":
       return f.choices ? { ...base, kind: "choice", choices: f.choices } : null
     case "options":

@@ -20,7 +20,7 @@ detail page.
    render". Don't have the type yet? Create it first on the
    [Device catalog](device-catalog.md) page; it only takes a moment and you'll
    reuse it for every device of that model.
-4. Optionally set the **site**, **location**, **role**, **platform**,
+4. Optionally set the **site**, **location**, [**room**](rooms.md), **role**, **platform**,
    **software version** (see
    [Software target](../features/lifecycle.md#software-target)), **cluster**,
    **status**, **serial number**, **asset tag** and **warranty end**
@@ -130,7 +130,7 @@ The default tab lays the device's facts out in cards:
 | **Device**     | name, status, role, platform (with the software version, [where it came from](../features/lifecycle.md#where-the-running-version-comes-from) and the platform's target) and its **OS support** bar, description, comments |
 | **Cooling path** | shown once the device has a cooling intake or outflow: each intake's path from source through any CDU, each hop a link - see [Cooling](../features/cooling.md#cooling-path) |
 | **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
-| **Location**   | site, location, rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
+| **Location**   | site, location, [room](rooms.md), rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 | **Support contracts** | shown once a contract covers the device: each contract with its manufacturer, service level, end and state |
 | **Software**   | the first eight installed applications, each with its version and end-of-life [lifetime bar](../features/lifecycle.md#the-lifetime-bar), then **View all N** to the [Software](#other-tabs) tab; *No software recorded.* when there is none |
@@ -297,7 +297,7 @@ fields** rather than custom fields:
 | Field                    | What it holds                                                                                      |
 | ------------------------ | -------------------------------------------------------------------------------------------------- |
 | **Comments**             | Long-form notes about the device (multiline).                                                      |
-| **Location**             | The [location](../features/regions-locations.md) within the site where the device lives.           |
+| **Location**             | The [location](../features/regions-locations.md) within the site where the device lives, and the [room](rooms.md) in it. The Room field shows and hides with Location. |
 | **Cluster**              | The virtualization/compute cluster the device belongs to.                                          |
 | **Airflow**              | Cooling direction - front-to-rear, rear-to-front, left-to-right, right-to-left, passive, or mixed. |
 | **Cooling method**       | How the device is cooled - air, liquid, hybrid or immersion. Blank inherits its type's; see [Cooling](../features/cooling.md). |
