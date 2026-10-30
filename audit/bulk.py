@@ -18,7 +18,7 @@ Usage:
 """
 from __future__ import annotations
 
-from .context import current_request_id, current_user
+from .context import current_cause, current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
 from .signals import _diff, _ser
 
@@ -38,6 +38,7 @@ def _entry(instance, action, changes, user, rid):
         object_site_id=entry_site_id(instance),
         changes=changes,
         request_id=rid,
+        cause=current_cause(),
     )
 
 

@@ -63,8 +63,13 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
     meta: {
       export: {
         value: (e) =>
-          Object.entries(e.changes)
-            .map(([f, c]) => `${f}: ${diffText(c)}`)
+          [
+            e.cause,
+            ...Object.entries(e.changes).map(
+              ([f, c]) => `${f}: ${diffText(c)}`
+            ),
+          ]
+            .filter(Boolean)
             .join("; "),
       },
     },
@@ -139,10 +144,15 @@ export function ChangeLogPanel({
 function ChangesCell({ e }: { e: ChangeLogEntry }) {
   const [open, setOpen] = useState(false)
   const fields = Object.entries(e.changes)
+  // Why a derived write happened ("Requirement 'WMS to Broker': …").
+  const cause = e.cause ? (
+    <div className="text-xs text-muted-foreground">{e.cause}</div>
+  ) : null
   if (fields.length === 0)
-    return <span className="text-muted-foreground">-</span>
+    return cause ?? <span className="text-muted-foreground">-</span>
   return (
     <div className="space-y-1.5">
+      {cause}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}

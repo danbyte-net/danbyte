@@ -12,9 +12,11 @@ pushed to a firewall.
 
 Flows live on their application. Its **Flows** tab lists them, and its
 **Diagram** tab draws them on the [Application map](#application-map). Devices, virtual machines, IP addresses and
-prefixes have a **Flows** tab too, listing the flows that touch them.
+prefixes have a **Flows** tab too, listing the flows that touch them. A
+[requirement](#requirements) writes flows for you from where an application
+is installed.
 
-Nothing ships pre-filled: no flows. The three statuses below are seeded so
+Nothing ships pre-filled: no flows, no requirements. The three statuses below are seeded so
 the status picker is not empty.
 
 ## The flow
@@ -33,8 +35,9 @@ the status picker is not empty.
 | Description, tags, custom fields | |
 
 Deleting an address, range or prefix that a flow names as an end deletes the
-flow with it. An application with flows cannot be deleted: delete or move
-its flows first.
+flow with it. An application with flows or requirements cannot be deleted,
+nor one another application's requirement names as *Hosts of*: the refusal
+names them.
 
 ## Both ends
 
@@ -60,6 +63,109 @@ The tab has the shared list: search, the columns menu (*Service* is in it),
 Adding from an address or prefix starts the flow there as its source.
 
 The **Applications** list has a **Flows** column.
+
+## Requirements
+
+A requirement says what an application needs without naming addresses:
+*the hosts of WMS client to the hosts of Broker, TCP 5672*. Danbyte
+documents it as ordinary flows, one per pair of addresses, and keeps them in
+step: install the application on a host, or give a host an address, and its
+flows appear; take it away and they go. The flows it makes are
+**generated** and read like any other flow everywhere flows show.
+
+Requirements live on the application's **Requirements** tab, after Flows.
+Its Overview counts them.
+
+| Field | |
+|---|---|
+| Name | Required, unique within the application. Generated flows are named `<requirement>: <source host> → <destination host>`, with the addresses added when one pair of hosts has several. |
+| Source, Destination | **This application** (every host it is installed on), **Hosts of application** (another application's hosts), or a fixed **address**, **range**, **prefix** or **Any**. At least one end is *This application*; *Hosts of application* may not name the application itself. *This application* on both ends documents its hosts to each other (cluster peers) and never pairs a host with itself. |
+| Protocol, Ports, Direction | As on a flow. |
+| Status | The status the generated flows carry, from the flow statuses. Retired makes them read Retired. |
+| Address (under More) | Which address a host end uses: **Primary address** (the default for *This application*: the host's primary address, or its only address), **Service address** (the default for *Hosts of application*: the address of the service its install names, else the primary; the flow's service is set to it), **Addresses with a role** (every address of the host with that [IP role](catalogs-and-settings.md), such as a VIP), or **Every address**. |
+| Family (under More) | Any, IPv4 or IPv6, applied after the address pick. |
+| Pairing (under More) | **Every host** (the default) pairs each host with every host of the other end; **Same site** pairs only hosts at one site - a WMS client with its own warehouse's broker. |
+
+Child applications are not included: *Hosts of Broker* means hosts with
+Broker itself installed. Hosts in any status count. Hand-made flows stay as
+they are; nothing turns them into requirements.
+
+### Preview and state
+
+The dialog previews what saving documents before you save: *Documents 96
+flows on 48 hosts; 2 hosts have no usable address*. Above 500 flows it
+warns; above 5,000 it refuses, and the requirement reads **Unresolved**
+until you narrow it with pairing or address, or raise the limit
+(`FLOW_REQUIREMENT_WARN_PAIRS`, `FLOW_REQUIREMENT_MAX_PAIRS` in
+[settings](../reference/settings.md#application-flow-requirements)).
+
+| State | |
+|---|---|
+| Resolved | Every host has its flows. |
+| Partial | Some hosts have no usable address ("no primary address", "no address with the role"). |
+| Unresolved | The other application is not installed anywhere, or there are too many pairs. |
+| Idle | This application is not installed anywhere yet. Not an error. |
+
+A row opens its panel: its **Flows**, the hosts **Missing** an address (a
+host you may not view is counted as "N more", never named), the
+**Excluded** pairs with **Restore**, and its **Change log**. **Re-resolve**
+runs it again now.
+
+### What keeps them in step
+
+The generated flows follow every change that moves an end, after the change
+is saved:
+
+- an install added, removed or moved to another host - including those an
+  [application group](applications.md#application-groups) or a
+  [device profile](device-profiles.md) makes;
+- an address added, readdressed, reassigned, given another role or deleted;
+- a device's or VM's primary address or site;
+- a service's address, or the service an install names;
+- the requirement itself saved or deleted.
+
+Small changes resolve at once. A large one (more than about 250 pairs to
+touch, such as editing a requirement across a fleet) runs as a background
+job on the [Jobs](jobs.md) page; the job reads everything again by id, so a
+requirement or tenant gone by then is skipped. A nightly sweep (the
+`danbyte-cleanup` timer, `reconcile_flow_requirements`) resolves every
+requirement again, healing writes made without the usual save.
+
+### Generated flows
+
+The flows tables' **Origin** column reads *Manual*, or a **Generated** badge
+whose tooltip names the requirement and the installs behind it (*WMS client
+4.2 is on wms-07*); filter on it with the facet.
+
+- **Ends are the requirement's.** A generated flow's ends, name and
+  application cannot be changed; its edit dialog shows them read-only.
+  **Detach** makes it a hand-made flow at the same site and excludes its
+  pair, so the requirement does not make it twice.
+- **Edits are kept.** Changing its protocol, ports, direction, status or
+  service marks it **Edited** (a warning badge) and the requirement leaves
+  that field alone from then on. **Follow requirement** drops the edits.
+  The description and tags are yours and never count as edits.
+- **Deleting excludes.** Deleting a generated flow asks *Exclude this pair
+  from WMS to Broker?*, records the exclusion and removes the flow; the
+  pair stays out until you **Restore** it on the requirement. Ticked rows
+  deleted together are excluded one by one.
+- **When it stops applying.** A flow whose pair no longer applies (the
+  host went, the address changed) is deleted - unless it was edited, then
+  it stays as a hand-made flow with a journal note *Kept after requirement
+  … stopped applying*. Deleting a requirement does the same with all its
+  flows.
+
+Each generated flow's change-log entry names the user who made the
+triggering change and a [cause](change-log.md#cause): *Requirement 'WMS to
+Broker': WMS client installed on wms-07*. The sweep writes as the system.
+
+### The host's Flows tab
+
+A device's or VM's **Flows** tab opens with the requirements that apply to
+it through its installs: *WMS to Broker · WMS client → Broker · TCP 5672 ·
+2 flows*, or a warning badge saying why it has none (*no primary address*,
+*Broker is not installed anywhere*). Give the host an address and its flows
+appear.
 
 ## Application map
 
@@ -186,12 +292,25 @@ sites; a site viewer reads them. A flow between two *Any* ends has no site.
 Every reference - application, addresses, ranges, prefixes, service,
 status, tags - must be the active tenant's.
 
+Requirements are `applicationflowrequirement`, a tenant-wide catalog like
+applications: only a tenant-wide editor writes them, and the site roles read
+them. Their generated flows are ordinary flows with the same site rule, so a
+site editor may change a generated flow's status or description at their
+sites and detach it, but not move its ends. A site editor's install may
+still make flows that reach another site's hosts: they are derived from
+an allowed change and carry its user in the change log. When a flow's first
+end is another site's address (*Broker hosts → this application*), the flow
+is that site's, as a hand-made one would be.
+
 A reader who may read a flow but not one of its ends - a Site A viewer
-reading a flow to a Site B address - sees that end as *Hidden*: the table,
+reading a flow to a Site B address - sees that end as *Hidden*, and a
+generated flow's name reads *Hidden* where it names that host: the table,
 the Application map, the diagram and its PDF name no address, DNS name,
 range, prefix, device or VM for it, and searching flows does not match on
 it. An address end they may view still leaves out a device or VM they may
 not. Editing such a flow keeps the hidden end unless you pick another.
+A requirement's fixed end you may not view reads *Hidden* too, and its
+missing hosts and preview count a host you may not view without naming it.
 
 ## API
 
@@ -208,7 +327,9 @@ Filters:
 | `?device=`, `?vm=` | The same for every address assigned to the device or VM. |
 | `?prefix=`, `?range=` | Flows with the prefix or range at either end. |
 | `?protocol=`, `?direction=`, `?status=`, `?service=` | Exact. |
-| `?search=` | Name, description, application name, ports, and the end addresses and CIDRs you may view. |
+| `?requirement=` | The requirement's generated flows. |
+| `?generated=` | `true` for generated flows, `false` for hand-made ones. |
+| `?search=` | Name (a generated flow's only while you may view both ends), description, application name, ports, and the end addresses and CIDRs you may view. |
 
 A flow carries `application` (`{id, name, slug, path}`), `source` and
 `destination` (`{kind, id, label, device, vm, hidden}` - `kind` is `ip`,
@@ -221,6 +342,44 @@ may not view comes back `{"kind": …, "id": null, "label": "Hidden",
 you may not view. A write that leaves an end's keys out keeps that end. Write `application_id`,
 `source_ip_id`, `source_range_id`, `source_prefix_id` or `source_any`, the
 `destination_*` equivalents, `status_id` and `service_id`.
+
+A flow also carries `requirement` (`{id, name}` or `null`), `generated`,
+`overridden_fields` (the fields edited on a generated flow) and
+`source_install` / `destination_install` (`{id, application, version,
+host}`, `null` when you may not view the install). On a generated flow a
+write that changes an end, the name or the application is a `400` *Generated
+by a requirement - detach it first*; `POST <id>/detach/` makes it hand-made,
+`POST <id>/follow/` drops its edits, and `DELETE` records an exclusion.
+
+| Endpoint | |
+|---|---|
+| `/api/application-flow-requirements/` | CRUD and `POST bulk-delete/`. A create or edit answers the requirement with `resolution` (the counts, or `{job}`). |
+| `POST /api/application-flow-requirements/preview/` | The payload of a create (or an edit, with `id`) without saving: `{pairs, hosts, state, detail, warn, refused, warn_at, max, gaps, hidden}`. |
+| `POST …/<id>/resolve/` | Resolve now: `{created, updated, removed, released, gaps, state, pairs}`, or `{job}`. |
+| `GET …/<id>/gaps/` | `{state, detail, gaps: [{side, host, reason}], hidden}`. |
+| `GET`/`POST …/<id>/exclusions/`, `DELETE …/<id>/exclusions/<eid>/` | The excluded pairs; add one by `binding_key`; Restore one. |
+
+Requirement filters: `?application=`, `?references=<application>` (whose
+*Hosts of* end is that application), `?state=`, `?search=`, and `?device=`
+or `?vm=` (the requirements applying to that host, each with `host:
+{flows, reason, state}`). A requirement carries `source` and `destination`
+(`{kind, id, label, application, address, address_role, hidden}`),
+`state`, `state_detail`, `generated_count`, `gap_count`, `resolved_at` and
+`exclusions`. Write `application_id`, `source_kind` (`self`, `app`, `ip`,
+`range`, `prefix`, `any`), `source_application_id`, `source_ip_id`,
+`source_range_id`, `source_prefix_id`, `source_address` (`primary`,
+`service`, `role`, `all`), `source_address_role_id`, the `destination_*`
+set, `family`, `pairing` (`all`, `same_site`), `protocol`, `ports`,
+`direction`, `status_id`, `description`, `tag_ids` and `custom_fields`.
+
+```bash
+curl -X POST https://danbyte.example/api/application-flow-requirements/ \
+  -H "Authorization: Token $TOKEN" -H "Content-Type: application/json" \
+  -d '{"application_id": "…", "name": "WMS to Broker",
+       "source_kind": "self", "destination_kind": "app",
+       "destination_application_id": "…", "pairing": "same_site",
+       "protocol": "tcp", "ports": "5672"}'
+```
 
 ```bash
 curl -X POST https://danbyte.example/api/application-flows/ \

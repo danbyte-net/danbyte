@@ -56,7 +56,13 @@ ergonomics on top:
     whose other end is another site's address, range or prefix: that end
     reads *Hidden* (no address, DNS name, device or VM) in tables, the
     Application map, the flow diagram and its PDF, and a flow search does
-    not match on it. A cooling intake connected to another site's feed or
+    not match on it. A flow an
+    [application requirement](../features/application-flows.md#requirements)
+    generated is an ordinary flow with the same rule, and its name reads
+    *Hidden* where it names the hidden host; the requirement itself is a
+    tenant-wide catalog the site roles read, its fixed ends hidden the same
+    way, and its list of hosts without an address counts the hosts the
+    reader can't view without naming them. A cooling intake connected to another site's feed or
     CDU outflow shows its upstream as *Hidden*, an outflow the intakes it
     serves on another site the same way, and a device's cooling path blanks
     the hops the reader can't open.

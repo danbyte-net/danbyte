@@ -147,6 +147,8 @@ const ROWS: Row[] = [
   ["device-profile-children", "Device profile · Children", "DCIM", "/api/device-profiles/", sub],
   ["installed-software", "Software", "DCIM", "/api/installed-software/", { ioType: "installedsoftware", settings: false }],
   ["application-flows", "Flows", "DCIM", "/api/application-flows/", { ioType: "applicationflow", settings: false }],
+  ["application-flow-requirements", "Application · Requirements", "DCIM", "/api/application-flow-requirements/", sub],
+  ["application-flow-requirement-flows", "Requirement · Flows", "DCIM", "/api/application-flows/", sub],
   ["support-contracts", "Support contracts", "DCIM", "/api/support-contracts/", { ioType: "supportcontract" }],
   ["support-contract-devices", "Support contract · Devices", "DCIM", "/api/devices/", sub],
   ["lifecycle", "Lifecycle", "DCIM", null],

@@ -31,6 +31,7 @@ import { dash } from "@/components/cells/dash"
 import { buildApplicationColumns } from "@/components/columns/application-columns"
 import { buildInstalledSoftwareColumns } from "@/components/columns/installed-software-columns"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
+import { FlowRequirementsPane } from "@/components/flow-requirements-pane"
 import { ApplicationFlowDiagram } from "@/components/application-flow-diagram"
 import { ApplicationGroupsOfApp } from "@/components/application-groups-of-app"
 import { InstalledSoftwareDialog } from "@/components/installed-software-pane"
@@ -61,6 +62,7 @@ function Body({ app }: { app: Application }) {
     | "overview"
     | "installs"
     | "flows"
+    | "requirements"
     | "diagram"
     | "children"
     | "groups"
@@ -116,6 +118,14 @@ function Body({ app }: { app: Application }) {
       label: "Flows",
       value: <span className="num">{app.flow_count}</span>,
     },
+    ...(canDo("applicationflowrequirement", "view")
+      ? [
+          {
+            label: "Requirements",
+            value: <span className="num">{app.requirement_count ?? 0}</span>,
+          } satisfies KvRow,
+        ]
+      : []),
   ]
 
   return (
@@ -166,10 +176,19 @@ function Body({ app }: { app: Application }) {
         { value: "overview", label: "Overview" },
         { value: "installs", label: "Installed on", count: app.install_count },
         ...(canDo("applicationflow", "view")
+          ? [{ value: "flows", label: "Flows", count: app.flow_count }]
+          : []),
+        ...(canDo("applicationflowrequirement", "view")
           ? [
-              { value: "flows", label: "Flows", count: app.flow_count },
-              { value: "diagram", label: "Diagram" },
+              {
+                value: "requirements",
+                label: "Requirements",
+                count: app.requirement_count,
+              },
             ]
+          : []),
+        ...(canDo("applicationflow", "view")
+          ? [{ value: "diagram", label: "Diagram" }]
           : []),
         {
           value: "children",
@@ -204,6 +223,9 @@ function Body({ app }: { app: Application }) {
       </DetailTab>
       <DetailTab value="flows">
         <ApplicationFlowPane scope={{ kind: "application", id: app.id }} />
+      </DetailTab>
+      <DetailTab value="requirements">
+        <FlowRequirementsPane app={app} />
       </DetailTab>
       <DetailTab value="diagram">
         <ApplicationFlowDiagram app={app} />

@@ -55,17 +55,32 @@ linked crumbs and the children three levels deep, each linked with its
 install count; a deeper branch ends in *+N*, which opens that child's
 **Child applications**. Overview counts the installs - the count opens the
 [Lifecycle overview](lifecycle-overview.md) filtered to this application -
-and the flows.
+the flows and the requirements.
 
 **Installed on** lists every install, with its *Cycle* and a *manual* chip
 where the cycle was set by hand. `?cycle=8` narrows it to one cycle,
 `?cycle=none` to the installs no cycle took; the chip above the table clears
 it. **Flows** and **Diagram** show its [flows](application-flows.md) (the Diagram is the [Application map](application-flows.md#application-map)),
-**Child applications** the children, then **Journal** and **Change log**.
+**Requirements** the flows it needs from wherever it is installed (see
+[Requirements](application-flows.md#requirements)), **Child applications**
+the children, then **Journal** and **Change log**.
 
-An application with installs, child applications or flows cannot be deleted
-(409); remove them first. The list's bulk delete skips such rows and says
-why.
+An application with installs, child applications, flows or requirements -
+or one another application's requirement names as *Hosts of* - cannot be
+deleted (409); the refusal names what holds it. The list's bulk delete skips
+such rows and says why.
+
+### Installs document flows
+
+An application's [requirements](application-flows.md#requirements) turn
+its installs into flows. Recording an install - by hand, by an import, by
+assigning an [application group](#application-groups) or a
+[device profile](device-profiles.md) - documents the flows the application
+needs on that host; removing it, or moving it to another host, takes them
+away. The host's **Flows** tab lists the requirements that apply to it and
+says when one can't be met (*no primary address*). Groups and profiles add
+nothing of their own: each install they make or remove is an ordinary
+install change.
 
 ## Installed software
 

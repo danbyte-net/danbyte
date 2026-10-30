@@ -79,6 +79,9 @@ class ChangeLogEntry(models.Model):
         default="",
         choices=[("ui", "UI"), ("api", "API"), ("chat", "Assistant"), ("system", "System")],
     )
+    # Why a derived write happened, when the code making it says so: "Requirement
+    # 'WMS to Broker': install added on wms-07". Blank for ordinary edits.
+    cause = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         ordering = ["-timestamp"]

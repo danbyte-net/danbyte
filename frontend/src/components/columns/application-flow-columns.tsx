@@ -6,6 +6,12 @@ import { flowServiceLabel } from "@/lib/flows"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 import { StatusBadge } from "@/components/status-badge"
+import { Badge } from "@/components/ui/badge"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { actionsColumn } from "@/components/columns/actions-column"
 import type { ActionsColumnOpts } from "@/components/columns/actions-column"
 
@@ -21,6 +27,7 @@ export type ApplicationFlowColumnId =
   | "service"
   | "direction"
   | "status"
+  | "origin"
   | "linked_service"
   | "description"
 
@@ -32,6 +39,7 @@ const CANONICAL_ORDER: ApplicationFlowColumnId[] = [
   "service",
   "direction",
   "status",
+  "origin",
   "linked_service",
   "description",
 ]
@@ -100,6 +108,54 @@ export function FlowEndCell({ end }: { end: FlowEnd }) {
         >
           {end.vm.name}
         </Link>
+      ) : null}
+    </span>
+  )
+}
+
+/** Where a flow came from: "Manual", or a "Generated" badge naming its
+ * requirement, with "Edited" when someone overrode a field on it. */
+export function flowOrigin(f: ApplicationFlow): string {
+  if (!f.generated) return "Manual"
+  return f.overridden_fields.length ? "Generated, edited" : "Generated"
+}
+
+export function FlowOriginCell({ flow }: { flow: ApplicationFlow }) {
+  if (!flow.generated)
+    return <span className="text-xs text-muted-foreground">Manual</span>
+  const because = [flow.source_install, flow.destination_install]
+    .filter((i) => i != null)
+    .map((i) =>
+      [i.application, i.version, "is on", i.host.name].filter(Boolean).join(" ")
+    )
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Badge variant="info">Generated</Badge>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent variant="panel" className="grid gap-0.5 text-xs">
+          <span className="font-medium">
+            {flow.requirement?.name ?? "Requirement"}
+          </span>
+          {because.map((b) => (
+            <span key={b}>{b}</span>
+          ))}
+        </TooltipContent>
+      </Tooltip>
+      {flow.overridden_fields.length ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Badge variant="warning">Edited</Badge>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent variant="panel" className="text-xs">
+            {flow.overridden_fields.join(", ")}
+          </TooltipContent>
+        </Tooltip>
       ) : null}
     </span>
   )
@@ -197,6 +253,19 @@ export function buildApplicationFlowColumns<
           kind: "enum",
           label: "Status",
           get: (r: T) => r.status?.name ?? "",
+        },
+      },
+    }),
+    origin: () => ({
+      id: "origin",
+      accessorFn: (r) => flowOrigin(r),
+      header: ({ column }) => <SortHeader column={column} label="Origin" />,
+      cell: ({ row }) => <FlowOriginCell flow={row.original} />,
+      meta: {
+        facet: {
+          kind: "enum",
+          label: "Origin",
+          get: (r: T) => (r.generated ? "Generated" : "Manual"),
         },
       },
     }),

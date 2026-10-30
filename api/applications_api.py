@@ -3,7 +3,8 @@
 * ``/api/applications/`` - the tenant's application catalog: CRUD,
   ``?picker=1``, ``?search=``, ``?manufacturer=``, ``?parent=`` (``none`` for
   the roots), ``?ancestor=`` (everything under it), ``bulk-delete``. A delete is refused (409) while the
-  application has installs, child applications or flows (#163).
+  application has installs, child applications, flows (#163) or flow
+  requirements - its own, or another's naming it as the far end.
 * ``/api/applications/<id>/eol/`` - ``GET`` the product, its cycles with
   install counts and the unmapped installs; ``PUT {source?, product}`` names
   the end-of-life product, ``DELETE`` clears it; 404 while the feature is off.
@@ -329,6 +330,7 @@ class ApplicationSerializer(
     install_count = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     flow_count = serializers.SerializerMethodField()
+    requirement_count = serializers.SerializerMethodField()
     ancestors = serializers.SerializerMethodField()
     children = serializers.SerializerMethodField()
 
@@ -337,11 +339,13 @@ class ApplicationSerializer(
         fields = ["id", "name", "slug", "parent", "parent_id", "path", "depth",
                   "manufacturer", "manufacturer_id", "eol_source", "eol_product", "eol",
                   "description", "tags", "tag_ids", "custom_fields",
-                  "install_count", "child_count", "flow_count", "ancestors", "children",
+                  "install_count", "child_count", "flow_count", "requirement_count",
+                  "ancestors", "children",
                   "created_at", "updated_at"]
         # The product is set through /eol/, which also redoes the installs.
         read_only_fields = ["id", "eol_source", "eol_product", "install_count",
-                            "child_count", "flow_count", "created_at", "updated_at"]
+                            "child_count", "flow_count", "requirement_count", "created_at",
+                            "updated_at"]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
@@ -377,6 +381,11 @@ class ApplicationSerializer(
         """The application's flows the reader may view (#163)."""
         n = getattr(obj, "flow_count_annotated", None)
         return n if n is not None else _visible_count(self, obj, "flows")
+
+    def get_requirement_count(self, obj) -> int:
+        """The application's flow requirements."""
+        n = getattr(obj, "requirement_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "flow_requirements")
 
     def validate_name(self, value):
         value = (value or "").strip()
@@ -570,6 +579,22 @@ def _slug_for(serializer, tenant):
         raise ValidationError({"slug": "Name already in use."})
 
 
+def _requirements_naming(ids) -> dict:
+    """``{application id: [requirement names]}`` - the flow requirements an
+    application owns, or names as the far end ("Hosts of Broker")."""
+    from .models import ApplicationFlowRequirement
+
+    out: dict = {}
+    for name, app, src, dst in ApplicationFlowRequirement.objects.filter(
+        Q(application_id__in=ids) | Q(source_application_id__in=ids)
+        | Q(destination_application_id__in=ids)
+    ).values_list("name", "application_id", "source_application_id",
+                  "destination_application_id"):
+        for pk in {app, src, dst} & set(ids):
+            out.setdefault(pk, []).append(name)
+    return out
+
+
 class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
     rbac_action_map = {"bulk_delete": "delete"}
     queryset = Application.objects.all().order_by(natural("name"))
@@ -603,6 +628,7 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 install_count_annotated=_visible_n(self, "installs"),
                 child_count_annotated=_visible_n(self, "children"),
                 flow_count_annotated=_visible_n(self, "flows"),
+                requirement_count_annotated=_visible_n(self, "flow_requirements"),
             )
         else:
             qs = qs.annotate(child_count_annotated=_visible_n(self, "children"))
@@ -644,7 +670,8 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
         serializer.save()
 
     @staticmethod
-    def _held(installs: int, children: int, flows: int = 0) -> str | None:
+    def _held(installs: int, children: int, flows: int = 0, requirements=(),
+              ) -> str | None:
         parts = []
         if installs:
             parts.append(f"{installs} install{'s' if installs != 1 else ''}")
@@ -652,6 +679,11 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             parts.append(f"{children} child application{'s' if children != 1 else ''}")
         if flows:
             parts.append(f"{flows} flow{'s' if flows != 1 else ''}")
+        if requirements:
+            names = ", ".join(sorted(requirements)[:5])
+            more = len(requirements) - 5
+            parts.append(f"requirement{'s' if len(requirements) != 1 else ''} {names}"
+                         + (f" and {more} more" if more > 0 else ""))
         if not parts:
             return None
         head = ", ".join(parts[:-1])
@@ -675,16 +707,19 @@ class ApplicationViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
             ApplicationFlow.objects.filter(application_id__in=ids)
             .values("application_id").annotate(n=Count("pk")).values_list("application_id", "n")
         )
+        reqs = _requirements_naming(ids)
         out = {}
         for pk in ids:
-            why = self._held(installs.get(pk, 0), children.get(pk, 0), flows.get(pk, 0))
+            why = self._held(installs.get(pk, 0), children.get(pk, 0), flows.get(pk, 0),
+                             reqs.get(pk, ()))
             if why:
                 out[pk] = why
         return out
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
-        why = self._held(obj.installs.count(), obj.children.count(), obj.flows.count())
+        why = self._held(obj.installs.count(), obj.children.count(), obj.flows.count(),
+                         _requirements_naming([obj.pk]).get(obj.pk, ()))
         if why:
             return Response({"detail": why}, status=drf_status.HTTP_409_CONFLICT)
         return super().destroy(request, *args, **kwargs)

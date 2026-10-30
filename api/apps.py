@@ -14,6 +14,9 @@ class ApiConfig(AppConfig):
         from . import applications, io, signals  # noqa: F401  (signals register on import)
 
         applications.connect_signals()
+        from . import flow_requirements
+
+        flow_requirements.connect_signals()
         io.register_builtins()
         autodiscover_modules("io")
         # The global search index follows every indexed model's saves/deletes.
