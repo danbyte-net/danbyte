@@ -1,14 +1,21 @@
+import { getLucideIcon } from "@/components/dynamic-icon"
+
 import { CELL } from "./canvas-geometry"
 import {
   HANDLES,
+  PATTERN_STROKE,
   labelColor,
   areaColor,
+  areaIcon,
   areaLabelColor,
   areaName,
+  areaNameHalo,
+  areaPattern,
   boxCenter,
   handlePoint,
   labelBox,
   labelFontCells,
+  patternRuns,
   polygonCentroid,
   rotateHandlePoint,
 } from "./shapes"
@@ -21,8 +28,116 @@ import type { GestureTarget, ShapeGestures } from "./use-shape-gestures"
 
 const px = (v: number) => v * CELL
 
+/** The name's size, and the icon's before it (world px). */
+const NAME_PX = 12
+const ICON_PX = 12
+const ICON_GAP = 4
+/** ~Average glyph width of the name's semibold sans, per em. */
+const NAME_EM = 0.6
+
+/** An area type's pattern: its strokes over the fill, clipped to the
+ * area's own outline (`clip`: a rect or polygon in world px). */
+function PatternStrokes({
+  id,
+  area,
+  color,
+  clip,
+  box,
+}: {
+  id: string
+  area: AreaShape
+  color: string
+  clip: React.ReactNode
+  box: { x: number; y: number; w: number; h: number }
+}) {
+  const runs = patternRuns(areaPattern(area), box.x, box.y, box.w, box.h)
+  if (!runs.length) return null
+  return (
+    <>
+      <clipPath id={id}>{clip}</clipPath>
+      <g
+        clipPath={`url(#${id})`}
+        data-pattern={areaPattern(area)}
+        stroke={color}
+        strokeOpacity={PATTERN_STROKE.opacity}
+        strokeWidth={PATTERN_STROKE.width}
+        pointerEvents="none"
+      >
+        {runs.map((run, r) => (
+          <g key={r} strokeDasharray={run.dash}>
+            {run.lines.map(([x1, y1, x2, y2], i) => (
+              <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} />
+            ))}
+          </g>
+        ))}
+      </g>
+    </>
+  )
+}
+
+/** An area's name with its type's icon before it: from (x, y) in its top
+ * left (`start`, y the baseline), or centred on (x, y) (`middle`, y the
+ * middle). A patterned area's name reads over its lines through a halo of
+ * the background. */
+function AreaName({
+  area,
+  name,
+  x,
+  y,
+  anchor,
+  ink,
+}: {
+  area: AreaShape
+  name: string
+  x: number
+  y: number
+  anchor: "start" | "middle"
+  ink: string
+}) {
+  const icon = areaIcon(area)
+  const Icon = icon ? getLucideIcon(icon) : null
+  const shift = Icon ? ICON_PX + ICON_GAP : 0
+  const textW = name.length * NAME_PX * NAME_EM
+  // The text's anchor point, and the icon's top left before the text.
+  const tx = anchor === "middle" ? x + shift / 2 : x + shift
+  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
+  const mid = anchor === "middle" ? y : y - NAME_PX * 0.35
+  const halo = areaNameHalo(area)
+  return (
+    <g pointerEvents="none" data-part="area-name">
+      {Icon && (
+        <Icon
+          data-part="area-icon"
+          x={ix}
+          y={mid - ICON_PX / 2}
+          width={ICON_PX}
+          height={ICON_PX}
+          color={ink}
+          strokeWidth={2.25}
+        />
+      )}
+      <text
+        x={tx}
+        y={y}
+        textAnchor={anchor === "middle" ? "middle" : undefined}
+        dominantBaseline={anchor === "middle" ? "middle" : undefined}
+        fontSize={NAME_PX}
+        fontWeight={600}
+        fill={ink}
+        className={halo ? "stroke-background" : undefined}
+        strokeWidth={halo ? 3 : undefined}
+        strokeLinejoin={halo ? "round" : undefined}
+        paintOrder={halo ? "stroke" : undefined}
+      >
+        {name}
+      </text>
+    </g>
+  )
+}
+
 /** An area: a tinted rectangle (turned about its centre) or polygon with
- * its name in its top left (a polygon: at its middle). */
+ * its name in its top left (a polygon: at its middle), its type's pattern
+ * over the tint and its type's icon before the name. */
 export function AreaShapeView({
   area,
   selected,
@@ -42,6 +157,7 @@ export function AreaShapeView({
   const name = area.show_name ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
   const strokeOpacity = area.border === "none" ? 0 : selected ? 0.95 : 0.6
+  const clipId = `area-pattern-${area.id}`
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
@@ -58,6 +174,11 @@ export function AreaShapeView({
     const pts = area.points
     if (pts.length < 3) return null
     const [cx, cy] = polygonCentroid(pts)
+    const outline = pts.map(([x, y]) => `${px(x)},${px(y)}`).join(" ")
+    const xs = pts.map((p) => px(p[0]))
+    const ys = pts.map((p) => px(p[1]))
+    const bx = Math.min(...xs)
+    const by = Math.min(...ys)
     return (
       <g
         data-area={area.id}
@@ -65,10 +186,18 @@ export function AreaShapeView({
         onPointerDown={onPointerDown}
         aria-label={name || "Area"}
       >
-        <polygon
-          points={pts.map(([x, y]) => `${px(x)},${px(y)}`).join(" ")}
-          strokeLinejoin="round"
-          {...common}
+        <polygon points={outline} strokeLinejoin="round" {...common} />
+        <PatternStrokes
+          id={clipId}
+          area={area}
+          color={color}
+          clip={<polygon points={outline} />}
+          box={{
+            x: bx,
+            y: by,
+            w: Math.max(...xs) - bx,
+            h: Math.max(...ys) - by,
+          }}
         />
         {onEdgeDoubleClick &&
           pts.map((p, i) => {
@@ -87,18 +216,14 @@ export function AreaShapeView({
             )
           })}
         {name && (
-          <text
+          <AreaName
+            area={area}
+            name={name}
             x={px(cx)}
             y={px(cy)}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize={12}
-            fontWeight={600}
-            fill={ink}
-            pointerEvents="none"
-          >
-            {name}
-          </text>
+            anchor="middle"
+            ink={ink}
+          />
         )}
       </g>
     )
@@ -126,17 +251,24 @@ export function AreaShapeView({
         rx={3}
         {...common}
       />
+      <PatternStrokes
+        id={clipId}
+        area={area}
+        color={color}
+        clip={
+          <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
+        }
+        box={{ x: px(area.x), y: px(area.y), w, h }}
+      />
       {name && w > 30 && h > 18 && (
-        <text
+        <AreaName
+          area={area}
+          name={name}
           x={px(area.x) + 6}
           y={px(area.y) + 15}
-          fontSize={12}
-          fontWeight={600}
-          fill={ink}
-          pointerEvents="none"
-        >
-          {name}
-        </text>
+          anchor="start"
+          ink={ink}
+        />
       )}
     </g>
   )

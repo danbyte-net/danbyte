@@ -122,6 +122,7 @@ const ROWS: Row[] = [
   ["locations", "Locations", "Organization", "/api/locations/"],
   ["location-types", "Location types", "Organization", "/api/location-types/", { ioType: "locationtype" }],
   ["location-type-locations", "Location type · Locations", "Organization", "/api/locations/", sub],
+  ["area-types", "Area types", "Organization", "/api/area-types/", { ioType: "areatype" }],
   ["rooms", "Rooms", "Organization", "/api/rooms/", { ioType: "room" }],
   ["embedded-rooms", "Rooms (embedded)", "Organization", "/api/rooms/", sub],
   ["tenants", "Tenants", "Organization", "/api/tenants/"],

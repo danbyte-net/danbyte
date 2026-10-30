@@ -44,7 +44,7 @@ from .models import (
     FiberSettings,
     FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile,
     FloorPlanTray,
-    FloorPlanArea, FloorPlanLabel, FloorPlanWall, FloorTileType, FrontPort,
+    AreaType, FloorPlanArea, FloorPlanLabel, FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -9637,6 +9637,41 @@ def location_type_ref(t) -> dict | None:
     return {"id": str(t.id), "name": t.name, "color": t.color, "icon": t.icon}
 
 
+class AreaTypeMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = AreaType
+        fields = ["id", "name", "slug", "color", "pattern", "icon"]
+
+
+class AreaTypeSerializer(NumIdModelSerializer):
+    """An area type: the editable catalog that names, colours and patterns
+    plain floor-plan areas (parking, fence, road…). Nothing is seeded."""
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    area_count = serializers.SerializerMethodField()
+
+    def get_area_count(self, obj) -> int:
+        v = getattr(obj, "area_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "areas")
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    class Meta:
+        model = AreaType
+        fields = ["id", "name", "slug", "color", "pattern", "icon", "description",
+                  "area_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "area_count", "created_at", "updated_at"]
+
+
+def area_type_ref(t) -> dict | None:
+    """How an area names its type: id, name, colour, pattern and icon."""
+    if t is None:
+        return None
+    return {"id": str(t.id), "name": t.name, "color": t.color, "pattern": t.pattern,
+            "icon": t.icon}
+
+
 class LocationMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Location
@@ -11655,6 +11690,15 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         source="location", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    area_type = serializers.SerializerMethodField()
+    area_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="area_type", queryset=AreaType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_area_type(self, obj):
+        return area_type_ref(obj.area_type) if obj.area_type_id else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_room(self, obj):
@@ -11697,6 +11741,16 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(
                 {"room_id": "Link a room or a location, not both."}
             )
+        # A type is for plain areas: a linked one wears its room's or
+        # location's colour. Linking an area drops the type it had.
+        if room is not None or location is not None:
+            if attrs.get("area_type") is not None:
+                raise serializers.ValidationError({"area_type_id": (
+                    "A type is for a plain area; this one stands for a "
+                    + ("room." if room is not None else "location.")
+                )})
+            if inst is not None and inst.area_type_id:
+                attrs["area_type"] = None
         if "room" in attrs and room is not None and plan is not None and (
             not in_scope(room.location, plan) or not self._visible("room", room)
         ):
@@ -11760,9 +11814,11 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         model = FloorPlanArea
         fields = ["id", "floor_plan_id", "shape", "x", "y", "width", "height",
                   "rotation", "points", "room", "room_id", "location", "location_id",
+                  "area_type", "area_type_id",
                   "label", "color", "fill_opacity", "border", "show_name", "z",
                   "locked", "created_at", "updated_at"]
-        read_only_fields = ["id", "room", "location", "created_at", "updated_at"]
+        read_only_fields = ["id", "room", "location", "area_type", "created_at",
+                            "updated_at"]
 
 
 class FloorPlanLabelSerializer(NumIdModelSerializer):

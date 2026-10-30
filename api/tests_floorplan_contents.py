@@ -14,6 +14,7 @@ from .models import (
     Cable,
     Device,
     DeviceRole,
+    AreaType,
     FloorPlan,
     FloorPlanArea,
     FloorPlanLabel,
@@ -123,6 +124,14 @@ class _Base(APITestCase):
             FloorPlanArea.objects.create(
                 floor_plan=self.plan, x=33, y=y, width=2, height=2, location=self.loc
             )
+            # A plain area of its own type (parking, fence...): joined too.
+            FloorPlanArea.objects.create(
+                floor_plan=self.plan, x=36, y=y, width=2, height=2,
+                area_type=AreaType.objects.create(
+                    tenant=self.tenant, name=f"Type {i}", slug=f"type-{i}",
+                    pattern="hatched",
+                ),
+            )
             FloorPlanLabel.objects.create(floor_plan=self.plan, text=f"L{i}", x=40, y=y)
         FloorPlanTile.objects.bulk_create(tiles)
 
@@ -158,7 +167,12 @@ class ContentsTests(_Base):
         linked = {t["linked"]["kind"] for t in body["tiles"]}
         self.assertEqual(linked, {"rack", "cabinet", "device", "powerpanel"})
         self.assertEqual(
-            sorted(bool(a["room"]) for a in body["areas"]), [False, False, True, True]
+            sorted(bool(a["room"]) for a in body["areas"]), [False] * 4 + [True] * 2
+        )
+        # A plain area's type comes joined, as the list endpoint has it.
+        self.assertEqual(
+            [a["area_type"]["pattern"] for a in body["areas"] if a["area_type"]],
+            ["hatched", "hatched"],
         )
         newest = max(row["updated_at"] for key in KINDS for row in body[key])
         # Same instant; the serializer and isoformat may spell it apart.
@@ -189,7 +203,7 @@ class ContentsTests(_Base):
         large, body = self._queries()
         self.assertEqual(len(body["tiles"]), 48)
         self.assertEqual(len(body["trays"]), 12)
-        self.assertEqual(len(body["areas"]), 24)
+        self.assertEqual(len(body["areas"]), 36)
         self.assertEqual(len(body["labels"]), 12)
         self.assertEqual(small, large)
         self.assertEqual(large, CONTENTS_QUERIES)
@@ -238,7 +252,7 @@ class ContentsPermissionTests(_Base):
         self.grant(["floorplan", "floorplanarea", "floorplanlabel"])
         self._login(self.user)
         body = self.client.get(self._url()).json()
-        self.assertEqual(len(body["areas"]), 2)
+        self.assertEqual(len(body["areas"]), 3)
         self.assertEqual(len(body["labels"]), 1)
         self.assertEqual(body["tiles"], [])
 

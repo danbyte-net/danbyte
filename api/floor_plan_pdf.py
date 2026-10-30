@@ -3,7 +3,7 @@
 The page draws the plan as an SVG (``frontend/src/components/floorplan/
 plan-svg.ts``: tiles, zones, raised floors, walls, trays and the cables in
 their lanes and bundles, light-themed) and posts it with the paper, the
-Color by legend and the cables' legend. The plan's CAD drawing
+Color by legend, the cables' legend and the area types'. The plan's CAD drawing
 is not posted: it is read here from the plan's own rendered file, in vector,
 with the layers and text the plan hides left out, and laid under the posted
 drawing at its placement - the transform the canvas uses
@@ -230,13 +230,28 @@ _LINES = {
 }
 
 
+#: An area legend row's fill pattern, as stripes over its tint.
+_PATTERNS = {
+    "hatched": "repeating-linear-gradient(45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm)",
+    "crosshatched": (
+        "repeating-linear-gradient(45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm),"
+        "repeating-linear-gradient(-45deg,{c} 0 0.25mm,transparent 0.25mm 0.9mm)"
+    ),
+    "dotted": "radial-gradient({c} 0.2mm,transparent 0.25mm) 0 0/0.8mm 0.8mm",
+}
+
+
 def _legend_html(legend: dict | None) -> str:
     if not legend or not legend.get("items"):
         return ""
-    def swatch(c: str) -> str:
-        # Validated #rrggbb (the serializer); the fill at a tile's strength.
+    def swatch(c: str, pattern: str = "") -> str:
+        # Validated #rrggbb (the serializer); the fill at a tile's strength,
+        # an area type's pattern (a validated choice) drawn over it.
         r, g, b = (int(c[i : i + 2], 16) for i in (1, 3, 5))
-        return f"background:rgba({r},{g},{b},0.35);border-color:{c}"
+        tint = f"rgba({r},{g},{b},0.35)"
+        if pattern in _PATTERNS:
+            return f"background:{_PATTERNS[pattern].format(c=c)},{tint};border-color:{c}"
+        return f"background:{tint};border-color:{c}"
 
     def line(c: str, kind: str) -> str:
         # A cable's line style, keyed as a line (validated choices only).
@@ -247,7 +262,7 @@ def _legend_html(legend: dict | None) -> str:
     rows = "".join(
         "<span class='li'>"
         + (line(row["color"], row["line"]) if row.get("line")
-           else f"<i style='{swatch(row['color'])}'></i>")
+           else f"<i style='{swatch(row['color'], row.get('pattern') or '')}'></i>")
         + f"{escape(row['label'])}</span>"
         for row in legend["items"]
     )
@@ -259,7 +274,7 @@ def _legend_html(legend: dict | None) -> str:
 
 def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict | None,
                legend: dict | None, generated: dt.datetime, title_block: bool,
-               cable_legend: dict | None = None) -> str:
+               cable_legend: dict | None = None, area_legend: dict | None = None) -> str:
     from danbyte import __version__
 
     pw, ph = sheet["page"]
@@ -273,6 +288,7 @@ def sheet_html(sheet: dict, *, title: str, subtitle: str, credit: str, bar: dict
             (_bar_html(bar) if bar else "")
             + _legend_html(legend)
             + _legend_html(cable_legend)
+            + _legend_html(area_legend)
         )
         if credit:
             left += f"<div class='credit'>{escape(credit)}</div>"
@@ -476,6 +492,10 @@ class _LegendItemSerializer(serializers.Serializer):
     color = serializers.RegexField(_HEX, max_length=7)
     #: A cable legend row keys a line style rather than a fill.
     line = serializers.ChoiceField(choices=sorted(_LINES), required=False)
+    #: An area legend row's fill pattern (an area type's).
+    pattern = serializers.ChoiceField(
+        choices=["solid", *sorted(_PATTERNS)], required=False
+    )
 
     def validate_color(self, v):
         r, g, b = (round(c * 255) for c in _rgb(v))
@@ -504,6 +524,10 @@ class FloorPlanPdfRequestSerializer(serializers.Serializer):
     cable_legend = _LegendSerializer(
         required=False, allow_null=True,
         help_text="The cables' colours and line styles, as the plan's legend reads.",
+    )
+    area_legend = _LegendSerializer(
+        required=False, allow_null=True,
+        help_text="The area types on the plan: colour and fill pattern.",
     )
 
 
@@ -590,6 +614,7 @@ def export_pdf(request, plan) -> HttpResponse | Response:
             bar=bar,
             legend=data.get("legend"),
             cable_legend=data.get("cable_legend"),
+            area_legend=data.get("area_legend"),
             generated=generated,
             title_block=title_block,
         )
@@ -632,7 +657,8 @@ pdf_schema = extend_schema(
         "Tabloid (A3 landscape by default), fitted to the page, with the plan's "
         "CAD drawing laid under it in vector (unless `drawing` is false) and a "
         "footer written on the server: a scale bar from the plan's cell size, "
-        "the posted Color by legend, the drawing's source file, and a title "
+        "the posted Color by, cables' and area types' legends, the drawing's "
+        "source file, and a title "
         "block with the plan, its location, site and tenant, the date, the "
         "Danbyte version and the page. Needs view on floor plans. The SVG is "
         "sanitized as the topology PDF's is, under the same limits; the CAD "

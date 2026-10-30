@@ -23,6 +23,7 @@ import {
 } from "@/lib/floor-plan-scope"
 import { QuickAddDialog } from "@/components/forms/quick-add"
 import type {
+  AreaTypeRef,
   FloorPlan,
   FloorPlanAreaBorder,
   FloorPlanLabelColor,
@@ -47,6 +48,7 @@ import { cn } from "@/lib/utils"
 import {
   LABEL_COLORS,
   LABEL_SIZES,
+  areaName,
   labelPresetMm,
   labelPresetOf,
 } from "./shapes"
@@ -216,6 +218,74 @@ function LinkColourField({
   )
 }
 
+/** A plain area's type (parking, fence…): the tenant's area types as their
+ * colour badges, with "+" to make one there and then. */
+function AreaTypeField({
+  area,
+  onChange,
+}: {
+  area: AreaShape
+  onChange: Patch
+}) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const types = useQuery({
+    queryKey: ["area-types-picker"],
+    queryFn: () => apiAll<AreaTypeRef>("/api/area-types/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  const rows = types.data?.results ?? []
+  return (
+    <FormCombobox
+      label="Type"
+      hint="optional"
+      value={area.area_type?.id ?? null}
+      onChange={(id) =>
+        onChange({ area_type: rows.find((t) => t.id === id) ?? null })
+      }
+      options={rows.map((t) => ({
+        value: t.id,
+        label: t.name,
+        color: t.color || null,
+        badge: true,
+      }))}
+      noneLabel="No type"
+      placeholder="Select a type…"
+      searchPlaceholder="Search types…"
+      emptyText="No area types."
+      quickAdd={
+        canDo("areatype", "add") ? (
+          <QuickAddDialog
+            title="New area type"
+            endpoint="/api/area-types/"
+            fields={[
+              { name: "name", label: "Name", required: true },
+              { name: "description", label: "Description", type: "textarea" },
+            ]}
+            onCreated={(t) => {
+              void qc.invalidateQueries({ queryKey: ["area-types-picker"] })
+              void qc.invalidateQueries({ queryKey: ["area-types"] })
+              const made = t as Partial<AreaTypeRef> & {
+                id: string
+                name: string
+              }
+              onChange({
+                area_type: {
+                  id: made.id,
+                  name: made.name,
+                  color: made.color ?? "",
+                  pattern: made.pattern ?? "solid",
+                  icon: made.icon ?? "",
+                },
+              })
+            }}
+          />
+        ) : undefined
+      }
+    />
+  )
+}
+
 /** An area's inspector: what it stands for (a room, a location or
  * nothing), its name and look. */
 export function AreaInspector({
@@ -256,7 +326,8 @@ export function AreaInspector({
   const setLink = (kind: LinkKind) => {
     setTab(kind)
     if (kind === link) return
-    onChange({ room: null, location: null })
+    // A type is for plain areas: linking one drops it.
+    onChange({ room: null, location: null, area_type: null })
     if (kind === "location") {
       const own = locations.find((l) => l.id === plan.location?.id)
       if (own)
@@ -349,17 +420,26 @@ export function AreaInspector({
           searchPlaceholder="Search locations…"
         />
       )}
+      {link === "none" && <AreaTypeField area={area} onChange={onChange} />}
       <Field label="Name" hint="optional">
         <Input
           value={area.label}
           maxLength={64}
-          placeholder={area.room?.name || area.location?.name || ""}
+          placeholder={areaName({ ...area, label: "" })}
           onChange={(e) => onChange({ label: e.target.value })}
         />
       </Field>
-      {/* A linked area wears its room's or location's colour. */}
+      {/* A linked area wears its room's or location's colour; a plain one
+          its own, else its type's. */}
       {link === "none" && (
-        <Field label="Colour">
+        <Field
+          label="Colour"
+          info={
+            area.area_type
+              ? `Blank: the ${area.area_type.name} type's colour.`
+              : undefined
+          }
+        >
           <ColorPicker
             value={area.color}
             onChange={(color) => onChange({ color })}

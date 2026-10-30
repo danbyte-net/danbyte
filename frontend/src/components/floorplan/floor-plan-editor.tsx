@@ -33,6 +33,7 @@ import {
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
+import { AreaLegend, areaLegendEntries, areaTypesInUse } from "./area-legend"
 import { DocumentRoutesPanel } from "./document-routes-panel"
 import { CELL } from "./floor-canvas"
 import type { FloorCanvasApi } from "./floor-canvas"
@@ -245,6 +246,8 @@ export function FloorPlanEditor({
     () => visibleShapes(ed.shapes, hidden),
     [ed.shapes, hidden]
   )
+  // The area types the shown plain areas wear: the plan's Areas legend.
+  const areaTypes = useMemo(() => areaTypesInUse(shownShapes), [shownShapes])
 
   /** Pick a tool: its canvas mode, nothing selected or half drawn. */
   const selectTool = useCallback(
@@ -541,10 +544,11 @@ export function FloorPlanEditor({
       {rackLegend}
     </div>
   )
-  const planLegend = (rackLegend || cableKey) && (
+  const planLegend = (rackLegend || cableKey || areaTypes.length > 0) && (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
       {rackLegend}
       {cableKey && <CableLegend legend={cableKey} />}
+      <AreaLegend types={areaTypes} />
     </div>
   )
 
@@ -640,6 +644,7 @@ export function FloorPlanEditor({
                   )
                 : null,
               cable_legend: cableKey ? cableLegendEntries(cableKey) : null,
+              area_legend: areaLegendEntries(shownShapes),
             })}
           />
         }

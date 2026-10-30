@@ -47,6 +47,9 @@ Two ticks on a tile type change how its tiles behave:
   (center or any corner), and a **PTZ** toggle swaps the cone for a full
   **360° coverage ring** (radius = reach) for pan-tilt-zoom cameras.
 
+Plain areas drawn on a plan - parking, fences, roads - have a catalog of
+their own, **Organization → Area types**: see [Area types](#area-types).
+
 A tile's *behaviour* never depends on what its type is called - it comes from
 what the tile **links to**. A tile linked to a rack acts like a rack tile
 whether you named its type "Rack", "Cabinet", or "Skab".
@@ -788,7 +791,12 @@ to **Select** and the inspector shows the new area:
   next to the Room picker makes a new room in this floor's location and
   links the area to it (needs permission to add rooms). A linked
   area wears the room's or location's colour - from its data, never from
-  its name - and shows its name; a plain area takes a colour of its own.
+  its name - and shows its name; a plain area takes a colour of its own,
+  or its [area type's](#area-types).
+- **Type** (Just an area only) - what the area is: *Parking*, *Fence*,
+  *Road*… from your [area types](#area-types), offered as their colour
+  badges, with **+** to make one there and then (needs permission to add
+  area types). Linking the area to a room or a location drops its type.
   Linking never changes anything about the room or the devices standing in
   it: a device's room is set on the device.
 - **Room colour** (or **Location colour**) is the linked room's or
@@ -836,6 +844,46 @@ and in view.
 **Snapshot.** **Snapshot this room…** on an area's right-click menu or its
 floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 
+### Area types
+
+An **area type** says what a plain area is - *Parking*, *Fence*, *Road*,
+*Gate*, *Lawn*, whatever a site plan holds besides rooms. Types are your own
+catalog under **Organization → Area types**: each has a name, a **colour**,
+a **fill pattern** (*Solid*, *Hatched*, *Cross-hatched* or *Dotted*), a
+**Lucide icon** and a description, and a name is unique in the tenant.
+Danbyte ships none - make the ones you use.
+
+- **Plain areas only.** A type is for an area that stands for neither a room
+  nor a location ("Just an area"). A linked area keeps one meaning - the
+  room's or location's - and its colour; it never carries a type, and the
+  API refuses one on it.
+- **How a typed area is drawn.** Its colour is its own when you set one,
+  else its type's. The fill pattern runs over the area's fill in the same
+  colour, clipped to its outline, in both themes; the type's icon sits
+  before the name, and an unnamed area is called by its type. Over a
+  pattern the name has a halo of the background so it reads; from 50 %
+  fill up it turns black or white as on any area.
+- **Legend.** The plan's legend, in its corner and inside the export area,
+  gains an **Areas** section: each type a shown area wears, as a swatch of
+  its colour and pattern, its icon and its name.
+- **Paper and 3D.** The PDF draws the patterns as lines clipped to each area
+  and prints the Areas legend in its footer; the PNG is the screen. The 3D
+  room tints the floor under a typed area in its colour, without the
+  pattern.
+- **The catalog.** The list has a pattern column and filter, and how many
+  areas use each type. Select several types to edit their colour, pattern,
+  icon and description at once, or to delete them. **Deleting a type**
+  leaves its areas in place, without a type. A type's page shows its look,
+  its Journal and its Change log. Import and export work like any other list.
+- **Permissions** - `areatype`, a tenant-wide catalog like location types.
+  [Site roles](permissions.md#site-roles-local-it-in-one-click) read the
+  types; only a tenant-wide grant changes them.
+
+API: `/api/area-types/` (`?picker=1` for the short form, `?search=`) with
+`name`, `slug`, `color`, `pattern`, `icon`, `description` and the read-only
+`area_count` (the areas you may view); an area carries `area_type` and
+`area_type_id`.
+
 ### Labels
 
 The **Label** tool (++t++) places a label where you click, its text selected
@@ -873,14 +921,15 @@ chip like a hidden tile.
 ### On paper and in 3D
 
 The PNG and PDF exports draw rooms, areas and labels as the plan shows them
-(labels at their real size, in their paper ink). The 3D room tints the floor
-under each room or area in its colour; labels are 2D only.
+(labels at their real size, in their paper ink; an area type's pattern and
+icon included). The 3D room tints the floor under each room or area in its
+colour; labels are 2D only.
 
 ### API
 
 | Call | |
 |---|---|
-| `GET/POST/PATCH/DELETE /api/floor-plan-areas/` | `?floor_plan=<id>`. Write `floor_plan_id`, `shape` (`rect` or `polygon`), `x`, `y`, `width`, `height`, `rotation` (a rectangle: its upright box in cells, inside the grid, turned about its centre), `points` (a polygon: 3-200 `[x, y]` pairs inside the grid that do not cross; its box is worked out), `room_id` or `location_id` (at most one), `label`, `color`, `fill_opacity` (0-100), `border` (`solid`, `dashed`, `none`), `show_name`, `z`, `locked`. Reads `room` (`id`, `name`, `code`, `color`) and `location` (`id`, `name`, `color`). |
+| `GET/POST/PATCH/DELETE /api/floor-plan-areas/` | `?floor_plan=<id>`. Write `floor_plan_id`, `shape` (`rect` or `polygon`), `x`, `y`, `width`, `height`, `rotation` (a rectangle: its upright box in cells, inside the grid, turned about its centre), `points` (a polygon: 3-200 `[x, y]` pairs inside the grid that do not cross; its box is worked out), `room_id` or `location_id` (at most one), `area_type_id` (a plain area only; linking a room or location drops it), `label`, `color`, `fill_opacity` (0-100), `border` (`solid`, `dashed`, `none`), `show_name`, `z`, `locked`. Reads `room` (`id`, `name`, `code`, `color`), `location` (`id`, `name`, `color`) and `area_type` (`id`, `name`, `color`, `pattern`, `icon`). |
 | `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `z`, `locked`. |
 | `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |
 
@@ -1926,7 +1975,9 @@ on the server:
   so;
 - a footer with a **scale bar** worked out from the plan's cell size (with
   the ratio, `1:200`), the **Color by legend**, the **cables' legend**
-  (their colours, then the line styles), the drawing's source file,
+  (their colours, then the line styles), the **Areas** legend (the
+  [area types](#area-types) in use, with their patterns), the drawing's
+  source file,
   and a **title block**: the plan, its location, site and tenant, the date,
   the Danbyte version and the page.
 
@@ -1935,9 +1986,10 @@ opens it in the browser's viewer to print. The PDF obeys the same limits as
 the [topology PDF](topology.md): one at a time per user, a few at a time on
 the server, and 30 seconds of rendering. Anyone who can view the plan can
 export it: `POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
-paper, the legend and `cable_legend` (rows of `label` and `color`, a line
-row adding `line`: `solid`, `dashed`, `thin` or `bundle`; `?print=1` for a
-five-minute print link).
+paper, the legend, `cable_legend` and `area_legend` (rows of `label` and
+`color`, a line row adding `line`: `solid`, `dashed`, `thin` or `bundle`, an
+area row `pattern`: `solid`, `hatched`, `crosshatched` or `dotted`;
+`?print=1` for a five-minute print link).
 
 ## Tenancy, permissions, audit
 
@@ -1965,7 +2017,10 @@ areas** (`floorplanarea`) and **Floor-plan labels** (`floorplanlabel`):
 scoped through their plan's tenant and its site, audited one row
 at a time, and in a site role's types like the plan's walls. Reading them in
 `contents/` follows their own view grant; the editor's **Save** (`bulk/`)
-needs `floorplan · change`.
+needs `floorplan · change`. [Area types](#area-types) (`areatype`) are a
+tenant-wide catalog like location types: site roles read them, only a
+tenant-wide grant adds, changes or deletes them, and an area names one only
+of its own tenant.
 
 A [snapshot](#snapshots) follows the floor plan's rules: making one needs
 view on the plan and `floorplan · add`, and it stays at the plan's site and

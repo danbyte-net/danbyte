@@ -1,3 +1,6 @@
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+
 import type {
   FloorPlan,
   FloorPlanCablePath,
@@ -6,6 +9,7 @@ import type {
   FloorPlanTray,
   FloorPlanWall,
 } from "@/lib/api"
+import { getLucideIcon } from "@/components/dynamic-icon"
 import { el, text } from "@/lib/diagram/markup"
 import { PAPERS, SHEET } from "@/lib/diagram/sheet"
 import type { PaperChoice } from "@/lib/diagram/sheet"
@@ -16,10 +20,15 @@ import {
 } from "@/components/floorplan3d/world"
 
 import {
+  PATTERN_STROKE,
   labelColor,
   areaColor,
+  areaIcon,
   areaLabelColor,
   areaName,
+  areaNameHalo,
+  areaPattern,
+  patternRuns,
   boxCenter,
   byZ,
   labelBox,
@@ -279,6 +288,98 @@ function cablesMarkup(c: PlanSvgCables): string {
   return `<g data-layer="cables">${parts.join("")}</g>`
 }
 
+/** An area type's icon as SVG markup, `size` px square at (x, y), stroked
+ * in `color`; "" for no icon or a name Lucide does not know. */
+function iconMarkup(
+  name: string,
+  x: number,
+  y: number,
+  size: number,
+  color: string
+): string {
+  const Icon = name ? getLucideIcon(name) : null
+  if (!Icon) return ""
+  // Lucide's own classes mean nothing on paper (no theme classes here).
+  return renderToStaticMarkup(
+    createElement(Icon, {
+      x,
+      y,
+      width: size,
+      height: size,
+      color,
+      strokeWidth: 2.25,
+    })
+  ).replace(/\sclass="[^"]*"/g, "")
+}
+
+/** An area type's pattern as strokes clipped to the area (`clip`: its
+ * outline's markup) - plain lines and a clip path, which the PDF's
+ * sanitiser keeps (it drops `<pattern>`). */
+function patternMarkup(
+  a: AreaShape,
+  color: string,
+  clip: string,
+  box: { x: number; y: number; w: number; h: number }
+): string {
+  const runs = patternRuns(areaPattern(a), box.x, box.y, box.w, box.h)
+  if (!runs.length) return ""
+  const id = `ap-${a.id}`.replace(/[^A-Za-z0-9_.-]/g, "_")
+  const body = runs
+    .map(
+      (run) =>
+        `<g${run.dash ? ` stroke-dasharray="${run.dash}"` : ""}>` +
+        run.lines
+          .map(([x1, y1, x2, y2]) => el("line", { x1, y1, x2, y2 }))
+          .join("") +
+        "</g>"
+    )
+    .join("")
+  return (
+    `<clipPath id="${id}">${clip}</clipPath>` +
+    `<g clip-path="url(#${id})" stroke="${color}" ` +
+    `stroke-opacity="${PATTERN_STROKE.opacity}" ` +
+    `stroke-width="${PATTERN_STROKE.width}">${body}</g>`
+  )
+}
+
+/** An area's name with its type's icon before it, as the canvas draws it:
+ * from its top left (`start`, y the baseline) or centred on x. A patterned
+ * area's name sits on a white halo (a stroked copy under it). */
+function areaNameMarkup(
+  a: AreaShape,
+  name: string,
+  x: number,
+  y: number,
+  anchor: "start" | "middle",
+  ink: string
+): string {
+  const icon = getLucideIcon(areaIcon(a)) ? areaIcon(a) : ""
+  const shift = icon ? 16 : 0
+  const textW = name.length * 12 * 0.6
+  const tx = anchor === "middle" ? x + shift / 2 : x + shift
+  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
+  const font = {
+    x: tx,
+    y,
+    "text-anchor": anchor === "middle" ? "middle" : undefined,
+    "font-size": 12,
+    "font-weight": 600,
+  }
+  return (
+    (icon ? iconMarkup(icon, ix, y - 10.5, 12, ink) : "") +
+    (areaNameHalo(a)
+      ? text(name, {
+          ...font,
+          fill: "#ffffff",
+          stroke: "#ffffff",
+          "stroke-width": 3,
+          "stroke-linejoin": "round",
+        })
+      : "") +
+    text(name, { ...font, fill: ink })
+  )
+}
+
 /** An area as the canvas draws it (shape-layer.tsx). */
 function areaMarkup(a: AreaShape): string {
   const color = areaColor(a)
@@ -295,44 +396,48 @@ function areaMarkup(a: AreaShape): string {
   if (a.shape === "polygon") {
     if (a.points.length < 3) return ""
     const [cx, cy] = polygonCentroid(a.points)
+    const points = a.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
+    const xs = a.points.map((p) => p[0] * CELL)
+    const ys = a.points.map((p) => p[1] * CELL)
+    const bx = Math.min(...xs)
+    const by = Math.min(...ys)
     return (
-      el("polygon", {
-        points: a.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" "),
-        "stroke-linejoin": "round",
-        ...style,
+      el("polygon", { points, "stroke-linejoin": "round", ...style }) +
+      patternMarkup(a, color, el("polygon", { points }), {
+        x: bx,
+        y: by,
+        w: Math.max(...xs) - bx,
+        h: Math.max(...ys) - by,
       }) +
       (name
-        ? text(name, {
-            x: cx * CELL,
-            y: cy * CELL + 4,
-            "text-anchor": "middle",
-            "font-size": 12,
-            "font-weight": 600,
-            fill: ink,
-          })
+        ? areaNameMarkup(a, name, cx * CELL, cy * CELL + 4, "middle", ink)
         : "")
     )
   }
   const [cx, cy] = boxCenter(a)
+  const box = {
+    x: a.x * CELL,
+    y: a.y * CELL,
+    w: a.width * CELL,
+    h: a.height * CELL,
+  }
   return (
     `<g${a.rotation ? ` transform="rotate(${a.rotation},${cx * CELL},${cy * CELL})"` : ""}>` +
     el("rect", {
-      x: a.x * CELL,
-      y: a.y * CELL,
-      width: a.width * CELL,
-      height: a.height * CELL,
+      x: box.x,
+      y: box.y,
+      width: box.w,
+      height: box.h,
       rx: 3,
       ...style,
     }) +
-    (name
-      ? text(name, {
-          x: a.x * CELL + 6,
-          y: a.y * CELL + 15,
-          "font-size": 12,
-          "font-weight": 600,
-          fill: ink,
-        })
-      : "") +
+    patternMarkup(
+      a,
+      color,
+      el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 3 }),
+      box
+    ) +
+    (name ? areaNameMarkup(a, name, box.x + 6, box.y + 15, "start", ink) : "") +
     "</g>"
   )
 }

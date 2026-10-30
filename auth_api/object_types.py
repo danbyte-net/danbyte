@@ -97,6 +97,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("core.SiteSettings", "Site settings", "Organization"),
     ("api.Location", "Locations", "Organization"),
     ("api.LocationType", "Location types", "Organization"),
+    ("api.AreaType", "Area types", "Organization"),
     ("api.Room", "Rooms", "Organization"),
     ("api.Contact", "Contacts", "Organization"),
     ("api.ContactGroup", "Contact groups", "Organization"),

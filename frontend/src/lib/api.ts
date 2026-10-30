@@ -12506,6 +12506,46 @@ export interface FloorPlanWall {
 
 export type FloorPlanAreaBorder = "solid" | "dashed" | "none"
 
+/** How an area type fills its areas. */
+export type AreaPattern = "solid" | "hatched" | "crosshatched" | "dotted"
+
+/** An area type - the editable catalog of what a plain floor-plan area is
+ * (Parking, Fence, Road, Gate…), with its colour, fill pattern and icon.
+ * Nothing is seeded. */
+export interface AreaType {
+  id: string
+  numid: number | null
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  pattern: AreaPattern
+  /** Lucide icon name, or "". */
+  icon: string
+  description: string
+  area_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** How an area names its type (and `?picker=1` on /api/area-types/). */
+export interface AreaTypeRef {
+  id: string
+  name: string
+  color: string
+  pattern: AreaPattern
+  icon: string
+}
+
+export interface AreaTypeWritePayload {
+  name: string
+  slug?: string
+  color?: string
+  pattern?: AreaPattern
+  icon?: string
+  description?: string
+}
+
 /** A room, a location or a plain area drawn on a floor: a rotated rectangle
  * or a polygon, under the tiles (docs: floor-plans "Rooms, areas and
  * labels"). Coordinates are cell units. */
@@ -12523,9 +12563,12 @@ export interface FloorPlanArea {
   points: [number, number][]
   room: { id: string; name: string; code: string; color: string } | null
   location: { id: string; name: string; color: string } | null
+  /** What a plain area is (never set while a room or location is linked):
+   * its colour, fill pattern and icon. Absent from older payloads. */
+  area_type?: AreaTypeRef | null
   /** Overrides the linked object's name. */
   label: string
-  /** Blank: the room's or location's colour. */
+  /** Blank: the room's or location's colour, else the type's. */
   color: string
   fill_opacity: number
   border: FloorPlanAreaBorder
@@ -12547,6 +12590,7 @@ export interface FloorPlanAreaWritePayload {
   points?: [number, number][]
   room_id?: string | null
   location_id?: string | null
+  area_type_id?: string | null
   label?: string
   color?: string
   fill_opacity?: number

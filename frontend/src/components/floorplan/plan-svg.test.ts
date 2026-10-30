@@ -11,6 +11,7 @@ import type {
 import { CableRouteCache } from "./cable-draw"
 import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
 import type { PlanSvgCables } from "./plan-svg"
+import type { AreaShape } from "./shapes"
 
 // The plan as the PDF export posts it: plan pixels, light colours written
 // out (no theme classes, no currentColor), and only what the PDF sanitiser
@@ -292,5 +293,106 @@ describe("planSvg cables", () => {
   it("leaves the cables out when the links are off", () => {
     const svg = planSvg({ plan, tiles, trays: [tray] })
     expect(svg).not.toContain('data-layer="cables"')
+  })
+})
+
+describe("planSvg area types", () => {
+  const typed = (patch: Partial<AreaShape> = {}): AreaShape => ({
+    kind: "area",
+    id: "a1",
+    shape: "rect",
+    x: 1,
+    y: 1,
+    width: 4,
+    height: 3,
+    rotation: 0,
+    points: [],
+    room: null,
+    location: null,
+    area_type: {
+      id: "t1",
+      name: "Parking",
+      color: "#2563eb",
+      pattern: "crosshatched",
+      icon: "car",
+    },
+    label: "",
+    color: "",
+    fill_opacity: 15,
+    border: "solid",
+    show_name: true,
+    z: 0,
+    locked: false,
+    created_at: "",
+    updated_at: "",
+    ...patch,
+  })
+
+  it("draws the type's colour, its pattern clipped to the area, and its icon", () => {
+    const svg = planSvg({ plan, tiles: [], shapes: [typed()] })
+    const doc = parse(svg)
+    const rect = doc.querySelector('rect[fill="#2563eb"]')!
+    expect(rect.getAttribute("fill-opacity")).toBe("0.15")
+    // Lines and a clip path - the sanitiser drops <pattern>.
+    expect(doc.querySelector("pattern")).toBeNull()
+    const clip = doc.querySelector("clipPath")!
+    expect(clip.getAttribute("id")).toBe("ap-a1")
+    const strokes = doc.querySelector('g[clip-path="url(#ap-a1)"]')!
+    expect(strokes.getAttribute("stroke")).toBe("#2563eb")
+    expect(strokes.querySelectorAll(":scope > g")).toHaveLength(2)
+    expect(strokes.querySelectorAll("line").length).toBeGreaterThan(4)
+    // The icon before the name, in the name's ink, without theme classes.
+    const icon = doc.querySelector("svg svg")!
+    expect(icon.getAttribute("stroke")).toBe("#2563eb")
+    expect(svg).not.toContain("class=")
+    // The name on a white halo over the pattern.
+    const names = [...doc.querySelectorAll("text")].filter(
+      (t) => t.textContent === "Parking"
+    )
+    expect(names.map((t) => t.getAttribute("stroke"))).toEqual([
+      "#ffffff",
+      null,
+    ])
+  })
+
+  it("lets the area's own colour win, and draws solid types plainly", () => {
+    const own = planSvg({
+      plan,
+      tiles: [],
+      shapes: [typed({ color: "#f97316" })],
+    })
+    expect(own).toContain('stroke="#f97316"')
+    const solid = planSvg({
+      plan,
+      tiles: [],
+      shapes: [
+        typed({
+          area_type: {
+            id: "t2",
+            name: "Lawn",
+            color: "#22c55e",
+            pattern: "solid",
+            icon: "",
+          },
+        }),
+      ],
+    })
+    expect(solid).not.toContain("clipPath")
+    expect(parse(solid).querySelectorAll("text")).toHaveLength(1)
+  })
+
+  it("ignores a type on a linked area", () => {
+    const svg = planSvg({
+      plan,
+      tiles: [],
+      shapes: [
+        typed({
+          room: { id: "r1", name: "Room 210", code: "", color: "#0ea5e9" },
+        }),
+      ],
+    })
+    expect(svg).not.toContain("clipPath")
+    expect(svg).toContain("Room 210")
+    expect(svg).not.toContain("#2563eb")
   })
 })
