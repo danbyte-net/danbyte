@@ -8720,6 +8720,38 @@ class Region(NumIdMixin, TimestampedModel):
             node = node.parent
 
 
+class LocationType(NumIdMixin, TimestampedModel):
+    """What kind of place a location is ("Building", "Floor", "Hall",
+    "Manhole"…). An editable tenant catalog - nothing is seeded; behaviour
+    never keys off a type, it only names and colours locations."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="location_types"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=64)
+    color = models.CharField(max_length=7, blank=True, default="")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. building, layers, door-closed).",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_locationtype_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Location(NumIdMixin, TimestampedModel):
     """A physical location *within a site* - a self-nesting tree (e.g.
     Building A → Floor 2 → Room 210). Racks/devices can hang off these."""
@@ -8751,6 +8783,14 @@ class Location(NumIdMixin, TimestampedModel):
         help_text="Lucide icon name (e.g. building, layers, door-closed).",
     )
     description = models.TextField(blank=True, default="")
+    location_type = models.ForeignKey(
+        LocationType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="locations",
+    )
+    code = models.CharField(
+        max_length=32, blank=True, default="", db_default="",
+        help_text="Short code the location is known by (e.g. A1, B2).",
+    )
 
     class Meta:
         ordering = [natural("site__name"), natural("name")]
@@ -8763,6 +8803,20 @@ class Location(NumIdMixin, TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def display_color(self) -> str:
+        """The colour a location is drawn in: its own, else its type's."""
+        if self.color:
+            return self.color
+        return self.location_type.color if self.location_type_id else ""
+
+    @property
+    def display_icon(self) -> str:
+        """The icon a location is drawn with: its own, else its type's."""
+        if self.icon:
+            return self.icon
+        return self.location_type.icon if self.location_type_id else ""
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -10063,6 +10117,63 @@ class CableRoute(TimestampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+
+class SiteMapOutline(TimestampedModel):
+    """A building (or any location) drawn on the geographic Site map: a
+    polygon of [lat, lng] points, usually linked to the Location it outlines.
+    Its colour is its own override, else the location type's, else the
+    location's; its label its own, else the location's code, else its name."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="site_map_outlines"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, related_name="map_outlines"
+    )
+    location = models.ForeignKey(
+        Location, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="map_outlines",
+    )
+    # [[lat, lng], …] decimal degrees, 6 dp; 3 to 500 points, a simple ring.
+    points = models.JSONField(default=list)
+    label = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Shown in place of the location's code or name.",
+    )
+    color = models.CharField(max_length=7, blank=True, default="")
+    z = models.SmallIntegerField(default=0, help_text="Draw order among outlines.")
+    locked = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["z", "created_at"]
+        indexes = [models.Index(fields=["tenant", "site"])]
+
+    def __str__(self) -> str:
+        return self.display_label or "Outline"
+
+    @property
+    def display_color(self) -> str:
+        """Its own colour, else its location type's, else its location's."""
+        if self.color:
+            return self.color
+        loc = self.location if self.location_id else None
+        if loc is None:
+            return ""
+        if loc.location_type_id and loc.location_type.color:
+            return loc.location_type.color
+        return loc.color or ""
+
+    @property
+    def display_label(self) -> str:
+        """Its own label, else its location's code, else its name."""
+        if self.label:
+            return self.label
+        loc = self.location if self.location_id else None
+        if loc is None:
+            return ""
+        return loc.code or loc.name
 
 
 class SearchEntry(models.Model):

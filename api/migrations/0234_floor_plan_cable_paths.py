@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0232_status_is_planned'),
+        ('api', '0233_location_types_outlines'),
         ('core', '0061_tenantsettings_coverage_warning_days'),
     ]
 

@@ -4,6 +4,7 @@ import type {
   FloorPlanLabelColor,
   FloorPlanTile,
 } from "@/lib/api"
+import { readableText } from "@/lib/color"
 
 // Areas (rooms, locations, plain areas) and labels drawn on a floor - their
 // geometry, in cell units: boxes that turn about their centre, polygons,
@@ -65,6 +66,17 @@ export function areaColor(
   a: Pick<FloorPlanArea, "room" | "location" | "color">
 ): string {
   return a.room?.color || a.location?.color || a.color || AREA_NEUTRAL
+}
+
+/** The ink for an area's name: its own colour over a light fill, or black
+ * or white - whichever reads - once the fill is strong enough to swallow it. */
+export function areaLabelColor(
+  a: Pick<FloorPlanArea, "room" | "location" | "color" | "fill_opacity">
+): string {
+  const color = areaColor(a)
+  return a.fill_opacity >= 50 && /^#[0-9a-f]{6}$/i.test(color)
+    ? readableText(color)
+    : color
 }
 
 /** What an area is called on the plan: its own label, else its room's or

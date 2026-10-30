@@ -192,6 +192,7 @@ from .presence_views import (
     presence_list,
 )
 from .search_views import search as search_view
+from .site_map_outlines import SiteMapOutlineViewSet
 from .site_map_views import site_map, site_map_cables, site_map_connections
 from .software_versions_api import software_versions_summary
 from .support_coverage_api import SupportContractViewSet, SupportCoverageViewSet
@@ -272,6 +273,7 @@ from .viewsets import (
     L2VPNTerminationViewSet,
     L2VPNViewSet,
     LabelTemplateViewSet,
+    LocationTypeViewSet,
     LocationViewSet,
     MACAddressViewSet,
     ManufacturerViewSet,
@@ -342,6 +344,7 @@ router.register(r"route-targets", RouteTargetViewSet, basename="route-target")
 router.register(r"sites",         SiteViewSet,        basename="site")
 router.register(r"regions",       RegionViewSet,      basename="region")
 router.register(r"locations",     LocationViewSet,    basename="location")
+router.register(r"location-types", LocationTypeViewSet, basename="location-type")
 router.register(r"rooms",         RoomViewSet,        basename="room")
 router.register(r"config-contexts", ConfigContextViewSet, basename="config-context")
 router.register(r"export-templates", ExportTemplateViewSet, basename="export-template")
@@ -381,6 +384,7 @@ router.register(r"ipsec-profiles", IPSecProfileViewSet, basename="ipsec-profile"
 router.register(r"tunnels",       TunnelViewSet,      basename="tunnel")
 router.register(r"tags",          TagViewSet,         basename="tag")
 router.register(r"site-markers",  SiteMarkerViewSet, basename="site-marker")
+router.register(r"site-map-outlines", SiteMapOutlineViewSet, basename="site-map-outline")
 router.register(r"statuses",      StatusViewSet,    basename="status")
 # Legacy alias - the page/API were renamed "statuses" (they cover every model,
 # not just IPs); old integrations keep working.

@@ -9,6 +9,7 @@ import {
   MapPin,
   Maximize,
   PanelRight,
+  Pentagon,
   Satellite,
   Search,
   Shrink,
@@ -25,6 +26,7 @@ import {
   type SiteMapDeviceInfo,
   type SiteMapFov,
   type SiteMapMarker,
+  type SiteMapOutline,
   type SiteMapCable,
   type SiteMapPayload,
   type SiteMapSite,
@@ -158,6 +160,13 @@ import {
   siteIcon,
 } from "@/components/site-map/map-icons"
 import { MapPaletteRail } from "@/components/site-map/palette-rail"
+import { useOutlineTool } from "@/components/site-map/use-outline-tool"
+import { OutlinePanel } from "@/components/site-map/outline-panel"
+import {
+  OutlineCreateDialog,
+  OutlineInspector,
+} from "@/components/site-map/outline-inspector"
+import { centroid } from "@/components/site-map/outline-geometry"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
 import { usePageTitle } from "@/lib/page-title"
@@ -251,6 +260,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       cables: true,
       routes: true,
       regions: true,
+      outlines: true,
     }
     try {
       const stored = JSON.parse(
@@ -435,6 +445,26 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   )
   const canEditAny =
     data.sites.some((s) => s.can_edit) || canDo("device", "change")
+
+  // Building outlines: the layer, the Outline tool and its reshape handles.
+  const outlineTool = useOutlineTool({
+    map: mapReady ? mapRef.current : null,
+    mapReady,
+    mode,
+    shown: layers.outlines,
+    showLabels,
+    hiddenSiteIds,
+    sites: data.sites,
+    selectedId: selected?.kind === "outline" ? selected.id : null,
+    onSelect: (id) => setSelected(id ? { kind: "outline", id } : null),
+    passive: !!placing,
+  })
+  const selOutline = selected?.kind === "outline" ? outlineTool.selected : null
+  const fitToOutline = (o: SiteMapOutline) => {
+    const map = mapRef.current
+    if (map && o.points.length >= 3)
+      map.fitBounds(L.latLngBounds(o.points).pad(0.4), { maxZoom: 19 })
+  }
 
   // Shared popover config - the SAME effective floorplan-popover settings the
   // floor-plan canvas uses, so which linked-device fields show on a device
@@ -1579,12 +1609,32 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               ]}
             />
           )}
+          {editing && outlineTool.canAdd && (
+            <BarToggle
+              pressed={outlineTool.drawing}
+              onClick={() => {
+                if (outlineTool.drawing) outlineTool.cancelDraw()
+                else {
+                  setPlacing(null)
+                  outlineTool.startDraw()
+                }
+              }}
+            >
+              <Pentagon /> Outline
+            </BarToggle>
+          )}
           <MapSearch
             sites={placed.filter(siteShown)}
             devices={data.devices.filter(deviceShown)}
             markers={data.markers}
+            outlines={layers.outlines ? outlineTool.outlines : []}
             onPick={(sel, lat, lng) => {
-              flyTo(lat, lng)
+              const o =
+                sel.kind === "outline"
+                  ? outlineTool.outlines.find((x) => x.id === sel.id)
+                  : null
+              if (o) fitToOutline(o)
+              else flyTo(lat, lng)
               setSelected(sel)
             }}
           />
@@ -1768,6 +1818,22 @@ function MapBody({ data }: { data: SiteMapPayload }) {
               )
             </div>
           )}
+          {outlineTool.drawing && (
+            <div className="absolute bottom-4 left-1/2 z-[1000] -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
+              Click the outline&apos;s corners · double-click or Enter to finish
+              · Esc to cancel (
+              <span className="num">{outlineTool.draftCount}</span>)
+            </div>
+          )}
+          {selOutline && mode !== "layout" && (
+            <div className="pointer-events-none absolute inset-0 z-[900] [&>aside]:pointer-events-auto">
+              <OutlinePanel
+                key={selOutline.id}
+                outline={selOutline}
+                onClose={() => setSelected(null)}
+              />
+            </div>
+          )}
           {editing && placing && (
             <div className="absolute bottom-4 left-1/2 z-[1000] flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
               <span>
@@ -1863,6 +1929,19 @@ function MapBody({ data }: { data: SiteMapPayload }) {
         {!selectedRoute && selSite && (
           <SiteInspector site={selSite} onClose={() => setSelected(null)} />
         )}
+        {selOutline && mode === "layout" && (
+          <OutlineInspector
+            key={selOutline.id}
+            outline={selOutline}
+            siteName={
+              data.sites.find((s) => s.id === selOutline.site_id)?.name ?? ""
+            }
+            canEdit={outlineTool.canChange}
+            onPatch={(body) => outlineTool.patch(selOutline.id, body)}
+            onDelete={() => outlineTool.remove(selOutline.id)}
+            onClose={() => setSelected(null)}
+          />
+        )}
         {selDevice && (
           <DeviceInspector
             device={selDevice}
@@ -1926,6 +2005,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
           }}
         />
 
+        <OutlineCreateDialog
+          points={outlineTool.pending}
+          sites={data.sites}
+          defaultSiteId={outlineTool.defaultSiteId}
+          onCancel={outlineTool.cancelCreate}
+          onCreate={outlineTool.create}
+        />
+
         <MarkerLinkDialog
           prompt={linkPrompt}
           onClose={() => setLinkPrompt(null)}
@@ -1954,6 +2041,11 @@ function MapBody({ data }: { data: SiteMapPayload }) {
                 r.boundary as unknown as GeoJSON.GeoJsonObject
               ).getBounds()
               if (b.isValid()) map.fitBounds(b.pad(0.05))
+            }}
+            outlines={layers.outlines ? outlineTool.outlines : []}
+            onPickOutline={(o) => {
+              fitToOutline(o)
+              setSelected({ kind: "outline", id: o.id })
             }}
             selectedRouteId={selectedRouteId}
             selected={selected}
@@ -2064,11 +2156,13 @@ function MapSearch({
   sites,
   devices,
   markers,
+  outlines,
   onPick,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
+  outlines: SiteMapOutline[]
   onPick: (sel: MapSelected, lat: number, lng: number) => void
 }) {
   const [value, setValue] = useState("")
@@ -2114,8 +2208,25 @@ function MapSearch({
           hint: m.type?.name ?? "marker",
         })
     }
+    for (const o of outlines) {
+      const name = o.display_label || o.location?.name || ""
+      const hay = [name, o.location?.name ?? "", o.location?.code ?? ""]
+      if (name && hay.some((h) => h.toLowerCase().includes(q))) {
+        const [lat, lng] = centroid(o.points)
+        rows.push({
+          sel: { kind: "outline", id: o.id },
+          lat,
+          lng,
+          name:
+            o.location && o.location.name !== name
+              ? `${name} · ${o.location.name}`
+              : name,
+          hint: o.location?.location_type?.name ?? "outline",
+        })
+      }
+    }
     return rows.slice(0, 8)
-  }, [q, sites, devices, markers])
+  }, [q, sites, devices, markers, outlines])
 
   return (
     <Popover open={open && matches.length > 0} onOpenChange={setOpen}>

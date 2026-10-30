@@ -96,6 +96,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # SITE_PATHS["sitesettings"] = "site".
     ("core.SiteSettings", "Site settings", "Organization"),
     ("api.Location", "Locations", "Organization"),
+    ("api.LocationType", "Location types", "Organization"),
     ("api.Room", "Rooms", "Organization"),
     ("api.Contact", "Contacts", "Organization"),
     ("api.ContactGroup", "Contact groups", "Organization"),
@@ -257,6 +258,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FloorPlanLabel", "Floor-plan labels", "DCIM"),
     ("api.FloorPlanCablePath", "Floor-plan cable paths", "DCIM"),
     ("api.SiteMarker", "Site-map markers", "DCIM"),
+    ("api.SiteMapOutline", "Site-map outlines", "DCIM"),
     ("api.TopologyView", "Topology views", "DCIM"),
     ("api.AuxPort", "Aux ports", "DCIM"),
     ("api.Antenna", "Antennas", "DCIM"),

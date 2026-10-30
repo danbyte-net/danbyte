@@ -5,7 +5,7 @@ trays, so a site editor documents routes at their sites and a site viewer
 sees them (and their change log). A new site role gets the type from
 ``site_role_types``; the roles built before it gain it here.
 
-A grant counts as a site role by the rules of 0028 to 0045. A hand-built
+A grant counts as a site role by the rules of 0028 to 0046. A hand-built
 grant is left alone. A second run changes nothing. Reverse is a no-op.
 """
 import importlib
@@ -13,12 +13,12 @@ import importlib
 from django.db import migrations
 
 _0028 = importlib.import_module("auth_api.migrations.0028_site_roles_site_view")
-_0045 = importlib.import_module(
-    "auth_api.migrations.0045_site_roles_floor_plan_areas_labels"
+_0046 = importlib.import_module(
+    "auth_api.migrations.0046_site_roles_location_types_outlines"
 )
 
 NEW_TYPES = ["floorplancablepath"]
-KNOWN = _0045.KNOWN | set(NEW_TYPES)
+KNOWN = _0046.KNOWN | set(NEW_TYPES)
 
 
 def _looks_like_role(perm, suffix, actions) -> bool:
@@ -45,7 +45,7 @@ def forwards(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("auth_api", "0045_site_roles_floor_plan_areas_labels"),
+        ("auth_api", "0046_site_roles_location_types_outlines"),
     ]
 
     operations = [

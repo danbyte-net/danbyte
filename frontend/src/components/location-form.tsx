@@ -6,6 +6,7 @@ import { apiAll } from "@/lib/api-all"
 import { useSiteOptions } from "@/lib/use-site-options"
 import type {
   Location,
+  LocationTypeRef,
   LocationWritePayload,
   SiteOption,
   Status,
@@ -21,6 +22,7 @@ import {
   FormStatusSelect,
   FormText,
   FormTextarea,
+  QuickAddDialog,
   useFieldErrors,
 } from "@/components/forms"
 import {
@@ -65,6 +67,10 @@ export function LocationForm({
   const [statusId, setStatusId] = useState<string | null>(
     location?.status?.id ?? null
   )
+  const [typeId, setTypeId] = useState<string | null>(
+    location?.location_type?.id ?? null
+  )
+  const [code, setCode] = useState(location?.code ?? "")
   const [color, setColor] = useState(location?.color ?? "")
   const [icon, setIcon] = useState(location?.icon ?? "")
   const [description, setDescription] = useState(location?.description ?? "")
@@ -78,6 +84,8 @@ export function LocationForm({
     setSiteId(location.site?.id ?? null)
     setParentId(location.parent?.id ?? null)
     setStatusId(location.status?.id ?? null)
+    setTypeId(location.location_type?.id ?? null)
+    setCode(location.code ?? "")
     setColor(location.color ?? "")
     setIcon(location.icon ?? "")
     setDescription(location.description)
@@ -86,6 +94,12 @@ export function LocationForm({
   }, [location, reset])
 
   const sites = useSiteOptions()
+  // The type picker shows each type as its colour badge.
+  const types = useQuery({
+    queryKey: ["location-types-picker"],
+    queryFn: () => apiAll<LocationTypeRef>("/api/location-types/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
   const statuses = useQuery({
     queryKey: ["statuses", "location"],
     queryFn: () =>
@@ -114,8 +128,10 @@ export function LocationForm({
     mutationFn: async (site: string) => {
       const payload: LocationWritePayload = {
         name: name.trim(),
+        code: code.trim(),
         site_id: site,
         parent_id: parentId,
+        location_type_id: typeId,
         status_id: statusId,
         color: color || "",
         icon: icon || "",
@@ -157,13 +173,60 @@ export function LocationForm({
       <FormColumns>
         <FormColumn>
           <FormSection title="Location" card>
-            <FormText
-              label="Name"
-              required
-              autoFocus={!isEdit}
-              value={name}
-              onChange={setName}
-              error={fieldErrors.name}
+            <div className="grid gap-3 @md:grid-cols-[1fr_8rem]">
+              <FormText
+                label="Name"
+                required
+                autoFocus={!isEdit}
+                value={name}
+                onChange={setName}
+                error={fieldErrors.name}
+              />
+              <FormText
+                label="Code"
+                hint="optional"
+                value={code}
+                onChange={setCode}
+                placeholder="A1"
+                error={fieldErrors.code}
+              />
+            </div>
+
+            <FormCombobox
+              label="Type"
+              hint="optional"
+              value={typeId}
+              onChange={setTypeId}
+              options={(types.data?.results ?? []).map((t) => ({
+                value: t.id,
+                label: t.name,
+                color: t.color,
+              }))}
+              noneLabel="No type"
+              placeholder="Select a type…"
+              searchPlaceholder="Search types…"
+              emptyText="No location types."
+              error={fieldErrors.location_type_id}
+              quickAdd={
+                <QuickAddDialog
+                  title="New location type"
+                  endpoint="/api/location-types/"
+                  fields={[
+                    { name: "name", label: "Name", required: true },
+                    {
+                      name: "description",
+                      label: "Description",
+                      type: "textarea",
+                    },
+                  ]}
+                  onCreated={(t) => {
+                    qc.invalidateQueries({
+                      queryKey: ["location-types-picker"],
+                    })
+                    setTypeId(t.id)
+                  }}
+                />
+              }
             />
 
             <FormStatusSelect

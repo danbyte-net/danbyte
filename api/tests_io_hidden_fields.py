@@ -175,6 +175,9 @@ class SerializerHidingIsDeclaredTests(APITestCase):
         "NotificationChannelSerializer",
         # Adds each cycle's computed status, the same for everyone.
         "EolCustomProductSerializer",
+        # A live view reads its source's grid, scale and background, the
+        # same for everyone.
+        "FloorPlanSerializer",
     }
 
     def test_every_override_is_accounted_for(self):

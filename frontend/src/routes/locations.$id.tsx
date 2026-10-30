@@ -11,6 +11,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { StatusBadge } from "@/components/status-badge"
 import { TileBadge } from "@/components/floorplan/tile-badge"
+import { ColorBadge } from "@/components/cells/color-badge"
+import {
+  locationColor,
+  locationIcon,
+} from "@/components/columns/location-columns"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { QueryError } from "@/components/query-error"
@@ -138,16 +143,35 @@ function Body({ location: l }: { location: Location }) {
       hero={
         <DetailHero
           title={
-            l.color || l.icon ? (
+            locationColor(l) || locationIcon(l) ? (
               <span className="inline-flex items-center gap-2">
-                <TileBadge color={l.color} icon={l.icon} className="h-6 w-6" />
+                <TileBadge
+                  color={locationColor(l)}
+                  icon={locationIcon(l)}
+                  className="h-6 w-6"
+                />
                 {l.name}
               </span>
             ) : (
               l.name
             )
           }
-          badges={<StatusBadge status={l.status} />}
+          badges={
+            <>
+              {l.location_type && (
+                <Link
+                  to="/location-types/$id"
+                  params={{ id: l.location_type.id }}
+                >
+                  <ColorBadge
+                    name={l.location_type.name}
+                    color={l.location_type.color || undefined}
+                  />
+                </Link>
+              )}
+              <StatusBadge status={l.status} />
+            </>
+          }
           description={l.description}
         />
       }
@@ -352,6 +376,24 @@ function LocationOverview({
       ) : (
         dash
       ),
+    },
+    {
+      label: "Type",
+      value: l.location_type ? (
+        <Link to="/location-types/$id" params={{ id: l.location_type.id }}>
+          <ColorBadge
+            name={l.location_type.name}
+            color={l.location_type.color || undefined}
+          />
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "Code",
+      value: l.code ? <span className="font-mono">{l.code}</span> : dash,
+      copy: l.code || undefined,
     },
     { label: "Status", value: <StatusBadge status={l.status} /> },
   ]

@@ -103,12 +103,15 @@ and devices that live there.
 
 1. Open **Organization → Locations** and click **Add location**.
 2. Choose the **site** this location belongs to.
-3. Give it a **name** and a **slug**.
-4. Optionally pick a **parent location** (it must be in the same site), set a
-   **status**, and add a description.
+3. Give it a **name** and, optionally, a short **code** (`A1`, `B2`) - the
+   code labels its [outline on the Site map](site-map.md#building-outlines).
+4. Optionally pick a **type** ([location types](#location-types)), a
+   **parent location** (it must be in the same site), set a **status**, and
+   add a description.
 5. Optionally give it a **color** and a **Lucide icon** - they render as a
    badge next to the location's name on list and detail pages, the same
-   treatment floor-plan tile types get.
+   treatment floor-plan tile types get. With none set, the location takes
+   its type's color and icon.
 6. Save.
 
 !!! note "Changing the site clears the parent"
@@ -135,6 +138,38 @@ and devices that live there.
 !!! tip "Address line vs. location tree"
     A site's free-text **location** field is just an address line. The structured
     building → floor → room tree is what you build with **locations**.
+
+## Location types
+
+A **location type** says what kind of place a location is - *Building*,
+*Floor*, *Hall*, *Manhole*, whatever your estate is made of. Types are your
+own catalog under **Organization → Location types**: each has a name, a
+**color**, a **Lucide icon** and a description, and a name is unique in the
+tenant. Danbyte ships none - make the ones you use.
+
+- **On a location** - the **Type** field on the location form lists the types
+  as their color badges; the **+** beside it makes a new type without leaving
+  the form. The location's page shows the type next to its status, and the
+  **Locations** list has a **Type** column and filter.
+- **Color** - a location is drawn in its own color, else its type's: the
+  badge on the list and detail pages, the rooms that name it, and the
+  floor-plan areas linked to it. Give *Building* a color once and every
+  building without its own reads the same.
+- **Outlines** - a [building outline](site-map.md#building-outlines) on the
+  Site map takes its location's type color first, and "**+** New building"
+  on the map makes a location of the type named *Building* when you have
+  one.
+- **Deleting a type** leaves its locations in place, without a type. Select
+  several types on the list to edit their color, icon and description at
+  once, or to delete them.
+- **Permissions** - `locationtype`, a tenant-wide catalog like rack roles.
+  [Site roles](permissions.md#site-roles-local-it-in-one-click) read the
+  types; only a tenant-wide grant changes them. Import and export work like
+  any other list (**Import / Export** on the list's toolbar).
+
+API: `/api/location-types/` (`?picker=1` for the short form);
+`/api/locations/?location_type=<id>` (or `none`) filters locations by type,
+and a location carries `location_type`, `location_type_id` and `code`.
 
 ## Rooms
 

@@ -5,6 +5,7 @@ import type {
   SiteMapConnection,
   SiteMapDevice,
   SiteMapMarker,
+  SiteMapOutline,
   SiteMapRegion,
   SiteMapSite,
 } from "@/lib/api"
@@ -47,6 +48,7 @@ export type MapSelected =
   | { kind: "marker"; id: string }
   | { kind: "connection"; id: string }
   | { kind: "cable"; id: string }
+  | { kind: "outline"; id: string }
 
 /**
  * What the sidebar's eye toggles have switched off, by name/id.
@@ -150,6 +152,8 @@ export function MapObjectsSidebar({
   onFocusConnection,
   onPickRoute,
   onFocusRegion,
+  outlines = [],
+  onPickOutline,
 }: {
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
@@ -170,6 +174,10 @@ export function MapObjectsSidebar({
   onPickRoute: (routeId: string, cableId: string | null) => void
   /** Fit the map to a region's boundary. */
   onFocusRegion: (region: SiteMapRegion) => void
+  /** Building outlines (what the map draws), listed by label. */
+  outlines?: SiteMapOutline[]
+  /** Fit the map to an outline and select it. */
+  onPickOutline?: (outline: SiteMapOutline) => void
 }) {
   const typeLabel = useCableTypeLabel()
   const [q, setQ] = useState("")
@@ -206,6 +214,19 @@ export function MapObjectsSidebar({
     match(m.label || m.device?.name || m.type?.name || "")
   )
   const shownRegions = regions.filter((r) => match(r.name))
+  const shownOutlines = outlines
+    .filter(
+      (o) =>
+        match(o.display_label) ||
+        match(o.location?.name ?? "") ||
+        match(o.location?.code ?? "")
+    )
+    .sort((a, b) =>
+      naturalCompare(
+        a.display_label || a.location?.name || "",
+        b.display_label || b.location?.name || ""
+      )
+    )
 
   // Sites fold by region - the same treatment devices get by role.
   const siteGroups = useMemo(() => {
@@ -333,7 +354,8 @@ export function MapObjectsSidebar({
       : shownMarkers.length +
         shownConnections.length +
         shownRoutes.length +
-        shownRegions.length)
+        shownRegions.length +
+        shownOutlines.length)
 
   const enterFirst = () => {
     // Enter jumps straight to the first hit.
@@ -544,6 +566,35 @@ export function MapObjectsSidebar({
               <span className="min-w-0 truncate">
                 {m.label || m.device?.name || m.type?.name || "Marker"}
               </span>
+            </button>
+          ))}
+        </ObjectsSection>
+      )}
+
+      {shownOutlines.length > 0 && !status && (
+        <ObjectsSection heading="Outlines">
+          {shownOutlines.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onPickOutline?.(o)}
+              className={cn(
+                "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[13px]",
+                selected?.kind === "outline" && selected.id === o.id
+                  ? "bg-muted font-medium"
+                  : "hover:bg-muted/60"
+              )}
+            >
+              <ColorBadge
+                name={o.display_label || o.location?.name || "Outline"}
+                color={o.display_color || undefined}
+                className="max-w-44"
+              />
+              {o.location && o.display_label !== o.location.name && (
+                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                  {o.location.name}
+                </span>
+              )}
             </button>
           ))}
         </ObjectsSection>

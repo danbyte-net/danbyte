@@ -209,11 +209,14 @@ REQUIREMENTS = importlib.import_module(
 )
 ROOMS = importlib.import_module("auth_api.migrations.0043_site_roles_rooms")
 STACKS = importlib.import_module("auth_api.migrations.0044_site_roles_floor_plan_stacks")
-PATHS = importlib.import_module(
-    "auth_api.migrations.0046_site_roles_floor_plan_cable_paths"
-)
 AREAS = importlib.import_module(
     "auth_api.migrations.0045_site_roles_floor_plan_areas_labels"
+)
+OUTLINES = importlib.import_module(
+    "auth_api.migrations.0046_site_roles_location_types_outlines"
+)
+PATHS = importlib.import_module(
+    "auth_api.migrations.0047_site_roles_floor_plan_cable_paths"
 )
 
 
@@ -326,6 +329,7 @@ class SiteRoleUpgradeTests(TestCase):
             | set(ROOMS.NEW_TYPES)
             | set(STACKS.NEW_TYPES)
             | set(AREAS.NEW_TYPES)
+            | set(OUTLINES.NEW_TYPES)
             | set(PATHS.NEW_TYPES),
             set(site_role_types()),
         )
@@ -395,6 +399,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS + PRTG_FACTS.NEW_CATALOGS
                 + PRTG_OVERRIDES.NEW_CATALOGS
                 + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
+                + OUTLINES.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -594,6 +599,51 @@ class SiteRoleFlowRequirementUpgradeTests(SiteRoleUpgradeTests):
         view.refresh_from_db()
         before = sorted(view.object_types)
         REQUIREMENTS.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleOutlineUpgradeTests(SiteRoleUpgradeTests):
+    """0046 gives the site roles built before it the site-map outlines, and
+    their viewers and the editors' catalog view the location types; an
+    editor's own grant gains no write on the types."""
+
+    def _role(self, name, actions):
+        """A role as 0045 left it."""
+        types = set(OUTLINES._0045.KNOWN) - set(CATALOG_MIGRATION.ROLE_CATALOGS) - {
+            "supportcontract", "application", "applicationgroup", "deviceprofile",
+            "applicationflowrequirement", "site"}
+        if actions == ["view"]:
+            types = types | {"site"} | set(CATALOG_MIGRATION.ROLE_CATALOGS)
+        return self._old(name, actions, types=sorted(types))
+
+    def test_roles_gain_outlines_and_types(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        OUTLINES.forwards(django_apps, None)
+        for perm in (view, edit, catalog):
+            perm.refresh_from_db()
+        self.assertIn("sitemapoutline", view.object_types)
+        self.assertIn("locationtype", view.object_types)
+        self.assertIn("sitemapoutline", edit.object_types)
+        self.assertNotIn("locationtype", edit.object_types)
+        self.assertIn("locationtype", catalog.object_types)
+        self.assertNotIn("sitemapoutline", catalog.object_types)
+
+    def test_outlines_second_run_and_hand_built(self):
+        view = self._role("A - site view", ["view"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        OUTLINES.forwards(django_apps, None)
+        view.refresh_from_db()
+        before = sorted(view.object_types)
+        OUTLINES.forwards(django_apps, None)
         view.refresh_from_db()
         custom.refresh_from_db()
         self.assertEqual(sorted(view.object_types), before)

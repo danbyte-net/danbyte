@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { draftReducer, emptyDraft, initDraftHistory } from "./edit-history"
 import {
   areaColor,
+  areaLabelColor,
   areaName,
   labelPresetMm,
   labelPresetOf,
@@ -209,5 +210,27 @@ describe("undo", () => {
     expect(h.present.shapes[0].x).toBe(0)
     h = draftReducer(h, { kind: "redo" })
     expect(h.present.shapes[0].x).toBe(3)
+  })
+})
+
+describe("an area's name ink", () => {
+  const room = { id: "r1", name: "Serverrum A", code: "", color: "#22d3ee" }
+  it("keeps the area colour over a light fill", () => {
+    expect(
+      areaLabelColor({ room, location: null, color: "", fill_opacity: 15 })
+    ).toBe("#22d3ee")
+  })
+  it("turns black or white once the fill would swallow it", () => {
+    expect(
+      areaLabelColor({ room, location: null, color: "", fill_opacity: 100 })
+    ).toBe("#0a0a0a")
+    expect(
+      areaLabelColor({
+        room: { ...room, color: "#1e3a8a" },
+        location: null,
+        color: "",
+        fill_opacity: 80,
+      })
+    ).toBe("#fff")
   })
 })

@@ -55,6 +55,7 @@ from .models import (
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
     ConfigBundle, ConfigContext, CoolingFeed, CoolingSource, ExportTemplate, Location,
+    LocationType,
     CoolingIntake, CoolingIntakeTemplate, CoolingOutflow, CoolingOutflowTemplate,
     PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
@@ -9591,10 +9592,73 @@ class RegionSerializer(NumIdModelSerializer):
                             "created_at", "updated_at"]
 
 
+class LocationTypeMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = LocationType
+        fields = ["id", "name", "slug", "color", "icon"]
+
+
+class LocationTypeSerializer(NumIdModelSerializer):
+    """A location type: the editable catalog that names and colours what kind
+    of place a location is (#buildings). Nothing is seeded."""
+
+    slug = serializers.SlugField(required=False, allow_blank=True)
+    location_count = serializers.SerializerMethodField()
+
+    def get_location_count(self, obj) -> int:
+        v = getattr(obj, "location_count_annotated", None)
+        return v if v is not None else _visible_count(self, obj, "locations")
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
+    class Meta:
+        model = LocationType
+        fields = ["id", "name", "slug", "color", "icon", "description",
+                  "location_count", "created_at", "updated_at"]
+        read_only_fields = ["id", "location_count", "created_at", "updated_at"]
+
+
+def hex_color_or_blank(value: str) -> str:
+    """A ``#rrggbb`` colour in lower case, or blank for "none"."""
+    import re
+
+    if value and not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise serializers.ValidationError(
+            "Enter a 7-char hex colour like #10b981, or leave it empty."
+        )
+    return (value or "").lower()
+
+
+def location_type_ref(t) -> dict | None:
+    """How a location names its type: id, name, colour and icon."""
+    if t is None:
+        return None
+    return {"id": str(t.id), "name": t.name, "color": t.color, "icon": t.icon}
+
+
 class LocationMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Location
         fields = ["id", "name", "slug"]
+
+
+class LocationPickerSerializer(NumIdModelSerializer):
+    """A location in a picker (``?picker=1``). ``color`` and ``icon`` are
+    what it is drawn with: its own, else its type's."""
+
+    color = serializers.CharField(source="display_color", read_only=True)
+    icon = serializers.CharField(source="display_icon", read_only=True)
+    location_type = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location_type(self, obj):
+        return location_type_ref(obj.location_type) if obj.location_type_id else None
+
+    class Meta:
+        model = Location
+        fields = ["id", "name", "slug", "code", "color", "icon", "location_type",
+                  "site_id", "parent_id"]
 
 
 class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
@@ -9605,6 +9669,11 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
     slug = serializers.SlugField(required=False, allow_blank=True)
     site = SiteMiniSerializer(read_only=True)
     parent = LocationMiniSerializer(read_only=True)
+    location_type = serializers.SerializerMethodField()
+    location_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="location_type", queryset=LocationType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     child_count = serializers.SerializerMethodField()
     device_count = serializers.SerializerMethodField()
     rack_count = serializers.SerializerMethodField()
@@ -9619,6 +9688,10 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
         source="parent", queryset=Location.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location_type(self, obj):
+        return location_type_ref(obj.location_type) if obj.location_type_id else None
 
     def get_child_count(self, obj) -> int:
         return obj.children.count()
@@ -9661,7 +9734,8 @@ class LocationSerializer(StatusSerializerMixin, NumIdModelSerializer):
 
     class Meta:
         model = Location
-        fields = ["id", "name", "slug", "site", "site_id", "parent", "parent_id",
+        fields = ["id", "name", "slug", "code", "site", "site_id", "parent", "parent_id",
+                  "location_type", "location_type_id",
                   "status", "status_id", "color", "icon", "description",
                   "child_count",
                   "device_count", "rack_count", "cabinet_count", "room_count",
@@ -9712,7 +9786,8 @@ class RoomSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
         loc = obj.location
-        return {"id": str(loc.id), "name": loc.name, "color": loc.color, "icon": loc.icon}
+        return {"id": str(loc.id), "name": loc.name, "color": loc.display_color,
+                "icon": loc.display_icon}
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
@@ -11581,7 +11656,7 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         loc = obj.location
         if loc is None:
             return None
-        return {"id": str(loc.pk), "name": loc.name, "color": loc.color}
+        return {"id": str(loc.pk), "name": loc.name, "color": loc.display_color}
 
     def _visible(self, model_slug, obj) -> bool:
         from api.views import _get_active_tenant

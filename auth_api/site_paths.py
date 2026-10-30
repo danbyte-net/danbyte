@@ -32,6 +32,8 @@ SITE_PATHS: dict[str, str] = {
     "powerpanel": "site",
     "coolingsource": "site",
     "location": "site",
+    # A building outline on the site map belongs to the site it is drawn at.
+    "sitemapoutline": "site",
     # A room's site is its location's (floor plans P1b).
     "room": "location__site",
     # Indirect (one hop).
