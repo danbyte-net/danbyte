@@ -34,6 +34,7 @@ export function DisplayMenu({
     showZoneLabels,
     showTrays,
     showCableLinks,
+    showPhotos,
     show3dU,
     show3dNames,
     names3dScope,
@@ -97,6 +98,12 @@ export function DisplayMenu({
             label="Zone labels"
             checked={showZoneLabels}
             onChange={(v) => setViewPref("show_zone_labels", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
+          <FormCheckbox
+            label="Photos"
+            checked={showPhotos}
+            onChange={(v) => setViewPref("show_photos", v)}
             className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
           />
           <div className="my-1 h-px bg-border" />

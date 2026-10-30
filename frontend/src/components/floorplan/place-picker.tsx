@@ -7,7 +7,7 @@ import type { FloorPlan, FloorPlanPlaceable } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import { BarMenuTrigger } from "@/components/map-toolbar"
+import { BarMenuTrigger, BarTip } from "@/components/map-toolbar"
 import { ObjectsSection } from "@/components/objects-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-import { PLACE_MIME } from "./placement"
+import { PLACE_MIME, placeKey, withDraftPlacement } from "./placement"
 import type { NearScope } from "./placement"
 
 const KIND_ICON = { device: HardDrive, rack: Server, cabinet: Box } as const
@@ -111,16 +111,26 @@ export function PlaceableRow({
 }
 
 /** The Objects panel's **Not placed**: the floor's devices, racks and
- * cabinets placed on no plan - drag one onto the plan, or click it. */
+ * cabinets placed on no plan - this floor counted as the editor holds it,
+ * unsaved edits included. Drag one onto the plan, or click it. */
 export function UnplacedList({
   planId,
+  onFloor,
   onPlace,
 }: {
   planId: string
+  /** What the editor's tiles link, saved or not: `kind:id` -> tile id. */
+  onFloor: Map<string, string>
   onPlace: (rows: FloorPlanPlaceable[]) => void
 }) {
-  const query = usePlaceable(planId, { unplaced: "1", limit: "200" })
-  const rows = query.data?.results ?? []
+  const query = usePlaceable(planId, {
+    unplaced: "1",
+    include_here: "1",
+    limit: "200",
+  })
+  const rows = (query.data?.results ?? []).filter(
+    (r) => !onFloor.has(placeKey(r.kind, r.id))
+  )
   if (!rows.length) return null
   return (
     <ObjectsSection
@@ -149,6 +159,7 @@ export function UnplacedList({
  */
 export function PlacePicker({
   plan,
+  onFloor,
   open,
   onOpenChange,
   near,
@@ -157,6 +168,8 @@ export function PlacePicker({
   onAssignRooms,
 }: {
   plan: FloorPlan
+  /** What the editor's tiles link, saved or not: `kind:id` -> tile id. */
+  onFloor: Map<string, string>
   open: boolean
   onOpenChange: (v: boolean) => void
   /** The room or location near the pointer when the picker opened. */
@@ -182,7 +195,11 @@ export function PlacePicker({
   if (scope?.room) params.near_room = scope.room.id
   else if (scope?.location) params.near_location = scope.location.id
   const query = usePlaceable(plan.id, params, open)
-  const rows = query.data?.results ?? []
+  // "On this floor" as the editor holds it: a tile placed or deleted
+  // since the last save counts at once.
+  const rows = (query.data?.results ?? []).map((r) =>
+    withDraftPlacement(r, onFloor, plan)
+  )
   const nearName = scope?.room?.name ?? scope?.location?.name
   const groups: [string, FloorPlanPlaceable[]][] = (
     [
@@ -202,11 +219,13 @@ export function PlacePicker({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <BarMenuTrigger>
-          <Plus /> Place…
-        </BarMenuTrigger>
-      </PopoverTrigger>
+      <BarTip tip="Place…" shortcut="P">
+        <PopoverTrigger asChild>
+          <BarMenuTrigger>
+            <Plus /> Place…
+          </BarMenuTrigger>
+        </PopoverTrigger>
+      </BarTip>
       <PopoverContent
         align="start"
         className="flex w-[26rem] flex-col gap-2 p-2"

@@ -39,6 +39,14 @@ vi.mock("@/lib/api", async (orig) => ({
 vi.mock("@/lib/api-all", () => ({ apiAll: () => Promise.resolve([]) }))
 Element.prototype.scrollIntoView = () => {}
 Element.prototype.hasPointerCapture = () => false
+// Radix measures the tooltip arrow; jsdom has no ResizeObserver.
+if (!("ResizeObserver" in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
 
 afterEach(cleanup)
 beforeEach(() => {
@@ -302,6 +310,46 @@ describe("the floating toolbar", () => {
     )
     fireEvent.click(screen.getByLabelText("Show as photo"))
     expect(h.onTileDisplay).toHaveBeenCalledWith(t, "photo")
+  })
+
+  it("offers the photo on a grid plan too", () => {
+    const h = handlers()
+    const t = tile({
+      photo: { url: "/m/a.png", aspect: 0.5, source: "type", width_mm: null },
+    })
+    wrap(
+      <SelectionToolbar
+        plan={{ ...plan, layout_mode: "grid" }}
+        tile={t}
+        shape={null}
+        shapes={[]}
+        {...h}
+      />
+    )
+    fireEvent.click(screen.getByLabelText("Show as photo"))
+    expect(h.onTileDisplay).toHaveBeenCalledWith(t, "photo")
+  })
+
+  it("without a photo, the button is disabled and says where one comes from", async () => {
+    const h = handlers()
+    wrap(
+      <SelectionToolbar
+        plan={plan}
+        tile={tile()}
+        shape={null}
+        shapes={[]}
+        {...h}
+      />
+    )
+    const tip =
+      "No photo: add an image to the device or a front image to its type"
+    const btn = screen.getByLabelText(tip)
+    expect(btn.getAttribute("aria-disabled")).toBe("true")
+    fireEvent.click(btn)
+    expect(h.onTileDisplay).not.toHaveBeenCalled()
+    fireEvent.focus(btn)
+    expect((await screen.findByRole("tooltip")).textContent).toContain(tip)
+    expect(screen.queryByLabelText("Show as photo")).toBeNull()
   })
 
   it("locks an area, and links its room from a picker", () => {

@@ -429,6 +429,23 @@ export function SelectionToolbar({
             <ColorBadge name={target.name} color={target.color} />
           </Button>
         )}
+        {!tile.photo && (l?.kind === "device" || l?.kind === "rack") && (
+          // Disabled in look only (aria-disabled), so its tooltip still
+          // says where a photo comes from.
+          <BarIconButton
+            label={
+              l.kind === "rack"
+                ? "No photo: add an image to the rack"
+                : "No photo: add an image to the device or a front image to its type"
+            }
+            tipSide="top"
+            aria-disabled
+            data-part="no-photo"
+            className="cursor-not-allowed opacity-50"
+          >
+            <ImageIcon />
+          </BarIconButton>
+        )}
         {tile.photo &&
           (tile.display === "photo" ? (
             <BarIconButton

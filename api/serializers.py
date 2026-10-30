@@ -10878,6 +10878,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     raise serializers.ValidationError(
                         {"link_id": "A tile can't link to its own floor plan."}
                     )
+                self._check_once_per_floor(kind, obj, attrs)
                 attrs[FloorPlanTile.LINK_FIELDS[kind]] = obj
                 attrs["link_kind"] = kind
         # Exactly one of tile_type / role_type - or neither on a linked tile,
@@ -10892,6 +10893,26 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     {"tile_type_id": "Pick a tile type or role, or link the tile to an object."}
                 )
         return attrs
+
+    def _check_once_per_floor(self, kind, obj, attrs):
+        """A device, rack or cabinet stands once on a floor: a second tile
+        linked to it on the same plan is refused. A tile that already links
+        it keeps saving, so duplicates made before this rule stay editable."""
+        if kind not in ("device", "rack", "cabinet"):
+            return
+        field = FloorPlanTile.LINK_FIELDS[kind]
+        if self.instance is not None and getattr(self.instance, f"{field}_id") == obj.pk:
+            return
+        plan = _plan_of(self, attrs)
+        if plan is None:
+            return
+        others = FloorPlanTile.objects.filter(floor_plan=plan, **{field: obj})
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
+            raise serializers.ValidationError(
+                {"link_id": f"{obj} is already on this floor."}
+            )
 
     def _check_geometry(self, attrs):
         """A grid plan holds whole cells at quarter turns; a free plan any

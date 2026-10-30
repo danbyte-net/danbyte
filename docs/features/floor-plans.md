@@ -674,7 +674,9 @@ change rather than an exit, so neither is guarded.
 Under **Display**: **Color by** heads the menu - see [below](#color-by);
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
-and **Camera FOV cones** shows/hides the camera wedges.
+**Camera FOV cones** shows/hides the camera wedges; and **Photos** draws
+every device and rack tile that has a photo as its photo (see
+[Photos](#photos)).
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
@@ -757,7 +759,7 @@ rotation. Labels draw over the tiles.
 | Key | In Edit |
 |---|---|
 | ++e++ | View / Edit |
-| ++p++ | Place… |
+| ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
 | ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label |
@@ -830,7 +832,9 @@ is on the plan. No tile type or role is chosen first.
 
 ### The Place picker
 
-In Edit, **Place…** sits first on the bar (++p++ opens it). It lists the
+In Edit, **Place…** sits first on the bar; ++p++ opens it, and in View
+switches to Edit first when you may edit the plan (its tooltip shows the
+key). It lists the
 devices, racks and cabinets of the plan's site that you may view, searchable
 by name, in three groups:
 
@@ -841,16 +845,28 @@ by name, in three groups:
 3. **Elsewhere** at the site.
 
 Each row shows the object's room as its colour badge, and where it is
-already placed: **On this floor**, or the name of the other floor. A device
-mounted in a rack or a cabinet is placed with it and is not listed.
+already placed: **On this floor**, or the name of the other floor. **On this
+floor** follows the plan as it is in the editor, unsaved edits included: an
+object placed a moment ago is on this floor at once, and one whose tile was
+deleted is not. A device mounted in a rack or a cabinet is placed with it
+and is not listed.
+
+An object stands once on a floor:
 
 - **Click** a row: the object is placed in the middle of the view. A row
   already on this floor is selected and shown instead.
 - **Drag** a row onto the plan: it is placed where you drop it - on a grid
   plan on the cell under the pointer (or the next free cell to its right,
-  as tiles never stack), on a free plan exactly there.
+  as tiles never stack), on a free plan exactly there. Dragging an object
+  already on this floor moves its tile there instead (on a grid, when the
+  cell is free) and selects it.
 - **Tick** several rows and drag one of them, or press **Place N**: they are
-  placed side by side in a row from that point.
+  placed side by side in a row from that point. Those already on this floor
+  are skipped, and a note says how many.
+
+The save refuses a second tile linked to the same device, rack or cabinet on
+one floor, whichever way it is sent. Duplicates saved before this rule stay
+as they are and can still be edited.
 
 A placement is an ordinary edit: part of undo and of the next **Save**.
 
@@ -871,8 +887,10 @@ type's look.
 
 In Edit, **Objects** opens with **Not placed** on top: the devices, racks
 and cabinets of the floor's location (or a location inside it, or one of
-their rooms) that stand on no floor plan yet, with their count. Drag one
-onto the plan, or click it to place it in the middle of the view.
+their rooms) that stand on no floor plan yet, with their count - this floor
+counted as the editor holds it, so a placed object leaves the list at once
+and one whose tile you deleted comes back before you save. Drag one onto
+the plan, or click it to place it in the middle of the view.
 
 ### Rooms are never set by placing
 
@@ -896,15 +914,24 @@ location, and plain areas, are not used.
 A device or rack can show as its **photo** instead of its coloured box: the
 first image attached to the object, else - a device - its device type's
 front image. Select the tile and press **Show as photo** in the floating
-toolbar (**Show as tile** goes back). The photo keeps its proportions inside
-the tile, with a thin outline that carries the selection, monitoring and
-planned status, and the name under it. On a free plan, placing an object
+toolbar (**Show as tile** goes back); a tile just placed from the picker
+offers it at once, before the save. Without a photo the button is greyed
+out, and its tooltip says where one comes from: an image on the device (or
+rack), or a front image on its device type. The photo keeps its proportions
+inside the tile, with a thin outline that carries the selection, monitoring
+and planned status, and the name under it. On a grid plan the photo fits
+the tile's cells; the tile keeps its size. On a free plan, placing an object
 that has a photo places it as its photo at the device type's real width (one
 cell when the type has none); the corner handles resize it with its
 proportions kept (++shift++ frees them), the turn handle turns it, and
 **Bring forward** / **Send back** stack overlapping tiles. Without a photo
 the tile draws as its box, whatever it is set to. The PDF export draws a
 photo tile as its box.
+
+To see the whole floor as photos, turn on **Display → Photos**: every tile
+that has a photo draws as it, in View and in Edit, while each tile's own
+**Show as photo** / **Show as tile** setting stays as saved. Like the other
+display choices it is saved on the plan for those who may edit it.
 
 ### The floating toolbar
 
@@ -935,10 +962,10 @@ another would give a place nobody chose.
 
 | Call | |
 |---|---|
-| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. |
+| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan; with `&include_here=1` on no other plan, those on this one last), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. |
 | `POST /api/floor-plans/<id>/assign-rooms/` | `{"dry_run": true}` answers `{"objects": [{kind, id, name, tile_id, room, area_room, can_change}]}`; `{"apply": [{"kind", "id"}]}` sets the room of the listed ones you may change (each validated and audited like a `PATCH` of the object) and answers `{applied, skipped, objects}`. |
 | Tiles | `display`: `icon` (default) or `photo`; `z`: stacking order. Read-only `photo` (`url`, `aspect` - height over width -, `source`: `device`, `rack` or `type`, `width_mm`), null without one or without view on the object; `linked` adds the object's `room` and `role` (`id`, `name`, `color`, `icon`) for a device, rack or cabinet. |
-| `POST /api/floor-plans/<id>/bulk/` | An update may carry `version` (the row's `updated_at`), and a delete may be `{"id", "version"}`. A row changed since answers **409** `{"detail", "conflicts": [{kind, id, current, changed_by}]}` (`current` null when it was deleted) and nothing is written. Without a version the last save wins, as before. |
+| `POST /api/floor-plans/<id>/bulk/` | A create (or a relink) of a tile linked to a device, rack or cabinet that already has a tile on this plan is refused with a `link_id` field error (400), as on `/api/floor-plan-tiles/`. An update may carry `version` (the row's `updated_at`), and a delete may be `{"id", "version"}`. A row changed since answers **409** `{"detail", "conflicts": [{kind, id, current, changed_by}]}` (`current` null when it was deleted) and nothing is written. Without a version the last save wins, as before. |
 | `PATCH` / `DELETE` on `/api/floor-plan-tiles/`, `-areas/`, `-labels/` | The same check: `version` in the body, or `?version=` on a delete. |
 
 ## Opening a plan

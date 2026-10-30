@@ -3,12 +3,16 @@ import { describe, expect, it } from "vitest"
 import type { FloorPlan, FloorPlanPlaceable, FloorPlanTile } from "@/lib/api"
 
 import {
+  asPhotos,
+  droppedRect,
   linkedTile,
   nearScope,
+  placedOnFloor,
   placedSize,
   placementRects,
   roomAreaAt,
   roomPrompts,
+  withDraftPlacement,
 } from "./placement"
 import type { AreaShape } from "./shapes"
 import { tileFill, tileRoleIcon } from "./tile-paint"
@@ -232,5 +236,77 @@ describe("the room prompt", () => {
 
   it("is nothing when there are no room areas", () => {
     expect(roomPrompts([tile({})], [])).toEqual([])
+  })
+})
+
+describe("on this floor, the draft included", () => {
+  const photo = {
+    url: "/m/a.png",
+    aspect: 0.5,
+    source: "type" as const,
+    width_mm: null,
+  }
+  const tiles = [
+    tile({ id: "t1" }),
+    tile({ id: "new-1", linked: { ...tile({}).linked!, id: "d2" } }),
+    tile({ id: "dup", x: 3 }),
+    tile({ id: "plain", linked: null, photo }),
+  ]
+
+  it("maps each linked object to its first tile", () => {
+    expect([...placedOnFloor(tiles)]).toEqual([
+      ["device:d1", "t1"],
+      ["device:d2", "new-1"],
+    ])
+  })
+
+  it("rewrites a row's placement from the editor's tiles", () => {
+    const p = { id: "p1", name: "Ground", stack: null }
+    const saved = row({
+      placed_count: 2,
+      placed_on: [
+        {
+          floor_plan: { id: "p1", name: "Ground", stack: "" },
+          tile_id: "t0",
+          this_floor: true,
+        },
+        {
+          floor_plan: { id: "p2", name: "1", stack: "" },
+          tile_id: "t5",
+          this_floor: false,
+        },
+      ],
+    })
+    // Deleted in the draft: only the other floor is left.
+    const gone = withDraftPlacement(saved, new Map(), p)
+    expect(gone.placed_count).toBe(1)
+    expect(gone.placed_on.map((x) => x.this_floor)).toEqual([false])
+    // Placed in the draft: on this floor, on the draft's tile.
+    const here = withDraftPlacement(row({ id: "d2" }), placedOnFloor(tiles), p)
+    expect(here.placed_count).toBe(1)
+    expect(here.placed_on[0]).toMatchObject({
+      tile_id: "new-1",
+      this_floor: true,
+    })
+  })
+
+  it("Photos draws a tile with a photo as it, leaving the rest", () => {
+    const out = asPhotos(tiles)
+    expect(out.map((t) => t.display)).toEqual(["icon", "icon", "icon", "photo"])
+    expect(tiles[3].display).toBe("icon")
+  })
+})
+
+describe("dropping an object already on the floor", () => {
+  it("moves its tile to the cell under the drop on a grid, keeping its size", () => {
+    const t = tile({ width: 2, height: 1 })
+    expect(droppedRect(t, [5.5, 3.5], grid, [t])).toEqual({ x: 4, y: 3 })
+    const other = tile({ id: "o", x: 2, y: 2 })
+    expect(droppedRect(t, [2.5, 2.5], grid, [t, other])).toBeNull()
+  })
+
+  it("centres it on the drop on a free plan", () => {
+    const t = tile({ width: 1, height: 0.5 })
+    expect(droppedRect(t, [3, 2], free, [t])).toEqual({ x: 2.5, y: 1.75 })
   })
 })

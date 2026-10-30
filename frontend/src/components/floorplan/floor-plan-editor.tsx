@@ -42,7 +42,7 @@ import { PlanScene3D } from "./plan-scene-3d"
 import { planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
-import { nearScope, roomPrompts } from "./placement"
+import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
 import type { NearScope } from "./placement"
 import {
   AssignRoomsDialog,
@@ -151,6 +151,12 @@ export function FloorPlanEditor({
   const shownTiles = useMemo(
     () => pickVisibleTiles(tiles, hidden),
     [tiles, hidden]
+  )
+  // Display > Photos: each tile with a photo drawn as it, its own saved
+  // `display` untouched (the edits keep reading `tiles`).
+  const drawnTiles = useMemo(
+    () => (prefs.showPhotos ? asPhotos(shownTiles) : shownTiles),
+    [shownTiles, prefs.showPhotos]
   )
   const shownShapes = useMemo(
     () => visibleShapes(ed.shapes, hidden),
@@ -273,9 +279,9 @@ export function FloorPlanEditor({
   /** Place rows at a cell point: linked tiles, no type needed. A drop into
    * another room's area asks "Set room to X?" - never sets it itself. */
   const placeAt = useCallback(
-    (rows: FloorPlanPlaceable[], at: Pt) => {
+    (rows: FloorPlanPlaceable[], at: Pt, move = false) => {
       if (ed.mode !== "layout") selectTool("select")
-      const placed = edits.placeRows(rows, at)
+      const placed = edits.placeRows(rows, at, { move })
       setPlaceOpen(false)
       setRoomPrompt(roomPrompts(placed, ed.shapes)[0] ?? null)
     },
@@ -292,6 +298,9 @@ export function FloorPlanEditor({
     },
     [plan, placeAt]
   )
+  // The objects on this floor as the editor holds it - the unsaved draft
+  // included - for the picker's "On this floor" and the Not placed list.
+  const onFloor = useMemo(() => placedOnFloor(tiles), [tiles])
   const openPlace = useCallback(() => {
     const api = canvasApi.current
     setNear(
@@ -339,6 +348,7 @@ export function FloorPlanEditor({
   }
 
   const { stepHistory } = useEditorKeys({
+    // P in View, for those who may edit: into Edit, then the picker.
     onPlaceKey: openPlace,
     canEdit: editing,
     canToggleEdit: canEdit,
@@ -522,6 +532,7 @@ export function FloorPlanEditor({
           editing && !view3d ? (
             <PlacePicker
               plan={plan}
+              onFloor={onFloor}
               open={placeOpen}
               onOpenChange={(o) => (o ? openPlace() : setPlaceOpen(false))}
               near={near}
@@ -587,7 +598,7 @@ export function FloorPlanEditor({
           {!view3d && (
             <PlanCanvas
               plan={plan}
-              shownTiles={shownTiles}
+              shownTiles={drawnTiles}
               shownShapes={shownShapes}
               shapeEdits={shapeEdits}
               canEdit={editing}
@@ -618,7 +629,9 @@ export function FloorPlanEditor({
               calibration={calibration}
               theme={theme}
               openTile={openTile}
-              onDropRows={editing ? placeAt : undefined}
+              onDropRows={
+                editing ? (rows, at) => placeAt(rows, at, true) : undefined
+              }
               selectionToolbar={
                 editing ? (
                   <SelectionToolbar
@@ -718,7 +731,11 @@ export function FloorPlanEditor({
             omitRacks={racksOpen}
             unplaced={
               editing && !view3d ? (
-                <UnplacedList planId={id} onPlace={placeAtCentre} />
+                <UnplacedList
+                  planId={id}
+                  onFloor={onFloor}
+                  onPlace={placeAtCentre}
+                />
               ) : undefined
             }
             shapes={ed.shapes}

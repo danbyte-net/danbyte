@@ -65,12 +65,14 @@ def _ref(obj, *fields):
 
 
 def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
-              near_location=None, unplaced=False, limit=50):
+              near_location=None, unplaced=False, include_here=False, limit=50):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
     location and the locations inside it, 2 for the rest of the site.
     ``unplaced`` keeps only objects of the floor's location (or its rooms)
-    placed on no plan. A device in a rack or a cabinet is placed with it and
+    placed on no plan; with ``include_here`` a tile on ``plan`` itself does
+    not count, those objects coming last - the editor weighs them against
+    its unsaved draft. A device in a rack or a cabinet is placed with it and
     never offered on its own."""
     from auth_api import rbac
 
@@ -96,10 +98,19 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
         qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
         if q:
             qs = qs.filter(name__icontains=q)
+        here_first = ()
         if unplaced:
+            tiles = FloorPlanTile.objects.filter(**{link: OuterRef("pk")})
             qs = qs.filter(
                 Q(location_id__in=floor_locs) | Q(room__location_id__in=floor_locs)
-            ).exclude(Exists(FloorPlanTile.objects.filter(**{link: OuterRef("pk")})))
+            )
+            if include_here:
+                qs = qs.exclude(Exists(tiles.exclude(floor_plan=plan))).annotate(
+                    here=Exists(tiles.filter(floor_plan=plan))
+                )
+                here_first = ("here",)
+            else:
+                qs = qs.exclude(Exists(tiles))
         whens = []
         if near_room is not None:
             whens.append(When(room_id=near_room.pk, then=Value(0)))
@@ -111,9 +122,11 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
         ).select_related("room", "location", "status", "role")
         if kind == "device":
             qs = qs.select_related("device_type")
-        for obj in qs.order_by("rank", natural("name"), "pk")[:limit]:
+        for obj in qs.order_by(*here_first, "rank", natural("name"), "pk")[:limit]:
             rows.append((kind, link, obj))
-    rows.sort(key=lambda r: (r[2].rank, r[2].name.lower(), str(r[2].pk)))
+    rows.sort(key=lambda r: (
+        bool(getattr(r[2], "here", False)), r[2].rank, r[2].name.lower(), str(r[2].pk)
+    ))
     rows = rows[:limit]
 
     # Where each candidate already stands: one query per kind present.
