@@ -205,6 +205,18 @@ class PlaceableTests(_Base):
         names = [r["name"] for r in self.rows(unplaced=1)]
         self.assertEqual(names, ["R1", "sw-floor"])
 
+    def test_unplaced_with_include_here_keeps_this_floors_last(self):
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=0, y=0, device=self.in_room, link_kind="device"
+        )
+        other = FloorPlan.objects.create(tenant=self.tenant, location=self.bldg, name="1")
+        FloorPlanTile.objects.create(
+            floor_plan=other, x=0, y=0, rack=self.rack, link_kind="rack"
+        )
+        rows = self.rows(unplaced=1, include_here=1)
+        self.assertEqual([r["name"] for r in rows], ["sw-floor", "sw-room"])
+        self.assertTrue(rows[1]["placed_on"][0]["this_floor"])
+
     def test_search(self):
         self.assertEqual([r["name"] for r in self.rows(q="annex")], ["sw-annex"])
 
@@ -608,3 +620,77 @@ class ConflictTests(_Base):
         r = self.client.patch(tile_url, {"x": 3, "version": "2001-01-01T00:00:00Z"},
                               format="json")
         self.assertEqual(r.status_code, 409)
+
+
+class OncePerFloorTests(_Base):
+    """A device, rack or cabinet stands once on a floor."""
+
+    def setUp(self):
+        super().setUp()
+        self.dev = Device.objects.create(
+            tenant=self.tenant, name="sw1", site=self.site, location=self.bldg
+        )
+        self.rack = Rack.objects.create(
+            tenant=self.tenant, name="R1", site=self.site, location=self.bldg
+        )
+
+    def bulk(self, body):
+        return self.client.post(f"/api/floor-plans/{self.plan.id}/bulk/", body, format="json")
+
+    def link(self, x, kind="device", obj=None):
+        obj = obj or self.dev
+        return {"x": x, "y": 0, "link_kind": kind, "link_id": str(obj.id)}
+
+    def test_a_second_tile_for_the_same_object_is_refused(self):
+        r = self.bulk({"tiles": {"create": [self.link(0)]}})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.bulk({"tiles": {"create": [self.link(2)]}})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("link_id", r.json())
+        self.assertEqual(FloorPlanTile.objects.filter(device=self.dev).count(), 1)
+
+    def test_two_in_one_save_are_refused_and_nothing_is_written(self):
+        r = self.bulk({"tiles": {"create": [
+            self.link(0, "rack", self.rack), self.link(2, "rack", self.rack),
+        ]}})
+        self.assertEqual(r.status_code, 400)
+        self.assertFalse(FloorPlanTile.objects.filter(rack=self.rack).exists())
+
+    def test_relinking_another_tile_to_a_placed_object_is_refused(self):
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=0, y=0, device=self.dev, link_kind="device"
+        )
+        other = FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=2, y=0, rack=self.rack, link_kind="rack"
+        )
+        r = self.bulk({"tiles": {"update": [{"id": str(other.id), **self.link(2)}]}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_delete_and_place_again_in_one_save(self):
+        tile = FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=0, y=0, device=self.dev, link_kind="device"
+        )
+        r = self.bulk({"tiles": {"delete": [str(tile.id)], "create": [self.link(3)]}})
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_another_floor_and_the_single_endpoint(self):
+        other = FloorPlan.objects.create(tenant=self.tenant, location=self.bldg, name="1")
+        FloorPlanTile.objects.create(
+            floor_plan=other, x=0, y=0, device=self.dev, link_kind="device"
+        )
+        r = self.bulk({"tiles": {"create": [self.link(0)]}})
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self.client.post("/api/floor-plan-tiles/", {
+            "floor_plan_id": str(self.plan.id), **self.link(4),
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_an_existing_duplicate_still_saves(self):
+        a = FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=0, y=0, device=self.dev, link_kind="device"
+        )
+        FloorPlanTile.objects.create(
+            floor_plan=self.plan, x=1, y=0, device=self.dev, link_kind="device"
+        )
+        r = self.bulk({"tiles": {"update": [{"id": str(a.id), **self.link(5)}]}})
+        self.assertEqual(r.status_code, 200, r.content)

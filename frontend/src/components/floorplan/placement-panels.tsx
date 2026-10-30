@@ -42,6 +42,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { InfoTip } from "@/components/ui/info-tip"
 import {
   Popover,
   PopoverContent,
@@ -136,7 +137,7 @@ export function RoomPrompt({
   )
 }
 
-/** **Assign rooms from areas…**: the placed objects standing in another
+/** **Set rooms from areas…**: the placed objects standing in another
  * room's area, ticked ones set together. */
 export function AssignRoomsDialog({
   planId,
@@ -177,7 +178,7 @@ export function AssignRoomsDialog({
       }),
     onSuccess: (res) => {
       toast.success(
-        `${res.applied.length} assigned` +
+        `Room set on ${res.applied.length}` +
           (res.skipped.length ? `, ${res.skipped.length} skipped` : "")
       )
       qc.invalidateQueries({ queryKey: ["floor-plan-assign-rooms", planId] })
@@ -191,7 +192,13 @@ export function AssignRoomsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Assign rooms from areas</DialogTitle>
+          <DialogTitle className="flex items-center gap-1.5">
+            Set rooms from areas
+            <InfoTip>
+              Sets each ticked object's room to the room of the area its tile
+              stands in, as an edit of the object.
+            </InfoTip>
+          </DialogTitle>
         </DialogHeader>
         {query.isLoading && <Loading />}
         {query.isError && <QueryError error={query.error} />}
@@ -239,7 +246,7 @@ export function AssignRoomsDialog({
             disabled={!picked.size || apply.isPending}
             onClick={() => apply.mutate()}
           >
-            {apply.isPending ? "Assigning…" : `Assign ${picked.size}`}
+            {apply.isPending ? "Setting…" : `Set ${picked.size}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -426,6 +433,23 @@ export function SelectionToolbar({
             Set room
             <ColorBadge name={target.name} color={target.color} />
           </Button>
+        )}
+        {!tile.photo && (l?.kind === "device" || l?.kind === "rack") && (
+          // Disabled in look only (aria-disabled), so its tooltip still
+          // says where a photo comes from.
+          <BarIconButton
+            label={
+              l.kind === "rack"
+                ? "No photo: add an image to the rack"
+                : "No photo: add an image to the device or a front image to its type"
+            }
+            tipSide="top"
+            aria-disabled
+            data-part="no-photo"
+            className="cursor-not-allowed opacity-50"
+          >
+            <ImageIcon />
+          </BarIconButton>
         )}
         {tile.photo &&
           (tile.display === "photo" ? (

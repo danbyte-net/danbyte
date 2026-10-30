@@ -122,8 +122,11 @@ export interface FloorCanvasProps {
   onChangeTile?: (id: string, patch: Partial<FloorPlanTile>) => void
   /** Fired when a paint-drag completes (place-mode). */
   onCreateRect?: (rect: { x: number; y: number; w: number; h: number }) => void
-  /** Viewer: tile clicked (also fired in editor on plain click, after select). */
+  /** Open a tile: a double-click, the context menu, and a viewer's click
+   * unless `onClickTile` takes it. */
   onOpenTile?: (tile: FloorPlanTile) => void
+  /** Viewer: a single click on a tile, in place of opening it. */
+  onClickTile?: (tile: FloorPlanTile) => void
   /** Pointer entered/left a tile - `at` is screen-space relative to the canvas
    * wrapper, for anchoring the tile popover. Fired only on boundary crossings
    * (never per pointermove), so it can't regress canvas panning. */
@@ -155,6 +158,8 @@ export interface FloorCanvasProps {
   showFov?: boolean
   /** Draw the name label on background zone tiles (Cold aisle, Hot aisle…). */
   showZoneLabels?: boolean
+  /** Outline photo tiles that are not selected. */
+  photoOutlines?: boolean
   // ── Raised-floor areas (Structure mode) ────────────────────────────────
   /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
   raisedFloors?: {
@@ -342,6 +347,7 @@ export function FloorCanvas({
   onChangeTile,
   onCreateRect,
   onOpenTile,
+  onClickTile,
   onHoverTile,
   exportRef,
   liveState,
@@ -353,6 +359,7 @@ export function FloorCanvas({
   labelFit = false,
   showFov = true,
   showZoneLabels = true,
+  photoOutlines = false,
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -695,7 +702,8 @@ export function FloorCanvas({
     if (isLocked(tile.id)) return
     e.stopPropagation()
     if (!editable) {
-      onOpenTile?.(tile)
+      if (onClickTile) onClickTile(tile)
+      else onOpenTile?.(tile)
       return
     }
     // Shift- or Ctrl/⌘-click builds the multi-selection instead of moving -
@@ -1174,6 +1182,7 @@ export function FloorCanvas({
           editable={editable}
           labelFit={labelFit}
           showZoneLabels={showZoneLabels}
+          photoOutline={photoOutlines}
           live={liveState?.tiles[tile.id]}
           colorBy={colorBy}
           figures={figures?.get(tile.id)}
@@ -1581,7 +1590,10 @@ export function FloorCanvas({
                   (highlightCableIds.includes(b.id) ? 1 : 0)
               )
               .map((cp) => {
-                const route = cableRoutePoints(cp, trays, tiles)
+                const route = cableRoutePoints(cp, trays, tiles, {
+                  ceilingMm: plan.ceiling_mm,
+                  areas: raisedFloors,
+                })
                 if (route.length < 2) return null
                 const hi = highlightCableIds.includes(cp.id)
                 return (

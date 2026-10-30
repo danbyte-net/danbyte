@@ -37,6 +37,14 @@ RACK_PLINTH_MM = 100.0
 #: trays); the router DECIDES routability, so a rack 30 cells from any tray
 #: must come back unreachable, not "reachable via a 20 m unsupported hop".
 MAX_ENTRY_CELLS = 6.0
+#: Two trays whose runs cross mid-segment join there only when their resolved
+#: elevations are this close (mm): an overhead ladder over an underfloor
+#: basket is not a junction. A vertex snapped onto another tray (a drop)
+#: always joins. cable-route.ts's LEVEL_JOIN_MM mirrors it.
+LEVEL_JOIN_MM = 300.0
+
+#: Node lookup that merges with a node of any level - the cable's own ends.
+_ANY = object()
 
 
 def _dist(a: Pt, b: Pt) -> float:
@@ -95,27 +103,45 @@ def route_through_trays(
     tray_polys: list[list[Pt]],
     snap: float = SNAP_CELLS,
     max_entry: float = MAX_ENTRY_CELLS,
+    elevations: list[float | None] | None = None,
 ) -> RouteResult:
     """Best A→B route through the tray network (Dijkstra over tray segments,
     junctions, and entry hops). ``reachable=False`` (with a straight A→B) when
     there are no usable trays, an endpoint sits farther than ``max_entry``
-    cells from every tray, or the network doesn't connect the ends."""
-    trays = [t for t in tray_polys if len(t) >= 2]
+    cells from every tray, or the network doesn't connect the ends.
+
+    ``elevations`` (mm, one per entry of ``tray_polys``; see
+    :func:`tray_elevations`) keeps trays at different heights apart: a
+    mid-run crossing joins two trays only within ``LEVEL_JOIN_MM`` of each
+    other, and points of different heights never merge into one node. A
+    vertex snapped onto another tray joins whatever the heights. ``None``
+    for a tray (or no list) joins it at every crossing, as before."""
+    keep = [i for i, t in enumerate(tray_polys) if len(t) >= 2]
+    trays = [tray_polys[i] for i in keep]
+    # A node's level: trays at one elevation share nodes, others never do.
+    level = [elevations[i] if elevations is not None else 0 for i in keep]
     straight = RouteResult(
         reachable=False, points=[a, b], run_cells=_dist(a, b)
     )
     if not trays:
         return straight
 
-    # ── Node registry (spatial merge so coincident points share a node) ──
+    def joins(ti: int, tj: int) -> bool:
+        li, lj = level[ti], level[tj]
+        return li is None or lj is None or abs(li - lj) <= LEVEL_JOIN_MM
+
+    # ── Node registry (spatial merge so coincident points of one level share
+    # a node) ──
     nodes: list[Pt] = []
+    node_level: list = []
     merge_dist = snap * 0.5
 
-    def node_at(p: Pt) -> int:
+    def node_at(p: Pt, lv=_ANY) -> int:
         for i, n in enumerate(nodes):
-            if _dist(n, p) <= merge_dist:
+            if (lv is _ANY or node_level[i] == lv) and _dist(n, p) <= merge_dist:
                 return i
         nodes.append(p)
+        node_level.append(lv)
         return len(nodes) - 1
 
     # adjacency: u → {v: (weight, tray_index_or_None)}
@@ -156,11 +182,14 @@ def route_through_trays(
                 pt, d, seg, t = _project_polyline(v, other)
                 if d <= snap:
                     breakpoints[tj].append((pos_on_tray(tj, seg, t), pt))
-                    edge(node_at(v), node_at(pt), d, None)
+                    edge(node_at(v, level[ti]), node_at(pt, level[tj]), d, None)
 
-    # Mid-segment crossings → junctions where two trays intersect.
+    # Mid-segment crossings → junctions where two trays at one level
+    # intersect. A run passing over or under another is not a junction.
     for ti in range(len(trays)):
         for tj in range(ti + 1, len(trays)):
+            if not joins(ti, tj):
+                continue
             for si in range(len(trays[ti]) - 1):
                 for sj in range(len(trays[tj]) - 1):
                     x = _segment_intersect(
@@ -172,10 +201,13 @@ def route_through_trays(
                     p, t, u = x
                     breakpoints[ti].append((pos_on_tray(ti, si, t), p))
                     breakpoints[tj].append((pos_on_tray(tj, sj, u), p))
+                    if level[ti] != level[tj]:
+                        # Close enough to join, but not one level: link them.
+                        edge(node_at(p, level[ti]), node_at(p, level[tj]), 0.0, None)
 
     # Entry/exit: project A and B onto their nearest tray - but only within
     # max_entry, otherwise the endpoint simply isn't served by the network.
-    def entry_point(p: Pt) -> Pt | None:
+    def entry_point(p: Pt) -> tuple[Pt, int] | None:
         best_d, best_pt, best_ti, best_seg, best_t = math.inf, p, 0, 0, 0.0
         for ti, poly in enumerate(trays):
             pt, d, seg, t = _project_polyline(p, poly)
@@ -186,7 +218,7 @@ def route_through_trays(
         breakpoints[best_ti].append(
             (pos_on_tray(best_ti, best_seg, best_t), best_pt)
         )
-        return best_pt
+        return best_pt, best_ti
 
     entry_a = entry_point(a)
     entry_b = entry_point(b)
@@ -198,16 +230,17 @@ def route_through_trays(
         bps = sorted(breakpoints[ti], key=lambda x: x[0])
         for i in range(len(bps) - 1):
             edge(
-                node_at(bps[i][1]),
-                node_at(bps[i + 1][1]),
+                node_at(bps[i][1], level[ti]),
+                node_at(bps[i + 1][1], level[ti]),
                 abs(bps[i + 1][0] - bps[i][0]),
                 ti,
             )
 
     # Endpoint hops (straight-line ends outside the network).
+    (pa, ta), (pb, tb) = entry_a, entry_b
     na, nb = node_at(a), node_at(b)
-    edge(na, node_at(entry_a), _dist(a, entry_a), None)
-    edge(nb, node_at(entry_b), _dist(b, entry_b), None)
+    edge(na, node_at(pa, level[ta]), _dist(a, pa), None)
+    edge(nb, node_at(pb, level[tb]), _dist(b, pb), None)
 
     # ── Dijkstra ──
     best = [math.inf] * len(nodes)
@@ -242,7 +275,7 @@ def route_through_trays(
     tray_order.reverse()
     # Deduplicate while keeping first-use order.
     seen: set[int] = set()
-    trays_used = [t for t in tray_order if not (t in seen or seen.add(t))]
+    trays_used = [keep[t] for t in tray_order if not (t in seen or seen.add(t))]
     return RouteResult(
         reachable=True,
         points=points,
@@ -298,6 +331,20 @@ def underfloor_plenum_mm(
                 if plenum > best:
                     best = float(plenum)
     return best or float(DEFAULT_PLENUM_MM)
+
+
+def tray_elevations(trays, ceiling_mm: int, area_rects) -> list[float]:
+    """Each tray's resolved elevation (mm), for ``route_through_trays``'s
+    ``elevations``: its own ``elevation_mm``, else derived from its level and
+    the raised floor under it. ``trays`` carry ``level``, ``elevation_mm``
+    and ``points``; ``area_rects`` are ``underfloor_plenum_mm``'s."""
+    return [
+        tray_elevation_mm(
+            t.level, t.elevation_mm, ceiling_mm,
+            underfloor_plenum_mm(area_rects, t.points),
+        )
+        for t in trays
+    ]
 
 
 def rack_drop_mm(

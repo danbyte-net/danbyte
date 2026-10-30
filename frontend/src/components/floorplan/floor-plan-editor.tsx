@@ -43,7 +43,7 @@ import { PlanScene3D } from "./plan-scene-3d"
 import { planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
-import { nearScope, roomPrompts } from "./placement"
+import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
 import type { NearScope } from "./placement"
 import {
   AssignRoomsDialog,
@@ -105,6 +105,12 @@ export function FloorPlanEditor({
   const data = useFloorPlanData(id)
   const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
   const { trays, areas, walls, cablePaths } = data
+  // Trays crossing at different heights do not join (cable-route.ts).
+  const ceilingMm = plan?.ceiling_mm
+  const planLevels = useMemo(
+    () => (ceilingMm == null ? undefined : { ceilingMm, areas }),
+    [ceilingMm, areas]
+  )
   usePageTitle(
     plan ? (plan.stack ? `${plan.stack.name} · ${plan.name}` : plan.name) : null
   )
@@ -162,6 +168,12 @@ export function FloorPlanEditor({
   const shownTiles = useMemo(
     () => pickVisibleTiles(tiles, hidden),
     [tiles, hidden]
+  )
+  // Display > Photos: each tile with a photo drawn as it, its own saved
+  // `display` untouched (the edits keep reading `tiles`).
+  const drawnTiles = useMemo(
+    () => (prefs.showPhotos ? asPhotos(shownTiles) : shownTiles),
+    [shownTiles, prefs.showPhotos]
   )
   const shownShapes = useMemo(
     () => visibleShapes(ed.shapes, hidden),
@@ -277,17 +289,17 @@ export function FloorPlanEditor({
     tracedRef.current = traceParam
     prefs.setShowLinksLocal(true)
     ed.setHighlightCableIds([traceParam])
-    const route = cableRoutePoints(cp, trays, tiles)
+    const route = cableRoutePoints(cp, trays, tiles, planLevels)
     if (route.length >= 2)
       requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
-  }, [traceParam, cablePaths, trays, tiles])
+  }, [traceParam, cablePaths, trays, tiles, planLevels])
 
   /** Place rows at a cell point: linked tiles, no type needed. A drop into
    * another room's area asks "Set room to X?" - never sets it itself. */
   const placeAt = useCallback(
-    (rows: FloorPlanPlaceable[], at: Pt) => {
+    (rows: FloorPlanPlaceable[], at: Pt, move = false) => {
       if (ed.mode !== "layout") selectTool("select")
-      const placed = edits.placeRows(rows, at)
+      const placed = edits.placeRows(rows, at, { move })
       setPlaceOpen(false)
       setRoomPrompt(roomPrompts(placed, ed.shapes)[0] ?? null)
     },
@@ -304,6 +316,9 @@ export function FloorPlanEditor({
     },
     [plan, placeAt]
   )
+  // The objects on this floor as the editor holds it - the unsaved draft
+  // included - for the picker's "On this floor" and the Not placed list.
+  const onFloor = useMemo(() => placedOnFloor(tiles), [tiles])
   const openPlace = useCallback(() => {
     const api = canvasApi.current
     setNear(
@@ -351,6 +366,7 @@ export function FloorPlanEditor({
   }
 
   const { stepHistory } = useEditorKeys({
+    // P in View, for those who may edit: into Edit, then the picker.
     onPlaceKey: openPlace,
     canEdit: editing,
     canToggleEdit: canEdit,
@@ -387,8 +403,10 @@ export function FloorPlanEditor({
       nav({ to: "/floorplans/$id", params: { id: tile.linked.id } })
       return
     }
-    // Rack/device tiles open the contents + end-to-end trace sheet.
+    // Rack/device tiles open the contents + end-to-end trace sheet (from
+    // the popover's Trace or a double-click - a click pins the popover).
     if (tile.linked?.kind === "rack" || tile.linked?.kind === "device") {
+      popover.close()
       ed.setDeepTile(tile)
       return
     }
@@ -413,13 +431,13 @@ export function FloorPlanEditor({
       const pts = cableIds
         .map((cid) => cablePaths.find((c) => c.id === cid))
         .filter((cp): cp is FloorPlanCablePath => !!cp)
-        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles))
+        .flatMap((cp) => cableRoutePoints(cp, trays, shownTiles, planLevels))
       if (pts.length >= 2)
         requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
       else if (cableIds.length)
         toast.info("That run isn't routed through a tray on this plan yet.")
     },
-    [cablePaths, trays, shownTiles]
+    [cablePaths, trays, shownTiles, planLevels]
   )
 
   if (planQuery.isLoading) return <Loading />
@@ -534,6 +552,7 @@ export function FloorPlanEditor({
           editing && !view3d ? (
             <PlacePicker
               plan={plan}
+              onFloor={onFloor}
               open={placeOpen}
               onOpenChange={(o) => (o ? openPlace() : setPlaceOpen(false))}
               near={near}
@@ -600,7 +619,7 @@ export function FloorPlanEditor({
           {!view3d && (
             <PlanCanvas
               plan={plan}
-              shownTiles={shownTiles}
+              shownTiles={drawnTiles}
               shownShapes={shownShapes}
               shapeEdits={shapeEdits}
               canEdit={editing}
@@ -631,7 +650,9 @@ export function FloorPlanEditor({
               calibration={calibration}
               theme={theme}
               openTile={openTile}
-              onDropRows={editing ? placeAt : undefined}
+              onDropRows={
+                editing ? (rows, at) => placeAt(rows, at, true) : undefined
+              }
               onSnapshotRect={
                 editing && ed.tool === "snapshot"
                   ? (r) => setSnapshotCrop(r)
@@ -737,7 +758,11 @@ export function FloorPlanEditor({
             omitRacks={racksOpen}
             unplaced={
               editing && !view3d ? (
-                <UnplacedList planId={id} onPlace={placeAtCentre} />
+                <UnplacedList
+                  planId={id}
+                  onFloor={onFloor}
+                  onPlace={placeAtCentre}
+                />
               ) : undefined
             }
             shapes={ed.shapes}

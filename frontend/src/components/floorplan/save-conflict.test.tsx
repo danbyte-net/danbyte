@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ApiError } from "@/lib/api"
@@ -139,19 +140,90 @@ describe("placing from the picker", () => {
     const { result } = setup()
     act(() => {
       result.current.edits.placeRows(
-        [ROW, { ...ROW, id: "d2", name: "sw2" }],
+        [
+          { ...ROW, id: "d2", name: "sw2" },
+          { ...ROW, id: "d3", name: "sw3" },
+        ],
         [1.5, 1.5]
       )
     })
     const placed = result.current.ed.tiles.filter((t) => t.id !== "t1")
     expect(placed.map((t) => [t.x, t.y, t.linked?.id])).toEqual([
-      [2, 1, "d1"],
-      [3, 1, "d2"],
+      [2, 1, "d2"],
+      [3, 1, "d3"],
     ])
     expect(placed.every((t) => !t.tile_type && !t.role_type)).toBe(true)
     act(() => {
       result.current.ed.draft.undo()
     })
     expect(result.current.ed.tiles).toHaveLength(1)
+  })
+
+  it("never places an object twice: a lone drop moves its tile", () => {
+    const { result } = setup()
+    // d1 stands on the saved tile t1: dropping it moves that tile.
+    act(() => {
+      result.current.edits.placeRows([ROW], [6.5, 4.5], { move: true })
+    })
+    expect(result.current.ed.tiles).toHaveLength(1)
+    expect(result.current.ed.tiles[0]).toMatchObject({ id: "t1", x: 6, y: 4 })
+    expect(result.current.ed.selectedId).toBe("t1")
+    // A click (no move) only selects it.
+    act(() => {
+      result.current.edits.placeRows([ROW], [0.5, 0.5])
+    })
+    expect(result.current.ed.tiles[0]).toMatchObject({ x: 6, y: 4 })
+  })
+
+  it("counts the unsaved draft: a tile placed a moment ago is not placed again", () => {
+    const { result } = setup()
+    const d2 = { ...ROW, id: "d2", name: "sw2" }
+    act(() => {
+      result.current.edits.placeRows([d2], [3.5, 3.5])
+    })
+    act(() => {
+      result.current.edits.placeRows([d2], [7.5, 7.5], { move: true })
+    })
+    const d2Tiles = result.current.ed.tiles.filter((t) => t.linked?.id === "d2")
+    expect(d2Tiles).toHaveLength(1)
+    expect(d2Tiles[0]).toMatchObject({ x: 7, y: 7 })
+  })
+
+  it("several at once skip those already on the floor, saying how many", () => {
+    vi.mocked(toast.info).mockClear()
+    const { result } = setup()
+    act(() => {
+      result.current.edits.placeRows(
+        [ROW, { ...ROW, id: "d2", name: "sw2" }],
+        [4.5, 4.5]
+      )
+    })
+    expect(result.current.ed.tiles.map((t) => t.linked?.id)).toEqual([
+      "d1",
+      "d2",
+    ])
+    expect(toast.info).toHaveBeenCalledWith("1 already on this floor, skipped")
+  })
+
+  it("carries the row's photo into the draft, so it can show at once", () => {
+    const { result } = setup()
+    const photo = {
+      url: "/m/front.png",
+      aspect: 0.25,
+      source: "type" as const,
+      width_mm: 440,
+    }
+    act(() => {
+      result.current.edits.placeRows(
+        [{ ...ROW, id: "d2", name: "sw2", photo }],
+        [5.5, 5.5]
+      )
+    })
+    const t = result.current.ed.tiles.find((x) => x.linked?.id === "d2")!
+    expect(t.photo).toEqual(photo)
+    // A grid plan shows it in the tile's cells, size unchanged.
+    act(() => result.current.edits.setTileDisplay(t, "photo"))
+    const shown = result.current.ed.tiles.find((x) => x.id === t.id)!
+    expect(shown).toMatchObject({ display: "photo", width: 1, height: 1 })
   })
 })

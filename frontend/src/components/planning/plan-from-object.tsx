@@ -1,22 +1,15 @@
 import { useState } from "react"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { CalendarClock, Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import {
-  api,
-  type Paginated,
-  type PlanningBoard,
-  type PlanningStatus,
-  type PlanningTask,
-} from "@/lib/api"
-import { apiAll } from "@/lib/api-all"
+import { api } from "@/lib/api"
+import type { Paginated, PlanningTask } from "@/lib/api"
 import { OBJECT_DETAIL_ROUTES, objectForPath } from "@/lib/object-routes"
 import { isPlanCapable } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
 import { useDateFormat } from "@/lib/datetime"
-import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormCombobox } from "@/components/forms"
@@ -25,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useCreateTask, usePlanningBoards } from "./use-create-task"
 
 /**
  * "Plan a change" from the object's own page.
@@ -63,14 +57,9 @@ export function PlanFromObject() {
     staleTime: 30_000,
   })
 
-  const boardsQ = useQuery({
-    queryKey: ["planning-boards"],
-    queryFn: () => apiAll<PlanningBoard>("/api/planning/boards/"),
-    enabled: enabled && creating,
-    staleTime: 60_000,
-  })
+  const boardsQ = usePlanningBoards(enabled && creating)
   const boards = boardsQ.data?.results ?? []
-  const activeBoard = boardId ?? boards[0]?.id ?? null
+  const activeBoard = boardId ?? boards.at(0)?.id ?? null
 
   const goPlan = (taskId: string, board: string) => {
     if (!target) return
@@ -81,51 +70,24 @@ export function PlanFromObject() {
     })
   }
 
-  const create = useMutation({
-    mutationFn: async () => {
-      if (!target || !activeBoard) throw new Error("Pick a board first.")
-      // The new task starts in the board's leftmost open column.
-      const statuses = await api<Paginated<PlanningStatus>>(
-        `/api/planning/statuses/?board=${activeBoard}&page_size=100`
-      )
-      const openCols = statuses.results.filter(
-        (s) =>
-          s.semantic_group !== "completed" && s.semantic_group !== "cancelled"
-      )
-      const status = (openCols[0] ?? statuses.results[0])?.id
-      if (!status) throw new Error("This board has no statuses.")
-      const task = await api<PlanningTask>("/api/planning/tasks/", {
-        method: "POST",
-        body: JSON.stringify({
-          board: activeBoard,
-          status,
-          title: title.trim(),
-        }),
-      })
-      // Auto-link the object the operator is standing on.
-      await api("/api/planning/links/", {
-        method: "POST",
-        body: JSON.stringify({
-          task: task.id,
-          object_type: target.objectType,
-          object_id: target.id,
-        }),
-      })
-      return task
-    },
+  const create = useCreateTask({
     onSuccess: (task) => {
       toast.success("Task created")
       goPlan(task.id, task.board)
     },
-    onError: (e) => apiErrorToast(e),
   })
+  const submit = () => {
+    if (!target || !activeBoard || !title.trim() || create.isPending) return
+    create.mutate({ board: activeBoard, title, link: target })
+  }
 
   if (!target || !isPlanCapable(target.objectType)) return null
   // Recording a change on a task is editing that task.
   if (!canDo("task", "change")) return null
 
   const rows = tasks.data?.results ?? []
-  const canCreate = canDo("task", "add")
+  // The new task is linked to this object, which needs its own right.
+  const canCreate = canDo("task", "add") && canDo("tasklink", "add")
 
   return (
     <Popover
@@ -154,8 +116,7 @@ export function PlanFromObject() {
               placeholder="Task title"
               className="h-8"
               onKeyDown={(e) => {
-                if (e.key === "Enter" && title.trim() && activeBoard)
-                  create.mutate()
+                if (e.key === "Enter") submit()
               }}
             />
             <FormCombobox
@@ -181,7 +142,7 @@ export function PlanFromObject() {
               <Button
                 size="sm"
                 disabled={!title.trim() || !activeBoard || create.isPending}
-                onClick={() => create.mutate()}
+                onClick={submit}
               >
                 {create.isPending ? "Creating..." : "Create & plan"}
               </Button>

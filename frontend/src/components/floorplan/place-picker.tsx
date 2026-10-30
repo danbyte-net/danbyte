@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Box, HardDrive, Plus, Server, X } from "lucide-react"
+import {
+  Box,
+  ChevronDown,
+  ChevronRight,
+  HardDrive,
+  Plus,
+  Server,
+  X,
+} from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { FloorPlan, FloorPlanPlaceable } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
-import { BarMenuTrigger } from "@/components/map-toolbar"
+import { BarMenuTrigger, BarTip } from "@/components/map-toolbar"
 import { ObjectsSection } from "@/components/objects-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Input } from "@/components/ui/input"
 import {
   Popover,
@@ -20,7 +29,7 @@ import {
 } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-import { PLACE_MIME } from "./placement"
+import { PLACE_MIME, placeKey, withDraftPlacement } from "./placement"
 import type { NearScope } from "./placement"
 
 const KIND_ICON = { device: HardDrive, rack: Server, cabinet: Box } as const
@@ -123,16 +132,26 @@ export function PlaceableRow({
 }
 
 /** The Objects panel's **Not placed**: the floor's devices, racks and
- * cabinets placed on no plan - drag one onto the plan, or click it. */
+ * cabinets placed on no plan - this floor counted as the editor holds it,
+ * unsaved edits included. Drag one onto the plan, or click it. */
 export function UnplacedList({
   planId,
+  onFloor,
   onPlace,
 }: {
   planId: string
+  /** What the editor's tiles link, saved or not: `kind:id` -> tile id. */
+  onFloor: Map<string, string>
   onPlace: (rows: FloorPlanPlaceable[]) => void
 }) {
-  const query = usePlaceable(planId, { unplaced: "1", limit: "200" })
-  const rows = query.data?.results ?? []
+  const query = usePlaceable(planId, {
+    unplaced: "1",
+    include_here: "1",
+    limit: "200",
+  })
+  const rows = (query.data?.results ?? []).filter(
+    (r) => !onFloor.has(placeKey(r.kind, r.id))
+  )
   if (!rows.length) return null
   return (
     <ObjectsSection
@@ -161,6 +180,7 @@ export function UnplacedList({
  */
 export function PlacePicker({
   plan,
+  onFloor,
   open,
   onOpenChange,
   near,
@@ -169,6 +189,8 @@ export function PlacePicker({
   onAssignRooms,
 }: {
   plan: FloorPlan
+  /** What the editor's tiles link, saved or not: `kind:id` -> tile id. */
+  onFloor: Map<string, string>
   open: boolean
   onOpenChange: (v: boolean) => void
   /** The room or location near the pointer when the picker opened. */
@@ -182,11 +204,13 @@ export function PlacePicker({
   const [q, setQ] = useState("")
   const [scope, setScope] = useState<NearScope | null>(near)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [placedOpen, setPlacedOpen] = useState(false)
   // Each opening takes the room near the pointer afresh.
   useEffect(() => {
     if (open) {
       setScope(near)
       setPicked(new Set())
+      setPlacedOpen(false)
     }
   }, [open])
   const params: Record<string, string> = {}
@@ -194,17 +218,28 @@ export function PlacePicker({
   if (scope?.room) params.near_room = scope.room.id
   else if (scope?.location) params.near_location = scope.location.id
   const query = usePlaceable(plan.id, params, open)
-  const rows = query.data?.results ?? []
+  // "On this floor" as the editor holds it: a tile placed or deleted
+  // since the last save counts at once.
+  const rows = (query.data?.results ?? []).map((r) =>
+    withDraftPlacement(r, onFloor, plan)
+  )
   const nearName = scope?.room?.name ?? scope?.location?.name
+  // What is already on this floor is not suggested: it waits, folded, at
+  // the foot. A search finds it in its place.
+  const searching = !!q.trim()
+  const isHere = (r: FloorPlanPlaceable) =>
+    r.placed_on.some((p) => p.this_floor)
+  const placedHere = searching ? [] : rows.filter(isHere)
+  const offered = searching ? rows : rows.filter((r) => !isHere(r))
   const groups: [string, FloorPlanPlaceable[]][] = (
     [
-      [nearName ? `In ${nearName}` : "", rows.filter((r) => r.rank === 0)],
+      [nearName ? `In ${nearName}` : "", offered.filter((r) => r.rank === 0)],
       // A site-wide floor ranks the near room's building next.
       [
         plan.location ? `In ${plan.location.name}` : "Nearby",
-        rows.filter((r) => r.rank === 1),
+        offered.filter((r) => r.rank === 1),
       ],
-      ["Elsewhere", rows.filter((r) => r.rank === 2)],
+      ["Elsewhere", offered.filter((r) => r.rank === 2)],
     ] as [string, FloorPlanPlaceable[]][]
   ).filter(([, list]) => list.length > 0)
   const selected = rows.filter((r) => picked.has(r.id))
@@ -215,14 +250,35 @@ export function PlacePicker({
     else onPlace([row])
     onOpenChange(false)
   }
+  const rowOf = (row: FloorPlanPlaceable) => (
+    <PlaceableRow
+      key={`${row.kind}:${row.id}`}
+      row={row}
+      checked={picked.has(row.id)}
+      onCheckedChange={(v) =>
+        setPicked((prev) => {
+          const next = new Set(prev)
+          if (v) next.add(row.id)
+          else next.delete(row.id)
+          return next
+        })
+      }
+      onClick={() => click(row)}
+      dragging={() =>
+        picked.has(row.id) && selected.length ? selected : [row]
+      }
+    />
+  )
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <BarMenuTrigger>
-          <Plus /> Place…
-        </BarMenuTrigger>
-      </PopoverTrigger>
+      <BarTip tip="Place…" shortcut="P">
+        <PopoverTrigger asChild>
+          <BarMenuTrigger>
+            <Plus /> Place…
+          </BarMenuTrigger>
+        </PopoverTrigger>
+      </BarTip>
       <PopoverContent
         align="start"
         className="flex w-[26rem] flex-col gap-2 p-2"
@@ -261,7 +317,7 @@ export function PlacePicker({
         <div className="max-h-80 overflow-y-auto" role="listbox">
           {query.isLoading && <Loading />}
           {query.isError && <QueryError error={query.error} />}
-          {query.isSuccess && rows.length === 0 && (
+          {query.isSuccess && groups.length === 0 && (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">
               Nothing to place
             </p>
@@ -273,27 +329,28 @@ export function PlacePicker({
                   {title}
                 </div>
               )}
-              {list.map((row) => (
-                <PlaceableRow
-                  key={`${row.kind}:${row.id}`}
-                  row={row}
-                  checked={picked.has(row.id)}
-                  onCheckedChange={(v) =>
-                    setPicked((prev) => {
-                      const next = new Set(prev)
-                      if (v) next.add(row.id)
-                      else next.delete(row.id)
-                      return next
-                    })
-                  }
-                  onClick={() => click(row)}
-                  dragging={() =>
-                    picked.has(row.id) && selected.length ? selected : [row]
-                  }
-                />
-              ))}
+              {list.map(rowOf)}
             </div>
           ))}
+          {placedHere.length > 0 && (
+            <div data-group="On this floor">
+              <button
+                type="button"
+                aria-expanded={placedOpen}
+                className="flex w-full items-center gap-1 px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                onClick={() => setPlacedOpen((o) => !o)}
+              >
+                {placedOpen ? (
+                  <ChevronDown className="size-3" />
+                ) : (
+                  <ChevronRight className="size-3" />
+                )}
+                On this floor
+                <Badge variant="secondary">{placedHere.length}</Badge>
+              </button>
+              {placedOpen && placedHere.map(rowOf)}
+            </div>
+          )}
         </div>
         <div
           className={cn(
@@ -312,17 +369,27 @@ export function PlacePicker({
               Place {selected.length}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className={cn(selected.length > 0 && "ml-auto")}
-            onClick={() => {
-              onOpenChange(false)
-              onAssignRooms()
-            }}
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              selected.length > 0 && "ml-auto"
+            )}
           >
-            Assign rooms from areas…
-          </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                onOpenChange(false)
+                onAssignRooms()
+              }}
+            >
+              Set rooms from areas…
+            </Button>
+            <InfoTip side="top">
+              Sets each placed object's room to the room of the area it stands
+              in. You pick which ones; nothing changes on its own.
+            </InfoTip>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

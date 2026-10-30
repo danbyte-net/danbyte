@@ -7,9 +7,64 @@
 // cable has no trays, or the trays don't connect its ends, it falls back to a
 // straight A→B line.
 //
+// Trays at different heights stay apart: where two runs cross mid-segment
+// they join only within LEVEL_JOIN_MM of each other, so an overhead ladder
+// over an underfloor basket is no junction. A vertex snapped onto another
+// tray (a drop) always joins. The server's api/pathfinding.py is the twin;
+// cable-route.cases.json holds the cases both must agree on.
+//
 // All coordinates are in cell units (the same units tray.points use).
 
 export type Pt = [number, number]
+
+/** Crossing runs this close in elevation (mm) join; pathfinding.py's
+ * LEVEL_JOIN_MM. */
+export const LEVEL_JOIN_MM = 300
+/** Overhead trays hang this far below the ceiling when no elevation is set. */
+const OVERHEAD_DROP_MM = 300
+/** Plenum depth under a raised floor when no area records one (mm). */
+const DEFAULT_PLENUM_MM = 300
+
+/** A raised-floor rect for {@link trayElevationMm}: cell units + plenum. */
+export interface PlenumRect {
+  x: number
+  y: number
+  width: number
+  height: number
+  plenum_mm: number
+}
+
+/** A tray's resolved elevation (mm) - its own `elevation_mm`, else from its
+ * level: overhead → ceiling − 300, underfloor → −(deepest raised floor under
+ * it, else 300), floor → 0. pathfinding.py's tray_elevation_mm +
+ * underfloor_plenum_mm. */
+export function trayElevationMm(
+  tray: {
+    level: string
+    elevation_mm: number | null
+    points: [number, number][]
+  },
+  ceilingMm: number,
+  areas: PlenumRect[] = []
+): number {
+  if (tray.elevation_mm != null) return tray.elevation_mm
+  if (tray.level === "underfloor") {
+    let best = 0
+    for (const [px, py] of tray.points)
+      for (const a of areas)
+        if (
+          a.x <= px &&
+          px <= a.x + a.width &&
+          a.y <= py &&
+          py <= a.y + a.height &&
+          a.plenum_mm > best
+        )
+          best = a.plenum_mm
+    return -(best || DEFAULT_PLENUM_MM)
+  }
+  if (tray.level === "floor") return 0
+  return ceilingMm - OVERHEAD_DROP_MM
+}
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1])
 
@@ -59,18 +114,42 @@ function projectPolyline(
 /**
  * Route A→B through the given trays. Returns an ordered list of points; a
  * straight `[a, b]` when there are no usable trays or B is unreachable.
+ * `elevations` (mm, one per tray; see {@link trayElevationMm}) keeps trays at
+ * different heights from joining where they cross; null for a tray, or no
+ * list, joins it at every crossing.
  */
-export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
-  const trays = trayPolys.filter((t) => t.length >= 2)
+export function routeCable(
+  a: Pt,
+  b: Pt,
+  trayPolys: Pt[][],
+  snap = 0.75,
+  elevations?: (number | null)[]
+): Pt[] {
+  const keep = trayPolys.flatMap((t, i) => (t.length >= 2 ? [i] : []))
+  const trays = keep.map((i) => trayPolys[i])
   if (trays.length === 0) return [a, b]
+  // A node's level: trays at one elevation share nodes, others never do.
+  const level = keep.map((i) => (elevations ? (elevations[i] ?? null) : 0))
+  const joins = (ti: number, tj: number) => {
+    const li = level[ti]
+    const lj = level[tj]
+    return li === null || lj === null || Math.abs(li - lj) <= LEVEL_JOIN_MM
+  }
 
-  // ── Node registry (spatial merge so coincident points share a node) ──────
+  // ── Node registry (spatial merge so coincident points of one level share
+  // a node; `undefined` matches any level - the cable's own ends) ──────────
   const nodes: Pt[] = []
+  const nodeLevel: (number | null | undefined)[] = []
   const mergeDist = snap * 0.5
-  function nodeAt(p: Pt): number {
+  function nodeAt(p: Pt, lv?: number | null): number {
     for (let i = 0; i < nodes.length; i++)
-      if (dist(nodes[i], p) <= mergeDist) return i
+      if (
+        (lv === undefined || nodeLevel[i] === lv) &&
+        dist(nodes[i], p) <= mergeDist
+      )
+        return i
     nodes.push(p)
+    nodeLevel.push(lv)
     return nodes.length - 1
   }
   const adj = new Map<number, Map<number, number>>()
@@ -114,7 +193,7 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
         const pr = projectPolyline(v, trays[tj])
         if (pr.d <= snap) {
           breakpoints[tj].push({ pos: posOnTray(tj, pr.seg, pr.t), p: pr.pt })
-          edge(nodeAt(v), nodeAt(pr.pt), pr.d)
+          edge(nodeAt(v, level[ti]), nodeAt(pr.pt, level[tj]), pr.d)
         }
       }
     }
@@ -122,9 +201,11 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
 
   // Segment crossings → junctions where two trays actually intersect mid-run
   // (neither has a vertex there). Split both trays at the crossing so a cable
-  // can turn from one onto the other.
+  // can turn from one onto the other - only at one level: a run passing over
+  // or under another is not a junction.
   for (let ti = 0; ti < trays.length; ti++) {
     for (let tj = ti + 1; tj < trays.length; tj++) {
+      if (!joins(ti, tj)) continue
       for (let si = 0; si < trays[ti].length - 1; si++) {
         for (let sj = 0; sj < trays[tj].length - 1; sj++) {
           const x = segmentIntersect(
@@ -136,6 +217,9 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
           if (!x) continue
           breakpoints[ti].push({ pos: posOnTray(ti, si, x.t), p: x.p })
           breakpoints[tj].push({ pos: posOnTray(tj, sj, x.u), p: x.p })
+          // Close enough to join, but not one level: link them.
+          if (level[ti] !== level[tj])
+            edge(nodeAt(x.p, level[ti]), nodeAt(x.p, level[tj]), 0)
         }
       }
     }
@@ -143,7 +227,7 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
 
   // Entry/exit: project A and B onto their nearest tray (unbounded) so the
   // trace always enters the network at the closest tray point.
-  function entryPoint(p: Pt): Pt {
+  function entryPoint(p: Pt): { pt: Pt; ti: number } {
     let best = { d: Infinity, pt: p, ti: 0, seg: 0, t: 0 }
     trays.forEach((poly, ti) => {
       const pr = projectPolyline(p, poly)
@@ -153,7 +237,7 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
       pos: posOnTray(best.ti, best.seg, best.t),
       p: best.pt,
     })
-    return best.pt
+    return { pt: best.pt, ti: best.ti }
   }
   const entryA = entryPoint(a)
   const entryB = entryPoint(b)
@@ -164,8 +248,8 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
     const bps = breakpoints[ti].sort((x, y) => x.pos - y.pos)
     for (let i = 0; i < bps.length - 1; i++) {
       edge(
-        nodeAt(bps[i].p),
-        nodeAt(bps[i + 1].p),
+        nodeAt(bps[i].p, level[ti]),
+        nodeAt(bps[i + 1].p, level[ti]),
         Math.abs(bps[i + 1].pos - bps[i].pos)
       )
     }
@@ -174,8 +258,8 @@ export function routeCable(a: Pt, b: Pt, trayPolys: Pt[][], snap = 0.75): Pt[] {
   // Connect the device endpoints to their tray entry points.
   const A = nodeAt(a)
   const B = nodeAt(b)
-  edge(A, nodeAt(entryA), dist(a, entryA))
-  edge(B, nodeAt(entryB), dist(b, entryB))
+  edge(A, nodeAt(entryA.pt, level[entryA.ti]), dist(a, entryA.pt))
+  edge(B, nodeAt(entryB.pt, level[entryB.ti]), dist(b, entryB.pt))
 
   // ── Dijkstra A→B ─────────────────────────────────────────────────────────
   const best = new Array<number>(nodes.length).fill(Infinity)

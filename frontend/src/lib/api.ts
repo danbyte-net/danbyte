@@ -12338,7 +12338,10 @@ export interface FloorPlanTray {
    * from level: overhead → ceiling−300, underfloor → −300, floor → 0. */
   elevation_mm: number | null
   description: string
+  /** The cables in it the reader may view. */
   cables: TrayCableMini[]
+  /** Cables in it the reader may not view. */
+  hidden_cable_count: number
   created_at: string
   updated_at: string
 }
@@ -12607,10 +12610,16 @@ export interface FloorPlanCablePath {
   b_tiles: string[]
   /** Endpoint device + port name per termination - lets the 3D room anchor
    * the run to the exact photo-port quad. */
-  a_points: { device: string; port: string }[]
-  b_points: { device: string; port: string }[]
+  a_points: FloorPlanCableEnd[]
+  b_points: FloorPlanCableEnd[]
   tray_ids: string[]
 }
+
+/** One end of a plan's cable: the device and port, or - on a device the
+ * reader may not view (#453) - nothing but `hidden`. */
+export type FloorPlanCableEnd =
+  | { device: string; port: string; hidden?: undefined }
+  | { device: null; port: null; hidden: true }
 
 /** A tray as the routing editor sees it. */
 export interface TrayRef {

@@ -11041,6 +11041,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     raise serializers.ValidationError(
                         {"link_id": "A tile can't link to its own floor plan."}
                     )
+                self._check_once_per_floor(kind, obj, attrs)
                 attrs[FloorPlanTile.LINK_FIELDS[kind]] = obj
                 attrs["link_kind"] = kind
         # Exactly one of tile_type / role_type - or neither on a linked tile,
@@ -11055,6 +11056,26 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     {"tile_type_id": "Pick a tile type or role, or link the tile to an object."}
                 )
         return attrs
+
+    def _check_once_per_floor(self, kind, obj, attrs):
+        """A device, rack or cabinet stands once on a floor: a second tile
+        linked to it on the same plan is refused. A tile that already links
+        it keeps saving, so duplicates made before this rule stay editable."""
+        if kind not in ("device", "rack", "cabinet"):
+            return
+        field = FloorPlanTile.LINK_FIELDS[kind]
+        if self.instance is not None and getattr(self.instance, f"{field}_id") == obj.pk:
+            return
+        plan = _plan_of(self, attrs)
+        if plan is None:
+            return
+        others = FloorPlanTile.objects.filter(floor_plan=plan, **{field: obj})
+        if self.instance is not None:
+            others = others.exclude(pk=self.instance.pk)
+        if others.exists():
+            raise serializers.ValidationError(
+                {"link_id": f"{obj} is already on this floor."}
+            )
 
     def _check_geometry(self, attrs):
         """A grid plan holds whole cells at quarter turns; a free plan any
@@ -11110,23 +11131,75 @@ def validate_lattice_points(v):
     return [[round(p[0] * 2) / 2, round(p[1] * 2) / 2] for p in v]
 
 
-class FloorPlanTraySerializer(NumIdModelSerializer):
-    """A tray/conduit run on a plan. Cables are assigned manually in v1 -
-    the tray lists the physical cables routed through it."""
+class _ViewableCableField(TenantScopedPrimaryKeyRelatedField):
+    """A cable the writer may view - one ``/api/cables/`` would list them.
+    Any other id answers as if it did not exist."""
 
-    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
-        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
-        write_only=True, required=False,
-    )
-    points = serializers.JSONField(required=False)
-    cables = serializers.SerializerMethodField()
-    cable_ids = TenantScopedPrimaryKeyRelatedField(
-        source="cables", queryset=Cable.objects.all(),
-        write_only=True, required=False, many=True,
-    )
+    def get_queryset(self):
+        qs = super().get_queryset()
+        request = self.context.get("request") if self.context else None
+        user = getattr(request, "user", None)
+        if request is None or qs is None or getattr(user, "is_superuser", False):
+            return qs
+        from api.views import _get_active_tenant
+
+        from .cable_scope import restrict_cables
+
+        tenant = _get_active_tenant(request)
+        if tenant is None:
+            return qs.none()
+        return restrict_cables(qs, user, tenant, "view")
+
+
+class _CableMembersMixin:
+    """``cables`` / ``cable_ids`` of a row that lists physical cables - a
+    floor-plan tray, a site-map cable route.
+
+    Read: ``cables`` names only the cables the reader may view (the scope of
+    ``/api/cables/``); ``hidden_cable_count`` counts the others. A list asks
+    once for all its rows. Write: ``cable_ids`` is the list of cables the
+    writer can see. Cables they cannot see stay as they are, and each cable
+    added or removed needs cable ``change`` (a field error names it)."""
+
+    def _cable_reader(self):
+        """``(user, tenant)`` whose cable scope applies, or None to show
+        every cable (a superuser, or no request)."""
+        request = self.context.get("request") if self.context else None
+        user = getattr(request, "user", None)
+        if user is None or getattr(user, "is_superuser", False):
+            return None
+        from api.views import _get_active_tenant
+
+        return user, _get_active_tenant(request)
+
+    def _visible_cables(self, obj) -> set | None:
+        reader = self._cable_reader()
+        if reader is None:
+            return None
+        cache = getattr(self, "_visible_cable_cache", None)
+        if cache is None or obj.pk not in cache["rows"]:
+            from .cable_scope import viewable_cable_ids
+
+            parent = getattr(self, "parent", None)
+            rows = (
+                list(parent.instance)
+                if isinstance(parent, serializers.ListSerializer)
+                and parent.instance is not None
+                else [obj]
+            )
+            if obj not in rows:
+                rows = [obj]
+            ids = {c.pk for r in rows for c in r.cables.all()}
+            cache = {
+                "rows": {r.pk for r in rows},
+                "visible": viewable_cable_ids(*reader, ids),
+            }
+            self._visible_cable_cache = cache
+        return cache["visible"]
 
     @extend_schema_field(serializers.ListField())
     def get_cables(self, obj):
+        visible = self._visible_cables(obj)
         return [
             {
                 "id": str(c.id),
@@ -11136,7 +11209,66 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
                 "color": c.color,
             }
             for c in obj.cables.all()
+            if visible is None or c.pk in visible
         ]
+
+    def get_hidden_cable_count(self, obj) -> int:
+        visible = self._visible_cables(obj)
+        if visible is None:
+            return 0
+        return sum(1 for c in obj.cables.all() if c.pk not in visible)
+
+    def _merge_cable_ids(self, wanted):
+        """The full member list for a ``cable_ids`` write: the cables sent
+        (all viewable, see ``_ViewableCableField``) plus the members the
+        writer cannot see. Refuses a change to a cable they may not change."""
+        reader = self._cable_reader()
+        if reader is None:
+            return wanted
+        from .cable_scope import restrict_cables, viewable_cable_ids
+
+        user, tenant = reader
+        current = (
+            set(self.instance.cables.values_list("pk", flat=True))
+            if self.instance is not None else set()
+        )
+        visible = viewable_cable_ids(user, tenant, current)
+        wanted_ids = {c.pk for c in wanted}
+        touched = (wanted_ids - current) | (visible - wanted_ids)
+        if touched:
+            allowed = set(restrict_cables(
+                Cable.objects.filter(pk__in=touched, tenant=tenant), user, tenant, "change"
+            ).values_list("pk", flat=True))
+            denied = Cable.objects.filter(pk__in=touched - allowed)
+            if denied:
+                raise serializers.ValidationError({"cable_ids": [
+                    f"You may not change cable {c}." for c in sorted(denied, key=str)
+                ]})
+        return [*wanted, *(current - visible)]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if "cables" in attrs:
+            attrs["cables"] = self._merge_cable_ids(attrs["cables"])
+        return attrs
+
+
+class FloorPlanTraySerializer(_CableMembersMixin, NumIdModelSerializer):
+    """A tray/conduit run on a plan. Cables are assigned manually in v1 -
+    the tray lists the physical cables routed through it (the ones the reader
+    may view; ``hidden_cable_count`` counts the rest)."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.exclude(kind="view"),
+        write_only=True, required=False,
+    )
+    points = serializers.JSONField(required=False)
+    cables = serializers.SerializerMethodField()
+    hidden_cable_count = serializers.SerializerMethodField()
+    cable_ids = _ViewableCableField(
+        source="cables", queryset=Cable.objects.all(),
+        write_only=True, required=False, many=True,
+    )
 
     def validate_points(self, v):
         # Shared with walls: same half-cell lattice, same snap.
@@ -11146,9 +11278,10 @@ class FloorPlanTraySerializer(NumIdModelSerializer):
         model = FloorPlanTray
         fields = ["id", "floor_plan_id", "name", "kind", "color", "points",
                   "level", "elevation_mm",
-                  "description", "cables", "cable_ids",
+                  "description", "cables", "hidden_cable_count", "cable_ids",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "cables", "created_at", "updated_at"]
+        read_only_fields = ["id", "cables", "hidden_cable_count",
+                            "created_at", "updated_at"]
 
 
 class FloorPlanWallSerializer(NumIdModelSerializer):
@@ -11498,29 +11631,18 @@ class FloorPlanLabelSerializer(NumIdModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
-class CableRouteSerializer(NumIdModelSerializer):
+class CableRouteSerializer(_CableMembersMixin, NumIdModelSerializer):
     """A geographic duct/aerial/trench run on the site map. Cables are
-    assigned manually in v1 - the route lists the cables that follow it."""
+    assigned manually in v1 - the route lists the cables that follow it
+    (the ones the reader may view; ``hidden_cable_count`` counts the rest)."""
 
     waypoints = serializers.JSONField(required=False)
     cables = serializers.SerializerMethodField()
-    cable_ids = TenantScopedPrimaryKeyRelatedField(
+    hidden_cable_count = serializers.SerializerMethodField()
+    cable_ids = _ViewableCableField(
         source="cables", queryset=Cable.objects.all(),
         write_only=True, required=False, many=True,
     )
-
-    @extend_schema_field(serializers.ListField())
-    def get_cables(self, obj):
-        return [
-            {
-                "id": str(c.id),
-                "numid": c.numid,
-                "label": str(c),
-                "type": c.type,
-                "color": c.color,
-            }
-            for c in obj.cables.all()
-        ]
 
     def validate_waypoints(self, v):
         if not isinstance(v, list) or not (2 <= len(v) <= 256):
@@ -11543,6 +11665,7 @@ class CableRouteSerializer(NumIdModelSerializer):
     class Meta:
         model = CableRoute
         fields = ["id", "name", "kind", "color", "waypoints",
-                  "description", "cables", "cable_ids",
+                  "description", "cables", "hidden_cable_count", "cable_ids",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "cables", "created_at", "updated_at"]
+        read_only_fields = ["id", "cables", "hidden_cable_count",
+                            "created_at", "updated_at"]

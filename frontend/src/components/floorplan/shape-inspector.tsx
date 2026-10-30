@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlignCenter,
   AlignLeft,
@@ -12,7 +12,9 @@ import {
   Trash2,
 } from "lucide-react"
 
+import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import {
   scopeKey,
@@ -45,11 +47,11 @@ import { cn } from "@/lib/utils"
 import {
   LABEL_COLORS,
   LABEL_SIZES,
-  areaColor,
   labelPresetMm,
   labelPresetOf,
 } from "./shapes"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
+import { floorPlanContentsKey } from "./use-floor-plan-data"
 import { NEW_LABEL_TEXT } from "./use-shape-edits"
 
 type Patch = (patch: Partial<PlanShape>) => void
@@ -137,6 +139,83 @@ function useFloorLocations(plan: FloorPlan) {
 
 type LinkKind = "room" | "location" | "none"
 
+/** The colour of the room or location an area stands for - the object's
+ * own, so a change repaints every area of it. Changed through the object's
+ * endpoint (its change grant, its change log); read-only without it. */
+function LinkColourField({
+  plan,
+  kind,
+  obj,
+  onColour,
+}: {
+  plan: FloorPlan
+  kind: "room" | "location"
+  obj: { id: string; name: string; color: string }
+  onColour?: (kind: "room" | "location", id: string, color: string) => void
+}) {
+  const { canDo } = useMe()
+  const qc = useQueryClient()
+  const save = useMutation({
+    mutationFn: (color: string) =>
+      api(`/api/${kind === "room" ? "rooms" : "locations"}/${obj.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ color }),
+      }),
+    onSuccess: (_d, color) => {
+      onColour?.(kind, obj.id, color)
+      for (const key of [
+        ["rooms-picker"],
+        ["rooms"],
+        ["locations-of-site"],
+        ["locations"],
+        floorPlanContentsKey(plan.id),
+        ["floor-plan-placeable", plan.id],
+      ])
+        void qc.invalidateQueries({ queryKey: key })
+    },
+    onError: (err) => apiErrorToast(err),
+  })
+  const timer = useRef<number | null>(null)
+  const pending = useRef<string | null>(null)
+  const flush = () => {
+    if (timer.current) window.clearTimeout(timer.current)
+    timer.current = null
+    if (pending.current) save.mutate(pending.current)
+    pending.current = null
+  }
+  // Leaving the area (another selected) still writes a pending colour.
+  const flushRef = useRef(flush)
+  flushRef.current = flush
+  useEffect(() => () => flushRef.current(), [])
+  const label = kind === "room" ? "Room colour" : "Location colour"
+  return (
+    <Field
+      label={label}
+      info={`The ${kind}'s own colour: changing it repaints every area of ${obj.name} and its badge everywhere.`}
+    >
+      {canDo(kind, "change") ? (
+        <ColorPicker
+          value={obj.color}
+          allowEmpty={false}
+          onChange={(color) => {
+            // The native picker reports every step of a drag: write the
+            // colour it settles on.
+            if (timer.current) window.clearTimeout(timer.current)
+            pending.current = color && color !== obj.color ? color : null
+            if (pending.current) timer.current = window.setTimeout(flush, 400)
+          }}
+        />
+      ) : (
+        <ColorBadge
+          name={obj.name}
+          color={obj.color}
+          className="max-w-full self-start"
+        />
+      )}
+    </Field>
+  )
+}
+
 /** An area's inspector: what it stands for (a room, a location or
  * nothing), its name and look. */
 export function AreaInspector({
@@ -145,12 +224,15 @@ export function AreaInspector({
   onChange,
   onRestack,
   onDelete,
+  onLinkColour,
 }: {
   plan: FloorPlan
   area: AreaShape
   onChange: Patch
   onRestack: (dir: 1 | -1) => void
   onDelete: () => void
+  /** A room's or location's colour was changed: repaint its areas. */
+  onLinkColour?: (kind: "room" | "location", id: string, color: string) => void
 }) {
   // The floor's rooms, its sub-locations' included.
   const rooms = useQuery({
@@ -284,14 +366,21 @@ export function AreaInspector({
           />
         </Field>
       )}
-      {link !== "none" && (area.room || area.location) && (
-        <Field label="Colour" hint={`from the ${link}`}>
-          <ColorBadge
-            name={area.room?.name ?? area.location?.name ?? ""}
-            color={areaColor(area)}
-            className="max-w-full self-start"
-          />
-        </Field>
+      {link === "room" && area.room && (
+        <LinkColourField
+          plan={plan}
+          kind="room"
+          obj={area.room}
+          onColour={onLinkColour}
+        />
+      )}
+      {link === "location" && area.location && (
+        <LinkColourField
+          plan={plan}
+          kind="location"
+          obj={area.location}
+          onColour={onLinkColour}
+        />
       )}
       <Field label="Fill" hint={`${area.fill_opacity}%`}>
         <Slider

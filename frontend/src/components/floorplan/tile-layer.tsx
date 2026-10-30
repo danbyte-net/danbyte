@@ -59,6 +59,7 @@ export function TileShape({
   editable,
   labelFit,
   showZoneLabels = true,
+  photoOutline = false,
   live,
   colorBy = "type",
   figures,
@@ -76,6 +77,8 @@ export function TileShape({
   editable: boolean
   labelFit: boolean
   showZoneLabels?: boolean
+  /** A photo tile's outline (status, monitoring) when not selected. */
+  photoOutline?: boolean
   live?: FloorPlanLiveState["tiles"][string]
   /** What the plan colours its racks by (`tile-paint.ts`). */
   colorBy?: ColorBy
@@ -208,12 +211,15 @@ export function TileShape({
           height={h}
           preserveAspectRatio="xMidYMid meet"
         />
+        {/* The outline: always while selected, else only with Display >
+            Photo outlines - a transparent hit area otherwise. */}
         <rect
+          data-part="photo-outline"
           width={w}
           height={h}
           rx={2}
           fill="transparent"
-          stroke={paint.stroke}
+          stroke={selected || photoOutline ? paint.stroke : "none"}
           strokeOpacity={selected || paint.alarm ? 1 : 0.35}
           strokeWidth={paint.strokeWidth}
           strokeDasharray={dashed ? "6 3" : undefined}
