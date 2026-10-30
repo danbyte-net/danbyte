@@ -198,6 +198,39 @@ For a VM that came from a hypervisor:
 VMs, interfaces and IPs **you** created are linked and blank-filled, never
 overwritten, and never deleted by a sync.
 
+## Editing several at once
+
+Tick VMs on the list, or **Select all**, and use **Edit** on the selection
+bar. It sets the same value on every ticked VM: **status**, **role**,
+**platform**, **cluster**, **group**, **host device**, **site**,
+**description** and **PRTG**, plus **add tags**, **remove tags** and the
+tenant's VM [custom fields](tags-and-custom-fields.md). A field left on
+**Keep current** is not touched and **Clear** empties it. A custom field
+you leave unticked keeps each VM's own value, as do the custom fields the
+dialog does not show. Name, primary IP and sizing stay per VM. More than
+1000 VMs go 1000 at a time (see
+[Large selections](table-preferences.md#large-selections)).
+
+Each value is checked as an edit of that VM checks it: a status VMs do not
+offer, an object from another tenant or outside your sites, a group on
+another cluster, a value a custom field does not take, or clearing a
+required custom field. One bad value refuses the whole edit and nothing is
+written. The edit only touches the VMs you may change; any others in the
+selection are left out. A site-scoped user cannot move a VM to a site
+outside their own.
+
+The edit does what saving each VM would do: moving VMs to another cluster
+drops a group that belongs to the old one, a VM left without a site takes
+its cluster's when the cluster
+[gives VMs its site](clusters.md#site-and-the-vms-on-it), and changing
+**PRTG** plans the change for PRTG straight away. Each changed VM gets its
+own [change log](change-log.md) entry.
+
+The edit is `POST /api/virtual-machines/bulk-update/`, and
+`GET /api/virtual-machines/bulk-edit-fields/` lists its fields - see
+[API: Bulk calls](../reference/api.md#bulk-calls). It needs the **change**
+permission on virtual machines.
+
 ## Deleting virtual machines
 
 **Delete** in the VM's header, or tick VMs on the list and use **Delete**

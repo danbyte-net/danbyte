@@ -102,3 +102,42 @@ def clean_custom_fields(tenant, model_slug: str, value):
         else:
             cleaned[d.key] = coerced
     return cleaned, errors
+
+
+def clean_custom_field_patch(tenant, model_slug: str, value):
+    """Validate a bulk edit's ``custom_fields``: only the keys sent change.
+
+    ``value`` maps a defined field's key to its new value; ``None``, ``""``
+    or ``[]`` clears it. Returns ``(sets, clears, errors)`` - ``sets`` the
+    coerced values, ``clears`` the keys to drop. Unlike a whole-dict write, a
+    key with no definition is refused and a required field cannot be
+    cleared.
+    """
+    if not isinstance(value, dict) or not value:
+        return {}, set(), {"custom_fields": "Name the custom fields to set."}
+    defs = {
+        d.key: d
+        for d in CustomField.objects.filter(
+            tenant=tenant, applies_to__contains=[model_slug], key__in=list(value)
+        )
+    }
+    sets: dict = {}
+    clears: set[str] = set()
+    errors: dict[str, str] = {}
+    for key, raw in value.items():
+        d = defs.get(key)
+        if d is None:
+            errors[key] = "No such custom field here."
+            continue
+        if raw in (None, "", []):
+            if d.required:
+                errors[key] = "This field is required."
+            else:
+                clears.add(key)
+            continue
+        ok, coerced, msg = _coerce(d, raw, tenant)
+        if ok:
+            sets[key] = coerced
+        else:
+            errors[key] = msg
+    return sets, clears, errors
