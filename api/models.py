@@ -2440,6 +2440,8 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         indexes = [
             models.Index(fields=["tenant", "name"]),
             models.Index(fields=["tenant", "device_type"]),
+            # The dashboard's newest devices, read in index order.
+            models.Index(fields=["tenant", "-created_at"], name="device_tenant_created_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -3295,6 +3297,9 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
             # The list's default order within a tenant: a page reads 50 rows
             # in index order instead of sorting the whole tenant (#339).
             models.Index(fields=["tenant", "ip_address"], name="ip_tenant_addr_idx"),
+            # The dashboard's newest addresses: eight rows from the index,
+            # not a sort of every address in the tenant.
+            models.Index(fields=["tenant", "-created_at"], name="ip_tenant_created_idx"),
             models.Index(
                 "tenant", Upper("dns_name"), name="ip_tenant_dns_upper_idx"
             ),
