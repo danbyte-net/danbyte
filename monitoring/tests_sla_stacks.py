@@ -390,6 +390,12 @@ class ConsumerTests(_Stack):
         for d in members:
             self.member(d)
         self.assertEqual(sla.member_ip_ids([self.agreement.id]), {ip.id})
+        # Asked for in another tenant (a dashboard scope naming this id),
+        # the agreement is not there.
+        org = Organization.objects.create(name="Elsewhere", slug="elsewhere")
+        other = Tenant.objects.create(org=org, name="Elsewhere", slug="elsewhere")
+        self.assertEqual(sla.member_ip_ids([self.agreement.id], tenant=other), set())
+        self.assertEqual(sla.member_ip_ids([self.agreement.id], tenant=self.tenant), {ip.id})
         _key, start, end = sla.period_for(self.agreement, NOW)
         ips = sla_analysis._window_ips(self.agreement, start, end, {"member": [str(vc.id)]})
         self.assertEqual(ips, {ip.id})

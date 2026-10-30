@@ -55,6 +55,23 @@ def window(*, days: int | None = None, hours: int | None = None, now=None) -> Wi
     return Window(since, now, tuple(parts))
 
 
+#: The longest window a chart reads hour by hour; past it, a point a day.
+CHART_HOURLY_MAX = 168
+
+
+def chart_window(hours: int, now=None) -> Window:
+    """The rollup rows behind a chart over the last ``hours``: the hourly
+    rows up to a week (a point an hour, the open hour included), the daily
+    rows plus today's hours beyond that (a point a day)."""
+    now = now or timezone.now()
+    hours = max(1, int(hours))
+    if hours <= CHART_HOURLY_MAX:
+        top = _floor(now, HOUR)
+        since = top - timedelta(hours=hours - 1)
+        return Window(since, now, ((CheckRollupHourly, since, top + HOUR),))
+    return window(days=max(1, hours // 24), now=now)
+
+
 FRAMES = ("24h", "7d", "30d", "90d", "mtd", "qtd", "ytd")
 
 
@@ -112,7 +129,14 @@ def window_from_params(params, now=None) -> Window:
 _P = "t_"
 
 
-def _aggregates() -> dict:
+#: What a chart needs from a summed row: availability and the weighted
+#: p50/p95. :func:`sums` with ``only=CHART_KEYS`` sums just these - a week
+#: of hourly rows is every check times 168, and the other twenty-odd sums
+#: (histogram, p99, incidents) cost a third of the query for nothing.
+CHART_KEYS = (*_SECONDS, "lat_n", "p50_w", "p95_w")
+
+
+def _aggregates(only=None) -> dict:
     has_lat = Q(lat_p50__isnull=False)
     return {_P + k: v for k, v in {
         **{k: Sum(k) for k in _SECONDS},
@@ -127,7 +151,7 @@ def _aggregates() -> dict:
         "lat_max": Max("lat_max"),
         "lat_hist_n": Sum("lat_hist_n"),
         **{f"lat_le_{e}": Sum(f"lat_le_{e}") for e in LATENCY_EDGES},
-    }.items()}
+    }.items() if only is None or k in only}
 
 
 def share_within(row: dict, edge: int) -> float | None:
@@ -148,20 +172,31 @@ def _fold(acc: dict, row: dict) -> None:
         acc[k] = max(acc.get(k) or 0, v) if k == "lat_max" else acc.get(k, 0) + v
 
 
-def sums(win: Window, narrow, group_by: tuple = ()) -> dict:
+def add(acc: dict, row: dict) -> dict:
+    """Add one summed row (as :func:`sums` returns them) into ``acc``."""
+    for k, v in row.items():
+        if v is None:
+            continue
+        acc[k] = max(acc.get(k) or 0, v) if k == "lat_max" else acc.get(k, 0) + v
+    return acc
+
+
+def sums(win: Window, narrow, group_by: tuple = (), only=None) -> dict:
     """``{group key: summed row}`` over the window.
 
     ``narrow(qs)`` applies tenant, RBAC scope and filters to one rollup
     queryset; it is called once per slice. ``group_by`` names fields or
     annotations on the rollup rows; the key is a tuple of their values
     (``()`` for no grouping). Each address counts from its availability
-    reset (:func:`monitoring.counting.rollup_slices`)."""
+    reset (:func:`monitoring.counting.rollup_slices`). ``only`` limits the
+    sums to those keys (:data:`CHART_KEYS`)."""
     from .counting import rollup_slices
 
     out: dict = {}
+    aggregates = _aggregates(only)
     for model, where in rollup_slices(win):
         qs = narrow(model.objects.filter(where))
-        for row in qs.values(*group_by).annotate(**_aggregates()).order_by():
+        for row in qs.values(*group_by).annotate(**aggregates).order_by():
             _fold(out.setdefault(tuple(row[g] for g in group_by), {}), row)
     return out
 
