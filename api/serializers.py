@@ -10722,6 +10722,28 @@ def _r3(v: float) -> float:
     return round(float(v), 3)
 
 
+class _FloorPlanTileListSerializer(serializers.ListSerializer):
+    """Many tiles: their photos are looked up once for the whole list."""
+
+    def to_representation(self, data):
+        rows = list(data.all() if hasattr(data, "all") else data)
+        if "tile_photos" not in self.context:
+            self.context["tile_photos"] = _tile_photos_for(rows, self.context)
+        return super().to_representation(rows)
+
+
+def _tile_photos_for(tiles, context) -> dict:
+    from api.views import _get_active_tenant
+
+    from .floor_plan_placement import tile_photos
+
+    request = context.get("request")
+    tenant = _get_active_tenant(request) if request is not None else None
+    if tenant is None:
+        return {}
+    return tile_photos(tiles, request.user, tenant)
+
+
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
     (resolved to the right FK, tenant-checked - the CableSerializer
@@ -10767,6 +10789,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         write_only=True, required=False, allow_null=True, allow_blank=True
     )
     linked = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_linked(self, obj):
@@ -10774,12 +10797,35 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         target = getattr(obj, field) if field else None
         if target is None:
             return None
-        return {
+        out = {
             "kind": obj.link_kind,
             "id": str(target.pk),
             "name": str(target),
             "route": self._LINK_ROUTES[obj.link_kind].format(id=target.pk),
         }
+        # The room a device, rack or cabinet names - the editor compares it
+        # with the room drawn where the tile stands.
+        if obj.link_kind in ("device", "rack", "cabinet"):
+            out["room"] = room_ref(target.room)
+            # Its role as it is now: a tile with no type of its own draws in
+            # the role's colour and icon, and follows the role as it changes.
+            role = target.role
+            out["role"] = None if role is None else {
+                "id": str(role.pk), "name": role.name, "color": role.color,
+                "icon": getattr(role, "icon", "") or "",
+            }
+        return out
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_photo(self, obj):
+        """The photo a device or rack tile can show (``display: photo``):
+        ``{url, aspect, source, width_mm}`` or null."""
+        if not (obj.device_id or obj.rack_id):
+            return None
+        photos = self.context.get("tile_photos")
+        if photos is None:
+            photos = _tile_photos_for([obj], self.context)
+        return photos.get(obj.pk)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -10874,9 +10920,10 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                   "orientation", "label", "color", "status",
                   "link_kind", "link_id", "linked",
                   "fov_deg", "fov_distance", "fov_direction", "fov_anchor",
-                  "fov_ptz",
+                  "fov_ptz", "display", "z", "photo",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "linked", "created_at", "updated_at"]
+        read_only_fields = ["id", "linked", "photo", "created_at", "updated_at"]
+        list_serializer_class = _FloorPlanTileListSerializer
 
 
 def validate_lattice_points(v):

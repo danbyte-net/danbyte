@@ -23,7 +23,11 @@ import type { CadCalibration } from "./cad-calibrate"
 import { CabinetPanel } from "./cabinet-panel"
 import { CanvasHints } from "./canvas-hints"
 import { FloorCanvas, tileIsZone } from "./floor-canvas"
-import type { FloorCanvasApi, PaletteEntry } from "./floor-canvas"
+import type {
+  FloorCanvasApi,
+  FloorCanvasProps,
+  PaletteEntry,
+} from "./floor-canvas"
 import { LinkedObjectLink } from "./linked-object-link"
 import { SelectionBar } from "./selection-bar"
 import { TilePopover } from "./tile-popover"
@@ -86,7 +90,16 @@ export function PlanCanvas({
   calibration,
   theme,
   openTile,
+  onDropRows,
+  selectionToolbar,
+  overlays,
 }: {
+  /** Edit: rows dragged from the Place picker or the unplaced list. */
+  onDropRows?: FloorCanvasProps["onDropRows"]
+  /** Edit: floats above the selection. */
+  selectionToolbar?: ReactNode
+  /** Drawn over the canvas: the room prompt, the empty floor's guidance. */
+  overlays?: ReactNode
   plan: FloorPlan
   shownTiles: FloorPlanTile[]
   /** The areas and labels on show. */
@@ -332,7 +345,10 @@ export function PlanCanvas({
         onDeleteShape={shapeEdits.deleteShape}
         onRestackShape={shapeEdits.restack}
         onOpenShape={onOpenShape}
+        onDropRows={onDropRows}
+        selectionToolbar={selectionToolbar}
       />
+      {overlays}
       {cad.drawing?.status === "ready" &&
         (cadSource.mode === "image" || cadSource.error) && (
           <div className="pointer-events-none absolute top-3 left-3 z-10">

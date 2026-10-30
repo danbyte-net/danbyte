@@ -76,11 +76,30 @@ export function readColorBy(raw: unknown): ColorBy {
   return COLOR_BY.includes(raw as ColorBy) ? (raw as ColorBy) : "type"
 }
 
-/** A tile's own colour: its override, else its type's, else its role's. */
+/** A tile's own colour: its override, else its type's, else its role's -
+ * and a tile with no type of its own, its linked object's role as it is
+ * now. */
 export function tileFill(
-  t: Pick<FloorPlanTile, "color" | "tile_type" | "role_type">
+  t: Pick<FloorPlanTile, "color" | "tile_type" | "role_type"> & {
+    linked?: FloorPlanTile["linked"]
+  }
 ): string {
-  return t.color || t.tile_type?.color || t.role_type?.color || "#a1a1aa"
+  return (
+    t.color ||
+    t.tile_type?.color ||
+    t.role_type?.color ||
+    t.linked?.role?.color ||
+    "#a1a1aa"
+  )
+}
+
+/** The icon a tile with no type of its own takes from its linked object's
+ * role (a device role's icon), or "". */
+export function tileRoleIcon(
+  t: Pick<FloorPlanTile, "tile_type" | "role_type" | "linked">
+): string {
+  if (t.tile_type || t.role_type) return ""
+  return t.linked?.role?.icon ?? ""
 }
 
 /** Monitoring worst-status → the tile's stroke. */

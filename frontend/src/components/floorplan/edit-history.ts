@@ -128,6 +128,10 @@ export interface PlanDraftApi<T, TShape = unknown> {
   canRedo: boolean
   /** Replace the draft and forget the history. */
   load: (tiles: T[], shapes?: TShape[]) => void
+  /** The rows as last loaded - what the edits are based on (their
+   * versions go with a save, so a row changed elsewhere since is a
+   * conflict rather than overwritten). */
+  origin: { tiles: T[]; shapes: TShape[] }
 }
 
 /** The page's handle on the draft. */
@@ -137,6 +141,10 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
   )
   const latest = useRef(h)
   latest.current = h
+  const origin = useRef<{ tiles: T[]; shapes: TShape[] }>({
+    tiles: [],
+    shapes: [],
+  })
 
   // One handler = one step: calls inside the same task share a key; the
   // microtask closes the window after the handler. A gesture holds one key
@@ -211,11 +219,10 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
     send({ kind: "redo" })
     return true
   }, [])
-  const load = useCallback(
-    (tiles: T[], shapes: TShape[] = []) =>
-      send({ kind: "load", draft: emptyDraft(tiles, shapes) }),
-    []
-  )
+  const load = useCallback((tiles: T[], shapes: TShape[] = []) => {
+    origin.current = { tiles, shapes }
+    send({ kind: "load", draft: emptyDraft(tiles, shapes) })
+  }, [])
   return {
     tiles: h.present.tiles,
     shapes: h.present.shapes,
@@ -232,5 +239,6 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
     canUndo: h.past.length > 0,
     canRedo: h.future.length > 0,
     load,
+    origin: origin.current,
   }
 }

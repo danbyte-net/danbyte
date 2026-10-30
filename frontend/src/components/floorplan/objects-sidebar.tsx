@@ -14,7 +14,11 @@ import {
   RowCheckBadge,
   VisibilityToggle,
 } from "@/components/foldable-group"
-import { NO_FLOOR_HIDDEN, tileHidden } from "@/components/floorplan/hidden"
+import {
+  NO_FLOOR_HIDDEN,
+  placedGroupKey,
+  tileHidden,
+} from "@/components/floorplan/hidden"
 import type { FloorHidden } from "@/components/floorplan/hidden"
 import { hiddenCount, isHidden, setHidden } from "@/components/hidden-objects"
 import {
@@ -28,6 +32,13 @@ import { TruncatedText } from "@/components/ui/truncated-text"
 import { naturalCompare } from "@/lib/natural-sort"
 import { areaColor, areaName } from "@/components/floorplan/shapes"
 import type { PlanShape } from "@/components/floorplan/shapes"
+
+/** A placed object with no role: grouped by its kind. */
+const KIND_TITLE: Partial<Record<string, string>> = {
+  device: "Devices",
+  rack: "Racks",
+  cabinet: "Cabinets",
+}
 
 interface Group {
   key: string
@@ -87,7 +98,10 @@ export function ObjectsSidebar({
   shapes = [],
   selectedShapeId = null,
   onPickShape,
+  unplaced,
 }: {
+  /** Edit: the floor's objects not placed anywhere (drag onto the plan). */
+  unplaced?: React.ReactNode
   /** The plan's areas and labels (hidden ones included, dimmed). */
   shapes?: PlanShape[]
   selectedShapeId?: string | null
@@ -113,34 +127,49 @@ export function ObjectsSidebar({
     onHiddenChange?.(setHidden(hidden, key, value, !shown))
   const checkOf = (t: FloorPlanTile) => liveState?.tiles[t.id]?.check ?? null
 
-  const { roleGroups, typeGroups, total, statusCounts, first } = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    // Zones are background paint, not placed objects - they'd drown the list.
-    const placed = tiles.filter(
-      (t) => !tileIsZone(t) && !(omitRacks && t.linked?.kind === "rack")
-    )
-    const searched = needle
-      ? placed.filter((t) =>
-          [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
-            .filter(Boolean)
-            .some((s) => s!.toLowerCase().includes(needle))
-        )
-      : placed
-    const match = status
-      ? searched.filter((t) => liveState?.tiles[t.id]?.check === status)
-      : searched
-    const byRole = groupBy(match, (t) => t.role_type)
-    const byType = groupBy(match, (t) => t.tile_type)
-    return {
-      roleGroups: byRole,
-      typeGroups: byType,
-      total: match.length,
-      statusCounts: checkCounts(
-        searched.map((t) => liveState?.tiles[t.id]?.check)
-      ),
-      first: byRole.at(0)?.tiles.at(0) ?? byType.at(0)?.tiles.at(0),
-    }
-  }, [tiles, q, status, liveState, omitRacks])
+  const { roleGroups, typeGroups, objectGroups, total, statusCounts, first } =
+    useMemo(() => {
+      const needle = q.trim().toLowerCase()
+      // Zones are background paint, not placed objects - they'd drown the list.
+      const placed = tiles.filter(
+        (t) => !tileIsZone(t) && !(omitRacks && t.linked?.kind === "rack")
+      )
+      const searched = needle
+        ? placed.filter((t) =>
+            [tileName(t), t.linked?.name, t.role_type?.name, t.tile_type?.name]
+              .filter(Boolean)
+              .some((s) => s!.toLowerCase().includes(needle))
+          )
+        : placed
+      const match = status
+        ? searched.filter((t) => liveState?.tiles[t.id]?.check === status)
+        : searched
+      const byRole = groupBy(match, (t) => t.role_type)
+      const byType = groupBy(match, (t) => t.tile_type)
+      // Placed straight from an object: no type, grouped by the object's role.
+      const byObject = groupBy(
+        match.filter((t) => !t.tile_type && !t.role_type && t.linked),
+        (t) => ({
+          id: placedGroupKey(t),
+          name:
+            t.linked?.role?.name ?? KIND_TITLE[t.linked?.kind ?? ""] ?? "Other",
+          color: t.linked?.role?.color ?? null,
+        })
+      )
+      return {
+        roleGroups: byRole,
+        typeGroups: byType,
+        objectGroups: byObject,
+        total: match.length,
+        statusCounts: checkCounts(
+          searched.map((t) => liveState?.tiles[t.id]?.check)
+        ),
+        first:
+          byObject.at(0)?.tiles.at(0) ??
+          byRole.at(0)?.tiles.at(0) ??
+          byType.at(0)?.tiles.at(0),
+      }
+    }, [tiles, q, status, liveState, omitRacks])
 
   // Areas and labels: no monitoring of their own, so the status filter
   // leaves them out.
@@ -314,10 +343,12 @@ export function ObjectsSidebar({
           Racks: in the table below
         </p>
       )}
+      {unplaced}
       {total + areaRows.length + labelRows.length === 0 ? (
         <ObjectsEmpty filtered={!!q.trim() || !!status} />
       ) : (
         <>
+          {section("Placed objects", objectGroups, "roleTypes")}
           {section("Device roles", roleGroups, "roleTypes")}
           {section("Tile types", typeGroups, "tileTypes")}
           {areaRows.length > 0 && (

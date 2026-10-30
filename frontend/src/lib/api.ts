@@ -11956,6 +11956,11 @@ export interface FloorPlanTile {
     id: string
     name: string
     route: string
+    /** A device, rack or cabinet: the room it names. */
+    room?: FloorPlanRoomRef | null
+    /** A device, rack or cabinet: its role as it is now - a tile with no
+     * type of its own draws in its colour and icon. */
+    role?: { id: string; name: string; color: string; icon: string } | null
   } | null
   fov_deg: number | null
   fov_distance: number | null
@@ -11964,8 +11969,75 @@ export interface FloorPlanTile {
   fov_anchor: FovAnchor
   /** PTZ: coverage is a full 360° ring (radius = reach), not a cone. */
   fov_ptz: boolean
+  /** A device or rack tile drawn as its coloured box or as its photo. */
+  display?: FloorTileDisplay
+  /** Stacking order on a free plan. */
+  z?: number
+  /** The photo a device or rack tile can show; null without one. */
+  photo?: FloorTilePhoto | null
   created_at: string
   updated_at: string
+}
+
+export type FloorTileDisplay = "icon" | "photo"
+
+export interface FloorTilePhoto {
+  url: string
+  /** Height / width; null when unknown. */
+  aspect: number | null
+  /** The object's own image, or its device type's front image. */
+  source: "device" | "rack" | "type"
+  /** The device type's width, for a true-size photo. */
+  width_mm: number | null
+}
+
+export interface FloorPlanRoomRef {
+  id: string
+  name: string
+  code: string
+  color: string
+}
+
+/** GET /api/floor-plans/<id>/placeable/ - a candidate for the Place picker. */
+export interface FloorPlanPlaceable {
+  kind: "device" | "rack" | "cabinet"
+  id: string
+  name: string
+  /** 0: in the room or location near the pointer; 1: the floor's location;
+   * 2: the rest of the site. */
+  rank: 0 | 1 | 2
+  room: FloorPlanRoomRef | null
+  location: { id: string; name: string } | null
+  status: { id: string; name: string; color: string } | null
+  role: { id: string; name: string; color: string; icon?: string } | null
+  photo: FloorTilePhoto | null
+  placed_count: number
+  placed_on: {
+    floor_plan: { id: string; name: string; stack: string }
+    tile_id: string
+    this_floor: boolean
+  }[]
+}
+
+/** POST /api/floor-plans/<id>/assign-rooms/ - a placed object whose tile
+ * stands in another room's area. */
+export interface FloorPlanRoomMismatch {
+  kind: "device" | "rack" | "cabinet"
+  id: string
+  name: string
+  tile_id: string
+  room: FloorPlanRoomRef | null
+  area_room: FloorPlanRoomRef
+  can_change: boolean
+}
+
+/** A 409 from a save: a row changed (or deleted) elsewhere. */
+export interface FloorPlanConflict {
+  kind: "tile" | "area" | "label"
+  id: string
+  /** The row as it is now; null when it was deleted. */
+  current: FloorPlanTile | FloorPlanArea | FloorPlanLabel | null
+  changed_by: string
 }
 
 export interface FloorPlanTileWritePayload {
@@ -11987,6 +12059,8 @@ export interface FloorPlanTileWritePayload {
   fov_direction?: number | null
   fov_anchor?: FovAnchor
   fov_ptz?: boolean
+  display?: FloorTileDisplay
+  z?: number
 }
 
 /** POST /api/floor-plans/<id>/tiles/bulk/ - one transaction, fresh list back. */
@@ -12356,8 +12430,10 @@ export interface FloorPlanLabelWritePayload {
 
 interface BulkPart<T> {
   create?: T[]
-  update?: (T & { id: string })[]
-  delete?: string[]
+  /** `version`: the row's updated_at the edit is based on - a 409 when it
+   * changed since. */
+  update?: (T & { id: string; version?: string })[]
+  delete?: (string | { id: string; version?: string })[]
 }
 
 /** POST /api/floor-plans/<id>/bulk/ - tiles, areas and labels in one

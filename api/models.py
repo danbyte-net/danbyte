@@ -9476,6 +9476,15 @@ class FloorPlanTile(TimestampedModel):
         help_text="Pan-tilt-zoom: coverage renders as a full 360° ring "
                   "(radius = reach) instead of a fixed cone.",
     )
+    DISPLAY_CHOICES = [("icon", "Icon"), ("photo", "Photo")]
+    # How a device or rack tile draws: its coloured box, or its photo (the
+    # object's first image, else its device type's front image). A tile
+    # without a photo draws as an icon whatever this says.
+    display = models.CharField(
+        max_length=8, choices=DISPLAY_CHOICES, default="icon", db_default="icon"
+    )
+    # Stacking order on a free plan, where tiles may overlap.
+    z = models.SmallIntegerField(default=0, db_default=0)
 
     class Meta:
         ordering = ["y", "x"]
