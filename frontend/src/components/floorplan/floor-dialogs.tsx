@@ -21,10 +21,15 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import type { FloorPlan, FloorPlanFloor, FloorPlanStack } from "@/lib/api"
+import type {
+  FloorPlan,
+  FloorPlanFloor,
+  FloorPlanStack,
+  LocationOption,
+} from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { ConfirmDialog } from "@/components/confirm-dialog"
-import { Field } from "@/components/forms"
+import { Field, FormCombobox } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -51,6 +56,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { WHOLE_SITE } from "@/lib/floor-plan-scope"
 
 /** Refresh everything that shows floors: the stack, the plan, the lists. */
 function useInvalidateFloors() {
@@ -175,7 +181,8 @@ export function AddFloorDialog({
   )
 }
 
-/** Rename the floor plan (the stack) and edit its description. */
+/** Rename the floor plan (the stack), set its location - one of its site's,
+ * or the whole site - and edit its description. */
 export function RenameStackDialog({
   open,
   onOpenChange,
@@ -187,18 +194,32 @@ export function RenameStackDialog({
 }) {
   const [name, setName] = useState(stack.name)
   const [description, setDescription] = useState(stack.description)
+  const [locationId, setLocationId] = useState<string | null>(
+    stack.location?.id ?? null
+  )
   useEffect(() => {
     if (open) {
       setName(stack.name)
       setDescription(stack.description)
+      setLocationId(stack.location?.id ?? null)
     }
-  }, [open, stack.name, stack.description])
+  }, [open, stack.name, stack.description, stack.location?.id])
+  const locations = useQuery({
+    queryKey: ["locations-picker", stack.site.id],
+    queryFn: () =>
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${stack.site.id}`),
+    enabled: open,
+  })
   const invalidate = useInvalidateFloors()
   const save = useMutation({
     mutationFn: () =>
       api<FloorPlanStack>(`/api/floor-plan-stacks/${stack.id}/`, {
         method: "PATCH",
-        body: JSON.stringify({ name: name.trim(), description }),
+        body: JSON.stringify({
+          name: name.trim(),
+          description,
+          location_id: locationId,
+        }),
       }),
     onSuccess: () => {
       invalidate()
@@ -210,7 +231,7 @@ export function RenameStackDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Rename floor plan</DialogTitle>
+          <DialogTitle>Edit floor plan</DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -228,6 +249,19 @@ export function RenameStackDialog({
               maxLength={128}
             />
           </Field>
+          <FormCombobox
+            label="Location"
+            value={locationId}
+            onChange={setLocationId}
+            noneLabel={WHOLE_SITE}
+            options={(locations.data?.results ?? []).map((l) => ({
+              value: l.id,
+              label: l.name,
+            }))}
+            placeholder={WHOLE_SITE}
+            searchPlaceholder="Search locations…"
+            emptyText="No locations."
+          />
           <Field label="Description">
             <Textarea
               value={description}
@@ -562,7 +596,7 @@ function MoveFloorDialog({
               <SelectContent>
                 {rows.map((s) => (
                   <SelectItem key={s.id} value={s.id}>
-                    {s.name} · {s.location.name}
+                    {s.name} · {s.location?.name ?? WHOLE_SITE}
                   </SelectItem>
                 ))}
               </SelectContent>

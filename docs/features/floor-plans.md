@@ -5,7 +5,7 @@ icon: lucide/layout-grid
 # Floor plans
 
 **Maps → Floor plans** lays out a [location](regions-locations.md) - a room, a
-hall, a floor - as a grid of tiles: racks, aisles, walls, cooling units,
+hall, a floor - or a whole site, as a grid of tiles: racks, aisles, walls, cooling units,
 cameras, doors… Each tile can **link to a real object** (a rack, a DIN-rail
 [cabinet](../dcim/cabinets.md), a device, a power panel or feed, a
 [cooling source](cooling.md#on-the-floor-plan), or another floor plan), so
@@ -71,11 +71,43 @@ delete a palette entry.
 ## Creating a plan
 
 **Maps → Floor plans → Add** (or the **Floor plan** button on a Location
-page). A new floor plan belongs to a location and starts with one floor,
-both named as you named it; add more floors from the editor (see
-[Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
+page, or **Add floor plan** on a site's **Floor plans** tab). Pick the
+**Site**, then a **Location** of it or leave it at **Whole site** (see
+[Site-wide floor plans](#site-wide-floor-plans)). A new floor plan starts
+with one floor, both named as you named it; add more floors from the editor
+(see [Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
 512×512), and can carry an uploaded **background image** - a blueprint or
 photo scaled under the grid with adjustable opacity.
+
+### Site-wide floor plans
+
+A floor plan names a **site** and, optionally, a **location** of it. A
+floor plan with no location is **site-wide**: a campus or yard map with
+many buildings on it. **Maps → Floor plans** reads **Whole site** in its
+Location column, the editor's subtitle names only the site, and the site's
+page lists it on its **Floor plans** tab with the floor plans of the site's
+locations.
+
+What a floor spans follows from that:
+
+- **Areas** may stand for any room or location of the site, not only those
+  under one location; the Room and Location pickers list the whole site.
+  **New room** is offered only on a floor with a location (a room needs
+  one).
+- **The Place picker** offers the site's devices, racks and cabinets, as on
+  any floor, ranked by the area under the pointer: its room (or location)
+  first, then the location of that room and the locations inside it, then
+  the rest of the site. **Not placed** lists the site's objects on no plan.
+- **Assign rooms from areas**, cables, trays and
+  [snapshots](#snapshots) work as on any floor; a snapshot or clone of a
+  site-wide plan is site-wide too.
+
+A floor of a site-wide floor plan may name any location of the site, or
+none. A floor plan's site is fixed once it exists; its location may change
+(the floor plan's name menu → **Edit…**) as long as every floor's location
+stays that location or one inside it, and going to **Whole site** is always
+allowed. Deleting a location deletes the floor plans at it; deleting a site
+deletes all of its floor plans, site-wide ones included.
 
 The grid also carries a **real-world scale**: a **cell size** in millimetres
 (default 600 - one standard raised-floor tile) and a **ceiling height**
@@ -535,17 +567,21 @@ The floor plan's name is a menu (floor-plan change permission):
 - **Merge floor plans…** - pick other floor plans at the same site; their
   floors move into this one, after its own, and the emptied floor plans go.
   Two floors with the same name are refused, listed, until one is renamed.
-- **Rename…** - the floor plan's name and description.
+- **Edit…** - the floor plan's name, location (one of its site's, or
+  **Whole site**) and description.
 - **Clone this floor** - see [Cloning a plan](#cloning-a-plan).
 
 Nothing groups, merges or renames floors on its own; each of these is an
 explicit action. A floor name is unique inside its floor plan, so two
-buildings under one location can each have a "1". A floor's location is
-its floor plan's location or a location nested under it, so floors
-modelled as locations (Building A → Level 2) work: a floor may point at
-Level 2 while its floor plan sits at Building A. Moving or merging a floor
-into a floor plan at another location of the site gives it that floor
-plan's location when its own lies outside it. Moving a floor changes
+buildings under one location can each have a "1"; a floor plan's name is
+unique at its location, or among its site's site-wide floor plans. A floor's
+site is its floor plan's. Its location is its floor plan's location or a
+location nested under it, so floors modelled as locations (Building A →
+Level 2) work: a floor may point at Level 2 while its floor plan sits at
+Building A. In a site-wide floor plan a floor may point at any location of
+the site, or none. Moving or merging a floor into a floor plan at another
+location of the site gives it that floor plan's location when its own lies
+outside it. Moving a floor changes
 only which floor plan it is in, its order and that location; its tiles,
 drawing and links stay as they are.
 
@@ -566,8 +602,8 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 
 | Call | Purpose |
 |---|---|
-| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `floors` (id, name, `floor_order`, location id; the floors you may view, in order), `floor_count` and `last_edited`. |
-| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `location_id`, `tag_ids`. A delete takes every floor with it and needs delete on each. |
+| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `floors` (id, name, `floor_order`, location id or null; the floors you may view, in order), `floor_count` and `last_edited`. |
+| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
 | `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. Answers the new floor (201). |
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
@@ -581,7 +617,13 @@ A floor (`/api/floor-plans/`) gains `stack` (`{id, name}`), `stack_id`
 `stack_id` creates a floor plan of its own named after the plan, as the
 **Add** form does, and needs no other change from a script written before
 0.19; with `stack_id`, `location_id` may be left out (the floor plan's
-location) and the new floor goes on top. Deleting a floor plan's last floor
+location) and the new floor goes on top. A floor reads `site` and
+`location` (null on a site-wide floor) and writes `site_id` and
+`location_id` (null: the whole site): `site_id` is needed on create only
+when neither `stack_id` nor `location_id` gives it - a client that sends
+only `location_id` gets that location's site - and the site cannot change
+afterwards. `GET /api/floor-plans/?site=<id>` lists the site's floors,
+site-wide or not. Deleting a floor plan's last floor
 deletes the floor plan.
 
 ## The editor
@@ -787,7 +829,8 @@ under each room or area in its colour; labels are 2D only.
 | `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |
 
 A room must be one of the plan's location's rooms, or of a location nested
-under it; a location must be the plan's or nested under it; both must be in
+under it; a location must be the plan's or nested under it (on a site-wide
+floor: any room or location of the site); both must be in
 the active tenant and ones you may view - anything else is refused on the
 `room_id` or `location_id` field, on create, update and bulk alike.
 
@@ -838,7 +881,9 @@ by name, in three groups:
 1. **In** the room near the pointer - the room (or location) of the area
    under the pointer when the picker opened, else of the area in the middle
    of the view. **Near** shows that room; × clears it.
-2. **In** the floor's location, or a location inside it.
+2. **In** the floor's location, or a location inside it. A site-wide floor
+   has none: this group is the location of the room near the pointer, and
+   reads **Nearby**.
 3. **Elsewhere** at the site.
 
 Each row shows the object's room as its colour badge, and where it is
@@ -872,7 +917,8 @@ type's look.
 
 In Edit, **Objects** opens with **Not placed** on top: the devices, racks
 and cabinets of the floor's location (or a location inside it, or one of
-their rooms) that stand on no floor plan yet, with their count. Drag one
+their rooms; on a site-wide floor, of the whole site) that stand on no floor
+plan yet, with their count. Drag one
 onto the plan, or click it to place it in the middle of the view.
 
 ### Rooms are never set by placing
@@ -936,7 +982,7 @@ another would give a place nobody chose.
 
 | Call | |
 |---|---|
-| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. |
+| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. On a site-wide floor rank 1 is the near room's location and `?unplaced=1` covers the whole site. |
 | `POST /api/floor-plans/<id>/assign-rooms/` | `{"dry_run": true}` answers `{"objects": [{kind, id, name, tile_id, room, area_room, can_change}]}`; `{"apply": [{"kind", "id"}]}` sets the room of the listed ones you may change (each validated and audited like a `PATCH` of the object) and answers `{applied, skipped, objects}`. |
 | Tiles | `display`: `icon` (default) or `photo`; `z`: stacking order. Read-only `photo` (`url`, `aspect` - height over width -, `source`: `device`, `rack` or `type`, `width_mm`), null without one or without view on the object; `linked` adds the object's `room` and `role` (`id`, `name`, `color`, `icon`) for a device, rack or cabinet. |
 | `POST /api/floor-plans/<id>/bulk/` | An update may carry `version` (the row's `updated_at`), and a delete may be `{"id", "version"}`. A row changed since answers **409** `{"detail", "conflicts": [{kind, id, current, changed_by}]}` (`current` null when it was deleted) and nothing is written. Without a version the last save wins, as before. |
@@ -1396,8 +1442,9 @@ hall, one cage, the corner a contractor needs. In Edit, the **Snapshot** tool
 (++s++) drags the rectangle on whole cells; on release a dialog asks for:
 
 - **Name**.
-- **Goes to**: a **new floor plan** at the floor's location, or a **new
-  floor** of this floor plan (on top of its floors).
+- **Goes to**: a **new floor plan** at the floor's location (site-wide
+  when the floor is), or a **new floor** of this floor plan (on top of its
+  floors).
 - **Kind**: an **Independent copy**, or **Keep in sync (live view)**.
 
 The snapshot opens. Its header carries a chip - **Copy of HQ · Floor 2 ·
@@ -1513,7 +1560,8 @@ panel links), cable trays (geometry only; the cables routed through the
 originals stay where they are), raised-floor areas, walls, rooms, areas
 and labels, its layout (grid or free), and its
 [CAD drawing](#cad-drawings) with its placement, units and calibration - into
-the same location as `<name> copy`, a floor plan of its own, and opens it.
+the same location (or, for a site-wide plan, site-wide at the same site) as
+`<name> copy`, a floor plan of its own, and opens it.
 Handy for a what-if layout you can throw away; **Move to floor plan…** makes
 it a floor of another floor plan. `POST /api/floor-plans/<id>/clone/` does
 the same. Needs the floor-plan add permission.
@@ -1564,7 +1612,10 @@ are audited too, but follow the `floorplan` permission and its site scope:
 viewing, adding floors, ordering, moving, merging and deleting each need the
 matching `floorplan` action, on the floor plans and floors involved. Every
 floor in a move or merge stays at the same site and tenant; a site-limited
-editor works only on the floor plans at their sites. A plan's CAD
+editor works only on the floor plans at their sites. Site scope keys on
+the floor plan's own **site**, so a site-limited user sees and edits the
+site-wide floor plans of their sites, and everything drawn on them, and
+none of another site's. A plan's CAD
 drawing is audited too (**Floor-plan drawings**), but its endpoints and files
 follow the plan's own permission; its files are served only to someone who
 may view the plan, in its tenant, are deleted with it, and are part of a
@@ -1572,7 +1623,7 @@ media backup.
 
 Rooms, areas and labels drawn on a plan are their own types, **Floor-plan
 areas** (`floorplanarea`) and **Floor-plan labels** (`floorplanlabel`):
-scoped through their plan's tenant and its location's site, audited one row
+scoped through their plan's tenant and its site, audited one row
 at a time, and in a site role's types like the plan's walls. Reading them in
 `contents/` follows their own view grant; the editor's **Save** (`bulk/`)
 needs `floorplan · change`.

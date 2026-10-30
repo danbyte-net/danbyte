@@ -212,7 +212,7 @@ def plan(rack: Rack, site, location, *, user, tenant) -> Plan:
 
     p.tiles = list(
         FloorPlanTile.objects.filter(Q(rack=rack) | Q(device_id__in=ids))
-        .exclude(floor_plan__location__site_id=site.pk)
+        .exclude(floor_plan__site_id=site.pk)
     )
     _cap(p)
     _name(p, user, tenant)

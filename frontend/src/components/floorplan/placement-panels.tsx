@@ -24,6 +24,7 @@ import type {
   RoomOption,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { scopeKey, scopeRoomsUrl } from "@/lib/floor-plan-scope"
 import { apiErrorToast } from "@/lib/api-toast"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { EmptyState } from "@/components/empty-state"
@@ -322,11 +323,8 @@ function AreaRoomButton({
 }) {
   const [open, setOpen] = useState(false)
   const rooms = useQuery({
-    queryKey: ["rooms-picker", plan.location.id, "descendants"],
-    queryFn: () =>
-      apiAll<RoomOption>(
-        `/api/rooms/?picker=1&location=${plan.location.id}&include_descendants=1`
-      ),
+    queryKey: ["rooms-picker", scopeKey(plan), "descendants"],
+    queryFn: () => apiAll<RoomOption>(scopeRoomsUrl(plan)),
     staleTime: 5 * 60_000,
     enabled: open,
   })

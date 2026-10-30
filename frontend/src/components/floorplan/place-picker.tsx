@@ -199,7 +199,11 @@ export function PlacePicker({
   const groups: [string, FloorPlanPlaceable[]][] = (
     [
       [nearName ? `In ${nearName}` : "", rows.filter((r) => r.rank === 0)],
-      [`In ${plan.location.name}`, rows.filter((r) => r.rank === 1)],
+      // A site-wide floor ranks the near room's building next.
+      [
+        plan.location ? `In ${plan.location.name}` : "Nearby",
+        rows.filter((r) => r.rank === 1),
+      ],
       ["Elsewhere", rows.filter((r) => r.rank === 2)],
     ] as [string, FloorPlanPlaceable[]][]
   ).filter(([, list]) => list.length > 0)

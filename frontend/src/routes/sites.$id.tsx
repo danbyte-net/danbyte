@@ -47,6 +47,7 @@ import { ContactsPanel } from "@/components/contacts-panel"
 import { SiteRoleDialog } from "@/components/site-role-dialog"
 import { SiteAssignPrefixDialog } from "@/components/site-assign-prefix-dialog"
 import { SiteCapacityTab, showCapacityTab } from "@/components/site-capacity"
+import { SiteFloorPlans } from "@/components/site-floor-plans"
 import { Badge } from "@/components/ui/badge"
 import { useMe } from "@/lib/use-me"
 
@@ -83,6 +84,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
     | "racks"
     | "cabinets"
     | "capacity"
+    | "floorplans"
     | "vms"
     | "prefixes"
     | "vlans"
@@ -102,6 +104,7 @@ function SiteDetailBody({ site: s }: { site: Site }) {
   // How full the site's racks are (#247): only where there are racks to
   // read, for those who may see them.
   const showCapacity = showCapacityTab(s, canDo("rack", "view"))
+  const showFloorPlans = canDo("floorplan", "view")
   const [deleting, setDeleting] = useState<Site | null>(null)
   const openDelete = useCallback(() => setDeleting(s), [s])
   const closeDelete = useCallback((o: boolean) => {
@@ -173,6 +176,9 @@ function SiteDetailBody({ site: s }: { site: Site }) {
         { value: "racks", label: "Racks", count: s.rack_count },
         { value: "cabinets", label: "Cabinets", count: s.cabinet_count },
         ...(showCapacity ? [{ value: "capacity", label: "Capacity" }] : []),
+        ...(showFloorPlans
+          ? [{ value: "floorplans", label: "Floor plans" }]
+          : []),
         { value: "vms", label: "Virtual machines", count: s.vm_count },
         { value: "prefixes", label: "Prefixes", count: s.prefix_count },
         { value: "vlans", label: "VLANs", count: s.vlan_count },
@@ -226,6 +232,11 @@ function SiteDetailBody({ site: s }: { site: Site }) {
       {showCapacity && (
         <DetailTab value="capacity">
           <SiteCapacityTab siteId={s.id} />
+        </DetailTab>
+      )}
+      {showFloorPlans && (
+        <DetailTab value="floorplans">
+          <SiteFloorPlans siteId={s.id} />
         </DetailTab>
       )}
       <DetailTab value="prefixes">

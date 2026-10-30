@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { FloorPlanStack } from "@/lib/api"
+import { WHOLE_SITE } from "@/lib/floor-plan-scope"
 import { entryFloor } from "@/lib/floor-plan-stacks"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
@@ -101,7 +102,11 @@ export function buildFloorPlanStackColumns<
       meta: { field: "floor_count" },
     }),
     location: () =>
-      locationColumn<T>({ get: (r) => r.location, className: "text-xs" }),
+      locationColumn<T>({
+        get: (r) => r.location,
+        className: "text-xs",
+        emptyLabel: WHOLE_SITE,
+      }),
     site: () => siteColumn<T>({ get: (r) => r.site, className: "text-xs" }),
     tags: () =>
       tagsColumn<T>({

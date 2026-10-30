@@ -55,13 +55,23 @@ A site's **Racks** tab lists its racks - name, role, status, width and units
 used - and **Cabinets** its DIN-rail cabinets, wherever in the site they
 stand; a location's tabs list only its own.
 
+## The Floor plans tab
+
+The site's [floor plans](../features/floor-plans.md): its
+[site-wide](../features/floor-plans.md#site-wide-floor-plans) ones, whose
+Location reads **Whole site**, and those of its locations, each opening its
+last-viewed or first floor. **Add floor plan** opens the new-plan form with
+the site picked. The tab shows to anyone who may view floor plans;
+`GET /api/floor-plan-stacks/?site=<id>` powers it.
+
 ## The Capacity tab
 
 How full the site's racks are, floor plan by floor plan. The tab shows when
 the site has racks and you may view racks; it sits after **Cabinets**.
 
 - **One card per floor plan** of the site: its name - which opens the
-  [floor plan](../features/floor-plans.md) - and location, a thumbnail of its
+  [floor plan](../features/floor-plans.md) - and location (**Whole site** for a
+  site-wide plan), a thumbnail of its
   rack tiles (only those, each marked on its front edge), and its racks added
   up: **Racks**, **Devices**, **Space** (units used, with the share),
   **Power** (demand over supply, as the rack page reads it), **Cooling**

@@ -457,5 +457,5 @@ class RegistryTests(APITestCase):
     def test_registered_and_site_scoped(self):
         for slug in ("floorplanarea", "floorplanlabel"):
             self.assertTrue(is_registered(slug))
-            self.assertEqual(SITE_PATHS[slug], "floor_plan__location__site")
+            self.assertEqual(SITE_PATHS[slug], "floor_plan__site|floor_plan__location__site")
             self.assertIn(slug, site_role_types())
