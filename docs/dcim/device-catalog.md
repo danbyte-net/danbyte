@@ -870,6 +870,35 @@ listing what runs it; the API gives both counts (`device_count`, `vm_count`).
 Like every catalog count, they count only the devices and virtual machines
 you may view, so a site-limited user's tab number matches the table under it.
 
+### Editing and deleting platforms in bulk {#platforms-bulk}
+
+Tick rows in the **Platforms** list and a bar floats up with **Edit** and
+**Delete** (each shown only with the *change* or *delete* permission on
+platforms).
+
+- **Edit** sets the **Group**, **Manufacturer**, **Config template**,
+  **Target version** and **Description** of every ticked platform, and adds
+  or removes tags. Only the fields you tick are written; each platform gets
+  its own [change log](../features/change-log.md) entry. The version pattern
+  stays a one-at-a-time edit.
+- **Delete** asks first. The dialog says how many platforms go, what goes
+  with them (an end-of-life mapping, a monitoring policy scoped to the
+  platform), and which are **kept** because something still uses them: a
+  platform any device or virtual machine runs (counted across the whole
+  tenant, not only what you can see), or one a
+  [device profile](../features/device-profiles.md) names. Only the free
+  platforms are deleted, the same rule a single delete follows.
+
+The endpoints are `POST /api/platforms/bulk-delete/` (`{"ids": [...]}`, add
+`"dry_run": true` for the preview; needs *delete*), `POST
+/api/platforms/bulk-update/` (`{"ids": [...], "fields": {...}}` with
+`group_id`, `manufacturer_id`, `config_template_id`, `target_version`,
+`description`, `add_tag_ids`, `remove_tag_ids`; needs *change*) and `GET
+/api/platforms/bulk-edit-fields/` - see [Bulk
+calls](../reference/api.md#bulk-calls). Ids from another tenant, or outside your
+permissions, are left out; a group, manufacturer or template from another
+tenant is a `400`.
+
 ### Platform groups and the effective platform
 
 **Platform groups** (their own sidebar page) organise platforms into families -
