@@ -59,7 +59,9 @@ ergonomics on top:
     not match on it. A flow an
     [application requirement](../features/application-flows.md#requirements)
     generated is an ordinary flow with the same rule, and its name reads
-    *Hidden* where it names the hidden host; the requirement itself is a
+    *Hidden* where it names the hidden host - in the API, its picker, the
+    export, templates, search, custom-field labels, the change log and the
+    requirement's excluded pairs and journal; the requirement itself is a
     tenant-wide catalog the site roles read, its fixed ends hidden the same
     way, and its list of hosts without an address counts the hosts the
     reader can't view without naming them. A cooling intake connected to another site's feed or

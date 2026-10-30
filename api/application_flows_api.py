@@ -36,13 +36,14 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from core.hidden_fields import hidden_related_spec
+from core.hidden_fields import PermissionHiddenFieldsMixin, hidden_related_spec
 from core.models import Tag
 from core.tags import TAGS
 
 from .applications_api import PATH_SEP, _paths, _uuid_param
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 from .cf_search import cf_text_q
+from .flow_names import END_SLUGS, FlowNames
 from .models import (
     Application,
     ApplicationFlow,
@@ -87,8 +88,6 @@ def _range_label(r) -> str:
     return f"{r.start_address}-{r.end_address}"
 
 
-#: The object type of each end kind, for the caller's view scope (#453).
-END_SLUGS = {"ip": "ipaddress", "range": "iprange", "prefix": "prefix"}
 
 
 def hidden_end(kind: str) -> dict:
@@ -132,12 +131,40 @@ def end_payload(flow, side: str, viewable=None) -> dict:
 END_SCHEMA = OpenApiTypes.OBJECT
 
 
-class ApplicationFlowMiniSerializer(NumIdModelSerializer):
+class _FlowNamesMixin(PermissionHiddenFieldsMixin):
+    """A generated flow's name with an end the caller may not view as
+    Hidden, in the API, the picker and the export (``api.flow_names``)."""
+
+    def _flow_names(self) -> FlowNames:
+        viewable = self._viewable() if hasattr(self, "_viewable") else None
+        return FlowNames.for_context(self.context, viewable)
+
+    def prime_related(self, rows) -> None:
+        if hasattr(super(), "prime_related"):
+            super().prime_related(rows)
+        self._flow_names().prime(rows)
+
+    def masked_fields(self, obj) -> dict:
+        out = dict(super().masked_fields(obj))
+        names = self._flow_names()
+        if names.masks(obj):
+            out["name"] = names.name(obj)
+        return out
+
+    def masked_columns(self) -> set[str]:
+        out = set(super().masked_columns())
+        if self._flow_names().active:
+            out.add("name")
+        return out
+
+
+class ApplicationFlowMiniSerializer(_FlowNamesMixin, NumIdModelSerializer):
     application = serializers.SerializerMethodField()
 
     class Meta:
         model = ApplicationFlow
         fields = ["id", "name", "application"]
+        list_serializer_class = _HiddenRelatedListSerializer
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_application(self, obj):
@@ -145,7 +172,8 @@ class ApplicationFlowMiniSerializer(NumIdModelSerializer):
 
 
 class ApplicationFlowSerializer(
-    HiddenRelatedFieldsMixin, CustomFieldsSerializerMixin, StatusSerializerMixin,
+    _FlowNamesMixin, HiddenRelatedFieldsMixin, CustomFieldsSerializerMixin,
+    StatusSerializerMixin,
     TaggableSerializerMixin, NumIdModelSerializer,
 ):
     cf_model = "applicationflow"
@@ -303,22 +331,6 @@ class ApplicationFlowSerializer(
     def get_destination_install(self, obj):
         return self._install(obj.destination_install)
 
-    def to_representation(self, obj):
-        """A generated row's name names the hosts at its ends; one the
-        caller can't view reads Hidden there, as the end itself does."""
-        data = super().to_representation(obj)
-        src, dst = data.get("source") or {}, data.get("destination") or {}
-        if obj.generated and (src.get("hidden") or dst.get("hidden")):
-            def label(end):
-                if end.get("hidden"):
-                    return "Hidden"
-                host = end.get("device") or end.get("vm")
-                return host["name"] if host else end.get("label", "")
-
-            prefix = obj.requirement.name if obj.requirement_id else data["name"].split(":")[0]
-            data["name"] = f"{prefix}: {label(src)} → {label(dst)}"
-        return data
-
     def _guard_generated(self, attrs) -> None:
         """A generated row keeps what its requirement decides - its ends,
         name and application. Changing one needs a detach first; a payload
@@ -333,6 +345,11 @@ class ApplicationFlowSerializer(
             if key not in attrs:
                 continue
             new, old = attrs[key], getattr(inst, key)
+            if key == "name" and new == self._flow_names().name(inst):
+                # The name as this caller reads it (masked) repeats it; the
+                # stored name stays.
+                attrs.pop("name")
+                continue
             if (getattr(new, "pk", new) or None) != (getattr(old, "pk", old) or None):
                 field = key if key in ("name",) else (
                     "application_id" if key == "application" else key.split("_")[0])
@@ -558,7 +575,7 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                                                 f"__{field}__icontains", s)
             # A generated row's name names the hosts at its ends; it matches
             # only while the caller may view both (#453).
-            named = Q(name__icontains=s) & (Q(generated=False) | self._ends_visible_q(tenant))
+            named = Q(name__icontains=s) & FlowNames(self.request.user, tenant).visible_q()
             qs = qs.filter(
                 named | Q(description__icontains=s)
                 | Q(application__name__icontains=s) | Q(ports__icontains=s)
@@ -566,27 +583,6 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                 | cf_text_q(qs.model, s)
             )
         return qs
-
-    def _ends_visible_q(self, tenant) -> Q:
-        """Rows whose every address, range and prefix end the caller may
-        view."""
-        from auth_api import rbac
-        from auth_api.object_types import model_for
-
-        user = self.request.user
-        if tenant is None or getattr(user, "is_superuser", False):
-            return Q()
-        q = Q()
-        for kind, slug in END_SLUGS.items():
-            f = rbac.row_filter(user, tenant, slug, "view")
-            if f is True:
-                continue
-            visible = (model_for(slug)._default_manager.filter(f).values("pk")
-                       if f is not None else model_for(slug)._default_manager.none())
-            for side in SIDES:
-                field = f"{side}_{kind}"
-                q &= Q(**{f"{field}__isnull": True}) | Q(**{f"{field}__in": visible})
-        return q
 
     def _visible_end_q(self, tenant, field: str, slug: str, lookup: str, value) -> Q:
         """``field<lookup>=value``, matched only on an end the caller may

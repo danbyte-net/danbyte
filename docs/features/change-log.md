@@ -26,6 +26,13 @@ diff, the snapshots and the API. In the API its value is `null`, with
 `hidden_related`. For a user with limited access, a deleted related object
 also shows as hidden, since its scope can no longer be checked.
 
+A generated application flow is named after the hosts at its ends. When you
+can't view one of them, its entries name it as the flow's API does - *WMS to
+Broker: wms-1 → Hidden* - in the entry, its `name` diff and snapshots, and
+a search of the log; see
+[application flows](application-flows.md#permissions). The stored entry is
+unchanged.
+
 !!! note "Change log vs. journal"
     The change log is the *automatic* record of what changed. A
     [journal](journals.md) is where people write *their own* notes about an
@@ -78,7 +85,9 @@ wms-07* - shown under the entry's changes, with the user and request of the
 change that triggered them, so the install and the flows it documented
 group together. The nightly sweep's entries read *nightly sweep* and are
 written by the system. Ordinary edits have no cause. The API returns it as
-`cause` on `/api/changelog/`.
+`cause` on `/api/changelog/`. A reader who can't view every address, range
+and prefix reads a flow's cause as just *Requirement 'WMS to Broker'*: what
+set it off may be a host at another site.
 
 Not every writer is a person. An [Outpost](../monitoring/outposts.md) writes as
 itself, and is named that way - `outpost:probe-1` - with no linked user account,

@@ -503,6 +503,48 @@ def _drop_hidden_matches(rows: list[dict], q: str, user, tenant) -> list[dict]:
     return [r for r in rows if (r["object_type"], r["object_id"]) not in dropped]
 
 
+def _mask_names(rows: list[dict], q: str, user, tenant) -> list[dict]:
+    """Show a name built from related rows as the caller may read it - a
+    generated flow's name with an end they may not view as Hidden (#453) -
+    and drop the hits that matched only through what the mask hides. A
+    masked hit stays when the term is in its masked title or its own text.
+    One query per masked type, and the masker's own per type."""
+    from core.hidden_fields import MASKED_NAMES, name_masker
+
+    from .search_index import _body
+
+    fq = _folded_term(q) if q else ""
+    memo: dict = {}
+    dropped: set = set()
+    by_type: dict[str, list[dict]] = {}
+    for r in rows:
+        by_type.setdefault(r["object_type"], []).append(r)
+    for slug, hits in by_type.items():
+        model = model_for(slug)
+        if model is None or model._meta.label_lower not in MASKED_NAMES:
+            continue
+        masker = name_masker(model._meta.label_lower, user, tenant, memo=memo)
+        if masker is None:
+            continue
+        objs = {o.pk: o for o in model._default_manager.filter(
+            pk__in=[r["object_id"] for r in hits])}
+        masker.prime(list(objs.values()))
+        spec = SPECS.get(slug)
+        for r in hits:
+            obj = objs.get(r["object_id"])
+            if obj is None or not masker.masks(obj):
+                continue
+            r["title"] = masker.name(obj)
+            if r.get("injected") or not fq:
+                continue
+            own = _body(obj, spec) if spec is not None else ""
+            if fq not in fold(r["title"]) and fq not in fold(own):
+                dropped.add((slug, r["object_id"]))
+    if not dropped:
+        return rows
+    return [r for r in rows if (r["object_type"], r["object_id"]) not in dropped]
+
+
 @extend_schema(
     summary="Global tenant-scoped search: one ranked list across every object type",
     tags=["search"],
@@ -580,6 +622,7 @@ def search(request):
         rows.sort(key=lambda r: (-float(r["score"]), r["title"]))
     rows = _allowed(rows, request.user, tenant)
     rows = _drop_hidden_matches(rows, mac or q, request.user, tenant)
+    rows = _mask_names(rows, mac or q, request.user, tenant)
 
     labels = _type_labels()
     counts: dict[str, int] = {}

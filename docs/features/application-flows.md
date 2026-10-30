@@ -312,6 +312,26 @@ not. Editing such a flow keeps the hidden end unless you pick another.
 A requirement's fixed end you may not view reads *Hidden* too, and its
 missing hosts and preview count a host you may not view without naming it.
 
+The masked name (*WMS to Broker: wms-1 → Hidden*) is the name everywhere
+that reader meets the flow:
+
+- the flow picker, the spreadsheet export (an export filter on `name` is
+  refused for them), export templates (a flow whose name is masked is left
+  out of the rows, as a label for one is refused), global search (it
+  matches the masked name, not the stored one), and custom-field labels;
+- the change log - the entry's object, its `name` diff and snapshots, a
+  search of the log, and the agent's change history. The cause of a
+  resolver's change reads just *Requirement 'WMS to Broker'*: the trigger
+  behind it can name a host or flow at any site. The log is masked when
+  read; the stored history is unchanged;
+- a requirement's **Excluded** pairs and its journal notes (*Excluded the
+  pair …*), whose label is the flow's name. A restored pair whose ends
+  can no longer be told reads *Hidden* whole.
+
+Saving a payload or an import row that repeats the masked name keeps the
+stored one. A superuser, and a reader who may view both ends, read the
+stored name.
+
 ## API
 
 | Endpoint | |
