@@ -44,6 +44,7 @@ from .application_flows_api import _PORTLESS, END_SLUGS, clean_ports
 from .applications_api import _uuid_param
 from .bulk_delete import SafeBulkDeleteMixin
 from .cf_search import cf_text_q
+from .flow_names import FlowNames
 from .models import (
     Application,
     ApplicationFlow,
@@ -224,8 +225,11 @@ class ApplicationFlowRequirementSerializer(
         rows = getattr(obj, "_prefetched_objects_cache", {}).get("exclusions")
         if rows is None:
             rows = obj.exclusions.all()
-        return [{"id": str(e.pk), "label": e.label, "binding_key": e.binding_key,
-                 "created_at": e.created_at} for e in rows]
+        # A pair's label is its flow's name: an end the caller can't view
+        # reads Hidden there (api.flow_names).
+        names = FlowNames.for_context(self.context, self._viewable())
+        return [{"id": str(e.pk), "label": names.exclusion_label(e),
+                 "binding_key": e.binding_key, "created_at": e.created_at} for e in rows]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_host(self, obj):
@@ -490,8 +494,10 @@ class ApplicationFlowRequirementViewSet(SafeBulkDeleteMixin, TenantScopedViewSet
             label = str(request.data.get("label") or key)[:255]
             exclude_pair(req, key, label, request.user)
         rows = ApplicationFlowRequirementExclusion.objects.filter(requirement=req)
-        return Response([{"id": str(e.pk), "label": e.label, "binding_key": e.binding_key,
-                          "created_at": e.created_at} for e in rows])
+        names = FlowNames(request.user, _tenant_from(self))
+        return Response([{"id": str(e.pk), "label": names.exclusion_label(e),
+                          "binding_key": e.binding_key, "created_at": e.created_at}
+                         for e in rows])
 
     @extend_schema(request=None, responses={204: None})
     @action(detail=True, methods=["delete"], url_path=r"exclusions/(?P<eid>[^/.]+)")

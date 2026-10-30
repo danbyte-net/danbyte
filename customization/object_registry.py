@@ -241,10 +241,22 @@ def resolve_labels(slug: str, ids: list[str], tenant=None, user=None) -> list[di
                 qs = _member_labels(ref, qs, tenant, user)
                 if qs is None:
                     return []
+    rows = list(qs)
+    # A name built from related rows reads as the caller may read it - a
+    # generated flow's with an end they may not view as Hidden (#453).
+    masker = None
+    if user is not None:
+        from core.hidden_fields import name_masker
+
+        masker = name_masker(ref.model._meta.label_lower, user, tenant)
+        if masker is not None:
+            masker.prime(rows)
     out = []
-    for obj in qs:
+    for obj in rows:
         label = getattr(obj, ref.label_field, None) if ref.label_field else None
         label = label or str(obj)
+        if masker is not None and masker.masks(obj):
+            label = masker.name(obj)
         out.append({
             "id": str(obj.pk),
             "label": str(label),
