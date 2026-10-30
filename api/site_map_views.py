@@ -111,7 +111,7 @@ def site_map(request):
         .select_related("region")
         .annotate(
             _devices=Count("device", distinct=True),
-            _floor_plans=Count("locations__floor_plans", distinct=True),
+            _floor_plans=Count("floor_plans", distinct=True),
         )
         .order_by("name")
     )
@@ -156,9 +156,10 @@ def site_map(request):
         .select_related("location")
         .order_by("name")
     ):
-        plans_by_site.setdefault(fp.location.site_id, [])
-        if len(plans_by_site[fp.location.site_id]) < 5:
-            plans_by_site[fp.location.site_id].append(
+        site_id = fp.site_id or (fp.location.site_id if fp.location_id else None)
+        plans_by_site.setdefault(site_id, [])
+        if len(plans_by_site[site_id]) < 5:
+            plans_by_site[site_id].append(
                 {"id": str(fp.id), "name": fp.name}
             )
 

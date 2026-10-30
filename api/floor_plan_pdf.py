@@ -483,7 +483,8 @@ class FloorPlanPdfLinkSerializer(serializers.Serializer):
 
 def plan_title(plan, tenant_name: str) -> tuple[str, str]:
     loc = plan.location
-    parts = [loc.name, loc.site.name if loc.site_id else "", tenant_name]
+    site = plan.site if plan.site_id else (loc.site if loc is not None else None)
+    parts = [loc.name if loc is not None else "", site.name if site else "", tenant_name]
     return plan.name, " · ".join(p for p in parts if p)
 
 

@@ -10682,11 +10682,13 @@ def _snap_tile(t, plan):
 
 class FloorPlanViewSet(TenantScopedViewSet):
     """Floor plans' floors. ``?stack=<id>`` lists one floor plan's floors in
-    floor order; ``?location=``, ``?site=``, ``?search=`` filter."""
+    floor order; ``?location=``, ``?site=`` (site-wide floors and those of
+    its locations), ``?search=`` filter."""
 
     queryset = (
         FloorPlan.objects.select_related(
-            "location", "location__site", "drawing", "stack", "source", "source__stack"
+            "site", "location", "location__site", "drawing", "stack", "source",
+            "source__stack",
         )
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME)
@@ -10709,10 +10711,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
             loc = self.request.query_params.get("location")
             if loc:
                 qs = qs.filter(location_id=loc)
-            site = self.request.query_params.get("site")
-            if site:
-                qs = qs.filter(location__site_id=site)
             from .topology_views import _uuid_param
+
+            site = _uuid_param(self.request.query_params, "site")
+            if site:
+                qs = qs.filter(site_id=site)
 
             stack = _uuid_param(self.request.query_params, "stack")
             if stack:
@@ -10793,7 +10796,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         qs = FloorPlanStack.objects.filter(tenant=tenant, pk=sid) if sid else \
             FloorPlanStack.objects.none()
         stack = rbac.restrict_queryset(
-            qs.select_related("location", "location__site"),
+            qs.select_related("site", "location", "location__site"),
             request.user, tenant, "floorplan", action,
         ).first()
         if stack is None:
@@ -10843,7 +10846,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "target": "plan" | "floor"}``. ``copy`` copies what the crop holds
         (clipped at its edge where the geometry allows, the rest copied whole
         and listed under ``crossing``), with the background cut to it;
-        ``view`` makes a live view of the crop. ``target`` ``plan`` makes a
+        ``view`` makes a live view of the crop (site-wide plans snapshot to
+        site-wide plans). ``target`` ``plan`` makes a
         floor plan of its own at this plan's location, ``floor`` a new floor
         of this floor plan. Needs view on this plan and ``floorplan · add``.
         A snapshot of a view is a snapshot of the plan it shows."""
@@ -10851,7 +10855,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         from auth_api import rbac
 
         from . import floor_plan_snapshots as snaps
-        from .floor_stacks import name_taken
+        from .floor_stacks import clash_message, name_clash, name_taken
 
         tenant = self._tenant_or_403()
         if not rbac.has_action(request.user, tenant, "floorplan", "add"):
@@ -10893,10 +10897,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 raise PermissionDenied("You may not add floors to this floor plan.")
             if name_taken(stack, name):
                 raise ValidationError({"name": ["This floor plan already has a floor with that name."]})
-        elif FloorPlanStack.objects.filter(
-            tenant=tenant, location=src.location, name=name
-        ).exists():
-            raise ValidationError({"name": ["This location already has a floor plan with that name."]})
+        elif name_clash(tenant.pk, src.site_id, src.location_id, name):
+            raise ValidationError({"name": [clash_message(src.location_id)]})
         with transaction.atomic(), cause(f"Snapshot of {src.name}"[:255]):
             dst, crossing = snaps.make_snapshot(src, crop, name=name, mode=mode, stack=stack)
             self._assert_bulk_write_in_site_scope([dst.pk], "add")
@@ -10930,8 +10932,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Copy the plan with everything drawn on it: tiles (their object
         links included), trays (geometry only - the cables routed through the
         originals stay where they are), raised-floor areas and walls. The
-        copy lands in the same location as "<name> copy", a floor plan of its
-        own (move it into another with ``move/``)."""
+        copy lands in the same location (or site-wide, at the same site) as
+        "<name> copy", a floor plan of its own (move it into another with
+        ``move/``)."""
         import os
 
         from django.core.files.base import ContentFile
@@ -10947,11 +10950,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
         maxlen = FloorPlan._meta.get_field("name").max_length or 128
         base = f"{src.name} copy"[:maxlen]
         name, n = base, 2
+        from .floor_stacks import name_clash
+
         while FloorPlan.objects.filter(
-            tenant=tenant, location=src.location, name=name
-        ).exists() or FloorPlanStack.objects.filter(
-            tenant=tenant, location=src.location, name=name
-        ).exists():
+            tenant=tenant, site_id=src.site_id, location=src.location, name=name
+        ).exists() or name_clash(tenant.pk, src.site_id, src.location_id, name):
             suffix = f" {n}"
             name = base[: maxlen - len(suffix)] + suffix
             n += 1
@@ -10964,7 +10967,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             root, crop = self._resolved(src)
             with transaction.atomic():
                 stack = FloorPlanStack.objects.create(
-                    tenant=tenant, location=src.location, name=name,
+                    tenant=tenant, site_id=src.site_id, location=src.location, name=name,
                 )
                 dst, _crossing = snaps.make_snapshot(
                     root, crop, name=name, mode="copy", stack=stack
@@ -10975,11 +10978,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         with transaction.atomic():
             stack = FloorPlanStack.objects.create(
-                tenant=tenant, location=src.location, name=name,
+                tenant=tenant, site_id=src.site_id, location=src.location, name=name,
             )
-            dst = FloorPlan(tenant=tenant, location=src.location, name=name, stack=stack)
+            dst = FloorPlan(
+                tenant=tenant, site_id=src.site_id, location=src.location, name=name,
+                stack=stack,
+            )
             for f in FloorPlan._meta.concrete_fields:
-                if f.name in skip or f.name in ("tenant", "location"):
+                if f.name in skip or f.name in ("tenant", "site", "location"):
                     continue
                 setattr(dst, f.attname, getattr(src, f.attname))
             if src.background_image:
@@ -11518,7 +11524,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """What the editor's Place picker offers: the devices, racks and
         cabinets of the plan's site the reader may view, ranked (``rank`` 0:
         in ``?near_room=`` or ``?near_location=`` - the area near the pointer; 1: in
-        the floor's location or one inside it; 2: the rest of the site), each
+        the floor's location or one inside it - on a site-wide floor, the
+        location of the near room; 2: the rest of the site), each
         with its room and where it is already placed. ``?q=`` filters by
         name, ``?kind=device,rack,cabinet`` by kind, ``?unplaced=1`` keeps the
         floor's objects placed on no plan (``&include_here=1``: on no other
@@ -12371,13 +12378,14 @@ class SiteMarkerViewSet(TenantScopedViewSet):
 class FloorPlanStackViewSet(TenantScopedViewSet):
     """Floor plans as users see them - a building or hall and its floors
     (``FloorPlanStack``). Follows the ``floorplan`` permission and its site
-    scope. Filters: ``?location=``, ``?site=``, ``?tag=<slug>``, ``?search=``
+    scope. Filters: ``?location=``, ``?site=`` (site-wide floor plans and
+    those of its locations), ``?site_wide=1``, ``?tag=<slug>``, ``?search=``
     (also matches floor names). Actions: ``floors/`` adds a floor,
     ``reorder/`` orders them, ``merge/`` moves other floor plans' floors in;
     a delete takes the floors with it."""
 
     queryset = (
-        FloorPlanStack.objects.select_related("location", "location__site")
+        FloorPlanStack.objects.select_related("site", "location", "location__site")
         .prefetch_related(TAGS)
         .order_by(NATURAL_NAME, "pk")
     )
@@ -12415,7 +12423,9 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
             qs = qs.filter(location_id=location)
         site = _uuid_param(params, "site")
         if site:
-            qs = qs.filter(location__site_id=site)
+            qs = qs.filter(site_id=site)
+        if params.get("site_wide") in ("1", "true"):
+            qs = qs.filter(location__isnull=True)
         tag_slugs = [t for t in params.getlist("tag") if t]
         for slug in tag_slugs:
             qs = qs.filter(tags__slug=slug)
@@ -12489,7 +12499,7 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
                 raise PermissionDenied(
                     "The created or updated object is outside your permission scope."
                 )
-        plan = FloorPlan.objects.select_related("location", "location__site", "stack") \
+        plan = FloorPlan.objects.select_related("site", "location", "stack") \
             .get(pk=plan.pk)
         return Response(
             FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
@@ -12535,7 +12545,7 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
         sources = list(
             rbac.restrict_queryset(
                 FloorPlanStack.objects.filter(tenant=tenant, pk__in=ids)
-                .select_related("location", "location__site"),
+                .select_related("site", "location", "location__site"),
                 request.user, tenant, "floorplan", "change",
             ).order_by(NATURAL_NAME, "pk")
         )

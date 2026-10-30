@@ -112,7 +112,7 @@ export function PlanHeader({
                 Merge floor plans…
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setOpen("rename")}>
-                Rename…
+                Edit…
               </DropdownMenuItem>
               {view && (
                 <DropdownMenuItem onSelect={() => setOpen("unlink")}>
@@ -136,7 +136,7 @@ export function PlanHeader({
           <h1 className="truncate text-base font-semibold">{title}</h1>
         )}
         <p className="truncate text-[11px] text-muted-foreground">
-          {plan.site.name} · {plan.location.name} ·{" "}
+          {plan.site.name} · {plan.location && <>{plan.location.name} · </>}
           <span className="num">
             {plan.grid_width}×{plan.grid_height}
           </span>{" "}

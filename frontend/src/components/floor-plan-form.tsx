@@ -1,12 +1,15 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
+import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { WHOLE_SITE } from "@/lib/floor-plan-scope"
 import { useSiteOptions } from "@/lib/use-site-options"
 import type {
   FloorPlan,
   FloorPlanWritePayload,
+  Location,
   LocationOption,
 } from "@/lib/api"
 import {
@@ -23,6 +26,8 @@ export interface FloorPlanFormProps {
   plan?: FloorPlan
   /** Preselect the location (e.g. arriving from a Location page). */
   initialLocationId?: string
+  /** Preselect the site (e.g. arriving from a Site page). */
+  initialSiteId?: string
   onSaved: (saved: FloorPlan) => void
   onCancel: () => void
 }
@@ -30,6 +35,7 @@ export interface FloorPlanFormProps {
 export function FloorPlanForm({
   plan,
   initialLocationId,
+  initialSiteId,
   onSaved,
   onCancel,
 }: FloorPlanFormProps) {
@@ -39,9 +45,12 @@ export function FloorPlanForm({
   const saveObject = useSaveObject()
 
   const [name, setName] = useState(plan?.name ?? "")
-  const [siteId, setSiteId] = useState<string | null>(plan?.site.id ?? null)
+  const [siteId, setSiteId] = useState<string | null>(
+    plan?.site.id ?? initialSiteId ?? null
+  )
+  // Null: the whole site (a site-wide plan spans every building of it).
   const [locationId, setLocationId] = useState<string | null>(
-    plan?.location.id ?? initialLocationId ?? null
+    plan ? (plan.location?.id ?? null) : (initialLocationId ?? null)
   )
   const [gridWidth, setGridWidth] = useState(String(plan?.grid_width ?? 24))
   const [gridHeight, setGridHeight] = useState(String(plan?.grid_height ?? 16))
@@ -50,24 +59,30 @@ export function FloorPlanForm({
   const [description, setDescription] = useState(plan?.description ?? "")
 
   const sites = useSiteOptions()
-  // Locations are per-site - the list follows the chosen site. With no site
-  // picked yet (e.g. prefilled location from a Location page) list them all
-  // so the prefill resolves.
+  // A location prefilled from a Location page names the site.
+  const prefill = useQuery({
+    queryKey: ["location", initialLocationId],
+    queryFn: () => api<Location>(`/api/locations/${initialLocationId}/`),
+    enabled: !plan && !siteId && !!initialLocationId,
+  })
+  const prefillSite = prefill.data?.site?.id
+  useEffect(() => {
+    if (prefillSite && !siteId) setSiteId(prefillSite)
+  }, [prefillSite, siteId])
+  // Locations are per-site - the list follows the chosen site.
   const locations = useQuery({
-    queryKey: ["locations-picker", siteId ?? "all"],
+    queryKey: ["locations-picker", siteId],
     queryFn: () =>
-      apiAll<LocationOption>(
-        siteId
-          ? `/api/locations/?picker=1&site=${siteId}`
-          : "/api/locations/?picker=1"
-      ),
+      apiAll<LocationOption>(`/api/locations/?picker=1&site=${siteId}`),
+    enabled: !!siteId,
   })
 
   const mutation = useMutation({
     mutationFn: async () => {
       const payload: FloorPlanWritePayload = {
         name: name.trim(),
-        location_id: locationId ?? undefined,
+        site_id: siteId ?? undefined,
+        location_id: locationId,
         grid_width: Math.min(512, Math.max(1, parseInt(gridWidth, 10) || 24)),
         grid_height: Math.min(512, Math.max(1, parseInt(gridHeight, 10) || 16)),
         cell_mm: Math.min(5000, Math.max(50, parseInt(cellMm, 10) || 600)),
@@ -117,7 +132,7 @@ export function FloorPlanForm({
         <div className="grid gap-3 @md:grid-cols-2">
           <FormCombobox
             label="Site"
-            hint="Narrows the location list"
+            required
             value={siteId}
             onChange={(v) => {
               setSiteId(v)
@@ -130,20 +145,23 @@ export function FloorPlanForm({
             placeholder="Select a site…"
             searchPlaceholder="Search sites…"
             emptyText="No sites."
+            disabled={isEdit}
+            error={fieldErrors.site_id}
           />
           <FormCombobox
             label="Location"
-            required
-            hint="The room / floor this lays out"
+            hint="The building or room this lays out"
             value={locationId}
             onChange={setLocationId}
+            noneLabel={WHOLE_SITE}
             options={(locations.data?.results ?? []).map((l) => ({
               value: l.id,
               label: l.name,
             }))}
-            placeholder="Select a location…"
+            placeholder={WHOLE_SITE}
             searchPlaceholder="Search locations…"
             emptyText="No locations."
+            disabled={!siteId}
             error={fieldErrors.location_id}
           />
         </div>

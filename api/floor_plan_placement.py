@@ -2,8 +2,9 @@
 
 * ``placeable`` - the devices, racks and cabinets of a plan's site that the
   Place picker offers, ranked: those in the room (or location) near the
-  pointer first, then those of the floor's location, then the rest of the
-  site; each with where it is already placed.
+  pointer first, then those of the floor's location (on a site-wide floor:
+  the location of the room near the pointer), then the rest of the site;
+  each with where it is already placed.
 * ``room_mismatches`` - placed objects whose tile stands in a room's area on
   this floor while the object names another room (or none). Rooms are never
   set from a placement; the editor offers the change and a write applies it.
@@ -69,16 +70,19 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
               view=None):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
-    location and the locations inside it, 2 for the rest of the site.
-    ``unplaced`` keeps only objects of the floor's location (or its rooms)
-    placed on no plan; with ``include_here`` a tile on this floor does not
-    count, those objects coming last - the editor weighs them against its
-    unsaved draft. A device in a rack or a cabinet is placed with it and
+    location and the locations inside it - on a site-wide floor, which has
+    none, the near room's location - 2 for the rest of the site.
+    ``unplaced`` keeps only objects of the floor's location (or its rooms;
+    on a site-wide floor, of the whole site) placed on no plan; with
+    ``include_here`` a tile on this floor does not count, those objects
+    coming last - the editor weighs them against its unsaved draft. A device
+    in a rack or a cabinet is placed with it and
     never offered on its own. ``view`` - ``(source, crop)`` when ``plan`` is
     a live view: "this floor" is then the source's tiles inside the crop."""
     from auth_api import rbac
 
-    site_id = plan.location.site_id
+    site_id = plan.site_id or plan.location.site_id
+    site_wide = plan.location_id is None
     floor_locs = location_subtree(plan.location)
     near_locs = (
         location_subtree(near_location)
@@ -87,6 +91,10 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     )
     if near_room is not None and near_room.location.site_id != site_id:
         near_room = None
+    if site_wide and near_room is not None:
+        # A site-wide floor spans the site; the building the pointer is in
+        # ranks next.
+        floor_locs = location_subtree(near_room.location)
     visible_plans = rbac.restrict_queryset(
         plan.__class__.objects.filter(tenant=tenant), user, tenant, "floorplan", "view"
     )
@@ -104,9 +112,10 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
         here_first = ()
         if unplaced:
             tiles = FloorPlanTile.objects.filter(**{link: OuterRef("pk")})
-            qs = qs.filter(
-                Q(location_id__in=floor_locs) | Q(room__location_id__in=floor_locs)
-            )
+            if not site_wide:
+                qs = qs.filter(
+                    Q(location_id__in=floor_locs) | Q(room__location_id__in=floor_locs)
+                )
             if include_here:
                 qs = qs.exclude(Exists(tiles.exclude(floor_plan=here_floor))).annotate(
                     here=Exists(tiles.filter(floor_plan=here_floor))
@@ -119,7 +128,8 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
             whens.append(When(room_id=near_room.pk, then=Value(0)))
         if near_locs:
             whens.append(When(location_id__in=near_locs, then=Value(0)))
-        whens.append(When(location_id__in=floor_locs, then=Value(1)))
+        if floor_locs:
+            whens.append(When(location_id__in=floor_locs, then=Value(1)))
         qs = qs.annotate(
             rank=Case(*whens, default=Value(2), output_field=IntegerField())
         ).select_related("room", "location", "status", "role")

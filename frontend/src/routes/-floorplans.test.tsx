@@ -62,13 +62,13 @@ function stack(
   id: string,
   name: string,
   floors: string[],
-  location = "Building A"
+  location: string | null = "Building A"
 ): FloorPlanStack {
   return {
     id,
     name,
     description: "",
-    location: { id: `l-${id}`, name: location, slug: id },
+    location: location ? { id: `l-${id}`, name: location, slug: id } : null,
     site: { id: "site1", name: "HQ" },
     floors: floors.map((f, i) => ({
       id: `${id}-${f}`,
@@ -88,6 +88,7 @@ function stack(
 const STACKS = [
   stack("hq", "HQ Building", ["B1", "Ground", "1"]),
   stack("dc", "DC Hall", ["Hall"], "Building B"),
+  stack("campus", "Campus", ["Site"], null),
 ]
 
 beforeAll(async () => {
@@ -154,6 +155,14 @@ describe("the floor plans list", () => {
     expect(
       apiMock.mock.calls.some(([p]) => p.startsWith("/api/floor-plan-stacks/?"))
     ).toBe(true)
+  })
+
+  it("reads Whole site for a site-wide floor plan", async () => {
+    mount("/floorplans")
+    const campus = await screen.findByRole("link", { name: "Campus" })
+    const row = campus.closest("tr")!
+    expect(row.textContent).toContain("Whole site")
+    expect(row.textContent).toContain("HQ")
   })
 
   it("forgets a remembered floor that left the floor plan", async () => {
