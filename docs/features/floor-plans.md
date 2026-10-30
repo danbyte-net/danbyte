@@ -622,6 +622,7 @@ At its foot, **Free placement** switches the plan between the grid and
 
 | Action | How |
 |---|---|
+| Place a device, rack or cabinet | **Place…** (++p++) - [pick or drag it](#placing-devices-racks-and-cabinets); no tile type needed |
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
 | Move | Drag a tile - snaps to cells |
 | Resize | Drag the corner handle of the selected tile |
@@ -647,7 +648,9 @@ are the exception: they may cover anything, and anything may sit on them.
 
 Edits are local until you press **Save** - one transactional bulk call writes
 all creates, moves, and deletes of tiles, areas and labels together, and the
-change log records each row individually.
+change log records each row individually. If someone else changed or deleted
+one of those rows since you opened the plan, nothing is written and the
+editor [asks whose version stays](#when-someone-else-saved-first).
 
 **Undo** steps back through the edits since the plan was opened or last
 saved - placing, moving, resizing, turning, retyping, relabelling and
@@ -754,6 +757,7 @@ rotation. Labels draw over the tiles.
 | Key | In Edit |
 |---|---|
 | ++e++ | View / Edit |
+| ++p++ | Place… |
 | ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label |
@@ -809,15 +813,133 @@ until you move them. Save your edits first - the snap works on the saved
 plan. A plan cannot be switched back to the grid any other way while a tile
 is off it.
 
-A tile linked to an object no longer needs a tile type or role: a linked
-tile may have neither and draws from its object (the API accepts it; placing
-one from the editor comes with the placement picker).
+A tile linked to an object does not need a tile type or role: a linked
+tile may have neither and draws from its object - see
+[Placing devices, racks and cabinets](#placing-devices-racks-and-cabinets).
 
 | Call | |
 |---|---|
 | `PATCH /api/floor-plans/<id>/` | `layout_mode`: `grid` or `free`. To `grid` only when every tile is on whole cells and a quarter turn, else a 400 on `layout_mode`. |
 | `POST /api/floor-plans/<id>/snap-all/` | `{"dry_run": true}` answers `{"layout_mode", "moved", "collisions": [{"id", "name"}]}` and changes nothing; without it the tiles are snapped (each one in the change log), the plan is set to `grid` and the answer adds `tiles`. Needs `floorplan · change`. |
 | Tiles | `x`, `y`, `width`, `height` are numbers of cells; a grid plan takes whole ones only, and `orientation` 0, 90, 180 or 270; a free plan any `orientation` 0-359. A tile needs a `tile_type_id` or a `role_type_id`, or a link. |
+
+## Placing devices, racks and cabinets
+
+Placing an existing device, rack or cabinet takes one step: pick it, and it
+is on the plan. No tile type or role is chosen first.
+
+### The Place picker
+
+In Edit, **Place…** sits first on the bar (++p++ opens it). It lists the
+devices, racks and cabinets of the plan's site that you may view, searchable
+by name, in three groups:
+
+1. **In** the room near the pointer - the room (or location) of the area
+   under the pointer when the picker opened, else of the area in the middle
+   of the view. **Near** shows that room; × clears it.
+2. **In** the floor's location, or a location inside it.
+3. **Elsewhere** at the site.
+
+Each row shows the object's room as its colour badge, and where it is
+already placed: **On this floor**, or the name of the other floor. A device
+mounted in a rack or a cabinet is placed with it and is not listed.
+
+- **Click** a row: the object is placed in the middle of the view. A row
+  already on this floor is selected and shown instead.
+- **Drag** a row onto the plan: it is placed where you drop it - on a grid
+  plan on the cell under the pointer (or the next free cell to its right,
+  as tiles never stack), on a free plan exactly there.
+- **Tick** several rows and drag one of them, or press **Place N**: they are
+  placed side by side in a row from that point.
+
+A placement is an ordinary edit: part of undo and of the next **Save**.
+
+### How a placed object looks
+
+A placed tile has no type of its own: it draws from its object, as it is
+now. A device wears its **device role's** colour and icon, a rack or a
+cabinet its role's colour; a new role colour shows on the plan, the 3D room
+and the exports without touching the tile. An object without a role is
+grey. The tile's own colour, and a type picked later in the inspector, still
+win.
+
+The older way stays: arm a tile type in the **Tiles** palette, place the
+tile, then **Link** it to an object in the inspector. Such a tile keeps its
+type's look.
+
+### Not placed
+
+In Edit, **Objects** opens with **Not placed** on top: the devices, racks
+and cabinets of the floor's location (or a location inside it, or one of
+their rooms) that stand on no floor plan yet, with their count. Drag one
+onto the plan, or click it to place it in the middle of the view.
+
+### Rooms are never set by placing
+
+Where a tile stands does not change the object's room. When you drop an
+object into a room's area and the object names another room (or none), a
+prompt over the plan offers **Set room** to that area's room - one click,
+written as an edit of the object (it needs `change` on it and lands in its
+change log), or dismissed with ×. Setting a room also sets the object's
+location to the room's, as any room edit does ([Rooms](../dcim/rooms.md)).
+
+The same offer sits in the floating toolbar of a selected tile standing in
+another room's area. **Place… → Assign rooms from areas…** lists every
+placed object of the floor whose tile centre lies in a room's area while the
+object names another room - the topmost room area when they overlap -, with
+its room and the area's room. Tick the ones to change and **Assign**; an
+object you may not change is listed but cannot be ticked. Areas linked to a
+location, and plain areas, are not used.
+
+### Photos
+
+A device or rack can show as its **photo** instead of its coloured box: the
+first image attached to the object, else - a device - its device type's
+front image. Select the tile and press **Show as photo** in the floating
+toolbar (**Show as tile** goes back). The photo keeps its proportions inside
+the tile, with a thin outline that carries the selection, monitoring and
+planned status, and the name under it. On a free plan, placing an object
+that has a photo places it as its photo at the device type's real width (one
+cell when the type has none); the corner handles resize it with its
+proportions kept (++shift++ frees them), the turn handle turns it, and
+**Bring forward** / **Send back** stack overlapping tiles. Without a photo
+the tile draws as its box, whatever it is set to. The PDF export draws a
+photo tile as its box.
+
+### The floating toolbar
+
+A selected tile, area or label in Edit carries a small toolbar just above
+it, next to the inspector: **Set room** (see above), **Show as photo** or
+**Show as tile**, **Bring forward** and **Send back** (a free plan's tiles;
+areas and labels), **Lock** (areas and labels), **Link room** (areas) and
+**Delete**.
+
+### An empty floor
+
+A floor with nothing on it opens in Edit with two buttons: **Draw a room**
+(the Room tool) and **Place devices** (the picker).
+
+### When someone else saved first
+
+Every row the editor saves carries the `updated_at` it was based on. If
+someone else changed or deleted one of those rows since the plan was
+opened, nothing is written and **Changed elsewhere** lists them - who
+changed each one, from the change log, and whether it was changed or
+deleted. Per row, **Keep mine** saves your version over theirs (a row they
+deleted is made again) and **Take theirs** drops your edit of it and shows
+the row as it is now; **Save** then saves again. A whole row wins or loses:
+fields are never merged, since a position from one edit and a turn from
+another would give a place nobody chose.
+
+### API
+
+| Call | |
+|---|---|
+| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. |
+| `POST /api/floor-plans/<id>/assign-rooms/` | `{"dry_run": true}` answers `{"objects": [{kind, id, name, tile_id, room, area_room, can_change}]}`; `{"apply": [{"kind", "id"}]}` sets the room of the listed ones you may change (each validated and audited like a `PATCH` of the object) and answers `{applied, skipped, objects}`. |
+| Tiles | `display`: `icon` (default) or `photo`; `z`: stacking order. Read-only `photo` (`url`, `aspect` - height over width -, `source`: `device`, `rack` or `type`, `width_mm`), null without one or without view on the object; `linked` adds the object's `room` and `role` (`id`, `name`, `color`, `icon`) for a device, rack or cabinet. |
+| `POST /api/floor-plans/<id>/bulk/` | An update may carry `version` (the row's `updated_at`), and a delete may be `{"id", "version"}`. A row changed since answers **409** `{"detail", "conflicts": [{kind, id, current, changed_by}]}` (`current` null when it was deleted) and nothing is written. Without a version the last save wins, as before. |
+| `PATCH` / `DELETE` on `/api/floor-plan-tiles/`, `-areas/`, `-labels/` | The same check: `version` in the body, or `?version=` on a delete. |
 
 ## Opening a plan
 
@@ -1226,7 +1348,9 @@ cable runs, just the trays, or both.
 - **Objects** (header toggle) opens a side list of everything placed on the
   plan - the same Objects sidebar the [site map](site-map.md) and the
   [topology map](topology.md) open. Tiles fold into groups by **device role**
-  and by **tile type**, each headed by the role's or type's color badge with a
+  and by **tile type** - a tile placed straight from its object under
+  **Placed objects**, by the object's role - each headed by the role's or
+  type's color badge with a
   count, and the down/degraded counts on the header even while it is folded.
   A tile with live monitoring carries its status pill. The *Search…* box
   covers each tile's label, linked object and type (Enter jumps to the first
@@ -1336,6 +1460,13 @@ at a time, and in a site role's types like the plan's walls. Reading them in
 `contents/` follows their own view grant; the editor's **Save** (`bulk/`)
 needs `floorplan · change`.
 
+Placing reads and writes the objects themselves under their own grants:
+the Place picker (`placeable/`) needs view on the plan and lists each kind -
+devices, racks, cabinets - by that kind's view grant and site scope; a
+tile's photo shows only to someone who may view its device or rack; and a
+room set from the prompt or **Assign rooms from areas** needs `change` on
+each object and is audited on it.
+
 ## Popover fields
 
 **Settings → Floor plans → Tile popover** picks which rows the tile popover
@@ -1393,4 +1524,6 @@ wall-plate ("drop") tiles with port assignments.
 
 !!! note "New in 0.19"
     View and Edit, the tool rail, rooms, areas and labels drawn on a floor,
-    and free placement.
+    free placement, the Place picker with rooms near the pointer, devices in
+    their role's look or as their photo, and a save that asks before it
+    overwrites someone else's change.

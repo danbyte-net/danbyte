@@ -58,7 +58,9 @@ The rules are the same for the forms, the API, import and integrations:
   [Moving a rack](racks.md#move-a-rack-to-another-site) to another site
   clears the room of the rack and of every device in it.
 - **Never from placement.** Placing an object on a floor plan, in a rack or in
-  a cabinet never sets its room; only a write that names the room does.
+  a cabinet never sets its room; only a write that names the room does. The
+  floor plan offers that write when an object lands in another room's area
+  ([Rooms are never set by placing](../features/floor-plans.md#rooms-are-never-set-by-placing)).
 
 The device, rack and cabinet lists take `?room=<id>`, and their tables offer a
 **Room** column (cabinets show it by default; on devices and racks it is in
