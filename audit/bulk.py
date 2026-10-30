@@ -41,9 +41,12 @@ def _entry(instance, action, changes, user, rid):
     )
 
 
-def log_bulk_update(rows, updates: dict) -> None:
+def log_bulk_update(rows, updates: dict, per_row: dict | None = None) -> None:
     """One UPDATE entry per row whose value actually changed. ``updates`` keys
-    are model attnames (``status``, ``vrf_id``, …) as passed to ``.update()``."""
+    are model attnames (``status``, ``vrf_id``, …) as passed to ``.update()``.
+    ``per_row`` adds what differs per row (``{pk: {attname: value}}``) - a
+    merged ``custom_fields``, a group dropped by a cluster move - to that
+    row's one entry. ``rows`` hold the values from before the write."""
     user = current_user()
     rid = current_request_id()
     entries = []
@@ -53,7 +56,8 @@ def log_bulk_update(rows, updates: dict) -> None:
         # resolves it to a name.
         names = {f.attname: f.name for f in r._meta.concrete_fields}
         changes = {}
-        for k, v in updates.items():
+        extra = (per_row or {}).get(r.pk) or {}
+        for k, v in {**updates, **extra}.items():
             old = _ser(getattr(r, k, None))
             new = _ser(v)
             if old != new:

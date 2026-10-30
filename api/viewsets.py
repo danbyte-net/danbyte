@@ -37,6 +37,13 @@ from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
+from .bulk_edit import BulkEditMixin, BulkEditSpec
+# Re-exported: these lived here before api.bulk_update.
+from .bulk_update import (  # noqa: F401
+    BulkUpdateMixin,
+    FieldWriteAllowList,
+    _bulk_status_offered,
+)
 from .bulk_validation import clean_bulk_updates
 from .filters import apply_tag_filter
 from .natural import natural, natural_key
@@ -773,192 +780,6 @@ class CatalogLocalityMixin:
         obj.owning_site = site
         obj.save()
         return Response(self.get_serializer(obj).data)
-
-
-class FieldWriteAllowList:
-    """Which model fields a *field-level* write path may set on this model.
-
-    Two consumers read this declaration:
-
-    * :meth:`ComponentBulkMixin.bulk_update`, which **enforces** it, and
-    * :mod:`api.editable_fields`, which turns it into editor metadata for bulk
-      edit and for planning's planned changes.
-
-    Declaring it in one place rather than inside either consumer is what stops
-    the metadata endpoint becoming a third list that can silently disagree with
-    the two that already exist.
-
-    A viewset built on :class:`api.bulk_edit.BulkEditMixin` is the exception:
-    its ``bulk-update`` takes its ``BulkEditSpec`` instead, so the fields a
-    plan may change and the fields a bulk edit offers can differ.
-
-    ``editable_*`` is the current spelling. The ``bulk_*`` names predate it and
-    stay authoritative, so the existing component viewsets need no edit. Note
-    the consequence: adding ``editable_*`` to a viewset that *does* have a
-    ``bulk-update`` endpoint also makes those fields bulk-editable.
-    """
-
-    editable_str_fields: tuple = ()
-    editable_bool_fields: tuple = ()
-    editable_int_fields: tuple = ()
-    editable_fk_fields: dict = {}
-
-    bulk_str_fields: tuple = ()
-    bulk_bool_fields: tuple = ()
-    bulk_int_fields: tuple = ()          # nullable ints
-    bulk_fk_fields: dict = {}            # "vlan_id" → tenant-scoped model
-
-    @classmethod
-    def field_write_allow_list(cls) -> dict:
-        """``{"str": (...), "bool": (...), "int": (...), "fk": {...}}``."""
-        return {
-            "str": (*cls.editable_str_fields, *cls.bulk_str_fields),
-            "bool": (*cls.editable_bool_fields, *cls.bulk_bool_fields),
-            "int": (*cls.editable_int_fields, *cls.bulk_int_fields),
-            "fk": {**cls.editable_fk_fields, **cls.bulk_fk_fields},
-        }
-
-
-def _bulk_status_offered(status_id, model, key="status_id") -> None:
-    """A bulk edit may only set a status the catalog offers ``model`` - as the
-    form and the API's single edit (``serializers.offered_status``). Run it
-    after the tenant check: the status is then known to be the tenant's."""
-    from .status_registry import status_label, status_offered
-
-    if not status_id:
-        return
-    status = Status.objects.filter(pk=status_id).first()
-    if status is not None and not status_offered(status, model):
-        raise ValidationError(
-            {key: f"“{status.name}” isn't a status for {status_label(model)}."}
-        )
-
-
-class BulkUpdateMixin(FieldWriteAllowList):
-    """``bulk-update`` on its own: the field-level bulk write that
-    :class:`ComponentBulkMixin` and the routing lists (#314) share.
-
-    POST ``bulk-update`` {ids: [...], fields: {...}} - only keys present in
-    ``fields`` are touched, and only keys :meth:`bulk_update_allow_list`
-    names are accepted (an unknown key is a 400, never silently dropped).
-    Tenant-scoped FKs re-validate against the active tenant since
-    ``qs.update`` bypasses the serializer's scoped fields. Selection is scoped
-    by ``get_queryset`` (tenant + RBAC rows), so foreign ids silently fall out.
-    """
-
-    bulk_tags = False                    # add_tag_ids / remove_tag_ids
-    rbac_action_map = {"bulk_update": "change"}
-
-    def _bulk_ids(self, request):
-        return bulk_ids(request, MAX_IDS)
-
-    def bulk_update_allow_list(self) -> dict:
-        """What ``bulk-update`` accepts, as ``field_write_allow_list()``
-        shapes it. Default: the viewset's whole field-write allow-list."""
-        return self.field_write_allow_list()
-
-    def normalize_bulk_updates(self, updates: dict) -> dict:
-        """Hook for model-level invariants that ``Model.save()`` would enforce
-        but a queryset ``update()`` skips. Default: unchanged."""
-        return updates
-
-    def check_bulk_rows(self, rows: list, updates: dict) -> None:
-        """Hook for invariants that span other rows (a serializer's
-        ``validate``), checked against the selected rows before the queryset
-        ``update()``. Raise ``ValidationError`` to refuse. Default: none."""
-
-    @action(detail=False, methods=["post"], url_path="bulk-update")
-    def bulk_update(self, request):
-        ids = self._bulk_ids(request)
-        fields = request.data.get("fields") or {}
-        if not isinstance(fields, dict) or not fields:
-            raise ValidationError({"fields": "Provide at least one field to update."})
-
-        spec = self.bulk_update_allow_list()
-        allowed = {*spec["str"], *spec["bool"], *spec["int"], *spec["fk"]}
-        tag_keys = {"add_tag_ids", "remove_tag_ids"} if self.bulk_tags else set()
-        unknown = set(fields) - allowed - tag_keys
-        if unknown:
-            raise ValidationError({
-                k: f"Not bulk-editable here. Allowed: {sorted(allowed | tag_keys)}"
-                for k in sorted(unknown)
-            })
-
-        tenant = _get_active_tenant(request)
-        model = self.get_queryset().model
-        updates = {}
-        for k in spec["str"]:
-            if k in fields:
-                v = "" if fields[k] is None else str(fields[k])
-                # Choice-backed CharFields validate against the model's own
-                # choice list (flatchoices flattens the grouped ones), so a
-                # typo'd slug is a 400 rather than a silently written value.
-                # "" always passes - it's how bulk edit clears the field.
-                valid = dict(model._meta.get_field(k).flatchoices)
-                if valid and v and v not in valid:
-                    # Short lists name their options; the long ones (216 interface
-                    # types) would bury the message, so point at the endpoint.
-                    opts = sorted(valid)
-                    hint = (
-                        ", ".join(opts) if len(opts) <= 12
-                        else "see /api/dcim/choices/"
-                    )
-                    raise ValidationError(
-                        {k: f"'{v}' is not a valid choice. Options: {hint}"}
-                    )
-                updates[k] = v
-        for k in spec["bool"]:
-            if k in fields:
-                if not isinstance(fields[k], bool):
-                    raise ValidationError({k: "Must be true or false."})
-                updates[k] = fields[k]
-        for k in spec["int"]:
-            if k in fields:
-                v = fields[k]
-                if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
-                    raise ValidationError({k: "Must be an integer or null."})
-                updates[k] = v
-        for k in spec["fk"]:
-            if k in fields:
-                updates[k] = fields[k] or None
-        # Lengths, ranges, choices and tenant-scoped relations as the edit
-        # form's PATCH checks them (#350); the row rules run below.
-        checked = clean_bulk_updates(self, updates)
-        updates = checked.updates
-        for k, model in spec["fk"].items():
-            if k in fields:
-                v = fields[k]
-                if v and not model.objects.filter(pk=v, tenant=tenant).exists():
-                    raise ValidationError({k: "Not found in this tenant."})
-                if model is Status:
-                    _bulk_status_offered(v, self.get_queryset().model, k)
-                updates[k] = v or None
-
-        qs = self.get_queryset().filter(pk__in=ids)
-        with transaction.atomic():
-            _rows = list(qs)
-            updates = self.normalize_bulk_updates(updates)
-            checked.check_rows(_rows, updates)
-            self.check_bulk_rows(_rows, updates)
-            updated = qs.update(**updates) if updates else qs.count()
-            if updates:
-                log_bulk_update(_rows, updates)
-            # Marking ports connected fulfils any hold on them.
-            if updates.get("mark_connected"):
-                from .models import release_reservations_for
-
-                release_reservations_for(qs.model, [r.pk for r in _rows])
-            if self.bulk_tags:
-                apply_and_log_bulk_tags(
-                    qs,
-                    fields.get("add_tag_ids") or [],
-                    fields.get("remove_tag_ids") or [],
-                    tenant=tenant,
-                )
-            self._assert_bulk_write_in_site_scope(
-                [row.pk for row in _rows], action="change"
-            )
-        return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
 
 def _is_module_ownership(field) -> bool:
@@ -6632,9 +6453,63 @@ class VirtualMachineGroupViewSet(TenantScopedViewSet):
 @extend_schema_view(list=extend_schema(
     parameters=[SOFTWARE_TARGET_PARAMETER, *SOFTWARE_VERSION_PARAMETERS]
 ))
-class VirtualMachineViewSet(PrtgCleanupDeleteMixin, CloneableMixin, TenantScopedViewSet):
+class VirtualMachineViewSet(
+    PrtgCleanupDeleteMixin, BulkEditMixin, CloneableMixin, TenantScopedViewSet,
+):
     queryset = VirtualMachine.objects.select_related("status").order_by(NATURAL_NAME)
     serializer_class = VirtualMachineSerializer
+    # The list's bulk edit. Name, primary IP and sizing are per VM; the
+    # hypervisor-owned fields stay with the sync.
+    bulk_edit = BulkEditSpec(
+        fields=(
+            "status_id", "role_id", "platform_id", "cluster_id", "group_id",
+            "device_id", "site_id", "description", "prtg_sync",
+        ),
+        custom_fields=True,
+    )
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map,
+        **PrtgCleanupDeleteMixin.rbac_action_map,
+    }
+
+    def bulk_row_updates(self, rows, updates):
+        """What a single save derives, per row: moving cluster drops a group
+        on the old one (the serializer's rule), and a VM left without a site
+        takes its cluster's when the cluster applies it (``_fill_site``)."""
+        out: dict = {}
+        cluster_id = updates.get("cluster_id")
+        moved_to = Cluster.objects.filter(pk=cluster_id).first() if cluster_id else None
+        for r in rows:
+            extra = {}
+            cluster = moved_to or r.cluster
+            if (
+                cluster_id and "group_id" not in updates and r.group_id
+                and str(r.group.cluster_id) != str(cluster_id)
+            ):
+                extra["group_id"] = None
+            site_id = updates["site_id"] if "site_id" in updates else r.site_id
+            if (
+                site_id is None and cluster is not None
+                and cluster.apply_site_to_vms and cluster.site_id
+            ):
+                extra["site_id"] = cluster.site_id
+            if extra:
+                out[r.pk] = extra
+        # Plan PRTG for the rows whose setting changed, once written.
+        self._prtg_changed = [
+            r.pk for r in rows
+            if "prtg_sync" in updates and (r.prtg_sync or "inherit") != updates["prtg_sync"]
+        ]
+        return out
+
+    def after_bulk_update(self, pks, updates):
+        changed = getattr(self, "_prtg_changed", None) or []
+        if not changed:
+            return
+        from prtg.provision import plan_after_save
+
+        for vm in VirtualMachine.objects.select_related("tenant").filter(pk__in=changed):
+            plan_after_save(vm)
 
     def perform_create(self, serializer):
         super().perform_create(serializer)
