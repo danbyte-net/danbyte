@@ -26,6 +26,7 @@ from auth_api.object_types import _registry
 from auth_api.site_paths import (
     CATALOG_SITE_PATHS,
     SITE_PATH_EXEMPT,
+    SITE_PATH_EXEMPT_CATALOGS,
     SITE_PATHS,
     SITE_ROLE_EXCLUDED,
     SITE_ROLE_REFERENCE_EXCLUDED,
@@ -59,7 +60,8 @@ class SitePathsRegistryTests(SimpleTestCase):
         owners = set(SITE_PATHS)
         missing = {}
         for slug, entry in _registry().items():
-            if slug in SITE_PATHS or slug in CATALOG_SITE_PATHS or slug in SITE_PATH_EXEMPT:
+            if (slug in SITE_PATHS or slug in CATALOG_SITE_PATHS or slug in SITE_PATH_EXEMPT
+                    or slug in SITE_PATH_EXEMPT_CATALOGS):
                 continue
             links = _site_links(entry["model"], owners)
             if links:
@@ -73,7 +75,7 @@ class SitePathsRegistryTests(SimpleTestCase):
 
     def test_exemptions_are_real_and_explained(self):
         registry = _registry()
-        for slug, reason in SITE_PATH_EXEMPT.items():
+        for slug, reason in {**SITE_PATH_EXEMPT, **SITE_PATH_EXEMPT_CATALOGS}.items():
             with self.subTest(slug=slug):
                 self.assertIn(slug, registry)
                 self.assertNotIn(slug, SITE_PATHS)
@@ -202,6 +204,9 @@ PRTG_OVERRIDES = importlib.import_module(
     "auth_api.migrations.0040_site_roles_prtg_overrides"
 )
 PROFILES = importlib.import_module("auth_api.migrations.0041_site_roles_device_profiles")
+REQUIREMENTS = importlib.import_module(
+    "auth_api.migrations.0042_site_roles_flow_requirements"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -377,7 +382,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + APPLICATIONS.NEW_CATALOGS + FLOWS.NEW_CATALOGS + GROUPS.NEW_CATALOGS
                 + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS + PRTG_FACTS.NEW_CATALOGS
                 + PRTG_OVERRIDES.NEW_CATALOGS
-                + PROFILES.NEW_CATALOGS
+                + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -529,6 +534,54 @@ class SiteRoleDeviceProfileUpgradeTests(SiteRoleUpgradeTests):
         view.refresh_from_db()
         before = sorted(view.object_types)
         PROFILES.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleFlowRequirementUpgradeTests(SiteRoleUpgradeTests):
+    """0042 gives the site viewers built before it, and the editors' catalog
+    view, the application flow requirements; an editor's own grant gains no
+    write on them."""
+
+    def _role(self, name, actions):
+        """A role as 0041 left it."""
+        types = (
+            MIGRATION.OLD_ROLE_TYPES | set(MIGRATION.NEW_ROLE_TYPES) | set(LATER.NEW_TYPES)
+            | set(COOLING.NEW_TYPES) | set(APPLICATIONS.NEW_TYPES)
+            | set(COOLING_PARTS.NEW_TYPES) | set(FLOWS.NEW_TYPES) | set(GROUPS.NEW_TYPES)
+            | set(PRTG.NEW_TYPES) | set(PINS.NEW_TYPES) | set(PRTG_FACTS.NEW_TYPES)
+            | set(PRTG_OVERRIDES.NEW_TYPES) | set(PROFILES.NEW_TYPES)
+        )
+        if actions == ["view"]:
+            types = types | {"site"} | set(CATALOG_MIGRATION.ROLE_CATALOGS) | {
+                "supportcontract", "application", "applicationgroup", "deviceprofile"}
+        return self._old(name, actions, types=sorted(types))
+
+    def test_viewer_and_catalog_view_gain_the_requirements(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + ["deviceprofile"]),
+        )
+        catalog.sites.set([self.site_a])
+        REQUIREMENTS.forwards(django_apps, None)
+        view.refresh_from_db()
+        edit.refresh_from_db()
+        catalog.refresh_from_db()
+        self.assertIn("applicationflowrequirement", view.object_types)
+        self.assertNotIn("applicationflowrequirement", edit.object_types)
+        self.assertIn("applicationflowrequirement", catalog.object_types)
+
+    def test_requirements_second_run_and_hand_built(self):
+        view = self._role("A - site view", ["view"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        REQUIREMENTS.forwards(django_apps, None)
+        view.refresh_from_db()
+        before = sorted(view.object_types)
+        REQUIREMENTS.forwards(django_apps, None)
         view.refresh_from_db()
         custom.refresh_from_db()
         self.assertEqual(sorted(view.object_types), before)

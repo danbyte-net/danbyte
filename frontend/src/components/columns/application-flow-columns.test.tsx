@@ -60,6 +60,7 @@ describe("application flow columns", () => {
       "service",
       "direction",
       "status",
+      "origin",
       "linked_service",
       "description",
     ])

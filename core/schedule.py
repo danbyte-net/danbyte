@@ -198,9 +198,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-cleanup",
-        commands=("cleanup_stale_ips",),
+        commands=("cleanup_stale_ips", "reconcile_flow_requirements"),
         at=("04:42",),
-        label="Retire stale discovered IPs",
+        label="Retire stale discovered IPs; re-resolve application flow requirements",
     ),
     ScheduledTask(
         unit="danbyte-document-linkcheck",

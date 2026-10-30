@@ -209,6 +209,16 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "prtgpolicy": "integration config; site and location are what it applies to",
 }
 
+# Tenant-wide catalogs that link to a site-bound row and that the site roles
+# still read, each with the reason. Their site links are references a reader
+# who can't view them sees as Hidden (#453, core.hidden_fields). Unlike
+# SITE_PATH_EXEMPT, site_role_catalog_types derives them like any catalog.
+SITE_PATH_EXEMPT_CATALOGS: dict[str, str] = {
+    # A requirement is a catalog like its application; the flows it
+    # generates are site-scoped as every flow is.
+    "applicationflowrequirement": "tenant-wide catalog; fixed ends are references",
+}
+
 # Compliance triage (``compliancetriage``) is tenant-wide and in neither map:
 # a row names its object as a generic (object_type, object_id) pair with no
 # foreign key to follow, so no ORM path reaches a site. The triage endpoint

@@ -79,6 +79,19 @@ GATED_RELATIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("destination_range", "iprange"),
         ("destination_prefix", "prefix"),
         ("service", "service"),
+        # A generated flow names the installs behind its host ends.
+        ("source_install", "installedsoftware"),
+        ("destination_install", "installedsoftware"),
+    ),
+    # A requirement is tenant-wide; its fixed ends may be another site's
+    # address, range or prefix.
+    "api.applicationflowrequirement": (
+        ("source_ip", "ipaddress"),
+        ("source_range", "iprange"),
+        ("source_prefix", "prefix"),
+        ("destination_ip", "ipaddress"),
+        ("destination_range", "iprange"),
+        ("destination_prefix", "prefix"),
     ),
     # An intake is its device's; its feed or the CDU outflow it hangs off
     # may be another site's (#453).

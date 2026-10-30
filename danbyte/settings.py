@@ -353,6 +353,38 @@ def api_paging(env) -> tuple[int, int, int, int]:
     API_PAGE_SIZE, API_MAX_PAGE_SIZE, API_LARGE_PAGE_THRESHOLD, API_LARGE_PAGE_CONCURRENCY,
 ) = api_paging(os.environ)
 
+
+# Application flow requirements (api.flow_requirements): the preview warns
+# above FLOW_REQUIREMENT_WARN_PAIRS generated flows for one requirement, and a
+# requirement over FLOW_REQUIREMENT_MAX_PAIRS is refused (Unresolved) until it
+# is narrowed or this is raised. Positive integers, the cap at least the
+# warning; a bad value refuses to start.
+def flow_requirement_limits(env) -> tuple[int, int]:
+    """``(FLOW_REQUIREMENT_WARN_PAIRS, FLOW_REQUIREMENT_MAX_PAIRS)`` from an
+    environment mapping."""
+    from django.core.exceptions import ImproperlyConfigured
+
+    out = []
+    for name, default in (("FLOW_REQUIREMENT_WARN_PAIRS", 500),
+                          ("FLOW_REQUIREMENT_MAX_PAIRS", 5000)):
+        raw = str(env.get(name) or "").strip()
+        try:
+            value = int(raw) if raw else default
+        except ValueError:
+            value = 0
+        if value < 1:
+            raise ImproperlyConfigured(f"{name} must be a positive whole number, not {raw!r}.")
+        out.append(value)
+    if out[1] < out[0]:
+        raise ImproperlyConfigured(
+            f"FLOW_REQUIREMENT_MAX_PAIRS ({out[1]}) must be at least "
+            f"FLOW_REQUIREMENT_WARN_PAIRS ({out[0]})."
+        )
+    return out[0], out[1]
+
+
+FLOW_REQUIREMENT_WARN_PAIRS, FLOW_REQUIREMENT_MAX_PAIRS = flow_requirement_limits(os.environ)
+
 REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
     # serializer didn't validate) into a 409 instead of a raw 500.

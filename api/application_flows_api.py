@@ -16,14 +16,25 @@ to another on a protocol and ports. CRUD, ``bulk-update``, ``bulk-delete``,
 Each end is exactly one of an address, a range, a prefix or "any". Every
 reference must be the active tenant's. A flow belongs to the site of its
 first end that has one (``SITE_PATHS["applicationflow"]``).
+
+A flow a requirement made (``generated``, ``api.flow_requirements``) keeps
+its ends, name and application: a write that changes them is a 400 "Detach
+it first". An edit to its protocol, ports, direction, status or service is
+kept as an override the resolver leaves alone. ``?requirement=`` and
+``?generated=`` filter; ``POST <id>/detach/`` makes it hand-made and
+``POST <id>/follow/`` drops its overrides. Deleting one records an
+exclusion on its requirement, so it is not made again.
 """
 from __future__ import annotations
 
+from django.db import transaction
 from django.db.models import Q
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_field
 from rest_framework import serializers
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
 from core.hidden_fields import hidden_related_spec
 from core.models import Tag
@@ -191,6 +202,9 @@ class ApplicationFlowSerializer(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    requirement = serializers.SerializerMethodField()
+    source_install = serializers.SerializerMethodField()
+    destination_install = serializers.SerializerMethodField()
 
     class Meta:
         model = ApplicationFlow
@@ -202,8 +216,11 @@ class ApplicationFlowSerializer(
                   "destination_prefix", "destination_prefix_id", "destination_any",
                   "protocol", "protocol_display", "ports", "direction", "direction_display",
                   "status", "status_id", "service", "service_id",
+                  "requirement", "generated", "overridden_fields",
+                  "source_install", "destination_install",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "generated", "overridden_fields",
+                            "created_at", "updated_at"]
         validators = []  # the unique name is checked in validate() as a field error
         list_serializer_class = _HiddenRelatedListSerializer
 
@@ -262,6 +279,80 @@ class ApplicationFlowSerializer(
         s = obj.service
         return {"id": str(s.id), "name": s.name} if s is not None else None
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_requirement(self, obj):
+        r = obj.requirement
+        return {"id": str(r.pk), "name": r.name} if r is not None else None
+
+    def _install(self, inst):
+        """``{id, application, version, host}`` - the install behind a host
+        end ("because WMS client 4.2 is on wms-07")."""
+        if inst is None:
+            return None
+        host = inst.device if inst.device_id else inst.virtual_machine
+        kind = "device" if inst.device_id else "vm"
+        return {"id": str(inst.pk), "application": inst.application.name,
+                "version": inst.version,
+                "host": {"kind": kind, "id": str(host.pk), "name": host.name}}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_source_install(self, obj):
+        return self._install(obj.source_install)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_destination_install(self, obj):
+        return self._install(obj.destination_install)
+
+    def to_representation(self, obj):
+        """A generated row's name names the hosts at its ends; one the
+        caller can't view reads Hidden there, as the end itself does."""
+        data = super().to_representation(obj)
+        src, dst = data.get("source") or {}, data.get("destination") or {}
+        if obj.generated and (src.get("hidden") or dst.get("hidden")):
+            def label(end):
+                if end.get("hidden"):
+                    return "Hidden"
+                host = end.get("device") or end.get("vm")
+                return host["name"] if host else end.get("label", "")
+
+            prefix = obj.requirement.name if obj.requirement_id else data["name"].split(":")[0]
+            data["name"] = f"{prefix}: {label(src)} → {label(dst)}"
+        return data
+
+    def _guard_generated(self, attrs) -> None:
+        """A generated row keeps what its requirement decides - its ends,
+        name and application. Changing one needs a detach first; a payload
+        that repeats the current value is fine."""
+        inst = self.instance
+        if inst is None or not inst.generated:
+            return
+        locked = ["application", "name"]
+        for side in SIDES:
+            locked += [f"{side}_{k}" for k in END_KINDS] + [f"{side}_any"]
+        for key in locked:
+            if key not in attrs:
+                continue
+            new, old = attrs[key], getattr(inst, key)
+            if (getattr(new, "pk", new) or None) != (getattr(old, "pk", old) or None):
+                field = key if key in ("name",) else (
+                    "application_id" if key == "application" else key.split("_")[0])
+                raise serializers.ValidationError(
+                    {field: "Generated by a requirement - detach it first."})
+
+    def update(self, instance, validated_data):
+        """An edit to a generated row's protocol, ports, direction, status
+        or service is kept as an override."""
+        if instance.generated:
+            changed = set(instance.overridden_fields or [])
+            for name in ("protocol", "ports", "direction", "status", "service"):
+                if name not in validated_data:
+                    continue
+                new, old = validated_data[name], getattr(instance, name)
+                if (getattr(new, "pk", new) or None) != (getattr(old, "pk", old) or None):
+                    changed.add(name)
+            instance.overridden_fields = sorted(changed)
+        return super().update(instance, validated_data)
+
     def validate_name(self, value):
         value = (value or "").strip()
         if not value:
@@ -306,6 +397,7 @@ class ApplicationFlowSerializer(
             raise serializers.ValidationError({"application_id": "Pick an application."})
         for side in SIDES:
             self._side(attrs, side)
+        self._guard_generated(attrs)
         proto = get("protocol") or "tcp"
         if proto in _PORTLESS and get("ports"):
             raise serializers.ValidationError(
@@ -386,6 +478,11 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
             "source_ip", "source_ip__assigned_device", "source_ip__assigned_vm",
             "destination_ip", "destination_ip__assigned_device", "destination_ip__assigned_vm",
             "source_range", "destination_range", "source_prefix", "destination_prefix",
+            "requirement",
+            "source_install__application", "source_install__device",
+            "source_install__virtual_machine",
+            "destination_install__application", "destination_install__device",
+            "destination_install__virtual_machine",
         )
         .prefetch_related(TAGS)
         .order_by(natural("application__name"), natural("name"))
@@ -393,6 +490,8 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
     serializer_class = ApplicationFlowSerializer
     pagination_class = StandardPagination
     bulk_edit = BulkEditSpec(fields=("status_id", "direction", "description"))
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "detach": "change",
+                       "follow": "change"}
 
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
@@ -440,6 +539,16 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                 if v not in {c for c, _ in choices}:
                     raise ValidationError({key: "Unknown value."})
                 qs = qs.filter(**{key: v})
+        req = _uuid_param(params, "requirement")
+        if req:
+            qs = qs.filter(requirement_id=req)
+        gen = params.get("generated")
+        if gen in ("true", "1"):
+            qs = qs.filter(generated=True)
+        elif gen in ("false", "0"):
+            qs = qs.filter(generated=False)
+        elif gen:
+            raise ValidationError({"generated": "true or false."})
         s = params.get("search", "").strip()
         if s:
             ends = Q()
@@ -447,13 +556,37 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                 for kind, field in (("ip", "ip_address"), ("prefix", "cidr")):
                     ends |= self._visible_end_q(tenant, f"{side}_{kind}", END_SLUGS[kind],
                                                 f"__{field}__icontains", s)
+            # A generated row's name names the hosts at its ends; it matches
+            # only while the caller may view both (#453).
+            named = Q(name__icontains=s) & (Q(generated=False) | self._ends_visible_q(tenant))
             qs = qs.filter(
-                Q(name__icontains=s) | Q(description__icontains=s)
+                named | Q(description__icontains=s)
                 | Q(application__name__icontains=s) | Q(ports__icontains=s)
                 | ends
                 | cf_text_q(qs.model, s)
             )
         return qs
+
+    def _ends_visible_q(self, tenant) -> Q:
+        """Rows whose every address, range and prefix end the caller may
+        view."""
+        from auth_api import rbac
+        from auth_api.object_types import model_for
+
+        user = self.request.user
+        if tenant is None or getattr(user, "is_superuser", False):
+            return Q()
+        q = Q()
+        for kind, slug in END_SLUGS.items():
+            f = rbac.row_filter(user, tenant, slug, "view")
+            if f is True:
+                continue
+            visible = (model_for(slug)._default_manager.filter(f).values("pk")
+                       if f is not None else model_for(slug)._default_manager.none())
+            for side in SIDES:
+                field = f"{side}_{kind}"
+                q &= Q(**{f"{field}__isnull": True}) | Q(**{f"{field}__in": visible})
+        return q
 
     def _visible_end_q(self, tenant, field: str, slug: str, lookup: str, value) -> Q:
         """``field<lookup>=value``, matched only on an end the caller may
@@ -481,3 +614,73 @@ class ApplicationFlowViewSet(BulkEditMixin, TenantScopedViewSet):
                 tenant=tenant, default_for__contains=["applicationflow"],
             ).first()
         super().perform_create(serializer)
+
+    def perform_destroy(self, instance):
+        """Deleting a generated flow excludes its pair from the requirement,
+        so the next resolution does not make it again."""
+        if instance.generated and instance.requirement_id:
+            from .flow_requirements_api import exclude_pair
+
+            exclude_pair(instance.requirement, instance.binding_key, instance.name,
+                         self.request.user)
+            return
+        super().perform_destroy(instance)
+
+    def bulk_row_updates(self, rows: list, updates: dict) -> dict:
+        """A bulk status or direction edit on a generated row is an
+        override, as the edit form's is."""
+        names = {"status_id": "status", "direction": "direction"}
+        out = {}
+        for r in rows:
+            if not r.generated:
+                continue
+            frozen = set(r.overridden_fields or [])
+            for key, name in names.items():
+                if key in updates and str(getattr(r, key) or "") != str(updates[key] or ""):
+                    frozen.add(name)
+            if frozen != set(r.overridden_fields or []):
+                out[r.pk] = {"overridden_fields": sorted(frozen)}
+        return out
+
+    @extend_schema(request=None, responses={200: ApplicationFlowSerializer})
+    @action(detail=True, methods=["post"], url_path="detach")
+    def detach(self, request, pk=None):
+        """Make a generated flow hand-made: it keeps its ends and fields,
+        and its pair is excluded from the requirement so it is not made
+        twice."""
+        from .flow_requirements_api import exclude_pair
+        from .models import ApplicationFlowRequirementExclusion
+
+        flow = self.get_object()
+        if not flow.generated:
+            raise ValidationError({"detail": "This flow is already hand-made."})
+        req, key = flow.requirement, flow.binding_key
+        with transaction.atomic():
+            flow.requirement = None
+            flow.generated = False
+            flow.binding_key = ""
+            flow.source_install = None
+            flow.destination_install = None
+            flow.overridden_fields = []
+            flow.save(update_fields=["requirement", "generated", "binding_key",
+                                     "source_install", "destination_install",
+                                     "overridden_fields", "updated_at"])
+            if req is not None and key and not ApplicationFlowRequirementExclusion.objects \
+                    .filter(requirement=req, binding_key=key).exists():
+                exclude_pair(req, key, flow.name, request.user, verb="Detached")
+        return Response(self.get_serializer(self.get_queryset().get(pk=flow.pk)).data)
+
+    @extend_schema(request=None, responses={200: ApplicationFlowSerializer})
+    @action(detail=True, methods=["post"], url_path="follow")
+    def follow(self, request, pk=None):
+        """Drop a generated flow's overrides: it follows its requirement
+        again."""
+        from . import flow_requirements as fr
+
+        flow = self.get_object()
+        if not flow.generated or flow.requirement is None:
+            raise ValidationError({"detail": "Only a generated flow follows a requirement."})
+        flow.overridden_fields = []
+        flow.save(update_fields=["overridden_fields", "updated_at"])
+        fr.resolve(flow.requirement, reason=f"{flow.name} follows it again")
+        return Response(self.get_serializer(self.get_queryset().get(pk=flow.pk)).data)

@@ -43,7 +43,7 @@ pre-filled.
 
 | Section | What assigning does |
 |---|---|
-| **Application groups** | Assigns each group, which records its installs as a group assignment always does. A group the object already has is left alone. |
+| **Application groups** | Assigns each group, which records its installs as a group assignment always does. A group the object already has is left alone. Each install then documents the flows its application's [requirements](application-flows.md#requirements) need on the object. |
 | **Tags** | Adds each tag the object lacks. Under [enhanced site separation](../access/site-separation.md) only tenant-wide tags. |
 | **Custom field values** | Fills each field while it is blank; a value already there is kept. Only fields that apply to the kinds of object the profile is for. |
 | **Platform** | Sets the platform while the object has none. |

@@ -462,6 +462,7 @@ class ChangeLogSerializer(serializers.ModelSerializer):
             "id", "timestamp", "user_name", "action", "action_display",
             "object_type", "object_label", "object_id", "object_repr",
             "object_exists", "changes", "change_count", "request_id", "via",
+            "cause",
         ]
 
     def get_change_count(self, obj) -> int:

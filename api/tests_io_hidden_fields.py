@@ -173,6 +173,8 @@ class SerializerHidingIsDeclaredTests(APITestCase):
         # Drops the channel secrets for everyone alike and answers *_set
         # flags instead; nothing is hidden per user.
         "NotificationChannelSerializer",
+        # Adds each cycle's computed status, the same for everyone.
+        "EolCustomProductSerializer",
     }
 
     def test_every_override_is_accounted_for(self):

@@ -123,6 +123,8 @@ AUDITED_MODELS = [
     "profiles.DeviceProfileApplicationGroup",
     "profiles.DeviceProfileAssignment",
     "api.ApplicationFlow",
+    "api.ApplicationFlowRequirement",
+    "api.ApplicationFlowRequirementExclusion",
     "api.NATRule",
     "routing.PrefixList",
     "routing.PrefixListRule",
