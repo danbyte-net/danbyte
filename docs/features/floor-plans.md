@@ -568,7 +568,7 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 |---|---|
 | `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `floors` (id, name, `floor_order`, location id; the floors you may view, in order), `floor_count` and `last_edited`. |
 | `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `location_id`, `tag_ids`. A delete takes every floor with it and needs delete on each. |
-| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size and scale. Answers the new floor (201). |
+| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. Answers the new floor (201). |
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
 | `GET /api/floor-plans/?stack=<id>` | One floor plan's floors, in order. |
@@ -586,18 +586,39 @@ deletes the floor plan.
 
 ## The editor
 
-Anyone with `floorplan · change` gets the edit tools; everyone else sees the
-read-only viewer.
+Every plan opens in **View**: a clean canvas to look at, click, search and
+export. Anyone with `floorplan · change` also gets **View | Edit** in the
+header - press ++e++ to switch, ++esc++ (with nothing selected or half
+drawn) to go back. The choice is remembered in this browser. Without the
+permission the plan is View only, whatever the browser remembers, and the
+server refuses every write anyway. Leaving Edit with unsaved edits asks
+first; **Discard** drops them.
 
 The page has two bars, split the way the [topology map](topology.md)'s are.
-The header names the plan, with the floor switcher and the **Edited** badge,
-and holds the **2D / 3D** and **Layout / Structure / Cables** tabs. The bar
-under it has *Find on plan…*, **Fit to view** and **Grid** on the left, and
-**Racks** (while the plan is [coloured by its racks](#color-by)),
-**Objects**, **Display**, **Background**, **Export**, plan settings, **Undo**,
-**Redo** and **Save** on the right. When that bar is too narrow for all of
-them (a small window), Grid, Background and plan settings move into **More**
-and Export shrinks to its icon, so nothing is ever cut off.
+The header names the plan, with the floor switcher, the **Edited** badge,
+**View | Edit** and **2D / 3D**. The bar under it has *Find on plan…*,
+**Fit to view** and **Grid** on the left, and **Racks** (while the plan is
+[coloured by its racks](#color-by)), **Objects**, **Display**, **Export**
+and, in Edit, **Background**, plan settings, **Undo**, **Redo** and **Save**
+on the right. When that bar is too narrow for all of them (a small window),
+Grid, Background and plan settings move into **More** and Export shrinks to
+its icon, so nothing is ever cut off.
+
+In Edit a **tool rail** runs down the left of the canvas. It replaced the
+Layout / Structure / Cables tabs of 0.18:
+
+| Tool | Key | What it does |
+|---|---|---|
+| Select | ++v++ | Select, move, resize and turn what is on the plan |
+| Room or area | ++r++ | Drag a rectangle: a [room, location or plain area](#rooms-areas-and-labels) |
+| Polygon area | ++shift+r++ | Click its corners; ++enter++, a double-click or a click on the first point closes it |
+| Label | ++t++ | Click to place a [label](#labels) |
+| Tiles | ++g++ | The tile palette (Tiles / Background tabs) |
+| Walls and raised floors | ++w++ | What the Structure tab did: [raised floors](#raised-floors-structure-mode) and [walls](#walls-doors-structure-mode) |
+| Cable trays | ++c++ | What the Cables tab did: [trays](#cable-trays-cables-mode) |
+
+At its foot, **Free placement** switches the plan between the grid and
+[free placement](#free-placement).
 
 | Action | How |
 |---|---|
@@ -608,7 +629,7 @@ and Export shrinks to its icon, so nothing is ever cut off.
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
 | Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed, cooling source and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
-| Nudge | Arrow keys move the selected tile one cell |
+| Nudge | Arrow keys move the selected tile one cell (on a [free plan](#free-placement), ++alt++ + arrow moves a tenth of a cell) |
 | Undo / redo | ++ctrl+z++ / ++ctrl+shift+z++ (or ++ctrl+y++), or the bar's buttons - ++cmd++ on a Mac |
 | Save | **Save**, or ++ctrl+s++ |
 | Pan / zoom | Drag empty grid / mouse wheel. On a touch screen, drag with one finger and pinch with two |
@@ -625,15 +646,17 @@ occupied cells is blocked - the tile stays where it was. Background **zones**
 are the exception: they may cover anything, and anything may sit on them.
 
 Edits are local until you press **Save** - one transactional bulk call writes
-all creates, moves, and deletes together, and the change log records each
-tile individually.
+all creates, moves, and deletes of tiles, areas and labels together, and the
+change log records each row individually.
 
-**Undo** steps back through the tile edits since the plan was opened or last
+**Undo** steps back through the edits since the plan was opened or last
 saved - placing, moving, resizing, turning, retyping, relabelling and
-deleting tiles, up to 100 steps - and **Redo** steps forward again. A whole
-drag is one step, and so is a bulk action on a selection. Undoing every step
-leaves nothing to save. Saving starts a fresh history. Trays, walls, raised
-floors and the drawing save as you make them and are not part of it.
+deleting tiles, and drawing, moving, resizing, turning, linking and deleting
+rooms, areas and labels, up to 100 steps - and **Redo** steps forward again.
+A whole drag is one step, and so is a bulk action on a selection. Undoing
+every step leaves nothing to save. Saving starts a fresh history. Trays,
+walls, raised floors and the drawing save as you make them and are not part
+of it.
 
 While there are unsaved edits an **Edited** badge sits in the header, and
 leaving the plan asks first - **Discard unsaved changes?**, with *Keep editing*
@@ -656,11 +679,149 @@ tile keeps its position, size, label, color and object link; only the look
 (and the popover rows configured for that type) follow the new type. Zones
 stay zones.
 
+## Rooms, areas and labels
+
+A floor is more than its racks: draw the **rooms** on it, mark areas that are
+not rooms (a cage, a loading dock, a staging corner) and write **labels**
+where a reader needs them ("North side", "A-feed side").
+
+### Rooms and areas
+
+In Edit, the **Room or area** tool (++r++) draws a rectangle - drag it out,
+or click for a 3 × 3 cell one - and **Polygon area** (++shift+r++) draws any
+outline: click its corners, then ++enter++, a double-click or a click on the
+first point closes it (++backspace++ takes back the last point, ++esc++ drops
+the drawing). An outline that crosses itself is not closed. After drawing, the tool goes back
+to **Select** and the inspector shows the new area:
+
+- **Stands for** - a **Room** of this floor's location (or of a location
+  inside it), a **Location** (this floor's or one inside it), or **Just an
+  area**. Rooms and locations are offered as their colour badges. A linked
+  area wears the room's or location's colour - from its data, never from
+  its name - and shows its name; a plain area takes a colour of its own.
+  Linking never changes anything about the room or the devices standing in
+  it: a device's room is set on the device.
+- **Name** overrides the linked name on the plan.
+- **Fill** (opacity), **Border** (solid, dashed or none), **Show the name**,
+  and the **Rotation** of a rectangle in degrees.
+
+Areas draw over the background, the drawing and the zone tiles, and under
+every other tile. They may overlap - a cage inside a hall is real. Each has a
+stacking order: **Bring forward** / **Send back** in the inspector or the
+right-click menu, ++ctrl+bracketright++ / ++ctrl+bracketleft++. **Lock**
+keeps an area from moving.
+
+**Selecting and moving.** Click an area to select it, then drag to move it -
+an area must be selected before it moves, so a big room under the pointer
+never catches an attempt to pan. A selected rectangle shows eight resize
+handles and a turn handle above its top edge; a selected polygon shows its
+corners, each a handle to drag. Double-click a polygon's edge to add a
+corner there; right-click a corner and **Remove point** to drop one (a
+polygon keeps at least three). ++shift++ while resizing keeps the
+proportions; ++shift++ while turning turns in 15° steps, and without it the
+turn settles on a quarter turn within 4°.
+
+**Snapping.** On a grid plan, rooms, areas and labels settle on **half
+cells**; on a [free plan](#free-placement) they are pulled onto the cell
+lines when near one. On both, an edge or middle near another area's, label's
+or tile's edge or middle is pulled onto it, and a dashed guide shows the line
+it took. Hold ++alt++ to place freely.
+
+**Viewing.** In View, click an area linked to a room and the map panel opens
+the room: its code, status, location and how many devices, racks and cabinets
+stand in it, with **Open room**. An area linked to a location offers **Open
+location**.
+
+### Labels
+
+The **Label** tool (++t++) places a label where you click, its text selected
+in the inspector so you can type straight away; the text may run to several
+lines. A label's size is the **height of its text on the
+floor, in millimetres**, so it scales with the plan, the PDF and its scale
+bar like the drawing does. **S**, **M**, **L** and **XL** are a quarter, a
+half, three quarters and one and a quarter of the plan's cell (150, 300, 450
+and 750 mm on a 600 mm grid); the millimetre field takes any height from 20
+to 5,000. Dragging a label's corner handle scales its text. A label also has
+**Bold**, alignment, a **colour** from a short palette (ink, muted, red,
+amber, green, blue, violet - the same on screen in either theme and on
+paper), an optional **plate** behind the text so it reads over lines, and a
+rotation. Labels draw over the tiles.
+
+### Keyboard
+
+| Key | In Edit |
+|---|---|
+| ++e++ | View / Edit |
+| ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ | The tools |
+| Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
+| ++delete++ | Delete the selected area or label |
+| ++ctrl+bracketleft++ / ++ctrl+bracketright++ | Send back / bring forward |
+| ++h++ / ++shift+h++ | Hide the selection / show everything |
+| ++enter++ / ++backspace++ | Close the polygon / take back its last point |
+| ++esc++ | Drop the drawing, put the tool down, clear the selection, then leave Edit |
+
+**Objects** lists the plan's areas under **Rooms and areas** (as their colour
+badges) and its labels under **Labels**, each with an eye; a hidden one is
+left off the plan, the 3D room and the exports, and counts in the hidden
+chip like a hidden tile.
+
+### On paper and in 3D
+
+The PNG and PDF exports draw rooms, areas and labels as the plan shows them
+(labels at their real size, in their paper ink). The 3D room tints the floor
+under each room or area in its colour; labels are 2D only.
+
+### API
+
+| Call | |
+|---|---|
+| `GET/POST/PATCH/DELETE /api/floor-plan-areas/` | `?floor_plan=<id>`. Write `floor_plan_id`, `shape` (`rect` or `polygon`), `x`, `y`, `width`, `height`, `rotation` (a rectangle: its upright box in cells, inside the grid, turned about its centre), `points` (a polygon: 3-200 `[x, y]` pairs inside the grid that do not cross; its box is worked out), `room_id` or `location_id` (at most one), `label`, `color`, `fill_opacity` (0-100), `border` (`solid`, `dashed`, `none`), `show_name`, `z`, `locked`. Reads `room` (`id`, `name`, `code`, `color`) and `location` (`id`, `name`, `color`). |
+| `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `z`, `locked`. |
+| `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |
+
+A room must be one of the plan's location's rooms, or of a location nested
+under it; a location must be the plan's or nested under it; both must be in
+the active tenant and ones you may view - anything else is refused on the
+`room_id` or `location_id` field, on create, update and bulk alike.
+
+## Free placement
+
+A plan is laid out on its **grid** - tiles on whole cells, turned in quarter
+turns, never on each other - or in **free placement**. **Free placement** at
+the foot of the tool rail switches the plan to free at once. On a free plan:
+
+- a tile moves smoothly with the pointer (snapping onto cell lines and other
+  tiles', areas' and labels' edges when near them; ++alt++ for none) and
+  stops wherever you let go - positions and sizes are kept to a thousandth of
+  a cell;
+- a selected tile shows the same eight resize handles and turn handle as an
+  area, and turns to any whole degree;
+- tiles may overlap;
+- arrows nudge a cell, ++alt++ + arrow a tenth of one.
+
+The way back is **Back to the grid…** (the same button): **Snap all to the
+grid?** shows how many tiles move - each to the nearest whole cells and the
+nearest quarter turn - and lists any that would then stand on another tile.
+Nothing moves until you confirm; tiles that end up on each other stay so
+until you move them. Save your edits first - the snap works on the saved
+plan. A plan cannot be switched back to the grid any other way while a tile
+is off it.
+
+A tile linked to an object no longer needs a tile type or role: a linked
+tile may have neither and draws from its object (the API accepts it; placing
+one from the editor comes with the placement picker).
+
+| Call | |
+|---|---|
+| `PATCH /api/floor-plans/<id>/` | `layout_mode`: `grid` or `free`. To `grid` only when every tile is on whole cells and a quarter turn, else a 400 on `layout_mode`. |
+| `POST /api/floor-plans/<id>/snap-all/` | `{"dry_run": true}` answers `{"layout_mode", "moved", "collisions": [{"id", "name"}]}` and changes nothing; without it the tiles are snapped (each one in the change log), the plan is set to `grid` and the answer adds `tiles`. Needs `floorplan · change`. |
+| Tiles | `x`, `y`, `width`, `height` are numbers of cells; a grid plan takes whole ones only, and `orientation` 0, 90, 180 or 270; a free plan any `orientation` 0-359. A tile needs a `tile_type_id` or a `role_type_id`, or a link. |
+
 ## Opening a plan
 
 The editor reads everything drawn on a plan in one request,
-`GET /api/floor-plans/<id>/contents/`: every tile, tray, wall and raised-floor
-area, with no page limit, so a plan of several thousand tiles opens whole.
+`GET /api/floor-plans/<id>/contents/`: every tile, tray, wall, raised-floor
+area, room or area and label, with no page limit, so a plan of several thousand tiles opens whole.
 Before 0.19 the editor read one page of each kind - at most 1,000 tiles and
 500 trays, walls or raised floors - and left the rest off the plan without a
 word. The dashboard's floor-plan widget reads the same request.
@@ -671,13 +832,16 @@ word. The dashboard's floor-plan widget reads the same request.
   "tiles": [ … ],
   "trays": [ … ],
   "walls": [ … ],
-  "raised_floors": [ … ]
+  "raised_floors": [ … ],
+  "areas": [ … ],
+  "labels": [ … ]
 }
 ```
 
 Each list holds rows in the shape its own endpoint returns
 (`/api/floor-plan-tiles/`, `/api/floor-plan-trays/`, `/api/floor-plan-walls/`,
-`/api/floor-plan-raised-floors/`), narrowed the same way: to the active tenant,
+`/api/floor-plan-raised-floors/`, `/api/floor-plan-areas/`,
+`/api/floor-plan-labels/`), narrowed the same way: to the active tenant,
 and to the rows the reader may view under each type's own permission and site
 scope. Someone who may view the plan but not its trays gets an empty `trays`.
 `version` is the newest `updated_at` across the rows, `null` for an empty plan.
@@ -823,7 +987,8 @@ selection.
 
 ## Raised floors (Structure mode)
 
-The **Structure** tab models the room itself. Draw **raised-floor areas** -
+The **Walls and raised floors** tool (++w++, the Structure tab before 0.19)
+models the room itself. Draw **raised-floor areas** -
 rectangles of tiles standing on pedestals with a cable plenum underneath -
 and give each one its **plenum depth** (default 300 mm). Rooms are rarely
 uniformly raised, so the raised floor is per-area: the DC pad is, the
@@ -857,7 +1022,7 @@ in the left rail to edit its label, plenum depth and color, or delete it.
 
 ## Walls & doors (Structure mode)
 
-The Structure tab also draws the **room shell**: walls as polylines on the
+The same tool also draws the **room shell**: walls as polylines on the
 same half-cell lattice trays snap to, so a wall can run along tile
 boundaries or straight down a tile's centerline. Click **Draw wall**, click
 corners (drawing magnetically snaps to existing walls, so rooms chain
@@ -890,7 +1055,7 @@ did before walls existed.
 
 ## Cable trays (Cables mode)
 
-The **Cables** tab (top-right toggle, next to Layout) turns the plan into a
+The **Cable trays** tool (++c++, the Cables tab before 0.19) turns the plan into a
 **buildable wiring drawing**. Draw **trays** - cable/conduit runs - as
 polylines a contractor can follow, and assign the real DCIM cables that run
 through each one. Hand the PNG to whoever's pulling cable.
@@ -1102,7 +1267,8 @@ cable runs, just the trays, or both.
 **Clone this floor**, in the menu on the floor plan's name, copies the floor
 on screen with everything drawn on it - tiles (with their rack / device /
 panel links), cable trays (geometry only; the cables routed through the
-originals stay where they are), raised-floor areas and walls, and its
+originals stay where they are), raised-floor areas, walls, rooms, areas
+and labels, its layout (grid or free), and its
 [CAD drawing](#cad-drawings) with its placement, units and calibration - into
 the same location as `<name> copy`, a floor plan of its own, and opens it.
 Handy for a what-if layout you can throw away; **Move to floor plan…** makes
@@ -1123,8 +1289,8 @@ paper.
 portrait or landscape (A3 landscape until you choose) - and makes one sheet
 on the server:
 
-- the whole plan **fitted to the page** - tiles, zones, raised floors, walls
-  and trays as the plan shows them, unsaved edits and hidden tiles included
+- the whole plan **fitted to the page** - tiles, zones, raised floors, walls,
+  trays, rooms, areas and labels as the plan shows them, unsaved edits and hidden tiles included
   as on screen, in the light theme;
 - the [CAD drawing](#cad-drawings) under it **in vector**, at its placement
   and opacity, with the layers and text the plan hides left out. A drawing
@@ -1160,6 +1326,13 @@ drawing is audited too (**Floor-plan drawings**), but its endpoints and files
 follow the plan's own permission; its files are served only to someone who
 may view the plan, in its tenant, are deleted with it, and are part of a
 media backup.
+
+Rooms, areas and labels drawn on a plan are their own types, **Floor-plan
+areas** (`floorplanarea`) and **Floor-plan labels** (`floorplanlabel`):
+scoped through their plan's tenant and its location's site, audited one row
+at a time, and in a site role's types like the plan's walls. Reading them in
+`contents/` follows their own view grant; the editor's **Save** (`bulk/`)
+needs `floorplan · change`.
 
 ## Popover fields
 
@@ -1215,3 +1388,7 @@ wall-plate ("drop") tiles with port assignments.
 !!! note "New in 0.18"
     PDF export with the CAD drawing in vector, undo and redo in the editor,
     moving and turning a multi-selection, and Shift-click to select.
+
+!!! note "New in 0.19"
+    View and Edit, the tool rail, rooms, areas and labels drawn on a floor,
+    and free placement.

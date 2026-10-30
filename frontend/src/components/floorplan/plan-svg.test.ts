@@ -101,13 +101,78 @@ describe("planSvg", () => {
       color: "",
       cables: [],
     } as unknown as Parameters<typeof planSvg>[0]["trays"] extends
-      | (infer U)[]
-      | undefined
+      (infer U)[] | undefined
       ? U
       : never
     expect(planSvg({ plan, tiles: [], trays: [tray] })).toContain("Tray A")
     expect(
       planSvg({ plan, tiles: [], trays: [tray], showTrays: false })
     ).not.toContain("Tray A")
+  })
+
+  it("draws rooms under the tiles and labels over them, in paper ink", () => {
+    const svg = planSvg({
+      plan,
+      tiles: [tile({ label: "R1" })],
+      shapes: [
+        {
+          kind: "label",
+          id: "l1",
+          text: "North side\nA-feed",
+          x: 1,
+          y: 1,
+          width: null,
+          height: null,
+          rotation: 0,
+          font_mm: 300,
+          weight: "bold",
+          align: "left",
+          color: "blue",
+          plate: true,
+          z: 0,
+          locked: false,
+          created_at: "",
+          updated_at: "",
+        },
+        {
+          kind: "area",
+          id: "a1",
+          shape: "rect",
+          x: 1,
+          y: 1,
+          width: 4,
+          height: 3,
+          rotation: 30,
+          points: [],
+          room: { id: "r1", name: "Room 210", code: "210", color: "#0ea5e9" },
+          location: null,
+          label: "",
+          color: "",
+          fill_opacity: 15,
+          border: "dashed",
+          show_name: true,
+          z: 0,
+          locked: false,
+          created_at: "",
+          updated_at: "",
+        },
+      ],
+    })
+    const order = ["Room 210", "R1", "North side"].map((s) => svg.indexOf(s))
+    expect(order.every((i) => i > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    const doc = parse(svg)
+    const area = doc.querySelector('rect[stroke-dasharray="8 5"]')!
+    expect(area.getAttribute("fill")).toBe("#0ea5e9")
+    expect(area.parentElement!.getAttribute("transform")).toBe(
+      "rotate(30,120,100)"
+    )
+    const lines = [...doc.querySelectorAll("text")].filter(
+      (t) => t.getAttribute("fill") === "#2563eb"
+    )
+    expect(lines.map((t) => t.textContent)).toEqual(["North side", "A-feed"])
+    // 300 mm on a 600 mm cell: half a cell of 40 px.
+    expect(lines[0].getAttribute("font-size")).toBe("20")
+    expect(svg).not.toContain("class=")
   })
 })

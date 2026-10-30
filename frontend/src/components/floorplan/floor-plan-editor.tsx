@@ -1,12 +1,13 @@
 import { useNavigate } from "@tanstack/react-router"
 import { toPng } from "html-to-image"
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type { FloorPlanCablePath, FloorPlanTile } from "@/lib/api"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { HiddenChip } from "@/components/hidden-chip"
 import { hiddenCount } from "@/components/hidden-objects"
 import { useTheme } from "@/components/theme-provider"
@@ -14,13 +15,18 @@ import { rememberFloor } from "@/lib/floor-plan-stacks"
 import { usePageTitle } from "@/lib/page-title"
 import { useMe } from "@/lib/use-me"
 
+import { AreaPanel } from "./area-panel"
 import { BackgroundControls } from "./background-controls"
 import { useCadCalibration } from "./cad-calibrate"
 import { useCadFloorImage, useCadSource } from "./cad-layer"
 import { ColorByLegend, colorByLegendEntries } from "./color-by-legend"
 import { CELL, cableRoutePoints } from "./floor-canvas"
 import type { FloorCanvasApi } from "./floor-canvas"
-import { readFloorHidden, visibleTiles as pickVisibleTiles } from "./hidden"
+import {
+  readFloorHidden,
+  visibleShapes,
+  visibleTiles as pickVisibleTiles,
+} from "./hidden"
 import { ObjectsSidebar } from "./objects-sidebar"
 import { PlanCanvas } from "./plan-canvas"
 import { PlanDialogs } from "./plan-dialogs"
@@ -31,15 +37,21 @@ import { PlanScene3D } from "./plan-scene-3d"
 import { planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { RackTablePanel } from "./rack-table-panel"
+import { shapeBounds } from "./shapes"
+import { SnapAllDialog } from "./snap-all-dialog"
 import { DEFAULT_POPOVER_FIELDS, useTilePopover } from "./tile-popover"
+import { ToolRail } from "./tool-rail"
 import { useCadDrawing } from "./use-cad-drawing"
+import { useEditMode } from "./use-edit-mode"
 import { useEditorKeys } from "./use-editor-keys"
 import { useFloorPlanData } from "./use-floor-plan-data"
 import { useLeaveGuard } from "./use-leave-guard"
 import { popoverShowsPorts, usePlanCapacity } from "./use-plan-capacity"
-import { usePlanEditState } from "./use-plan-edit-state"
+import { TOOL_MODE, usePlanEditState } from "./use-plan-edit-state"
+import type { EditorTool } from "./use-plan-edit-state"
 import { usePlanMutations } from "./use-plan-mutations"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
+import { useShapeEdits } from "./use-shape-edits"
 import { useStructureEdits } from "./use-structure-edits"
 import { useTileEdits } from "./use-tile-edits"
 
@@ -66,6 +78,8 @@ export function FloorPlanEditor({
   const { canDo, humanIds } = useMe()
   const { theme } = useTheme()
   const canEdit = canDo("floorplan", "change")
+  // View by default; Edit (E) for those who may change the plan.
+  const { editing, setEdit } = useEditMode(canEdit)
 
   const data = useFloorPlanData(id)
   const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
@@ -81,8 +95,12 @@ export function FloorPlanEditor({
   const { trace: traceParam, viz: vizParam, tile: tileParam } = search
   const view3d = vizParam === "3d"
 
-  const ed = usePlanEditState(id, data.serverTiles)
+  const ed = usePlanEditState(id, data.serverTiles, data.serverShapes)
   const { tiles, isDirty, selectedId, setSelectedId } = ed
+  // An area opened while viewing (its room in the map panel).
+  const [openArea, setOpenArea] = useState<string | null>(null)
+  const [snapOpen, setSnapOpen] = useState(false)
+  const [leaveEditOpen, setLeaveEditOpen] = useState(false)
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
   // Resolve the row list for the tile in hand: a tile type with its own list
@@ -103,11 +121,58 @@ export function FloorPlanEditor({
   const { hidden, setHiddenPref, colorBy, showRacks, showObjects } = prefs
   const edits = useTileEdits({ id, plan, ed })
   const structure = useStructureEdits({ id, plan, walls, ed })
+  const shapeEdits = useShapeEdits({ plan, ed })
 
   const shownTiles = useMemo(
     () => pickVisibleTiles(tiles, hidden),
     [tiles, hidden]
   )
+  const shownShapes = useMemo(
+    () => visibleShapes(ed.shapes, hidden),
+    [ed.shapes, hidden]
+  )
+
+  /** Pick a tool: its canvas mode, nothing selected or half drawn. */
+  const selectTool = useCallback(
+    (tool: EditorTool) => {
+      ed.setTool(tool)
+      ed.setMode(TOOL_MODE[tool])
+      setSelectedId(null)
+      ed.setSelectedShapeId(null)
+      ed.setSelectedTrayId(null)
+      ed.setArmed(null)
+      ed.setDrawPoints(null)
+      ed.setSelectedAreaId(null)
+      ed.setAreaArmed(false)
+      ed.setMultiSel(new Set())
+      // Leaving the trays must exit tray-edit - otherwise Layout stays
+      // frozen (tiles unselectable, cables hidden).
+      ed.setTrayEditMode(false)
+    },
+    [ed]
+  )
+  /** View or Edit. Leaving Edit with unsaved edits asks first. */
+  const changeEditing = useCallback(
+    (on: boolean) => {
+      if (!on && isDirty) {
+        setLeaveEditOpen(true)
+        return
+      }
+      if (!on) selectTool("select")
+      setOpenArea(null)
+      setEdit(on)
+    },
+    [isDirty, selectTool, setEdit]
+  )
+  const toggleFree = () => {
+    if (!plan) return
+    if (plan.layout_mode === "free") setSnapOpen(true)
+    else
+      patchPlan.mutate(
+        { layout_mode: "free" },
+        { onSuccess: () => toast.success("Free placement on") }
+      )
+  }
   const hiddenTileIds = useMemo(
     () =>
       new Set(tiles.filter((t) => !shownTiles.includes(t)).map((t) => t.id)),
@@ -181,7 +246,12 @@ export function FloorPlanEditor({
   }, [traceParam, cablePaths, trays, tiles])
 
   const { stepHistory } = useEditorKeys({
-    canEdit,
+    canEdit: editing,
+    canToggleEdit: canEdit,
+    onToggleEdit: changeEditing,
+    selectTool,
+    shapeEdits,
+    canvasApi,
     view3d,
     traceParam,
     tracedRef,
@@ -284,20 +354,8 @@ export function FloorPlanEditor({
         canEdit={canEdit}
         canAdd={canDo("floorplan", "add")}
         view3d={view3d}
-        mode={ed.mode}
-        onModeChange={(m) => {
-          ed.setMode(m)
-          setSelectedId(null)
-          ed.setSelectedTrayId(null)
-          ed.setArmed(null)
-          ed.setDrawPoints(null)
-          ed.setSelectedAreaId(null)
-          ed.setAreaArmed(false)
-          ed.setMultiSel(new Set())
-          // Leaving Cables mode must exit tray-edit - otherwise Layout
-          // mode stays frozen (tiles unselectable, cables hidden).
-          ed.setTrayEditMode(false)
-        }}
+        editing={editing}
+        onEditingChange={changeEditing}
       />
 
       {/* ── Second bar: find and view on the left, the panel, display and
@@ -306,7 +364,7 @@ export function FloorPlanEditor({
         plan={plan}
         mode={ed.mode}
         view3d={view3d}
-        canEdit={canEdit}
+        canEdit={editing}
         tiles={shownTiles}
         search={ed.search}
         onSearchChange={ed.setSearch}
@@ -332,6 +390,7 @@ export function FloorPlanEditor({
                 walls,
                 trays,
                 areas,
+                shapes: shownShapes,
                 colorBy,
                 figures: capacity.figures,
                 liveState: liveState.data ?? null,
@@ -369,7 +428,15 @@ export function FloorPlanEditor({
 
       {/* ── Body: palette rail · canvas · inspector ─────────────────── */}
       <div className="flex min-h-0 flex-1">
-        {canEdit && (
+        {editing && !view3d && (
+          <ToolRail
+            tool={ed.tool}
+            onToolChange={selectTool}
+            free={plan.layout_mode === "free"}
+            onToggleFree={toggleFree}
+          />
+        )}
+        {editing && !view3d && (
           <PlanRail
             plan={plan}
             ed={ed}
@@ -399,6 +466,7 @@ export function FloorPlanEditor({
               cad={cad}
               cadFloorUrl={cadFloorUrl}
               colorLegend={colorLegend}
+              areas={shownShapes}
               showHint={ed.show3dHint}
               onDismissHint={() => ed.setShow3dHint(false)}
             />
@@ -407,7 +475,12 @@ export function FloorPlanEditor({
             <PlanCanvas
               plan={plan}
               shownTiles={shownTiles}
-              canEdit={canEdit}
+              shownShapes={shownShapes}
+              shapeEdits={shapeEdits}
+              canEdit={editing}
+              onOpenShape={(s) => {
+                if (s.kind === "area") setOpenArea(s.id)
+              }}
               ed={ed}
               edits={edits}
               structure={structure}
@@ -434,15 +507,24 @@ export function FloorPlanEditor({
               openTile={openTile}
             />
           )}
+          {!editing &&
+            !view3d &&
+            (() => {
+              const a = ed.shapes.find((s) => s.id === openArea)
+              return a?.kind === "area" ? (
+                <AreaPanel area={a} onClose={() => setOpenArea(null)} />
+              ) : null
+            })()}
         </div>
 
-        {canEdit && (
+        {editing && !view3d && (
           <PlanInspector
             plan={plan}
             ed={ed}
             edits={edits}
             structure={structure}
             prefs={prefs}
+            shapeEdits={shapeEdits}
             trays={trays}
             walls={walls}
             areas={areas}
@@ -473,6 +555,24 @@ export function FloorPlanEditor({
             onHiddenChange={setHiddenPref}
             // While the rack table is open it lists the racks.
             omitRacks={racksOpen}
+            shapes={ed.shapes}
+            selectedShapeId={editing ? ed.selectedShapeId : openArea}
+            onPickShape={(s) => {
+              const off =
+                s.kind === "area"
+                  ? hidden.areas.includes(s.id)
+                  : hidden.labels.includes(s.id)
+              if (off) return
+              if (editing) {
+                if (ed.mode !== "layout") selectTool("select")
+                shapeEdits.select(s.id)
+              } else if (s.kind === "area") setOpenArea(s.id)
+              const b = shapeBounds(s, plan.cell_mm)
+              canvasApi.current?.focusPoints([
+                [b.minX, b.minY],
+                [b.maxX, b.maxY],
+              ])
+            }}
           />
         )}
       </div>
@@ -513,6 +613,26 @@ export function FloorPlanEditor({
         traceCablesOnMap={traceCablesOnMap}
         backgroundControls={backgroundControls}
         leaveGuard={leaveGuard}
+      />
+      <SnapAllDialog
+        planId={plan.id}
+        open={snapOpen}
+        onOpenChange={setSnapOpen}
+        isDirty={isDirty}
+      />
+      <ConfirmDialog
+        open={leaveEditOpen}
+        onOpenChange={setLeaveEditOpen}
+        title="Leave Edit?"
+        description="This plan has unsaved changes. Leaving Edit discards them."
+        confirmLabel="Discard"
+        destructive
+        onConfirm={() => {
+          ed.draft.load(data.serverTiles ?? [], data.serverShapes ?? [])
+          setLeaveEditOpen(false)
+          selectTool("select")
+          setEdit(false)
+        }}
       />
     </div>
   )

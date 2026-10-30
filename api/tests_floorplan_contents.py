@@ -1,5 +1,5 @@
 """GET /api/floor-plans/{id}/contents/ - the editor's one read on open:
-every tile, tray, wall and raised floor of a plan, unpaginated, tenant- and
+every tile, tray, wall, raised floor, area and label of a plan, unpaginated, tenant- and
 permission-scoped, at a query count that does not grow with the plan."""
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -15,6 +15,8 @@ from .models import (
     Device,
     DeviceRole,
     FloorPlan,
+    FloorPlanArea,
+    FloorPlanLabel,
     FloorPlanRaisedFloorArea,
     FloorPlanTile,
     FloorPlanTray,
@@ -23,6 +25,7 @@ from .models import (
     Location,
     PowerPanel,
     Rack,
+    Room,
     Site,
 )
 
@@ -31,7 +34,9 @@ User = get_user_model()
 # Queries for one contents/ read as a superuser - session, user and tenant
 # resolution, the plan, then one per kind plus the trays' cables. The same
 # for 2 rows of each kind as for 12.
-CONTENTS_QUERIES = 13
+CONTENTS_QUERIES = 15
+
+KINDS = ("tiles", "trays", "walls", "raised_floors", "areas", "labels")
 
 
 class _Base(APITestCase):
@@ -105,6 +110,18 @@ class _Base(APITestCase):
             FloorPlanRaisedFloorArea.objects.create(
                 floor_plan=self.plan, x=20, y=y, width=2, height=2
             )
+            # An area per room and per location, and a label: their links
+            # are what a lazy serializer would pay for per row.
+            room = Room.objects.create(
+                tenant=self.tenant, location=self.loc, name=f"Room {i}", slug=f"room-{i}"
+            )
+            FloorPlanArea.objects.create(
+                floor_plan=self.plan, x=30, y=y, width=2, height=2, room=room
+            )
+            FloorPlanArea.objects.create(
+                floor_plan=self.plan, x=33, y=y, width=2, height=2, location=self.loc
+            )
+            FloorPlanLabel.objects.create(floor_plan=self.plan, text=f"L{i}", x=40, y=y)
         FloorPlanTile.objects.bulk_create(tiles)
 
     def _queries(self):
@@ -118,14 +135,14 @@ class ContentsTests(_Base):
     def test_shape_matches_the_list_endpoints(self):
         self._fill(2)
         body = self.client.get(self._url()).json()
-        self.assertEqual(
-            set(body), {"version", "tiles", "trays", "walls", "raised_floors"}
-        )
+        self.assertEqual(set(body), {"version", *KINDS})
         for key, path in (
             ("tiles", "floor-plan-tiles"),
             ("trays", "floor-plan-trays"),
             ("walls", "floor-plan-walls"),
             ("raised_floors", "floor-plan-raised-floors"),
+            ("areas", "floor-plan-areas"),
+            ("labels", "floor-plan-labels"),
         ):
             listed = self.client.get(
                 f"/api/{path}/?floor_plan={self.plan.id}&page_size=1000"
@@ -138,18 +155,17 @@ class ContentsTests(_Base):
         self.assertEqual(len(tray["cables"]), 2)
         linked = {t["linked"]["kind"] for t in body["tiles"]}
         self.assertEqual(linked, {"rack", "cabinet", "device", "powerpanel"})
-        newest = max(
-            row["updated_at"]
-            for key in ("tiles", "trays", "walls", "raised_floors")
-            for row in body[key]
+        self.assertEqual(
+            sorted(bool(a["room"]) for a in body["areas"]), [False, False, True, True]
         )
+        newest = max(row["updated_at"] for key in KINDS for row in body[key])
         # Same instant; the serializer and isoformat may spell it apart.
         self.assertEqual(body["version"][:19], newest[:19])
 
     def test_an_empty_plan(self):
         body = self.client.get(self._url()).json()
         self.assertEqual(body["version"], None)
-        for key in ("tiles", "trays", "walls", "raised_floors"):
+        for key in KINDS:
             self.assertEqual(body[key], [])
 
     def test_more_than_a_thousand_tiles_all_load(self):
@@ -171,6 +187,8 @@ class ContentsTests(_Base):
         large, body = self._queries()
         self.assertEqual(len(body["tiles"]), 48)
         self.assertEqual(len(body["trays"]), 12)
+        self.assertEqual(len(body["areas"]), 24)
+        self.assertEqual(len(body["labels"]), 12)
         self.assertEqual(small, large)
         self.assertEqual(large, CONTENTS_QUERIES)
 
@@ -211,6 +229,16 @@ class ContentsPermissionTests(_Base):
         self.assertEqual(len(body["walls"]), 1)
         self.assertEqual(body["trays"], [])
         self.assertEqual(body["raised_floors"], [])
+        self.assertEqual(body["areas"], [])
+        self.assertEqual(body["labels"], [])
+
+    def test_areas_and_labels_follow_their_grants(self):
+        self.grant(["floorplan", "floorplanarea", "floorplanlabel"])
+        self._login(self.user)
+        body = self.client.get(self._url()).json()
+        self.assertEqual(len(body["areas"]), 2)
+        self.assertEqual(len(body["labels"]), 1)
+        self.assertEqual(body["tiles"], [])
 
     def test_no_plan_grant_is_refused(self):
         self.grant(["floorplantile"])
@@ -222,12 +250,12 @@ class ContentsPermissionTests(_Base):
         self.grant(["floorplan"], [self.site])
         self.grant(
             ["floorplantile", "floorplantray", "floorplanwall",
-             "floorplanraisedfloorarea"],
+             "floorplanraisedfloorarea", "floorplanarea", "floorplanlabel"],
             [elsewhere],
         )
         self._login(self.user)
         body = self.client.get(self._url()).json()
-        for key in ("tiles", "trays", "walls", "raised_floors"):
+        for key in KINDS:
             self.assertEqual(body[key], [], key)
 
     def test_plan_at_another_site_is_404(self):

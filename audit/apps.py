@@ -180,6 +180,8 @@ AUDITED_MODELS = [
     "api.FloorPlanTray",
     "api.FloorPlanRaisedFloorArea",
     "api.FloorPlanWall",
+    "api.FloorPlanArea",
+    "api.FloorPlanLabel",
     "api.CableRoute",
     # Customisation + monitoring config (not high-volume engine state). The
     # MAC-tracking sightings (monitoring.MacSighting / ArpSighting, #284) are

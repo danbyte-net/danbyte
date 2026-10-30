@@ -44,7 +44,7 @@ from .models import (
     FiberSettings,
     FloorPlan, FloorPlanDrawing, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile,
     FloorPlanTray,
-    FloorPlanWall, FloorTileType, FrontPort,
+    FloorPlanArea, FloorPlanLabel, FloorPlanWall, FloorTileType, FrontPort,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
@@ -10508,6 +10508,15 @@ class FloorPlanSerializer(
                 raise serializers.ValidationError({"location_id": "This field is required."})
             location = attrs["location"] = stack.location
         name = attrs.get("name", getattr(inst, "name", None))
+        if (
+            inst is not None
+            and attrs.get("layout_mode") == "grid"
+            and inst.layout_mode != "grid"
+            and any(not tile_on_grid(t) for t in inst.tiles.all())
+        ):
+            raise serializers.ValidationError(
+                {"layout_mode": "Use Snap all to bring the tiles back onto the grid."}
+            )
         if stack is not None:
             err = location_error(location, stack)
             if err:
@@ -10568,7 +10577,7 @@ class FloorPlanSerializer(
         fields = ["id", "numid", "name", "location", "location_id", "site",
                   "stack", "stack_id", "floor_order", "elevation_mm",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
-                  "background_image",
+                  "layout_mode", "background_image",
                   "background_opacity", "state", "description", "tile_count",
                   "drawing",
                   "tags", "tag_ids", "custom_fields",
@@ -10691,6 +10700,28 @@ class FloorPlanDrawingCalibrationSerializer(serializers.Serializer):
         return attrs
 
 
+def tile_on_grid(t) -> bool:
+    """Whether a tile sits as a grid plan needs it: whole cells, a quarter
+    turn."""
+    return all(float(v).is_integer() for v in (t.x, t.y, t.width, t.height)) \
+        and t.orientation % 90 == 0
+
+
+def _plan_of(serializer, attrs):
+    """The floor plan a child row is (or will be) on: the bulk endpoints'
+    plan (passed in the context; it wins), else the payload's, else the
+    row's."""
+    return (
+        serializer.context.get("floor_plan")
+        or attrs.get("floor_plan")
+        or (serializer.instance.floor_plan if serializer.instance is not None else None)
+    )
+
+
+def _r3(v: float) -> float:
+    return round(float(v), 3)
+
+
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
     (resolved to the right FK, tenant-checked - the CableSerializer
@@ -10754,18 +10785,17 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
         attrs = super().validate(attrs)
         from api.views import _get_active_tenant
 
-        # Exactly one of tile_type / role_type (matches the DB constraint,
-        # but with a friendly message).
         tile_type = attrs.get(
             "tile_type", getattr(self.instance, "tile_type", None)
         )
         role_type = attrs.get(
             "role_type", getattr(self.instance, "role_type", None)
         )
-        if (tile_type is None) == (role_type is None):
+        if tile_type is not None and role_type is not None:
             raise serializers.ValidationError(
                 {"tile_type_id": "Set exactly one of tile_type_id / role_type_id."}
             )
+        self._check_geometry(attrs)
 
         # Resolve the link when the payload touches it.
         if "link_kind" in attrs or "link_id" in attrs:
@@ -10804,7 +10834,38 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                     )
                 attrs[FloorPlanTile.LINK_FIELDS[kind]] = obj
                 attrs["link_kind"] = kind
+        # Exactly one of tile_type / role_type - or neither on a linked tile,
+        # which draws from its object (the DB constraint, with a message).
+        if tile_type is None and role_type is None:
+            linked = any(
+                attrs.get(f, getattr(self.instance, f, None)) is not None
+                for f in FloorPlanTile.LINK_FIELDS.values()
+            )
+            if not linked:
+                raise serializers.ValidationError(
+                    {"tile_type_id": "Pick a tile type or role, or link the tile to an object."}
+                )
         return attrs
+
+    def _check_geometry(self, attrs):
+        """A grid plan holds whole cells at quarter turns; a free plan any
+        position, size and whole-degree angle (kept to 3 decimals)."""
+        plan = _plan_of(self, attrs)
+        free = plan is not None and plan.layout_mode == "free"
+        for key in ("x", "y", "width", "height"):
+            if key not in attrs:
+                continue
+            v = attrs[key]
+            if not math.isfinite(v):
+                raise serializers.ValidationError({key: "A finite number."})
+            if free:
+                attrs[key] = _r3(v)
+            elif not float(v).is_integer():
+                raise serializers.ValidationError({key: "Whole cells on a grid plan."})
+        if "orientation" in attrs and not free and attrs["orientation"] % 90:
+            raise serializers.ValidationError(
+                {"orientation": "A quarter turn (0, 90, 180 or 270) on a grid plan."}
+            )
 
     class Meta:
         model = FloorPlanTile
@@ -11010,6 +11071,216 @@ class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
         model = FloorPlanRaisedFloorArea
         fields = ["id", "floor_plan_id", "x", "y", "width", "height",
                   "plenum_mm", "label", "color", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+def _in_plan(serializer, attrs, x, y, w=0.0, h=0.0, key="x"):
+    """A box (cell units) inside its plan's grid, else a field error."""
+    plan = _plan_of(serializer, attrs)
+    if plan is None:
+        return
+    eps = 1e-6
+    if x < -eps or y < -eps or x + w > plan.grid_width + eps \
+            or y + h > plan.grid_height + eps:
+        raise serializers.ValidationError({key: "Keep it inside the plan's grid."})
+
+
+def _segments_cross(a, b, c, d) -> bool:
+    """Whether segments ab and cd properly intersect or touch (collinear
+    overlap included)."""
+    def orient(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return 0 if abs(v) < 1e-12 else (1 if v > 0 else -1)
+
+    def on(p, q, r):
+        return min(p[0], r[0]) - 1e-12 <= q[0] <= max(p[0], r[0]) + 1e-12 and \
+            min(p[1], r[1]) - 1e-12 <= q[1] <= max(p[1], r[1]) + 1e-12
+
+    o1, o2, o3, o4 = orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b)
+    if o1 != o2 and o3 != o4:
+        return True
+    return (o1 == 0 and on(a, c, b)) or (o2 == 0 and on(a, d, b)) or \
+        (o3 == 0 and on(c, a, d)) or (o4 == 0 and on(c, b, d))
+
+
+def polygon_is_simple(points) -> bool:
+    """No two non-adjacent edges of the closed outline meet."""
+    n = len(points)
+    edges = [(points[i], points[(i + 1) % n]) for i in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j == i + 1 or (i == 0 and j == n - 1):
+                continue
+            if _segments_cross(*edges[i], *edges[j]):
+                return False
+    return True
+
+
+class FloorPlanAreaSerializer(NumIdModelSerializer):
+    """A room, a location or a plain area drawn on a floor: a rectangle
+    turned about its centre, or a polygon. Linked to a room or a location of
+    the floor's location (or one inside it), never both."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False,
+    )
+    points = serializers.JSONField(required=False)
+    room = serializers.SerializerMethodField()
+    room_id = TenantScopedPrimaryKeyRelatedField(
+        source="room", queryset=Room.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_room(self, obj):
+        r = obj.room
+        if r is None:
+            return None
+        return {"id": str(r.pk), "name": r.name, "code": r.code, "color": r.color}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        loc = obj.location
+        if loc is None:
+            return None
+        return {"id": str(loc.pk), "name": loc.name, "color": loc.color}
+
+    def _visible(self, model_slug, obj) -> bool:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        request = self.context.get("request")
+        if request is None:
+            return True
+        tenant = _get_active_tenant(request)
+        model = type(obj)
+        return rbac.restrict_queryset(
+            model.objects.filter(pk=obj.pk), request.user, tenant, model_slug, "view",
+        ).exists()
+
+    def validate(self, attrs):
+        from .floor_stacks import within
+
+        attrs = super().validate(attrs)
+        inst = self.instance
+        get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
+        plan = _plan_of(self, attrs)
+
+        room, location = get("room"), get("location")
+        if room is not None and location is not None:
+            raise serializers.ValidationError(
+                {"room_id": "Link a room or a location, not both."}
+            )
+        if "room" in attrs and room is not None and plan is not None and (
+            not within(room.location, plan.location) or not self._visible("room", room)
+        ):
+            raise serializers.ValidationError(
+                {"room_id": "Pick a room of this floor's location."}
+            )
+        if "location" in attrs and location is not None and plan is not None and (
+            not within(location, plan.location) or not self._visible("location", location)
+        ):
+            raise serializers.ValidationError(
+                {"location_id": "Pick this floor's location or one inside it."}
+            )
+
+        shape = get("shape", "rect")
+        if shape == "polygon":
+            pts = get("points") or []
+            if not isinstance(pts, list) or not 3 <= len(pts) <= 200:
+                raise serializers.ValidationError(
+                    {"points": "An outline of 3 to 200 [x, y] points."}
+                )
+            clean = []
+            for p in pts:
+                if not (isinstance(p, (list, tuple)) and len(p) == 2 and all(
+                    isinstance(n, (int, float)) and not isinstance(n, bool)
+                    and math.isfinite(n) for n in p
+                )):
+                    raise serializers.ValidationError(
+                        {"points": "Each point is an [x, y] pair of numbers."}
+                    )
+                clean.append([_r3(p[0]), _r3(p[1])])
+            if not polygon_is_simple(clean):
+                raise serializers.ValidationError({"points": "The outline crosses itself."})
+            xs = [p[0] for p in clean]
+            ys = [p[1] for p in clean]
+            x, y = min(xs), min(ys)
+            w, h = max(xs) - x, max(ys) - y
+            if w <= 0 or h <= 0:
+                raise serializers.ValidationError({"points": "The outline has no area."})
+            _in_plan(self, attrs, x, y, w, h, key="points")
+            attrs.update(points=clean, x=x, y=y, width=_r3(w), height=_r3(h), rotation=0.0)
+        else:
+            vals = {}
+            for k in ("x", "y", "width", "height", "rotation"):
+                v = get(k, 0.0 if k in ("x", "y", "rotation") else 1.0)
+                if not math.isfinite(v):
+                    raise serializers.ValidationError({k: "A finite number."})
+                vals[k] = v
+            for k in ("width", "height"):
+                if vals[k] <= 0:
+                    raise serializers.ValidationError({k: "Must be more than 0."})
+            _in_plan(self, attrs, vals["x"], vals["y"], vals["width"], vals["height"])
+            attrs.update(
+                x=_r3(vals["x"]), y=_r3(vals["y"]), width=_r3(vals["width"]),
+                height=_r3(vals["height"]), rotation=_r3(vals["rotation"] % 360), points=[],
+            )
+        return attrs
+
+    class Meta:
+        model = FloorPlanArea
+        fields = ["id", "floor_plan_id", "shape", "x", "y", "width", "height",
+                  "rotation", "points", "room", "room_id", "location", "location_id",
+                  "label", "color", "fill_opacity", "border", "show_name", "z",
+                  "locked", "created_at", "updated_at"]
+        read_only_fields = ["id", "room", "location", "created_at", "updated_at"]
+
+
+class FloorPlanLabelSerializer(NumIdModelSerializer):
+    """Free text on a floor. ``font_mm`` is the text height on the floor in
+    millimetres; ``width``/``height`` null size the box to the text."""
+
+    floor_plan_id = TenantScopedPrimaryKeyRelatedField(
+        source="floor_plan", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False,
+    )
+    text = serializers.CharField(max_length=500, trim_whitespace=True)
+
+    def validate_text(self, v):
+        v = v.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not v:
+            raise serializers.ValidationError("Write some text.")
+        return v
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+        get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
+        for k in ("x", "y", "width", "height", "rotation"):
+            v = get(k)
+            if v is None:
+                continue
+            if not math.isfinite(v):
+                raise serializers.ValidationError({k: "A finite number."})
+            if k in ("width", "height") and v <= 0:
+                raise serializers.ValidationError({k: "Must be more than 0."})
+            if k in attrs:
+                attrs[k] = _r3(v % 360 if k == "rotation" else v)
+        _in_plan(self, attrs, get("x", 0.0), get("y", 0.0))
+        return attrs
+
+    class Meta:
+        model = FloorPlanLabel
+        fields = ["id", "floor_plan_id", "text", "x", "y", "width", "height",
+                  "rotation", "font_mm", "weight", "align", "color", "plate", "z",
+                  "locked", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 

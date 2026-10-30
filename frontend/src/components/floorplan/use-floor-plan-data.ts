@@ -1,6 +1,9 @@
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+
+import { shapesOf } from "./shapes"
 import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
@@ -38,6 +41,12 @@ export function useFloorPlanData(id: string) {
     queryFn: () => api<FloorPlanContents>(`/api/floor-plans/${id}/contents/`),
   })
   const contents = contentsQuery.data
+  // Areas and labels as the editor's draft keeps them - one array per
+  // fetch, so the draft hydrates only when they really change.
+  const serverShapes = useMemo(
+    () => (contents ? shapesOf(contents.areas, contents.labels) : undefined),
+    [contents]
+  )
   const tileTypes = useQuery({
     queryKey: ["floor-tile-types-picker"],
     queryFn: () =>
@@ -87,6 +96,8 @@ export function useFloorPlanData(id: string) {
     contentsQuery,
     /** The saved tiles - undefined until they land. */
     serverTiles: contents?.tiles,
+    /** The saved areas and labels - undefined until they land. */
+    serverShapes,
     trays: contents?.trays ?? [],
     // Raised-floor areas (Structure mode) - rectangles with a plenum depth.
     areas: contents?.raised_floors ?? [],

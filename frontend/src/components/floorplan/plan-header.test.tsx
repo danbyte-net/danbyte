@@ -84,6 +84,7 @@ function plan(id: string, name: string): FloorPlan {
     background_image: null,
     background_opacity: 60,
     state: {},
+    layout_mode: "grid",
     description: "",
     tile_count: 0,
     drawing: null,
@@ -100,7 +101,11 @@ const THREE = [
   floor("f2", "1", 10),
 ]
 
-function mount(url: string, floors: FloorPlanFloor[] = THREE) {
+function mount(
+  url: string,
+  floors: FloorPlanFloor[] = THREE,
+  props: Partial<Parameters<typeof PlanHeader>[0]> = {}
+) {
   const stack = stackOf(floors)
   const root = createRootRoute()
   const page = createRoute({
@@ -120,8 +125,7 @@ function mount(url: string, floors: FloorPlanFloor[] = THREE) {
           canEdit
           canAdd
           view3d={viz === "3d"}
-          mode="layout"
-          onModeChange={() => {}}
+          {...props}
         />
       )
     },
@@ -201,5 +205,27 @@ describe("the floor switcher", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/floorplans/f9")
     )
+  })
+})
+
+describe("View and Edit", () => {
+  it("open in View, and Edit asks the page to switch", async () => {
+    const onEditingChange = vi.fn()
+    mount("/floorplans/f1", THREE, { editing: false, onEditingChange })
+    const view = await screen.findByRole("button", { name: "View" })
+    expect(view.getAttribute("aria-current")).toBe("page")
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    expect(onEditingChange).toHaveBeenCalledWith(true)
+  })
+
+  it("are not offered to someone who may not change the plan", async () => {
+    mount("/floorplans/f1", THREE, {
+      canEdit: false,
+      editing: false,
+      onEditingChange: vi.fn(),
+    })
+    await screen.findByRole("heading", { name: "HQ Building" })
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "View" })).toBeNull()
   })
 })

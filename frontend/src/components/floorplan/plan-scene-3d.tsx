@@ -5,6 +5,7 @@ import { X } from "lucide-react"
 import type { FloorPlan, FloorPlanLiveState } from "@/lib/api"
 import { Loading } from "@/components/loading"
 
+import type { PlanShape } from "./shapes"
 import type { PlanCapacity } from "./use-plan-capacity"
 import type { CadDrawingState } from "./use-cad-drawing"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
@@ -26,9 +27,13 @@ export function PlanScene3D({
   cad,
   cadFloorUrl,
   colorLegend,
+  areas,
   showHint,
   onDismissHint,
 }: {
+  /** The plan's areas (and labels, left out here) on show: flat tints on
+   * the floor. */
+  areas?: PlanShape[]
   plan: FloorPlan
   liveState: FloorPlanLiveState | null
   hiddenTileIds: Set<string>
@@ -67,6 +72,7 @@ export function PlanScene3D({
           racks={capacity.rackById}
           pointTileIds={capacity.highlightTileIds}
           focusRack={rackFocus}
+          areas={areas?.filter((s) => s.kind === "area")}
           drawingFloor={
             cadFloorUrl && cad.drawing
               ? {

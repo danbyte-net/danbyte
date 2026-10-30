@@ -94,8 +94,8 @@ from .models import (
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
     rename_marker_refs,
-    FloorPlan, FloorPlanRaisedFloorArea, FloorPlanStack, FloorPlanTile, FloorPlanTray,
-    FloorPlanWall, FloorTileType, SiteMarker,
+    FloorPlan, FloorPlanArea, FloorPlanLabel, FloorPlanRaisedFloorArea, FloorPlanStack,
+    FloorPlanTile, FloorPlanTray, FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
     InstalledSoftware, IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
@@ -132,6 +132,8 @@ from .serializers import (
     FiberSettingsSerializer,
     FloorPlanDrawingUnitsSerializer,
     FloorPlanMiniSerializer,
+    FloorPlanAreaSerializer,
+    FloorPlanLabelSerializer,
     FloorPlanRaisedFloorAreaSerializer,
     FloorPlanTraySerializer,
     FloorPlanWallSerializer,
@@ -10636,6 +10638,38 @@ def _clone_drawing(src, dst) -> None:
         cad_render.enqueue(copy.pk, copy.source.name)
 
 
+def _on_plan(item: dict) -> dict:
+    """A bulk row without a plan of its own: it stays on (or joins) the plan
+    the bulk call is for."""
+    return {k: v for k, v in item.items() if k != "floor_plan_id"}
+
+
+def _plan_tiles(plan):
+    return plan.tiles.select_related(
+        "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
+        "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
+    ).order_by("y", "x", "id")
+
+
+def _plan_areas(plan):
+    return plan.areas.select_related("room", "location").order_by("z", "created_at", "id")
+
+
+def _plan_labels(plan):
+    return plan.labels.order_by("z", "created_at", "id")
+
+
+def _snap_tile(t, plan):
+    """(x, y, width, height, orientation) of ``t`` on the grid: a quarter
+    turn, whole cells at least one wide, inside the plan."""
+    w = min(plan.grid_width, max(1, round(t.width)))
+    h = min(plan.grid_height, max(1, round(t.height)))
+    x = min(max(0, round(t.x)), plan.grid_width - w)
+    y = min(max(0, round(t.y)), plan.grid_height - h)
+    o = (round(t.orientation / 90) * 90) % 360
+    return (float(x), float(y), float(w), float(h), o)
+
+
 class FloorPlanViewSet(TenantScopedViewSet):
     """Floor plans' floors. ``?stack=<id>`` lists one floor plan's floors in
     floor order; ``?location=``, ``?site=``, ``?search=`` filter."""
@@ -10792,7 +10826,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 )
             dst.save()
             dst.tags.set(tags_of(src))
-            for rel in ("tiles", "trays", "raised_floor_areas", "walls"):
+            for rel in ("tiles", "trays", "raised_floor_areas", "walls", "areas", "labels"):
                 for obj in getattr(src, rel).all():
                     obj.pk = None
                     obj.id = None
@@ -11228,8 +11262,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["get"], url_path="contents")
     def contents(self, request, pk=None):
-        """Everything the 2D editor draws, in one read: every tile, tray, wall
-        and raised-floor area of the plan, unpaginated, each kind narrowed to
+        """Everything the 2D editor draws, in one read: every tile, tray, wall,
+        raised-floor area, drawn area (``areas``: rooms, locations) and label
+        of the plan, unpaginated, each kind narrowed to
         the rows the reader may view (as its own list endpoint narrows them).
         Rows keep their list-endpoint shape. ``version`` is the newest
         ``updated_at`` across them (null for an empty plan). The query count
@@ -11244,7 +11279,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         tiles = list(visible(
             plan.tiles.select_related(
-                "floor_plan", "tile_type", "role_type", "rack", "cabinet",
+                "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet",
                 "device", "power_panel", "power_feed", "cooling_source",
                 "linked_floor_plan",
             ).order_by("y", "x", "id"),
@@ -11259,10 +11294,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
             plan.raised_floor_areas.order_by("y", "x", "id"),
             "floorplanraisedfloorarea",
         ))
-        stamps = [o.updated_at for rows in (tiles, trays, walls, areas) for o in rows]
+        drawn = list(visible(_plan_areas(plan), "floorplanarea"))
+        labels = list(visible(_plan_labels(plan), "floorplanlabel"))
+        stamps = [
+            o.updated_at
+            for rows in (tiles, trays, walls, areas, drawn, labels) for o in rows
+        ]
         ctx = {"request": request}
         return Response({
             "version": max(stamps).isoformat() if stamps else None,
+            "areas": FloorPlanAreaSerializer(drawn, many=True, context=ctx).data,
+            "labels": FloorPlanLabelSerializer(labels, many=True, context=ctx).data,
             "tiles": FloorPlanTileSerializer(tiles, many=True, context=ctx).data,
             "trays": FloorPlanTraySerializer(trays, many=True, context=ctx).data,
             "walls": FloorPlanWallSerializer(walls, many=True, context=ctx).data,
@@ -11280,6 +11322,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "drawing_render": "view",
         "export_pdf": "view",
         "export_pdf_file": "view",
+        "bulk": "change",
+        "snap_all": "change",
     }
 
     @action(detail=True, methods=["post"], url_path="route")
@@ -11609,21 +11653,146 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 if tile is None:
                     raise ValidationError({"update": f"Unknown tile {item['id']}."})
                 ser = FloorPlanTileSerializer(
-                    tile, data=item, partial=True, context={"request": request}
+                    tile, data=item, partial=True,
+                    context={"request": request, "floor_plan": plan},
                 )
                 ser.is_valid(raise_exception=True)
                 ser.save()
             for item in creates:
-                ser = FloorPlanTileSerializer(data=item, context={"request": request})
+                ser = FloorPlanTileSerializer(
+                    data=item, context={"request": request, "floor_plan": plan}
+                )
                 ser.is_valid(raise_exception=True)
                 ser.save(floor_plan=plan)
         tiles = plan.tiles.select_related(
-            "tile_type", "role_type", "rack", "device",
+            "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
             "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
         ).order_by("y", "x")
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
         )
+
+    #: Operations one ``bulk/`` save may carry.
+    BULK_MAX = 5000
+
+    @action(detail=True, methods=["post"], url_path="bulk")
+    def bulk(self, request, pk=None):
+        """The editor's Save: tiles, areas and labels in one transaction.
+        ``{"tiles": {create, update, delete}, "areas": {...}, "labels": {...}}``
+        (each key optional; an update carries its ``id``) -> the plan's fresh
+        ``{"tiles", "areas", "labels"}`` in the contents shape. Deletes run
+        first. At most ``BULK_MAX`` operations."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        plan = self.get_object()
+        kinds = (
+            ("tiles", plan.tiles, FloorPlanTileSerializer, "tile"),
+            ("areas", plan.areas, FloorPlanAreaSerializer, "area"),
+            ("labels", plan.labels, FloorPlanLabelSerializer, "label"),
+        )
+        specs = {}
+        total = 0
+        for key, _rel, _ser, _noun in kinds:
+            spec = request.data.get(key) or {}
+            if not isinstance(spec, dict):
+                raise ValidationError({key: "An object of create/update/delete lists."})
+            parts = {}
+            for op in ("create", "update", "delete"):
+                rows = spec.get(op) or []
+                if not isinstance(rows, list):
+                    raise ValidationError({key: f"{op} must be a list."})
+                parts[op] = rows
+                total += len(rows)
+            specs[key] = parts
+        if total > self.BULK_MAX:
+            raise ValidationError(
+                {"detail": f"At most {self.BULK_MAX} changes in one save."}
+            )
+
+        def row(rel, row_pk):
+            try:
+                return rel.filter(pk=row_pk).first()
+            except (DjangoValidationError, ValueError, TypeError):
+                return None
+
+        ctx = {"request": request, "floor_plan": plan}
+        with transaction.atomic():
+            for key, rel, _ser, _noun in kinds:
+                for pk_ in specs[key]["delete"]:
+                    obj = row(rel, pk_)
+                    if obj is not None:
+                        obj.delete()
+            for key, rel, ser_cls, noun in kinds:
+                for item in specs[key]["update"]:
+                    if not isinstance(item, dict) or not item.get("id"):
+                        raise ValidationError({key: "Each update needs an id."})
+                    obj = row(rel, item["id"])
+                    if obj is None:
+                        raise ValidationError({key: f"Unknown {noun} {item['id']}."})
+                    ser = ser_cls(obj, data=_on_plan(item), partial=True, context=ctx)
+                    ser.is_valid(raise_exception=True)
+                    ser.save()
+                for item in specs[key]["create"]:
+                    if not isinstance(item, dict):
+                        raise ValidationError({key: "Each create is an object."})
+                    ser = ser_cls(data=_on_plan(item), context=ctx)
+                    ser.is_valid(raise_exception=True)
+                    ser.save(floor_plan=plan)
+        ctx = {"request": request}
+        return Response({
+            "tiles": FloorPlanTileSerializer(_plan_tiles(plan), many=True, context=ctx).data,
+            "areas": FloorPlanAreaSerializer(_plan_areas(plan), many=True, context=ctx).data,
+            "labels": FloorPlanLabelSerializer(
+                _plan_labels(plan), many=True, context=ctx
+            ).data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="snap-all")
+    def snap_all(self, request, pk=None):
+        """Bring every tile back onto the grid and make the plan a grid plan:
+        a quarter turn, whole cells, inside the grid. ``{"dry_run": true}``
+        changes nothing and answers what would move and which tiles would
+        then overlap; without it the tiles are snapped (each audited) and
+        the plan's ``layout_mode`` becomes ``grid``."""
+        plan = self.get_object()
+        dry = request.data.get("dry_run") in (True, "true", "1", 1)
+        tiles = list(_plan_tiles(plan))
+        snapped = {t.pk: _snap_tile(t, plan) for t in tiles}
+        moved = [
+            t for t in tiles
+            if snapped[t.pk] != (t.x, t.y, t.width, t.height, t.orientation)
+        ]
+        solid = [t for t in tiles if not (t.tile_type_id and t.tile_type.is_zone)]
+        hits = set()
+        for i, a in enumerate(solid):
+            ax, ay, aw, ah, _ = snapped[a.pk]
+            for b in solid[i + 1:]:
+                bx, by, bw, bh, _ = snapped[b.pk]
+                if ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah:
+                    hits.update((a.pk, b.pk))
+        collisions = [
+            {"id": str(t.pk), "name": t.label or str(t.linked_object or "") or str(t)}
+            for t in solid if t.pk in hits
+        ]
+        if dry:
+            return Response({
+                "layout_mode": plan.layout_mode, "moved": len(moved),
+                "collisions": collisions,
+            })
+        with transaction.atomic():
+            for t in moved:
+                t.x, t.y, t.width, t.height, t.orientation = snapped[t.pk]
+                t.save()
+            if plan.layout_mode != "grid":
+                plan.layout_mode = "grid"
+                plan.save(update_fields=["layout_mode", "updated_at"])
+        return Response({
+            "layout_mode": plan.layout_mode, "moved": len(moved),
+            "collisions": collisions,
+            "tiles": FloorPlanTileSerializer(
+                _plan_tiles(plan), many=True, context={"request": request}
+            ).data,
+        })
 
 
 class SiteMarkerViewSet(TenantScopedViewSet):
@@ -11842,7 +12011,7 @@ class FloorPlanTileViewSet(TenantScopedViewSet):
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     queryset = FloorPlanTile.objects.select_related(
-        "floor_plan", "tile_type", "role_type", "rack", "cabinet", "device",
+        "floor_plan__stack", "tile_type", "role_type", "rack", "cabinet", "device",
         "power_panel", "power_feed", "cooling_source", "linked_floor_plan",
     ).order_by("y", "x")
     serializer_class = FloorPlanTileSerializer
@@ -11928,6 +12097,51 @@ class FloorPlanWallViewSet(TenantScopedViewSet):
         if serializer.validated_data.get("floor_plan") is None:
             raise ValidationError({"floor_plan_id": "This field is required."})
         serializer.save()
+
+
+class _FloorPlanChildViewSet(TenantScopedViewSet):
+    """Rows drawn on a plan - scoped through their plan's tenant, filtered by
+    ``?floor_plan=``."""
+
+    pagination_class = StandardPagination
+    tenant_field = None
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(floor_plan__tenant=tenant)
+        if self.request:
+            from .topology_views import _uuid_param
+
+            fp = _uuid_param(self.request.query_params, "floor_plan")
+            if fp:
+                qs = qs.filter(floor_plan_id=fp)
+        return restrict_for_view(self, qs)
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get("floor_plan") is None:
+            raise ValidationError({"floor_plan_id": "This field is required."})
+        serializer.save()
+
+
+class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
+    """Rooms, locations and plain areas drawn on a floor (rectangles turned
+    about their centre, or polygons)."""
+
+    queryset = FloorPlanArea.objects.select_related(
+        "floor_plan", "room", "location"
+    ).order_by("z", "created_at", "id")
+    serializer_class = FloorPlanAreaSerializer
+
+
+class FloorPlanLabelViewSet(_FloorPlanChildViewSet):
+    """Free text on a floor, sized in millimetres on the floor."""
+
+    queryset = FloorPlanLabel.objects.select_related("floor_plan").order_by(
+        "z", "created_at", "id"
+    )
+    serializer_class = FloorPlanLabelSerializer
 
 
 class FloorPlanRaisedFloorAreaViewSet(TenantScopedViewSet):

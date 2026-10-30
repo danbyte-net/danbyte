@@ -92,7 +92,7 @@ def _renumber(floors) -> None:
 def add_floor(stack, name: str, *, position: int | None = None, copy_from=None):
     """A new, empty floor named ``name`` at ``position`` in the stack's order
     (0 = lowest; None = on top). ``copy_from`` (a floor of the same stack)
-    lends its grid size, scale and background opacity."""
+    lends its grid size, scale, background opacity and layout mode."""
     name = (name or "").strip()
     if not name:
         raise ValidationError({"name": ["Name the floor."]})
@@ -111,7 +111,7 @@ def add_floor(stack, name: str, *, position: int | None = None, copy_from=None):
         )
         if copy_from is not None:
             for f in ("grid_width", "grid_height", "cell_mm", "ceiling_mm",
-                      "background_opacity"):
+                      "background_opacity", "layout_mode"):
                 setattr(plan, f, getattr(copy_from, f))
         plan.save()
         if position is not None:

@@ -69,6 +69,9 @@ import { RackMesh } from "./rack-mesh"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
+import type { AreaShape } from "@/components/floorplan/shapes"
+
+import { AreaFloorMesh } from "./area-floor-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { TileGhostMesh } from "./tile-ghost-mesh"
@@ -121,6 +124,7 @@ export default function FloorScene3D({
   pointTileIds,
   focusRack = null,
   drawingFloor = null,
+  areas = [],
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -165,6 +169,8 @@ export default function FloorScene3D({
   focusRack?: { tileId: string; n: number } | null
   /** The plan's CAD drawing as the floor texture (room.tsx). */
   drawingFloor?: DrawingFloor | null
+  /** Rooms and areas drawn on the plan: flat tints on the floor. */
+  areas?: AreaShape[]
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -660,6 +666,9 @@ export default function FloorScene3D({
           ceiling={showCeiling}
           drawingFloor={drawingFloor}
         />
+        {areas.map((a) => (
+          <AreaFloorMesh key={a.id} plan={plan} area={a} />
+        ))}
         {shownRacks.map((t) => (
           <RackMesh
             key={t.id}

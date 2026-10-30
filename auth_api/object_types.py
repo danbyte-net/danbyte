@@ -253,6 +253,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FloorPlanTray", "Floor-plan cable trays", "DCIM"),
     ("api.FloorPlanRaisedFloorArea", "Floor-plan raised floors", "DCIM"),
     ("api.FloorPlanWall", "Floor-plan walls", "DCIM"),
+    ("api.FloorPlanArea", "Floor-plan areas", "DCIM"),
+    ("api.FloorPlanLabel", "Floor-plan labels", "DCIM"),
     ("api.SiteMarker", "Site-map markers", "DCIM"),
     ("api.TopologyView", "Topology views", "DCIM"),
     ("api.AuxPort", "Aux ports", "DCIM"),
