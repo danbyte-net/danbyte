@@ -834,12 +834,15 @@ class CablePathTests(_Base):
         self.assertEqual(entry["a_tiles"], [str(tile_a.id)])
         self.assertEqual(entry["b_tiles"], [str(tile_b.id)])
         self.assertEqual(entry["tray_ids"], [str(tray.id)])
-        # Endpoint device + port ride along (3D anchors runs to port quads).
+        # Endpoint device + port ride along (3D anchors runs to port quads),
+        # with the device's name for the 2D cable popover.
         self.assertEqual(
-            entry["a_points"], [{"device": str(dev_a.id), "port": "eth0"}]
+            entry["a_points"],
+            [{"device": str(dev_a.id), "port": "eth0", "device_name": "sw-a"}],
         )
         self.assertEqual(
-            entry["b_points"], [{"device": str(dev_b.id), "port": "eth0"}]
+            entry["b_points"],
+            [{"device": str(dev_b.id), "port": "eth0", "device_name": "sw-b"}],
         )
 
 
