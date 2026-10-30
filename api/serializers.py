@@ -10329,9 +10329,13 @@ class FloorTileTypeSerializer(NumIdModelSerializer):
 
 
 class FloorPlanMiniSerializer(NumIdModelSerializer):
+    # The floor plan a floor belongs to, so two floors named "1" in two
+    # buildings can be told apart in a picker.
+    stack_name = serializers.CharField(source="stack.name", read_only=True, default=None)
+
     class Meta:
         model = FloorPlan
-        fields = ["id", "name", "grid_width", "grid_height"]
+        fields = ["id", "name", "stack_name", "grid_width", "grid_height"]
 
 
 class FloorPlanFloorSerializer(serializers.ModelSerializer):
