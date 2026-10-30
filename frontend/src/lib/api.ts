@@ -11927,9 +11927,15 @@ export interface FloorPlanTilesBulkPayload {
 export interface FloorPlan {
   id: string
   numid: number | null
+  /** The floor's name ("B1", "Ground", "2"). */
   name: string
   location: LocationOption
   site: SiteOption
+  /** The floor plan (stack) this is a floor of. */
+  stack: { id: string; name: string } | null
+  /** Sort key inside the stack, lowest first. */
+  floor_order: number
+  elevation_mm: number | null
   grid_width: number
   grid_height: number
   /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
@@ -11950,6 +11956,39 @@ export interface FloorPlan {
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** A floor as its floor plan lists it (the switcher's row). */
+export interface FloorPlanFloor {
+  id: string
+  numid: number | null
+  name: string
+  floor_order: number
+  location_id: string
+}
+
+/** GET /api/floor-plan-stacks/ - a floor plan as users see it: a building or
+ * hall and its floors in order (docs: floor-plans "Floors"). */
+export interface FloorPlanStack {
+  id: string
+  name: string
+  description: string
+  location: LocationOption
+  site: SiteOption
+  floors: FloorPlanFloor[]
+  floor_count: number
+  /** The newest change to the floor plan or one of its floors. */
+  last_edited: string | null
+  tags: Tag[]
+  created_at: string
+  updated_at: string
+}
+
+export interface FloorPlanStackWritePayload {
+  name?: string
+  description?: string
+  location_id?: string
+  tag_ids?: number[]
 }
 
 export type FloorPlanDrawingStatus = "queued" | "ready" | "failed"
@@ -12255,6 +12294,8 @@ export interface CableRouting {
 export interface FloorPlanWritePayload {
   name?: string
   location_id?: string
+  stack_id?: string
+  floor_order?: number
   grid_width?: number
   grid_height?: number
   cell_mm?: number

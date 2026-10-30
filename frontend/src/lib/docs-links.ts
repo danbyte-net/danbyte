@@ -69,6 +69,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/cabinet-types": "dcim/cabinets/#cabinet-types",
   "/cabinet-roles": "dcim/cabinets/#cabinet-roles",
   "/floorplans": "features/floor-plans/",
+  "/floorplans/stacks": "features/floor-plans/#floors",
   "/floor-tile-types": "features/floor-plans/",
   "/site-map": "features/site-map/",
   "/topology": "features/topology/",

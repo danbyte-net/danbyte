@@ -9,8 +9,8 @@ import type {
   FloorPlanContents,
   FloorPlanLiveState,
   FloorplanPopoverConfig,
+  FloorPlanStack,
   FloorTileTypeOption,
-  Paginated,
 } from "@/lib/api"
 
 /** The query key of a plan's contents (tiles, trays, walls, raised floors) -
@@ -18,8 +18,14 @@ import type {
 export const floorPlanContentsKey = (id: string) =>
   ["floor-plan-contents", id] as const
 
+/** The query key of a floor plan (stack) and its floors - what a floor
+ * change (add, rename, reorder, move, delete) invalidates. */
+export const floorPlanStackKey = (id: string) =>
+  ["floor-plan-stack", id] as const
+
 /** Everything the floor-plan editor reads from the server: the plan, what is
- * drawn on it, the palette catalogs, the live overlay and the sibling floors. */
+ * drawn on it, the palette catalogs, the live overlay and its floor plan's
+ * floors. */
 export function useFloorPlanData(id: string) {
   const planQuery = useQuery({
     queryKey: ["floor-plan", id],
@@ -57,16 +63,13 @@ export function useFloorPlanData(id: string) {
     staleTime: 5 * 60_000,
   })
 
-  // Sibling plans of the same location - the "floors" of this building
-  // (Floor 1 / Floor 2 / Basement…). Powers the header switcher.
-  const locationId = planQuery.data?.location.id
-  const floors = useQuery({
-    queryKey: ["floor-plans", "location", locationId],
-    queryFn: () =>
-      api<Paginated<FloorPlan>>(
-        `/api/floor-plans/?location=${locationId}&page_size=100`
-      ),
-    enabled: !!locationId,
+  // The floor plan (stack) this plan is a floor of: its name and its floors
+  // in order (B1 / Ground / 1 / 2…). Powers the header switcher.
+  const stackId = planQuery.data?.stack?.id
+  const stack = useQuery({
+    queryKey: floorPlanStackKey(stackId ?? ""),
+    queryFn: () => api<FloorPlanStack>(`/api/floor-plan-stacks/${stackId}/`),
+    enabled: !!stackId,
   })
 
   const cablePathsQuery = useQuery({
@@ -93,7 +96,7 @@ export function useFloorPlanData(id: string) {
     roles,
     liveState,
     popoverCfg,
-    floors,
+    stack,
     cablePaths,
   }
 }
