@@ -1,11 +1,14 @@
 """Evaluate compliance rules against current data → violations (computed)."""
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import regex
 
+from core.expressions import compile_q, leaves
 from core.tags import TAGS, tags_of
 
-from .models import ComplianceRule, OBJECT_TYPES
+from .models import OBJECT_TYPES, ComplianceRule
 
 # Cap the string a regex rule is matched against. Compliance patterns are
 # tenant-admin authored and could contain catastrophic-backtracking constructs
@@ -172,21 +175,221 @@ def _violates(rule: ComplianceRule, obj, tag_slugs, eol_cfg=None,
     return False
 
 
+#: Each rule's query runs under this statement timeout. A rule that runs
+#: out of it shows an error instead of passing.
+RULE_TIMEOUT_MS = 5000
+
+#: Violations listed per run (the counts are whole past it).
+LIST_CAP = 5000
+
+
+def type_label(types) -> str:
+    return ", ".join(OBJECT_TYPES.get(t, t) for t in types)
+
+
+class Plan:
+    """What an evaluation reads once for all its rules: the field registry,
+    which referenced rows still exist in the tenant (one query per catalog),
+    and the profile tree for "has profile P" to include P's children."""
+
+    def __init__(self, tenant, rules):
+        from .fields import REF_MODELS, Registry, ref_model
+
+        self.tenant = tenant
+        self.registry = Registry(tenant)
+        self._children = None
+        wanted: dict[str, set[str]] = {}
+        for rule in rules:
+            for _path, node, field in self._ref_leaves(rule):
+                wanted.setdefault(field.ref, set()).update(node.get("values") or ())
+        self.existing: dict[str, set[str]] = {}
+        for ref, ids in wanted.items():
+            model = ref_model(ref)
+            ids = [i for i in ids if valid_pk(model, i)]
+            qs = model.objects.filter(pk__in=ids)
+            if REF_MODELS[ref].shared_null_tenant:
+                from django.db.models import Q
+
+                qs = qs.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
+            else:
+                qs = qs.filter(tenant=tenant)
+            self.existing[ref] = {str(pk) for pk in qs.values_list("pk", flat=True)}
+
+    def asts(self, rule):
+        out = []
+        if rule.scope:
+            out.append(rule.scope)
+        if rule.check_type == "expression" and rule.condition:
+            out.append(rule.condition)
+        return out
+
+    def _ref_leaves(self, rule):
+        union = self.registry.union(rule.types)
+        for ast in self.asts(rule):
+            for path, node in leaves(ast):
+                hit = union.get(node.get("field"))
+                if hit and hit[0].ref and node.get("cmp") in ("in", "not_in"):
+                    yield path, node, hit[0]
+
+    def error(self, rule) -> str | None:
+        """Why the rule cannot be judged ("Broken"), or None. A reference
+        that no longer exists never reads as "matches nothing": the rule
+        would pass silently."""
+        from .fields import REF_MODELS
+
+        if rule.check_type == "expression" and not rule.condition:
+            return "The rule has no conditions."
+        union = self.registry.union(rule.types)
+        for ast in self.asts(rule):
+            for _path, node in leaves(ast):
+                key = node.get("field")
+                if key not in union:
+                    return f"The field {key} no longer exists on these object types."
+        for _path, node, field in self._ref_leaves(rule):
+            have = self.existing.get(field.ref, set())
+            if any(v not in have for v in node.get("values") or ()):
+                return f"A referenced {REF_MODELS[field.ref].noun} no longer exists."
+        return None
+
+    def expand(self, ref: str, ids: list) -> list:
+        if ref != "deviceprofile":
+            return ids
+        if self._children is None:
+            from profiles.models import DeviceProfile
+
+            self._children = {}
+            for pk, parent in DeviceProfile.objects.filter(tenant=self.tenant).values_list(
+                "id", "parent_id"
+            ):
+                if parent is not None:
+                    self._children.setdefault(str(parent), []).append(str(pk))
+        out, todo = [], [str(i) for i in ids]
+        while todo:
+            pk = todo.pop()
+            if pk in out:
+                continue
+            out.append(pk)
+            todo.extend(self._children.get(pk, ()))
+        return out
+
+    def q(self, ast, rule, object_type):
+        return compile_q(ast, self.registry.field_on(object_type), object_type, self.expand)
+
+    def scope_q(self, rule, object_type):
+        return self.q(rule.scope, rule, object_type) if rule.scope else None
+
+    def condition_q(self, rule, object_type):
+        return self.q(rule.condition, rule, object_type)
+
+
+def valid_pk(model, value) -> bool:
+    """Is ``value`` shaped like ``model``'s primary key? Tags count from 1;
+    every other catalog has a UUID."""
+    import uuid
+
+    from django.db import models as m
+
+    if isinstance(model._meta.pk, m.UUIDField):
+        try:
+            uuid.UUID(str(value))
+        except ValueError:
+            return False
+        return True
+    return str(value).isdigit()
+
+
+@contextmanager
+def statement_timeout(ms: int = RULE_TIMEOUT_MS):
+    """Run the block in a savepoint whose statements stop after ``ms``. The
+    previous timeout is put back when the block ends, so a caller already
+    inside a transaction keeps its own."""
+    from django.db import connection, transaction
+
+    with transaction.atomic():
+        with connection.cursor() as cur:
+            cur.execute("SELECT current_setting('statement_timeout')")
+            previous = cur.fetchone()[0]
+            cur.execute("SELECT set_config('statement_timeout', %s, true)", [f"{int(ms)}ms"])
+        yield
+        with connection.cursor() as cur:
+            cur.execute("SELECT set_config('statement_timeout', %s, true)", [previous])
+
+
+def _query_error(exc) -> str:
+    text = str(exc).lower()
+    if "statement timeout" in text or "canceling statement" in text:
+        return "The rule took too long to evaluate."
+    return "The rule could not be evaluated."
+
+
+def _failing_qs(base, scope_q, cond_q):
+    """The rows in scope that fail the conditions: a NOT IN on the passing
+    rows' ids, so a NULL never reads as passing."""
+    qs = base.filter(scope_q) if scope_q is not None else base
+    return qs.exclude(pk__in=base.filter(cond_q).values("pk"))
+
+
+def failing_for_object(plan: Plan, rules, object_type: str, obj) -> tuple[set, set]:
+    """For one object: the ids of the expression rules it fails and of the
+    scoped rules it is out of scope of, read in one query."""
+    from django.db.models import BooleanField, Case, Value, When
+
+    exprs = {}
+    for i, rule in enumerate(rules):
+        if plan.error(rule):
+            continue
+        scope_q = plan.scope_q(rule, object_type)
+        if rule.check_type == "expression":
+            fails = Case(
+                When(plan.condition_q(rule, object_type), then=Value(False)),
+                default=Value(True), output_field=BooleanField(),
+            )
+            exprs[f"f{i}"] = (
+                Case(When(scope_q, then=fails), default=Value(False),
+                     output_field=BooleanField())
+                if scope_q is not None else fails
+            )
+        elif scope_q is not None:
+            exprs[f"s{i}"] = Case(When(scope_q, then=Value(True)), default=Value(False),
+                                  output_field=BooleanField())
+    if not exprs:
+        return set(), set()
+    row = type(obj).objects.filter(pk=obj.pk).values(**exprs).first() or {}
+    failed = {rules[int(k[1:])].id for k, v in row.items() if k[0] == "f" and v}
+    outside = {rules[int(k[1:])].id for k, v in row.items() if k[0] == "s" and not v}
+    return failed, outside
+
+
 def evaluate_for_object(tenant, object_type: str, obj) -> list[ComplianceRule]:
-    """The enabled rules of ``object_type`` that ``obj`` currently fails.
+    """The enabled rules covering ``object_type`` that ``obj`` currently fails.
 
     Single-object companion to :func:`evaluate` - powers the per-device
     compliance status endpoint without scanning the whole tenant. One rule
     fails one object at most once, so the failed rules *are* the violations.
+    The condition rules and every scope are answered in one query; a rule
+    that cannot be judged (Broken) is left out.
     """
-    rules = ComplianceRule.objects.filter(
-        tenant=tenant, enabled=True, object_type=object_type
+    from django.db.models import Q
+
+    rules = list(
+        ComplianceRule.objects.filter(tenant=tenant, enabled=True).filter(
+            Q(object_types__contains=[object_type])
+            | Q(object_types=[], object_type=object_type)
+        )
     )
+    plan = Plan(tenant, rules)
+    failed_expr, outside = failing_for_object(plan, rules, object_type, obj)
     tag_slugs: set[str] | None = None
     eol_cfg = None
     coverage_days = None
     failed = []
     for rule in rules:
+        if plan.error(rule) or rule.id in outside:
+            continue
+        if rule.check_type == "expression":
+            if rule.id in failed_expr:
+                failed.append(rule)
+            continue
         if _needs_tags(rule) and tag_slugs is None:
             tag_slugs = {t.slug for t in tags_of(obj)}
         if rule.check_type == "eol_status" and eol_cfg is None:
@@ -389,13 +592,26 @@ def _site_of(object_type: str, obj) -> tuple[str | None, str]:
     return str(site_id), str(obj.site)
 
 
-def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> dict:
+def _row_qs(qs, model, object_type):
+    """Tags ride every listed row (the Violations tab facets on them), and
+    the site when the type has one."""
+    qs = qs.prefetch_related(TAGS)
+    if object_type != "site" and any(f.name == "site" for f in model._meta.get_fields()):
+        qs = qs.select_related("site")
+    return qs
+
+
+def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None,
+             universe=None, list_cap: int = LIST_CAP) -> dict:
     """Return per-rule violation counts + a flat violation list.
 
     ``scope(object_type, queryset)`` returns the rows of ``queryset`` the
     caller may view, or None for all of them: the flat list then names only
     those. The per-rule counts stay whole - a compliance grant says how many
     objects fail a rule, not which.
+
+    ``universe(object_type, queryset)`` narrows the rows judged at all (the
+    preview judges only what its caller may view); every row by default.
 
     ``triage`` is a :func:`triage_index`; read here when not given. Each
     violation carries its state, and each rule how many of its failures are
@@ -404,7 +620,15 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
     When the triage is read here, an acknowledged pair this run finds passing
     has its acknowledgement cleared (:func:`clear_passed_acknowledgements`):
     an acknowledgement follows one occurrence of a violation. Only the rules
-    and rows this run judged count - a row past ``cap`` is left as it is."""
+    and rows this run judged count - a row past ``cap`` is left as it is.
+
+    A condition rule (``expression``) runs as SQL, one query per (rule, type)
+    for its failing ids plus one for the rows it lists, so its count is exact
+    however many rows fail. The other checks run in Python over one scan per
+    type, capped at ``cap`` rows; a rule's scope rides that scan as a column.
+    """
+    from django.db import DatabaseError
+    from django.db.models import BooleanField, ExpressionWrapper
     from django.utils import timezone
 
     if rules is None:
@@ -418,34 +642,97 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
         acked = {(str(t.rule_id), str(t.object_id)): t for t in rows if t.acknowledged_at}
     passed: list[tuple] = []
     models = _models()
-    rule_rows = []
+    plan = Plan(tenant, rules)
+    errors = {rule.id: plan.error(rule) for rule in rules}
     violations = []
     tag_info: dict[str, dict] = {}
     failing_objects: set[tuple[str, str]] = set()
 
-    # One scan per object type, every rule of that type applied to each row
-    # as it goes by - ten rules on addresses read the addresses once (#200).
-    by_type: dict[str, list] = {}
-    for rule in rules:
-        if rule.object_type in models:
-            by_type.setdefault(rule.object_type, []).append(rule)
     counts = {rule.id: 0 for rule in rules}
+    per_type = {rule.id: {t: 0 for t in rule.types if t in models} for rule in rules}
     states = {rule.id: {ACKNOWLEDGED: 0, SNOOZED: 0} for rule in rules}
+
+    def base_of(object_type):
+        qs = models[object_type].objects.filter(tenant=tenant)
+        return universe(object_type, qs) if universe is not None else qs
+
+    shown_cache: dict[str, set | None] = {}
+
+    def shown_of(object_type, qs):
+        if object_type not in shown_cache:
+            shown = None
+            if scope is not None:
+                viewable = scope(object_type, qs)
+                if viewable is not None:
+                    shown = set(viewable.values_list("pk", flat=True))
+            shown_cache[object_type] = shown
+        return shown_cache[object_type]
+
+    def record(rule, object_type, obj, tags, eol_cfg=None):
+        """List one failure, while the flat list has room."""
+        if len(violations) >= list_cap:
+            return
+        tri = triage.get((str(rule.id), str(obj.pk)), _OPEN_TRIAGE)
+        site_id, site_name = _site_of(object_type, obj)
+        for t in tags:
+            tag_info.setdefault(
+                t.slug, {"id": t.pk, "name": t.name, "color": t.color,
+                         "text_color": t.text_color}
+            )
+        violations.append(
+            {
+                "rule_id": str(rule.id),
+                "rule_name": rule.name,
+                "severity": rule.severity,
+                "object_type": object_type,
+                "object_type_label": OBJECT_TYPES.get(object_type, object_type),
+                "object_route": _ROUTES.get(object_type),
+                "object_id": str(obj.pk),
+                "object_repr": str(obj)[:120],
+                "detail": detail_for(rule, obj, eol_cfg),
+                "site_id": site_id,
+                "site_name": site_name,
+                "tags": sorted(t.slug for t in tags),
+                **tri,
+            }
+        )
+
+    def count(rule, object_type, oid):
+        counts[rule.id] += 1
+        per_type[rule.id][object_type] += 1
+        tri = triage.get((str(rule.id), str(oid)), _OPEN_TRIAGE)
+        if tri["state"] != OPEN:
+            states[rule.id][tri["state"]] += 1
+        failing_objects.add((object_type, str(oid)))
+
+    # Python checks: one scan per object type, every rule of that type
+    # applied to each row as it goes by - ten rules on addresses read the
+    # addresses once (#200).
+    by_type: dict[str, list] = {}
+    sql_rules = []
+    for rule in rules:
+        if errors[rule.id]:
+            continue
+        if rule.check_type == "expression":
+            sql_rules.append(rule)
+            continue
+        for t in rule.types:
+            if t in models:
+                by_type.setdefault(t, []).append(rule)
     for object_type, type_rules in by_type.items():
         model = models[object_type]
-        qs = model.objects.filter(tenant=tenant)
-        shown = None
-        if scope is not None:
-            viewable = scope(object_type, qs)
-            if viewable is not None:
-                shown = set(viewable.values_list("pk", flat=True))
-        # Tags ride every row: a required-tag check reads them, and the
-        # Violations tab facets on them.
-        qs = qs.prefetch_related(TAGS)
-        if object_type != "site" and any(
-            f.name == "site" for f in model._meta.get_fields()
-        ):
-            qs = qs.select_related("site")
+        qs = base_of(object_type)
+        shown = shown_of(object_type, qs)
+        qs = _row_qs(qs, model, object_type)
+        # A rule's scope is one more column on the scan: no query of its own.
+        in_scope = {}
+        for i, rule in enumerate(type_rules):
+            scope_q = plan.scope_q(rule, object_type)
+            if scope_q is not None:
+                in_scope[rule.id] = f"_in_scope_{i}"
+                qs = qs.annotate(**{in_scope[rule.id]: ExpressionWrapper(
+                    scope_q, output_field=BooleanField()
+                )})
         coverage_days = None
         if any(r.check_type == "coverage" for r in type_rules):
             from api.support_coverage import annotate_devices
@@ -474,71 +761,91 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
         for obj in qs[:cap]:
             tags = tags_of(obj)
             tag_slugs = {t.slug for t in tags}
-            failed_any = False
             for rule in type_rules:
-                if not _violates(rule, obj, tag_slugs, eol_cfg, coverage_days):
+                alias = in_scope.get(rule.id)
+                # Out of scope reads as passing.
+                fails = (not alias or bool(getattr(obj, alias))) and _violates(
+                    rule, obj, tag_slugs, eol_cfg, coverage_days
+                )
+                if not fails:
                     if acked:
                         row = acked.get((str(rule.id), str(obj.pk)))
                         if row is not None:
                             passed.append((row, rule, obj))
                     continue
-                failed_any = True
-                counts[rule.id] += 1
-                tri = triage.get((str(rule.id), str(obj.pk)), _OPEN_TRIAGE)
-                if tri["state"] != OPEN:
-                    states[rule.id][tri["state"]] += 1
+                count(rule, object_type, obj.pk)
                 if shown is not None and obj.pk not in shown:
                     continue
                 # Bound the flat list, but keep it generous: per-object UI
                 # markers (the violation badge) rely on object_ids being
                 # present here, not just the aggregate per-rule counts.
-                if len(violations) < 5000:
-                    site_id, site_name = _site_of(object_type, obj)
-                    for t in tags:
-                        tag_info.setdefault(
-                            t.slug, {"id": t.pk, "name": t.name, "color": t.color,
-                 "text_color": t.text_color}
-                        )
-                    violations.append(
-                        {
-                            "rule_id": str(rule.id),
-                            "rule_name": rule.name,
-                            "severity": rule.severity,
-                            "object_type": rule.object_type,
-                            "object_type_label": OBJECT_TYPES.get(
-                                rule.object_type, rule.object_type
-                            ),
-                            "object_route": _ROUTES.get(rule.object_type),
-                            "object_id": str(obj.pk),
-                            "object_repr": str(obj)[:120],
-                            "detail": detail_for(rule, obj, eol_cfg),
-                            "site_id": site_id,
-                            "site_name": site_name,
-                            "tags": sorted(tag_slugs),
-                            **tri,
-                        }
-                    )
-            if failed_any:
-                failing_objects.add((object_type, str(obj.pk)))
-    for rule in rules:
-        if rule.object_type not in models:
+                record(rule, object_type, obj, tags, eol_cfg)
+
+    # Condition rules: SQL per (rule, type), exact counts. A rule whose query
+    # fails on any of its types reports the error and nothing else.
+    for rule in sql_rules:
+        results = []
+        room = list_cap - len(violations)
+        try:
+            for object_type in rule.types:
+                if object_type not in models:
+                    continue
+                model = models[object_type]
+                base = base_of(object_type)
+                failing = _failing_qs(
+                    base, plan.scope_q(rule, object_type), plan.condition_q(rule, object_type)
+                )
+                with statement_timeout():
+                    ids = list(failing.values_list("pk", flat=True))
+                    listed = []
+                    if ids and room > 0:
+                        viewable = scope(object_type, failing) if scope is not None else None
+                        listed = list(_row_qs(
+                            viewable if viewable is not None else failing, model, object_type
+                        )[:room])
+                        room -= len(listed)
+                results.append((object_type, model, ids, listed))
+        except DatabaseError as exc:
+            errors[rule.id] = _query_error(exc)
             continue
-        count = counts[rule.id]
-        acked = states[rule.id][ACKNOWLEDGED]
-        snoozed = states[rule.id][SNOOZED]
+        for object_type, model, ids, listed in results:
+            for oid in ids:
+                count(rule, object_type, oid)
+            for obj in listed:
+                record(rule, object_type, obj, tags_of(obj))
+            if acked:
+                failing_ids = {str(i) for i in ids}
+                gone = [
+                    t.object_id for (rid, oid), t in acked.items()
+                    if rid == str(rule.id) and t.object_type == object_type
+                    and oid not in failing_ids
+                ]
+                if gone:
+                    for obj in model.objects.filter(tenant=tenant, pk__in=gone):
+                        passed.append((acked[(str(rule.id), str(obj.pk))], rule, obj))
+
+    rule_rows = []
+    for rule in rules:
+        types = [t for t in rule.types if t in models]
+        if not types:
+            continue
+        total = counts[rule.id]
+        n_acked = states[rule.id][ACKNOWLEDGED]
+        n_snoozed = states[rule.id][SNOOZED]
         rule_rows.append(
             {
                 "id": str(rule.id),
                 "name": rule.name,
-                "object_type": rule.object_type,
-                "object_type_label": OBJECT_TYPES.get(
-                    rule.object_type, rule.object_type
-                ),
+                "object_type": types[0],
+                "object_types": types,
+                "object_type_label": type_label(types),
                 "severity": rule.severity,
-                "violations": count,
-                "open": count - acked - snoozed,
-                "acknowledged": acked,
-                "snoozed": snoozed,
+                "violations": total,
+                "open": total - n_acked - n_snoozed,
+                "acknowledged": n_acked,
+                "snoozed": n_snoozed,
+                "by_type": per_type[rule.id],
+                "error": errors[rule.id],
             }
         )
 
@@ -554,3 +861,42 @@ def evaluate(tenant, rules=None, cap: int = 5000, scope=None, triage=None) -> di
         "failing_objects": failing_objects,
         "tags": tag_info,
     }
+
+
+def preview_rule(tenant, rule, universe, sample: int = 25) -> dict:
+    """An unsaved rule's counts per type: how many objects are in scope and
+    how many fail, with up to ``sample`` failing objects each. Only the rows
+    ``universe(object_type, queryset)`` keeps are judged, so the counts are
+    the caller's own. Nothing is written, triage included."""
+    from django.db import DatabaseError
+
+    models = _models()
+    plan = Plan(tenant, [rule])
+    error = plan.error(rule)
+    if error:
+        return {"by_type": {}, "error": error}
+    types = [t for t in rule.types if t in models]
+    by_type = {}
+    try:
+        for t in types:
+            base = universe(t, models[t].objects.filter(tenant=tenant))
+            scope_q = plan.scope_q(rule, t)
+            with statement_timeout():
+                n = (base.filter(scope_q) if scope_q is not None else base).count()
+            by_type[t] = {"in_scope": n, "failing": 0, "sample": []}
+    except DatabaseError as exc:
+        return {"by_type": {}, "error": _query_error(exc)}
+    for t in types:
+        def only(object_type, qs, t=t):
+            return universe(object_type, qs) if object_type == t else qs.none()
+
+        result = evaluate(tenant, rules=[rule], triage={}, universe=only, list_cap=sample)
+        row = result["rules"][0] if result["rules"] else None
+        if row and row["error"]:
+            return {"by_type": by_type, "error": row["error"]}
+        by_type[t]["failing"] = row["violations"] if row else 0
+        by_type[t]["sample"] = [
+            {"id": v["object_id"], "repr": v["object_repr"], "site_name": v["site_name"]}
+            for v in result["violations"] if v["object_type"] == t
+        ]
+    return {"by_type": by_type, "error": None}

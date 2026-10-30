@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from core.models import Tenant, TimestampedModel
@@ -28,6 +29,12 @@ class CheckType(models.TextChoices):
     EOL_STATUS = "eol_status", "End-of-life status"
     COVERAGE = "coverage", "Support coverage"
     SOFTWARE_TARGET = "software_target", "Software target"
+    EXPRESSION = "expression", "Conditions"
+
+
+#: The single-field checks from before conditions. They keep working; the
+#: rule form offers to convert them to conditions.
+LEGACY_CHECKS = ("required", "forbidden", "regex", "required_tag", "required_cf")
 
 
 class EolFailOn(models.TextChoices):
@@ -94,9 +101,20 @@ class ComplianceRule(TimestampedModel):
         max_length=8, choices=Severity.choices, default=Severity.WARNING
     )
 
+    #: The types the rule applies to, in the order picked.
+    object_types = ArrayField(
+        models.CharField(max_length=20), default=list, blank=True,
+        db_default=models.Value([], ArrayField(models.CharField(max_length=20))),
+    )
+    #: ``object_types[0]``, kept for ordering and older API readers.
     object_type = models.CharField(
         max_length=20, help_text="Which model the rule applies to."
     )
+    #: Which objects the rule judges (``core.expressions`` AST); null = all
+    #: of its types.
+    scope = models.JSONField(null=True, blank=True)
+    #: What an ``expression`` check requires of each object in scope.
+    condition = models.JSONField(null=True, blank=True)
     check_type = models.CharField(max_length=16, choices=CheckType.choices)
 
     # Check params - interpreted by the engine per check_type:
@@ -132,6 +150,20 @@ class ComplianceRule(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.object_type})"
+
+    def save(self, *args, **kwargs):
+        # The two type columns agree: a write naming only the old single type
+        # gets the list, and the list's first type is the single one.
+        if not self.object_types and self.object_type:
+            self.object_types = [self.object_type]
+        if self.object_types:
+            self.object_type = self.object_types[0]
+        super().save(*args, **kwargs)
+
+    @property
+    def types(self) -> list[str]:
+        """The rule's object types; a row from before 0009 reads its one."""
+        return list(self.object_types or ([self.object_type] if self.object_type else []))
 
 
 # ─── End-of-life data (#8) ───────────────────────────────────────────────────
