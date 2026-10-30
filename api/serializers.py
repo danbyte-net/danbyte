@@ -76,6 +76,7 @@ from .capacity import (
     rack_power,
     used_units,
 )
+from .detail_counts import annotated
 # The far-end helpers moved to api.port_state (#248); re-exported here for
 # the imports that predate the move.
 from .port_state import (
@@ -127,14 +128,23 @@ def detail_only(default=None):
     page must not pay a query per row for. The ``detail_only`` flag on the
     wrapper is what ``api.list_fields`` reads to keep such a field out of the
     list-column catalog, where it would only ever read 0 or empty.
+
+    Off the list, a ``<field>_annotated`` value on the row wins over the
+    getter: the detail reads annotate their tab counts (api.detail_counts),
+    so the getter's own query only runs for a row read without them.
     """
 
     def decorate(fn):
+        attr = f"{fn.__name__.removeprefix('get_')}_annotated"
+
         @functools.wraps(fn)
         def wrapper(self, obj):
             view = self.context.get("view")
             if view is not None and getattr(view, "action", None) == "list":
                 return copy.copy(default)
+            value = getattr(obj, attr, None)
+            if value is not None:
+                return value
             return fn(self, obj)
 
         wrapper.detail_only = True
@@ -3362,10 +3372,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         vc = obj.virtual_chassis
         if vc is None:
             return None
+        members = annotated(obj, "vc_member_count")
         return {
             "id": str(vc.id), "name": vc.name,
             "is_master": vc.master_id == obj.pk,
-            "member_count": vc.members.count(),
+            "member_count": members if members is not None else vc.members.count(),
         }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
