@@ -103,6 +103,8 @@ export function PlanCanvas({
   onSnapshotShape,
   lockedIds,
   trayPick,
+  tilePick,
+  onConnectTile,
   emptyActions,
   structureToolbar,
   onRerouteCable,
@@ -115,6 +117,10 @@ export function PlanCanvas({
   emptyActions?: FloorCanvasProps["emptyActions"]
   /** Picking a cable's trays on the plan ("After placing"). */
   trayPick?: FloorCanvasProps["trayPick"]
+  /** Picking objects to connect to on the plan (Connect to…). */
+  tilePick?: FloorCanvasProps["tilePick"]
+  /** Edit: "Connect to…" on a tile's menu. */
+  onConnectTile?: FloorCanvasProps["onConnectTile"]
   /** Edit, the Snapshot tool in hand: the dragged rectangle. */
   onSnapshotRect?: FloorCanvasProps["onSnapshotRect"]
   /** Edit: "Snapshot this room…" on an area's menu. */
@@ -393,6 +399,8 @@ export function PlanCanvas({
         onFinishDraw={finishDraw}
         trayEditMode={trayEditMode}
         trayPick={trayPick}
+        tilePick={tilePick}
+        onConnectTile={onConnectTile}
         cablePaths={cablePaths}
         showCableLinks={showCableLinks}
         highlightCableIds={highlightCableIds}

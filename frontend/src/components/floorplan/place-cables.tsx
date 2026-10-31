@@ -123,8 +123,11 @@ export function AfterPlacingCard({
   onSetRoom,
   cables,
   onRouteCables,
+  onConnect,
   onDismiss,
 }: {
+  /** "Connect to…": plan new cables from what was placed. */
+  onConnect?: () => void
   room: RoomPromptState | null
   roomBusy: boolean
   onSetRoom: () => void
@@ -133,7 +136,7 @@ export function AfterPlacingCard({
   onRouteCables: () => void
   onDismiss: () => void
 }) {
-  if (!room && !cables) return null
+  if (!room && !cables && !onConnect) return null
   const n = room?.objects.length ?? 0
   return (
     <div
@@ -166,6 +169,19 @@ export function AfterPlacingCard({
             </span>
             <Button size="sm" className="h-7" onClick={onRouteCables}>
               {cables === 1 ? "Route 1 cable" : `Route ${cables} cables`}
+            </Button>
+          </div>
+        )}
+        {onConnect && (
+          <div data-part="connect-to" className="flex items-center gap-2">
+            <span className="whitespace-nowrap">New cables</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={onConnect}
+            >
+              Connect to…
             </Button>
           </div>
         )}

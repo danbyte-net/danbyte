@@ -5151,6 +5151,32 @@ class MACAddressViewSet(TenantScopedViewSet):
             super().perform_update(serializer)
 
 
+def validate_cable_rows(rows, make):
+    """Validate cable payloads for a create of several at once (#454):
+    ``make(row)`` gives each row's serializer. A port named by two rows is
+    refused as well. Answers ``(serializers, errors)`` - one error object
+    per row, in order, ``{}`` for a row that was fine."""
+    sers, errors = [], []
+    seen: dict = {}
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            errors.append({"non_field_errors": ["Expected a cable object."]})
+            continue
+        ser = make(row)
+        if not ser.is_valid():
+            errors.append(ser.errors)
+            continue
+        err = {}
+        for side in ("a", "b"):
+            for kind, obj in ser.validated_data[f"_{side}"]:
+                first = seen.setdefault((kind, obj.pk), i)
+                if first != i:
+                    err[side] = [f"{obj} is already in cable {first + 1}."]
+        errors.append(err)
+        sers.append(ser)
+    return sers, errors
+
+
 class CableViewSet(TenantScopedViewSet):
     queryset = (
         Cable.objects.select_related("status").prefetch_related(
@@ -5242,24 +5268,7 @@ class CableViewSet(TenantScopedViewSet):
                 {"cables": f"Too many at once (max {self.BULK_CREATE_MAX})."}
             )
 
-        sers, errors = [], []
-        seen: dict = {}
-        for i, row in enumerate(rows):
-            if not isinstance(row, dict):
-                errors.append({"non_field_errors": ["Expected a cable object."]})
-                continue
-            ser = self.get_serializer(data=row)
-            if not ser.is_valid():
-                errors.append(ser.errors)
-                continue
-            err = {}
-            for side in ("a", "b"):
-                for kind, obj in ser.validated_data[f"_{side}"]:
-                    first = seen.setdefault((kind, obj.pk), i)
-                    if first != i:
-                        err[side] = [f"{obj} is already in cable {first + 1}."]
-            errors.append(err)
-            sers.append(ser)
+        sers, errors = validate_cable_rows(rows, lambda row: self.get_serializer(data=row))
         if any(errors):
             return Response(
                 {"detail": "Nothing was created - fix the marked cables.",
@@ -12057,6 +12066,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
     rbac_action_map = {
         "route": "view",
         "cable_plan": "view",
+        "cable_plan_ports": "view",
         "drawing_render": "view",
         "export_pdf": "view",
         "export_pdf_file": "view",
@@ -12195,7 +12205,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "elevation_mm", "points", "run", "cable_ids"}]``; ``run`` is the new
         tray's points, null when nothing new is needed), the plan's
         ``cell_mm`` and ``scale_source`` (``assumed`` when a CAD drawing's
-        scale was never set)."""
+        scale was never set).
+
+        ``mode: "new"`` plans new cables instead (Connect to…):
+        :meth:`_connect_preview`."""
         import uuid as _uuid
 
         from auth_api import rbac
@@ -12254,6 +12267,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
             plan, positions=positions, new_tiles=new_tiles, removed=removed,
             extra_trays=draft_trays, removed_trays=removed_trays,
         )
+        if body.get("mode") == "new":
+            return self._connect_preview(request, tenant, plan, crop, router, body, choices,
+                                         run_level)
         ids = body.get("cable_ids")
         objects = body.get("objects")
         dropped: set = set()
@@ -12541,6 +12557,279 @@ class FloorPlanViewSet(TenantScopedViewSet):
                                  "port": port or ""})
             out[c.pk] = ends
         return out
+
+    # ── Connect to… (new cables) ──
+
+    def _connect_devices(self, request, tenant, router, objects, field) -> list:
+        """The devices of ``objects`` (a device, or a rack's or cabinet's)
+        placed on this plan, each one the user may view, as
+        ``[(id, name)]`` in natural order. A hidden or unplaced device is
+        never offered."""
+        from auth_api import rbac
+
+        from .models import Device
+
+        if not isinstance(objects, list) or not objects:
+            raise ValidationError({field: "Pick at least one object."})
+        try:
+            ids = self._dropped_devices(request, tenant, objects)
+        except ValidationError as exc:
+            raise ValidationError({field: exc.detail.get("objects", exc.detail)}) from None
+        router.prime_devices(ids)
+        viewable = None if request.user.is_superuser else rbac.ViewableRows(request.user, tenant)
+        if viewable is not None:
+            viewable.prime("device", ids)
+        rows = Device.objects.filter(pk__in=ids, tenant=tenant).values_list("id", "name")
+        out = [
+            (pk, name) for pk, name in rows
+            if router.tile_for(pk) is not None
+            and (viewable is None or viewable.may_view("device", pk))
+        ]
+        return sorted(out, key=lambda r: (natural_key(r[1] or ""), str(r[0])))
+
+    @staticmethod
+    def _planned_statuses(tenant) -> list:
+        """The tenant's statuses that mean planned work and apply to cables -
+        what a new cable from Connect to… may take. Nothing is seeded: with
+        none, the panel says so and links to Statuses."""
+        from .models import Status
+
+        return [
+            {"id": str(s.pk), "name": s.name, "color": s.color}
+            for s in Status.objects.filter(
+                tenant=tenant, is_planned=True, available_to__contains=["cable"],
+            ).order_by("weight", NATURAL_NAME)
+        ]
+
+    @staticmethod
+    def _port_refs(raw, field) -> list[tuple[str, str]]:
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, list) or len(raw) > 1024:
+            raise ValidationError({field: "A list of {kind, id}."})
+        out = []
+        for item in raw:
+            if not isinstance(item, dict) or not isinstance(item.get("kind"), str):
+                raise ValidationError({field: "Each port is {kind, id}."})
+            out.append((item["kind"], str(item.get("id"))))
+        return out
+
+    def _connect_preview(self, request, tenant, plan, crop, router, body, choices,
+                         run_level):
+        """``cable-plan`` with ``mode: new`` - Connect to…: new cables from
+        ``source`` to ``targets`` (objects, as ``objects``), proposed or as
+        the user edited them, routed like existing ones. Nothing is stored.
+
+        Body: ``source``, ``targets``, ``family`` (``data``, ``console``,
+        ``power``), ``per_target`` (cables to each target device, 1-8),
+        ``include_mgmt``, ``exclude_ports`` (``[{kind, id}]`` the draft
+        cables already take) and, once the user edits them, ``pairs``
+        (``[{"key", "a": {kind, id}, "b": {kind, id}}]``), plus the routing
+        keys of an ordinary preview (``choices`` by pair key,
+        ``suggest_runs``, ``keep_runs``, ``run_level``).
+
+        Answers ``pairs`` (``key``, ``a`` and ``b`` ports, ``type`` - a
+        cable type that fits, ``route``/``via``/``suggestions``/``reason``
+        as a cable row, ``error`` when a sent pair is not valid), ``short``
+        (device pairs that got fewer cables than asked, and why),
+        ``statuses`` (the planned cable statuses), ``can_add``,
+        ``suggestions``, ``cell_mm`` and ``scale_source``."""
+        import math
+        from types import SimpleNamespace
+
+        from auth_api import rbac
+
+        from .cable_connect import (
+            FAMILIES,
+            PER_TARGET_MAX,
+            cable_type_for,
+            compatible,
+            free_ports,
+            interface_counts,
+            kind_family,
+            port_of,
+            propose,
+            read_port,
+        )
+        from .cable_routing import ROUTE_MAX, plan_batch, route_data
+
+        family = body.get("family") or "data"
+        if family not in FAMILIES:
+            raise ValidationError({"family": "data, console or power."})
+        per_target = body.get("per_target", 1)
+        if not isinstance(per_target, int) or isinstance(per_target, bool) \
+                or not 1 <= per_target <= PER_TARGET_MAX:
+            raise ValidationError({"per_target": f"1 to {PER_TARGET_MAX}."})
+        sources = self._connect_devices(request, tenant, router, body.get("source"), "source")
+        targets = self._connect_devices(request, tenant, router, body.get("targets"), "targets")
+        names = {str(pk): name for pk, name in [*sources, *targets]}
+        uuids = {str(pk): pk for pk, _n in [*sources, *targets]}
+        exclude = self._port_refs(body.get("exclude_ports"), "exclude_ports")
+        include_mgmt = bool(body.get("include_mgmt"))
+        free = free_ports(uuids.values(), family, include_mgmt=include_mgmt,
+                          exclude=exclude, names=names)
+
+        # Targets nearest the source first: route distance is what the
+        # cables will run, the tile distance a fair stand-in.
+        def at(dev):
+            t = router.tile_for(dev)
+            return (t.x + t.width / 2, t.y + t.height / 2)
+
+        src0 = at(sources[0][0]) if sources else (0, 0)
+        targets.sort(key=lambda r: (
+            round(math.hypot(at(r[0])[0] - src0[0], at(r[0])[1] - src0[1]), 3),
+            natural_key(r[1] or ""), str(r[0]),
+        ))
+
+        short_out: list = []
+        errors: dict = {}
+        raw_pairs = body.get("pairs")
+        pairs: list = []
+        if raw_pairs is None:
+            device_pairs = [
+                (str(s), str(t)) for s, _sn in sources for t, _tn in targets if s != t
+            ]
+            sizes = interface_counts(uuids.values())
+            proposed, short = propose(
+                device_pairs, free, per_target=per_target, sizes=sizes, limit=ROUTE_MAX,
+            )
+            pairs = [(f"pair-{i + 1}", a, b) for i, (a, b) in enumerate(proposed)]
+            short_out = [
+                {**s, "a_device": {"id": s["a_device"], "name": names.get(s["a_device"], "")},
+                 "b_device": {"id": s["b_device"], "name": names.get(s["b_device"], "")}}
+                for s in short
+            ]
+        else:
+            if not isinstance(raw_pairs, list) or len(raw_pairs) > ROUTE_MAX:
+                raise ValidationError({"pairs": f"A list of at most {ROUTE_MAX} pairs."})
+            free_ids = {(p.kind, p.id) for ports in free.values() for p in ports}
+            used: set = set()
+            for i, item in enumerate(raw_pairs):
+                if not isinstance(item, dict):
+                    raise ValidationError({"pairs": "Each pair is {key, a, b}."})
+                key = str(item.get("key") or f"pair-{i + 1}")[:64]
+                ends = []
+                problem = ""
+                for side in ("a", "b"):
+                    ref = item.get(side)
+                    if not isinstance(ref, dict) or kind_family(ref.get("kind")) != family:
+                        raise ValidationError({"pairs": f"Each side is a {family} port."})
+                    obj = read_port(ref["kind"], ref.get("id"))
+                    dev = str(obj.device_id) if obj is not None else None
+                    if obj is None or dev not in names:
+                        raise ValidationError({"pairs": [f"Unknown port {ref.get('id')}."]})
+                    port = port_of(ref["kind"], obj, names[dev])
+                    ends.append(port)
+                    if (port.kind, port.id) not in free_ids:
+                        problem = problem or f"{port.device_name} · {port.name} is not free."
+                    elif (port.kind, port.id) in used:
+                        problem = problem or f"{port.device_name} · {port.name} is in two cables."
+                    used.add((port.kind, port.id))
+                ok, why = compatible(*ends)
+                if not ok:
+                    problem = problem or why
+                if problem:
+                    errors[key] = problem
+                pairs.append((key, ends[0], ends[1]))
+
+        virtual = []
+        for key, a, b in pairs:
+            if key in errors:
+                continue
+            router.add_planned(key, [("A", uuids[a.device], a.name),
+                                     ("B", uuids[b.device], b.name)])
+            virtual.append(SimpleNamespace(pk=key))
+        routes, suggestions = plan_batch(
+            router, virtual, choices=choices, suggest=bool(body.get("suggest_runs")),
+            keep_runs=body.get("keep_runs", True) is not False, level=run_level,
+        )
+        ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+        out = []
+        for key, a, b in pairs:
+            route = routes.get(key)
+            row = {
+                "key": key, "a": a.data(), "b": b.data(), "type": cable_type_for(a, b),
+                "route": None, "via": None, "suggestions": [], "reason": "",
+                "error": errors.get(key, ""),
+            }
+            if route is not None:
+                row["route"] = route_data(route, dx=-ox, dy=-oy)
+                row["via"] = route["via"]
+                row["suggestions"] = route.get("suggestions", [])
+            elif key not in errors:
+                row["reason"] = "Both ends stand on one tile."
+            out.append(row)
+        drawing = getattr(plan, "drawing", None)
+        return Response({
+            "pairs": out,
+            "short": short_out,
+            "statuses": self._planned_statuses(tenant),
+            "can_add": rbac.has_action(request.user, tenant, "cable", "add"),
+            "suggestions": [
+                {
+                    **s,
+                    "points": [[x - ox, y - oy] for x, y in s["points"]],
+                    "run": [[x - ox, y - oy] for x, y in s["run"]] if s["run"] else None,
+                }
+                for s in suggestions
+            ],
+            "cell_mm": plan.cell_mm,
+            "scale_source": drawing.scale_source if drawing is not None else None,
+        })
+
+    @action(detail=True, methods=["get"], url_path="cable-plan/ports")
+    def cable_plan_ports(self, request, pk=None):
+        """Free ports of one device for Connect to…'s port picker:
+        ``?device=<id>&family=data&for=<kind>:<id>&include_mgmt=1&exclude=
+        <kind>:<id>,…``. With ``for`` (the port at the other end), only the
+        ports a direct cable may join to it. The device must be the
+        tenant's and one the user may view. Answers ``{"ports": [...]}``."""
+        from auth_api import rbac
+
+        from .cable_connect import FAMILIES, compatible, free_ports, port_of, read_port
+        from .models import Device
+
+        self.get_object()
+        tenant = self._tenant_or_403()
+        q = request.query_params
+        family = q.get("family") or "data"
+        if family not in FAMILIES:
+            raise ValidationError({"family": "data, console or power."})
+
+        def visible_device(dev_id):
+            try:
+                d = Device.objects.filter(pk=dev_id, tenant=tenant).first()
+            except (DjangoValidationError, ValueError, TypeError):
+                return None
+            if d is None or not (
+                request.user.is_superuser
+                or rbac.ViewableRows(request.user, tenant).may_view("device", d.pk)
+            ):
+                return None
+            return d
+
+        device = visible_device(q.get("device"))
+        if device is None:
+            raise ValidationError({"device": "Unknown device."})
+        exclude = []
+        for part in (q.get("exclude") or "").split(","):
+            kind, _sep, pid = part.partition(":")
+            if kind and pid:
+                exclude.append((kind, pid))
+        other = None
+        if q.get("for"):
+            kind, _sep, pid = q["for"].partition(":")
+            obj = read_port(kind, pid)
+            far = visible_device(obj.device_id) if obj is not None else None
+            if far is None:
+                raise ValidationError({"for": "Unknown port."})
+            other = port_of(kind, obj, far.name)
+        ports = free_ports([device.pk], family, include_mgmt=q.get("include_mgmt") == "1",
+                           exclude=exclude, names={str(device.pk): device.name})
+        rows = ports.get(str(device.pk), [])
+        if other is not None:
+            rows = [p for p in rows if compatible(p, other)[0]]
+        return Response({"ports": [p.data() for p in rows]})
 
     @action(detail=True, methods=["get"], url_path="scene")
     def scene(self, request, pk=None):
@@ -13073,6 +13362,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         total += len(paths_spec["upsert"]) + len(paths_spec["delete"])
         trays_spec = self._bulk_trays_spec(request.data.get("trays"))
         total += len(trays_spec)
+        cables_spec = self._bulk_cables_spec(request.data.get("cables"))
+        total += len(cables_spec)
+        # Routes of the cables this save makes name them by their key: they
+        # are written after them, with no version to check.
+        new_keys = {c["key"] for c in cables_spec}
+        new_paths = [p for p in paths_spec["upsert"] if str(p["cable"]) in new_keys]
+        paths_spec["upsert"] = [
+            p for p in paths_spec["upsert"] if str(p["cable"]) not in new_keys
+        ]
         if total > self.BULK_MAX:
             raise ValidationError(
                 {"detail": f"At most {self.BULK_MAX} changes in one save."}
@@ -13151,7 +13449,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
             # New trays (runs kept from "After placing"), then the cable
             # paths: a route computed here sees the tiles and trays saved.
             tray_keys = self._bulk_trays(request, plan, crop, trays_spec)
-            paths_out = self._bulk_cable_paths(request, plan, crop, paths_spec, tray_keys)
+            # New cables (Connect to…), then every route.
+            made = self._bulk_cables(request, cables_spec)
+            paths_spec["upsert"] += new_paths
+            paths_out = self._bulk_cable_paths(
+                request, plan, crop, paths_spec, tray_keys, new_cables=made,
+            )
         from auth_api import rbac
 
         tenant = self._tenant_or_403()
@@ -13191,6 +13494,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
             out["cable_paths"] = paths_out
         if trays_spec:
             out["trays"] = [{"key": k, "id": v} for k, v in tray_keys.items()]
+        if cables_spec:
+            out["cables"] = [{"key": k, "id": str(c.pk)} for k, c in made.items()]
         return Response(out)
 
     @staticmethod
@@ -13287,6 +13592,75 @@ class FloorPlanViewSet(TenantScopedViewSet):
         return out
 
     @staticmethod
+    def _bulk_cables_spec(raw) -> list:
+        """``bulk/``'s ``cables``: ``{"create": [{"key", ...cable payload}]}``
+        - new cables (Connect to…), each with the draft's ``key`` the
+        save's ``cable_paths`` may name as ``cable``."""
+        from .cable_routing import ROUTE_MAX
+
+        if raw in (None, ""):
+            return []
+        if not isinstance(raw, dict) or not isinstance(raw.get("create") or [], list):
+            raise ValidationError({"cables": "An object with a create list."})
+        rows = raw.get("create") or []
+        if len(rows) > ROUTE_MAX:
+            raise ValidationError({"cables": f"At most {ROUTE_MAX} new cables in one save."})
+        keys = set()
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("key"), str) \
+                    or not item["key"]:
+                raise ValidationError({"cables": "Each new cable has its key."})
+            if item["key"] in keys:
+                raise ValidationError({"cables": f"Key {item['key']} twice."})
+            keys.add(item["key"])
+        return rows
+
+    def _bulk_cables(self, request, rows) -> dict:
+        """Make a ``bulk/`` save's new cables (inside its transaction): each
+        validated as ``POST /api/cables/bulk-create/`` validates it, in a
+        status that means planned work, and one the user may add - both
+        ends inside their cable grant's sites. Any error writes nothing:
+        a 400 with ``cables``, one error object per cable in order.
+        Answers ``{key: cable}``."""
+        from auth_api import rbac
+
+        from .cable_scope import can_act_on_cable
+
+        if not rows:
+            return {}
+        tenant = self._tenant_or_403()
+        user = request.user
+        if not rbac.has_action(user, tenant, "cable", "add"):
+            raise PermissionDenied("You may not add cables.")
+        payloads = [{k: v for k, v in r.items() if k != "key"} for r in rows]
+        sers, errors = validate_cable_rows(
+            payloads,
+            lambda row: CableSerializer(data=row, context={"request": request}),
+        )
+        index = {id(p): i for i, p in enumerate(payloads)}
+        for ser in sers:
+            i = index[id(ser.initial_data)]
+            status = ser.validated_data.get("status")
+            if status is None or not status.is_planned:
+                errors[i] = {
+                    **errors[i], "status_id": ["Pick a status that means planned work."],
+                }
+        if any(errors):
+            raise ValidationError({
+                "detail": "Nothing was saved - fix the marked cables.",
+                "cables": errors,
+            })
+        out = {}
+        for row, ser in zip(rows, sers, strict=True):
+            cable = ser.save(tenant=tenant)
+            if not can_act_on_cable(user, tenant, "add", cable):
+                raise PermissionDenied(
+                    "Your cable permission does not cover every termination site."
+                )
+            out[row["key"]] = cable
+        return out
+
+    @staticmethod
     def _cable_paths_spec(raw) -> dict:
         """``bulk/``'s ``cable_paths``: ``{"upsert": [...], "delete": [...]}``.
         An upsert is ``{"cable", "legs"?, "kind"?, "tray_order"?, "version"?,
@@ -13317,19 +13691,23 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         return out
 
-    def _path_cables(self, request, plan, spec) -> dict:
+    def _path_cables(self, request, plan, spec, known=None) -> dict:
         """The cables a ``cable_paths`` spec names, by id string: the plan's
         tenant's cables the user may view. An unknown or unseen one is a 400
-        that reads alike."""
+        that reads alike. ``known`` (key → cable) are the cables the same
+        save made."""
         import uuid as _uuid
 
         from .cable_scope import viewable_cable_ids
         from .models import Cable
 
         tenant = self._tenant_or_403()
+        known = known or {}
         ids = {}
         for op in ("upsert", "delete"):
             for item in spec[op]:
+                if str(item["cable"]) in known:
+                    continue
                 try:
                     ids[str(item["cable"])] = _uuid.UUID(str(item["cable"]))
                 except ValueError:
@@ -13337,7 +13715,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         {"cable_paths": f"Unknown cable {item['cable']}."}
                     ) from None
         if not ids:
-            return {}
+            return dict(known)
         found = {
             c.pk: c for c in Cable.objects.filter(tenant=plan.tenant, pk__in=ids.values())
         }
@@ -13347,7 +13725,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             if pk_ not in seen:
                 raise ValidationError({"cable_paths": f"Unknown cable {key}."})
             out[key] = found[pk_]
-        return out
+        return {**out, **known}
 
     def _cable_path_conflicts(self, request, plan, crop, spec) -> list:
         """The cable paths (and cable lengths) of a ``bulk/`` save changed
@@ -13398,7 +13776,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         })
         return out
 
-    def _bulk_cable_paths(self, request, plan, crop, spec, tray_keys=None) -> list:
+    def _bulk_cable_paths(self, request, plan, crop, spec, tray_keys=None,
+                          new_cables=None) -> list:
         """Write a ``bulk/`` save's cable paths (inside its transaction).
 
         Each cable must be one the user may change, and each path row one
@@ -13409,7 +13788,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         the payload. ``write_length`` fills the cable's length when it is
         blank or computed; ``replace_length`` also replaces one a person
         entered. A ``tray_order`` entry may be the key of a tray the same
-        save creates (``tray_keys``). Answers the paths written."""
+        save creates (``tray_keys``); a ``cable`` the key of a cable it made
+        (``new_cables``, checked for ``add`` when made). Answers the paths
+        written."""
         from auth_api import rbac
 
         from .cable_routing import (
@@ -13426,9 +13807,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return []
         user = request.user
         tenant = self._tenant_or_403()
-        cables = self._path_cables(request, plan, spec)
+        cables = self._path_cables(request, plan, spec, known=new_cables)
+        made = {c.pk for c in (new_cables or {}).values()}
         for cable in {c.pk: c for c in cables.values()}.values():
-            if not can_act_on_cable(user, tenant, "change", cable):
+            if cable.pk not in made and not can_act_on_cable(user, tenant, "change", cable):
                 raise PermissionDenied(f"You may not change {cable}.")
 
         def allowed(action, row):

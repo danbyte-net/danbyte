@@ -972,8 +972,9 @@ Room tool draws: a 3 × 3 area at the point, selected to resize and link),
 point, its text ready to type) and **Fit to view**. In View, those who may
 edit get **Edit here**, which switches to Edit.
 
-The menu offers what fits what is under the pointer: an area adds **Add
-walls around this**; a wall offers **Add door here**, **Add bend here**,
+The menu offers what fits what is under the pointer: a placed device, rack
+or cabinet adds **Connect to…** (in Edit, for those who may add cables); an
+area adds **Add walls around this**; a wall offers **Add door here**, **Add bend here**,
 **Split here**, **Join walls** and **Delete wall**, a door **Flip swing** and
 **Delete door**; with the walls tool a raised floor offers **Delete raised
 floor**, and with the trays tool a tray the same as a wall, less the door.
@@ -1186,7 +1187,8 @@ it, next to the inspector: **Set room** (see above), **Show as photo** or
 areas and labels), **Lock** (areas and labels), **Link room** (areas),
 **Opens…** (areas and labels, see [Opens links](#opens-links)),
 **Add walls around this** (areas; **Add walls around these** with several
-picked) and **Delete**. A selected wall carries **Add door** and **Delete**, a
+picked), **Connect to…** (a device, rack or cabinet, for those who may add
+cables; see [Connect to…](#connect-to-plan-new-cables)) and **Delete**. A selected wall carries **Add door** and **Delete**, a
 door **Flip swing** and **Delete**, a tray or raised floor **Delete**, and two
 walls or trays picked that touch **Join**.
 
@@ -1922,8 +1924,9 @@ plan: **Set room** when the object stands in another room's area, and
 **Route N cables** when it has cables you may change whose far end stands on
 this floor - a device's own tile, or the rack or cabinet holding it. A rack
 or cabinet counts the cables of the devices in it; a cable between two of
-them on one tile is left out. Nothing changes until a button is pressed;
-× dismisses the card.
+them on one tile is left out. **Connect to…** plans new cables from what
+was placed ([below](#connect-to-plan-new-cables)). Nothing changes until a
+button is pressed; × dismisses the card.
 
 **Route N cables** opens the **Route cables** panel. The routes are worked
 out against the draft as it stands - unsaved tiles, moves, removals and
@@ -1973,6 +1976,59 @@ into the draft as one undo step; they draw on the plan until **Save** writes
 them with the rest of the plan, and **Discard** drops them. A cable you may
 not change cannot be ticked; cables you may not view are not listed.
 
+#### Connect to…: plan new cables
+
+**Connect to…** plans new cables from a placed device, rack or cabinet to
+others on this floor. It is on the tile's [floating
+toolbar](#the-floating-toolbar), its right-click menu and the **After
+placing** card, for editors who may add cables.
+
+- **Targets.** Click tiles on the plan (**Pick on plan** is on when the
+  panel opens; a second click takes one back), or tick them in the list
+  below, searchable, with the objects in the same room area first and then
+  the nearest. A rack or cabinet stands for the devices in it. Objects you
+  may not view, and devices that are not placed on this plan, are never
+  offered.
+- **What to connect.** **Network** (interfaces and patch-panel ports),
+  **Console** or **Power**; **Cables each** (1-8) to every target device;
+  **Management ports** to offer management-only interfaces too.
+- **The proposal.** Danbyte pairs free ports only - no cable on them, not
+  marked connected, not reserved, an interface enabled and physical - and
+  only ports a direct cable may join: kinds a cable may join at all (as on
+  the cable form), the same media (copper with copper, fibre with fibre or
+  an empty transceiver cage, DAC with DAC or a cage, a cage with a cage of
+  the same family - SFP or QSFP; a type that says nothing matches
+  anything) and the same speed when both are known (from the interface
+  type, else its speed).
+- **Which ports first.** Between two switch-sized devices (8 or more
+  physical interfaces) - an uplink - ports marked **Uplink** come first,
+  then the faster ones, then the last ports by number. Otherwise the
+  smaller device gives its fastest port and the switch its lowest free one,
+  its uplinks last. The same choice gives the same pairs every time; a port
+  is used once. Device pairs that got fewer cables than asked are listed
+  with the reason (*No free ports*, *No compatible free ports*).
+- **Review.** Each pair shows `device · port → device · port`, how it runs
+  and its length. The pencil changes either port, from a list of that
+  device's free ports that fit the other end; × drops the pair. The cables
+  draw on the plan as **previews**, routed like existing cables - through
+  the trays, or **Suggest runs** (kept as a tray by default) where no tray
+  path serves. Patch-panel paths are not followed: these are direct cables.
+- **The cables.** **Status** lists only statuses marked *Planned* that
+  apply to cables, the first by default. With none, the panel says so and
+  links to **Add one** - nothing is seeded. **Type** is *Suggested* by
+  default (Cat6 for copper, a passive DAC for DAC and cages, Power for
+  power; fibre is left to you), **Color** is the jacket colour. Cables
+  have no label scheme to follow, so new ones are left unlabelled.
+
+**Add N cables** puts the cables and their routes into the draft as one
+undo step: they draw on the plan as planned runs (long dash) until **Save**
+makes them, together with the rest of the plan, and **Discard** drops
+them. Save makes every cable through the same checks as
+[creating several cables](../dcim/cabling.md#many-at-once) - all or
+nothing: a port cabled by someone else since, or a status that no longer
+means planned, writes nothing and names the cable. Each route's length is
+written to its cable as computed.
+
 #### API
 
 | Endpoint | |
@@ -1980,7 +2036,9 @@ not change cannot be ticked; cables you may not view are not listed.
 | `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
 | `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
-| `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). |
+| `POST /api/floor-plans/{id}/cable-plan/` with `mode: "new"` | Connect to…: a preview of new cables; nothing is stored. Body: `source` and `targets` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, each at most 64; devices you may view and that are placed on this plan), `family` (`data`, `console`, `power`; default `data`), `per_target` (1-8, default 1), `include_mgmt`, `exclude_ports` (`[{kind, id}]` the draft's new cables take), the unsaved draft as above, and `choices` (by pair key), `suggest_runs`, `keep_runs`, `run_level`. Without `pairs` the server proposes; with `pairs` (`[{"key", "a": {kind, id}, "b": {kind, id}}]`, at most 256) it checks and routes those, each pair failing a check carrying `error`. Answers `pairs` (`[{key, a, b, type, route, via, suggestions, reason, error}]`, each port `{kind, id, name, device, device_name, type, media, connector, speed_mbps, uplink, mgmt_only, poe_mode}`), `short` (`[{a_device, b_device, made, reason}]`), `statuses` (the tenant's planned cable statuses), `can_add` (cable · add), `suggestions`, `cell_mm` and `scale_source`. Needs view on the plan. |
+| `GET /api/floor-plans/{id}/cable-plan/ports/` | Connect to…'s port picker: `?device=<id>&family=&for=<kind>:<id>&include_mgmt=1&exclude=<kind>:<id>,...` - the device's free ports in the family, only those a direct cable may join to the `for` port when given. The device (and the `for` port's) must be the tenant's and one you may view. Answers `{"ports": [...]}`. |
+| `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
 | `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`. |
 

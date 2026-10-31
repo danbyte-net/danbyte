@@ -12732,6 +12732,9 @@ export interface FloorPlanBulkPayload {
     upsert?: CablePathUpsert[]
     delete?: (string | { cable: string; version?: string })[]
   }
+  /** New cables (Connect to…), made before the routes, in a planned
+   * status; all or nothing. */
+  cables?: { create: BulkCableCreate[] }
   /** New trays - runs kept from "After placing". `key` is the draft's id
    * for one, which `tray_order` of the paths saved with it may name. A
    * tray with no name is called "Run N". */
@@ -12782,6 +12785,8 @@ export interface FloorPlanBulkResult {
   cable_paths?: StoredCablePath[]
   /** The trays the save made, by the key each was sent with. */
   trays?: { key: string; id: string }[]
+  /** The cables the save made, by the key each was sent with. */
+  cables?: { key: string; id: string }[]
   walls?: FloorPlanWall[]
   raised_floors?: RaisedFloorArea[]
   /** The plan's trays afterwards. */
@@ -13128,6 +13133,92 @@ export interface CablePlanRequest {
   suggest_runs?: boolean
   keep_runs?: boolean
   run_level?: "overhead" | "underfloor"
+}
+
+/** What kind of cable Connect to… plans: network (interfaces and panel
+ * ports), console or power. */
+export type ConnectFamily = "data" | "console" | "power"
+
+/** A port as Connect to… pairs it. `media` is "" when the type does not
+ * say; `cage` is an empty transceiver cage. */
+export interface ConnectPort {
+  kind: string
+  id: string
+  name: string
+  device: string
+  device_name: string
+  type: string
+  media: "" | "copper" | "fibre" | "dac" | "cage"
+  connector: string
+  speed_mbps: number | null
+  uplink: boolean
+  mgmt_only: boolean
+  poe_mode: string
+}
+
+/** A port pair - a new cable - in a Connect to… preview. */
+export interface ConnectPair {
+  key: string
+  a: ConnectPort
+  b: ConnectPort
+  /** A cable type that fits the pair, or "". */
+  type: string
+  route: StoredCablePath | null
+  via: CablePlanVia | null
+  suggestions: string[]
+  /** Why there is no route (both ends on one tile). */
+  reason: string
+  /** Why a pair the user edited is not valid; "" when it is. */
+  error: string
+}
+
+/** POST /api/floor-plans/<id>/cable-plan/ with `mode: "new"`. */
+export interface ConnectRequest extends Omit<
+  CablePlanRequest,
+  "cable_ids" | "objects"
+> {
+  mode: "new"
+  source: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  targets: { kind: "device" | "rack" | "cabinet"; id: string }[]
+  family?: ConnectFamily
+  per_target?: number
+  include_mgmt?: boolean
+  /** Ports the draft's new cables already take. */
+  exclude_ports?: { kind: string; id: string }[]
+  /** The pairs as the user edited them; without, the server proposes. */
+  pairs?: {
+    key: string
+    a: { kind: string; id: string }
+    b: { kind: string; id: string }
+  }[]
+}
+
+export interface ConnectPreview {
+  pairs: ConnectPair[]
+  /** Device pairs that got fewer cables than asked, and why. */
+  short: {
+    a_device: { id: string; name: string }
+    b_device: { id: string; name: string }
+    made: number
+    reason: string
+  }[]
+  /** The tenant's planned cable statuses - what a new cable may take. */
+  statuses: { id: string; name: string; color: string }[]
+  can_add: boolean
+  suggestions?: CablePlanSuggestion[]
+  cell_mm: number
+  scale_source: string | null
+}
+
+/** A new cable in a floor plan's save (Connect to…): the cable payload
+ * with the draft's `key`, which `cable_paths` may name as `cable`. */
+export interface BulkCableCreate {
+  key: string
+  a: { kind: string; id: string }[]
+  b: { kind: string; id: string }[]
+  type?: string
+  color?: string
+  status_id: string
 }
 
 /** One end of a plan's cable: the device and port, or - on a device the

@@ -568,6 +568,7 @@ export function useTileEdits({
           update: trayPart.update,
           delete: trayPart.delete,
         },
+        ...(cablePart.cables ? { cables: cablePart.cables } : {}),
         ...(cablePart.cable_paths
           ? { cable_paths: cablePart.cable_paths }
           : {}),

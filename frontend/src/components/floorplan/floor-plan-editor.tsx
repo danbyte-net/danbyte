@@ -34,7 +34,15 @@ import {
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
-import { applyRoutes, draftPlanInput, withDraftRoutes } from "./cable-draft"
+import {
+  applyNewCables,
+  applyRoutes,
+  draftCablePorts,
+  draftPlanInput,
+  withDraftRoutes,
+} from "./cable-draft"
+import { ConnectCablesPanel, connectable } from "./connect-cables"
+import type { ConnectApply, ConnectSource } from "./connect-cables"
 import { AreaLegend, areaLegendEntries, areaTypesInUse } from "./area-legend"
 import { DocumentRoutesPanel } from "./document-routes-panel"
 import { CELL } from "./floor-canvas"
@@ -221,6 +229,10 @@ export function FloorPlanEditor({
   const [afterPlace, setAfterPlace] = useState<AfterPlace | null>(null)
   const [placeCablesOpen, setPlaceCablesOpen] = useState(false)
   const [trayPick, setTrayPick] = useState<FloorCanvasProps["trayPick"]>()
+  // Connect to…: new cables from these objects, and the objects being
+  // picked on the plan as their targets.
+  const [connect, setConnect] = useState<ConnectSource[] | null>(null)
+  const [tilePick, setTilePick] = useState<FloorCanvasProps["tilePick"]>()
   // Update routes: the panel re-routing cables against the draft - after a
   // move (`rev`: the move's step, which Apply joins), from a route's
   // popover or for every out-of-date route (`rev` null: a step of its own).
@@ -644,6 +656,53 @@ export function FloorPlanEditor({
     setReroute(null)
     setReroutePrompt(null)
   }
+  // Connect to…: planned only by those who may add cables.
+  const canConnect = editing && canDo("cable", "add")
+  /** Open Connect to… from these placed objects. */
+  const openConnect = (sources: ConnectSource[]) => {
+    if (!sources.length) return
+    setPlaceCablesOpen(false)
+    setDocRoutesOpen(false)
+    setReroute(null)
+    setConnect(sources)
+  }
+  const connectFromTile = (tile: FloorPlanTile) => {
+    const o = connectable(tile)
+    if (o) openConnect([{ ...o, tileId: tile.id }])
+  }
+  const connectInput = useMemo(
+    () =>
+      connect
+        ? draftPlanInput({
+            tiles: ed.tiles,
+            dirtyIds: ed.dirtyIds,
+            deletedIds: ed.deletedIds,
+            cd: ed.draft.cables,
+            isTemp,
+            trays: draftTrays,
+          })
+        : {},
+    // The draft as it was when the panel opened.
+    [connect]
+  )
+  const connectTaken = useMemo(
+    () => draftCablePorts(ed.draft.cables),
+    [ed.draft.cables]
+  )
+  /** Apply Connect to…: the new cables and their routes into the draft,
+   * one undo step; Save makes them. */
+  const applyConnect = (a: ConnectApply) => {
+    ed.draft.setCables((cd) =>
+      applyNewCables(cd, { ...a, trays, newId: tempId })
+    )
+    setConnect(null)
+    setAfterPlace(null)
+    toast.info(
+      a.pairs.length === 1
+        ? "1 cable added - Save makes it"
+        : `${a.pairs.length} cables added - Save makes them`
+    )
+  }
   // Undoing (or redoing past) the move closes its panel.
   useEffect(() => {
     if (reroute?.rev != null && reroutePrompt?.rev !== reroute.rev)
@@ -1046,11 +1105,13 @@ export function FloorPlanEditor({
               cablePaths={drawnCablePaths}
               cableRoutes={cableRoutes}
               cablePreviews={
-                docRoutesOpen || placeCablesOpen || reroute
+                docRoutesOpen || placeCablesOpen || reroute || connect
                   ? cablePreviews
                   : undefined
               }
               trayPick={placeCablesOpen || reroute ? trayPick : undefined}
+              tilePick={connect ? tilePick : undefined}
+              onConnectTile={canConnect ? connectFromTile : undefined}
               onRerouteCable={
                 editing ? (cid) => openReroute([cid], null) : undefined
               }
@@ -1106,6 +1167,7 @@ export function FloorPlanEditor({
                       liveView ? undefined : structure.wallsAroundAreas
                     }
                     areaPicks={[...ed.areaSel]}
+                    onConnect={canConnect ? connectFromTile : undefined}
                   />
                 ) : undefined
               }
@@ -1142,7 +1204,7 @@ export function FloorPlanEditor({
               overlays={
                 editing ? (
                   <>
-                    {afterPlace && !placeCablesOpen && (
+                    {afterPlace && !placeCablesOpen && !connect && (
                       <AfterPlacingCard
                         room={afterPlace.room}
                         roomBusy={setRooms.isPending}
@@ -1155,6 +1217,19 @@ export function FloorPlanEditor({
                           setReroute(null)
                           setPlaceCablesOpen(true)
                         }}
+                        onConnect={
+                          canConnect && afterPlace.objects.length
+                            ? () =>
+                                openConnect(
+                                  afterPlace.objects.flatMap((o) => {
+                                    const t = tiles.find(
+                                      (x) => x.linked?.id === o.id
+                                    )
+                                    return t ? [{ ...o, tileId: t.id }] : []
+                                  })
+                                )
+                            : undefined
+                        }
                         onDismiss={() => setAfterPlace(null)}
                       />
                     )}
@@ -1205,6 +1280,22 @@ export function FloorPlanEditor({
               onTrayPick={setTrayPick}
               onApply={applyReroute}
               onClose={() => setReroute(null)}
+            />
+          )}
+          {editing && !view3d && connect && (
+            <ConnectCablesPanel
+              key={connect.map((s) => s.tileId).join()}
+              planId={id}
+              sources={connect}
+              tiles={tiles}
+              shapes={ed.shapes}
+              trays={planTrays}
+              input={connectInput}
+              taken={connectTaken}
+              onTilePick={setTilePick}
+              onPreviews={setCablePreviews}
+              onApply={applyConnect}
+              onClose={() => setConnect(null)}
             />
           )}
           {editing && !view3d && docRoutesOpen && (

@@ -1,9 +1,11 @@
 import type {
+  BulkCableCreate,
   BulkTrayCreate,
   CablePathUpsert,
   CablePlanRequest,
   CablePlanRow,
   CablePlanSuggestion,
+  ConnectPort,
   FloorPlanCablePath,
   FloorPlanTile,
   FloorPlanTray,
@@ -16,6 +18,10 @@ import type {
  * as trays) in the draft as one undo step; the plan's Save writes them in
  * the same bulk call as the tiles (`trays.create`, then `cable_paths`).
  * Discard drops them with the rest of the draft.
+ *
+ * New cables planned with "Connect to…" ride the draft too: Save makes
+ * them (`cables.create`, all or nothing) before their routes, which name
+ * them by their draft key.
  */
 
 /** What a ticked row writes: its route, and its length when ticked -
@@ -34,11 +40,24 @@ export interface DraftCableRoute {
   rev: number
 }
 
+/** A new cable planned with "Connect to…", not made until Save. Its
+ * route (if any) is in `routes` under its `key`. */
+export interface DraftNewCable {
+  key: string
+  a: ConnectPort
+  b: ConnectPort
+  type: string
+  color: string
+  status: { id: string; name: string; color: string }
+}
+
 export interface CableDraft {
-  /** By cable id. */
+  /** By cable id - a new cable's by its draft key. */
   routes: Readonly<Partial<Record<string, DraftCableRoute>>>
   /** New trays (suggested runs kept), with draft ids. */
   trays: readonly FloorPlanTray[]
+  /** New cables (Connect to…). */
+  cables?: readonly DraftNewCable[]
 }
 
 export const EMPTY_CABLE_DRAFT: CableDraft = { routes: {}, trays: [] }
@@ -51,7 +70,27 @@ export function draftRoutes(cd: CableDraft): DraftCableRoute[] {
 }
 
 export function cableDraftDirty(cd: CableDraft | undefined): boolean {
-  return !!cd && (cd.trays.length > 0 || Object.keys(cd.routes).length > 0)
+  return (
+    !!cd &&
+    (cd.trays.length > 0 ||
+      Object.keys(cd.routes).length > 0 ||
+      (cd.cables?.length ?? 0) > 0)
+  )
+}
+
+/** A new cable's name in lists: "sw-a · ge-1 → sw-b · ge-1". */
+export function newCableLabel(c: { a: ConnectPort; b: ConnectPort }): string {
+  return `${c.a.device_name} · ${c.a.name} → ${c.b.device_name} · ${c.b.name}`
+}
+
+/** The ports the draft's new cables take - not offered again. */
+export function draftCablePorts(
+  cd: CableDraft | undefined
+): { kind: string; id: string }[] {
+  return (cd?.cables ?? []).flatMap((c) => [
+    { kind: c.a.kind, id: c.a.id },
+    { kind: c.b.kind, id: c.b.id },
+  ])
 }
 
 /** A row's ticks in the panel. */
@@ -169,6 +208,71 @@ export function applyRoutes(
   return { routes, trays: [...cd.trays, ...made] }
 }
 
+/**
+ * The draft with new cables (Connect to…): one per pair, in the status,
+ * type and colour picked, each routed as previewed - its length written
+ * from the route - and the runs it uses kept as trays. One step: undo
+ * takes them all back. `newId` names the cables and trays in the draft.
+ */
+export function applyNewCables(
+  cd: CableDraft,
+  {
+    pairs,
+    type,
+    color,
+    status,
+    suggestions = [],
+    trays,
+    newId,
+  }: {
+    pairs: readonly {
+      a: ConnectPort
+      b: ConnectPort
+      route: StoredCablePath | null
+      type?: string
+    }[]
+    type: string | null
+    color: string
+    status: DraftNewCable["status"]
+    suggestions?: readonly CablePlanSuggestion[]
+    trays: readonly { name: string }[]
+    newId: () => string
+  }
+): CableDraft {
+  if (!pairs.length) return cd
+  const made: DraftNewCable[] = []
+  const rows: CablePlanRow[] = []
+  const ticks: Partial<Record<string, RouteTicks>> = {}
+  for (const p of pairs) {
+    const key = newId()
+    made.push({
+      key,
+      a: p.a,
+      b: p.b,
+      type: type ?? p.type ?? "",
+      color,
+      status,
+    })
+    if (!p.route) continue
+    rows.push({
+      id: key,
+      label: newCableLabel(p),
+      length: null,
+      length_unit: "m",
+      length_source: "",
+      can_change: true,
+      path: null,
+      route: p.route,
+      reason: "",
+      delta_mm: null,
+      write_length: true,
+    })
+    ticks[key] = { route: true, length: true }
+  }
+  const routed = applyRoutes(cd, { rows, ticks, suggestions, trays, newId })
+  return { ...routed, cables: [...(cd.cables ?? []), ...made] }
+}
+
 const centre = (t: FloorPlanTile): [number, number] => [
   t.x + t.width / 2,
   t.y + t.height / 2,
@@ -187,6 +291,7 @@ export function cableDraftPayload(
   tiles: readonly FloorPlanTile[]
 ): {
   trays?: { create: BulkTrayCreate[] }
+  cables?: { create: BulkCableCreate[] }
   cable_paths?: { upsert: CablePathUpsert[] }
   dropped: string[]
 } {
@@ -247,6 +352,20 @@ export function cableDraftPayload(
           },
         }
       : {}),
+    ...(cd!.cables?.length
+      ? {
+          cables: {
+            create: cd!.cables.map((c) => ({
+              key: c.key,
+              a: [{ kind: c.a.kind, id: c.a.id }],
+              b: [{ kind: c.b.kind, id: c.b.id }],
+              ...(c.type ? { type: c.type } : {}),
+              ...(c.color ? { color: c.color } : {}),
+              status_id: c.status.id,
+            })),
+          },
+        }
+      : {}),
     ...(upsert.length ? { cable_paths: { upsert } } : {}),
     dropped,
   }
@@ -260,6 +379,7 @@ export function withDraftRoutes(
   cd: CableDraft | undefined
 ): FloorPlanCablePath[] {
   if (!cd || !Object.keys(cd.routes).length) return cablePaths
+  const fresh = new Map((cd.cables ?? []).map((c) => [c.key, c]))
   const seen = new Set<string>()
   const out = cablePaths.map((cp) => {
     const r = cd.routes[cp.id]
@@ -269,11 +389,16 @@ export function withDraftRoutes(
   })
   for (const r of draftRoutes(cd)) {
     if (seen.has(r.cable)) continue
+    const c = fresh.get(r.cable)
     out.push({
       id: r.cable,
       label: r.label,
-      color: "",
-      type: "",
+      color: c?.color ?? "",
+      type: c?.type ?? "",
+      // A new cable draws as what it is: planned.
+      ...(c
+        ? { status: { ...c.status, text_color: "", is_planned: true } }
+        : {}),
       path: { ...r.route, version: `draft-${r.rev}` },
       a_tiles: [],
       b_tiles: [],

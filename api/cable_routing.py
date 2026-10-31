@@ -233,6 +233,25 @@ class PlanRouter:
         ):
             self._devices[d.pk] = d
 
+    def add_planned(self, key: str, ends) -> None:
+        """Route a cable that is not made yet (Connect to…) under ``key``:
+        ``ends`` is ``[(end, device id, port name), ...]``. Route it with
+        any object whose ``pk`` is ``key``."""
+        self._terms[key] = list(ends)
+        self.prime_devices(d for _e, d, _p in ends)
+
+    def prime_devices(self, ids) -> None:
+        """Read the devices ``ids`` (where they stand) in one query."""
+        from .models import Device
+
+        wanted = {d for d in ids if d and d not in self._devices}
+        if not wanted:
+            return
+        for d in Device.objects.filter(id__in=wanted).select_related("device_type").only(
+            "id", "rack_id", "cabinet_id", "position", "device_type", "device_type__u_height"
+        ):
+            self._devices[d.pk] = d
+
     def tile_for(self, dev_id):
         """The tile a device is placed by: its own, else its rack's or
         cabinet's. None when it is not on this plan."""

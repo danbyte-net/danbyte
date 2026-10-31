@@ -237,6 +237,14 @@ export interface FloorCanvasProps {
    * tray, in any mode, adds or takes it away; the picked ones show
    * selected. */
   trayPick?: { picked: readonly string[]; onPick: (id: string) => void }
+  /** Picking objects to connect to (Connect to…): a click on a tile, in
+   * any mode, picks it or takes it back; the picked ones show outlined. */
+  tilePick?: {
+    picked: ReadonlySet<string>
+    onPick: (tile: FloorPlanTile) => void
+  }
+  /** "Connect to…" on a placed device's, rack's or cabinet's menu. */
+  onConnectTile?: (tile: FloorPlanTile) => void
   // ── Cable A↔B links ────────────────────────────────────────────────────
   cablePaths?: FloorPlanCablePath[]
   showCableLinks?: boolean
@@ -445,6 +453,8 @@ export function FloorCanvas({
   onFinishDraw,
   trayEditMode = false,
   trayPick,
+  tilePick,
+  onConnectTile,
   cablePaths = NO_CABLES,
   showCableLinks = false,
   highlightCableIds = NO_IDS,
@@ -836,6 +846,11 @@ export function FloorCanvas({
 
   const handleTileDown = (tile: FloorPlanTile, e: React.PointerEvent) => {
     if (e.button !== 0) return
+    if (tilePick) {
+      e.stopPropagation()
+      tilePick.onPick(tile)
+      return
+    }
     // In cable/structure mode (or while editing a tray) tiles are inert.
     if (mode === "cable" || mode === "structure" || editing) return
     // A drawing tool draws over the tile (the press reaches the plan).
@@ -1304,7 +1319,9 @@ export function FloorCanvas({
           live={liveState?.tiles[tile.id]}
           colorBy={colorBy}
           figures={figures?.get(tile.id)}
-          highlighted={!!highlightTileIds?.has(tile.id)}
+          highlighted={
+            !!highlightTileIds?.has(tile.id) || !!tilePick?.picked.has(tile.id)
+          }
           dimmed={!!dimTileIds?.has(tile.id)}
           onPointerDown={(e) => handleTileDown(tile, e)}
           onResizeDown={(e) => handleResizeDown(tile, e)}
@@ -2223,6 +2240,21 @@ export function FloorCanvas({
                       }}
                     >
                       Trace cables here
+                    </DropdownMenuItem>
+                  )}
+                {onConnectTile &&
+                  ctxMenu.tile.linked &&
+                  !ctxMenu.tile.linked.hidden &&
+                  ["device", "rack", "cabinet"].includes(
+                    ctxMenu.tile.linked.kind
+                  ) && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onConnectTile(ctxMenu.tile!)
+                        setCtxMenu(null)
+                      }}
+                    >
+                      Connect to…
                     </DropdownMenuItem>
                   )}
                 {ctxMenu.tile.linked &&
