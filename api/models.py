@@ -10087,6 +10087,13 @@ class FloorPlanLabel(TimestampedModel):
     # Back button made it. It opens that shape's plan; turning the button
     # off deletes it. Copies and clones drop it.
     pair_id = models.UUIDField(null=True, blank=True, db_index=True)
+    # Shown only in this live view of the plan: a back label made for a
+    # view lives on the view's source inside its crop, but is the view's
+    # own button, so neither the source nor its other views draw it.
+    shown_in = models.ForeignKey(
+        FloorPlan, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="view_only_labels",
+    )
 
     class Meta:
         ordering = ["z", "created_at"]

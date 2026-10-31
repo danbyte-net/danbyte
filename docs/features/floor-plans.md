@@ -874,8 +874,10 @@ a room that opens its snapshot.
   write your own text below the switch. Each side's text is its own:
   renaming one never renames the other. The label lands in the target's
   top left - on a live view, on the view's source in the view's top left,
-  so the view shows it - and is an ordinary label there, to move and
-  restyle. Picking another target offers to move the back label with it;
+  shown only in that view (never on the source or its other views) - and
+  is an ordinary label there, to move and restyle. A live view also hides
+  the shapes of its source that open the view itself, so "Go to B1" shows
+  on the main plan and "Go back" in the B1 view. Picking another target offers to move the back label with it;
   clearing the target, turning the switch off or deleting the shape offers
   to delete it. The switch needs the shape saved and permission to change
   the target (a live view's source too); without it, it is disabled and
@@ -990,7 +992,7 @@ colour; labels are 2D only.
 | Call | |
 |---|---|
 | `GET/POST/PATCH/DELETE /api/floor-plan-areas/` | `?floor_plan=<id>`. Write `floor_plan_id`, `shape` (`rect` or `polygon`), `x`, `y`, `width`, `height`, `rotation` (a rectangle: its upright box in cells, inside the grid, turned about its centre), `points` (a polygon: 3-200 `[x, y]` pairs inside the grid that do not cross; its box is worked out), `room_id` or `location_id` (at most one), `area_type_id` (a plain area only; linking a room or location drops it), `label`, `color`, `fill_opacity` (0-100), `border` (`solid`, `dashed`, `none`), `show_name`, `z`, `locked`. Reads `room` (`id`, `name`, `code`, `color`), `location` (`id`, `name`, `color`) and `area_type` (`id`, `name`, `color`, `pattern`, `icon`). |
-| `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `plate_color` (the same tokens, `""` the background), `z`, `locked`. Reads `pair_id`: on a back label, the area or label whose Back button made it. |
+| `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `plate_color` (the same tokens, `""` the background), `z`, `locked`. Reads `pair_id`: on a back label, the area or label whose Back button made it. A back label made for a live view is shown only in that view's `contents/`. |
 | Opens (areas and labels) | Write `opens_id` (a floor plan of the tenant you may view, not the shape's own; `null` clears it; left out, it is kept). Reads `opens` (`id`, `name`, `stack_name`, `kind`, `can_change`) - `null` with `opens_hidden: true` when you may not view the target - and `back_label` (`id`, `floor_plan_id`, `floor_plan_name`, `text`) or `null`. |
 | `POST /api/floor-plans/<id>/back-link/` | A shape's Back button: `{"kind": "area" \| "label", "id", "on": true, "target_id", "text"}` makes the back label on `target_id` (or moves it there, or renames it); `"on": false` deletes it. Needs `floorplan · change` on this plan and on the target (a live view's source too). Answers `{"back_label"}`. |
 | `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |

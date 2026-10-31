@@ -265,6 +265,27 @@ class BackLinkTests(_Fixture):
         shown = self.contents(view)["labels"]
         self.assertEqual([lb["id"] for lb in shown], [str(made.id)])
 
+    def test_a_view_shows_its_back_label_and_hides_its_opener(self):
+        r = self.client.post(f"/api/floor-plans/{self.campus.id}/snapshot/", {
+            "name": "B1 close-up", "mode": "view", "crop": {"x": 6, "y": 0, "w": 6, "h": 4},
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        view = FloorPlan.objects.get(pk=r.json()["id"])
+        # "Go to B1" sits inside the crop and opens the view itself.
+        self.label.opens = view
+        self.label.save()
+        r = self.back({"kind": "label", "id": str(self.label.id), "on": True,
+                       "target_id": str(view.id), "text": "Go back"})
+        self.assertEqual(r.status_code, 200, r.content)
+        made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
+        self.assertEqual(made.floor_plan_id, self.campus.id)
+        self.assertEqual(made.shown_in_id, view.id)
+        in_view = [lb["id"] for lb in self.contents(view)["labels"]]
+        self.assertEqual(in_view, [str(made.id)])
+        on_source = [lb["id"] for lb in self.contents(self.campus)["labels"]]
+        self.assertIn(str(self.label.id), on_source)
+        self.assertNotIn(str(made.id), on_source)
+
     def test_needs_change_on_the_target(self):
         self.login(self.silo_editor())
         r = self.back({"kind": "label", "id": str(self.label.id), "on": True,
