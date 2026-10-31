@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BrickWall,
   BringToFront,
+  Cable,
   Crop,
   DoorOpen,
   Image as ImageIcon,
@@ -441,7 +442,10 @@ export function SelectionToolbar({
   onShapeBackLabel,
   onWallsAround,
   areaPicks = [],
+  onConnect,
 }: {
+  /** "Connect to…" on a placed device, rack or cabinet. */
+  onConnect?: (tile: FloorPlanTile) => void
   /** Walls round these areas (one, or the ones picked). */
   onWallsAround?: (areaIds: string[]) => void
   /** The areas picked with Ctrl/⌘. */
@@ -565,6 +569,18 @@ export function SelectionToolbar({
             </BarIconButton>
           </>
         )}
+        {onConnect &&
+          (l?.kind === "device" ||
+            l?.kind === "rack" ||
+            l?.kind === "cabinet") && (
+            <BarIconButton
+              label="Connect to…"
+              tipSide="top"
+              onClick={() => onConnect(tile)}
+            >
+              <Cable />
+            </BarIconButton>
+          )}
         <BarIconButton
           label="Delete"
           tipSide="top"

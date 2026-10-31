@@ -449,3 +449,29 @@ describe("trays while picking a cable's run", () => {
     expect(onSelectTray).toHaveBeenCalledWith("tr1")
   })
 })
+
+describe("tiles while picking what to connect to", () => {
+  it("a click on a tile picks it, in any mode, instead of selecting it", () => {
+    Element.prototype.setPointerCapture = () => {}
+    const onPick = vi.fn()
+    const onSelect = vi.fn()
+    const t = tile()
+    const { container } = render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[t]}
+        selectedId={null}
+        editable
+        showGrid
+        armed={null}
+        mode="cable"
+        onSelect={onSelect}
+        tilePick={{ picked: new Set(), onPick }}
+      />
+    )
+    const g = container.querySelector<SVGGElement>('g[data-tile="t1"]')!
+    fireEvent.pointerDown(g, { button: 0 })
+    expect(onPick).toHaveBeenCalledWith(t)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})

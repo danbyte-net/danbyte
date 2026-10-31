@@ -180,6 +180,16 @@ while a front / rear / console / power port opens the
 it - **Front ports**, **Rear ports**, **Console** or **Power**
 (`?tab=components&sub=front-ports`, …).
 
+### Planning cables on a floor plan
+
+A floor plan's [Connect to…](../features/floor-plans.md#connect-to-plan-new-cables)
+plans new direct cables between placed objects: it proposes free,
+compatible port pairs (same media and speed, uplinks first), shows their
+routes and lengths on the plan, and makes them on the plan's Save in a
+status marked **Planned** - all or nothing, through the same checks as
+**Many at once**. Mark a cable status *Planned* (Settings → Statuses) to
+use it; none is created for you.
+
 ## Connection shapes
 
 You're not limited to one-to-one patches:
