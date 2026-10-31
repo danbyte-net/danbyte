@@ -2617,7 +2617,25 @@ a device you may not view reads **Hidden**.
 every page, under the plan's title; **Plan on the first page** puts the
 plan with its routes on top, as the Display menu draws it - framed to
 what is drawn on the plan (not the whole grid), with hatches and cables
-sized for the paper so they stay crisp. **CSV** and
+sized for the paper so they stay crisp. Under it go the plan's
+**background image** and its **CAD drawing**, added on the server as the
+floor-plan PDF adds them: the image cut to the framed part (a live view's
+part of its source's image), at most 200 dpi on paper and under the
+sanitiser's image limits (3 MB, 36 megapixels); the drawing in vector, its
+hidden layers left out, at the plan's opacity. A drawing too large for paper
+is left out and the caption under the plan says so.
+
+**Close-ups of the cabled parts** (on by default) adds detail pages after
+the plan when it prints too small to read - a grid cell under 2 mm on
+paper, as a big site plan does. The framed plan is cut into page-sized
+pieces at a cell of 5 mm, and every piece a cable's route, tray or end
+crosses becomes a page (A1, A2, … by row and column): the plan cut to it,
+background and drawing included and its hatches and cables sized for that
+page, and the list of the cables drawn there. The overview carries a
+labelled frame for each, and the schedule's table gains a **Detail** column
+naming the pages a cable is on. At most 20 close-ups, the busiest pieces
+kept; the caption says how many were left out. The schedule's tables follow
+the close-ups. **CSV** and
 **XLSX** are the same rows as a table (one line per cable in each group,
 then the totals) - the table export's files. The PDF obeys the floor-plan
 PDF's limits. Anyone who can view the plan can make it:
@@ -2625,7 +2643,30 @@ PDF's limits. Anyone who can view the plan can make it:
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
-| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default) and `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `detail_svg` (optional: the same plan drawn at the close-ups' scale, 0.125 mm per plan pixel) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm; `on`: whenever the close-ups are larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
+
+### Try it: the demo floor plan
+
+`manage.py seed_floorplan_demo --tenant <slug>` (or
+`make seed-floorplan-demo TENANT=<slug>`) makes an opt-in demo in
+that tenant to try the floor-plan features on: a site **Demo campus** with
+**Building A** (rooms *Server room* and *Office*) and **Building B**, a
+floor plan **Demo HQ** with floors **Ground** and **First** (elevations,
+ceiling heights, 600 mm cells) - rooms drawn as areas with linked walls
+and doors, a raised floor, a hatched *Loading bay* area, labels, a label
+opening the first floor with its Back button there, two racks and a
+cabinet, a riser pair, overhead and underfloor trays, two switches, a
+firewall and two servers, and twelve cables between them: most with a
+stored route, one breakout, one planned, one left inferred, one stale and
+one up the riser - and a site-wide plan **Demo campus overview** whose
+building outlines open the building plan. Demo HQ · Ground shows its cables
+and their labels from the start. The command prints the pages it made; run
+again, it finds what is there and makes only what is missing, so edits made
+since are kept. Its catalog rows (a *Building* location type, *Rack*,
+*Cabinet*, *Riser* and *Device* tile types, a *Loading bay* area type, a
+*Planned run* cable status when the tenant has no planned status, demo
+device types and roles) are made only by this command, never by bootstrap
+or a migration.
 
 ## Tenancy, permissions, audit
 

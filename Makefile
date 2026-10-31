@@ -30,7 +30,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
         fastlane-up fastlane-down fastlane-restart fastlane-logs \
-        migrate makemigrations superuser bootstrap seed-demo seed-fabric shell test check \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
         linger service-user cad-tools
@@ -412,6 +412,11 @@ seed-demo:
 # Opt-in demo leaf/spine EVPN fabric for the routing pages. Idempotent.
 seed-fabric:
 	@$(PY) manage.py seed_fabric
+
+# Opt-in demo floor plan in one tenant: make seed-floorplan-demo TENANT=<slug>.
+seed-floorplan-demo:
+	@test -n "$(TENANT)" || { echo "Usage: make seed-floorplan-demo TENANT=<slug>"; exit 2; }
+	@$(PY) manage.py seed_floorplan_demo --tenant "$(TENANT)"
 
 shell:
 	@$(PY) manage.py shell

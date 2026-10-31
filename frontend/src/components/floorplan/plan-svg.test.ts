@@ -9,7 +9,12 @@ import type {
 } from "@/lib/api"
 
 import { CableRouteCache } from "./cable-draw"
-import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
+import {
+  CLOSEUP_MM_PER_PX,
+  PAPER_INK,
+  planPaperScale,
+  planSvg,
+} from "./plan-svg"
 import type { PlanSvgCables } from "./plan-svg"
 import type { AreaShape } from "./shapes"
 
@@ -450,5 +455,22 @@ describe("a drawing framed to its content", () => {
   it("spaces the hatch for the paper, so it does not turn to a moire", () => {
     const lines = (svg: string) => (svg.match(/<line /g) ?? []).length
     expect(lines(draw(true))).toBeLessThan(lines(draw(false)))
+  })
+
+  it("draws a close-up at its own paper scale, same frame", () => {
+    const closeup = planSvg({
+      plan: big as never,
+      tiles: [],
+      shapes: [hatched],
+      fitContent: {
+        paper: { size: "a4", orientation: "landscape" },
+        mmPerPx: CLOSEUP_MM_PER_PX,
+      },
+    })
+    const vb = (svg: string) => /viewBox="([^"]+)"/.exec(svg)![1]
+    expect(vb(closeup)).toBe(vb(draw(true)))
+    // Larger on paper: the hatch keeps its plan spacing, more lines.
+    const lines = (svg: string) => (svg.match(/<line /g) ?? []).length
+    expect(lines(closeup)).toBeGreaterThan(lines(draw(true)))
   })
 })

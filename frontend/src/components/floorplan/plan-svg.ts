@@ -105,9 +105,15 @@ export interface PlanSvgInput {
   /** The cables, drawn as the canvas draws them at the paper's scale. */
   cables?: PlanSvgCables
   /** Frame the drawing to what is on the plan (plus a margin) instead of
-   * the whole grid, scaled for `paper`: a thumbnail of a big site plan. */
-  fitContent?: { paper: PaperChoice }
+   * the whole grid, scaled for `paper`: a thumbnail of a big site plan.
+   * `mmPerPx` draws it for that paper scale instead (the schedule's
+   * close-ups, CLOSEUP_MM_PER_PX). */
+  fitContent?: { paper: PaperChoice; mmPerPx?: number }
 }
+
+/** Paper mm per plan px on the cable schedule's close-up pages: a cell
+ * 5 mm (api/cable_schedule_plan.py CLOSEUP_MM_PER_PX). */
+export const CLOSEUP_MM_PER_PX = 5 / 40
 
 /** Margin round the content when the drawing is framed to it (cells). */
 const FIT_MARGIN_CELLS = 2
@@ -856,10 +862,12 @@ export function planSvg({
     : null
   let pat = DEFAULT_PATTERN
   if (frame && fitContent) {
-    const mmPerPx = planPaperScale(
-      { grid_width: frame.w / CELL, grid_height: frame.h / CELL },
-      fitContent.paper
-    )
+    const mmPerPx =
+      fitContent.mmPerPx ??
+      planPaperScale(
+        { grid_width: frame.w / CELL, grid_height: frame.h / CELL },
+        fitContent.paper
+      )
     pat = {
       gap: Math.max(PATTERN_GAP, PAPER_PATTERN_GAP_MM / mmPerPx),
       width: Math.max(PATTERN_STROKE.width, PAPER_PATTERN_STROKE_MM / mmPerPx),
