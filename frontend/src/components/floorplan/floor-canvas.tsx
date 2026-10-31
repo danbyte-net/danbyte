@@ -278,9 +278,14 @@ export interface FloorCanvasProps {
   underlay?: React.ReactNode
   /** Drawn in world px over everything else - calibration marks. */
   worldOverlay?: React.ReactNode
-  /** Point-pick mode (drawing calibration): a click anywhere reports its
-   * world px point instead of selecting or painting; a drag still pans. */
-  onPickPoint?: (pt: { x: number; y: number }) => void
+  /** Point-pick mode (drawing calibration, Detect outline): a click
+   * anywhere reports its world px point (and whether Shift was held)
+   * instead of selecting or painting; a drag still pans. A press on an
+   * element marked `data-outline-handle` is left to it. */
+  onPickPoint?: (
+    pt: { x: number; y: number },
+    mods: { shiftKey: boolean }
+  ) => void
   // ── Areas and labels; free placement ─────────────────────────────────
   /** Areas and labels as shown (hidden ones left out). Areas draw over the
    * zones and under the tiles, labels over the tiles. */
@@ -365,6 +370,8 @@ type StructMenu = {
 export interface EmptyActions {
   placeAt?: (at: Pt) => void
   drawAreaAt?: (at: Pt) => void
+  /** Detect outline at the point. */
+  detectAt?: (at: Pt) => void
   addLabelAt?: (at: Pt) => void
   /** Paste what was copied, when anything was. */
   pasteAt?: (at: Pt) => void
@@ -1386,8 +1393,10 @@ export function FloorCanvas({
           }
           if (!onPickPoint) return
           // Picking owns the press: nothing under it selects, moves
-          // or paints. A drag still pans the plan.
+          // or paints. A drag still pans the plan. A corner handle of a
+          // found outline drags itself.
           if (e.button !== 0) return
+          if ((e.target as Element).closest("[data-outline-handle]")) return
           e.stopPropagation()
           setCtxMenu(null)
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -1418,7 +1427,9 @@ export function FloorCanvas({
             svgRef.current &&
             Math.hypot(e.clientX - start.x, e.clientY - start.y) < 5
           )
-            onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY))
+            onPickPoint(toWorld(svgRef.current, e.clientX, e.clientY), {
+              shiftKey: e.shiftKey,
+            })
           handleUp(e)
         }}
         onPointerLeave={(e) => {
@@ -2204,6 +2215,7 @@ export function FloorCanvas({
                   ? [
                       ["Place device here…", emptyActions.placeAt],
                       ["Draw room/area here", emptyActions.drawAreaAt],
+                      ["Detect outline here", emptyActions.detectAt],
                       ["Add label here", emptyActions.addLabelAt],
                       ["Paste", emptyActions.pasteAt],
                     ]

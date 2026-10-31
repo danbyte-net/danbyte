@@ -55,8 +55,9 @@ export function useShapeEdits({
   const topZ = (kind: PlanShape["kind"]) =>
     Math.max(-1, ...shapes.filter((s) => s.kind === kind).map((s) => s.z)) + 1
 
+  /** A new area, selected for the inspector; returns it. */
   const createArea = useCallback(
-    (geom: NewAreaGeometry) => {
+    (geom: NewAreaGeometry): AreaShape => {
       const now = new Date().toISOString()
       const base: AreaShape = {
         kind: "area",
@@ -81,7 +82,7 @@ export function useShapeEdits({
         created_at: now,
         updated_at: now,
       }
-      add(
+      const area: AreaShape =
         geom.shape === "rect"
           ? {
               ...base,
@@ -91,7 +92,8 @@ export function useShapeEdits({
               height: geom.height,
             }
           : { ...base, ...polygonPatch(geom.points) }
-      )
+      add(area)
+      return area
     },
     [shapes, add]
   )

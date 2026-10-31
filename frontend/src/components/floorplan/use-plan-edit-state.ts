@@ -20,6 +20,7 @@ export type EditorTool =
   | "select"
   | "rect"
   | "polygon"
+  | "outline"
   | "label"
   | "tiles"
   | "structure"
@@ -32,6 +33,7 @@ export const TOOL_MODE: Record<EditorTool, EditorMode> = {
   select: "layout",
   rect: "layout",
   polygon: "layout",
+  outline: "layout",
   label: "layout",
   tiles: "layout",
   structure: "structure",
