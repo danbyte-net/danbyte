@@ -303,6 +303,18 @@ own, with **change** on the device. The device's `model_3d` is its own
 model's URL, and `model_3d_effective` is what the room draws -
 `{url, source: "device" | "type", fit, up, front}` - or null.
 
+The card's **Ports** row counts the ports
+[mapped onto the model](device-catalog.md#model-ports) the device draws -
+its type's (*from device type*) while it shows its type's model.
+**Map ports** opens the same editor as the type's, listing this device's own
+components; saving gives the device a mapping of its own, which replaces the
+type's for this device, and **Use type's ports** goes back to the type's. A
+device with its own model maps its own ports or none. `GET` / `PUT
+/api/devices/{id}/model-ports/` read and save it (its `model_ports` field;
+null inherits). In the [3D room](../features/floor-plans.md#port-markers-on-3d-models)
+the mapped ports show on the model in their state colour, and cables end at
+them.
+
 The rows shown in _italics_ above - comments, airflow, cooling, location,
 coordinates, and cluster - are **built-in fields** whose visibility is
 admin-controlled; a device only shows the ones your administrator has enabled.

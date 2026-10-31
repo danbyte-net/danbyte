@@ -90,7 +90,9 @@ export interface Sel {
   /** Set when kind === "port": the clicked photo-port marker. */
   portName?: string
   portKind?: string
-  portSide?: "front" | "rear"
+  /** The photo the marker is on, or "model": a port mapped onto a floor
+   * device's 3D model (FacePorts.model). */
+  portSide?: "front" | "rear" | "model"
 }
 
 /**

@@ -443,6 +443,7 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
           front={d.model_3d_front ?? "+z"}
           canEdit={objCan(d, "change", canDo("devicetype", "change"))}
           queryKey={["device-type", d.id]}
+          typeId={d.id}
         />
       </div>
     </div>

@@ -4,6 +4,7 @@ import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
+import { markersVisible } from "@/lib/model-ports"
 
 import { isCameraMoving } from "./camera-motion"
 import {
@@ -23,6 +24,8 @@ import {
   useDeviceModel,
 } from "./device-model"
 import type { ModelEntry } from "./device-model"
+import { ModelPortMarkers } from "./device-model-port-markers"
+import type { MappedPortPick } from "./device-model-port-markers"
 import { CHECK_COLOR } from "./rack-mesh"
 import type { Sel } from "./rack-mesh"
 import { TextSprite } from "./text-sprite"
@@ -186,6 +189,38 @@ function FacePhoto({
   )
 }
 
+/** A device-local point and direction in the room: the tile's centre and
+ * turn applied, as the device's group places it. */
+export function placedToWorld(
+  p: Pick<Placed, "centre" | "floorY" | "rotY">,
+  at: [number, number, number],
+  normal: [number, number, number]
+): { point: THREE.Vector3; normal: THREE.Vector3 } {
+  const point = new THREE.Vector3(...at)
+    .applyAxisAngle(Y_AXIS, p.rotY)
+    .add(new THREE.Vector3(p.centre[0], p.floorY, p.centre[1]))
+  const n = new THREE.Vector3(...normal)
+    .normalize()
+    .applyAxisAngle(Y_AXIS, p.rotY)
+  return { point, normal: n }
+}
+
+/** Where the camera goes to look at a mapped port: out along its normal,
+ * a little above, the port in the middle of the view. */
+export function portViewpoint(
+  p: Pick<Placed, "centre" | "floorY" | "rotY">,
+  pick: Pick<MappedPortPick, "at" | "normal">
+): { target: THREE.Vector3; position: THREE.Vector3 } {
+  const { point, normal } = placedToWorld(p, pick.at, pick.normal)
+  return {
+    target: point,
+    position: point
+      .clone()
+      .addScaledVector(normal, 0.45)
+      .add(new THREE.Vector3(0, 0.08, 0)),
+  }
+}
+
 /** One placed device up close (or selected, or wearing a model). */
 function PlacedDevice({
   p,
@@ -195,8 +230,11 @@ function PlacedDevice({
   selected,
   ghosted,
   showName,
+  showPorts,
+  selectedPort,
   onSelect,
   onZoom,
+  onFlyTo,
 }: {
   p: Placed
   entry: ModelEntry | null
@@ -205,9 +243,14 @@ function PlacedDevice({
   selected: boolean
   ghosted: boolean
   showName: boolean
+  /** Close enough to draw the ports mapped onto its model. */
+  showPorts: boolean
+  /** The mapped port selected in the room, if it is on this device. */
+  selectedPort: string | null
   onSelect: (sel: Sel) => void
   /** Double-click: frame this device's front at its drawn size. */
   onZoom: (size: { w: number; h: number; d: number }) => void
+  onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const { dev, tile } = p
@@ -268,6 +311,30 @@ function PlacedDevice({
           <mesh position={[0, h / 2, 0]} geometry={sharedBox(w, h, d)}>
             <meshBasicMaterial colorWrite={false} depthWrite={false} />
           </mesh>
+          {showPorts && !ghosted && dev.model_ports && (
+            <ModelPortMarkers
+              deviceId={dev.id}
+              size={fit.size}
+              selectedPort={selectedPort}
+              onSelect={(pk) =>
+                onSelect({
+                  kind: "port",
+                  tileId: tile.id,
+                  deviceId: dev.id,
+                  portName: pk.port.marker,
+                  portKind:
+                    dev.model_ports?.ports.find(
+                      (m) => m.name === pk.port.marker
+                    )?.kind ?? "interface",
+                  portSide: "model",
+                })
+              }
+              onFly={(pk) => {
+                const vp = portViewpoint(p, pk)
+                onFlyTo(vp.target, vp.position)
+              }}
+            />
+          )}
         </>
       ) : (
         <mesh
@@ -430,11 +497,30 @@ export function FloorDevicesLayer({
   // once the camera settles.
   const tiers = useRef(new Map<string, Tier>())
   const [near, setNear] = useState<ReadonlySet<string>>(new Set())
+  // Devices close enough to draw their mapped ports - a tighter ring than
+  // the detail tier, with its own hysteresis (markersVisible).
+  const portsShown = useRef(new Set<string>())
+  const [portsNear, setPortsNear] = useState<ReadonlySet<string>>(new Set())
   useFrame(({ camera }) => {
     if (isCameraMoving()) return
     let changed = false
+    let portsChanged = false
     const next = new Set<string>()
     for (const p of placed) {
+      if (p.dev.model_ports?.ports.length) {
+        const dist = Math.hypot(
+          camera.position.x - p.centre[0],
+          camera.position.y - p.floorY,
+          camera.position.z - p.centre[1]
+        )
+        const was = portsShown.current.has(p.tile.id)
+        const now = markersVisible(dist, was)
+        if (now !== was) {
+          if (now) portsShown.current.add(p.tile.id)
+          else portsShown.current.delete(p.tile.id)
+          portsChanged = true
+        }
+      }
       const half = p.box ? Math.hypot(p.box.w, p.box.h, p.box.d) / 2 : 0.5
       const dist =
         Math.hypot(
@@ -451,6 +537,7 @@ export function FloorDevicesLayer({
       if (t === "detail") next.add(p.tile.id)
     }
     if (changed) setNear(next)
+    if (portsChanged) setPortsNear(new Set(portsShown.current))
   })
 
   const flyTo = (p: Placed, size: { w: number; h: number; d: number }) => {
@@ -519,8 +606,17 @@ export function FloorDevicesLayer({
             selected={selection?.tileId === p.tile.id}
             ghosted={!!focusTileId && focusTileId !== p.tile.id}
             showName={showNames}
+            showPorts={portsNear.has(p.tile.id)}
+            selectedPort={
+              selection?.kind === "port" &&
+              selection.portSide === "model" &&
+              selection.deviceId === p.dev.id
+                ? (selection.portName ?? null)
+                : null
+            }
             onSelect={onSelect}
             onZoom={(size) => flyTo(p, size)}
+            onFlyTo={onFlyTo}
           />
         )
       })}

@@ -1,4 +1,4 @@
-import type { ImagePortMarker, ImagePorts } from "@/lib/api"
+import type { ImagePortMarker, ImagePorts, ModelPortsDoc } from "@/lib/api"
 import {
   normalizePortName,
   OPENING_MM,
@@ -135,6 +135,9 @@ export interface SceneFloorDevice extends SceneDevice {
   height_mm: number | null
   depth_mm: number | null
   model: SceneModel | null
+  /** The ports mapped onto that model (lib/model-ports). Optional for
+   * older cached payloads. */
+  model_ports?: ModelPortsDoc | null
 }
 
 export interface SceneTray {

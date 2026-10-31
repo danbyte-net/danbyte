@@ -30,6 +30,7 @@ from .face_ports import (
     effective_image_ports,
     render_marker_name,
 )
+from .model_ports import effective_model_ports, model_markers
 
 _TERMINATION_COMPONENTS = (
     "interface", "front_port", "rear_port", "console_port", "console_server_port",
@@ -140,6 +141,10 @@ def component_queryset(relation, device_ids):
 
     model = Device._meta.get_field(relation).related_model
     qs = model.objects.filter(device_id__in=device_ids)
+    if relation == "interfaces":
+        # The untagged VLAN rides along for the 3D model's port hover - a
+        # join, not a query.
+        return qs.select_related("vlan").prefetch_related(*CABLED_PREFETCH)
     if relation in _CABLED_RELATIONS:
         return qs.prefetch_related(*CABLED_PREFETCH)
     # A module bay's occupancy is the reverse Module relation; a part carries
@@ -177,7 +182,8 @@ class FacePortLoader:
         needed = {FACE_PORT_KINDS[k][0] for k in _SYNTHETIC_KINDS}
         for device in self.devices:
             layout = effective_image_ports(device) or {}
-            for marker in _markers(layout, "front") + _markers(layout, "rear"):
+            mapped = model_markers(effective_model_ports(device))
+            for marker in _markers(layout, "front") + _markers(layout, "rear") + mapped:
                 kind = marker.get("kind", "interface") if isinstance(marker, dict) else ""
                 if kind in FACE_PORT_KINDS:
                     needed.add(FACE_PORT_KINDS[kind][0])
@@ -219,13 +225,20 @@ class FacePortLoader:
                     yield far
 
     def payload(self, device, peer=far_end) -> dict:
-        """``{"front": [...], "rear": [...]}`` for one device: every marker
-        resolved to the device's real component, then the power components no
-        marker covers as synthetic rear entries. ``peer`` turns a termination
-        into its far end (``PeerScope.far_end`` blanks hidden ones)."""
+        """``{"front": [...], "rear": [...], "model": [...]}`` for one device:
+        every marker resolved to the device's real component, then the power
+        components no marker covers as synthetic rear entries. ``model`` is
+        the ports mapped onto its 3D model (api.model_ports), each entry with
+        the mapping's ``p`` and ``n`` and, on an interface, its untagged
+        VLAN. ``peer`` turns a termination into its far end
+        (``PeerScope.far_end`` blanks hidden ones)."""
         layout = effective_image_ports(device) or {}
         front = self._resolve(device, _markers(layout, "front"), peer)
         rear = self._resolve(device, _markers(layout, "rear"), peer)
+        mapped = model_markers(effective_model_ports(device))
+        model = self._resolve(device, mapped, peer, with_vlan=True)
+        for entry, m in zip(model, mapped, strict=False):
+            entry["p"], entry["n"] = m.get("p"), m.get("n")
         # Power components no photo marker covers still have to be clickable
         # and cable-able in the 3D room (a PDU strip has no photo at all, and
         # many rear photos never got their inlets marked). Emit them as
@@ -252,9 +265,9 @@ class FacePortLoader:
                     "status": None, "module": None,
                     "drift": None,
                 })
-        return {"front": front, "rear": rear}
+        return {"front": front, "rear": rear, "model": model}
 
-    def _resolve(self, device, markers, peer) -> list:
+    def _resolve(self, device, markers, peer, with_vlan=False) -> list:
         pos = device.vc_position
         out = []
         for m in markers:
@@ -337,6 +350,11 @@ class FacePortLoader:
                         "label_hidden": bool(getattr(comp, "hide_label", False)),
                         "label_color": getattr(comp, "label_color", "") or "",
                     })
+                    if with_vlan and kind == "interface":
+                        vlan = comp.vlan if comp.vlan_id else None
+                        entry["vlan"] = {
+                            "vlan_id": vlan.vlan_id, "name": vlan.name,
+                        } if vlan is not None else None
             out.append(entry)
         return out
 

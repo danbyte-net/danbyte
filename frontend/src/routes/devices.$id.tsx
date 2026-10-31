@@ -1353,6 +1353,8 @@ function DeviceOverview({
         front={d.model_3d_front ?? "+z"}
         canEdit={objCan(d, "change", canDo("device", "change"))}
         queryKey={["device", d.id]}
+        typeId={d.device_type?.id ?? null}
+        ownImagePorts={d.image_ports ?? null}
       />
       <CustomFieldValues
         model="device"
