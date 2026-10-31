@@ -1789,6 +1789,32 @@ class _HiddenRelatedListSerializer(serializers.ListSerializer):
         return super().to_representation(rows)
 
 
+class _AddressCountListSerializer(serializers.ListSerializer):
+    """A device or VM page's ``ip_count`` in one query for the page (#455),
+    instead of a correlated count per row (see ``api.ip_usage``). A response
+    that leaves the field out does not count."""
+
+    kind = ""
+
+    def to_representation(self, data):
+        from django.db.models.manager import BaseManager
+
+        from .ip_usage import attach_address_counts
+
+        rows = list(data.all() if isinstance(data, BaseManager) else data)
+        if "ip_count" in self.child.fields:
+            attach_address_counts(self.kind, rows)
+        return super().to_representation(rows)
+
+
+class _DeviceListSerializer(_AddressCountListSerializer):
+    kind = "device"
+
+
+class _VMListSerializer(_AddressCountListSerializer):
+    kind = "vm"
+
+
 class HiddenRelatedFieldsMixin(PermissionHiddenFieldsMixin):
     """A row that names related rows the caller may not view shows those
     fields as ``null`` - in the API and in the spreadsheet export (#413).
@@ -3793,6 +3819,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
     class Meta:
         model = Device
+        list_serializer_class = _DeviceListSerializer
         fields = ["id", "numid", "name", "device_type", "device_type_id", "site", "site_id",
                   "role", "role_id", "platform", "platform_id",
                   "effective_platform",
@@ -6708,6 +6735,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixi
 
     class Meta:
         model = VirtualMachine
+        list_serializer_class = _VMListSerializer
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
                   "role", "role_id", "platform", "platform_id", "lifecycle_next",
                   "device", "device_id",

@@ -3738,14 +3738,12 @@ def _device_rows(*, one: bool = False, counts: bool = False):
                 for path in ("", "role__", "platform__")
             ),
         )
-        # ip_count + interface_count are shown/served on the list, as
-        # correlated subqueries. The joined COUNT(DISTINCT) they replaced
+        # interface_count is shown/served on the list, as a
+        # correlated subquery. The joined COUNT(DISTINCT) it and ip_count replaced
         # multiplied every device's addresses by its interfaces before
         # grouping - a 48-port switch with ten addresses was 480 rows - and a
         # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            # Every address the device uses, not only those assigned to it.
-            ip_count_annotated=ip_usage.address_count("device", one=one),
             interface_count_annotated=_count_of(Interface, "device"),
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
@@ -3756,6 +3754,12 @@ def _device_rows(*, one: bool = False, counts: bool = False):
             install_count_annotated=_count_of(InstalledSoftware, "device"),
         )
     )
+    if one:
+        # Every address the device uses, not only those assigned to it, by
+        # index for one device. A list counts its page in one query instead
+        # (api.ip_usage.attach_address_counts): as a subquery per row it read
+        # every address of the tenant for each row (#455).
+        qs = qs.annotate(ip_count_annotated=ip_usage.address_count("device", one=True))
     if counts:
         qs = qs.select_related("virtual_chassis").annotate(**detail_counts.device_annotations())
     # One row: no ordering to compile or plan.
@@ -6634,8 +6638,6 @@ class VirtualMachineViewSet(
                 # Installed software's soonest end (#436), for Next end of life.
                 **software_end_annotations("virtual_machine"),
                 install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
-                # Every address the VM uses, for its IPs tab (api/ip_usage.py).
-                ip_count_annotated=ip_usage.address_count("vm", one=one),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.
@@ -6650,6 +6652,10 @@ class VirtualMachineViewSet(
                 ),
             )
         )
+        if one:
+            # Every address the VM uses, for its IPs tab (api/ip_usage.py), by
+            # index. A list counts its page in one query instead (#455).
+            qs = qs.annotate(ip_count_annotated=ip_usage.address_count("vm", one=True))
         if self.action == "retrieve":
             qs = qs.annotate(**detail_counts.vm_annotations())
         if self.request:
