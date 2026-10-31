@@ -1578,11 +1578,10 @@ export function FloorPlanEditor({
         planName={plan.name}
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
-        planSvg={
-          view3d
-            ? undefined
-            : async (paper, closeup) =>
-                exportSvg(paper, true, true, closeup) || null
+        // Built from the plan's data, not the 2D canvas, so it works from
+        // the 3D view too.
+        planSvg={async (paper, closeup) =>
+          exportSvg(paper, true, true, closeup) || null
         }
       />
       <SnapAllDialog
