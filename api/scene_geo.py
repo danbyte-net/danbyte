@@ -173,3 +173,55 @@ def cabinet_geo(c, device_count: int) -> dict:
         "outer_depth_mm": c.outer_depth_mm or 200,
         "device_count": device_count,
     }
+
+
+#: Every relation of a floor-placed device that ``placed_device_geo`` reads.
+PLACED_DEVICE_LOOKUPS = ("power_ports", "power_outlets")
+
+
+def load_placed_devices(devices) -> dict:
+    """``{device id: device}`` for devices placed straight on a floor plan,
+    with what ``placed_device_geo`` reads joined or prefetched."""
+    qs = devices.select_related(
+        "device_type", "role", "status", "primary_ip"
+    ).prefetch_related(*PLACED_DEVICE_LOOKUPS)
+    return {d.id: d for d in qs}
+
+
+def viewable_type_ids(user, tenant, devices) -> set:
+    """The ids of these devices' types the reader may view: an inherited 3D
+    model is fetched from the type's URL then, shared by every device of it."""
+    from auth_api import rbac
+
+    from .models import DeviceType
+
+    ids = {d.device_type_id for d in devices if d.device_type_id}
+    if not ids:
+        return set()
+    qs = DeviceType.objects.filter(tenant=tenant, id__in=ids)
+    return set(
+        rbac.restrict_queryset(qs, user, tenant, "devicetype", "view").values_list(
+            "id", flat=True
+        )
+    )
+
+
+def _mm(v):
+    return float(v) if v is not None else None
+
+
+def placed_device_geo(d, img, viewable_types) -> dict:
+    """A device standing on the floor: the racked shape (``device_geo``),
+    the type's body size, and the 3D model the room draws for it."""
+    from .model_3d import effective
+
+    dt = d.device_type
+    geo = device_geo(d, img, {})
+    geo["position"] = None
+    geo.update({
+        "width_mm": _mm(dt.width_mm) if dt else None,
+        "height_mm": _mm(dt.height_mm) if dt else None,
+        "depth_mm": _mm(dt.depth_mm) if dt else None,
+        "model": effective(d, type_viewable=bool(dt and dt.id in viewable_types)),
+    })
+    return geo
