@@ -10788,11 +10788,13 @@ def _plan_labels(plan):
     return plan.labels.select_related("opens__stack").order_by("z", "created_at", "id")
 
 
-def plan_contents(request, tenant, src, crop=None) -> dict:
+def plan_contents(request, tenant, src, crop=None, view=None) -> dict:
     """What ``contents/`` answers for ``src``: every row of each kind the
     reader may view, as its list endpoint shapes it, and ``version``. With
     ``crop`` (a live view, or a room's part of its floor): the rows inside
-    it, in its cells, each with ``crosses_edge``."""
+    it, in its cells, each with ``crosses_edge``. ``view`` is the live view
+    being drawn: its own back labels show, and the shapes on the source that
+    open this very view do not (they would only link to themselves)."""
     from auth_api import rbac
 
     from . import floor_plan_snapshots as snaps
@@ -10815,9 +10817,17 @@ def plan_contents(request, tenant, src, crop=None) -> dict:
             src.raised_floor_areas.order_by("y", "x", "id"),
             "floorplanraisedfloorarea",
         ), FloorPlanRaisedFloorAreaSerializer),
-        "areas": (visible(_plan_areas(src), "floorplanarea"), FloorPlanAreaSerializer),
-        "labels": (visible(_plan_labels(src), "floorplanlabel"),
-                   FloorPlanLabelSerializer),
+        "areas": (visible(
+            _plan_areas(src).exclude(opens_id=view.pk) if view is not None
+            else _plan_areas(src),
+            "floorplanarea",
+        ), FloorPlanAreaSerializer),
+        "labels": (visible(
+            _plan_labels(src).filter(Q(shown_in__isnull=True) | Q(shown_in_id=view.pk))
+            .exclude(opens_id=view.pk) if view is not None
+            else _plan_labels(src).filter(shown_in__isnull=True),
+            "floorplanlabel",
+        ), FloorPlanLabelSerializer),
     }
     ctx = {"request": request}
     out = {}
@@ -11298,6 +11308,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     lb.delete()
             if keep is not None:
                 keep.opens = here
+                keep.shown_in = target if snaps.is_view(target) else None
                 if text:
                     keep.text = text
                 keep.save()
@@ -11308,6 +11319,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     x=min(ox + 0.5, max(dst.grid_width - 1, 0)),
                     y=min(oy + 0.5, max(dst.grid_height - 1, 0)),
                     plate=True, opens=here, pair_id=shape.pk,
+                    shown_in=target if snaps.is_view(target) else None,
                     z=(dst.labels.order_by("-z").values_list("z", flat=True).first() or 0) + 1,
                 )
         return Response({"back_label": _back_label_ref({"request": request}, shape)})
@@ -11889,7 +11901,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         stays flat however many rows the plan holds."""
         plan = self.get_object()
         src, crop = self._resolved(plan)
-        return Response(plan_contents(request, _get_active_tenant(request), src, crop))
+        view = plan if crop is not None and plan.pk != src.pk else None
+        return Response(
+            plan_contents(request, _get_active_tenant(request), src, crop, view=view)
+        )
 
     @action(detail=True, methods=["get"], url_path="placeable")
     def placeable(self, request, pk=None):
