@@ -10647,12 +10647,23 @@ class FloorPlanSerializer(
     tile_count = serializers.SerializerMethodField()
     drawing = serializers.SerializerMethodField()
     snapshot = serializers.SerializerMethodField()
+    geo = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_geo(self, obj):
+        """The plan's geo anchor (api/floor_plan_geo.py): ``bbox`` [south,
+        west, north, east], ``mpc`` (metres per cell), ``zoom``, ``basemap``
+        and ``captured_at`` of the map background. Null for a plan not tied
+        to the Site map, and for a live view."""
+        from .floor_plan_geo import geo_data
+
+        return geo_data(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
@@ -10899,11 +10910,11 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
                   "background_opacity", "state", "description", "tile_count",
-                  "drawing", "kind", "snapshot",
+                  "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "background_image",
-                            "tile_count", "drawing", "kind", "snapshot",
+                            "tile_count", "drawing", "kind", "snapshot", "geo",
                             "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own
         # validator for the conditional (stack, name) one would make

@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   HardDrive,
+  MapPin,
   Plus,
   Server,
   X,
@@ -172,11 +173,40 @@ export function UnplacedList({
   )
 }
 
+/** A device with a GPS position on the plan: one click places it there. */
+export function GpsRow({
+  row,
+  onPlace,
+}: {
+  row: FloorPlanPlaceable
+  onPlace: () => void
+}) {
+  const Icon = KIND_ICON[row.kind]
+  return (
+    <div
+      role="option"
+      aria-selected={false}
+      draggable
+      data-placeable={row.id}
+      onDragStart={(e) => dragRows(e, [row])}
+      className="flex h-8 cursor-grab items-center gap-2 rounded-md px-2 text-sm hover:bg-accent"
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{row.name}</span>
+      <Button size="xs" variant="ghost" onClick={onPlace}>
+        <MapPin /> Place at GPS position
+      </Button>
+    </div>
+  )
+}
+
 /**
  * **Place…**: the devices, racks and cabinets of the plan's site, those in
  * the room near the pointer first. Click a row to place it in the middle of
  * the view, drag it (or the ticked ones) onto the plan. No tile type needed:
- * a placed object draws in its own role's colour and icon.
+ * a placed object draws in its own role's colour and icon. On a plan made
+ * from the Site map, the devices whose GPS position is on the plan come
+ * first, each placed there in one click.
  */
 export function PlacePicker({
   plan,
@@ -185,6 +215,7 @@ export function PlacePicker({
   onOpenChange,
   near,
   onPlace,
+  onPlaceAt,
   onShow,
   onAssignRooms,
 }: {
@@ -197,6 +228,8 @@ export function PlacePicker({
   near: NearScope | null
   /** Place these rows in the middle of the view. */
   onPlace: (rows: FloorPlanPlaceable[]) => void
+  /** Place these rows at a cell point (a device's GPS position). */
+  onPlaceAt?: (rows: FloorPlanPlaceable[], at: [number, number]) => void
   /** Select an object already on this floor. */
   onShow: (tileId: string) => void
   onAssignRooms: () => void
@@ -218,6 +251,12 @@ export function PlacePicker({
   if (scope?.room) params.near_room = scope.room.id
   else if (scope?.location) params.near_location = scope.location.id
   const query = usePlaceable(plan.id, params, open)
+  // Devices with a GPS position on a plan made from the Site map.
+  const gpsQuery = usePlaceable(
+    plan.id,
+    { gps: "1", kind: "device", limit: "200" },
+    open && !!plan.geo && !!onPlaceAt
+  )
   // "On this floor" as the editor holds it: a tile placed or deleted
   // since the last save counts at once.
   const rows = (query.data?.results ?? []).map((r) =>
@@ -243,6 +282,11 @@ export function PlacePicker({
     ] as [string, FloorPlanPlaceable[]][]
   ).filter(([, list]) => list.length > 0)
   const selected = rows.filter((r) => picked.has(r.id))
+  const atGps = searching
+    ? []
+    : (gpsQuery.data?.results ?? [])
+        .map((r) => withDraftPlacement(r, onFloor, plan))
+        .filter((r) => r.gps_cell && !isHere(r))
 
   const click = (row: FloorPlanPlaceable) => {
     const here = row.placed_on.find((p) => p.this_floor)
@@ -317,10 +361,27 @@ export function PlacePicker({
         <div className="max-h-80 overflow-y-auto" role="listbox">
           {query.isLoading && <Loading />}
           {query.isError && <QueryError error={query.error} />}
-          {query.isSuccess && groups.length === 0 && (
+          {query.isSuccess && groups.length === 0 && atGps.length === 0 && (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">
               Nothing to place
             </p>
+          )}
+          {atGps.length > 0 && onPlaceAt && (
+            <div data-group="At GPS position">
+              <div className="px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                At GPS position
+              </div>
+              {atGps.map((row) => (
+                <GpsRow
+                  key={`gps:${row.id}`}
+                  row={row}
+                  onPlace={() => {
+                    onPlaceAt([row], row.gps_cell!)
+                    onOpenChange(false)
+                  }}
+                />
+              ))}
+            </div>
           )}
           {groups.map(([title, list]) => (
             <div key={title || "near"} data-group={title}>

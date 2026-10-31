@@ -1364,6 +1364,19 @@ export interface SiteMapPayload {
   devices: SiteMapDevice[]
   markers: SiteMapMarker[]
   regions: SiteMapRegion[]
+  /** The boxes of the floor plans made from the map the reader may view. */
+  plan_footprints?: SiteMapPlanFootprint[]
+}
+
+/** A floor plan's box on the Site map (its geo anchor). */
+export interface SiteMapPlanFootprint {
+  id: string
+  name: string
+  /** The floor plan (stack) it is a floor of. */
+  stack: string
+  site_id: string | null
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number]
 }
 
 /** GeoJSON Polygon/MultiPolygon geometry - an OSM-sourced region boundary. */
@@ -12160,6 +12173,9 @@ export interface FloorPlanPlaceable {
     tile_id: string
     this_floor: boolean
   }[]
+  /** On a plan made from the Site map: the device's GPS position in the
+   * plan's cells, when it is on the grid. */
+  gps_cell?: [number, number] | null
 }
 
 /** POST /api/floor-plans/<id>/assign-rooms/ - a placed object whose tile
@@ -12280,6 +12296,8 @@ export interface FloorPlan {
   kind?: FloorPlanKind
   /** What the plan was snapshotted from; null for a plan made otherwise. */
   snapshot?: FloorPlanSnapshotInfo | null
+  /** The box of the Site map the grid spans, for a plan made from it. */
+  geo?: FloorPlanGeo | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
@@ -12287,6 +12305,43 @@ export interface FloorPlan {
 }
 
 export type FloorPlanKind = "plan" | "view"
+
+/** A plan's geo anchor: the Site map box its grid spans, linear in Web
+ * Mercator, and the map background rendered for it. */
+export interface FloorPlanGeo {
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number]
+  /** Metres per cell. */
+  mpc: number | null
+  zoom: number | null
+  /** The background's basemap; null when it is not a map render. */
+  basemap: "map" | "sat" | null
+  /** When the map background was rendered; null: no map background. */
+  captured_at: string | null
+  attribution: string
+}
+
+/** `POST /api/floor-plans/<id>/expand/` - the grown plan and what moved. */
+export interface FloorPlanExpanded extends FloorPlan {
+  expanded: {
+    left: number
+    top: number
+    right: number
+    bottom: number
+    moved: Record<string, number>
+    /** "rendered": the new render; "padded": the old image placed on a
+     * larger canvas; "none": no background. */
+    background: "rendered" | "padded" | "none"
+  }
+}
+
+/** `POST /api/floor-plans/<id>/import-outlines/` - an outline on offer. */
+export interface FloorPlanOutlineOffer {
+  id: string
+  label: string
+  location: { id: string; name: string } | null
+  color: string
+}
 
 /** A rectangle of a plan in whole cells. */
 export interface FloorPlanCrop {

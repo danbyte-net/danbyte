@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import L from "leaflet"
@@ -170,6 +170,7 @@ import {
 import { centroid } from "@/components/site-map/outline-geometry"
 import { useFrameTool } from "@/components/site-map/use-frame-tool"
 import { PlanFromMapDialog } from "@/components/site-map/plan-from-map-dialog"
+import { buildPlanFootprintsLayer } from "@/components/site-map/plan-footprints-layer"
 import type { Bbox } from "@/components/site-map/plan-from-map"
 import { buildFovLayer, type FovSource } from "@/components/site-map/fov-layer"
 import { useMe } from "@/lib/use-me"
@@ -265,6 +266,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       routes: true,
       regions: true,
       outlines: true,
+      plans: true,
     }
     try {
       const stored = JSON.parse(
@@ -485,6 +487,33 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   useEffect(() => {
     if (mode !== "layout" || placing || outlineTool.drawing) setFraming(false)
   }, [mode, placing, outlineTool.drawing])
+  // The boxes of the floor plans made from the map, under the outlines; a
+  // click opens the plan.
+  const navigate = useNavigate()
+  const footprintsRef = useRef<L.LayerGroup | null>(null)
+  const footprints = useMemo(
+    () =>
+      (data.plan_footprints ?? []).filter(
+        (f) => !f.site_id || !hiddenSiteIds.has(f.site_id)
+      ),
+    [data.plan_footprints, hiddenSiteIds]
+  )
+  const footprintsLive = !framing && !placing && !outlineTool.drawing
+  useEffect(() => {
+    const map = mapRef.current
+    footprintsRef.current?.remove()
+    footprintsRef.current = null
+    if (!map || !layers.plans || footprints.length === 0) return
+    if (!map.getPane("smPlanFootprints"))
+      map.createPane("smPlanFootprints").style.zIndex = "340"
+    const layer = buildPlanFootprintsLayer(footprints, {
+      pane: "smPlanFootprints",
+      interactive: footprintsLive,
+      onOpen: (id) => void navigate({ to: "/floorplans/$id", params: { id } }),
+    })
+    layer.addTo(map)
+    footprintsRef.current = layer
+  }, [footprints, layers.plans, footprintsLive, mapReady])
   // The framed area stays outlined while the dialog is open.
   useEffect(() => {
     const map = mapRef.current

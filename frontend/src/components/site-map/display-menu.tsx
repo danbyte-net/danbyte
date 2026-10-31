@@ -23,6 +23,8 @@ export interface SiteMapLayers {
   regions: boolean
   /** Building outlines. */
   outlines: boolean
+  /** The boxes of the floor plans made from the map. */
+  plans: boolean
 }
 
 const ROW =
@@ -88,6 +90,7 @@ export function SiteMapDisplayMenu({
           {layer("routes", "Cable routes")}
           {layer("regions", "Region boundaries")}
           {layer("outlines", "Outlines")}
+          {layer("plans", "Floor plans")}
           <FormCheckbox
             label="Camera FOV cones"
             checked={showFov}

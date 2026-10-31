@@ -1025,6 +1025,7 @@ export function FloorPlanEditor({
               }}
               near={near}
               onPlace={placePicked}
+              onPlaceAt={(rows, at) => placeAt(rows, at)}
               onShow={(tileId) => {
                 const tile = tiles.find((t) => t.id === tileId)
                 if (!tile) return
