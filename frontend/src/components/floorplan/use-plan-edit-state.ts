@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 
 import type { FloorPlanTile } from "@/lib/api"
 
+import { cableDraftDirty } from "./cable-draft"
 import { usePlanDraft } from "./edit-history"
 import type { PaletteEntry } from "./floor-canvas"
 import type { PlanShape } from "./shapes"
@@ -115,7 +116,9 @@ export function usePlanEditState(
   )
   const [search, setSearch] = useState("")
 
-  const isDirty = dirtyIds.size > 0 || deletedIds.size > 0
+  // Cable routes applied from "After placing" are unsaved edits too.
+  const isDirty =
+    dirtyIds.size > 0 || deletedIds.size > 0 || cableDraftDirty(draft.cables)
   const isDirtyRef = useRef(isDirty)
   isDirtyRef.current = isDirty
 

@@ -102,7 +102,10 @@ export function PlanCanvas({
   onSnapshotRect,
   onSnapshotShape,
   lockedIds,
+  trayPick,
 }: {
+  /** Picking a cable's trays on the plan ("After placing"). */
+  trayPick?: FloorCanvasProps["trayPick"]
   /** Edit, the Snapshot tool in hand: the dragged rectangle. */
   onSnapshotRect?: FloorCanvasProps["onSnapshotRect"]
   /** Edit: "Snapshot this room…" on an area's menu. */
@@ -334,6 +337,7 @@ export function PlanCanvas({
           patchTray.mutate({ trayId, patch: { points } })
         }
         trayEditMode={trayEditMode}
+        trayPick={trayPick}
         cablePaths={cablePaths}
         showCableLinks={showCableLinks}
         highlightCableIds={highlightCableIds}

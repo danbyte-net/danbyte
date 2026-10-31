@@ -365,3 +365,288 @@ def rack_drop_mm(
     )
     elev = tray_elevation_mm(level, elevation_mm, ceiling_mm, plenum_mm)
     return abs(elev - top)
+
+
+# ─── Suggested runs (no tray path) ──────────────────────────────────────────
+#
+# When no tray connects a cable's ends, the plan can suggest a run: A* on
+# the half-cell lattice, orthogonal moves only. Tiles other than the two
+# ends are in the way, and so are walls except at their door openings; an
+# underfloor run stays inside the raised-floor areas. A step along an
+# existing tray (or a run suggested earlier in the batch) costs less, so a
+# suggestion extends the network rather than running beside it, and a turn
+# costs extra, so runs come out straight and tidy.
+
+#: Lattice pitch (cells) - the half-cell lattice trays and walls snap to.
+SUGGEST_STEP = 0.5
+#: A step along an existing tray costs this fraction of a plain one.
+SUGGEST_TRAY_FACTOR = 0.6
+#: A change of direction costs this many cells.
+SUGGEST_TURN_CELLS = 1.0
+#: What the search reckons a step to the goal costs when there are trays
+#: (between SUGGEST_TRAY_FACTOR and 1).
+SUGGEST_ESTIMATE = 0.8
+#: Lattice states A* may settle before it gives up (a plan too big to search).
+SUGGEST_MAX_STATES = 250_000
+
+_DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+_E = 1e-6
+
+Rect = tuple[float, float, float, float]
+Node = tuple[int, int]
+
+
+def _strictly_in(p: Pt, r: Rect) -> bool:
+    x, y, w, h = r
+    return x + _E < p[0] < x + w - _E and y + _E < p[1] < y + h - _E
+
+
+def _closed_in(p: Pt, r: Rect) -> bool:
+    x, y, w, h = r
+    return x - _E <= p[0] <= x + w + _E and y - _E <= p[1] <= y + h + _E
+
+
+def _along(p: Pt, s: Pt, e: Pt) -> float | None:
+    """How far along [s, e] (cells from s) the point p lies; None when it
+    is not on the segment."""
+    _pt, t, d = _project_segment(p, s, e)
+    if d > 1e-4:
+        return None
+    return t * _dist(s, e)
+
+
+def compress_polyline(points: list[Pt]) -> list[Pt]:
+    """Drop repeated points and the middle of straight runs."""
+    out: list[Pt] = []
+    for p in points:
+        if out and _dist(out[-1], p) < _E:
+            continue
+        if len(out) >= 2:
+            a, b = out[-2], out[-1]
+            cross = (b[0] - a[0]) * (p[1] - b[1]) - (b[1] - a[1]) * (p[0] - b[0])
+            dot = (b[0] - a[0]) * (p[0] - b[0]) + (b[1] - a[1]) * (p[1] - b[1])
+            if abs(cross) < _E and dot >= 0:
+                out[-1] = p
+                continue
+        out.append(p)
+    return out
+
+
+def lattice_steps(polylines) -> set[tuple[int, int, int, int]]:
+    """The half-cell lattice steps the axis-aligned runs of ``polylines``
+    cover, as ``(ix, iy, jx, jy)`` lattice coordinates, both ways."""
+    out: set[tuple[int, int, int, int]] = set()
+    for poly in polylines:
+        for s, e in zip(poly, poly[1:], strict=False):
+            sx, sy = round(s[0] / SUGGEST_STEP), round(s[1] / SUGGEST_STEP)
+            ex, ey = round(e[0] / SUGGEST_STEP), round(e[1] / SUGGEST_STEP)
+            if sx != ex and sy != ey:
+                continue
+            dx = (ex > sx) - (ex < sx)
+            dy = (ey > sy) - (ey < sy)
+            x, y = sx, sy
+            while (x, y) != (ex, ey):
+                out.add((x, y, x + dx, y + dy))
+                out.add((x + dx, y + dy, x, y))
+                x, y = x + dx, y + dy
+    return out
+
+
+def _wall_nodes(walls, step: float) -> tuple[set[Node], list[tuple[Pt, Pt]]]:
+    """The lattice points on a wall outside its door openings, and the
+    wall segments that are neither horizontal nor vertical (a step can
+    cross those between two lattice points)."""
+    on_wall: set[Node] = set()
+    doors: set[Node] = set()
+    slanted: list[tuple[Pt, Pt]] = []
+    for points, openings in walls:
+        pts = [(float(p[0]), float(p[1])) for p in points or []]
+        for seg, (s, e) in enumerate(zip(pts, pts[1:], strict=False)):
+            spans = [
+                (float(o.get("from", 0)), float(o.get("to", 0)))
+                for o in openings or []
+                if isinstance(o, dict) and o.get("seg") == seg
+            ]
+            if abs(s[0] - e[0]) > _E and abs(s[1] - e[1]) > _E:
+                slanted.append((s, e))
+            lo_x, hi_x = sorted((s[0], e[0]))
+            lo_y, hi_y = sorted((s[1], e[1]))
+            for ix in range(math.floor(lo_x / step), math.ceil(hi_x / step) + 1):
+                for iy in range(math.floor(lo_y / step), math.ceil(hi_y / step) + 1):
+                    at = _along((ix * step, iy * step), s, e)
+                    if at is None:
+                        continue
+                    # Inside the door; a door narrower than a lattice step
+                    # lets through at its jambs.
+                    door = any(
+                        (f + _E < at < t - _E)
+                        or (t - f <= step + _E and f - _E <= at <= t + _E)
+                        for f, t in spans
+                    )
+                    (doors if door else on_wall).add((ix, iy))
+    return on_wall - doors, slanted
+
+
+def suggest_run(
+    a: Pt,
+    b: Pt,
+    *,
+    width: float,
+    height: float,
+    obstacles=(),
+    walls=(),
+    trays=(),
+    within=None,
+    max_states: int = SUGGEST_MAX_STATES,
+) -> list[Pt] | None:
+    """A suggested run from ``a`` to ``b`` (cells) on the half-cell lattice
+    of a ``width`` × ``height`` plan, or None when nothing gets through.
+
+    ``obstacles`` are rectangles ``(x, y, w, h)`` a run may not cross (the
+    tiles other than the two ends); it may run along an edge, but not
+    between two that touch. ``walls`` are ``(points, openings)`` with the
+    wall's door spans (``{"seg", "from", "to"}``, cells from the segment's
+    start): a run crosses a wall only inside an opening. ``trays`` are
+    polylines a run is cheaper along. ``within``, when given, are the
+    rectangles every point must stay inside (an underfloor run: the raised
+    floors). Answers the polyline from ``a`` to ``b``, its middle points on
+    the lattice, straight runs as one segment."""
+    step = SUGGEST_STEP
+    cols = math.ceil(max(width, a[0], b[0]) / step) + 1
+    rows = math.ceil(max(height, a[1], b[1]) / step) + 1
+
+    def node_of(p: Pt) -> Node:
+        return (
+            min(max(round(p[0] / step), 0), cols - 1),
+            min(max(round(p[1] / step), 0), rows - 1),
+        )
+
+    # Obstacles bucketed by the cells they cover.
+    buckets: dict[Node, list[Rect]] = {}
+    for r in obstacles:
+        x, y, w, h = r
+        for bx in range(math.floor(x), math.ceil(x + w) + 1):
+            for by in range(math.floor(y), math.ceil(y + h) + 1):
+                buckets.setdefault((bx, by), []).append(r)
+
+    def occupied(p: Pt) -> bool:
+        return any(
+            _strictly_in(p, r)
+            for r in buckets.get((math.floor(p[0]), math.floor(p[1])), ())
+        )
+
+    on_wall, slanted = _wall_nodes(walls, step)
+    count = cols * rows
+    # Per node: 0 not looked at yet, 1 free, 2 blocked.
+    node_state = bytearray(count)
+
+    def blocked(i: int) -> bool:
+        v = node_state[i]
+        if not v:
+            ix, iy = i % cols, i // cols
+            p = (ix * step, iy * step)
+            hit = (
+                (ix, iy) in on_wall
+                or occupied(p)
+                or (within is not None and not any(_closed_in(p, r) for r in within))
+            )
+            v = node_state[i] = 2 if hit else 1
+        return v == 2
+
+    def step_ok(i: int, j: int) -> bool:
+        ux, uy, vx, vy = i % cols, i // cols, j % cols, j // cols
+        mid = ((ux + vx) * step / 2, (uy + vy) * step / 2)
+        if occupied(mid):
+            return False
+        if ux == vx:
+            sides = ((mid[0] - step / 2, mid[1]), (mid[0] + step / 2, mid[1]))
+        else:
+            sides = ((mid[0], mid[1] - step / 2), (mid[0], mid[1] + step / 2))
+        if occupied(sides[0]) and occupied(sides[1]):
+            return False
+        p, q = (ux * step, uy * step), (vx * step, vy * step)
+        for s, e in slanted:
+            x = _segment_intersect(p, q, s, e)
+            if x is not None and _E < x[1] < 1 - _E and _E < x[2] < 1 - _E:
+                return False
+        return True
+
+    sx, sy = node_of(a)
+    gx, gy = node_of(b)
+    start, goal = sy * cols + sx, gy * cols + gx
+    if blocked(start) or blocked(goal):
+        return None
+    # The cheaper steps, as (node, direction) - both ways.
+    deltas = (1, -1, cols, -cols)
+    cheap: set[int] = set()
+    for ix, iy, jx, jy in lattice_steps(trays):
+        if 0 <= ix < cols and 0 <= iy < rows and 0 <= jx < cols and 0 <= jy < rows:
+            k = _DIRS.index((jx - ix, jy - iy))
+            cheap.add((iy * cols + ix) * 4 + k)
+    factor, turn = SUGGEST_TRAY_FACTOR, SUGGEST_TURN_CELLS
+    plain, along = step, step * factor
+    # Steps to the goal, priced between a plain step and one along a tray
+    # when there are trays: low enough that the search finds a tray close
+    # by, high enough that it does not comb the whole floor for one.
+    least = step * SUGGEST_ESTIMATE if cheap else plain
+
+    def est(i: int) -> float:
+        return (abs(i % cols - gx) + abs(i // cols - gy)) * least
+
+    # One state per node, with the direction its best way in arrived from
+    # (-1: the start). A turn is priced against that direction - close to
+    # exact, and a quarter of the states of tracking every direction.
+    inf = math.inf
+    best = [inf] * count
+    came = [-1] * count
+    prev = [-1] * count
+    # Per (node, direction): 0 not looked at, 1 a step there is fine, 2 not.
+    steps = bytearray(count * 4)
+    best[start] = 0.0
+    # Ties go to the state further along (-g), so the many equal-cost
+    # staircases of an open floor are not all explored.
+    heap = [(est(start), -0.0, start)]
+    settled = 0
+    found = False
+    while heap:
+        _f, neg_g, i = heapq.heappop(heap)
+        g = -neg_g
+        if g > best[i] + _E:
+            continue
+        if i == goal:
+            found = True
+            break
+        settled += 1
+        if settled > max_states:
+            return None
+        d = came[i]
+        ix = i % cols
+        for k in range(4):
+            if k == 0 and ix == cols - 1 or k == 1 and ix == 0:
+                continue
+            j = i + deltas[k]
+            if j < 0 or j >= count or blocked(j):
+                continue
+            sk = i * 4 + k
+            ok = steps[sk]
+            if not ok:
+                ok = 1 if step_ok(i, j) else 2
+                steps[sk] = ok
+                steps[j * 4 + (k ^ 1)] = ok
+            if ok == 2:
+                continue
+            ng = g + (along if sk in cheap else plain) + (turn if d >= 0 and d != k else 0)
+            if ng < best[j] - _E:
+                best[j] = ng
+                came[j] = k
+                prev[j] = i
+                heapq.heappush(heap, (ng + est(j), -ng, j))
+    if not found:
+        return None
+    nodes: list[Pt] = []
+    i = goal
+    while i >= 0:
+        nodes.append(((i % cols) * step, (i // cols) * step))
+        i = prev[i]
+    nodes.reverse()
+    return compress_polyline([(float(a[0]), float(a[1])), *nodes, (float(b[0]), float(b[1]))])

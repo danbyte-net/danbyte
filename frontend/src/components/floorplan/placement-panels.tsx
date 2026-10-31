@@ -286,7 +286,7 @@ export function ConflictDialog({
         <div className="flex max-h-80 flex-col gap-2 overflow-y-auto">
           {(conflicts ?? []).map((c) => (
             <div
-              key={c.id}
+              key={`${c.kind}:${c.id}`}
               data-conflict={c.id}
               className="flex items-center gap-3 text-sm"
             >

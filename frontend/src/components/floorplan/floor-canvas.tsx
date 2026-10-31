@@ -210,6 +210,10 @@ export interface FloorCanvasProps {
   /** Tray edit mode: hide all cables and make every tray reshapeable (drag
    * points, add/remove bends). A toggle, not per-tray. */
   trayEditMode?: boolean
+  /** Picking a cable's trays ("After placing" → Pick trays): a click on a
+   * tray, in any mode, adds or takes it away; the picked ones show
+   * selected. */
+  trayPick?: { picked: readonly string[]; onPick: (id: string) => void }
   // ── Cable A↔B links ────────────────────────────────────────────────────
   cablePaths?: FloorPlanCablePath[]
   showCableLinks?: boolean
@@ -393,6 +397,7 @@ export function FloorCanvas({
   onFinishDraw,
   onMoveTray,
   trayEditMode = false,
+  trayPick,
   cablePaths = NO_CABLES,
   showCableLinks = false,
   highlightCableIds = NO_IDS,
@@ -847,6 +852,12 @@ export function FloorCanvas({
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
     if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
+    if (trayPick) {
+      trayPick.onPick(tray.id)
+      return
+    }
+    // A tray of the unsaved draft (a kept run) is not edited here.
+    if (tray.id.startsWith("new-")) return
     onSelectTray?.(tray.id)
     if (!editable || !trayEditMode) return
     drag.current = {
@@ -1607,16 +1618,27 @@ export function FloorCanvas({
                       ? { ...tray, points: trayDraft.points }
                       : tray
                   }
-                  selected={tray.id === selectedTrayId}
+                  selected={
+                    trayPick
+                      ? trayPick.picked.includes(tray.id)
+                      : tray.id === selectedTrayId
+                  }
                   interactive={
-                    mode === "cable" && !drawing && !isLocked(tray.id)
+                    trayPick
+                      ? !isLocked(tray.id)
+                      : mode === "cable" &&
+                        !drawing &&
+                        !isLocked(tray.id) &&
+                        !tray.id.startsWith("new-")
                   }
                   editable={
                     editable &&
+                    !trayPick &&
                     mode === "cable" &&
                     !drawing &&
                     trayEditMode &&
-                    !isLocked(tray.id)
+                    !isLocked(tray.id) &&
+                    !tray.id.startsWith("new-")
                   }
                   editing={isEditing}
                   dimmed={isLocked(tray.id)}
@@ -1655,7 +1677,7 @@ export function FloorCanvas({
               bundle={bundleCables}
               showLabels={showCableLabels}
               highlightIds={highlightCableIds}
-              interactive
+              interactive={!trayPick}
               onSelect={selectCable}
               onHover={hoverCable}
               previews={cablePreviews}

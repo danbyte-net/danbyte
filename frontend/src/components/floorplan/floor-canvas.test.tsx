@@ -2,7 +2,12 @@
 import { cleanup, fireEvent, render } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { FloorPlan, FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
+import type {
+  FloorPlan,
+  FloorPlanLiveState,
+  FloorPlanTile,
+  FloorPlanTray,
+} from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
 
 // A tile linked to a DIN-rail cabinet on the 2D plan: named after the
@@ -361,5 +366,80 @@ describe("a multi-selection", () => {
     fireEvent.pointerUp(svg, at(2, 2))
     expect(props.onMoveSelection).not.toHaveBeenCalled()
     expect(props.onSelect).toHaveBeenCalledWith("t1")
+  })
+})
+
+describe("trays while picking a cable's run", () => {
+  const trays = [
+    {
+      id: "tr1",
+      name: "T-03",
+      points: [
+        [0, 1],
+        [11, 1],
+      ],
+    },
+    {
+      id: "new-5",
+      name: "Run 1",
+      points: [
+        [0, 5],
+        [11, 5],
+      ],
+    },
+  ].map((t) => ({
+    kind: "",
+    color: "",
+    level: "overhead",
+    elevation_mm: null,
+    description: "",
+    cables: [],
+    hidden_cable_count: 0,
+    created_at: "",
+    updated_at: "",
+    ...t,
+  })) as unknown as FloorPlanTray[]
+  const trayGroup = (c: HTMLElement, name: string) =>
+    [...c.querySelectorAll("title")].find((t) =>
+      t.textContent?.startsWith(name)
+    )!.parentElement!
+
+  function drawTrays(props: Partial<React.ComponentProps<typeof FloorCanvas>>) {
+    return render(
+      <FloorCanvas
+        plan={plan}
+        tiles={[]}
+        selectedId={null}
+        editable
+        showGrid
+        armed={null}
+        trays={trays}
+        {...props}
+      />
+    )
+  }
+
+  it("a click on a tray picks it, in any mode", () => {
+    const onPick = vi.fn()
+    const onSelectTray = vi.fn()
+    const { container } = drawTrays({
+      mode: "layout",
+      trayPick: { picked: [], onPick },
+      onSelectTray,
+    })
+    fireEvent.pointerDown(trayGroup(container, "T-03"), { button: 0 })
+    expect(onPick).toHaveBeenCalledWith("tr1")
+    fireEvent.pointerDown(trayGroup(container, "Run 1"), { button: 0 })
+    expect(onPick).toHaveBeenCalledWith("new-5")
+    expect(onSelectTray).not.toHaveBeenCalled()
+  })
+
+  it("an unsaved run is not selected for editing", () => {
+    const onSelectTray = vi.fn()
+    const { container } = drawTrays({ mode: "cable", onSelectTray })
+    fireEvent.pointerDown(trayGroup(container, "Run 1"), { button: 0 })
+    expect(onSelectTray).not.toHaveBeenCalledWith("new-5")
+    fireEvent.pointerDown(trayGroup(container, "T-03"), { button: 0 })
+    expect(onSelectTray).toHaveBeenCalledWith("tr1")
   })
 })
