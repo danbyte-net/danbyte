@@ -266,7 +266,8 @@ editor's own local entries under
     (`deviceprofile`). They also gain the
     [building outlines](site-map.md#building-outlines) of their sites
     (`sitemapoutline`), and site viewers and silo site editors view on
-    [location types](regions-locations.md#location-types) (`locationtype`).
+    [location types](regions-locations.md#location-types) (`locationtype`)
+    and [area types](floor-plans.md#area-types) (`areatype`).
 
 ### Set it up when you create the user
 

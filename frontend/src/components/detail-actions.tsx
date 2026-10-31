@@ -20,6 +20,7 @@ const SEGMENT_SLUG: Record<string, string> = {
   racks: "rack",
   "rack-roles": "rackrole",
   "location-types": "locationtype",
+  "area-types": "areatype",
   cabinets: "cabinet",
   "cabinet-roles": "cabinetrole",
   interfaces: "interface",

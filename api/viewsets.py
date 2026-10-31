@@ -95,7 +95,8 @@ from .models import (
     FHRPGroup, FHRPGroupAssignment,
     FiberSettings,
     rename_marker_refs,
-    FloorPlan, FloorPlanArea, FloorPlanLabel, FloorPlanRaisedFloorArea, FloorPlanStack,
+    AreaType, FloorPlan, FloorPlanArea, FloorPlanLabel, FloorPlanRaisedFloorArea,
+    FloorPlanStack,
     FloorPlanTile, FloorPlanTray, FloorPlanWall, FloorTileType, SiteMarker,
     FrontPort, FrontPortTemplate,
     InterfaceTemplate, DeviceTypeService,
@@ -198,6 +199,8 @@ from .serializers import (
     LocationPickerSerializer,
     LocationTypeMiniSerializer,
     LocationTypeSerializer,
+    AreaTypeMiniSerializer,
+    AreaTypeSerializer,
     RoomSerializer,
     RoomMiniSerializer,
     ConfigContextSerializer,
@@ -9899,6 +9902,55 @@ class LocationTypeViewSet(BulkEditMixin, TenantScopedViewSet):
         serializer.save()
 
 
+class AreaTypeViewSet(BulkEditMixin, TenantScopedViewSet):
+    """Area types - the editable catalog of what a plain floor-plan area is
+    (Parking, Fence, Road, Gate…), with its colour, fill pattern and icon.
+    Ships empty. Deleting a type leaves its areas in place without a type."""
+
+    queryset = AreaType.objects.all().order_by(NATURAL_NAME)
+    serializer_class = AreaTypeSerializer
+    pagination_class = StandardPagination
+    bulk_edit = BulkEditSpec(fields=("color", "pattern", "icon", "description"), tags=False)
+
+    def get_serializer_class(self):
+        if self.action == "list" and self.request and \
+                self.request.query_params.get("picker") == "1":
+            return AreaTypeMiniSerializer
+        return AreaTypeSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            s = self.request.query_params.get("search", "").strip()
+            if s:
+                qs = qs.filter(Q(name__icontains=s) | Q(description__icontains=s))
+        if self.get_serializer_class() is AreaTypeSerializer:
+            qs = qs.annotate(area_count_annotated=_visible_n(self, "areas"))
+        return qs
+
+    def _slug(self, serializer, tenant):
+        data = serializer.validated_data
+        name = data.get("name") or (serializer.instance.name if serializer.instance else "")
+        slug = data.get("slug") or slugify(name)
+        if not slug:
+            raise ValidationError({"name": "Give the type a name."})
+        data["slug"] = slug
+        clash = AreaType.objects.filter(tenant=tenant, slug=slug)
+        if serializer.instance is not None:
+            clash = clash.exclude(pk=serializer.instance.pk)
+        if clash.exists():
+            raise ValidationError({"name": "An area type with this name already exists."})
+
+    def perform_create(self, serializer):
+        tenant = self._tenant_or_403()
+        self._slug(serializer, tenant)
+        serializer.save(tenant=tenant)
+
+    def perform_update(self, serializer):
+        self._slug(serializer, self._tenant_or_403())
+        serializer.save()
+
+
 class RoomViewSet(BulkEditMixin, ImageAttachmentMixin, TenantScopedViewSet):
     """Rooms inside a location (Region → Site → Location → Room). Filters:
     ``?site=``, ``?location=`` (with ``include_descendants=1`` the rooms of
@@ -10727,7 +10779,9 @@ def _plan_tiles(plan):
 
 
 def _plan_areas(plan):
-    return plan.areas.select_related("room", "location").order_by("z", "created_at", "id")
+    return plan.areas.select_related(
+        "room", "location__location_type", "area_type"
+    ).order_by("z", "created_at", "id")
 
 
 def _plan_labels(plan):
@@ -13912,7 +13966,7 @@ class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
     about their centre, or polygons)."""
 
     queryset = FloorPlanArea.objects.select_related(
-        "floor_plan", "room", "location"
+        "floor_plan", "room", "location__location_type", "area_type"
     ).order_by("z", "created_at", "id")
     serializer_class = FloorPlanAreaSerializer
     snapshot_kind = "areas"

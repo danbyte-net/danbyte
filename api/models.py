@@ -9923,11 +9923,54 @@ class FloorPlanWall(TimestampedModel):
         return self.label or f"wall ({len(self.points or [])} pts)"
 
 
+class AreaType(NumIdMixin, TimestampedModel):
+    """What a plain floor-plan area is ("Parking", "Fence", "Road",
+    "Gate"…): an editable tenant catalog with a colour, a fill pattern and
+    an icon. Nothing is seeded; behaviour never keys off a type, it only
+    names and draws the areas. A type applies to areas linked to neither a
+    room nor a location - those wear their room's or location's colour."""
+
+    PATTERNS = [
+        ("solid", "Solid"),
+        ("hatched", "Hatched"),
+        ("crosshatched", "Cross-hatched"),
+        ("dotted", "Dotted"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="area_types"
+    )
+    name = models.CharField(max_length=64)
+    slug = models.SlugField(max_length=64)
+    color = models.CharField(max_length=7, blank=True, default="")
+    pattern = models.CharField(max_length=16, choices=PATTERNS, default="solid")
+    icon = models.CharField(
+        max_length=48,
+        blank=True,
+        default="",
+        help_text="Lucide icon name (e.g. car, fence, trees).",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "slug"], name="uniq_areatype_tenant_slug"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class FloorPlanArea(TimestampedModel):
     """A room, a location or a plain area drawn on one floor: a rectangle
     (turned about its centre) or a polygon, in cell units. Its colour is the
-    linked room's or location's, else its own. Drawn under the tiles, over
-    the background and zone tiles; areas may overlap (a cage in a hall)."""
+    linked room's or location's, else its own, else its area type's (plain
+    areas only). Drawn under the tiles, over the background and zone tiles;
+    areas may overlap (a cage in a hall)."""
 
     SHAPES = [("rect", "Rectangle"), ("polygon", "Polygon")]
     BORDERS = [("solid", "Solid"), ("dashed", "Dashed"), ("none", "None")]
@@ -9959,6 +10002,12 @@ class FloorPlanArea(TimestampedModel):
         max_length=64, blank=True, default="",
         help_text="Shown in place of the linked room's or location's name.",
     )
+    # What a plain area is (parking, fence…); never set while a room or a
+    # location is linked - those wear the linked object's colour.
+    area_type = models.ForeignKey(
+        AreaType, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="areas",
+    )
     color = models.CharField(max_length=7, blank=True, default="")
     fill_opacity = models.PositiveSmallIntegerField(
         default=15, validators=[MaxValueValidator(100)], help_text="Percent."
@@ -9981,7 +10030,7 @@ class FloorPlanArea(TimestampedModel):
     def __str__(self) -> str:
         return self.label or (str(self.room) if self.room_id else "") or (
             str(self.location) if self.location_id else ""
-        ) or "Area"
+        ) or (self.area_type.name if self.area_type_id else "") or "Area"
 
 
 class FloorPlanLabel(TimestampedModel):

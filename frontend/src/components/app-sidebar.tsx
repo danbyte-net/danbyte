@@ -42,6 +42,7 @@ import {
   History,
   KeyRound,
   Landmark,
+  LandPlot,
   Layers,
   Layers3,
   LayoutDashboard,
@@ -432,6 +433,12 @@ export const sections: NavSection[] = [
             url: "/location-types",
             icon: Shapes,
             objectType: "locationtype",
+          },
+          {
+            title: "Area types",
+            url: "/area-types",
+            icon: LandPlot,
+            objectType: "areatype",
           },
           {
             title: "Rooms",

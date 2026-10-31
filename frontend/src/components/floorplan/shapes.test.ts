@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest"
 import { draftReducer, emptyDraft, initDraftHistory } from "./edit-history"
 import {
   areaColor,
+  areaIcon,
   areaLabelColor,
   areaName,
+  areaNameHalo,
+  areaPattern,
+  areaTypeOf,
   labelPresetMm,
   labelPresetOf,
+  patternRuns,
   pointInBox,
   polygonCrossesItself,
   resizeBox,
@@ -232,5 +237,78 @@ describe("an area's name ink", () => {
         fill_opacity: 80,
       })
     ).toBe("#fff")
+  })
+})
+
+describe("area types", () => {
+  const parking = {
+    id: "t1",
+    name: "Parking",
+    color: "#2563eb",
+    pattern: "hatched" as const,
+    icon: "car",
+  }
+  const plain = { room: null, location: null, color: "", area_type: parking }
+
+  it("colour a plain area unless it has its own colour", () => {
+    expect(areaColor(plain)).toBe("#2563eb")
+    expect(areaColor({ ...plain, color: "#f97316" })).toBe("#f97316")
+    expect(areaPattern(plain)).toBe("hatched")
+    expect(areaIcon(plain)).toBe("car")
+    expect(areaName({ ...plain, label: "" })).toBe("Parking")
+    expect(areaName({ ...plain, label: "Visitors" })).toBe("Visitors")
+  })
+
+  it("never apply to a linked area", () => {
+    const room = { id: "r", name: "Room 210", code: "", color: "" }
+    const linked = { ...plain, room }
+    expect(areaTypeOf(linked)).toBeNull()
+    expect(areaColor(linked)).toBe("#71717a")
+    expect(areaPattern(linked)).toBe("solid")
+    expect(areaName({ ...linked, label: "" })).toBe("Room 210")
+  })
+
+  it("halo the name over a pattern, not over a strong fill", () => {
+    expect(areaNameHalo({ ...plain, fill_opacity: 15 })).toBe(true)
+    expect(areaNameHalo({ ...plain, fill_opacity: 60 })).toBe(false)
+    expect(
+      areaNameHalo({
+        ...plain,
+        area_type: { ...parking, pattern: "solid" },
+        fill_opacity: 15,
+      })
+    ).toBe(false)
+  })
+})
+
+describe("pattern strokes", () => {
+  it("draw nothing for solid", () => {
+    expect(patternRuns("solid", 0, 0, 100, 100)).toEqual([])
+  })
+
+  it("cover the box with 45° lines, both ways when cross-hatched", () => {
+    const [up] = patternRuns("hatched", 0, 0, 100, 50)
+    expect(up.lines.length).toBeGreaterThan(5)
+    for (const [x1, y1, x2, y2] of up.lines) {
+      expect(x2 - x1).toBeCloseTo(50)
+      expect(y1 - y2).toBeCloseTo(50)
+    }
+    // From before the left edge to near the right one.
+    expect(up.lines[0][0]).toBeLessThanOrEqual(-50 + 1e-9)
+    expect(up.lines.at(-1)![0]).toBeGreaterThan(100 - 15)
+    expect(patternRuns("crosshatched", 0, 0, 100, 50)).toHaveLength(2)
+  })
+
+  it("dot rows with a dash one dot long", () => {
+    const [run] = patternRuns("dotted", 0, 0, 100, 40)
+    expect(run.dash).toMatch(/^[\d.]+ [\d.]+$/)
+    expect(run.lines.length).toBe(4)
+  })
+
+  it("widen the gaps on a huge area", () => {
+    const [run] = patternRuns("hatched", 0, 0, 40000, 40000, {
+      maxLines: 400,
+    })
+    expect(run.lines.length).toBeLessThanOrEqual(401)
   })
 })

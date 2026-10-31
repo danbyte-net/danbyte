@@ -1,4 +1,6 @@
 import type {
+  AreaPattern,
+  AreaTypeRef,
   FloorPlanArea,
   FloorPlanLabel,
   FloorPlanLabelColor,
@@ -60,18 +62,44 @@ export function shapesOf(
 
 // ── Areas ─────────────────────────────────────────────────────────────────
 
+type AreaLook = Pick<FloorPlanArea, "room" | "location" | "color"> &
+  Partial<Pick<FloorPlanArea, "area_type">>
+
+/** The type a plain area wears - none once a room or location is linked
+ * (those wear the linked object's colour; docs: floor-plans "Area types"). */
+export function areaTypeOf(
+  a: Pick<FloorPlanArea, "room" | "location"> &
+    Partial<Pick<FloorPlanArea, "area_type">>
+): AreaTypeRef | null {
+  return a.room || a.location ? null : (a.area_type ?? null)
+}
+
 /** An area's colour: its room's, else its location's, else its own, else
- * neutral - from the linked object's data, never from a name. */
-export function areaColor(
-  a: Pick<FloorPlanArea, "room" | "location" | "color">
-): string {
-  return a.room?.color || a.location?.color || a.color || AREA_NEUTRAL
+ * its type's, else neutral - from the objects' data, never from a name. */
+export function areaColor(a: AreaLook): string {
+  return (
+    a.room?.color ||
+    a.location?.color ||
+    a.color ||
+    areaTypeOf(a)?.color ||
+    AREA_NEUTRAL
+  )
+}
+
+/** The fill pattern an area is drawn with: its type's, else solid. */
+export function areaPattern(a: AreaLook): AreaPattern {
+  return areaTypeOf(a)?.pattern ?? "solid"
+}
+
+/** The Lucide icon drawn before an area's name: its type's, if any. */
+export function areaIcon(a: AreaLook): string {
+  return areaTypeOf(a)?.icon ?? ""
 }
 
 /** The ink for an area's name: its own colour over a light fill, or black
  * or white - whichever reads - once the fill is strong enough to swallow it. */
 export function areaLabelColor(
-  a: Pick<FloorPlanArea, "room" | "location" | "color" | "fill_opacity">
+  a: AreaLook & Pick<FloorPlanArea, "fill_opacity">
 ): string {
   const color = areaColor(a)
   return a.fill_opacity >= 50 && /^#[0-9a-f]{6}$/i.test(color)
@@ -79,12 +107,78 @@ export function areaLabelColor(
     : color
 }
 
+/** Whether an area's name needs a halo of the background to read: a
+ * pattern's lines run under a name drawn in their own colour. */
+export function areaNameHalo(
+  a: AreaLook & Pick<FloorPlanArea, "fill_opacity">
+): boolean {
+  return areaPattern(a) !== "solid" && a.fill_opacity < 50
+}
+
 /** What an area is called on the plan: its own label, else its room's or
- * location's name. */
+ * location's name, else its type's. */
 export function areaName(
-  a: Pick<FloorPlanArea, "label" | "room" | "location">
+  a: Pick<FloorPlanArea, "label" | "room" | "location"> &
+    Partial<Pick<FloorPlanArea, "area_type">>
 ): string {
-  return a.label || a.room?.name || a.location?.name || ""
+  return (
+    a.label || a.room?.name || a.location?.name || areaTypeOf(a)?.name || ""
+  )
+}
+
+/** The fill patterns an area type draws its areas with, in menu order. */
+export const AREA_PATTERNS: { value: AreaPattern; label: string }[] = [
+  { value: "solid", label: "Solid" },
+  { value: "hatched", label: "Hatched" },
+  { value: "crosshatched", label: "Cross-hatched" },
+  { value: "dotted", label: "Dotted" },
+]
+
+/** Plan pixels between a pattern's lines (and dots). */
+export const PATTERN_GAP = 10
+/** A pattern's lines over the area's fill: their opacity and width. */
+export const PATTERN_STROKE = { opacity: 0.55, width: 1.25 } as const
+
+/** One run of a pattern's strokes: segments `[x1, y1, x2, y2]`, and the
+ * dash that turns a line into dots. */
+export interface PatternRun {
+  lines: [number, number, number, number][]
+  dash?: string
+}
+
+/**
+ * A fill pattern as plain strokes over the box `x, y, w, h` (plan pixels),
+ * to be clipped to the area - the same on screen and on paper, where the
+ * PDF's sanitiser keeps clip paths but not `<pattern>`. Hatched: 45°
+ * lines; cross-hatched: both diagonals; dotted: rows of dashes one dot
+ * long. At most `maxLines` per run - a huge area gets wider gaps.
+ */
+export function patternRuns(
+  pattern: AreaPattern,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  { gap = PATTERN_GAP, maxLines = 400 } = {}
+): PatternRun[] {
+  if (pattern === "solid" || w <= 0 || h <= 0) return []
+  if (pattern === "dotted") {
+    const step = Math.max(gap, h / maxLines, w / maxLines)
+    const dot = Math.min(1.8, step / 3)
+    const lines: PatternRun["lines"] = []
+    for (let yy = y + step / 2; yy < y + h; yy += step)
+      lines.push([x + step / 2 - dot / 2, yy, x + w, yy])
+    return [{ lines, dash: `${round3(dot)} ${round3(step - dot)}` }]
+  }
+  // Diagonals step along x by gap·√2 so they sit `gap` apart.
+  const step = Math.max(gap * Math.SQRT2, (w + h) / maxLines)
+  const up: PatternRun["lines"] = []
+  const down: PatternRun["lines"] = []
+  for (let t = x - h; t <= x + w; t += step) {
+    up.push([t, y + h, t + h, y])
+    if (pattern === "crosshatched") down.push([t, y, t + h, y + h])
+  }
+  return down.length ? [{ lines: up }, { lines: down }] : [{ lines: up }]
 }
 
 // ── Labels ────────────────────────────────────────────────────────────────

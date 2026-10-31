@@ -52,6 +52,7 @@ function areaBody(
     points: a.points,
     room_id: a.room?.id ?? null,
     location_id: a.location?.id ?? null,
+    area_type_id: a.room || a.location ? null : (a.area_type?.id ?? null),
     label: a.label,
     color: a.color,
     fill_opacity: a.fill_opacity,

@@ -207,6 +207,7 @@ SPECS: dict[str, IndexSpec] = {
     "platformgroup": IndexSpec("api.PlatformGroup", "/platform-groups/{id}", weight=4, site=None),
     "rackrole": IndexSpec("api.RackRole", "/rack-roles/{id}", weight=4, site=None),
     "locationtype": IndexSpec("api.LocationType", "/location-types/{id}", weight=4, site=None),
+    "areatype": IndexSpec("api.AreaType", "/area-types/{id}", weight=4, site=None),
     "racktype": IndexSpec("api.RackType", "/rack-types/{id}", weight=4, site=None),
     "cabinetrole": IndexSpec("api.CabinetRole", "/cabinet-roles/{id}", weight=4, site=None),
     "cabinettype": IndexSpec("api.CabinetType", "/cabinet-types/{id}", weight=4, site=None),

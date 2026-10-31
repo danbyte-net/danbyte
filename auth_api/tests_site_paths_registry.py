@@ -218,6 +218,7 @@ OUTLINES = importlib.import_module(
 PATHS = importlib.import_module(
     "auth_api.migrations.0047_site_roles_floor_plan_cable_paths"
 )
+AREA_TYPES = importlib.import_module("auth_api.migrations.0048_site_roles_area_types")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -399,7 +400,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + PRTG.NEW_CATALOGS + PINS.NEW_CATALOGS + PRTG_FACTS.NEW_CATALOGS
                 + PRTG_OVERRIDES.NEW_CATALOGS
                 + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
-                + OUTLINES.NEW_CATALOGS
+                + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -644,6 +645,47 @@ class SiteRoleOutlineUpgradeTests(SiteRoleUpgradeTests):
         view.refresh_from_db()
         before = sorted(view.object_types)
         OUTLINES.forwards(django_apps, None)
+        view.refresh_from_db()
+        custom.refresh_from_db()
+        self.assertEqual(sorted(view.object_types), before)
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleAreaTypeUpgradeTests(SiteRoleUpgradeTests):
+    """0048 gives the site viewers built before it, and the editors' catalog
+    view, the area types; an editor's own grant gains no write on them."""
+
+    def _role(self, name, actions):
+        """A role as 0047 left it."""
+        types = set(PATHS.KNOWN) - set(CATALOG_MIGRATION.ROLE_CATALOGS) - {
+            "supportcontract", "application", "applicationgroup", "deviceprofile",
+            "applicationflowrequirement", "site", "locationtype"}
+        if actions == ["view"]:
+            types = types | {"site", "locationtype"} | set(CATALOG_MIGRATION.ROLE_CATALOGS)
+        return self._old(name, actions, types=sorted(types))
+
+    def test_roles_gain_area_types(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + OUTLINES.NEW_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        AREA_TYPES.forwards(django_apps, None)
+        for perm in (view, edit, catalog):
+            perm.refresh_from_db()
+        self.assertIn("areatype", view.object_types)
+        self.assertNotIn("areatype", edit.object_types)
+        self.assertIn("areatype", catalog.object_types)
+
+    def test_area_types_second_run_and_hand_built(self):
+        view = self._role("A - site view", ["view"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        AREA_TYPES.forwards(django_apps, None)
+        view.refresh_from_db()
+        before = sorted(view.object_types)
+        AREA_TYPES.forwards(django_apps, None)
         view.refresh_from_db()
         custom.refresh_from_db()
         self.assertEqual(sorted(view.object_types), before)
