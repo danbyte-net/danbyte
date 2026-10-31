@@ -212,7 +212,7 @@ const planRequests = () =>
 
 type PanelProps = Parameters<typeof ConnectCablesPanel>[0]
 
-function panel(over: Partial<PanelProps> = {}) {
+function panel() {
   const props = {
     planId: "p1",
     sources,
@@ -224,7 +224,6 @@ function panel(over: Partial<PanelProps> = {}) {
     onPreviews: vi.fn<PanelProps["onPreviews"]>(),
     onApply: vi.fn<(a: ConnectApply) => void>(),
     onClose: vi.fn(),
-    ...over,
   }
   wrap(<ConnectCablesPanel {...props} />)
   return props
