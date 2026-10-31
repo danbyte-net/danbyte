@@ -5,6 +5,10 @@ import * as THREE from "three"
 import { clipName, nameBox, thinNames } from "@/components/floorplan/readable"
 import type { NameCandidate } from "@/components/floorplan/readable"
 
+import { useTheme } from "@/components/theme-provider"
+
+import { roomLook } from "./room-look"
+import type { RoomLook } from "./room-look"
 import { textTexture } from "./text-sprite"
 import { cellToWorld, floorDeviceBoxM } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
@@ -85,6 +89,13 @@ export function ReadableNames3D({
 }) {
   const group = useRef<THREE.Group>(null)
   const made = useRef(new Map<string, MadeSprite>())
+  // The plates wear the theme's chip; a theme change makes them anew.
+  const look = roomLook(useTheme().theme === "dark")
+  useEffect(() => {
+    const all = made.current
+    for (const m of all.values()) free(m)
+    all.clear()
+  }, [look])
   const entries = useMemo<NameEntry[]>(
     () =>
       tiles
@@ -147,7 +158,7 @@ export function ReadableNames3D({
         continue
       }
       if (!m) {
-        m = make(e)
+        m = make(e, look)
         made.current.set(e.id, m)
         g.add(m.sprite)
       }
@@ -167,12 +178,15 @@ export function ReadableNames3D({
   return <group ref={group} />
 }
 
-function make(e: NameEntry): MadeSprite {
+function make(e: NameEntry, look: RoomLook): MadeSprite {
   const { texture, w, h } = textTexture(e.name, {
     fontPx: 24,
     pad: 6,
     scale: 1,
     align: "center",
+    color: look.plateText,
+    background: look.plate,
+    border: look.plateBorder,
   })
   const material = new THREE.SpriteMaterial({
     map: texture,

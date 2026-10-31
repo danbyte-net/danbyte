@@ -133,6 +133,7 @@ export default function FloorScene3D({
   drawingFloor = null,
   areas = [],
   readableNames = false,
+  muteBackground = true,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -182,6 +183,9 @@ export default function FloorScene3D({
   /** Display > Object size: Readable - every object's name at one size on
    * screen, thinned (readable-names.tsx). */
   readableNames?: boolean
+  /** Display > Muted background: the floor's picture muted as on the 2D
+   * plan. */
+  muteBackground?: boolean
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -756,6 +760,7 @@ export default function FloorScene3D({
           xray={shellMode === "xray"}
           ceiling={showCeiling}
           drawingFloor={drawingFloor}
+          muted={muteBackground}
         />
         {areas.map((a) => (
           <AreaFloorMesh

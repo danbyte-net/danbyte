@@ -37,54 +37,85 @@ export function AreaFloorMesh({
   onPick?: (ids: string[], frame: boolean) => void
 }) {
   const c = cellM(plan)
-  const geometry = useMemo(() => {
+  const { geometry, outline } = useMemo(() => {
     const pts = area.shape === "polygon" ? area.points : boxCorners(area)
-    if (pts.length < 3) return null
+    if (pts.length < 3) return { geometry: null, outline: null }
     const shape = new THREE.Shape(
       pts.map(([x, y]) => new THREE.Vector2(x * c, y * c))
     )
-    return new THREE.ShapeGeometry(shape)
+    // The outline lies flat with the tint: x along x, the plan's y along z.
+    const line = new THREE.BufferGeometry().setFromPoints(
+      pts.map(([x, y]) => new THREE.Vector3(x * c, 0, y * c))
+    )
+    return { geometry: new THREE.ShapeGeometry(shape), outline: line }
   }, [area, c])
-  useEffect(() => () => geometry?.dispose(), [geometry])
+  useEffect(
+    () => () => {
+      geometry?.dispose()
+      outline?.dispose()
+    },
+    [geometry, outline]
+  )
   if (!geometry) return null
+  const color = areaColor(area)
   return (
-    <mesh
-      geometry={geometry}
-      // The shape is drawn in x/y; lying down, its y runs along the floor's z.
-      rotation={[Math.PI / 2, 0, 0]}
-      position={[0, Y, 0]}
-      renderOrder={1}
-      userData={{ areaId: area.id }}
-      onClick={
-        onPick &&
-        ((e) => {
-          e.stopPropagation()
-          onPick(areaIdsUnder(e), false)
-        })
-      }
-      onDoubleClick={
-        onPick &&
-        ((e) => {
-          e.stopPropagation()
-          onPick(areaIdsUnder(e), true)
-        })
-      }
-    >
-      <meshBasicMaterial
-        color={areaColor(area)}
-        transparent
-        opacity={Math.min(
-          0.85,
-          Math.max(0.12, area.fill_opacity / 100) + (selected ? 0.25 : 0)
-        )}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-        // Pulled towards the camera so it never flickers into the floor or
-        // the background a few millimetres below on a large site.
-        polygonOffset
-        polygonOffsetFactor={-2}
-        polygonOffsetUnits={-4}
-      />
-    </mesh>
+    <>
+      {area.border !== "none" && outline && (
+        <lineLoop
+          geometry={outline}
+          position={[0, Y + 0.001, 0]}
+          renderOrder={2}
+          raycast={() => null}
+        >
+          <lineBasicMaterial
+            color={color}
+            transparent
+            opacity={selected ? 1 : 0.8}
+            toneMapped={false}
+            depthWrite={false}
+          />
+        </lineLoop>
+      )}
+      <mesh
+        geometry={geometry}
+        // The shape is drawn in x/y; lying down, its y runs along the floor's z.
+        rotation={[Math.PI / 2, 0, 0]}
+        position={[0, Y, 0]}
+        renderOrder={1}
+        userData={{ areaId: area.id }}
+        onClick={
+          onPick &&
+          ((e) => {
+            e.stopPropagation()
+            onPick(areaIdsUnder(e), false)
+          })
+        }
+        onDoubleClick={
+          onPick &&
+          ((e) => {
+            e.stopPropagation()
+            onPick(areaIdsUnder(e), true)
+          })
+        }
+      >
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={Math.min(
+            0.85,
+            Math.max(0.12, area.fill_opacity / 100) + (selected ? 0.25 : 0)
+          )}
+          // Its own colour, as on the 2D plan - not tone-mapped to a pastel.
+          toneMapped={false}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          // Pulled towards the camera so it never flickers into the floor or
+          // the background a few millimetres below on a large site.
+          polygonOffset
+          polygonOffsetFactor={-2}
+          polygonOffsetUnits={-4}
+        />
+      </mesh>
+    </>
   )
 }

@@ -410,6 +410,7 @@ export function TileShape({
           y={labelY}
           textAnchor="middle"
           fontSize={label.fontSize}
+          fontWeight={500}
           fill="currentColor"
           opacity={paint.muted ? 0.6 : 1}
           pointerEvents="none"

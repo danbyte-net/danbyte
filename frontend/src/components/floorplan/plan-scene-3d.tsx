@@ -74,6 +74,7 @@ export function PlanScene3D({
           focusRack={rackFocus}
           areas={areas?.filter((s) => s.kind === "area")}
           readableNames={prefs.objectSize === "readable"}
+          muteBackground={prefs.muteBackground}
           drawingFloor={
             cadFloorUrl && cad.drawing
               ? {
