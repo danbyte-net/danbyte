@@ -1816,6 +1816,8 @@ export function FloorCanvas({
                 <TrayShape
                   key={tray.id}
                   tray={shownRow(tray)}
+                  zoom={t.k}
+                  readable={readable}
                   selected={
                     trayPick
                       ? trayPick.picked.includes(tray.id)

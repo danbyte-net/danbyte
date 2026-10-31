@@ -263,7 +263,7 @@ export function usePlanViewPrefs({
     (plan?.state.bundle_cables as boolean | undefined) ??
     true
 
-  // Real (the plan as it always looked) unless the plan asks for Readable.
+  // Readable unless the plan chose Real (zoomed in the two look the same).
   const objectSize = objectSizeLocal ?? readObjectSize(plan?.state.object_size)
 
   const setViewPref = (

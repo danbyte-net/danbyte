@@ -3,13 +3,19 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { UseMutationResult } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { FloorPlan, FloorPlanTile } from "@/lib/api"
+import type { FloorPlan, FloorPlanTile, FloorPlanTray } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 import { DisplayMenu } from "./display-menu"
 import { FloorCanvas } from "./floor-canvas"
 import { planSvg } from "./plan-svg"
-import { READABLE_FONT_MM, READABLE_SYMBOL_MM } from "./readable"
+import {
+  READABLE_FONT_MM,
+  READABLE_SYMBOL_MM,
+  READABLE_TRAY_MM,
+  READABLE_TRAY_PX,
+} from "./readable"
+import { TrayShape } from "./tray-layer"
 import type { ObjectSize } from "./readable"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
 
@@ -186,15 +192,15 @@ function Harness({
 }
 
 describe("Display > Object size", () => {
-  it("is Real by default and saves Readable on the plan for an editor", async () => {
+  it("is Readable by default and saves Real on the plan for an editor", async () => {
     const mutate = vi.fn()
     render(<Harness canEdit mutate={mutate} />)
-    expect(screen.getByTestId("size").textContent).toBe("real")
-    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
-    fireEvent.click(await screen.findByRole("button", { name: "Readable" }))
     expect(screen.getByTestId("size").textContent).toBe("readable")
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Real" }))
+    expect(screen.getByTestId("size").textContent).toBe("real")
     expect(mutate).toHaveBeenCalledWith({
-      state: { object_size: "readable" },
+      state: { object_size: "real" },
     })
   })
 
@@ -202,8 +208,103 @@ describe("Display > Object size", () => {
     const mutate = vi.fn()
     render(<Harness canEdit={false} mutate={mutate} />)
     fireEvent.click(screen.getByRole("button", { name: /Display/ }))
-    fireEvent.click(await screen.findByRole("button", { name: "Readable" }))
-    expect(screen.getByTestId("size").textContent).toBe("readable")
+    fireEvent.click(await screen.findByRole("button", { name: "Real" }))
+    expect(screen.getByTestId("size").textContent).toBe("real")
     expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it("keeps a plan that chose Real", () => {
+    expect(usePlanViewPrefsStateDefault({ object_size: "real" })).toBe("real")
+  })
+})
+
+/** The prefs' Object size for a plan's saved state. */
+function usePlanViewPrefsStateDefault(state: Record<string, unknown>) {
+  let got = ""
+  function Probe() {
+    got = usePlanViewPrefs({
+      id: "p2",
+      plan: { ...plan, state },
+      canEdit: false,
+      patchPlan: { mutate: vi.fn() } as unknown as UseMutationResult<
+        FloorPlan,
+        Error,
+        Record<string, unknown>
+      >,
+    }).objectSize
+    return null
+  }
+  render(<Probe />)
+  return got
+}
+
+describe("Readable trays", () => {
+  const tray = {
+    id: "tr1",
+    name: "Duct A",
+    color: "",
+    points: [
+      [0, 0],
+      [100, 0],
+    ],
+    cables: ["c1", "c2"],
+    hidden_cable_count: 0,
+  } as unknown as FloorPlanTray
+  const shape = (readable: boolean) =>
+    render(
+      <svg>
+        <TrayShape
+          tray={tray}
+          selected={false}
+          interactive={false}
+          editable={false}
+          editing={false}
+          dimmed={false}
+          onPointerDown={() => {}}
+          onDoubleClick={() => {}}
+          onVertexDown={() => {}}
+          onInsertBend={() => {}}
+          onVertexContext={() => {}}
+          zoom={0.05}
+          readable={readable}
+        />
+      </svg>
+    ).container
+
+  it("keeps a least width and a readable count from afar", () => {
+    const c = shape(true)
+    const w = +c.querySelector("polyline")!.getAttribute("stroke-width")!
+    expect(w * 0.05).toBeCloseTo(READABLE_TRAY_PX)
+    const t = c.querySelector("text")!
+    expect(t.textContent).toBe("Duct A · 2")
+    expect(+t.getAttribute("font-size")! * 0.05).toBeCloseTo(11)
+  })
+
+  it("Real keeps the 10 px channel", () => {
+    const c = shape(false)
+    expect(c.querySelector("polyline")!.getAttribute("stroke-width")).toBe("10")
+  })
+
+  it("on paper: at least READABLE_TRAY_MM, its count at READABLE_FONT_MM", () => {
+    const mmPerPx = 0.02
+    const svg = planSvg({
+      plan,
+      tiles: [],
+      trays: [tray],
+      objectSize: "readable",
+      mmPerPx,
+    })
+    const d = new DOMParser().parseFromString(svg, "image/svg+xml")
+    const line = d.querySelector("polyline")!
+    expect(+line.getAttribute("stroke-width")! * mmPerPx).toBeCloseTo(
+      READABLE_TRAY_MM,
+      2
+    )
+    const label = [...d.querySelectorAll("text")].pop()!
+    expect(label.textContent).toBe("Duct A · 2")
+    expect(+label.getAttribute("font-size")! * mmPerPx).toBeCloseTo(
+      READABLE_FONT_MM,
+      2
+    )
   })
 })

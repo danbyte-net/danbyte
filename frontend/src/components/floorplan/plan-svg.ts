@@ -65,6 +65,7 @@ import type { Pt } from "./cable-route"
 import {
   READABLE_FONT_MM,
   READABLE_SYMBOL_MM,
+  READABLE_TRAY_MM,
   clipName,
   fontGrow,
   growFactor,
@@ -931,28 +932,49 @@ function wallMarkup(wall: FloorPlanWall, cellMm: number): string {
   return `<g>${parts.join("")}</g>`
 }
 
-function trayMarkup(tray: FloorPlanTray): string {
+function trayMarkup(
+  tray: FloorPlanTray,
+  mmPerPx: number | null = null
+): string {
   if (tray.points.length < 2) return ""
   const color = tray.color || TRAY_DEFAULT
   const pts = tray.points.map(([x, y]) => `${x * CELL},${y * CELL}`).join(" ")
   const mid = tray.points[Math.floor(tray.points.length / 2)]
+  // Readable: at least READABLE_TRAY_MM wide on paper, the name and its
+  // cable count at least READABLE_FONT_MM.
+  const width = mmPerPx == null ? 10 : Math.max(10, READABLE_TRAY_MM / mmPerPx)
+  const grow = mmPerPx == null ? 1 : fontGrow(9, mmPerPx, READABLE_FONT_MM)
+  const count = mmPerPx == null ? 0 : tray.cables.length
+  const hidden = mmPerPx == null ? 0 : (tray.hidden_cable_count ?? 0)
+  const label =
+    tray.name +
+    (count > 0 ? ` · ${count}` : "") +
+    (hidden > 0 ? ` · ${hidden} hidden` : "")
+  const at = {
+    x: mid[0] * CELL + 8 * grow,
+    y: mid[1] * CELL - Math.max(8 * grow, width / 2 + 3 * grow),
+    "font-size": +(9 * grow).toFixed(2),
+  }
   return (
     el("polyline", {
       points: pts,
       fill: "none",
       stroke: color,
       "stroke-opacity": 0.3,
-      "stroke-width": 10,
+      "stroke-width": +width.toFixed(2),
       "stroke-linejoin": "round",
       "stroke-linecap": "round",
     }) +
     (tray.name
-      ? text(tray.name, {
-          x: mid[0] * CELL + 8,
-          y: mid[1] * CELL - 8,
-          "font-size": 9,
-          fill: color,
-        })
+      ? (grow > 1
+          ? text(label, {
+              ...at,
+              fill: "#ffffff",
+              stroke: "#ffffff",
+              "stroke-width": +(3 * grow).toFixed(2),
+              "stroke-linejoin": "round",
+            })
+          : "") + text(label, { ...at, fill: color })
       : "")
   )
 }
@@ -1153,7 +1175,9 @@ export function planSvg({
     body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
   }
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
-  if (showTrays) for (const tray of trays) body.push(trayMarkup(tray))
+  if (showTrays)
+    for (const tray of trays)
+      body.push(trayMarkup(tray, readable ? paperMmPerPx : null))
   if (cables) body.push(cablesMarkup(cables))
   if (readable) body.push(readableNamesMarkup(ordered, growOf, paperMmPerPx))
   // Labels over everything, as on the canvas.

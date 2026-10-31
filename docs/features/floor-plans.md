@@ -892,10 +892,8 @@ outlines** gives photo tiles their coloured outline (see [Photos](#photos)).
 **Object size** (under Color by) chooses how placed objects draw when you
 zoom out:
 
-- **Real** (the default) draws every tile at its true size, as plans always
-  have looked. Far out, a connected tile keeps only the 8 px marker described
-  under [Seeing cables A↔B](#seeing-cables-ab-routed-through-the-trays).
-- **Readable** keeps every placed object - device, rack, cabinet, patch
+- **Readable** (the default, on every plan that has not chosen Real) keeps
+  every placed object - device, rack, cabinet, patch
   panel, any typed tile with its picture or icon - at least **28 px** on
   screen. A tile smaller than that draws grown to 28 px along its longer
   side, its aspect kept, centred on its true place and over its neighbours.
@@ -904,8 +902,12 @@ zoom out:
   racks, cabinets and devices win over planning tiles, then the larger
   footprint. The selected and the hovered tile always show their name. Room
   and area names, zone names and plan labels never drop below 11 px either.
-  Once a tile is 28 px or more on screen nothing changes, so zoomed in
-  Readable and Real look the same.
+  A cable tray's channel stays at least **6 px** wide on screen, and its
+  name and cable count at least 11 px. Once a tile is 28 px or more on
+  screen nothing changes, so zoomed in Readable and Real look the same.
+- **Real** draws every tile and tray at its true size, as plans looked
+  before. Far out, a connected tile keeps only the 8 px marker described
+  under [Seeing cables A↔B](#seeing-cables-ab-routed-through-the-trays).
 
 The grown symbol is only drawn. It selects, hovers, drags and opens its
 right-click menu like the tile, but the tile's saved size and place never
@@ -921,7 +923,8 @@ objects themselves stay their real size in 3D.
 
 The **Export PDF** follows the setting at the sheet's scale: on paper
 objects are at least **5 mm** and names **2 mm** (about 5.7 pt), thinned the
-same way, so a site-wide printout names what is on it. The PNG export is
+same way, and trays at least **1 mm** wide with their name and cable count
+at 2 mm, so a site-wide printout names what is on it. The PNG export is
 the canvas as you see it.
 
 Like the other Display choices, Object size is saved on the plan for those

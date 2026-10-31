@@ -12,9 +12,9 @@ import type { Pt } from "./cable-route"
 export const OBJECT_SIZES = ["real", "readable"] as const
 export type ObjectSize = (typeof OBJECT_SIZES)[number]
 
-/** A stored value as an Object size; anything else is Real. */
+/** A stored value as an Object size: Readable unless the plan chose Real. */
 export function readObjectSize(v: unknown): ObjectSize {
-  return v === "readable" ? "readable" : "real"
+  return v === "real" ? "real" : "readable"
 }
 
 /** Readable on screen: the symbol's least side and the names' font (px). */
@@ -23,6 +23,10 @@ export const READABLE_FONT_PX = 11
 /** Readable on paper: the same, in mm (about 5.7 pt for the names). */
 export const READABLE_SYMBOL_MM = 5
 export const READABLE_FONT_MM = 2
+/** Readable trays: the channel's least width on screen (px) and paper
+ * (mm). */
+export const READABLE_TRAY_PX = 6
+export const READABLE_TRAY_MM = 1
 /** A name longer than this is cut with an ellipsis. */
 export const READABLE_MAX_CHARS = 24
 /** ~Average glyph width of the sans, per em. */

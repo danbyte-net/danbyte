@@ -41,9 +41,10 @@ const tile = (
   }) as unknown as FloorPlanTile
 
 describe("Object size", () => {
-  it("reads Real unless the plan stored Readable", () => {
-    expect(readObjectSize(undefined)).toBe("real")
-    expect(readObjectSize("weird")).toBe("real")
+  it("reads Readable unless the plan chose Real", () => {
+    expect(readObjectSize(undefined)).toBe("readable")
+    expect(readObjectSize("weird")).toBe("readable")
+    expect(readObjectSize("real")).toBe("real")
     expect(readObjectSize("readable")).toBe("readable")
   })
 })
