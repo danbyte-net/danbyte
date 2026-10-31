@@ -1139,7 +1139,9 @@ a room that opens its snapshot.
   dimming never covers it), shown only in that view (never on the source or its other views) - and
   is an ordinary label there, to move and restyle. It starts looking like
   the button that leads there - a label's size, weight, colours and plate;
-  for an area, a size that reads on the target when it is fitted. A live view also hides
+  for an area, a size that reads on the target when it is fitted. A copied
+  size is held to the target: at most 3% of its shorter side (300 mm at
+  least), so a plate made for a campus does not swamp a room. A live view also hides
   the shapes of its source that open the view itself, so "Go to B1" shows
   on the main plan and "Go back" in the B1 view. Picking another target offers to move the back label with it;
   clearing the target, turning the switch off or deleting the shape offers
@@ -1858,7 +1860,11 @@ through each one. Hand the PNG to whoever's pulling cable.
   [length rules](#lengths). A length a person entered is never overwritten
   (the API accepts `overwrite: true`); a blank or computed one is filled.
   Ends farther than ~6 cells from any tray come back *unreachable* rather
-  than pretending a 20 m unsupported hop is a route.
+  than pretending a 20 m unsupported hop is a route. Ends that drop onto one
+  tray - two racks either side of an underfloor tray, straight across it,
+  or anywhere along one run - route drop, along the tray between the two
+  drop points (no length at all when they meet), drop. The canvas traces
+  them the same way.
   `POST /api/floor-plans/{id}/route/` previews a route between two objects
   without saving.
 - **Capacity**: a tray may record how many cables it holds (`capacity`,
@@ -1898,7 +1904,14 @@ When both ends are placed on the plan, a `PUT` also stores the route through
 the trays named - in that order - or the direct run for an empty list, as
 the cable's [stored route](#stored-routes-and-lengths); `GET` lists the
 trays in the stored order, and both answer the stored `path` (null when
-there is none). A length is never written by the routing card.
+there is none). A length is never written by the routing card. Like
+Auto-route, a `PUT` answers `reachable`: `false`, with a `detail`, when the
+trays named do not connect the two ends - the trays stay assigned, but no
+route is stored (an earlier one is removed); `null` when no route applies
+(an end not placed on the plan, or both ends on one tile). The card says so
+after a save: a warning with the `detail`, and **Not routed – trays don't
+connect the ends** above the tray list until you change the pick.
+
 - **Level & elevation**: each tray records where it physically lives -
   **Overhead** (the default), **Underfloor**, or **Floor level** - plus an
   optional exact **elevation in mm**. Leave elevation blank and it derives
@@ -2454,7 +2467,7 @@ copied or cloned riser is not paired.
 | `GET /api/floor-plans/{id}/cable-plan/ports/` | Connect to…'s port picker: `?device=<id>&family=&for=<kind>:<id>&include_mgmt=1&exclude=<kind>:<id>,...` - the device's free ports in the family, only those a direct cable may join to the `for` port when given. The device (and the `for` port's) must be the tenant's and one you may view. Answers `{"ports": [...]}`. |
 | `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. An upsert with `riser` (a riser tile of this plan) routes the cable between floors on the server, through that riser and the one it pairs with, against the tiles as saved: it writes a route here and one on the other floor (which needs floor plan · change and the route's own add or change there), each with `riser` and `riser_mm`; `legs` are ignored. Deleting such a route deletes the other floor's part too when you may edit it. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
-| `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`. |
+| `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`, and on `PUT` `reachable` (`false` with `detail` when the trays do not connect the ends: assigned, no route stored). |
 | `GET /api/floor-plans/{id}/risers/` | The riser tiles on the other floors of the plan's site that you may view (`[{id, label, floor_plan: {id, name, stack}, pair}]`; `pair` is the riser it pairs with now, or null): what a riser of this plan may pair with. |
 
 Tiles carry `riser`, `riser_pair` (`{id, label, floor_plan: {id, name}}`;

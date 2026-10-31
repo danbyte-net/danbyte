@@ -680,6 +680,42 @@ class BulkCablePathTests(_Plan):
         self.cable.refresh_from_db()
         self.assertIsNone(self.cable.length)
 
+    def test_routing_card_routes_racks_either_side_of_one_tray(self):
+        # Both racks drop onto the tray at the same point (x 0.5).
+        self.tile_b.x, self.tile_b.y = 0, 0
+        self.tile_b.save()
+        url = f"/api/cables/{self.cable.id}/routing/"
+        r = self.client.put(
+            url, {"floor_plan": str(self.plan.id), "tray_ids": [str(self.tray.id)]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["reachable"])
+        path = r.json()["path"]
+        self.assertEqual(path["kind"], "trays")
+        (span,) = path["legs"][0]["trays"]
+        self.assertEqual((span["id"], span["entry"], span["exit"]),
+                         (str(self.tray.id), [0.5, 1.0], [0.5, 1.0]))
+        self.assertEqual(path["run_mm"], 1200)
+
+    def test_routing_card_says_when_the_trays_do_not_connect(self):
+        far = FloorPlanTray.objects.create(
+            floor_plan=self.plan, name="FAR", level="overhead", points=[[30, 19], [39, 19]],
+        )
+        self.store()
+        url = f"/api/cables/{self.cable.id}/routing/"
+        r = self.client.put(
+            url, {"floor_plan": str(self.plan.id), "tray_ids": [str(far.id)]}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertIs(body["reachable"], False)
+        self.assertIn("do not connect", body["detail"])
+        self.assertIsNone(body["path"])
+        self.assertEqual([t["id"] for t in body["trays"]], [str(far.id)])
+        self.assertFalse(FloorPlanCablePath.objects.filter(cable=self.cable).exists())
+        self.assertEqual(list(self.cable.trays.all()), [far])
+
     def test_saves_against_tiles_moved_in_the_same_save(self):
         r = self.bulk({
             "tiles": {"update": [{"id": str(self.tile_b.id), "x": 6}]},

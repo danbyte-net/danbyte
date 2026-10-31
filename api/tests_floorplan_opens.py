@@ -283,8 +283,9 @@ class BackLinkTests(_Fixture):
         made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
         self.assertEqual(made.floor_plan_id, self.campus.id)
         self.assertEqual(made.shown_in_id, view.id)
-        # It looks like the button that leads there.
-        self.assertEqual((made.font_mm, made.plate, made.plate_color), (3000, True, "red"))
+        # It looks like the button that leads there, at a size the 6 x 4
+        # cell view can hold (3% of 2.4 m is under the 300 mm floor).
+        self.assertEqual((made.font_mm, made.plate, made.plate_color), (300, True, "red"))
         in_view = [lb["id"] for lb in self.contents(view)["labels"]]
         self.assertEqual(in_view, [str(made.id)])
         on_source = [lb["id"] for lb in self.contents(self.campus)["labels"]]
@@ -339,6 +340,29 @@ class BackLinkTests(_Fixture):
             return hit
 
         self.assertTrue(inside(made.x, made.y), (made.x, made.y))
+
+    def _copied_font(self, font_mm, grid, cell_mm=600):
+        self.label.font_mm = font_mm
+        self.label.opens = self.hall
+        self.label.save()
+        self.hall.grid_width, self.hall.grid_height = grid
+        self.hall.cell_mm = cell_mm
+        self.hall.save()
+        r = self.back({"kind": "label", "id": str(self.label.id), "on": True,
+                       "target_id": str(self.hall.id)})
+        self.assertEqual(r.status_code, 200, r.content)
+        made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
+        made.delete()
+        return made.font_mm
+
+    def test_copied_font_is_held_to_the_target_plan(self):
+        # A 2.5 m campus plate on an 80 x 60 cell hall: 3% of 36 m.
+        self.assertEqual(self._copied_font(2500, (80, 60)), 1080)
+        # A size that fits the target is kept.
+        self.assertEqual(self._copied_font(500, (80, 60)), 500)
+        # Never under 300 mm, however small the target.
+        self.assertEqual(self._copied_font(2500, (10, 8)), 300)
+        self.assertEqual(self._copied_font(100, (80, 60)), 300)
 
     def test_needs_change_on_the_target(self):
         self.login(self.silo_editor())

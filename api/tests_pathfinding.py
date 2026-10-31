@@ -80,6 +80,36 @@ class RouterTests(APITestCase):
         self.assertEqual(r.tray_indexes, [0])
         self.assertAlmostEqual(r.run_cells, 10.0, places=2)
 
+    def test_both_ends_drop_onto_the_same_point(self):
+        # Two racks either side of one underfloor tray, straight across it.
+        tray = [(0.0, 5.0), (20.0, 5.0)]
+        r = route_through_trays((10, 3), (10, 7), [tray])
+        self.assertTrue(r.reachable)
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points, [(10, 3), (10.0, 5.0), (10.0, 5.0), (10, 7)])
+        self.assertAlmostEqual(r.run_cells, 4.0, places=6)
+
+    def test_both_ends_drop_onto_one_segment(self):
+        tray = [(0.0, 5.0), (20.0, 5.0)]
+        # Close enough that the drops would merge into one graph node.
+        r = route_through_trays((10, 3), (10.2, 7), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points[1:3], [(10.0, 5.0), (10.2, 5.0)])
+        self.assertAlmostEqual(r.run_cells, 4.2, places=6)
+        r = route_through_trays((4, 3), (12, 7), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertAlmostEqual(r.run_cells, 12.0, places=6)
+
+    def test_both_ends_drop_onto_different_segments_of_one_tray(self):
+        tray = [(0.0, 5.0), (10.0, 5.0), (10.0, 15.0)]
+        r = route_through_trays((5, 3), (12, 12), [tray])
+        self.assertEqual(r.tray_indexes, [0])
+        self.assertEqual(r.points, [(5, 3), (5.0, 5.0), (10.0, 5.0), (10.0, 12.0), (12, 12)])
+        self.assertAlmostEqual(r.run_cells, 2 + 5 + 7 + 2, places=6)
+        # Travelling the other way walks the vertices backwards.
+        r = route_through_trays((12, 12), (5, 3), [tray])
+        self.assertEqual(r.points[1:4], [(10.0, 12.0), (10.0, 5.0), (5.0, 5.0)])
+
     def test_length_estimate(self):
         # 10 cells × 600mm = 6m run, 2m + 1m drops → 9m, +10% slack = 9.9.
         self.assertAlmostEqual(
@@ -121,6 +151,11 @@ class SharedCaseTests(SimpleTestCase):
                 self.assertAlmostEqual(r.run_cells, case["run"], places=4)
                 run = sum(math.dist(p, q) for p, q in zip(r.points, r.points[1:], strict=False))
                 self.assertAlmostEqual(run, case["run"], places=4)
+                if "points" in case:
+                    self.assertEqual(len(r.points), len(case["points"]))
+                    for got, want in zip(r.points, case["points"], strict=True):
+                        self.assertAlmostEqual(got[0], want[0], places=6)
+                        self.assertAlmostEqual(got[1], want[1], places=6)
 
 
 class RouteApiTests(APITestCase):

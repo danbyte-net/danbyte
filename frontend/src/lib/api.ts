@@ -13427,6 +13427,14 @@ export interface CableRouting {
   trays: TrayRef[]
   /** Every tray on the plan - the pick list. */
   available: TrayRef[]
+  /** The route stored on this plan, null when there is none. */
+  path: StoredCablePath | null
+  /** PUT only: true when a route was stored; false when the trays named do
+   * not connect the two ends (they stay assigned, no path is stored); null
+   * when no route applies (an end off the plan, or both on one tile). */
+  reachable?: boolean | null
+  /** PUT only: why no route was stored. */
+  detail?: string
 }
 
 export interface FloorPlanWritePayload {
