@@ -171,6 +171,36 @@ def view_mask(view, source, crop: Crop):
     return [[_r(x - crop.x), _r(y - crop.y)] for x, y in area_outline(area)]
 
 
+def inside_corner(outline, inset: float = 0.5):
+    """A point just inside ``outline`` near its top left, in the outline's
+    cells - where a view's own button goes so the mask never dims it. Tries
+    points stepping in from the top-left-most corner towards the middle;
+    falls back to the middle of the outline."""
+    if len(outline) < 3:
+        return None
+    cx = sum(x for x, _ in outline) / len(outline)
+    cy = sum(y for _, y in outline) / len(outline)
+    ox, oy = min(outline, key=lambda p: p[0] + p[1])
+
+    def inside(px, py):
+        hit = False
+        n = len(outline)
+        for i in range(n):
+            (x1, y1), (x2, y2) = outline[i], outline[(i + 1) % n]
+            if (y1 > py) != (y2 > py) and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
+                hit = not hit
+        return hit
+
+    dx, dy = cx - ox, cy - oy
+    length = (dx * dx + dy * dy) ** 0.5 or 1.0
+    for step in range(1, 41):
+        d = inset * step
+        px, py = ox + dx / length * d, oy + dy / length * d
+        if inside(px, py) and inside(px + 1, py) and inside(px, py + 0.5):
+            return _r(px), _r(py)
+    return _r(cx), _r(cy)
+
+
 def freeze_followers(area) -> None:
     """Before ``area`` goes: the views following it keep the crop it gives
     them now (SET_NULL then leaves them a plain view of that rectangle)."""

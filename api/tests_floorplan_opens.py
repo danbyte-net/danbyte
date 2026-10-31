@@ -286,6 +286,37 @@ class BackLinkTests(_Fixture):
         self.assertIn(str(self.label.id), on_source)
         self.assertNotIn(str(made.id), on_source)
 
+    def test_a_room_view_gets_its_back_label_inside_the_room(self):
+        # An L-shaped room: its bounding box's top left lies outside it.
+        room = FloorPlanArea.objects.create(
+            floor_plan=self.campus, shape="polygon",
+            points=[[10, 2], [14, 2], [14, 8], [6, 8], [6, 5], [10, 5]],
+        )
+        r = self.client.post(f"/api/floor-plans/{self.campus.id}/snapshot/", {
+            "name": "L room", "mode": "view", "area_id": str(room.id),
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        view = FloorPlan.objects.get(pk=r.json()["id"])
+        self.label.opens = view
+        self.label.save()
+        r = self.back({"kind": "label", "id": str(self.label.id), "on": True,
+                       "target_id": str(view.id)})
+        self.assertEqual(r.status_code, 200, r.content)
+        made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
+        from api import floor_plan_snapshots as snaps
+
+        outline = snaps.area_outline(room)
+
+        def inside(px, py):
+            hit = False
+            for i in range(len(outline)):
+                (x1, y1), (x2, y2) = outline[i], outline[(i + 1) % len(outline)]
+                if (y1 > py) != (y2 > py) and px < x1 + (py - y1) * (x2 - x1) / (y2 - y1):
+                    hit = not hit
+            return hit
+
+        self.assertTrue(inside(made.x, made.y), (made.x, made.y))
+
     def test_needs_change_on_the_target(self):
         self.login(self.silo_editor())
         r = self.back({"kind": "label", "id": str(self.label.id), "on": True,

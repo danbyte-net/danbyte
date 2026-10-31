@@ -11314,10 +11314,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 keep.save()
             else:
                 ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+                bx, by = ox + 0.5, oy + 0.5
+                # A view made from a room dims what lies outside it: the
+                # button goes just inside the room's outline instead.
+                area = snaps.following(target, dst) if crop is not None else None
+                spot = snaps.inside_corner(snaps.area_outline(area)) if area else None
+                if spot is not None:
+                    bx, by = spot
                 FloorPlanLabel.objects.create(
                     floor_plan=dst, text=text or f"Back to {here_name}"[:500],
-                    x=min(ox + 0.5, max(dst.grid_width - 1, 0)),
-                    y=min(oy + 0.5, max(dst.grid_height - 1, 0)),
+                    x=min(bx, max(dst.grid_width - 1, 0)),
+                    y=min(by, max(dst.grid_height - 1, 0)),
                     plate=True, opens=here, pair_id=shape.pk,
                     shown_in=target if snaps.is_view(target) else None,
                     z=(dst.labels.order_by("-z").values_list("z", flat=True).first() or 0) + 1,
