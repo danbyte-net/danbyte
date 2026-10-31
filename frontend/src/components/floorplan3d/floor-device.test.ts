@@ -134,6 +134,18 @@ describe("model placement", () => {
     })
   })
 
+  it("fills the tile when the type has no measured size", () => {
+    // A 1U printer type with no width/height/depth: the rack-unit box would
+    // squeeze the model to 44 mm tall; the tile's footprint sets it instead.
+    const target = modelTargetM(dev({ u_height: 1 }), { w: 0.6, d: 0.6 })
+    expect(target).toEqual({ w: 0.6, d: 0.6 })
+    // A 30-unit model fills 0.6 m across, not 44 mm high.
+    expect(modelScale([30, 30, 26], target, "auto")).toBeCloseTo(0.02)
+    expect(
+      modelTargetM(dev({ u_height: 1, height_mm: 400 }), { w: 0.6, d: 0.6 })
+    ).toEqual({ w: undefined, h: 0.4, d: undefined })
+  })
+
   it("stands the fitted model on the floor, centred", () => {
     // A Z-up model 1000 x 500 x 200 (mm-ish units), offset from the origin.
     const box = new THREE.Box3(

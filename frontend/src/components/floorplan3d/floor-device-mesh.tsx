@@ -29,6 +29,7 @@ import { TextSprite } from "./text-sprite"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import {
   TRANSPARENT_ORDER,
+  cellM,
   cellToWorld,
   deviceViewpoint,
   floorBoxAsRackBox,
@@ -64,6 +65,8 @@ interface Placed {
   floorY: number
   centre: [number, number]
   rotY: number
+  /** The tile's footprint in its own (unrotated) frame, m. */
+  footprint: { w: number; d: number }
 }
 
 /** Whether a tile is a placed device this layer draws (rather than the
@@ -81,9 +84,14 @@ export function placedOf(scene: ScenePayload, tile: SceneTile): Placed | null {
     tile.x + tile.w / 2,
     tile.y + tile.h / 2
   )
+  const c = cellM(scene.plan)
+  const turned = ((tile.orientation % 180) + 180) % 180 === 90
   return {
     tile,
     dev,
+    footprint: turned
+      ? { w: tile.h * c, d: tile.w * c }
+      : { w: tile.w * c, d: tile.h * c },
     box: floorDeviceBoxM(dev),
     floorY: floorTopM(scene, tile),
     centre: [cx, cz],
@@ -207,9 +215,9 @@ function PlacedDevice({
   const fit = useMemo(
     () =>
       model && entry?.status === "ready" && entry.box
-        ? fittedModel(entry.box, model, modelTargetM(dev))
+        ? fittedModel(entry.box, model, modelTargetM(dev, p.footprint))
         : null,
-    [model, entry, dev]
+    [model, entry, dev, p.footprint]
   )
   // What stands here: the model when it has loaded (or its bounding box
   // when it is over the budget), else the rack-unit box.

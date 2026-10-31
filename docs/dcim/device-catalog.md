@@ -276,7 +276,7 @@ turntable, turned the way the room will turn it (its front toward you), with
 
 | Setting | What it does |
 |---|---|
-| **Size** | **Fit to size** (the default) scales the model to the type's width, height and depth where they are recorded, else to its rack-unit box (19 inch wide, its U high, rack depth). Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
+| **Size** | **Fit to size** (the default) scales the model to the type's width, height and depth where they are recorded, else to the footprint of the tile it stands on, so a model fills its tile. Give the type a width, height or depth to size it exactly. Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
 | **Up axis** | **Y up** (glTF's convention) or **Z up** (most CAD exports). |
 | **Front** | The model axis its front faces: +Z (glTF's convention), −Z, +X or −X. The room turns that face to the tile's front edge. |
 
