@@ -15,9 +15,10 @@ import type { ShapeEdits } from "./use-shape-edits"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
 import type { StructureEdits } from "./use-structure-edits"
 import type { TileEdits } from "./use-tile-edits"
+import { slideDoor, translatePoints } from "./structure"
 
 /** The drawing tools: Esc puts them down before it clears a selection. */
-const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "label"]
+const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "label", "door"]
 
 /** The editor's keyboard: E / Esc into and out of Edit, the tool keys,
  * H / Shift+H hide and show, Delete, Escape, arrows, Enter to finish a
@@ -191,6 +192,10 @@ export function useEditorKeys({
         const busy =
           !!selectedId ||
           !!selectedShapeId ||
+          !!ed.selectedWallId ||
+          !!ed.selectedTrayId ||
+          !!ed.selectedAreaId ||
+          !!ed.selectedDoor ||
           multiSel.size > 0 ||
           drawPoints !== null ||
           !!armed
@@ -222,8 +227,17 @@ export function useEditorKeys({
         setArmed(null)
         setSelectedId(null)
         setSelectedShapeId(null)
+        // A door goes first, then its wall.
+        if (ed.selectedDoor) {
+          ed.setSelectedDoor(null)
+          return
+        }
         setSelectedTrayId(null)
         setSelectedWallId(null)
+        ed.setSelectedAreaId(null)
+        ed.setStructSel(new Set())
+        ed.setAreaSel(new Set())
+        setDoorArmed(false)
         setDrawPoints(null)
         setCabinetTileId(null)
         return
@@ -254,6 +268,20 @@ export function useEditorKeys({
       // is invisible) - don't nudge/delete a tile nobody can see.
       if (!canEdit || view3d) return
       const free = plan?.layout_mode === "free"
+      // Walls, doors, trays and raised floors: Delete, arrows (half a cell;
+      // a raised floor a cell; a door slides 100 mm), F flips a door, J
+      // joins two runs picked together.
+      if ((mode === "structure" || mode === "cable") && plan && bare) {
+        const handled = structureKey(e, {
+          ed,
+          structure,
+          plan,
+        })
+        if (handled) {
+          e.preventDefault()
+          return
+        }
+      }
       // An area or a label: Delete, arrows (a half cell on a grid plan, a
       // cell on a free one, a tenth with Alt), Ctrl/⌘+[ and ] to restack.
       if (selectedShape && mode === "layout" && plan && shapeEdits) {
@@ -357,6 +385,8 @@ export function useEditorKeys({
     armed,
     canvasApi,
     onPlaceKey,
+    ed,
+    structure,
   ])
 
   // Ctrl/⌘+Z undoes a tile edit, Shift+Ctrl/⌘+Z or Ctrl+Y redoes it, and
@@ -375,4 +405,74 @@ export function useEditorKeys({
   })
 
   return { stepHistory }
+}
+
+/** A structure key in Structure or Cables mode; true when it did
+ * something. */
+export function structureKey(
+  e: KeyboardEvent,
+  {
+    ed,
+    structure,
+    plan,
+  }: {
+    ed: PlanEditState
+    structure: StructureEdits
+    plan: FloorPlan
+  }
+): boolean {
+  const grid = { w: plan.grid_width, h: plan.grid_height }
+  const key = e.key
+  const arrow = key.startsWith("Arrow")
+  const dx = key === "ArrowLeft" ? -1 : key === "ArrowRight" ? 1 : 0
+  const dy = key === "ArrowUp" ? -1 : key === "ArrowDown" ? 1 : 0
+  const door = ed.selectedDoor
+  if (door) {
+    const w = ed.structure.find((r) => r.id === door.wallId)
+    if (w?.part !== "wall" || !w.openings[door.index]) return false
+    if (key === "Delete" || key === "Backspace") {
+      structure.deleteDoor(door.wallId, door.index)
+      return true
+    }
+    if (key.toLowerCase() === "f") {
+      structure.flipDoor(door.wallId, door.index)
+      return true
+    }
+    if (arrow) {
+      const step = (100 / plan.cell_mm) * (dx || dy)
+      structure.changeDoor(
+        door.wallId,
+        door.index,
+        slideDoor(w.points, w.openings, door.index, step)
+      )
+      return true
+    }
+    return false
+  }
+  if (key.toLowerCase() === "j" && ed.structSel.size === 2) {
+    const [a, b] = [...ed.structSel]
+    structure.join(a, b)
+    return true
+  }
+  const id =
+    ed.mode === "structure"
+      ? (ed.selectedWallId ?? ed.selectedAreaId)
+      : ed.selectedTrayId
+  const row = id ? ed.structure.find((r) => r.id === id) : undefined
+  if (!row) return false
+  if (key === "Delete" || key === "Backspace") {
+    structure.deleteRow(row.id)
+    return true
+  }
+  if (!arrow) return false
+  if (row.part === "raised_floor") {
+    const x = Math.max(0, Math.min(grid.w - row.width, row.x + dx))
+    const y = Math.max(0, Math.min(grid.h - row.height, row.y + dy))
+    if (x !== row.x || y !== row.y) structure.patchArea(row.id, { x, y })
+    return true
+  }
+  const points = translatePoints(row.points, dx * 0.5, dy * 0.5, grid)
+  if (row.part === "wall") structure.patchWall(row.id, { points })
+  else structure.change(row.id, { points })
+  return true
 }

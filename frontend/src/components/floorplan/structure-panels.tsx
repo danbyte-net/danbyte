@@ -9,7 +9,16 @@ import type {
 import { Button } from "@/components/ui/button"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+
+import { WALL_DEFAULT_MM } from "./structure"
 
 /** Structure-mode left rail - raised-floor areas + walls, each with its own
  * draw control. One rail, two catalogs: both are room construction. */
@@ -75,11 +84,6 @@ export function StructureRail({
             dive as deep as its plenum, and the 3D room shows the void.
           </p>
         )}
-        {(areas.length > 0 || walls.length > 0) && (
-          <p className="px-1.5 pb-1 text-[10px] leading-snug text-muted-foreground/80">
-            Structure edits save immediately - the Save button governs tiles.
-          </p>
-        )}
         {areas.map((a) => (
           <button
             key={a.id}
@@ -120,8 +124,7 @@ export function StructureRail({
                 Cancel drawing
               </Button>
               <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-                Click corners along the tile lattice (0.5-cell snap).
-                Double-click or Enter finishes; Esc cancels.
+                Click the corners. Double-click or Enter finishes; Esc cancels.
               </p>
             </>
           ) : (
@@ -137,8 +140,8 @@ export function StructureRail({
         </div>
         {walls.length === 0 && !wallDrawing && (
           <p className="px-1.5 py-1 text-xs text-muted-foreground">
-            No walls yet. Draw the room shell - the 3D view raises it; doors are
-            added on a selected wall.
+            No walls yet. Draw them, or right-click a room: Add walls around
+            this.
           </p>
         )}
         {walls.map((w) => (
@@ -177,6 +180,8 @@ export function WallInspector({
   ceilingMM,
   doorArmed,
   onArmDoor,
+  selectedDoor = null,
+  onSelectDoor,
   onPatch,
   onDelete,
 }: {
@@ -185,12 +190,18 @@ export function WallInspector({
   ceilingMM: number
   doorArmed: boolean
   onArmDoor: () => void
+  /** The door selected on the plan. */
+  selectedDoor?: number | null
+  onSelectDoor?: (index: number | null) => void
   onPatch: (body: Partial<FloorPlanWall>) => void
   onDelete: () => void
 }) {
   const [label, setLabel] = useState(wall.label)
   const [height, setHeight] = useState(
     wall.height_mm == null ? "" : String(wall.height_mm)
+  )
+  const [thickness, setThickness] = useState(
+    wall.thickness_mm == null ? "" : String(wall.thickness_mm)
   )
   const openings = wall.openings
   // Total run length (m) - the number a builder actually wants at a glance.
@@ -248,6 +259,27 @@ export function WallInspector({
           Blank = full height (the plan's ceiling).
         </span>
       </label>
+      <label className="grid gap-1 text-xs">
+        <span className="text-muted-foreground">Thickness (mm)</span>
+        <Input
+          type="number"
+          min={20}
+          max={2000}
+          value={thickness}
+          onChange={(e) => setThickness(e.target.value)}
+          onBlur={() => {
+            const v = thickness.trim() === "" ? null : Number(thickness)
+            if (v !== null && (!Number.isFinite(v) || v < 20 || v > 2000))
+              return
+            if (v !== (wall.thickness_mm ?? null)) onPatch({ thickness_mm: v })
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
+          placeholder={String(WALL_DEFAULT_MM)}
+          className="h-8"
+        />
+      </label>
       <div className="grid gap-1 text-xs">
         <span className="text-muted-foreground">Color</span>
         <ColorPicker
@@ -265,20 +297,23 @@ export function WallInspector({
             className="h-6 px-2"
             onClick={onArmDoor}
           >
-            {doorArmed ? "Click the wall…" : "Add door"}
+            {doorArmed ? "Drag along the wall…" : "Add door"}
           </Button>
         </div>
         {openings.length === 0 && !doorArmed && (
-          <p className="text-[11px] text-muted-foreground">
-            No doors. Arm “Add door”, then click where the opening goes.
-          </p>
+          <p className="text-[11px] text-muted-foreground">No doors yet.</p>
         )}
         {openings.map((o, i) => {
           const widthMM = Math.round((o.to - o.from) * cellMM)
           return (
             <div
               key={i}
-              className="grid gap-1.5 rounded-md border border-border p-2"
+              data-door-card={i}
+              className={cn(
+                "grid gap-1.5 rounded-md border border-border p-2",
+                selectedDoor === i && "ring-1 ring-primary"
+              )}
+              onClick={() => onSelectDoor?.(i)}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">
@@ -305,6 +340,7 @@ export function WallInspector({
                     Width (mm)
                   </span>
                   <Input
+                    key={`${o.from}-${o.to}`}
                     type="number"
                     min={100}
                     defaultValue={widthMM}
@@ -348,6 +384,37 @@ export function WallInspector({
                   />
                 </label>
               </div>
+              <label className="grid gap-0.5">
+                <span className="text-[10px] text-muted-foreground">Swing</span>
+                <Select
+                  value={o.hinge && o.side ? `${o.hinge}-${o.side}` : "none"}
+                  onValueChange={(v) => {
+                    if (v === "none") {
+                      const { hinge: _h, side: _s, ...rest } = o
+                      onPatch({
+                        openings: openings.map((x, k) => (k === i ? rest : x)),
+                      })
+                      return
+                    }
+                    const [hinge, side] = v.split("-") as [
+                      "start" | "end",
+                      "left" | "right",
+                    ]
+                    patchOpening(i, { hinge, side })
+                  }}
+                >
+                  <SelectTrigger size="sm" className="h-7 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Opening</SelectItem>
+                    <SelectItem value="start-left">Start, left</SelectItem>
+                    <SelectItem value="start-right">Start, right</SelectItem>
+                    <SelectItem value="end-left">End, left</SelectItem>
+                    <SelectItem value="end-right">End, right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
             </div>
           )
         })}

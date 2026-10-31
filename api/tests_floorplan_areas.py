@@ -379,7 +379,10 @@ class BulkTests(_Base):
         }, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         body = r.json()
-        self.assertEqual(set(body), {"tiles", "areas", "labels"})
+        self.assertEqual(
+            set(body),
+            {"tiles", "areas", "labels", "walls", "raised_floors", "tray_rows"},
+        )
         self.assertEqual(len(body["tiles"]), 2)
         self.assertEqual([a["room"]["name"] for a in body["areas"]], ["Room 1"])
         self.assertEqual(body["labels"][0]["text"], "B")

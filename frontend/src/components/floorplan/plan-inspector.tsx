@@ -21,6 +21,7 @@ import type { PlanViewPrefs } from "./use-plan-view-prefs"
 import type { ShapeEdits } from "./use-shape-edits"
 import type { StructureEdits } from "./use-structure-edits"
 import type { TileEdits } from "./use-tile-edits"
+import { isTemp } from "./use-tile-edits"
 
 /** The editor's right panel for what is selected in the mode in hand: a
  * tile, an area or a label (Layout), a tray (Cables), a wall or a raised
@@ -160,10 +161,9 @@ export function PlanInspector({
             if (cableId && !showCableLinks)
               setViewPref("show_cable_links", true)
           }}
-          onPatch={(patch) =>
-            patchTray.mutate({ trayId: selectedTray.id, patch })
-          }
-          onDelete={() => deleteTray.mutate(selectedTray.id)}
+          saved={!isTemp(selectedTray.id)}
+          onPatch={(patch) => patchTray(selectedTray.id, patch)}
+          onDelete={() => deleteTray(selectedTray.id)}
         />
       )
     )
@@ -175,10 +175,16 @@ export function PlanInspector({
         wall={wall}
         cellMM={plan.cell_mm}
         ceilingMM={plan.ceiling_mm}
-        doorArmed={doorArmed}
+        doorArmed={doorArmed || ed.tool === "door"}
         onArmDoor={() => setDoorArmed((v) => !v)}
-        onPatch={(body) => patchWall.mutate({ wallId: wall.id, body })}
-        onDelete={() => deleteWall.mutate(wall.id)}
+        selectedDoor={
+          ed.selectedDoor?.wallId === wall.id ? ed.selectedDoor.index : null
+        }
+        onSelectDoor={(index) =>
+          ed.setSelectedDoor(index === null ? null : { wallId: wall.id, index })
+        }
+        onPatch={(body) => patchWall(wall.id, body)}
+        onDelete={() => deleteWall(wall.id)}
       />
     )
   const area = areas.find((a) => a.id === selectedAreaId)
@@ -187,8 +193,8 @@ export function PlanInspector({
     <AreaInspector
       key={area.id}
       area={area}
-      onPatch={(body) => patchArea.mutate({ areaId: area.id, body })}
-      onDelete={() => deleteArea.mutate(area.id)}
+      onPatch={(body) => patchArea(area.id, body)}
+      onDelete={() => deleteArea(area.id)}
     />
   )
 }

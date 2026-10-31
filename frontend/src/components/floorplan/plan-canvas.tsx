@@ -9,7 +9,6 @@ import type {
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
-  RaisedFloorArea,
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -43,6 +42,7 @@ import type { PlanEditState } from "./use-plan-edit-state"
 import type { ShapeEdits } from "./use-shape-edits"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
 import type { StructureEdits } from "./use-structure-edits"
+import type { RaisedRow } from "./structure"
 import type { TileEdits } from "./use-tile-edits"
 
 /** Arms the canvas's drag-rect painter while drawing a raised-floor area -
@@ -104,7 +104,10 @@ export function PlanCanvas({
   lockedIds,
   trayPick,
   emptyActions,
+  structureToolbar,
 }: {
+  /** Edit: floats above the selected wall, door, tray or raised floor. */
+  structureToolbar?: ReactNode
   /** The right-click menu on empty plan space. */
   emptyActions?: FloorCanvasProps["emptyActions"]
   /** Picking a cable's trays on the plan ("After placing"). */
@@ -136,7 +139,7 @@ export function PlanCanvas({
   liveState: FloorPlanLiveState | null
   trays: FloorPlanTray[]
   walls: FloorPlanWall[]
-  areas: RaisedFloorArea[]
+  areas: RaisedRow[]
   cablePaths: FloorPlanCablePath[]
   /** Each cable's route (use-cable-routes.ts). */
   cableRoutes: ReadonlyMap<string, CableRoute>
@@ -170,7 +173,13 @@ export function PlanCanvas({
     setSelectedAreaId,
     selectedWallId,
     setSelectedWallId,
-    doorArmed,
+    doorArmed: doorArmedState,
+    selectedDoor,
+    setSelectedDoor,
+    structSel,
+    setStructSel,
+    areaSel,
+    setAreaSel,
     multiSel,
     setMultiSel,
     showGrid,
@@ -200,15 +209,9 @@ export function PlanCanvas({
     deleteTile,
     setTileFacing,
   } = edits
-  const {
-    patchArea,
-    createAreaAt,
-    patchWall,
-    placeDoor,
-    patchTray,
-    addDrawPoint,
-    finishDraw,
-  } = structure
+  const { createAreaAt, addDrawPoint, finishDraw } = structure
+  // The Door tool holds the door arm while it is in hand.
+  const doorArmed = doorArmedState || tool === "door"
   const {
     colorBy,
     labelFit,
@@ -295,18 +298,64 @@ export function PlanCanvas({
         onCreateRect={mode === "structure" ? createAreaAt : createAt}
         raisedFloors={areas}
         selectedAreaId={selectedAreaId}
-        onSelectArea={setSelectedAreaId}
-        onAreaRectChange={(areaId, rect) =>
-          patchArea.mutate({ areaId, body: rect })
-        }
+        onSelectArea={(aid) => {
+          setSelectedAreaId(aid)
+          if (aid) {
+            setSelectedWallId(null)
+            setSelectedDoor(null)
+          }
+        }}
         walls={walls}
         selectedWallId={selectedWallId}
-        onSelectWall={setSelectedWallId}
-        onMoveWall={(wallId, points) =>
-          patchWall.mutate({ wallId, body: { points } })
-        }
+        onSelectWall={(wid) => {
+          setSelectedWallId(wid)
+          setStructSel((prev) => (prev.size ? new Set() : prev))
+          if (wid) setSelectedAreaId(null)
+        }}
         doorArmed={doorArmed}
-        onPlaceDoor={placeDoor}
+        structure={ed.structure}
+        onCommitStructure={structure.commit}
+        onAddDoor={structure.addDoor}
+        selectedDoor={selectedDoor}
+        onSelectDoor={setSelectedDoor}
+        structSel={structSel}
+        onToggleStruct={(sid) =>
+          setStructSel((prev) => {
+            // The run selected with a plain click is the first one picked.
+            const cur = mode === "cable" ? selectedTrayId : selectedWallId
+            const next = new Set(
+              prev.size === 0 && cur && cur !== sid ? [cur] : prev
+            )
+            if (next.has(sid)) next.delete(sid)
+            else next.add(sid)
+            return next
+          })
+        }
+        structureActions={{
+          addDoorAt: structure.placeDoor,
+          addBendAt: structure.addBend,
+          splitAt: structure.splitAt,
+          join: structure.join,
+          flipDoor: structure.flipDoor,
+          deleteDoor: structure.deleteDoor,
+          deleteRow: structure.deleteRow,
+          removePoint: structure.removePoint,
+          wallsAround: structure.wallsAroundAreas,
+        }}
+        structureToolbar={structureToolbar}
+        areaSel={areaSel}
+        onToggleArea={(aid) =>
+          setAreaSel((prev) => {
+            const next = new Set(
+              prev.size === 0 && selectedShapeId && selectedShapeId !== aid
+                ? [selectedShapeId]
+                : prev
+            )
+            if (next.has(aid)) next.delete(aid)
+            else next.add(aid)
+            return next
+          })
+        }
         onOpenTile={openTile}
         // A click on a device or rack pins its popover (Trace there, or a
         // double-click, opens the deep view); without a hover to pin - a
@@ -332,13 +381,13 @@ export function PlanCanvas({
         trays={trays}
         showTrays={showTrays}
         selectedTrayId={selectedTrayId}
-        onSelectTray={setSelectedTrayId}
+        onSelectTray={(tid) => {
+          setSelectedTrayId(tid)
+          setStructSel((prev) => (prev.size ? new Set() : prev))
+        }}
         drawPoints={drawPoints ?? undefined}
         onAddDrawPoint={addDrawPoint}
         onFinishDraw={finishDraw}
-        onMoveTray={(trayId, points) =>
-          patchTray.mutate({ trayId, patch: { points } })
-        }
         trayEditMode={trayEditMode}
         trayPick={trayPick}
         cablePaths={cablePaths}

@@ -173,9 +173,12 @@ export function AreaShapeView({
   onPointerDown,
   onEdgeDoubleClick,
   zoom = 1,
+  multiSelected = false,
 }: {
   area: AreaShape
   selected: boolean
+  /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
+  multiSelected?: boolean
   /** The canvas zoom, for strokes that keep their screen size. */
   zoom?: number
   /** Takes the pointer (Edit with Select, or View). */
@@ -187,14 +190,15 @@ export function AreaShapeView({
   const ink = areaLabelColor(area)
   const name = area.show_name ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
-  const strokeOpacity = area.border === "none" ? 0 : selected ? 0.95 : 0.6
+  const on = selected || multiSelected
+  const strokeOpacity = area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
   const clipId = `area-pattern-${area.id}`
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
     stroke: color,
     strokeOpacity,
-    strokeWidth: (selected ? 2.5 : 1.5) / zoom,
+    strokeWidth: (on ? 2.5 : 1.5) / zoom,
     strokeDasharray: dash,
   }
   const style: React.CSSProperties = {
@@ -213,6 +217,7 @@ export function AreaShapeView({
     return (
       <g
         data-area={area.id}
+        data-picked={multiSelected ? "" : undefined}
         style={style}
         onPointerDown={onPointerDown}
         aria-label={name || "Area"}
@@ -273,6 +278,7 @@ export function AreaShapeView({
   return (
     <g
       data-area={area.id}
+      data-picked={multiSelected ? "" : undefined}
       style={style}
       onPointerDown={onPointerDown}
       transform={
@@ -415,6 +421,10 @@ export function LabelShapeView({
   )
 }
 
+/** Every handle on the plan is this many screen pixels across - areas,
+ * labels, free tiles, tile grips, walls, trays, raised floors and doors. */
+export const HANDLE_PX = 9
+
 /** The handles of a selected box: eight squares to resize, a circle above
  * the top edge to turn it. Their screen size holds at any zoom. */
 export function BoxHandles({
@@ -430,7 +440,7 @@ export function BoxHandles({
   gestures: ShapeGestures
   handles?: readonly Handle[]
 }) {
-  const s = 9 / zoom
+  const s = HANDLE_PX / zoom
   const gap = 22 / zoom / CELL
   const [rx, ry] = rotateHandlePoint(box, gap)
   const [tx, ty] = handlePoint(box, "n")
@@ -502,7 +512,7 @@ export function VertexHandles({
   gestures: ShapeGestures
   onVertexMenu?: (index: number, e: React.MouseEvent) => void
 }) {
-  const s = 9 / zoom
+  const s = HANDLE_PX / zoom
   return (
     <g data-handles="">
       {area.points.map(([x, y], i) => (

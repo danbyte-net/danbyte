@@ -152,6 +152,8 @@ export interface SceneWall {
   points: [number, number][]
   /** null = full height (the plan's ceiling). */
   height_mm: number | null
+  /** null = WALL_THICKNESS_M. */
+  thickness_mm?: number | null
   color: string
   openings: SceneWallOpening[]
 }
@@ -632,7 +634,7 @@ export function airflowGlyphPlacements(
 
 // ─── Walls ───────────────────────────────────────────────────────────────────
 
-/** Wall thickness (m) - a frontend constant until someone needs it as data. */
+/** A wall's thickness (m) when it has none of its own. */
 export const WALL_THICKNESS_M = 0.1
 /** An opening with no height renders a standard door. */
 export const DOOR_DEFAULT_MM = 2100

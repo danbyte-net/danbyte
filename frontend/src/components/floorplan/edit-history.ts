@@ -6,10 +6,11 @@ import type { CableDraft } from "./cable-draft"
 
 /**
  * The floor plan editor's draft with its undo history - the topology map's
- * `view-document.ts` pattern for the plan's tiles and shapes (areas and
- * labels). The draft is what Save writes in one bulk call: the tiles and
- * shapes as edited, which of them changed and which were deleted (one set
- * each, keyed by id - ids never repeat across kinds). Every edit is one step back (at most `HISTORY_LIMIT`);
+ * `view-document.ts` pattern for the plan's tiles, shapes (areas and
+ * labels) and structure (walls, raised floors, trays). The draft is what
+ * Save writes in one bulk call: the rows as edited, which of them changed
+ * and which were deleted (one set each, keyed by id - ids never repeat
+ * across kinds). Every edit is one step back (at most `HISTORY_LIMIT`);
  * the setters called inside one event handler are one step, and so is a
  * whole drag (`gesture`, sealed when the pointer lifts).
  *
@@ -18,27 +19,29 @@ import type { CableDraft } from "./cable-draft"
  */
 export const HISTORY_LIMIT = 100
 
-export interface PlanDraft<T, TShape = unknown> {
+export interface PlanDraft<T, TShape = unknown, TStruct = unknown> {
   tiles: T[]
   shapes: TShape[]
+  /** Walls, raised floors and trays. */
+  structure: TStruct[]
   dirty: ReadonlySet<string>
   deleted: ReadonlySet<string>
   /** Cable routes applied from "After placing" (cable-draft.ts). */
   cables: CableDraft
 }
 
-export interface DraftHistory<T, TShape = unknown> {
-  past: PlanDraft<T, TShape>[]
-  present: PlanDraft<T, TShape>
-  future: PlanDraft<T, TShape>[]
+export interface DraftHistory<T, TShape = unknown, TStruct = unknown> {
+  past: PlanDraft<T, TShape, TStruct>[]
+  present: PlanDraft<T, TShape, TStruct>
+  future: PlanDraft<T, TShape, TStruct>[]
   /** The coalescing key of the last step. */
   step: string | null
 }
 
-export type DraftMsg<T, TShape = unknown> =
+export type DraftMsg<T, TShape = unknown, TStruct = unknown> =
   | {
       kind: "do"
-      apply: (d: PlanDraft<T, TShape>) => PlanDraft<T, TShape>
+      apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>
       step?: string
     }
   | { kind: "undo" }
@@ -46,31 +49,33 @@ export type DraftMsg<T, TShape = unknown> =
   /** Close the current step: the next edit is a step of its own. */
   | { kind: "seal" }
   /** Fresh data from the server, or after a save: history forgotten. */
-  | { kind: "load"; draft: PlanDraft<T, TShape> }
+  | { kind: "load"; draft: PlanDraft<T, TShape, TStruct> }
 
-export function emptyDraft<T, TShape = unknown>(
+export function emptyDraft<T, TShape = unknown, TStruct = unknown>(
   tiles: T[] = [],
-  shapes: TShape[] = []
-): PlanDraft<T, TShape> {
+  shapes: TShape[] = [],
+  structure: TStruct[] = []
+): PlanDraft<T, TShape, TStruct> {
   return {
     tiles,
     shapes,
+    structure,
     dirty: new Set(),
     deleted: new Set(),
     cables: EMPTY_CABLE_DRAFT,
   }
 }
 
-export function initDraftHistory<T, TShape = unknown>(
-  draft: PlanDraft<T, TShape>
-): DraftHistory<T, TShape> {
+export function initDraftHistory<T, TShape = unknown, TStruct = unknown>(
+  draft: PlanDraft<T, TShape, TStruct>
+): DraftHistory<T, TShape, TStruct> {
   return { past: [], present: draft, future: [], step: null }
 }
 
-export function draftReducer<T, TShape = unknown>(
-  h: DraftHistory<T, TShape>,
-  m: DraftMsg<T, TShape>
-): DraftHistory<T, TShape> {
+export function draftReducer<T, TShape = unknown, TStruct = unknown>(
+  h: DraftHistory<T, TShape, TStruct>,
+  m: DraftMsg<T, TShape, TStruct>
+): DraftHistory<T, TShape, TStruct> {
   switch (m.kind) {
     case "do": {
       const next = m.apply(h.present)
@@ -78,6 +83,7 @@ export function draftReducer<T, TShape = unknown>(
         next === h.present ||
         (next.tiles === h.present.tiles &&
           next.shapes === h.present.shapes &&
+          next.structure === h.present.structure &&
           next.dirty === h.present.dirty &&
           next.deleted === h.present.deleted &&
           next.cables === h.present.cables)
@@ -122,13 +128,15 @@ export function draftReducer<T, TShape = unknown>(
 const resolve = <TState>(v: SetStateAction<TState>, prev: TState): TState =>
   typeof v === "function" ? (v as (p: TState) => TState)(prev) : v
 
-export interface PlanDraftApi<T, TShape = unknown> {
+export interface PlanDraftApi<T, TShape = unknown, TStruct = unknown> {
   tiles: T[]
   shapes: TShape[]
   dirtyIds: ReadonlySet<string>
   deletedIds: ReadonlySet<string>
   setTiles: (v: SetStateAction<T[]>) => void
   setShapes: (v: SetStateAction<TShape[]>) => void
+  structure: TStruct[]
+  setStructure: (v: SetStateAction<TStruct[]>) => void
   setDirtyIds: (v: SetStateAction<ReadonlySet<string>>) => void
   setDeletedIds: (v: SetStateAction<ReadonlySet<string>>) => void
   cables: CableDraft
@@ -141,23 +149,34 @@ export interface PlanDraftApi<T, TShape = unknown> {
   canUndo: boolean
   canRedo: boolean
   /** Replace the draft and forget the history. */
-  load: (tiles: T[], shapes?: TShape[]) => void
+  load: (tiles: T[], shapes?: TShape[], structure?: TStruct[]) => void
   /** The rows as last loaded - what the edits are based on (their
    * versions go with a save, so a row changed elsewhere since is a
    * conflict rather than overwritten). */
-  origin: { tiles: T[]; shapes: TShape[] }
+  origin: { tiles: T[]; shapes: TShape[]; structure: TStruct[] }
 }
 
 /** The page's handle on the draft. */
-export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
-  const [h, send] = useReducer(draftReducer<T, TShape>, undefined, () =>
-    initDraftHistory(emptyDraft<T, TShape>())
+export function usePlanDraft<
+  T,
+  TShape = unknown,
+  TStruct = unknown,
+>(): PlanDraftApi<T, TShape, TStruct> {
+  const [h, send] = useReducer(
+    draftReducer<T, TShape, TStruct>,
+    undefined,
+    () => initDraftHistory(emptyDraft<T, TShape, TStruct>())
   )
   const latest = useRef(h)
   latest.current = h
-  const origin = useRef<{ tiles: T[]; shapes: TShape[] }>({
+  const origin = useRef<{
+    tiles: T[]
+    shapes: TShape[]
+    structure: TStruct[]
+  }>({
     tiles: [],
     shapes: [],
+    structure: [],
   })
 
   // One handler = one step: calls inside the same task share a key; the
@@ -178,8 +197,9 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
   }, [])
 
   const edit = useCallback(
-    (apply: (d: PlanDraft<T, TShape>) => PlanDraft<T, TShape>) =>
-      send({ kind: "do", apply, step: stepKey() }),
+    (
+      apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>
+    ) => send({ kind: "do", apply, step: stepKey() }),
     [stepKey]
   )
   const setTiles = useCallback(
@@ -195,6 +215,14 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
       edit((d) => {
         const shapes = resolve(v, d.shapes)
         return shapes === d.shapes ? d : { ...d, shapes }
+      }),
+    [edit]
+  )
+  const setStructure = useCallback(
+    (v: SetStateAction<TStruct[]>) =>
+      edit((d) => {
+        const structure = resolve(v, d.structure)
+        return structure === d.structure ? d : { ...d, structure }
       }),
     [edit]
   )
@@ -241,10 +269,13 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
     send({ kind: "redo" })
     return true
   }, [])
-  const load = useCallback((tiles: T[], shapes: TShape[] = []) => {
-    origin.current = { tiles, shapes }
-    send({ kind: "load", draft: emptyDraft(tiles, shapes) })
-  }, [])
+  const load = useCallback(
+    (tiles: T[], shapes: TShape[] = [], structure: TStruct[] = []) => {
+      origin.current = { tiles, shapes, structure }
+      send({ kind: "load", draft: emptyDraft(tiles, shapes, structure) })
+    },
+    []
+  )
   return {
     tiles: h.present.tiles,
     shapes: h.present.shapes,
@@ -252,6 +283,8 @@ export function usePlanDraft<T, TShape = unknown>(): PlanDraftApi<T, TShape> {
     deletedIds: h.present.deleted,
     setTiles,
     setShapes,
+    structure: h.present.structure,
+    setStructure,
     setDirtyIds,
     setDeletedIds,
     cables: h.present.cables,

@@ -35,7 +35,7 @@ export function PlanDialogs({
   ed: PlanEditState
   cad: CadDrawingState
   uploadBackground: UseMutationResult<FloorPlan, Error, File | null>
-  createTray: UseMutationResult<unknown, Error, FloorPlanTrayWritePayload>
+  createTray: (payload: FloorPlanTrayWritePayload) => void
   traceCablesOnMap: (cableIds: string[]) => void
   backgroundControls: ReactNode
   leaveGuard: LeaveBlocker
@@ -58,7 +58,7 @@ export function PlanDialogs({
         points={namingPoints}
         onCancel={() => setNamingPoints(null)}
         onCreate={(payload) => {
-          createTray.mutate(payload)
+          createTray(payload)
           setNamingPoints(null)
         }}
       />

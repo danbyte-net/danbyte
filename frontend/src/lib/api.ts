@@ -12106,13 +12106,24 @@ export interface FloorPlanRoomMismatch {
 /** A 409 from a save: a row changed (or deleted) elsewhere. A cable's
  * stored route (`cable_path`) or its length (`cable`) carry the cable's id. */
 export interface FloorPlanConflict {
-  kind: "tile" | "area" | "label" | "cable_path" | "cable"
+  kind:
+    | "tile"
+    | "area"
+    | "label"
+    | "wall"
+    | "tray"
+    | "raised_floor"
+    | "cable_path"
+    | "cable"
   id: string
   /** The row as it is now; null when it was deleted. */
   current:
     | FloorPlanTile
     | FloorPlanArea
     | FloorPlanLabel
+    | FloorPlanWall
+    | FloorPlanTray
+    | RaisedFloorArea
     | StoredCablePath
     | CableLengthNow
     | null
@@ -12504,6 +12515,11 @@ export interface FloorPlanWallOpening {
   from: number
   to: number
   height_mm: number | null
+  /** A door's leaf: hinged at the span's start or end, swinging to the
+   * left or the right of the segment's direction. Neither: a plain
+   * opening. */
+  hinge?: "start" | "end"
+  side?: "left" | "right"
 }
 
 export interface FloorPlanWall {
@@ -12513,6 +12529,8 @@ export interface FloorPlanWall {
   points: [number, number][]
   /** null = full height (the plan's ceiling). */
   height_mm: number | null
+  /** null = the standard 100 mm. */
+  thickness_mm?: number | null
   color: string
   openings: FloorPlanWallOpening[]
   created_at: string
@@ -12702,12 +12720,14 @@ interface BulkPart<T> {
   delete?: (string | { id: string; version?: string })[]
 }
 
-/** POST /api/floor-plans/<id>/bulk/ - tiles, areas and labels in one
- * transaction; the fresh lists come back. */
+/** POST /api/floor-plans/<id>/bulk/ - tiles, areas, labels, walls, raised
+ * floors and trays in one transaction; the fresh lists come back. */
 export interface FloorPlanBulkPayload {
   tiles?: BulkPart<FloorPlanTileWritePayload>
   areas?: BulkPart<FloorPlanAreaWritePayload>
   labels?: BulkPart<FloorPlanLabelWritePayload>
+  walls?: BulkPart<FloorPlanWallWritePayload>
+  raised_floors?: BulkPart<RaisedFloorAreaWritePayload>
   cable_paths?: {
     upsert?: CablePathUpsert[]
     delete?: (string | { cable: string; version?: string })[]
@@ -12715,7 +12735,12 @@ export interface FloorPlanBulkPayload {
   /** New trays - runs kept from "After placing". `key` is the draft's id
    * for one, which `tray_order` of the paths saved with it may name. A
    * tray with no name is called "Run N". */
-  trays?: { create?: BulkTrayCreate[] }
+  trays?: {
+    create?: BulkTrayCreate[]
+    /** A tray update writes its cables only when it carries `cable_ids`. */
+    update?: (FloorPlanTrayWritePayload & { id: string; version?: string })[]
+    delete?: (string | { id: string; version?: string })[]
+  }
 }
 
 export interface BulkTrayCreate {
@@ -12724,6 +12749,11 @@ export interface BulkTrayCreate {
   level?: TrayLevel
   elevation_mm?: number | null
   name?: string
+  kind?: string
+  color?: string
+  capacity?: number | null
+  description?: string
+  cable_ids?: string[]
 }
 
 /** A cable's route to store: routed on the server when `legs` is left out,
@@ -12752,6 +12782,10 @@ export interface FloorPlanBulkResult {
   cable_paths?: StoredCablePath[]
   /** The trays the save made, by the key each was sent with. */
   trays?: { key: string; id: string }[]
+  walls?: FloorPlanWall[]
+  raised_floors?: RaisedFloorArea[]
+  /** The plan's trays afterwards. */
+  tray_rows?: FloorPlanTray[]
 }
 
 /** GET /api/floor-plans/{id}/contents/ - everything drawn on a plan in one
@@ -12774,6 +12808,7 @@ export interface FloorPlanWallWritePayload {
   label?: string
   points?: [number, number][]
   height_mm?: number | null
+  thickness_mm?: number | null
   color?: string
   openings?: FloorPlanWallOpening[]
 }
@@ -12786,6 +12821,7 @@ export interface FloorPlanTrayWritePayload {
   points?: [number, number][]
   level?: TrayLevel
   elevation_mm?: number | null
+  capacity?: number | null
   description?: string
   cable_ids?: string[]
 }

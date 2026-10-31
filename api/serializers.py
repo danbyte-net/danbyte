@@ -11567,6 +11567,13 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
                     {"openings": "opening height must be ≥200 mm and not "
                      "taller than the wall"}
                 )
+            if o.get("hinge") not in (None, "start", "end") or o.get("side") not in (
+                None, "left", "right"
+            ):
+                raise serializers.ValidationError(
+                    {"openings": "a door's hinge is start or end, its side "
+                     "left or right"}
+                )
             spans = by_seg.setdefault(seg, [])
             if any(start < e and s < end for s, e in spans):
                 raise serializers.ValidationError(
@@ -11578,7 +11585,7 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanWall
         fields = ["id", "floor_plan_id", "label", "points", "height_mm",
-                  "color", "openings", "created_at", "updated_at"]
+                  "thickness_mm", "color", "openings", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
@@ -11594,9 +11601,10 @@ class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # A plan's bulk save names the plan in the context, not the body.
         plan = attrs.get("floor_plan") or (
             self.instance.floor_plan if self.instance else None
-        )
+        ) or self.context.get("floor_plan")
         if plan is None:
             return attrs
         get = lambda k: attrs.get(  # noqa: E731 - tiny create-or-update getter
