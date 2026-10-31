@@ -40,7 +40,8 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
-import { useMe } from "@/lib/use-me"
+import { objCan, useMe } from "@/lib/use-me"
+import { Model3DCard } from "@/components/model-3d-card"
 
 const DEVICE_TYPE_TABS = [
   "overview",
@@ -433,6 +434,16 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
         <KvCard title="Usage" rows={usage} />
         <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
+        <Model3DCard
+          kind="device-types"
+          id={d.id}
+          own={d.model_3d ?? null}
+          fit={d.model_3d_fit ?? "auto"}
+          up={d.model_3d_up ?? "y"}
+          front={d.model_3d_front ?? "+z"}
+          canEdit={objCan(d, "change", canDo("devicetype", "change"))}
+          queryKey={["device-type", d.id]}
+        />
       </div>
     </div>
   )

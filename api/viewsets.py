@@ -3565,6 +3565,29 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
         dt.save()
         return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
 
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+            "fit": {"type": "string"}, "up": {"type": "string"},
+            "front": {"type": "string"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_file(self, request, pk=None):
+        """The type's 3D model (binary glTF, api.model_3d). GET downloads it
+        (``model/gltf-binary``, as an attachment); POST a multipart ``file``
+        to set or replace it, with optional ``fit`` / ``up`` / ``front``;
+        DELETE removes it. Reading needs view on the type, writing change."""
+        from . import model_3d
+
+        dt = self.get_object()
+        resp = model_3d.handle(request, dt, slugify(dt.name) or "model")
+        if resp is not None:
+            return resp
+        return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
+
 
 def _region_and_descendant_ids(region_id):
     """All region ids in the subtree rooted at ``region_id`` (inclusive).
@@ -3898,6 +3921,30 @@ class DeviceViewSet(
         from .cooling_trace import device_path
 
         return Response(device_path(self.get_object(), request.user, _get_active_tenant(request)))
+
+    @extend_schema(
+        request={"multipart/form-data": {"type": "object", "properties": {
+            "file": {"type": "string", "format": "binary"},
+            "fit": {"type": "string"}, "up": {"type": "string"},
+            "front": {"type": "string"},
+        }}},
+        responses={200: OpenApiTypes.BINARY},
+    )
+    @action(detail=True, methods=["get", "post", "delete"], url_path="model",
+            parser_classes=[MultiPartParser, FormParser])
+    def model_file(self, request, pk=None):
+        """The device's 3D model (api.model_3d). GET downloads what the 3D
+        room draws for it - its own model, else its type's; POST a multipart
+        ``file`` to set its own (overriding the type's), with optional
+        ``fit`` / ``up`` / ``front``; DELETE removes its own, so it inherits
+        again. Reading needs view on the device, writing change."""
+        from . import model_3d
+
+        device = self.get_object()
+        resp = model_3d.handle(request, device, slugify(device.name) or "model")
+        if resp is not None:
+            return resp
+        return Response(DeviceSerializer(device, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):
@@ -13037,6 +13084,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
         def cabinet_geo(c):
             return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))
 
+        # Devices placed straight on the floor: a rack-unit box, or their
+        # uploaded 3D model, where the reader may view them (#placed-3d).
+        placed = scene_geo.load_placed_devices(
+            viewable_devices.filter(
+                id__in={t.device_id for t in shown if t.device_id},
+                rack__isnull=True, cabinet__isnull=True,
+            )
+        )
+        viewable_types = scene_geo.viewable_type_ids(user, tenant, placed.values())
+
+        def placed_geo(t):
+            d = placed.get(t.device_id) if t.device_id else None
+            if d is None or t.pk in hidden_tiles:
+                return None
+            return scene_geo.placed_device_geo(d, img, viewable_types)
+
         tiles = [
             {
                 "id": str(t.id),
@@ -13078,6 +13141,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 if t.rack_id and t.rack_id in racks else None,
                 "cabinet": cabinet_geo(t.cabinet)
                 if t.cabinet_id and t.pk not in hidden_tiles else None,
+                "device": placed_geo(t),
             }
             for t in tiles_qs
         ]

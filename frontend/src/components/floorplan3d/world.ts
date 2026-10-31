@@ -112,6 +112,29 @@ export interface SceneTile {
   /** Zone tiles of a perforated type draw as grate floor in 3D. Optional so
    * older cached payloads stay type-valid. */
   perforated?: boolean
+  /** The linked device when it stands straight on the floor (not in a rack
+   * or cabinet) and the reader may view it: drawn as its rack-unit box or
+   * its uploaded 3D model. Optional for older cached payloads. */
+  device?: SceneFloorDevice | null
+}
+
+/** An uploaded 3D model as the room draws it (api.model_3d.effective). */
+export interface SceneModel {
+  url: string
+  /** Whose model it is: the device's own, or its type's. */
+  source: "device" | "type"
+  fit: "auto" | "native"
+  up: "y" | "z"
+  front: "+z" | "-z" | "+x" | "-x"
+}
+
+/** A device placed on the floor: the racked shape plus the type's body
+ * size and the model drawn for it. */
+export interface SceneFloorDevice extends SceneDevice {
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
+  model: SceneModel | null
 }
 
 export interface SceneTray {
@@ -1318,4 +1341,134 @@ export function webglSupported(): boolean {
   } catch {
     return false
   }
+}
+
+// ─── Devices placed on the floor ─────────────────────────────────────────────
+
+/** A 19" panel, and one rack unit (mm). */
+export const RACK_PANEL_MM = 482.6
+export const RACK_UNIT_MM = 44.45
+/** A raised floor's finished top (raised-floor-mesh's slab top). */
+export const RAISED_FLOOR_TOP_M = 0.013
+
+/**
+ * A floor-placed rack-unit device's box (m): as wide as a 19" panel (half
+ * that for half-width gear) unless the type records its width, its units
+ * tall, and the type's depth - else the depth a rack gives it (90% of the
+ * default rack depth full-depth, 45% otherwise). Null for 0U gear, which
+ * keeps its flat tile.
+ */
+export function floorDeviceBoxM(
+  dev: Pick<
+    SceneFloorDevice,
+    "u_height" | "rack_width" | "is_full_depth" | "width_mm" | "depth_mm"
+  >
+): { w: number; h: number; d: number } | null {
+  if (!(dev.u_height > 0)) return null
+  const w = dev.width_mm
+    ? mm(dev.width_mm)
+    : mm(RACK_PANEL_MM) * (dev.rack_width === "half" ? 0.5 : 1)
+  const h = mm(dev.u_height * RACK_UNIT_MM)
+  const d = dev.depth_mm
+    ? mm(dev.depth_mm)
+    : RACK_DEPTH_DEFAULT_M * (dev.is_full_depth ? 0.9 : 0.45)
+  return { w, h, d }
+}
+
+/** The floor's height under a tile: a raised floor's top where its centre
+ * stands on one, else the slab. */
+export function floorTopM(scene: ScenePayload, tile: SceneTile): number {
+  const cx = tile.x + tile.w / 2
+  const cy = tile.y + tile.h / 2
+  const on = (scene.raised_floors ?? []).some(
+    (a) => a.x <= cx && cx <= a.x + a.w && a.y <= cy && cy <= a.y + a.h
+  )
+  return on ? RAISED_FLOOR_TOP_M : 0
+}
+
+/** A floor-placed device's box local to its tile, in the shape
+ * `deviceBoxM` gives a racked one - so `portLocalM` and `deviceViewpoint`
+ * read it unchanged: centred on the tile, standing on the floor, front
+ * panel facing local −Z. */
+export function floorBoxAsRackBox(
+  box: { w: number; h: number; d: number },
+  floorY: number
+): ReturnType<typeof deviceBoxM> {
+  return {
+    y: floorY,
+    h: box.h,
+    dx: 0,
+    dz: 0,
+    dw: box.w,
+    dd: box.d,
+    boxH: box.h,
+    mountedRear: false,
+  }
+}
+
+/**
+ * The turn that stands a model upright with its front on the tile's front
+ * (local −Z, as a rack's): Z-up models tip −90° about X first, then a turn
+ * about Y brings the named front axis round to −Z.
+ */
+export function modelRotation(
+  up: SceneModel["up"],
+  front: SceneModel["front"]
+): [number, number, number] {
+  const rx = up === "z" ? -Math.PI / 2 : 0
+  const ry =
+    front === "+z"
+      ? Math.PI
+      : front === "+x"
+        ? Math.PI / 2
+        : front === "-x"
+          ? -Math.PI / 2
+          : 0
+  return [rx, ry, 0]
+}
+
+/** The size a model is fitted to (m), each axis only where it is known:
+ * the type's recorded width/height/depth, else the rack-unit box. */
+export function modelTargetM(
+  dev: Pick<
+    SceneFloorDevice,
+    | "u_height"
+    | "rack_width"
+    | "is_full_depth"
+    | "width_mm"
+    | "height_mm"
+    | "depth_mm"
+  >
+): { w?: number; h?: number; d?: number } | null {
+  if (dev.width_mm || dev.height_mm || dev.depth_mm) {
+    return {
+      w: dev.width_mm ? mm(dev.width_mm) : undefined,
+      h: dev.height_mm ? mm(dev.height_mm) : undefined,
+      d: dev.depth_mm ? mm(dev.depth_mm) : undefined,
+    }
+  }
+  const box = floorDeviceBoxM(dev)
+  return box ? { w: box.w, h: box.h, d: box.d } : null
+}
+
+/**
+ * The uniform scale for a model whose upright bounding box is `size`
+ * (x = width, y = height, z = depth, model units): "native" keeps its own
+ * size in metres; "auto" fits it inside the target by the tightest known
+ * axis (uniform, so nothing is squashed). No target: its own size.
+ */
+export function modelScale(
+  size: [number, number, number],
+  target: { w?: number; h?: number; d?: number } | null,
+  fit: SceneModel["fit"]
+): number {
+  if (fit === "native" || !target) return 1
+  const ratios: number[] = []
+  const add = (want: number | undefined, have: number) => {
+    if (want && have > 1e-9) ratios.push(want / have)
+  }
+  add(target.w, size[0])
+  add(target.h, size[1])
+  add(target.d, size[2])
+  return ratios.length ? Math.min(...ratios) : 1
 }

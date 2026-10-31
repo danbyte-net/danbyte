@@ -532,6 +532,28 @@ uploaded blueprint or CAD drawing textures it.
   tiles: a cabinet takes its tile's fill - the whole frame from afar, the
   posts, caps and side panels up close - with the same legend in the corner,
   and a row of the [rack table](#the-rack-table) lights its cabinet up.
+- **Devices on the floor**: a device placed straight on the plan - not in a
+  rack or cabinet - stands where its tile is:
+    - **with rack units**, as the box a rack gives it, lying on the floor (or
+      a raised floor's top): 19 inch wide (half that for half-width gear, or
+      the type's recorded width), its U high, and the type's depth - else
+      the depth a rack would give it. It wears its type's front photo on the
+      front and its rear photo on the rear, and its front faces the tile's
+      front edge, turned with the tile;
+    - **with a [3D model](../dcim/device-catalog.md#3d-models)** (the
+      device's own, else its type's), as that model, fitted and turned as
+      the model's settings say. The box - or the flat tile for 0U gear -
+      stands in while the model loads, and stays if it fails to;
+    - **0U with no model**, as the flat tile it always was.
+
+    Click selects one (its card says *On the floor*), double-click flies to
+    its front, ++f++ focuses it, and its outline takes its monitoring state's
+    colour. Cable runs to it end on its box's port side - at the port's
+    photo marker where there is one, else the middle of the panel - and rise
+    straight up from there. Far off, every box in the room is one draw call
+    without photos. A model over 500,000 triangles, or past the room's
+    budget of 2,000,000 for all models together, draws as its bounding box,
+    and a **Model too detailed** card names it.
 - **Light that grounds the room**: one shadow-casting key light plus a
   procedural studio environment (no downloaded assets - it works
   airgapped), so cabinets stand *on* the floor instead of floating in
@@ -2914,8 +2936,11 @@ the object:
 - The editor draws it as a plain tile named **Hidden**. It can be moved,
   relabelled, relinked or unlinked, but not opened, traced or placed by.
 - `scene/` (the 3D room) gives it `hidden: true`, `device_name` *Hidden*,
-  no rack or cabinet and no role colour, and draws a rack's devices only
-  when you may view them.
+  no rack, cabinet or device and no role colour, and draws a rack's devices
+  only when you may view them. A tile's `device` - the linked device's
+  shape, photos and `model` when it stands on the floor - is there only
+  for a device you may view; its `model.url` is the type's download when you
+  may view the type, else the device's own, which serves the same file.
 - `state/` (the live overlay) leaves it out, and a `snap-all/` collision
   calls it *Hidden*.
 

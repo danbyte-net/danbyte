@@ -262,6 +262,110 @@ there is the offline route: restore the media folder from a backup, or
 re-upload images per type, or import [bundles](#bundles) exported with
 *Include photos*, which carry the files themselves.
 
+### 3D models {#3d-models}
+
+A device type can carry a **3D model** of the hardware. The
+[3D room view](../features/floor-plans.md#the-3d-room-view) draws every
+device of the type that stands on the floor with it, fitted to the
+hardware's size. A [device](devices.md#3d-model) can have its own model,
+which wins over its type's.
+
+The **3D model** card on the type's Overview tab shows the model as a small
+turntable, turned the way the room will turn it (its front toward you), with
+**Upload** / **Replace** and **Remove**. Under the model:
+
+| Setting | What it does |
+|---|---|
+| **Size** | **Fit to size** (the default) scales the model to the type's width, height and depth where they are recorded, else to its rack-unit box (19 inch wide, its U high, rack depth). Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
+| **Up axis** | **Y up** (glTF's convention) or **Z up** (most CAD exports). |
+| **Front** | The model axis its front faces: +Z (glTF's convention), −Z, +X or −X. The room turns that face to the tile's front edge. |
+
+Uploading, replacing and removing need **change** on the type; anyone who can
+view the type sees the card read-only. Each change lands in the type's
+change log.
+
+#### What can be uploaded
+
+The upload dialog takes **.glb**, **.gltf** (self-contained), **.step** /
+**.stp**, **.iges** / **.igs**, **.stl** and **.obj**. Everything is
+converted in the browser and stored as one **binary glTF (.glb)** - the only
+format the server keeps:
+
+- STEP and IGES go through OpenCascade (compiled to WebAssembly, shipped
+  with Danbyte and loaded only when a CAD file is picked - nothing is fetched
+  from the internet, so it works airgapped). It runs in the background, so a
+  large assembly doesn't freeze the page. Part and face colours in the STEP
+  file are kept; parts without one are a neutral grey.
+- STL and OBJ go through three.js's own readers, in a neutral grey (an OBJ's
+  `.mtl` materials aren't carried).
+- A `.gltf` that refers to separate `.bin` or texture files is refused -
+  upload the `.glb` instead.
+- Native CAD files (`.sldprt`, `.ipt`, `.f3d`, …) can't be read: export them
+  as STEP or STL first.
+
+Before saving, the dialog shows the converted model with its **triangle
+count**, **stored size** and **dimensions**, and lets you set:
+
+- **Units** - mm, cm, m or in. STEP and IGES default to mm; STL and OBJ carry
+  no unit, so a part more than 10 units across is taken as mm, a smaller one
+  as metres. If the dimensions look a thousand times off, change this.
+- **Up axis** - STEP, IGES and STL default to Z up, glTF and OBJ to Y up.
+
+The saved file is always metres and Y up, with parts merged per material so a
+400-part assembly draws as a handful of meshes. A model over **300,000
+triangles** can't be saved as it is; **Simplify** reduces it to the cap (with
+meshoptimizer's simplifier, also shipped with Danbyte).
+
+#### Using models from GrabCAD
+
+GrabCAD models are mostly native CAD files plus STEP, IGES or STL exports.
+
+1. On the model's GrabCAD page, download the **STEP** (`.step` / `.stp`)
+   file if there is one, else the **STL**. A native file (SolidWorks,
+   Inventor, Fusion) won't load - Danbyte says *Export it from GrabCAD as STEP
+   or STL*.
+2. Unzip it if it came as a `.zip`, and upload the `.step` or `.stl` on the
+   type's **3D model** card.
+3. Check the dimensions under the preview. If they are wrong by a factor of
+   10, 25.4 or 1000, pick the right **Units**; if the model lies on its side,
+   switch the **Up axis**.
+4. Save. If it faces the wrong way in the room, set **Front** on the card.
+
+#### Format rules
+
+The server checks every upload, whichever way it arrives:
+
+- the file starts with the binary glTF header (`glTF`), says **version 2**,
+  and its declared length equals its size;
+- it is at most **25 MB** - set by
+  [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes);
+- every buffer and image is inside the file (the binary chunk, a buffer view,
+  or a `data:` URI). A model can't refer to anything outside itself, so it
+  can't make a viewer's browser fetch from elsewhere;
+- any extension it **requires** is one the room reads without a decoder from
+  elsewhere: the `KHR_materials_*` family, `KHR_texture_transform`,
+  `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression`,
+  `EXT_mesh_gpu_instancing`, `EXT_texture_webp` and `EXT_texture_avif`.
+  Draco (`KHR_draco_mesh_compression`) and Basis textures are refused.
+
+The file is stored under the media folder but never served from `/media/`:
+only through the type's (or device's) `model/` endpoint, to a signed-in user
+who may view it, as a download (`model/gltf-binary`, `nosniff`, attachment).
+
+#### API
+
+| Call | Does |
+|---|---|
+| `GET /api/device-types/{id}/model/` | Downloads the model (view on the type). |
+| `POST /api/device-types/{id}/model/` | Sets or replaces it: multipart `file`, optional `fit` (`auto` / `native`), `up` (`y` / `z`), `front` (`+z` / `-z` / `+x` / `-x`). Change on the type. Answers the type. |
+| `DELETE /api/device-types/{id}/model/` | Removes it (change on the type). |
+
+The type's `model_3d` is the model's download URL (never a file path), or
+null; `model_3d_fit`, `model_3d_up` and `model_3d_front` are plain fields you
+can `PATCH`. The spreadsheet export carries the three settings; the file
+itself is never imported or exported. Library bundles and the NetBox
+library import don't carry models.
+
 ### Jumping to the devices
 
 The **Devices** count on a device type's detail page is a link: it opens the

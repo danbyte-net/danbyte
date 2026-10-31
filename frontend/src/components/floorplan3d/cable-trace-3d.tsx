@@ -7,11 +7,7 @@ import { isCameraMoving } from "./camera-motion"
 import type { Line2 } from "three-stdlib"
 import { useQuery } from "@tanstack/react-query"
 
-import {
-  api,
-  type FloorPlanCableEnd,
-  type FloorPlanCablePath,
-} from "@/lib/api"
+import { api, type FloorPlanCableEnd, type FloorPlanCablePath } from "@/lib/api"
 import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
@@ -22,6 +18,9 @@ import {
   cellToWorld,
   deviceBoxM,
   filletPath,
+  floorBoxAsRackBox,
+  floorDeviceBoxM,
+  floorTopM,
   freeAirRideY,
   offsetPolyline,
   portLocalM,
@@ -43,16 +42,64 @@ const CABLE_FALLBACK = "#64748b"
 interface DeviceSite {
   tile: SceneTile
   devIndex: number
+  /** The device stands on the floor (``tile.device``), not in a rack. */
+  floor?: boolean
 }
 
-/** deviceId → its rack tile + device, for port-anchored endpoints. */
+/** deviceId → its rack tile + device, or the tile it stands on, for
+ * port-anchored endpoints. */
 function deviceSites(scene: ScenePayload): Map<string, DeviceSite> {
   const map = new Map<string, DeviceSite>()
   for (const tile of scene.tiles) {
+    if (tile.device && floorDeviceBoxM(tile.device))
+      map.set(tile.device.id, { tile, devIndex: -1, floor: true })
     if (!tile.rack) continue
     tile.rack.devices.forEach((d, i) => map.set(d.id, { tile, devIndex: i }))
   }
   return map
+}
+
+/**
+ * A port on a rack-unit device standing on the floor: on its box's port
+ * side - the marker's spot when the photo marks it, else the middle of the
+ * panel it is likely on - out a short stub, then straight up from there to
+ * wherever the run rides. Same `portLocalM` the racked box uses, on the box
+ * the room draws.
+ */
+function floorEndRun(
+  scene: ScenePayload,
+  tile: SceneTile,
+  point: { port: string }
+): EndRun | null {
+  const dev = tile.device
+  const size = dev ? floorDeviceBoxM(dev) : null
+  if (!dev || !size) return null
+  const box = floorBoxAsRackBox(size, floorTopM(scene, tile))
+  const find = (panel: "front" | "rear") =>
+    findPortMarker(
+      dev.image_ports?.[panel] ?? [],
+      point.port,
+      dev.vc_position ?? null
+    )
+  const onFront = find("front")
+  const m = onFront ?? find("rear")
+  const synth = m
+    ? undefined
+    : syntheticPortMarkers(dev).find(
+        (s) => normalizePortName(s.name) === normalizePortName(point.port)
+      )
+  const rear = synth ? true : onFront ? false : m != null || dev.is_full_depth
+  const [lx, ly, lz] = portLocalM(box, m ?? synth ?? { x: 0.5, y: 0.5 }, rear)
+  const outZ = rear ? 0.06 : -0.06
+  const world = (x: number, y: number, z: number): Vec3 =>
+    worldOf(scene, tile, x, y, z)
+  return {
+    entry: [world(lx, ly, lz), world(lx, ly, lz + outZ)],
+    railAt: (y) => world(lx, y, lz + outZ),
+    rear,
+    anchored: Boolean(m ?? synth),
+    local: { tile, x: lx, y: ly, z: lz, stubZ: lz + outZ, chanX: lx },
+  }
 }
 
 type Vec3 = [number, number, number]
@@ -79,7 +126,14 @@ interface EndRun {
   /** Rack-LOCAL anchor + tile, so a same-rack run can be routed in local
    * coords (rotation-safe) and transformed once. `chanX` is this end's side
    * channel; `stubZ` is the depth the lead exits to. */
-  local: { tile: SceneTile; x: number; y: number; z: number; stubZ: number; chanX: number }
+  local: {
+    tile: SceneTile
+    x: number
+    y: number
+    z: number
+    stubZ: number
+    chanX: number
+  }
 }
 
 /** The traced run draws last and ignores depth - above the glass and ghosts
@@ -118,6 +172,7 @@ function portEndRun(
   point: { device: string; port: string }
 ): EndRun | null {
   const site = sites.get(point.device)
+  if (site?.floor) return floorEndRun(scene, site.tile, point)
   if (!site?.tile.rack) return null
   const { tile } = site
   const rack = tile.rack!
@@ -281,10 +336,7 @@ export function cableRunPoints(
     return null
   const endLane = cableLane(cp.id)
 
-  const endRun = (
-    points: FloorPlanCableEnd[],
-    tileId: string
-  ): EndRun => {
+  const endRun = (points: FloorPlanCableEnd[], tileId: string): EndRun => {
     for (const p of points) {
       if (p.hidden) continue
       const r = portEndRun(scene, sites, p)
@@ -349,7 +401,8 @@ export function cableRunPoints(
       )
     }
     const mid = (la.x + lb.x) / 2
-    const sideSign = Math.abs(mid) < 1e-6 ? Math.sign(la.chanX) || 1 : Math.sign(mid)
+    const sideSign =
+      Math.abs(mid) < 1e-6 ? Math.sign(la.chanX) || 1 : Math.sign(mid)
     const side = sideSign * (Math.abs(la.chanX) + Math.abs(lane.across))
     // Riser depth per end: the stub depth plus the lane's lift, pushed
     // outward from that end's face.
@@ -431,10 +484,7 @@ export function cableEndsAnchored(
   cp: FloorPlanCablePath
 ): [boolean, boolean] {
   const sites = deviceSites(scene)
-  const one = (
-    points: FloorPlanCableEnd[],
-    tileId: string | undefined
-  ) => {
+  const one = (points: FloorPlanCableEnd[], tileId: string | undefined) => {
     for (const p of points) {
       if (p.hidden) continue
       const r = portEndRun(scene, sites, p)

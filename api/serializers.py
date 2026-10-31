@@ -2713,6 +2713,8 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "devicetype"
+    # The 3D model's placement settings are render plumbing, not columns.
+    list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front")
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -2735,6 +2737,14 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     document_count = serializers.SerializerMethodField()
     front_image = serializers.SerializerMethodField()
     rear_image = serializers.SerializerMethodField()
+    # The 3D model's download URL (never its stored path); set through the
+    # ``model/`` action.
+    model_3d = serializers.SerializerMethodField()
+
+    def get_model_3d(self, obj) -> str | None:
+        from .model_3d import type_url
+
+        return type_url(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_platform(self, obj):
@@ -2977,6 +2987,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
+                  "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
@@ -2984,7 +2995,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "created_at", "updated_at"]
         read_only_fields = ["id", "device_count", "component_count",
                   "sensor_count", "document_count",
-                  "front_image", "rear_image",
+                  "front_image", "rear_image", "model_3d",
                             "lifecycle_state", "created_at", "updated_at"]
 
 
@@ -3202,6 +3213,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     list_columns_exclude = (
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
         "topology_photo_size",
+        "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
         # Its own column, Next end of life (device-columns.tsx).
@@ -3213,6 +3225,23 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
+    # The device's own 3D model (a URL, never its stored path), and what the
+    # 3D room draws for it - its own, else its type's.
+    model_3d = serializers.SerializerMethodField()
+    model_3d_effective = serializers.SerializerMethodField()
+
+    def get_model_3d(self, obj) -> str | None:
+        from .model_3d import version_of
+
+        if not obj.model_3d:
+            return None
+        return f"/api/devices/{obj.pk}/model/?v={version_of(obj.model_3d)}"
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_model_3d_effective(self, obj):
+        from .model_3d import effective
+
+        return effective(obj)
     site = SiteRegionMiniSerializer(read_only=True)
     primary_ip = serializers.SerializerMethodField()
     secondary_ip = serializers.SerializerMethodField()
@@ -3892,6 +3921,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "port_labels", "topology_card", "topology_photo_size",
+                  "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                  "model_3d_effective",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",
@@ -3905,6 +3936,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "contact_count", "document_count", "install_count", "device_profiles",
                   "permissions", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
+                            "model_3d", "model_3d_effective",
                             "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
 

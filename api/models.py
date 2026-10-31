@@ -476,8 +476,51 @@ class LifecycleMixin(models.Model):
 TOPOLOGY_PHOTO_SIZE_CHOICES = [("rack", "Rack width"), ("own", "Own size")]
 
 
+def device_model_path(instance, filename):
+    """``device-models/<random>.glb``: a 3D model never sits in a public
+    media folder (api.media_views serves nothing from here) and a replaced
+    model never reuses the old one's URL."""
+    return f"device-models/{uuid.uuid4().hex}.glb"
+
+
+#: How the 3D room sizes an uploaded model: fitted to the hardware's size
+#: (the type's width, height and depth where known, else the rack box), or at
+#: its own size in metres.
+MODEL_3D_FIT_CHOICES = [("auto", "Fit to size"), ("native", "Own size")]
+#: The model's up axis: glTF is Y-up, many CAD exports are Z-up.
+MODEL_3D_UP_CHOICES = [("y", "Y up"), ("z", "Z up")]
+#: Which way the model's front faces once it stands upright.
+MODEL_3D_FRONT_CHOICES = [("+z", "+Z"), ("-z", "-Z"), ("+x", "+X"), ("-x", "-X")]
+
+
+class Model3DMixin(models.Model):
+    """An optional uploaded 3D model (binary glTF) and how to place it. On a
+    device type it draws every device of the type in the 3D room; on a
+    device it overrides the type's."""
+
+    model_3d = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="3D model (binary glTF, .glb) drawn in the 3D room.",
+    )
+    model_3d_fit = models.CharField(
+        max_length=8, choices=MODEL_3D_FIT_CHOICES, default="auto", db_default="auto",
+        help_text="Fit the model to the hardware's size, or use its own size in metres.",
+    )
+    model_3d_up = models.CharField(
+        max_length=2, choices=MODEL_3D_UP_CHOICES, default="y", db_default="y",
+        help_text="The model's up axis.",
+    )
+    model_3d_front = models.CharField(
+        max_length=2, choices=MODEL_3D_FRONT_CHOICES, default="+z", db_default="+z",
+        help_text="The axis the model's front faces.",
+    )
+
+    class Meta:
+        abstract = True
+
+
 class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
-                 LifecycleMixin):
+                 LifecycleMixin, Model3DMixin):
     """User-defined device type / template (e.g. ``Dell R650``, ``Cisco C9300``).
 
     DeviceType is the *template* - manufacturer + model + part number + slot
@@ -2203,7 +2246,7 @@ PRTG_SYNC_CHOICES = [
 ]
 
 
-class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Model3DMixin):
     """A physical device.
 
     IPs are linked back to a Device via the ``IPAddress.assigned_device``

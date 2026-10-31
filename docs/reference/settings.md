@@ -214,6 +214,14 @@ Trusted scripts are never confined.
 backend answers to it; WebSocket origins and the site's public name keep to
 the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
 
+## Device 3D models (`DEVICE_MODEL_MAX_BYTES`)
+
+`DEVICE_MODEL_MAX_BYTES` is the largest
+[3D model](../dcim/device-catalog.md#3d-models) a device type or device
+takes, in bytes. The default is `26214400` (25 MB); a larger upload is
+refused with the limit in the message. Keep it under the web server's
+`client_max_body_size` (512 MB in the shipped nginx templates).
+
 ## CAD drawings (`DANBYTE_CAD_CONVERTER`)
 
 `DANBYTE_CAD_CONVERTER` is the absolute path of the program that turns a DWG

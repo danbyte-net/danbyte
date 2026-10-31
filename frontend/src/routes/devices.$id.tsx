@@ -68,6 +68,7 @@ import {
 } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
+import { Model3DCard } from "@/components/model-3d-card"
 import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
@@ -883,7 +884,7 @@ function DeviceOverview({
   device: Device
   onTab: (tab: "ips" | "components" | "routing") => void
 }) {
-  const { humanIds } = useMe()
+  const { humanIds, canDo } = useMe()
   const nav = useNavigate({ from: "/devices/$id" })
   // Hovered utilization-card state - lights matching ports on the panel.
   const [portGlow, setPortGlow] = useState<CableState | null>(null)
@@ -1340,6 +1341,19 @@ function DeviceOverview({
       <DeviceProfilesCard host={{ kind: "device", id: d.id }} />
       {(d.cooling_count ?? 0) > 0 && <DeviceCoolingPathCard deviceId={d.id} />}
       <KvCard title="Location" rows={locationRows} />
+      <Model3DCard
+        kind="devices"
+        id={d.id}
+        own={d.model_3d ?? null}
+        inherited={
+          d.model_3d_effective?.source === "type" ? d.model_3d_effective : null
+        }
+        fit={d.model_3d_fit ?? "auto"}
+        up={d.model_3d_up ?? "y"}
+        front={d.model_3d_front ?? "+z"}
+        canEdit={objCan(d, "change", canDo("device", "change"))}
+        queryKey={["device", d.id]}
+      />
       <CustomFieldValues
         model="device"
         values={d.custom_fields}

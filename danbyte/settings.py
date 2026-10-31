@@ -716,6 +716,10 @@ STATICFILES_DIRS: list = []
 # at 8 MB by its serializer, and file uploads stream to disk regardless.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 
+# The largest 3D model (binary glTF) a device type or device takes, in bytes
+# (api.model_3d). 25 MB by default.
+DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 * 1024)))
+
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders
 # made for it are closed to other users, so a web server reading the folder

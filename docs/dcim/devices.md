@@ -285,6 +285,24 @@ The same **image gallery** appears on **rack**, **site**, and **location**
 detail pages (on those it sits in the Overview) - one shared attachment system,
 each scoped to its object and gated by that object's change permission.
 
+### 3D model {#3d-model}
+
+The **3D model** card on the Overview shows what the
+[3D room view](../features/floor-plans.md#the-3d-room-view) draws for the
+device when it stands on the floor: its own model, else its type's (*From
+device type*). **Upload** gives the device its own model, which overrides
+the type's for this device only; **Remove** takes it away again, so the
+device goes back to its type's. Uploading takes the same files - GLB, glTF,
+STEP, IGES, STL, OBJ - and follows the same rules as a
+[device type's model](device-catalog.md#3d-models); the **Size**, **Up
+axis** and **Front** settings show for the device's own model.
+
+`GET /api/devices/{id}/model/` downloads the model the room draws for the
+device (its own, else its type's); `POST` and `DELETE` set and remove its
+own, with **change** on the device. The device's `model_3d` is its own
+model's URL, and `model_3d_effective` is what the room draws -
+`{url, source: "device" | "type", fit, up, front}` - or null.
+
 The rows shown in _italics_ above - comments, airflow, cooling, location,
 coordinates, and cluster - are **built-in fields** whose visibility is
 admin-controlled; a device only shows the ones your administrator has enabled.
