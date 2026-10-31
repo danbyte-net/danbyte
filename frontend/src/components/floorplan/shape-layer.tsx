@@ -5,6 +5,7 @@ import { getLucideIcon } from "@/components/dynamic-icon"
 import { CELL } from "./canvas-geometry"
 import {
   HANDLES,
+  PATTERN_GAP,
   PATTERN_STROKE,
   labelColor,
   areaColor,
@@ -46,14 +47,20 @@ function PatternStrokes({
   color,
   clip,
   box,
+  zoom,
 }: {
   id: string
   area: AreaShape
   color: string
   clip: React.ReactNode
   box: { x: number; y: number; w: number; h: number }
+  /** The canvas zoom: the lines keep their spacing and width on screen,
+   * so a hatch stays readable zoomed out. */
+  zoom: number
 }) {
-  const runs = patternRuns(areaPattern(area), box.x, box.y, box.w, box.h)
+  const runs = patternRuns(areaPattern(area), box.x, box.y, box.w, box.h, {
+    gap: PATTERN_GAP / zoom,
+  })
   if (!runs.length) return null
   return (
     <>
@@ -63,7 +70,7 @@ function PatternStrokes({
         data-pattern={areaPattern(area)}
         stroke={color}
         strokeOpacity={PATTERN_STROKE.opacity}
-        strokeWidth={PATTERN_STROKE.width}
+        strokeWidth={PATTERN_STROKE.width / zoom}
         pointerEvents="none"
       >
         {runs.map((run, r) => (
@@ -165,9 +172,12 @@ export function AreaShapeView({
   interactive,
   onPointerDown,
   onEdgeDoubleClick,
+  zoom = 1,
 }: {
   area: AreaShape
   selected: boolean
+  /** The canvas zoom, for strokes that keep their screen size. */
+  zoom?: number
   /** Takes the pointer (Edit with Select, or View). */
   interactive: boolean
   onPointerDown?: (e: React.PointerEvent) => void
@@ -184,7 +194,7 @@ export function AreaShapeView({
     fillOpacity: area.fill_opacity / 100,
     stroke: color,
     strokeOpacity,
-    strokeWidth: selected ? 2.5 : 1.5,
+    strokeWidth: (selected ? 2.5 : 1.5) / zoom,
     strokeDasharray: dash,
   }
   const style: React.CSSProperties = {
@@ -212,6 +222,7 @@ export function AreaShapeView({
           id={clipId}
           area={area}
           color={color}
+          zoom={zoom}
           clip={<polygon points={outline} />}
           box={{
             x: bx,
@@ -283,6 +294,7 @@ export function AreaShapeView({
         id={clipId}
         area={area}
         color={color}
+        zoom={zoom}
         clip={
           <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
         }

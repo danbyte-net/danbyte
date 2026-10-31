@@ -895,7 +895,9 @@ An **area type** says what a plain area is - *Parking*, *Fence*, *Road*,
 catalog under **Organization → Area types**: each has a name, a **colour**,
 a **fill pattern** (*Solid*, *Hatched*, *Cross-hatched* or *Dotted*), a
 **Lucide icon** and a description, and a name is unique in the tenant.
-Danbyte ships none - make the ones you use.
+Danbyte ships none - make the ones you use. On screen a pattern's lines, and
+an area's border, keep their spacing and width at any zoom, so a hatch stays
+readable zoomed out.
 
 - **Plain areas only.** A type is for an area that stands for neither a room
   nor a location ("Just an area"). A linked area keeps one meaning - the

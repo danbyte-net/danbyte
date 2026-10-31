@@ -1611,6 +1611,7 @@ export function FloorCanvas({
                 key={a.id}
                 area={a}
                 selected={a.id === selectedShapeId}
+                zoom={t.k}
                 interactive={shapesLive && !isLocked(a.id)}
                 onPointerDown={(e) => shapeG.shapeDown(a, e)}
                 onEdgeDoubleClick={
