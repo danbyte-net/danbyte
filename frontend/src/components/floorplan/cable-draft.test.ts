@@ -137,10 +137,10 @@ describe("applyRoutes", () => {
       newId,
     })
     expect(Object.keys(cd.routes).sort()).toEqual(["c1", "c2"])
-    expect(cd.routes.c1.length).toBe("write")
-    expect(cd.routes.c1.cableVersion).toBe("2026-10-30T10:00:00Z")
+    expect(cd.routes.c1!.length).toBe("write")
+    expect(cd.routes.c1!.cableVersion).toBe("2026-10-30T10:00:00Z")
     // A measured length is replaced only because its tick said so.
-    expect(cd.routes.c2.length).toBe("replace")
+    expect(cd.routes.c2!.length).toBe("replace")
     expect(cd.trays).toEqual([])
   })
 
@@ -171,9 +171,9 @@ describe("applyRoutes", () => {
     expect(tray.name).toBe("Run 3")
     expect(tray.id.startsWith("new-")).toBe(true)
     expect(tray.points).toEqual(run.run)
-    expect(cd.routes.c1.route.tray_order).toEqual([tray.id])
-    expect(cd.routes.c1.route.legs[0].trays[0].id).toBe(tray.id)
-    expect(cd.routes.c1.length).toBeUndefined()
+    expect(cd.routes.c1!.route.tray_order).toEqual([tray.id])
+    expect(cd.routes.c1!.route.legs[0].trays[0].id).toBe(tray.id)
+    expect(cd.routes.c1!.length).toBeUndefined()
   })
 
   it("makes no tray for a run left as the cable's own path", () => {
@@ -191,7 +191,7 @@ describe("applyRoutes", () => {
       newId,
     })
     expect(cd.trays).toEqual([])
-    expect(cd.routes.c1.route.kind).toBe("manual")
+    expect(cd.routes.c1!.route.kind).toBe("manual")
   })
 
   it("nothing ticked changes nothing", () => {
