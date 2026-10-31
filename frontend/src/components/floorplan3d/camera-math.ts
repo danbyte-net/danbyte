@@ -186,7 +186,10 @@ export function dollyThroughStep(
  * shimmer from across the room. Scaling near with distance serves both ends.
  */
 export function nearForDistance(distance: number): number {
-  return Math.min(0.5, Math.max(0.01, distance * 0.02))
+  // 2 % of the orbit distance: 1 cm nose-on, 0.5 m across a hall, and on a
+  // site-sized plan seen from hundreds of metres far enough out that layers
+  // millimetres apart (floor, map, area tints) keep their depth order.
+  return Math.min(25, Math.max(0.01, distance * 0.02))
 }
 
 /**

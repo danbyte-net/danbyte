@@ -362,6 +362,9 @@ The **2D / 3D** toggle in the plan header (or `?viz=3d` in the URL) turns the
 plan into a navigable room: rack tiles become cabinets at their grid
 positions - sized from the rack's rail width, outer dimensions and U height -
 with their racked devices drawn at true U positions when you move close.
+A site-sized plan keeps its floor layers (slab, map background, area tints)
+apart at any distance, and its grid draws every n-th line - about 120 a side
+- so it reads as a grid rather than a hatch.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
 uploaded blueprint or CAD drawing textures it.

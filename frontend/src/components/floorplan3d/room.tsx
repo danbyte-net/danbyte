@@ -39,6 +39,12 @@ function grateTexture(): THREE.CanvasTexture {
  * deliberately inert: a first version made them clickable (isolate), and
  * every empty-floor click inside a zone hid the room instead of
  * deselecting - isolation lives on the rack HUD now. */
+/** How many cells apart the 3D grid's lines are: one per cell up to 120
+ * cells a side, then the smallest step that keeps it near 120 lines. */
+export function gridStep(cellsWide: number, cellsDeep: number): number {
+  return Math.max(1, Math.ceil(Math.max(cellsWide, cellsDeep) / 120))
+}
+
 export function Room({
   scene,
   xray = false,
@@ -62,9 +68,12 @@ export function Room({
   const grid = useMemo(() => {
     const pts: number[] = []
     const c = cellM(plan)
-    for (let x = 0; x <= plan.grid_width; x++)
+    // A large plan draws every n-th line, so the grid reads as a grid and
+    // not as a hatch of lines a pixel apart.
+    const step = gridStep(plan.grid_width, plan.grid_height)
+    for (let x = 0; x <= plan.grid_width; x += step)
       pts.push(x * c, 0, 0, x * c, 0, d)
-    for (let y = 0; y <= plan.grid_height; y++)
+    for (let y = 0; y <= plan.grid_height; y += step)
       pts.push(0, 0, y * c, w, 0, y * c)
     const g = new THREE.BufferGeometry()
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3))
@@ -271,7 +280,16 @@ function Blueprint({
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[w / 2, 0.001, d / 2]}>
       <planeGeometry args={[w, d]} />
-      <meshBasicMaterial map={texture} transparent opacity={opacity} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        opacity={opacity}
+        // A picture on the floor: it never hides what lies on it.
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-1}
+        polygonOffsetUnits={-2}
+      />
     </mesh>
   )
 }
