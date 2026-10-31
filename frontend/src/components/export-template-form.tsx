@@ -329,7 +329,10 @@ export function ExportTemplateForm({
             </p>
           )}
           {preview !== null && (
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="max-h-72 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+            >
               {preview || "(empty)"}
             </pre>
           )}

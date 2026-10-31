@@ -820,6 +820,7 @@ function PaletteFilterPopover({
               {LABELS[key]}
             </span>
             <Combobox
+              aria-label={LABELS[key]}
               value={filters[key] ?? null}
               onChange={(v) => set(key, v)}
               options={options[key]}

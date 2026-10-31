@@ -143,7 +143,10 @@ export function RequestCertificateDialog({
               </div>
               <Field label="Private key">
                 <div className="space-y-2">
-                  <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">
+                  <pre
+                    tabIndex={0}
+                    className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+                  >
                     {created.private_key}
                   </pre>
                   <div className="flex gap-2">
@@ -163,7 +166,10 @@ export function RequestCertificateDialog({
               </Field>
               <Field label="CSR">
                 <div className="space-y-2">
-                  <pre className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">
+                  <pre
+                    tabIndex={0}
+                    className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+                  >
                     {created.csr_pem}
                   </pre>
                   <div className="flex gap-2">

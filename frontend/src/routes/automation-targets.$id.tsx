@@ -255,7 +255,10 @@ function TargetOverview({
           <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
             Extra vars
           </h2>
-          <pre className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+          <pre
+            tabIndex={0}
+            className="max-h-96 overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+          >
             {JSON.stringify(t.extra_vars, null, 2)}
           </pre>
         </section>

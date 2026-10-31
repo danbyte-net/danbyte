@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view"
 import { oneDark } from "@codemirror/theme-one-dark"
 
 import { useTheme } from "@/components/theme-provider"
+import { useFieldControl } from "@/components/ui/field-control"
 import { cn } from "@/lib/utils"
 
 export type CodeLanguage = "python" | "plain"
@@ -20,6 +21,7 @@ export function CodeEditor({
   readOnly = false,
   placeholder,
   className,
+  "aria-label": ariaLabel,
 }: {
   value: string
   onChange?: (v: string) => void
@@ -28,12 +30,27 @@ export function CodeEditor({
   readOnly?: boolean
   placeholder?: string
   className?: string
+  /** Name for an editor with no Field label around it. */
+  "aria-label"?: string
 }) {
   const { theme } = useTheme()
+  // The editable surface is CodeMirror's own `.cm-content` (a textbox), so
+  // its name goes there, from the surrounding Field's label or `aria-label`
+  // (#461).
+  const field = useFieldControl()
   const extensions = useMemo(() => {
-    const base = [EditorView.lineWrapping]
+    const named: Record<string, string> = ariaLabel
+      ? { "aria-label": ariaLabel }
+      : field
+        ? { "aria-labelledby": field.labelId }
+        : {}
+    if (field?.describedBy) named["aria-describedby"] = field.describedBy
+    const base = [
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of(named),
+    ]
     return language === "python" ? [python(), ...base] : base
-  }, [language])
+  }, [language, ariaLabel, field])
 
   return (
     <div

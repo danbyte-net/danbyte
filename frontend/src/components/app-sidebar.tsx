@@ -1946,7 +1946,10 @@ function FavoritesSection() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          <SelectTrigger
+                            aria-label={`${folder.name} parent folder`}
+                            className="h-8 w-32 text-xs"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1991,7 +1994,10 @@ function FavoritesSection() {
                             })
                           }
                         >
-                          <SelectTrigger className="h-8 w-32 text-xs">
+                          <SelectTrigger
+                            aria-label={`${bookmark.label} folder`}
+                            className="h-8 w-32 text-xs"
+                          >
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

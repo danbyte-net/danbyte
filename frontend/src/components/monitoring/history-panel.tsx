@@ -105,6 +105,7 @@ function CustomWindow({
         />
         <div className="flex items-center gap-2">
           <Input
+            aria-label="Period"
             type="number"
             min={1}
             className="h-8 w-24 text-sm"
@@ -122,7 +123,7 @@ function CustomWindow({
               apply(text, u as "h" | "d")
             }}
           >
-            <SelectTrigger className="h-8 w-24 text-sm">
+            <SelectTrigger aria-label="Unit" className="h-8 w-24 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -137,9 +138,7 @@ function CustomWindow({
 }
 
 export type HistoryScope =
-  | { ip: string }
-  | { device: string }
-  | { prefix: string }
+  { ip: string } | { device: string } | { prefix: string }
 
 function scopePath(scope: HistoryScope): string {
   if ("ip" in scope) return `ips/${scope.ip}`
@@ -274,7 +273,13 @@ export function HistoryPanel({ scope }: { scope: HistoryScope }) {
                 since={tl.since}
                 until={tl.until}
                 uptime={summary?.uptime_pct}
-                scope={"ip" in scope ? { ip: scope.ip } : "device" in scope ? { device: scope.device } : undefined}
+                scope={
+                  "ip" in scope
+                    ? { ip: scope.ip }
+                    : "device" in scope
+                      ? { device: scope.device }
+                      : undefined
+                }
                 strong
               />
               {"ips" in tl &&
