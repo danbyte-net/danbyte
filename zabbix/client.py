@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 
 from api.natural import natural_key
+from core.redaction import redact_secrets
 from core.ssrf import safe_post
 
 
@@ -61,10 +62,13 @@ class ZabbixClient:
                 verify=self.verify_tls,
             )
         except Exception as exc:
-            raise ZabbixUnreachable(str(exc)) from exc
+            # A proxy or transport error can quote the request, header and all.
+            raise ZabbixUnreachable(redact_secrets(exc, self.token)) from None
 
         if resp.status_code != 200:
-            raise ZabbixError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            raise ZabbixError(
+                redact_secrets(f"HTTP {resp.status_code}: {resp.text}", self.token)[:200]
+            )
         try:
             payload = resp.json()
         except ValueError as exc:
@@ -77,7 +81,9 @@ class ZabbixClient:
 
         if "error" in payload:
             err = payload["error"]
-            raise ZabbixError(err.get("data") or err.get("message") or str(err))
+            raise ZabbixError(
+                redact_secrets(err.get("data") or err.get("message") or str(err), self.token)
+            )
         return payload.get("result")
 
     def version(self) -> str:

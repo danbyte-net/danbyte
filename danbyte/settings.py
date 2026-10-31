@@ -354,6 +354,27 @@ def api_paging(env) -> tuple[int, int, int, int]:
 ) = api_paging(os.environ)
 
 
+# The most unexpired API tokens one user may hold (#457). Large-page slots are
+# per user whatever token a request carries; this bounds the rest. A positive
+# whole number; a bad value refuses to start.
+def api_max_tokens_per_user(env) -> int:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raw = str(env.get("API_MAX_TOKENS_PER_USER") or "").strip()
+    try:
+        value = int(raw) if raw else 25
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise ImproperlyConfigured(
+            f"API_MAX_TOKENS_PER_USER must be a positive whole number, not {raw!r}."
+        )
+    return value
+
+
+API_MAX_TOKENS_PER_USER = api_max_tokens_per_user(os.environ)
+
+
 # Application flow requirements (api.flow_requirements): the preview warns
 # above FLOW_REQUIREMENT_WARN_PAIRS generated flows for one requirement, and a
 # requirement over FLOW_REQUIREMENT_MAX_PAIRS is refused (Unresolved) until it

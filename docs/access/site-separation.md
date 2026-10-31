@@ -96,7 +96,9 @@ ergonomics on top:
     a tenant group counts only the tenants the reader can open. A prefix's
     child prefixes, IP addresses, static routes and DNS records count only
     the ones the reader may view; its utilisation still measures every
-    address in it. The number on a tab matches the table under it, and says
+    address in it. A VRF's prefixes, VLANs and IP addresses, a shared
+    VLAN's prefixes, the VRFs importing or exporting a route target and an
+    L2VPN's terminations count the same way. The number on a tab matches the table under it, and says
     nothing about other sites.
 
 ## Which rows belong to a site

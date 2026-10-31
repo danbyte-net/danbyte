@@ -69,7 +69,7 @@ import {
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
-import { planPaperScale, planSvg } from "./plan-svg"
+import { CLOSEUP_MM_PER_PX, planPaperScale, planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
 import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
@@ -114,6 +114,7 @@ import type { EditorTool } from "./use-plan-edit-state"
 import { usePlanMutations } from "./use-plan-mutations"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
+import { useOutlineDetect } from "./outline-tool"
 import { useStructureEdits } from "./use-structure-edits"
 import { structureLists } from "./structure"
 import { StructureToolbar } from "./structure-toolbar"
@@ -453,6 +454,8 @@ export function FloorPlanEditor({
   // kept on screen (a viewer's layer choices), drawn under the grid.
   // A view's drawing is its source's: layer choices stay on screen.
   const cad = useCadDrawing(plan, canEdit && !liveView)
+  // Detect outline: a click on a building or room proposes its polygon.
+  const outline = useOutlineDetect({ plan, cad, ed, shapeEdits, structure })
   const cadSource = useCadSource(id, cad.drawing, cad.placement)
   const cadPxPerMm = CELL / (plan?.cell_mm || 600)
   const calibration = useCadCalibration(
@@ -802,7 +805,8 @@ export function FloorPlanEditor({
   const exportSvg = (
     paper?: PaperChoice,
     withCables: boolean = prefs.showCableLinks,
-    fitContent = false
+    fitContent = false,
+    closeup = false
   ) =>
     plan
       ? planSvg({
@@ -828,7 +832,10 @@ export function FloorPlanEditor({
                 mmPerPx: planPaperScale(plan, paper),
               }
             : undefined,
-          fitContent: fitContent && paper ? { paper } : undefined,
+          fitContent:
+            fitContent && paper
+              ? { paper, ...(closeup ? { mmPerPx: CLOSEUP_MM_PER_PX } : {}) }
+              : undefined,
         })
       : ""
 
@@ -1137,6 +1144,12 @@ export function FloorPlanEditor({
                         if (ed.mode !== "layout") selectTool("select")
                         shapeEdits.createLabel({ x: at[0], y: at[1] })
                       },
+                      detectAt: outline.modes.length
+                        ? (at) => {
+                            if (ed.tool !== "outline") selectTool("outline")
+                            void outline.pickAt(at)
+                          }
+                        : undefined,
                     }
                   : canEdit
                     ? { editHere: () => changeEditing(true) }
@@ -1145,6 +1158,7 @@ export function FloorPlanEditor({
               ed={ed}
               edits={edits}
               structure={structure}
+              outline={editing ? outline : undefined}
               prefs={prefs}
               liveState={liveState.data ?? null}
               trays={planTrays}
@@ -1564,10 +1578,10 @@ export function FloorPlanEditor({
         planName={plan.name}
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
-        planSvg={
-          view3d
-            ? undefined
-            : async (paper) => exportSvg(paper, true, true) || null
+        // Built from the plan's data, not the 2D canvas, so it works from
+        // the 3D view too.
+        planSvg={async (paper, closeup) =>
+          exportSvg(paper, true, true, closeup) || null
         }
       />
       <SnapAllDialog

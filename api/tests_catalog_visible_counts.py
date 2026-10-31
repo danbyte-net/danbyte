@@ -509,3 +509,66 @@ class RollupVisibleCountTests(_TwoSites):
                 )
         self._as_admin()
         self._expect("/api/prefixes/", self.container, child_count=4, ip_count=2)
+
+    def test_vrf_counts_the_rows_the_reader_may_view(self):
+        # A shared VRF holding every site's prefixes, addresses and VLANs.
+        vrf = VRF.objects.create(tenant=self.tenant, name="Shared")
+        for model in (Prefix, IPAddress, VLAN):
+            model.objects.filter(tenant=self.tenant, site__isnull=False).update(vrf=vrf)
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect("/api/vrfs/", vrf, prefix_count=1, vlan_count=1, ip_count=1)
+        self._as_admin()
+        self._expect("/api/vrfs/", vrf, prefix_count=4, vlan_count=4, ip_count=4)
+
+    def test_shared_vlan_counts_the_prefixes_the_reader_may_view(self):
+        vlan = VLAN.objects.create(tenant=self.tenant, vlan_id=999, name="shared")
+        Prefix.objects.filter(tenant=self.tenant, site__isnull=False).update(vlan=vlan)
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect("/api/vlans/", vlan, prefix_count=1)
+        self._as_admin()
+        self._expect("/api/vlans/", vlan, prefix_count=4)
+
+    def test_route_target_counts_the_vrfs_the_vrf_list_shows(self):
+        from api.models import RouteTarget
+
+        rt = RouteTarget.objects.create(tenant=self.tenant, name="65000:1")
+        for site in (self.site_a, self.site_b):
+            vrf = VRF.objects.create(tenant=self.tenant, name=f"V-{site.name}", owning_site=site)
+            vrf.import_targets.add(rt)
+            vrf.export_targets.add(rt)
+        self._grant(["routetarget"], sites=[])
+        for on in self._separated():
+            with self.subTest(separation=on):
+                listed = len(self._rows(f"/api/vrfs/?rt={rt.id}"))
+                self.assertEqual(listed, 1 if on else 2)
+                self._expect("/api/route-targets/", rt, import_vrf_count=listed,
+                             export_vrf_count=listed, vrf_count=listed)
+        self._as_admin()
+        self._expect("/api/route-targets/", rt, import_vrf_count=2, vrf_count=2)
+
+    def test_l2vpn_counts_the_terminations_it_lists(self):
+        from api.models import L2VPNTermination
+
+        l2vpn = L2VPN.objects.create(
+            tenant=self.tenant, name="L2", slug="l2", type="vxlan", identifier=100
+        )
+        for vlan in VLAN.objects.filter(tenant=self.tenant, vlan_id__in=(10, 20)):
+            L2VPNTermination.objects.create(l2vpn=l2vpn, vlan=vlan)
+        self._grant(["l2vpn"], sites=[])
+        for on in self._separated():
+            with self.subTest(separation=on):
+                self._expect("/api/l2vpns/", l2vpn, termination_count=1)
+                body = self._get(f"/api/l2vpns/{l2vpn.id}/")
+                self.assertEqual(len(body["terminations"]), body["termination_count"])
+        self._as_admin()
+        self._expect("/api/l2vpns/", l2vpn, termination_count=2)
+
+    def test_cluster_save_response_counts_its_vms(self):
+        self._as_admin()
+        r = self.client.patch(
+            f"/api/clusters/{self.cluster.id}/", {"description": "x"}, format="json"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["vm_count"], 4)

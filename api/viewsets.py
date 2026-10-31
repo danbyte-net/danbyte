@@ -1944,11 +1944,12 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         # Per-row figures come with the page: one correlated count per
-        # related table, not three COUNT queries per VRF (#196).
+        # related table, not three COUNT queries per VRF (#196). A VRF spans
+        # sites, so each counts the rows the reader may view (#448).
         qs = qs.annotate(
-            prefix_n=_count_of(Prefix, "vrf"),
-            vlan_n=_count_of(VLAN, "vrf"),
-            ip_n=_count_of(IPAddress, "vrf"),
+            prefix_n=_visible_n(self, "prefixes"),
+            vlan_n=_visible_n(self, "vlans"),
+            ip_n=_visible_n(self, "ip_addresses"),
         )
         if not self.request:
             return qs
@@ -1999,6 +2000,15 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         qs = super().get_queryset()
         if not self.request:
             return qs
+        # The VRF counts are over the VRFs the reader may view (#448), so
+        # only those are prefetched.
+        f = view_filter(self.request, VRF)
+        vrfs = VRF.objects.none() if f is None else VRF.objects.filter(f)
+        qs = qs.prefetch_related(None).prefetch_related(
+            Prefetch("importing_vrfs", queryset=vrfs),
+            Prefetch("exporting_vrfs", queryset=vrfs),
+            TAGS,
+        )
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
@@ -2192,15 +2202,10 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # The prefix count as one subquery per page instead of a count per
         # row (#179). A subquery, not a join Count: the tags prefetch and a
         # joined aggregate would multiply.
+        # Only the prefixes the reader may view: a shared VLAN's prefixes
+        # may sit at other sites (#448).
         qs = super().get_queryset().annotate(
-            prefix_n=Coalesce(
-                Subquery(
-                    Prefix.objects.filter(vlan_id=OuterRef("pk"))
-                    .order_by().values("vlan_id")
-                    .annotate(c=Count("*")).values("c")[:1]
-                ),
-                0,
-            )
+            prefix_n=_visible_n(self, "prefixes")
         )
         if not self.request:
             return qs
@@ -3742,14 +3747,12 @@ def _device_rows(*, one: bool = False, counts: bool = False):
                 for path in ("", "role__", "platform__")
             ),
         )
-        # ip_count + interface_count are shown/served on the list, as
-        # correlated subqueries. The joined COUNT(DISTINCT) they replaced
+        # interface_count is shown/served on the list, as a
+        # correlated subquery. The joined COUNT(DISTINCT) it and ip_count replaced
         # multiplied every device's addresses by its interfaces before
         # grouping - a 48-port switch with ten addresses was 480 rows - and a
         # page of a hundred devices took a quarter of a second in that join.
         .annotate(
-            # Every address the device uses, not only those assigned to it.
-            ip_count_annotated=ip_usage.address_count("device", one=one),
             interface_count_annotated=_count_of(Interface, "device"),
             # Support coverage (#421): the latest covered day and how many
             # contracts cover the device - two more correlated subqueries.
@@ -3760,6 +3763,12 @@ def _device_rows(*, one: bool = False, counts: bool = False):
             install_count_annotated=_count_of(InstalledSoftware, "device"),
         )
     )
+    if one:
+        # Every address the device uses, not only those assigned to it, by
+        # index for one device. A list counts its page in one query instead
+        # (api.ip_usage.attach_address_counts): as a subquery per row it read
+        # every address of the tenant for each row (#455).
+        qs = qs.annotate(ip_count_annotated=ip_usage.address_count("device", one=True))
     if counts:
         qs = qs.select_related("virtual_chassis").annotate(**detail_counts.device_annotations())
     # One row: no ordering to compile or plan.
@@ -6642,8 +6651,6 @@ class VirtualMachineViewSet(
                 # Installed software's soonest end (#436), for Next end of life.
                 **software_end_annotations("virtual_machine"),
                 install_count_annotated=_count_of(InstalledSoftware, "virtual_machine"),
-                # Every address the VM uses, for its IPs tab (api/ip_usage.py).
-                ip_count_annotated=ip_usage.address_count("vm", one=one),
                 # Open review items for this VM - a hypervisor disagreement the
                 # operator hasn't resolved. Annotated so a list of VMs doesn't
                 # fan out one query per row.
@@ -6658,6 +6665,10 @@ class VirtualMachineViewSet(
                 ),
             )
         )
+        if one:
+            # Every address the VM uses, for its IPs tab (api/ip_usage.py), by
+            # index. A list counts its page in one query instead (#455).
+            qs = qs.annotate(ip_count_annotated=ip_usage.address_count("vm", one=True))
         if self.action == "retrieve":
             qs = qs.annotate(**detail_counts.vm_annotations())
         if self.request:
@@ -9439,7 +9450,10 @@ class L2VPNViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # The ends the reader may view, as the nested list shows them (#448).
+        qs = super().get_queryset().annotate(
+            termination_count_annotated=_visible_n(self, "terminations")
+        )
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
@@ -11744,6 +11758,40 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "floor_plan": FloorPlanSerializer(plan, context=self.get_serializer_context()).data,
             "drawing": self._drawing_response(d).data,
         })
+
+    @action(detail=True, methods=["get"], url_path="drawing/loops")
+    def drawing_loops(self, request, pk=None):
+        """The smallest closed shape of the drawing round the plan point
+        ``?x=&y=`` (in cells), for Detect outline: ``{"points": [[x, y],
+        ...], "layer"}`` in cells, its corners the drawing's own (at most
+        200). 404 when no closed shape of a shown layer holds the point;
+        409 until the drawing is processed. Read from the processed
+        drawing, cached per render (api.cad_loops)."""
+        import math
+
+        from . import cad_loops
+
+        plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
+        d = self._drawing_or_404(plan)
+        if d.status != "ready" or not d.rendered or not d.extents:
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        point = []
+        for key in ("x", "y"):
+            try:
+                v = float(request.query_params.get(key, ""))
+            except (TypeError, ValueError):
+                v = math.nan
+            if not math.isfinite(v) or abs(v) > 100_000:
+                return Response({key: ["A number of cells."]}, status=400)
+            point.append(v)
+        try:
+            found = cad_loops.pick(d, plan.cell_mm, point[0], point[1])
+        except OSError:
+            return Response({"detail": "The drawing's file is missing."}, status=409)
+        if found is None:
+            raise NotFound("No closed shape here.")
+        return Response(found)
 
     @action(detail=True, methods=["get", "post"], url_path="drawing/render")
     def drawing_render(self, request, pk=None):

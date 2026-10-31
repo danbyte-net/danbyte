@@ -75,7 +75,11 @@ is the only way the classic API takes a key: PRTG 26.3 answers an
 scheme.* API v2 is the other way round and takes the key only as a Bearer
 header. Because the classic key travels in the URL, Danbyte never puts a
 request URL in an error or a log line; the key is redacted from anything it
-reports. PRTG's own web server logs the URL, as it does for every classic API
+reports. That includes error pages that repeat the URL or the request headers
+(a reverse proxy, a WAF, an IIS or PRTG error page): every error text is
+redacted before it reaches **Last error**, the Test connection answer, the
+change log, a toast or a log line. Upgrading to 0.19 also masks the key in
+error text stored before. PRTG's own web server logs the URL, as it does for every classic API
 client. Tables are read in pages of 5,000
 rows with a short pause between pages, since the same web server serves the
 PRTG interface. Status codes 0-14 are read from `status_raw`; *Not Licensed*

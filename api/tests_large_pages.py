@@ -67,7 +67,7 @@ class _TokenBase(TestCase):
             user=self.user, tenant=self.tenant, name="t", kind="user",
             key_hash=hash_api_key(self.key), prefix=self.key[:11], scope="read",
         )
-        self.slots = [f"api:large-page:t:{hash_api_key(self.key)}:{n}" for n in range(2)]
+        self.slots = [f"api:large-page:u:{self.user.pk}:{n}" for n in range(2)]
         cache.delete_many(self.slots)
         self.addCleanup(cache.delete_many, self.slots)
         Site.objects.bulk_create(
@@ -140,7 +140,7 @@ class LargePageGuardTests(_TokenBase):
     def test_the_limit_follows_the_setting(self):
         for key in self.slots:
             cache.set(key, 1, 60)
-        third = f"api:large-page:t:{hash_api_key(self.key)}:2"
+        third = f"api:large-page:u:{self.user.pk}:2"
         self.addCleanup(cache.delete, third)
         self.assertEqual(self.client.get("/api/sites/?page_size=2000").status_code, 200)
 
@@ -156,6 +156,136 @@ class LargePageGuardTests(_TokenBase):
         self.addCleanup(cache.delete_many,
                         [f"api:large-page:u:{other.pk}:{n}" for n in range(2)])
         self.assertEqual(client.get("/api/sites/?page_size=2000").status_code, 200)
+
+    def _token(self, user):
+        key = generate_api_key()
+        ApiToken.objects.create(
+            user=user, tenant=self.tenant, name="more", kind="user",
+            key_hash=hash_api_key(key), prefix=key[:11], scope="read",
+        )
+        return key
+
+    def test_more_tokens_of_one_user_share_the_slots(self):
+        """#457: each new token used to bring its own slots."""
+        for key in self.slots:
+            cache.set(key, 1, 60)
+        for _ in range(5):
+            r = Client(HTTP_AUTHORIZATION=f"Token {self._token(self.user)}").get(
+                "/api/sites/?page_size=2000")
+            self.assertEqual(r.status_code, 429, r.content)
+        # The user's session shares them too.
+        session = Client()
+        session.force_login(self.user)
+        self.assertEqual(session.get("/api/sites/?page_size=2000").status_code, 429)
+
+    def test_tokens_of_one_user_in_flight_at_once(self):
+        keys = [self._token(self.user) for _ in range(3)]
+        factory = RequestFactory()
+        seen: list[int] = []
+
+        def req(key):
+            return factory.get("/api/sites/?page_size=2000", HTTP_AUTHORIZATION=f"Token {key}")
+
+        def third(_request):
+            return HttpResponse("third")
+
+        def second(_request):
+            seen.append(LargePageGuardMiddleware(third)(req(keys[2])).status_code)
+            return HttpResponse("second")
+
+        r = LargePageGuardMiddleware(second)(req(keys[0]))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(seen, [200])
+        # Two in flight from two tokens hold both of the user's slots.
+        r = LargePageGuardMiddleware(
+            lambda _r: LargePageGuardMiddleware(
+                lambda _r2: LargePageGuardMiddleware(third)(req(keys[2]))
+            )(req(keys[1]))
+        )(req(keys[0]))
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(cache.get_many(self.slots), {})
+
+    def test_another_users_token_has_its_own_slots(self):
+        for key in self.slots:
+            cache.set(key, 1, 60)
+        other = User.objects.create_superuser("other457", "o@example.com", "x")
+        prof = UserProfile.objects.create(user=other)
+        prof.tenants.add(self.tenant)
+        self.addCleanup(cache.delete_many,
+                        [f"api:large-page:u:{other.pk}:{n}" for n in range(2)])
+        r = Client(HTTP_AUTHORIZATION=f"Token {self._token(other)}").get(
+            "/api/sites/?page_size=2000")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_an_unknown_token_only_competes_with_itself(self):
+        for key in self.slots:
+            cache.set(key, 1, 60)
+        forged = generate_api_key()
+        request = RequestFactory().get("/api/sites/?page_size=2000",
+                                       HTTP_AUTHORIZATION=f"Token {forged}")
+        seen = []
+
+        def view(req):
+            seen.append(cache.get(f"api:large-page:t:{hash_api_key(forged)}:0"))
+            return HttpResponse("ok")
+
+        self.assertEqual(LargePageGuardMiddleware(view)(request).status_code, 200)
+        self.assertEqual(seen, [1])
+
+    def test_anonymous_requests_pass_untouched(self):
+        for key in self.slots:
+            cache.set(key, 1, 60)
+        request = RequestFactory().get("/api/sites/?page_size=2000")
+        ok = LargePageGuardMiddleware(lambda _r: HttpResponse("ok"))(request)
+        self.assertEqual(ok.status_code, 200)
+        self.assertIn(Client().get("/api/sites/?page_size=2000").status_code, (401, 403))
+
+
+class TokenCountLimitTests(TestCase):
+    """#457: a user holds at most API_MAX_TOKENS_PER_USER working tokens."""
+
+    def setUp(self):
+        org = Organization.objects.create(name="O", slug="o")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t")
+        self.user = User.objects.create_user("u457", password="x")
+        prof = UserProfile.objects.create(user=self.user)
+        prof.tenants.add(self.tenant)
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def create(self, name="t"):
+        return self.client.post("/api/api-tokens/", {"name": name,
+                                "tenant_id": str(self.tenant.id), "scope": "read"},
+                                content_type="application/json")
+
+    @override_settings(API_MAX_TOKENS_PER_USER=3)
+    def test_the_limit_holds_and_revoking_frees_room(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        ids = [self.create(f"t{i}").json()["id"] for i in range(3)]
+        r = self.create("one too many")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("Revoke one", r.json()["detail"])
+        # Run tokens and expired tokens don't count.
+        ApiToken.objects.filter(pk=ids[0]).update(
+            expires_at=timezone.now() - timedelta(days=1))
+        ApiToken.objects.create(user=self.user, tenant=self.tenant, name="run", kind="run",
+                                key_hash=hash_api_key(generate_api_key()), prefix="x")
+        self.assertEqual(self.create("after expiry").status_code, 201)
+        self.assertEqual(self.create("full again").status_code, 400)
+        self.assertEqual(self.client.delete(f"/api/api-tokens/{ids[1]}/").status_code, 204)
+        self.assertEqual(self.create("after revoke").status_code, 201)
+
+    def test_default_and_bad_values(self):
+        from danbyte.settings import api_max_tokens_per_user
+
+        self.assertEqual(api_max_tokens_per_user({}), 25)
+        self.assertEqual(api_max_tokens_per_user({"API_MAX_TOKENS_PER_USER": "7"}), 7)
+        for raw in ("0", "-1", "many"):
+            with self.assertRaises(ImproperlyConfigured):
+                api_max_tokens_per_user({"API_MAX_TOKENS_PER_USER": raw})
 
 
 class _UrlopenToTestClient:

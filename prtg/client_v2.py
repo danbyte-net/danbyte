@@ -52,6 +52,7 @@ import json
 import re
 import time
 
+from core.redaction import redact_secrets
 from core.ssrf import SSRFError, safe_request
 
 from .client import PrtgError, PrtgUnauthorized, PrtgUnreachable
@@ -111,8 +112,7 @@ class PrtgV2Client:
     # ── transport ────────────────────────────────────────────────────
 
     def redact(self, text) -> str:
-        text = str(text or "")
-        return text.replace(self.api_key, "REDACTED") if self.api_key else text
+        return redact_secrets(text, self.api_key)
 
     def _raw(self, method: str, path: str, *, params=None, body=None):
         headers = {"Accept": "application/json"}
@@ -161,7 +161,7 @@ class PrtgV2Client:
             break
         if code in ok:
             return resp
-        message = _message(resp)
+        message = self.redact(_message(resp))
         if code in (401, 403):
             raise PrtgUnauthorized(f"PRTG refused the API key ({message or code})")
         if code == 404:

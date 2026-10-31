@@ -426,6 +426,7 @@ floor plan, changing needs **change**.
 | `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
 | `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
 | `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
+| `GET /api/floor-plans/{id}/drawing/loops/?x=&y=` | [Detect outline](#detect-outline)'s pick: the smallest closed shape of a shown layer round the plan point (`x`, `y` in cells) - `{"points": [[x, y], ...], "layer"}` in cells, at most 200 corners. Needs only **view**. 404 when no closed shape holds the point, 409 until the drawing is ready, 400 on a live view. |
 | `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The same request while one is queued returns that one. At most 3 renders of a drawing queue at once; past that, 429 until one finishes. The last 12 are kept. |
 
 The drawing record:
@@ -808,6 +809,7 @@ Layout / Structure / Cables tabs of 0.18:
 | Select | ++v++ | Select, move, resize and turn what is on the plan |
 | Room or area | ++r++ | Drag a rectangle: a [room, location or plain area](#rooms-areas-and-labels) |
 | Polygon area | ++shift+r++ | Click its corners; ++enter++, a double-click or a click on the first point closes it |
+| Detect outline | ++o++ | Click a building or a room on the background: its outline, [proposed as an area](#detect-outline) |
 | Label | ++t++ | Click to place a [label](#labels) |
 | Tiles | ++g++ | The tile palette (Tiles / Background tabs) |
 | Walls and raised floors | ++w++ | What the Structure tab did: [raised floors](#raised-floors-structure-mode) and [walls](#walls-doors-structure-mode) |
@@ -966,6 +968,71 @@ and in view.
 **Snapshot.** **Snapshot this room…** on an area's right-click menu or its
 floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 
+### Detect outline
+
+**Detect outline** (++o++, or **Detect outline here** on the plan's
+right-click menu) draws an area by finding it: click a building on a map
+background, a room in a scanned plan or a closed shape in a CAD drawing,
+and its outline is proposed over the plan, dashed, a handle on each corner
+to drag. It works best on maps, CAD drawings and line drawings; satellite
+pictures have no clean edges to follow.
+
+The card over the plan picks how it looks:
+
+- **Colour** (a background picture) - grows a region from the clicked
+  pixel over every pixel whose colour is within the **Tolerance** of the
+  clicked one (1-40, as a percentage of the black-to-white distance;
+  default 8). A street map's building fill stops at its darker outline; a
+  tolerance too high runs into the land around it, and the card says to
+  lower it. House numbers and other marks inside the building are holes
+  and are ignored: only the outer edge counts.
+- **Fill room** (a line drawing or a scan) - pixels darker than the
+  **Threshold** (default 128 of 255) are walls; the white space round the
+  click is filled, its **Door gap** (metres, default 1.0) bridged so the
+  fill stops at the doorway instead of running into the next room. The
+  bridge is a square's width: the room keeps its sharp corners and gets no
+  bulge in the doorway. A room narrower than the gap is filled with a gap
+  as wide as the click allows.
+- **CAD shape** (a plan with a [CAD drawing](#cad-drawings)) - the smallest
+  closed shape of the drawing round the click: a closed polyline, a circle
+  or a hatch's boundary, on a layer that is shown. Its corners are the
+  drawing's own, so there is nothing to simplify or square. Lines that only
+  meet at their ends are not a closed shape.
+
+A picture's outline is then traced along the region's outer edge and
+cleaned up:
+
+- **Simplify** (0-2 cells, default a quarter) drops corners closer than that
+  to the line between their neighbours (never finer than two pixels of the
+  picture, the width of an anti-aliased edge).
+- **Square corners** (on by default) turns every edge within 8° of the
+  shape's main direction, or a quarter turn from it, onto it - a building
+  at 20° stays at 20° - lays each edge through the middle of the stair-step
+  edge it stands for, and drops jogs shorter than twice the simplify. Edges
+  far from the main direction keep their own.
+
+The card reads the corner count and the area in m², with **Accept**,
+**Accept + walls** and **Cancel** (++enter++ accepts, ++esc++ cancels).
+++shift++-click adds more outlines to the same batch; a plain click starts
+again. Moving a corner by hand keeps it until a setting changes.
+
+- **Accept** makes each outline a polygon area through the plan's draft,
+  like a drawn one: one undo step each, saved with **Save**. The inspector
+  opens on it to pick **Room**, **Location** or **Just an area** and a type.
+- **Accept + walls** also runs [Add walls around this](#walls-from-a-rooms-outline)
+  on each, linked to it, in the same undo step.
+
+Limits: the picture is read in the browser at up to 4 megapixels (a larger
+one is scaled down for the search, still several pixels a cell), the
+search runs in a background worker, and a region over half the picture is
+refused. An area takes 200 corners at most; a busier outline is simplified
+until it fits. Corners are kept inside the grid. A drawing's closed shapes
+are read on the server from the drawing as processed (never the uploaded
+file) and cached per render, at most 50,000 shapes of up to 5,000 points;
+the pick is `GET /api/floor-plans/<id>/drawing/loops/?x=&y=` (see the
+[drawing API](#api)). On a live view, picture outlines work and CAD shapes
+are picked on its source plan.
+
 ### Opens links
 
 An area or a label can **open** another floor plan: a click on it in View
@@ -1075,6 +1142,8 @@ In Edit, a right-click on empty plan space offers **Place device here…**
 (the [Place picker](#the-place-picker); what you pick lands at the point,
 on the grid on a grid plan), **Draw room/area here** (what a click with the
 Room tool draws: a 3 × 3 area at the point, selected to resize and link),
+**Detect outline here** (on a plan with a background picture or a drawing:
+[Detect outline](#detect-outline) at the point),
 **Add label here** (a label at the
 point, its text ready to type) and **Fit to view**. In View, those who may
 edit get **Edit here**, which switches to Edit.
@@ -1092,7 +1161,7 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 |---|---|
 | ++e++ | View / Edit |
 | ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
-| ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
+| ++v++ ++r++ ++shift+r++ ++o++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label - or wall, door, tray or raised floor |
 | ++d++ | The Door tool |
@@ -2548,7 +2617,25 @@ a device you may not view reads **Hidden**.
 every page, under the plan's title; **Plan on the first page** puts the
 plan with its routes on top, as the Display menu draws it - framed to
 what is drawn on the plan (not the whole grid), with hatches and cables
-sized for the paper so they stay crisp. **CSV** and
+sized for the paper so they stay crisp. Under it go the plan's
+**background image** and its **CAD drawing**, added on the server as the
+floor-plan PDF adds them: the image cut to the framed part (a live view's
+part of its source's image), at most 200 dpi on paper and under the
+sanitiser's image limits (3 MB, 36 megapixels); the drawing in vector, its
+hidden layers left out, at the plan's opacity. A drawing too large for paper
+is left out and the caption under the plan says so.
+
+**Close-ups of the cabled parts** (on by default) adds detail pages after
+the plan when it prints too small to read - a grid cell under 2 mm on
+paper, as a big site plan does. The framed plan is cut into page-sized
+pieces at a cell of 5 mm, and every piece a cable's route, tray or end
+crosses becomes a page (A1, A2, … by row and column): the plan cut to it,
+background and drawing included and its hatches and cables sized for that
+page, and the list of the cables drawn there. The overview carries a
+labelled frame for each, and the schedule's table gains a **Detail** column
+naming the pages a cable is on. At most 20 close-ups, the busiest pieces
+kept; the caption says how many were left out. The schedule's tables follow
+the close-ups. **CSV** and
 **XLSX** are the same rows as a table (one line per cable in each group,
 then the totals) - the table export's files. The PDF obeys the floor-plan
 PDF's limits. Anyone who can view the plan can make it:
@@ -2556,7 +2643,30 @@ PDF's limits. Anyone who can view the plan can make it:
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
-| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default) and `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `detail_svg` (optional: the same plan drawn at the close-ups' scale, 0.125 mm per plan pixel) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm; `on`: whenever the close-ups are larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
+
+### Try it: the demo floor plan
+
+`manage.py seed_floorplan_demo --tenant <slug>` (or
+`make seed-floorplan-demo TENANT=<slug>`) makes an opt-in demo in
+that tenant to try the floor-plan features on: a site **Demo campus** with
+**Building A** (rooms *Server room* and *Office*) and **Building B**, a
+floor plan **Demo HQ** with floors **Ground** and **First** (elevations,
+ceiling heights, 600 mm cells) - rooms drawn as areas with linked walls
+and doors, a raised floor, a hatched *Loading bay* area, labels, a label
+opening the first floor with its Back button there, two racks and a
+cabinet, a riser pair, overhead and underfloor trays, two switches, a
+firewall and two servers, and twelve cables between them: most with a
+stored route, one breakout, one planned, one left inferred, one stale and
+one up the riser - and a site-wide plan **Demo campus overview** whose
+building outlines open the building plan. Demo HQ · Ground shows its cables
+and their labels from the start. The command prints the pages it made; run
+again, it finds what is there and makes only what is missing, so edits made
+since are kept. Its catalog rows (a *Building* location type, *Rack*,
+*Cabinet*, *Riser* and *Device* tile types, a *Loading bay* area type, a
+*Planned run* cable status when the tenant has no planned status, demo
+device types and roles) are made only by this command, never by bootstrap
+or a migration.
 
 ## Tenancy, permissions, audit
 
@@ -2720,4 +2830,5 @@ wall-plate ("drop") tiles with port assignments.
     free placement, the Place picker with rooms near the pointer, devices in
     their role's look or as their photo, a save that asks before it
     overwrites someone else's change, and snapshots: a rectangle of a floor
-    as an independent copy or a live view.
+    as an independent copy or a live view. Detect outline: a click on a
+    building, a room or a CAD shape proposes its area.

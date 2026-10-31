@@ -589,3 +589,60 @@ class LoginAttemptCounterConcurrencyTests(TestCase):
         from django.core.cache import caches
 
         self._hammer(caches["default"])
+
+
+class OverlappingAttemptTests(TestCase):
+    """#449: every check starts the next attempt while it is still running,
+    so all of them are in flight at once - the race parallel workers hit.
+    Only the limit's worth may reach the check."""
+
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.user = User.objects.create_user("dave449", password="pw12345!")
+        self.profile = UserProfile.objects.create(user=self.user)
+
+    def _overlap(self, target, attempt, total):
+        from . import login_api
+
+        statuses: list[int] = []
+        calls = {"n": 0}
+        real = getattr(login_api, target)
+
+        def checking(*args, **kwargs):
+            calls["n"] += 1
+            if len(statuses) + calls["n"] < total:
+                statuses.append(attempt().status_code)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(login_api, target, side_effect=checking):
+            statuses.append(attempt().status_code)
+        return calls["n"], statuses
+
+    def test_parallel_wrong_passwords(self):
+        def attempt():
+            return _post(Client(), "/api/auth/login/", username="dave449", password="wrong")
+
+        checked, statuses = self._overlap("authenticate", attempt, 25)
+        self.assertEqual(checked, LOGIN_MAX_FAILURES)
+        self.assertEqual(statuses.count(400), LOGIN_MAX_FAILURES)
+        self.assertEqual(statuses.count(429), len(statuses) - LOGIN_MAX_FAILURES)
+
+    def test_parallel_wrong_codes(self):
+        from .login_api import MFA_MAX_ACCOUNT_FAILURES
+
+        self.profile.mfa_totp_confirmed = True
+        self.profile.secrets = {"totp": pyotp.random_base32()}
+        self.profile.save()
+        c = Client()
+        c.force_login(self.user)
+
+        def attempt():
+            return _post(c, "/api/auth/mfa/totp/disable/", code="000000")
+
+        checked, statuses = self._overlap("_totp_consume", attempt, 25)
+        self.assertEqual(checked, MFA_MAX_ACCOUNT_FAILURES)
+        self.assertEqual(statuses.count(400), MFA_MAX_ACCOUNT_FAILURES)
+        self.assertEqual(statuses.count(429), len(statuses) - MFA_MAX_ACCOUNT_FAILURES)
+        self.profile.refresh_from_db()
+        self.assertTrue(self.profile.mfa_totp_confirmed)

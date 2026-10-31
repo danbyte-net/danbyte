@@ -173,13 +173,15 @@ export function CableScheduleDialog({
   planName: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The plan with its routes, for the PDF's first page. */
-  planSvg?: (paper: PaperChoice) => Promise<string | null>
+  /** The plan with its routes, for the PDF's first page; `closeup`: drawn
+   * for the close-up pages' scale. */
+  planSvg?: (paper: PaperChoice, closeup?: boolean) => Promise<string | null>
 }) {
   const [group, setGroup] = useState<ScheduleGroup>("room")
   const [format, setFormat] = useState<ScheduleFormat>("pdf")
   const [paper, setPaper] = useState<Paper>("a4")
   const [withPlan, setWithPlan] = useState(true)
+  const [closeups, setCloseups] = useState(true)
   const [busy, setBusy] = useState(false)
   const base = `${planName} cable schedule`
 
@@ -189,6 +191,8 @@ export function CableScheduleDialog({
       if (format === "pdf") {
         const sheet: PaperChoice = { size: paper, orientation: "landscape" }
         const svg = withPlan && planSvg ? await planSvg(sheet) : null
+        const detail =
+          svg && closeups && planSvg ? await planSvg(sheet, true) : null
         const { url } = await api<{ url: string }>(
           `/api/floor-plans/${planId}/cable-schedule/pdf/?print=1`,
           {
@@ -196,7 +200,8 @@ export function CableScheduleDialog({
             body: JSON.stringify({
               group,
               paper: sheet,
-              ...(svg ? { svg } : {}),
+              ...(svg ? { svg, closeups: closeups ? "auto" : "off" } : {}),
+              ...(detail ? { detail_svg: detail } : {}),
             }),
           }
         )
@@ -270,6 +275,14 @@ export function CableScheduleDialog({
               label="Plan on the first page"
               checked={withPlan}
               onChange={setWithPlan}
+              className="items-center text-[13px]"
+            />
+          )}
+          {format === "pdf" && planSvg && withPlan && (
+            <FormCheckbox
+              label="Close-ups of the cabled parts"
+              checked={closeups}
+              onChange={setCloseups}
               className="items-center text-[13px]"
             />
           )}

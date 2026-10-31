@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from django.utils import timezone
 
+from core.redaction import redact_secrets
+
 from .client import PrtgClient, PrtgError, PrtgUnauthorized, PrtgUnreachable
 from .models import PrtgConnection
 
@@ -63,6 +65,10 @@ def test_connection(conn: PrtgConnection, *, client: PrtgClient | None = None) -
             result["detail"] = f"Could not reach {conn.url}: {exc}"
         except PrtgError as exc:
             result["detail"] = str(exc)
+    # The client redacts what it raises; this is the last stop before the
+    # answer and the stored error, so check once more (#459).
+    for k in ("detail", "v2_detail", "write_detail"):
+        result[k] = redact_secrets(result[k], conn.api_key)
     conn.last_checked_at = timezone.now()
     conn.last_error = "" if result["ok"] else result["detail"][:500]
     conn.save(update_fields=[

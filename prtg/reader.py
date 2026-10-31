@@ -31,6 +31,7 @@ from datetime import timedelta
 from django.db import models, transaction
 from django.utils import timezone
 
+from core.redaction import redact_secrets
 from monitoring.external.beat import skip_reason
 
 from . import status as st
@@ -734,6 +735,7 @@ def adoption_pass(conn, devices) -> int:
 
 
 def _stamp(conn, now, *, error: str = "", summary: dict | None = None) -> None:
+    error = redact_secrets(error, conn.api_key) if error else ""  # #459
     conn.last_status_at = now
     conn.last_checked_at = now
     conn.last_error = error[:500]

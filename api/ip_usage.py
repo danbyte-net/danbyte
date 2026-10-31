@@ -68,9 +68,11 @@ def addresses_q(kind: str, obj=None, *, one: bool | None = None) -> Q:
 
 
 def address_count(kind: str, *, one: bool = False):
-    """How many addresses the outer row uses, as one correlated subquery so a
-    list of devices or VMs pays no query per row. Same tenant only. ``one``
-    for a single-object read (see :func:`addresses_q`)."""
+    """How many addresses the outer row uses, as one correlated subquery.
+    Same tenant only. ``one`` for a single-object read (see
+    :func:`addresses_q`). Not for a list: the OR defeats every index, so each
+    row reads all of the tenant's addresses - a list counts its page with
+    :func:`attach_address_counts` (#455)."""
     return Coalesce(
         Subquery(
             IPAddress.objects.filter(addresses_q(kind, one=one), tenant_id=OuterRef("tenant_id"))
@@ -81,6 +83,45 @@ def address_count(kind: str, *, one: bool = False):
         ),
         0,
     )
+
+
+def attach_address_counts(kind: str, objs) -> None:
+    """Set ``ip_count_annotated`` on each of ``objs`` (devices or VMs, a
+    list's page) to the number of addresses it uses - the same number as
+    :func:`address_count`, in one query for the whole page (#455).
+
+    The per-row subquery ORs the assignment, the interface and the slots, so
+    Postgres can use no index and read every address of the tenant for each
+    row: a page cost rows x tenant addresses. Here each branch is its own
+    indexed lookup over the page's ids, the ``UNION`` drops an address that
+    reaches the same object twice, and the pairs are counted in Python - as
+    many as the page's objects use, whatever the tenant holds."""
+    objs = [o for o in objs if getattr(o, "ip_count_annotated", None) is None]
+    if not objs:
+        return
+    direct, via_iface, slots = _KINDS[kind]
+    ids = [o.pk for o in objs]
+    model = type(objs[0])
+    branches = [
+        IPAddress.objects.filter(**{f"{direct}__in": ids})
+        .order_by().values_list(direct, "pk", "tenant_id"),
+        IPAddress.objects.filter(**{f"{via_iface}__in": ids})
+        .order_by().values_list(via_iface, "pk", "tenant_id"),
+    ]
+    for slot in slots:
+        rel = slot.removesuffix("_id")
+        branches.append(
+            model.objects.filter(pk__in=ids, **{f"{rel}__isnull": False})
+            .order_by().values_list("pk", slot, f"{rel}__tenant_id")
+        )
+    pairs = branches[0].union(*branches[1:])
+    tenant_of = {o.pk: o.tenant_id for o in objs}
+    counts: dict = {}
+    for owner, _ip, tenant_id in pairs:
+        if tenant_id == tenant_of.get(owner):
+            counts[owner] = counts.get(owner, 0) + 1
+    for o in objs:
+        o.ip_count_annotated = counts.get(o.pk, 0)
 
 
 def addresses_of(kind: str, obj):
