@@ -231,6 +231,7 @@ class BulkUpdateMixin(FieldWriteAllowList):
                     fields.get("add_tag_ids") or [],
                     fields.get("remove_tag_ids") or [],
                     tenant=tenant,
+                    request=request,
                 )
             self._assert_bulk_write_in_site_scope(
                 [row.pk for row in _rows], action="change"

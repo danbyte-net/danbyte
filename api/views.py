@@ -19,13 +19,12 @@ from django.db.models.expressions import RawSQL
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.text import slugify
 from django.views.decorators.http import require_http_methods, require_POST
 
 from api.forms import IPAddressForm, PrefixForm
 from api.form_helpers import initial_from_get, save_and_add_more_redirect
 from api.models import VRF, IPAddress, IPRole, Status, Prefix, Site, VLAN
-from core.models import Organization, Tag, Tenant
+from core.models import Organization, Tenant
 from auth_api.permissions import require_perm
 from auth_api.user_prefs import get_page_size
 
@@ -987,22 +986,6 @@ def _gateway_address_for(network, policy):
             return str(network.broadcast_address)
         return str(network.network_address)
     return None
-
-
-def _set_tags_from_string(obj, raw, *, create_missing=True):
-    """Parse a comma-separated tag string and apply to ``obj``."""
-    names = [n.strip() for n in (raw or "").split(",") if n.strip()]
-    if not names:
-        obj.tags.clear()
-        return
-    tags = []
-    for name in names:
-        t, _ = Tag.objects.get_or_create(
-            name=name, defaults={"slug": slugify(name)}
-        ) if create_missing else (Tag.objects.filter(name=name).first(), False)
-        if t is not None:
-            tags.append(t)
-    obj.tags.set(tags)
 
 
 def _autospawn_gateway(prefix, *, request=None):
