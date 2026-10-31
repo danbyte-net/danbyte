@@ -1504,6 +1504,11 @@ export interface DeviceType extends LifecycleInfo {
   front_image: string | null
   /** Absolute URL of the rear rack-face image, or null. */
   rear_image: string | null
+  /** Download URL of the type's 3D model (binary glTF), or null. */
+  model_3d?: string | null
+  model_3d_fit?: Model3DFit
+  model_3d_up?: Model3DUp
+  model_3d_front?: Model3DFront
   /** Saved front-panel layout (drag-and-drop builder); null = auto layout. */
   faceplate: FaceplateDoc | null
   /** Port markers anchored on the front/rear photo; null = none placed. */
@@ -1678,10 +1683,58 @@ export interface SiteRegionMini {
   region?: { id: string; name: string; slug: string } | null
 }
 
+/** How the 3D room sizes a model: fitted to the hardware, or its own size. */
+export type Model3DFit = "auto" | "native"
+export type Model3DUp = "y" | "z"
+export type Model3DFront = "+z" | "-z" | "+x" | "-x"
+
+/** What the 3D room draws for a device: its own model, else its type's. */
+export interface Model3DEffective {
+  url: string
+  source: "device" | "type"
+  fit: Model3DFit
+  up: Model3DUp
+  front: Model3DFront
+}
+
+export interface Model3DOptions {
+  fit?: Model3DFit
+  up?: Model3DUp
+  front?: Model3DFront
+}
+
+/** Set or replace a device type's or device's 3D model (a .glb). */
+export function uploadModel3D<T>(
+  kind: "device-types" | "devices",
+  id: string,
+  glb: Blob,
+  opts: Model3DOptions = {}
+): Promise<T> {
+  const fd = new FormData()
+  fd.append("file", glb, "model.glb")
+  for (const [k, v] of Object.entries(opts)) if (v) fd.append(k, v)
+  return api<T>(`/api/${kind}/${id}/model/`, { method: "POST", body: fd })
+}
+
+/** Remove a device type's or device's own 3D model. */
+export function deleteModel3D(
+  kind: "device-types" | "devices",
+  id: string
+): Promise<void> {
+  return api<void>(`/api/${kind}/${id}/model/`, { method: "DELETE" })
+}
+
 export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Download URL of the device's own 3D model, or null (inherits). */
+  model_3d?: string | null
+  model_3d_fit?: Model3DFit
+  model_3d_up?: Model3DUp
+  model_3d_front?: Model3DFront
+  /** The model the 3D room draws for it, or null. */
+  model_3d_effective?: Model3DEffective | null
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
   /** What PRTG polls instead of the primary address ("" = the primary). */

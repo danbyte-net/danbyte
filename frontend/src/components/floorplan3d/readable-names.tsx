@@ -6,7 +6,7 @@ import { clipName, nameBox, thinNames } from "@/components/floorplan/readable"
 import type { NameCandidate } from "@/components/floorplan/readable"
 
 import { textTexture } from "./text-sprite"
-import { cellToWorld } from "./world"
+import { cellToWorld, floorDeviceBoxM } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
 // Readable (Display > Object size) in the room: every placed object's name
@@ -53,7 +53,9 @@ function nameAnchor(plan: ScenePayload["plan"], t: SceneTile): THREE.Vector3 {
     ? t.rack.u_height * 0.04445 + 0.2
     : t.cabinet
       ? t.cabinet.outer_height_mm / 1000
-      : 2.0
+      : t.device
+        ? (floorDeviceBoxM(t.device)?.h ?? 2.0)
+        : 2.0
   return new THREE.Vector3(x, top + 0.25, z)
 }
 

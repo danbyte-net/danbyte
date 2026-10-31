@@ -25,6 +25,7 @@ import { FaceplateLegend } from "@/components/device-faceplate"
 import { LegendFrame } from "@/components/map-legend"
 import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loading } from "@/components/loading"
 import { BarButton, BarIconButton } from "@/components/map-toolbar"
@@ -79,12 +80,14 @@ import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
 import { ReadableNames3D } from "./readable-names"
 import { TileGhostMesh } from "./tile-ghost-mesh"
+import { FloorDevicesLayer, isPlacedDevice } from "./floor-device-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
   cabinetBoxM,
   cellToWorld,
+  floorDeviceBoxM,
   rackFootprintM,
   rackViewpoint,
   trayElevationM,
@@ -206,6 +209,9 @@ export default function FloorScene3D({
   // ghosts. Session state, deliberately not persisted - it is a look, not a
   // preference.
   const [focusOn, setFocusOn] = useState(false)
+  // Placed devices whose 3D model is over the room's triangle budget and
+  // draws as its bounding box.
+  const [tooDetailed, setTooDetailed] = useState<string[]>([])
   // Isolation: only these tile ids render (zone click or "Isolate row").
   const [isolation, setIsolation] = useState<{
     label: string
@@ -453,7 +459,9 @@ export default function FloorScene3D({
             ? rackFootprintM(t.rack).height
             : t?.cabinet
               ? cabinetBoxM(t.cabinet).height
-              : null
+              : t?.device
+                ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+                : null
           if (!focusOn && d && t && height != null) {
             setViewSide("front")
             flyTo(rackViewpoint(d.plan, t, height, "front"))
@@ -584,6 +592,11 @@ export default function FloorScene3D({
   const selDevice =
     (selection?.kind === "device" || selection?.kind === "port") && selTile
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
+      : null
+  // A device standing on the floor, selected.
+  const selFloor =
+    selection?.kind === "device"
+      ? (data.tiles.find((t) => t.id === selection.tileId && t.device) ?? null)
       : null
   const selCabinet =
     selection?.kind === "cabinet"
@@ -950,6 +963,7 @@ export default function FloorScene3D({
               !t.is_zone &&
               !t.rack &&
               !t.cabinet &&
+              !isPlacedDevice(t) &&
               !hiddenTileIds?.has(t.id) &&
               (!isolation || isolation.ids.has(t.id))
           )
@@ -961,6 +975,26 @@ export default function FloorScene3D({
               showName={!readableNames}
             />
           ))}
+        {/* Devices placed on the floor: their rack-unit box or 3D model. */}
+        <FloorDevicesLayer
+          scene={data}
+          tiles={data.tiles.filter(
+            (t) =>
+              isPlacedDevice(t) &&
+              !hiddenTileIds?.has(t.id) &&
+              (!isolation || isolation.ids.has(t.id))
+          )}
+          checks={(id) => liveState?.tiles[id]?.check ?? null}
+          selection={selection}
+          focusTileId={focusOn && selection ? selection.tileId : null}
+          showNames={!readableNames}
+          onSelect={handleSelect}
+          onFlyTo={(target, position) => {
+            flyToRef.current = { target, position }
+            setViewSide("front")
+          }}
+          onTooDetailed={setTooDetailed}
+        />
         {readableNames && (
           <ReadableNames3D
             plan={plan}
@@ -1076,6 +1110,23 @@ export default function FloorScene3D({
           pinned
           focus={{ on: focusOn, onToggle: () => setFocusOn((v) => !v) }}
         />
+      )}
+      {selFloor?.device && (
+        <DeviceHud
+          tile={selFloor}
+          dev={selFloor.device}
+          focused={focusOn}
+          onToggleFocus={() => setFocusOn((v) => !v)}
+        />
+      )}
+      {tooDetailed.length > 0 && (
+        <div className="pointer-events-none absolute right-3 bottom-3 max-w-72 rounded-lg border border-border bg-popover/95 px-3 py-2 text-[12px] text-popover-foreground shadow-lg backdrop-blur">
+          <Badge variant="warning">Model too detailed</Badge>
+          <div className="mt-1 text-muted-foreground">
+            {tooDetailed.slice(0, 3).join(", ")}
+            {tooDetailed.length > 3 ? ` +${tooDetailed.length - 3}` : ""}
+          </div>
+        </div>
       )}
       {selTile && selDevice && selection?.kind === "device" && (
         <DeviceHud
