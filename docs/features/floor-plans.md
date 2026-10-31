@@ -1833,7 +1833,8 @@ through each one. Hand the PNG to whoever's pulling cable.
   than pretending a 20 m unsupported hop is a route. Ends that drop onto one
   tray - two racks either side of an underfloor tray, straight across it,
   or anywhere along one run - route drop, along the tray between the two
-  drop points (no length at all when they meet), drop.
+  drop points (no length at all when they meet), drop. The canvas traces
+  them the same way.
   `POST /api/floor-plans/{id}/route/` previews a route between two objects
   without saving.
 - **Capacity**: a tray may record how many cables it holds (`capacity`,
@@ -1877,7 +1878,10 @@ there is none). A length is never written by the routing card. Like
 Auto-route, a `PUT` answers `reachable`: `false`, with a `detail`, when the
 trays named do not connect the two ends - the trays stay assigned, but no
 route is stored (an earlier one is removed); `null` when no route applies
-(an end not placed on the plan, or both ends on one tile).
+(an end not placed on the plan, or both ends on one tile). The card says so
+after a save: a warning with the `detail`, and **Not routed – trays don't
+connect the ends** above the tray list until you change the pick.
+
 - **Level & elevation**: each tray records where it physically lives -
   **Overhead** (the default), **Underfloor**, or **Floor level** - plus an
   optional exact **elevation in mm**. Leave elevation blank and it derives

@@ -151,6 +151,11 @@ class SharedCaseTests(SimpleTestCase):
                 self.assertAlmostEqual(r.run_cells, case["run"], places=4)
                 run = sum(math.dist(p, q) for p, q in zip(r.points, r.points[1:], strict=False))
                 self.assertAlmostEqual(run, case["run"], places=4)
+                if "points" in case:
+                    self.assertEqual(len(r.points), len(case["points"]))
+                    for got, want in zip(r.points, case["points"], strict=True):
+                        self.assertAlmostEqual(got[0], want[0], places=6)
+                        self.assertAlmostEqual(got[1], want[1], places=6)
 
 
 class RouteApiTests(APITestCase):
