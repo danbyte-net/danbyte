@@ -127,6 +127,43 @@ class AgreementTests(_Base):
         self.assertEqual(r.status_code, 400)
 
 
+class AgreementListQueryTests(_Base):
+    """The list costs the same queries whatever the number of agreements
+    (#460): the sites and notification channels come prefetched."""
+
+    def _list_queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            r = self.client.get(f"{A}?page_size=50")
+        self.assertEqual(r.status_code, 200)
+        return len(ctx.captured_queries), r.json()
+
+    def test_query_count_is_flat(self):
+        from .models import NotificationChannel
+
+        channel = NotificationChannel.objects.create(
+            tenant=self.tenant, name="noc", kind="email",
+            config={"recipients": ["noc@example.com"]},
+        )
+
+        def add(n):
+            for i in range(n):
+                a = self.agreement(name=f"A{SlaAgreement.objects.count()}-{i}",
+                                   sites=[str(self.site_a.id)])
+                SlaAgreement.objects.get(pk=a["id"]).notify_channels.add(channel)
+
+        add(2)
+        few, _ = self._list_queries()
+        add(6)
+        many, body = self._list_queries()
+        self.assertEqual(many, few)
+        rows = body["results"] if isinstance(body, dict) else body
+        self.assertEqual(len(rows), 8)
+        self.assertTrue(all(row["notify_channels"] == [str(channel.id)] for row in rows))
+
+
 class MemberTests(_Base):
     def test_bulk_add_skip_and_leave(self):
         a = self.agreement()

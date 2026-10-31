@@ -134,7 +134,9 @@ address's own assignment only.
 
 The device and VM `ip_count`, the **IPs** tab and the Overview's **IP
 addresses** count use the same set (`api/ip_usage.py`).
-`GET /api/devices/<id>/ips/` returns it too.
+`GET /api/devices/<id>/ips/` returns it too. A device or VM list counts its
+page in one query, so a list costs the same however many addresses the
+tenant holds.
 
 ## PRTG sensors
 
