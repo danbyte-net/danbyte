@@ -1,5 +1,5 @@
 {
-  "about": "Shared by api/tests_pathfinding.py (route_through_trays) and cable-route.test.ts (routeCable): the two routers must agree. Coordinates in cells, elevations in mm; levels=false routes without elevations (the site map). run is the path length in cells; trays_used the tray indexes the path rides (server only).",
+  "about": "Shared by api/tests_pathfinding.py (route_through_trays) and cable-route.test.ts (routeCable): the two routers must agree. Coordinates in cells, elevations in mm; levels=false routes without elevations (the site map). run is the path length in cells; trays_used the tray indexes the path rides (server only); points, when given, the path itself.",
   "cases": [
     {
       "name": "same-level crossing joins",
@@ -208,6 +208,202 @@
       "reachable": true,
       "trays_used": [0, 1],
       "run": 18
+    },
+    {
+      "name": "both ends drop onto one tray point",
+      "a": [10, 3],
+      "b": [10, 7],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 4,
+      "points": [
+        [10, 3],
+        [10, 5],
+        [10, 5],
+        [10, 7]
+      ]
+    },
+    {
+      "name": "both ends drop onto one tray point, the other way",
+      "a": [10, 7],
+      "b": [10, 3],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 4,
+      "points": [
+        [10, 7],
+        [10, 5],
+        [10, 5],
+        [10, 3]
+      ]
+    },
+    {
+      "name": "both ends drop onto one segment, merged drops",
+      "a": [10, 3],
+      "b": [10.2, 7],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 4.2,
+      "points": [
+        [10, 3],
+        [10, 5],
+        [10.2, 5],
+        [10.2, 7]
+      ]
+    },
+    {
+      "name": "both ends drop onto one segment, merged drops, the other way",
+      "a": [10.2, 7],
+      "b": [10, 3],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 4.2,
+      "points": [
+        [10.2, 7],
+        [10.2, 5],
+        [10, 5],
+        [10, 3]
+      ]
+    },
+    {
+      "name": "both ends drop onto one segment",
+      "a": [4, 3],
+      "b": [12, 7],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 12,
+      "points": [
+        [4, 3],
+        [4, 5],
+        [12, 5],
+        [12, 7]
+      ]
+    },
+    {
+      "name": "both ends drop onto one segment, the other way",
+      "a": [12, 7],
+      "b": [4, 3],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [20, 5]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 12,
+      "points": [
+        [12, 7],
+        [12, 5],
+        [4, 5],
+        [4, 3]
+      ]
+    },
+    {
+      "name": "both ends drop onto different segments of one tray",
+      "a": [5, 3],
+      "b": [12, 12],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5],
+            [10, 15]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 16,
+      "points": [
+        [5, 3],
+        [5, 5],
+        [10, 5],
+        [10, 12],
+        [12, 12]
+      ]
+    },
+    {
+      "name": "both ends drop onto different segments of one tray, the other way",
+      "a": [12, 12],
+      "b": [5, 3],
+      "levels": false,
+      "trays": [
+        {
+          "points": [
+            [0, 5],
+            [10, 5],
+            [10, 15]
+          ],
+          "elevation_mm": null
+        }
+      ],
+      "reachable": true,
+      "trays_used": [0],
+      "run": 16,
+      "points": [
+        [12, 12],
+        [10, 12],
+        [10, 5],
+        [5, 5],
+        [5, 3]
+      ]
     }
   ]
 }

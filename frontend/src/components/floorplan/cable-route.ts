@@ -111,6 +111,25 @@ function projectPolyline(
   return best
 }
 
+/** The run along one tray from arc position `posA` (point `pa`) to `posB`
+ * (`pb`), through the vertices between: both drop points even when they
+ * coincide, so the run reads as a (zero-length) stretch of the tray.
+ * pathfinding.py's _along_tray. */
+function alongTray(
+  poly: Pt[],
+  arc: number[],
+  posA: number,
+  posB: number,
+  pa: Pt,
+  pb: Pt
+): Pt[] {
+  const lo = Math.min(posA, posB)
+  const hi = Math.max(posA, posB)
+  const mid = poly.filter((_, i) => lo + 1e-9 < arc[i] && arc[i] < hi - 1e-9)
+  if (posB < posA) mid.reverse()
+  return [pa, ...mid, pb]
+}
+
 /**
  * Route A→B through the given trays. Returns an ordered list of points; a
  * straight `[a, b]` when there are no usable trays or B is unreachable.
@@ -152,8 +171,9 @@ export function routeCable(
     nodeLevel.push(lv)
     return nodes.length - 1
   }
-  const adj = new Map<number, Map<number, number>>()
-  function edge(u: number, v: number, w: number) {
+  // u → {v: [weight, tray index or null]}
+  const adj = new Map<number, Map<number, [number, number | null]>>()
+  function edge(u: number, v: number, w: number, tray: number | null) {
     if (u === v) return
     for (const [x, y] of [
       [u, v],
@@ -165,7 +185,7 @@ export function routeCable(
         adj.set(x, m)
       }
       const cur = m.get(y)
-      if (cur === undefined || w < cur) m.set(y, w)
+      if (cur === undefined || w < cur[0]) m.set(y, [w, tray])
     }
   }
 
@@ -193,7 +213,7 @@ export function routeCable(
         const pr = projectPolyline(v, trays[tj])
         if (pr.d <= snap) {
           breakpoints[tj].push({ pos: posOnTray(tj, pr.seg, pr.t), p: pr.pt })
-          edge(nodeAt(v, level[ti]), nodeAt(pr.pt, level[tj]), pr.d)
+          edge(nodeAt(v, level[ti]), nodeAt(pr.pt, level[tj]), pr.d, null)
         }
       }
     }
@@ -219,7 +239,7 @@ export function routeCable(
           breakpoints[tj].push({ pos: posOnTray(tj, sj, x.u), p: x.p })
           // Close enough to join, but not one level: link them.
           if (level[ti] !== level[tj])
-            edge(nodeAt(x.p, level[ti]), nodeAt(x.p, level[tj]), 0)
+            edge(nodeAt(x.p, level[ti]), nodeAt(x.p, level[tj]), 0, null)
         }
       }
     }
@@ -227,17 +247,15 @@ export function routeCable(
 
   // Entry/exit: project A and B onto their nearest tray (unbounded) so the
   // trace always enters the network at the closest tray point.
-  function entryPoint(p: Pt): { pt: Pt; ti: number } {
+  function entryPoint(p: Pt): { pt: Pt; ti: number; pos: number } {
     let best = { d: Infinity, pt: p, ti: 0, seg: 0, t: 0 }
     trays.forEach((poly, ti) => {
       const pr = projectPolyline(p, poly)
       if (pr.d < best.d) best = { d: pr.d, pt: pr.pt, ti, seg: pr.seg, t: pr.t }
     })
-    breakpoints[best.ti].push({
-      pos: posOnTray(best.ti, best.seg, best.t),
-      p: best.pt,
-    })
-    return { pt: best.pt, ti: best.ti }
+    const pos = posOnTray(best.ti, best.seg, best.t)
+    breakpoints[best.ti].push({ pos, p: best.pt })
+    return { pt: best.pt, ti: best.ti, pos }
   }
   const entryA = entryPoint(a)
   const entryB = entryPoint(b)
@@ -250,7 +268,8 @@ export function routeCable(
       edge(
         nodeAt(bps[i].p, level[ti]),
         nodeAt(bps[i + 1].p, level[ti]),
-        Math.abs(bps[i + 1].pos - bps[i].pos)
+        Math.abs(bps[i + 1].pos - bps[i].pos),
+        ti
       )
     }
   }
@@ -258,12 +277,13 @@ export function routeCable(
   // Connect the device endpoints to their tray entry points.
   const A = nodeAt(a)
   const B = nodeAt(b)
-  edge(A, nodeAt(entryA.pt, level[entryA.ti]), dist(a, entryA.pt))
-  edge(B, nodeAt(entryB.pt, level[entryB.ti]), dist(b, entryB.pt))
+  edge(A, nodeAt(entryA.pt, level[entryA.ti]), dist(a, entryA.pt), null)
+  edge(B, nodeAt(entryB.pt, level[entryB.ti]), dist(b, entryB.pt), null)
 
   // ── Dijkstra A→B ─────────────────────────────────────────────────────────
   const best = new Array<number>(nodes.length).fill(Infinity)
   const prev = new Array<number>(nodes.length).fill(-1)
+  const prevTray = new Array<number | null>(nodes.length).fill(null)
   const done = new Array<boolean>(nodes.length).fill(false)
   best[A] = 0
   for (;;) {
@@ -278,16 +298,48 @@ export function routeCable(
     done[u] = true
     const m = adj.get(u)
     if (!m) continue
-    for (const [v, w] of m)
+    for (const [v, [w, tray]] of m)
       if (best[u] + w < best[v]) {
         best[v] = best[u] + w
         prev[v] = u
+        prevTray[v] = tray
       }
   }
-  if (best[B] === Infinity) return [a, b]
+  // Both ends drop onto one tray (racks either side of it, one segment or
+  // the same point): drop, along the tray between the two drop points, drop.
+  // Dijkstra alone misses it when the drops merge into one node - the path
+  // then rides no tray edge at all. pathfinding.py does the same.
+  let same: { points: Pt[]; run: number } | null = null
+  if (entryA.ti === entryB.ti) {
+    const ti = entryA.ti
+    same = {
+      points: [
+        a,
+        ...alongTray(
+          trays[ti],
+          arcs[ti],
+          entryA.pos,
+          entryB.pos,
+          entryA.pt,
+          entryB.pt
+        ),
+        b,
+      ],
+      run:
+        dist(a, entryA.pt) +
+        Math.abs(entryB.pos - entryA.pos) +
+        dist(entryB.pt, b),
+    }
+  }
+  if (best[B] === Infinity) return same ? same.points : [a, b]
 
   const path: Pt[] = []
-  for (let u = B; u !== -1; u = prev[u]) path.push(nodes[u])
+  let ridesTray = false
+  for (let u = B; u !== -1; u = prev[u]) {
+    path.push(nodes[u])
+    if (prevTray[u] !== null) ridesTray = true
+  }
   path.reverse()
+  if (same && (!ridesTray || same.run <= best[B] + 1e-9)) return same.points
   return path
 }

@@ -22,6 +22,14 @@ describe("routeCable shared cases", () => {
       const path = routeCable(a, b, polys, undefined, elevations)
       expect(length(path)).toBeCloseTo(c.run, 4)
       if (!c.reachable) expect(path).toEqual([a, b])
+      const want = "points" in c ? (c.points as Pt[]) : null
+      if (want) {
+        expect(path).toHaveLength(want.length)
+        want.forEach((p, i) => {
+          expect(path[i][0]).toBeCloseTo(p[0], 6)
+          expect(path[i][1]).toBeCloseTo(p[1], 6)
+        })
+      }
     })
   }
 })
