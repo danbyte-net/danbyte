@@ -173,9 +173,12 @@ export function AreaShapeView({
   onPointerDown,
   onEdgeDoubleClick,
   zoom = 1,
+  multiSelected = false,
 }: {
   area: AreaShape
   selected: boolean
+  /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
+  multiSelected?: boolean
   /** The canvas zoom, for strokes that keep their screen size. */
   zoom?: number
   /** Takes the pointer (Edit with Select, or View). */
@@ -187,14 +190,16 @@ export function AreaShapeView({
   const ink = areaLabelColor(area)
   const name = area.show_name ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
-  const strokeOpacity = area.border === "none" ? 0 : selected ? 0.95 : 0.6
+  const on = selected || multiSelected
+  const strokeOpacity =
+    area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
   const clipId = `area-pattern-${area.id}`
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
     stroke: color,
     strokeOpacity,
-    strokeWidth: (selected ? 2.5 : 1.5) / zoom,
+    strokeWidth: (on ? 2.5 : 1.5) / zoom,
     strokeDasharray: dash,
   }
   const style: React.CSSProperties = {
@@ -213,6 +218,7 @@ export function AreaShapeView({
     return (
       <g
         data-area={area.id}
+        data-picked={multiSelected ? "" : undefined}
         style={style}
         onPointerDown={onPointerDown}
         aria-label={name || "Area"}
@@ -273,6 +279,7 @@ export function AreaShapeView({
   return (
     <g
       data-area={area.id}
+      data-picked={multiSelected ? "" : undefined}
       style={style}
       onPointerDown={onPointerDown}
       transform={

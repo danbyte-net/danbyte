@@ -9,965 +9,574 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ZonesRouteImport } from './routes/zones'
-import { Route as WirelessLansRouteImport } from './routes/wireless-lans'
-import { Route as WirelessLanGroupsRouteImport } from './routes/wireless-lan-groups'
-import { Route as WebhooksRouteImport } from './routes/webhooks'
-import { Route as VrfsRouteImport } from './routes/vrfs'
-import { Route as VlansRouteImport } from './routes/vlans'
-import { Route as VlanGroupsRouteImport } from './routes/vlan-groups'
-import { Route as VirtualChassisRouteImport } from './routes/virtual-chassis'
-import { Route as UsersRouteImport } from './routes/users'
-import { Route as TunnelsRouteImport } from './routes/tunnels'
-import { Route as TunnelGroupsRouteImport } from './routes/tunnel-groups'
-import { Route as TopologyRouteImport } from './routes/topology'
-import { Route as TenantsRouteImport } from './routes/tenants'
-import { Route as TagsRouteImport } from './routes/tags'
-import { Route as SupportContractsRouteImport } from './routes/support-contracts'
-import { Route as StatusesRouteImport } from './routes/statuses'
-import { Route as StaticRoutesRouteImport } from './routes/static-routes'
-import { Route as SitesRouteImport } from './routes/sites'
-import { Route as SiteMapRouteImport } from './routes/site-map'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SetPasswordRouteImport } from './routes/set-password'
-import { Route as SearchRouteImport } from './routes/search'
-import { Route as SavedFiltersRouteImport } from './routes/saved-filters'
-import { Route as RoutingPoliciesRouteImport } from './routes/routing-policies'
-import { Route as RoutingKeychainsRouteImport } from './routes/routing-keychains'
-import { Route as RouteTargetsRouteImport } from './routes/route-targets'
-import { Route as RirsRouteImport } from './routes/rirs'
-import { Route as RegionsRouteImport } from './routes/regions'
-import { Route as RackTypesRouteImport } from './routes/rack-types'
-import { Route as ProvidersRouteImport } from './routes/providers'
-import { Route as ProviderNetworksRouteImport } from './routes/provider-networks'
-import { Route as PrefixesRouteImport } from './routes/prefixes'
-import { Route as PrefixListsRouteImport } from './routes/prefix-lists'
-import { Route as PowerPanelsRouteImport } from './routes/power-panels'
-import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
-import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
-import { Route as PermissionsRouteImport } from './routes/permissions'
-import { Route as OspfAreasRouteImport } from './routes/ospf-areas'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engines'
-import { Route as MonitoringRouteImport } from './routes/monitoring'
-import { Route as ModuleTypesRouteImport } from './routes/module-types'
-import { Route as ManufacturersRouteImport } from './routes/manufacturers'
-import { Route as MacsRouteImport } from './routes/macs'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as LocationsRouteImport } from './routes/locations'
-import { Route as L2vpnsRouteImport } from './routes/l2vpns'
-import { Route as IpsecProfilesRouteImport } from './routes/ipsec-profiles'
-import { Route as IpStatusesRouteImport } from './routes/ip-statuses'
-import { Route as IpRolesRouteImport } from './routes/ip-roles'
-import { Route as IpRangesRouteImport } from './routes/ip-ranges'
-import { Route as InterfacesRouteImport } from './routes/interfaces'
-import { Route as ImportRouteImport } from './routes/import'
-import { Route as GroupsRouteImport } from './routes/groups'
-import { Route as FloorplansRouteImport } from './routes/floorplans'
-import { Route as FloorTileTypesRouteImport } from './routes/floor-tile-types'
-import { Route as FiberCablesRouteImport } from './routes/fiber-cables'
-import { Route as FiberRouteImport } from './routes/fiber'
-import { Route as FhrpGroupsRouteImport } from './routes/fhrp-groups'
-import { Route as ExportTemplatesRouteImport } from './routes/export-templates'
-import { Route as EthernetSegmentsRouteImport } from './routes/ethernet-segments'
-import { Route as DevicesRouteImport } from './routes/devices'
-import { Route as DeviceTypesRouteImport } from './routes/device-types'
-import { Route as DeployRunsRouteImport } from './routes/deploy-runs'
-import { Route as CustomFieldsRouteImport } from './routes/custom-fields'
-import { Route as CustomFieldGroupsRouteImport } from './routes/custom-field-groups'
-import { Route as ContactsRouteImport } from './routes/contacts'
-import { Route as ContactRolesRouteImport } from './routes/contact-roles'
-import { Route as ContactGroupsRouteImport } from './routes/contact-groups'
-import { Route as ConfigDriftRouteImport } from './routes/config-drift'
-import { Route as ConfigContextsRouteImport } from './routes/config-contexts'
-import { Route as ConfigBundlesRouteImport } from './routes/config-bundles'
-import { Route as ComplianceRouteImport } from './routes/compliance'
-import { Route as CommunityListsRouteImport } from './routes/community-lists'
-import { Route as CommunitiesRouteImport } from './routes/communities'
-import { Route as CircuitsRouteImport } from './routes/circuits'
-import { Route as CircuitTypesRouteImport } from './routes/circuit-types'
-import { Route as ChangeLogRouteImport } from './routes/change-log'
-import { Route as CablesRouteImport } from './routes/cables'
-import { Route as BgpSessionsRouteImport } from './routes/bgp-sessions'
-import { Route as BgpPeerGroupsRouteImport } from './routes/bgp-peer-groups'
-import { Route as BfdProfilesRouteImport } from './routes/bfd-profiles'
-import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
-import { Route as AuditLogRouteImport } from './routes/audit-log'
-import { Route as AsnsRouteImport } from './routes/asns'
-import { Route as AsPathListsRouteImport } from './routes/as-path-lists'
-import { Route as AlertsRouteImport } from './routes/alerts'
-import { Route as AggregatesRouteImport } from './routes/aggregates'
-import { Route as AgentAccessRouteImport } from './routes/agent-access'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ZonesIndexRouteImport } from './routes/zones.index'
-import { Route as ZabbixIndexRouteImport } from './routes/zabbix.index'
-import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
-import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-lan-groups.index'
-import { Route as WindowsServersIndexRouteImport } from './routes/windows-servers.index'
-import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
-import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
-import { Route as VtepsIndexRouteImport } from './routes/vteps.index'
-import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
-import { Route as VmGroupsIndexRouteImport } from './routes/vm-groups.index'
-import { Route as VlansIndexRouteImport } from './routes/vlans.index'
-import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
-import { Route as VirtualizationSourcesIndexRouteImport } from './routes/virtualization-sources.index'
-import { Route as VirtualTopologyIndexRouteImport } from './routes/virtual-topology.index'
-import { Route as VirtualSwitchesIndexRouteImport } from './routes/virtual-switches.index'
-import { Route as VirtualMachinesIndexRouteImport } from './routes/virtual-machines.index'
-import { Route as VirtualChassisIndexRouteImport } from './routes/virtual-chassis.index'
-import { Route as UsersIndexRouteImport } from './routes/users.index'
-import { Route as TunnelsIndexRouteImport } from './routes/tunnels.index'
-import { Route as TunnelGroupsIndexRouteImport } from './routes/tunnel-groups.index'
-import { Route as TopologyIndexRouteImport } from './routes/topology.index'
-import { Route as TenantsIndexRouteImport } from './routes/tenants.index'
-import { Route as TagsIndexRouteImport } from './routes/tags.index'
-import { Route as SupportContractsIndexRouteImport } from './routes/support-contracts.index'
-import { Route as StatusesIndexRouteImport } from './routes/statuses.index'
-import { Route as StaticRoutesIndexRouteImport } from './routes/static-routes.index'
-import { Route as SitesIndexRouteImport } from './routes/sites.index'
-import { Route as SettingsIndexRouteImport } from './routes/settings.index'
-import { Route as ServicesIndexRouteImport } from './routes/services.index'
-import { Route as ServiceTemplatesIndexRouteImport } from './routes/service-templates.index'
-import { Route as ScriptsIndexRouteImport } from './routes/scripts.index'
-import { Route as RoutingPoliciesIndexRouteImport } from './routes/routing-policies.index'
-import { Route as RoutingKeychainsIndexRouteImport } from './routes/routing-keychains.index'
-import { Route as RouteTargetsIndexRouteImport } from './routes/route-targets.index'
-import { Route as RirsIndexRouteImport } from './routes/rirs.index'
-import { Route as RegionsIndexRouteImport } from './routes/regions.index'
-import { Route as RacksIndexRouteImport } from './routes/racks.index'
-import { Route as RackTypesIndexRouteImport } from './routes/rack-types.index'
-import { Route as RackRolesIndexRouteImport } from './routes/rack-roles.index'
-import { Route as ProvidersIndexRouteImport } from './routes/providers.index'
-import { Route as ProviderNetworksIndexRouteImport } from './routes/provider-networks.index'
-import { Route as PrefixesIndexRouteImport } from './routes/prefixes.index'
-import { Route as PrefixListsIndexRouteImport } from './routes/prefix-lists.index'
-import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.index'
-import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
-import { Route as PortReservationsIndexRouteImport } from './routes/port-reservations.index'
-import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
-import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
-import { Route as PlanningIndexRouteImport } from './routes/planning.index'
-import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
-import { Route as OxidizedIndexRouteImport } from './routes/oxidized.index'
-import { Route as OspfInstancesIndexRouteImport } from './routes/ospf-instances.index'
-import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
-import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
-import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
-import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
-import { Route as MaintenanceIndexRouteImport } from './routes/maintenance.index'
-import { Route as MacsIndexRouteImport } from './routes/macs.index'
-import { Route as LocationsIndexRouteImport } from './routes/locations.index'
-import { Route as LabelTemplatesIndexRouteImport } from './routes/label-templates.index'
-import { Route as L2vpnsIndexRouteImport } from './routes/l2vpns.index'
-import { Route as JobsIndexRouteImport } from './routes/jobs.index'
-import { Route as IsisInstancesIndexRouteImport } from './routes/isis-instances.index'
-import { Route as IpsecProfilesIndexRouteImport } from './routes/ipsec-profiles.index'
-import { Route as IpsIndexRouteImport } from './routes/ips.index'
-import { Route as IpRolesIndexRouteImport } from './routes/ip-roles.index'
-import { Route as IpRangesIndexRouteImport } from './routes/ip-ranges.index'
-import { Route as InterfacesIndexRouteImport } from './routes/interfaces.index'
-import { Route as ImportIndexRouteImport } from './routes/import.index'
-import { Route as GroupsIndexRouteImport } from './routes/groups.index'
-import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
-import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
-import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
-import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
-import { Route as EthernetSegmentsIndexRouteImport } from './routes/ethernet-segments.index'
-import { Route as EigrpInstancesIndexRouteImport } from './routes/eigrp-instances.index'
-import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
-import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
-import { Route as DhcpScopesIndexRouteImport } from './routes/dhcp-scopes.index'
-import { Route as DhcpReservationsIndexRouteImport } from './routes/dhcp-reservations.index'
-import { Route as DhcpLeasesIndexRouteImport } from './routes/dhcp-leases.index'
-import { Route as DevicesIndexRouteImport } from './routes/devices.index'
-import { Route as DeviceTypesIndexRouteImport } from './routes/device-types.index'
-import { Route as DeviceRolesIndexRouteImport } from './routes/device-roles.index'
-import { Route as DashboardsIndexRouteImport } from './routes/dashboards.index'
-import { Route as CustomFieldsIndexRouteImport } from './routes/custom-fields.index'
-import { Route as CustomFieldGroupsIndexRouteImport } from './routes/custom-field-groups.index'
-import { Route as ContactsIndexRouteImport } from './routes/contacts.index'
-import { Route as ContactRolesIndexRouteImport } from './routes/contact-roles.index'
-import { Route as ContactGroupsIndexRouteImport } from './routes/contact-groups.index'
-import { Route as ConfigContextsIndexRouteImport } from './routes/config-contexts.index'
-import { Route as ConfigBundlesIndexRouteImport } from './routes/config-bundles.index'
-import { Route as CommunityListsIndexRouteImport } from './routes/community-lists.index'
-import { Route as CommunitiesIndexRouteImport } from './routes/communities.index'
-import { Route as ClustersIndexRouteImport } from './routes/clusters.index'
-import { Route as ClusterTypesIndexRouteImport } from './routes/cluster-types.index'
-import { Route as ClusterGroupsIndexRouteImport } from './routes/cluster-groups.index'
-import { Route as CircuitsIndexRouteImport } from './routes/circuits.index'
-import { Route as CircuitTypesIndexRouteImport } from './routes/circuit-types.index'
-import { Route as CertificatesIndexRouteImport } from './routes/certificates.index'
-import { Route as CertificateRequestsIndexRouteImport } from './routes/certificate-requests.index'
-import { Route as CertificateIssuersIndexRouteImport } from './routes/certificate-issuers.index'
-import { Route as CablesIndexRouteImport } from './routes/cables.index'
-import { Route as CabinetsIndexRouteImport } from './routes/cabinets.index'
-import { Route as CabinetTypesIndexRouteImport } from './routes/cabinet-types.index'
-import { Route as CabinetRolesIndexRouteImport } from './routes/cabinet-roles.index'
-import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
-import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
-import { Route as BgpInstancesIndexRouteImport } from './routes/bgp-instances.index'
-import { Route as BfdProfilesIndexRouteImport } from './routes/bfd-profiles.index'
-import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
-import { Route as AsnsIndexRouteImport } from './routes/asns.index'
-import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
+import { Route as AgentAccessRouteImport } from './routes/agent-access'
+import { Route as AggregatesRouteImport } from './routes/aggregates'
+import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as ApplicationMapRouteImport } from './routes/application-map'
+import { Route as AreaTypesRouteImport } from './routes/area-types'
+import { Route as AsPathListsRouteImport } from './routes/as-path-lists'
+import { Route as AsnsRouteImport } from './routes/asns'
+import { Route as AuditLogRouteImport } from './routes/audit-log'
+import { Route as AutomationTargetsRouteImport } from './routes/automation-targets'
+import { Route as BfdProfilesRouteImport } from './routes/bfd-profiles'
+import { Route as BgpPeerGroupsRouteImport } from './routes/bgp-peer-groups'
+import { Route as BgpSessionsRouteImport } from './routes/bgp-sessions'
+import { Route as CablesRouteImport } from './routes/cables'
+import { Route as ChangeLogRouteImport } from './routes/change-log'
+import { Route as CircuitTypesRouteImport } from './routes/circuit-types'
+import { Route as CircuitsRouteImport } from './routes/circuits'
+import { Route as CommunitiesRouteImport } from './routes/communities'
+import { Route as CommunityListsRouteImport } from './routes/community-lists'
+import { Route as ComplianceRouteImport } from './routes/compliance'
+import { Route as ConfigBundlesRouteImport } from './routes/config-bundles'
+import { Route as ConfigContextsRouteImport } from './routes/config-contexts'
+import { Route as ConfigDriftRouteImport } from './routes/config-drift'
+import { Route as ContactGroupsRouteImport } from './routes/contact-groups'
+import { Route as ContactRolesRouteImport } from './routes/contact-roles'
+import { Route as ContactsRouteImport } from './routes/contacts'
+import { Route as CoolingFeedsRouteImport } from './routes/cooling-feeds'
+import { Route as CoolingSourcesRouteImport } from './routes/cooling-sources'
+import { Route as CustomFieldGroupsRouteImport } from './routes/custom-field-groups'
+import { Route as CustomFieldsRouteImport } from './routes/custom-fields'
+import { Route as DeployRunsRouteImport } from './routes/deploy-runs'
+import { Route as DeviceTypesRouteImport } from './routes/device-types'
+import { Route as DevicesRouteImport } from './routes/devices'
+import { Route as EthernetSegmentsRouteImport } from './routes/ethernet-segments'
+import { Route as ExportTemplatesRouteImport } from './routes/export-templates'
+import { Route as FhrpGroupsRouteImport } from './routes/fhrp-groups'
+import { Route as FiberRouteImport } from './routes/fiber'
+import { Route as FiberCablesRouteImport } from './routes/fiber-cables'
+import { Route as FloorTileTypesRouteImport } from './routes/floor-tile-types'
+import { Route as FloorplansRouteImport } from './routes/floorplans'
+import { Route as GroupsRouteImport } from './routes/groups'
+import { Route as ImportRouteImport } from './routes/import'
+import { Route as InterfacesRouteImport } from './routes/interfaces'
+import { Route as IpRangesRouteImport } from './routes/ip-ranges'
+import { Route as IpRolesRouteImport } from './routes/ip-roles'
+import { Route as IpStatusesRouteImport } from './routes/ip-statuses'
+import { Route as IpsecProfilesRouteImport } from './routes/ipsec-profiles'
+import { Route as L2vpnsRouteImport } from './routes/l2vpns'
+import { Route as LifecycleRouteImport } from './routes/lifecycle'
+import { Route as LocationTypesRouteImport } from './routes/location-types'
+import { Route as LocationsRouteImport } from './routes/locations'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MacsRouteImport } from './routes/macs'
+import { Route as ManufacturersRouteImport } from './routes/manufacturers'
+import { Route as ModuleTypesRouteImport } from './routes/module-types'
+import { Route as MonitoringRouteImport } from './routes/monitoring'
+import { Route as MonitoringEnginesRouteImport } from './routes/monitoring-engines'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as OspfAreasRouteImport } from './routes/ospf-areas'
+import { Route as PermissionsRouteImport } from './routes/permissions'
+import { Route as PortUtilizationRouteImport } from './routes/port-utilization'
+import { Route as PowerFeedsRouteImport } from './routes/power-feeds'
+import { Route as PowerPanelsRouteImport } from './routes/power-panels'
+import { Route as PrefixListsRouteImport } from './routes/prefix-lists'
+import { Route as PrefixesRouteImport } from './routes/prefixes'
+import { Route as ProviderNetworksRouteImport } from './routes/provider-networks'
+import { Route as ProvidersRouteImport } from './routes/providers'
+import { Route as RackTypesRouteImport } from './routes/rack-types'
+import { Route as RegionsRouteImport } from './routes/regions'
+import { Route as RirsRouteImport } from './routes/rirs'
+import { Route as RouteTargetsRouteImport } from './routes/route-targets'
+import { Route as RoutingKeychainsRouteImport } from './routes/routing-keychains'
+import { Route as RoutingPoliciesRouteImport } from './routes/routing-policies'
+import { Route as SavedFiltersRouteImport } from './routes/saved-filters'
+import { Route as SearchRouteImport } from './routes/search'
+import { Route as SetPasswordRouteImport } from './routes/set-password'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SiteMapRouteImport } from './routes/site-map'
+import { Route as SitesRouteImport } from './routes/sites'
+import { Route as StaticRoutesRouteImport } from './routes/static-routes'
+import { Route as StatusesRouteImport } from './routes/statuses'
+import { Route as SupportContractsRouteImport } from './routes/support-contracts'
+import { Route as TagsRouteImport } from './routes/tags'
+import { Route as TenantsRouteImport } from './routes/tenants'
+import { Route as TopologyRouteImport } from './routes/topology'
+import { Route as TunnelGroupsRouteImport } from './routes/tunnel-groups'
+import { Route as TunnelsRouteImport } from './routes/tunnels'
+import { Route as UsersRouteImport } from './routes/users'
+import { Route as VirtualChassisRouteImport } from './routes/virtual-chassis'
+import { Route as VlanGroupsRouteImport } from './routes/vlan-groups'
+import { Route as VlansRouteImport } from './routes/vlans'
+import { Route as VrfsRouteImport } from './routes/vrfs'
+import { Route as WebhooksRouteImport } from './routes/webhooks'
+import { Route as WirelessLanGroupsRouteImport } from './routes/wireless-lan-groups'
+import { Route as WirelessLansRouteImport } from './routes/wireless-lans'
+import { Route as ZonesRouteImport } from './routes/zones'
 import { Route as AggregatesIndexRouteImport } from './routes/aggregates.index'
-import { Route as ZonesNewRouteImport } from './routes/zones.new'
-import { Route as ZonesIdRouteImport } from './routes/zones.$id'
-import { Route as WirelessLansNewRouteImport } from './routes/wireless-lans.new'
-import { Route as WirelessLansIdRouteImport } from './routes/wireless-lans.$id'
-import { Route as WirelessLanGroupsNewRouteImport } from './routes/wireless-lan-groups.new'
-import { Route as WirelessLanGroupsIdRouteImport } from './routes/wireless-lan-groups.$id'
-import { Route as WindowsServersIdRouteImport } from './routes/windows-servers.$id'
-import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
-import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
-import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
-import { Route as VmGroupsNewRouteImport } from './routes/vm-groups.new'
-import { Route as VmGroupsIdRouteImport } from './routes/vm-groups.$id'
-import { Route as VlansNewRouteImport } from './routes/vlans.new'
-import { Route as VlansBulkEditRouteImport } from './routes/vlans.bulk-edit'
-import { Route as VlansIdRouteImport } from './routes/vlans.$id'
-import { Route as VlanGroupsNewRouteImport } from './routes/vlan-groups.new'
-import { Route as VlanGroupsIdRouteImport } from './routes/vlan-groups.$id'
-import { Route as VirtualizationSourcesIdRouteImport } from './routes/virtualization-sources.$id'
-import { Route as VirtualSwitchesIdRouteImport } from './routes/virtual-switches.$id'
-import { Route as VirtualMachinesNewRouteImport } from './routes/virtual-machines.new'
-import { Route as VirtualMachinesIdRouteImport } from './routes/virtual-machines.$id'
-import { Route as VirtualChassisNewRouteImport } from './routes/virtual-chassis.new'
-import { Route as VirtualChassisBulkEditRouteImport } from './routes/virtual-chassis.bulk-edit'
-import { Route as VirtualChassisIdRouteImport } from './routes/virtual-chassis.$id'
-import { Route as UsersNewRouteImport } from './routes/users.new'
-import { Route as TunnelsNewRouteImport } from './routes/tunnels.new'
-import { Route as TunnelsIdRouteImport } from './routes/tunnels.$id'
-import { Route as TunnelGroupsNewRouteImport } from './routes/tunnel-groups.new'
-import { Route as TunnelGroupsIdRouteImport } from './routes/tunnel-groups.$id'
-import { Route as TenantsNewRouteImport } from './routes/tenants.new'
-import { Route as TenantsIdRouteImport } from './routes/tenants.$id'
-import { Route as TagsNewRouteImport } from './routes/tags.new'
-import { Route as TagsIdRouteImport } from './routes/tags.$id'
-import { Route as SupportContractsNewRouteImport } from './routes/support-contracts.new'
-import { Route as SupportContractsIdRouteImport } from './routes/support-contracts.$id'
-import { Route as StatusesNewRouteImport } from './routes/statuses.new'
-import { Route as StatusesIdRouteImport } from './routes/statuses.$id'
-import { Route as StaticRoutesNewRouteImport } from './routes/static-routes.new'
-import { Route as StaticRoutesIdRouteImport } from './routes/static-routes.$id'
-import { Route as SitesNewRouteImport } from './routes/sites.new'
-import { Route as SitesBulkEditRouteImport } from './routes/sites.bulk-edit'
-import { Route as SitesIdRouteImport } from './routes/sites.$id'
-import { Route as SilencesNewRouteImport } from './routes/silences.new'
-import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
-import { Route as SettingsTopologyRouteImport } from './routes/settings.topology'
-import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant-ldap'
-import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
-import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
-import { Route as SettingsTableDefaultsRouteImport } from './routes/settings.table-defaults'
-import { Route as SettingsSsoRouteImport } from './routes/settings.sso'
-import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-sensors'
-import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
-import { Route as SettingsSitesRouteImport } from './routes/settings.sites'
-import { Route as SettingsSiteRouteImport } from './routes/settings.site'
-import { Route as SettingsSeparationRouteImport } from './routes/settings.separation'
-import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
-import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
-import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
-import { Route as SettingsMonitoringDefaultsRouteImport } from './routes/settings.monitoring-defaults'
-import { Route as SettingsMonitoringRouteImport } from './routes/settings.monitoring'
-import { Route as SettingsMapsRouteImport } from './routes/settings.maps'
-import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
-import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
-import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
-import { Route as SettingsEmailRouteImport } from './routes/settings.email'
-import { Route as SettingsDirectoryRouteImport } from './routes/settings.directory'
-import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
-import { Route as SettingsConnectRouteImport } from './routes/settings.connect'
-import { Route as SettingsComponentsRouteImport } from './routes/settings.components'
-import { Route as SettingsBackupsRouteImport } from './routes/settings.backups'
-import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
-import { Route as ServicesIdRouteImport } from './routes/services.$id'
-import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
-import { Route as ServiceTemplatesIdRouteImport } from './routes/service-templates.$id'
-import { Route as ScriptsIdRouteImport } from './routes/scripts.$id'
-import { Route as RoutingPoliciesNewRouteImport } from './routes/routing-policies.new'
-import { Route as RoutingPoliciesIdRouteImport } from './routes/routing-policies.$id'
-import { Route as RoutingKeychainsNewRouteImport } from './routes/routing-keychains.new'
-import { Route as RoutingKeychainsIdRouteImport } from './routes/routing-keychains.$id'
-import { Route as RouteTargetsNewRouteImport } from './routes/route-targets.new'
-import { Route as RouteTargetsIdRouteImport } from './routes/route-targets.$id'
-import { Route as RirsNewRouteImport } from './routes/rirs.new'
-import { Route as RirsIdRouteImport } from './routes/rirs.$id'
-import { Route as RegionsNewRouteImport } from './routes/regions.new'
-import { Route as RegionsIdRouteImport } from './routes/regions.$id'
-import { Route as RacksNewRouteImport } from './routes/racks.new'
-import { Route as RacksElevationsRouteImport } from './routes/racks.elevations'
-import { Route as RacksIdRouteImport } from './routes/racks.$id'
-import { Route as RackTypesNewRouteImport } from './routes/rack-types.new'
-import { Route as RackTypesIdRouteImport } from './routes/rack-types.$id'
-import { Route as RackRolesNewRouteImport } from './routes/rack-roles.new'
-import { Route as RackRolesIdRouteImport } from './routes/rack-roles.$id'
-import { Route as ProvidersNewRouteImport } from './routes/providers.new'
-import { Route as ProvidersIdRouteImport } from './routes/providers.$id'
-import { Route as ProviderNetworksNewRouteImport } from './routes/provider-networks.new'
-import { Route as ProviderNetworksIdRouteImport } from './routes/provider-networks.$id'
-import { Route as PrefixesNewRouteImport } from './routes/prefixes.new'
-import { Route as PrefixesBulkEditRouteImport } from './routes/prefixes.bulk-edit'
-import { Route as PrefixesIdRouteImport } from './routes/prefixes.$id'
-import { Route as PrefixListsNewRouteImport } from './routes/prefix-lists.new'
-import { Route as PrefixListsIdRouteImport } from './routes/prefix-lists.$id'
-import { Route as PowerPanelsNewRouteImport } from './routes/power-panels.new'
-import { Route as PowerPanelsIdRouteImport } from './routes/power-panels.$id'
-import { Route as PowerFeedsNewRouteImport } from './routes/power-feeds.new'
-import { Route as PowerFeedsIdRouteImport } from './routes/power-feeds.$id'
-import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
-import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
-import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
-import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$id'
-import { Route as PlanningCalendarRouteImport } from './routes/planning.calendar'
-import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
-import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
-import { Route as OspfAreasNewRouteImport } from './routes/ospf-areas.new'
-import { Route as OspfAreasIdRouteImport } from './routes/ospf-areas.$id'
-import { Route as NatRulesIdRouteImport } from './routes/nat-rules.$id'
-import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
-import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
-import { Route as ManufacturersNewRouteImport } from './routes/manufacturers.new'
-import { Route as ManufacturersIdRouteImport } from './routes/manufacturers.$id'
-import { Route as MaintenanceNewRouteImport } from './routes/maintenance.new'
-import { Route as MacsMacRouteImport } from './routes/macs.$mac'
-import { Route as LocationsNewRouteImport } from './routes/locations.new'
-import { Route as LocationsIdRouteImport } from './routes/locations.$id'
-import { Route as L2vpnsNewRouteImport } from './routes/l2vpns.new'
-import { Route as L2vpnsIdRouteImport } from './routes/l2vpns.$id'
-import { Route as JobsIdRouteImport } from './routes/jobs.$id'
-import { Route as IpsecProfilesNewRouteImport } from './routes/ipsec-profiles.new'
-import { Route as IpsecProfilesIdRouteImport } from './routes/ipsec-profiles.$id'
-import { Route as IpsNewRouteImport } from './routes/ips.new'
-import { Route as IpsBulkEditRouteImport } from './routes/ips.bulk-edit'
-import { Route as IpsIdRouteImport } from './routes/ips.$id'
-import { Route as IpRolesNewRouteImport } from './routes/ip-roles.new'
-import { Route as IpRolesIdRouteImport } from './routes/ip-roles.$id'
-import { Route as IpRangesNewRouteImport } from './routes/ip-ranges.new'
-import { Route as IpRangesIdRouteImport } from './routes/ip-ranges.$id'
-import { Route as InterfacesNewRouteImport } from './routes/interfaces.new'
-import { Route as InterfacesBulkRouteImport } from './routes/interfaces.bulk'
-import { Route as InterfacesIdRouteImport } from './routes/interfaces.$id'
-import { Route as ImportNetboxRouteImport } from './routes/import.netbox'
-import { Route as GroupsNewRouteImport } from './routes/groups.new'
-import { Route as FloorplansNewRouteImport } from './routes/floorplans.new'
-import { Route as FloorplansIdRouteImport } from './routes/floorplans.$id'
-import { Route as FloorTileTypesNewRouteImport } from './routes/floor-tile-types.new'
-import { Route as FloorTileTypesIdRouteImport } from './routes/floor-tile-types.$id'
-import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
-import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
-import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
-import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
-import { Route as EthernetSegmentsNewRouteImport } from './routes/ethernet-segments.new'
-import { Route as EthernetSegmentsIdRouteImport } from './routes/ethernet-segments.$id'
-import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
-import { Route as DnsRecordsIdRouteImport } from './routes/dns-records.$id'
-import { Route as DnsNamesNameRouteImport } from './routes/dns-names.$name'
-import { Route as DevicesNewRouteImport } from './routes/devices.new'
-import { Route as DevicesIdRouteImport } from './routes/devices.$id'
-import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
-import { Route as DeviceTypesIdRouteImport } from './routes/device-types.$id'
-import { Route as DeviceRolesNewRouteImport } from './routes/device-roles.new'
-import { Route as DeviceRolesIdRouteImport } from './routes/device-roles.$id'
-import { Route as DashboardsIdRouteImport } from './routes/dashboards.$id'
-import { Route as CustomFieldsNewRouteImport } from './routes/custom-fields.new'
-import { Route as CustomFieldsIdRouteImport } from './routes/custom-fields.$id'
-import { Route as CustomFieldGroupsNewRouteImport } from './routes/custom-field-groups.new'
-import { Route as CustomFieldGroupsIdRouteImport } from './routes/custom-field-groups.$id'
-import { Route as ContactsNewRouteImport } from './routes/contacts.new'
-import { Route as ContactsIdRouteImport } from './routes/contacts.$id'
-import { Route as ContactRolesNewRouteImport } from './routes/contact-roles.new'
-import { Route as ContactRolesIdRouteImport } from './routes/contact-roles.$id'
-import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.new'
-import { Route as ContactGroupsIdRouteImport } from './routes/contact-groups.$id'
-import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
-import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
-import { Route as ConfigBundlesNewRouteImport } from './routes/config-bundles.new'
-import { Route as ConfigBundlesIdRouteImport } from './routes/config-bundles.$id'
-import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
-import { Route as ComplianceRulesIdRouteImport } from './routes/compliance-rules.$id'
-import { Route as CommunityListsNewRouteImport } from './routes/community-lists.new'
-import { Route as CommunityListsIdRouteImport } from './routes/community-lists.$id'
-import { Route as CommunitiesNewRouteImport } from './routes/communities.new'
-import { Route as CommunitiesIdRouteImport } from './routes/communities.$id'
-import { Route as ClustersNewRouteImport } from './routes/clusters.new'
-import { Route as ClustersIdRouteImport } from './routes/clusters.$id'
-import { Route as ClusterTypesNewRouteImport } from './routes/cluster-types.new'
-import { Route as ClusterTypesIdRouteImport } from './routes/cluster-types.$id'
-import { Route as ClusterGroupsNewRouteImport } from './routes/cluster-groups.new'
-import { Route as ClusterGroupsIdRouteImport } from './routes/cluster-groups.$id'
-import { Route as CircuitsNewRouteImport } from './routes/circuits.new'
-import { Route as CircuitsIdRouteImport } from './routes/circuits.$id'
-import { Route as CircuitTypesNewRouteImport } from './routes/circuit-types.new'
-import { Route as CircuitTypesIdRouteImport } from './routes/circuit-types.$id'
-import { Route as ChannelsNewRouteImport } from './routes/channels.new'
-import { Route as ChangeLogIdRouteImport } from './routes/change-log_.$id'
-import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
-import { Route as CertificateRequestsIdRouteImport } from './routes/certificate-requests.$id'
-import { Route as CablesNewRouteImport } from './routes/cables.new'
-import { Route as CablesIdRouteImport } from './routes/cables.$id'
-import { Route as CabinetsNewRouteImport } from './routes/cabinets.new'
-import { Route as CabinetsIdRouteImport } from './routes/cabinets.$id'
-import { Route as CabinetTypesNewRouteImport } from './routes/cabinet-types.new'
-import { Route as CabinetTypesIdRouteImport } from './routes/cabinet-types.$id'
-import { Route as CabinetRolesNewRouteImport } from './routes/cabinet-roles.new'
-import { Route as CabinetRolesIdRouteImport } from './routes/cabinet-roles.$id'
-import { Route as BgpSessionsNewRouteImport } from './routes/bgp-sessions.new'
-import { Route as BgpSessionsIdRouteImport } from './routes/bgp-sessions.$id'
-import { Route as BgpPeerGroupsNewRouteImport } from './routes/bgp-peer-groups.new'
-import { Route as BgpPeerGroupsIdRouteImport } from './routes/bgp-peer-groups.$id'
-import { Route as BfdProfilesNewRouteImport } from './routes/bfd-profiles.new'
-import { Route as BfdProfilesIdRouteImport } from './routes/bfd-profiles.$id'
-import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
-import { Route as AutomationTargetsNewRouteImport } from './routes/automation-targets.new'
-import { Route as AutomationTargetsIdRouteImport } from './routes/automation-targets.$id'
-import { Route as AuditLogIdRouteImport } from './routes/audit-log_.$id'
-import { Route as AsnsNewRouteImport } from './routes/asns.new'
-import { Route as AsnsIdRouteImport } from './routes/asns.$id'
-import { Route as AsPathListsNewRouteImport } from './routes/as-path-lists.new'
-import { Route as AsPathListsIdRouteImport } from './routes/as-path-lists.$id'
-import { Route as AlertRulesNewRouteImport } from './routes/alert-rules.new'
-import { Route as AggregatesNewRouteImport } from './routes/aggregates.new'
 import { Route as AggregatesIdRouteImport } from './routes/aggregates.$id'
-import { Route as ZonesIdEditRouteImport } from './routes/zones.$id_.edit'
-import { Route as WirelessLansIdEditRouteImport } from './routes/wireless-lans.$id_.edit'
-import { Route as WirelessLanGroupsIdEditRouteImport } from './routes/wireless-lan-groups.$id_.edit'
-import { Route as WebhooksIdEditRouteImport } from './routes/webhooks.$id_.edit'
-import { Route as VrfsIdEditRouteImport } from './routes/vrfs.$id_.edit'
-import { Route as VmGroupsIdEditRouteImport } from './routes/vm-groups.$id_.edit'
-import { Route as VlansIdEditRouteImport } from './routes/vlans.$id_.edit'
-import { Route as VlanGroupsIdEditRouteImport } from './routes/vlan-groups.$id_.edit'
-import { Route as VirtualMachinesIdEditRouteImport } from './routes/virtual-machines.$id_.edit'
-import { Route as VirtualChassisIdEditRouteImport } from './routes/virtual-chassis.$id_.edit'
-import { Route as UsersIdEditRouteImport } from './routes/users.$id_.edit'
-import { Route as TunnelsIdEditRouteImport } from './routes/tunnels.$id_.edit'
-import { Route as TunnelGroupsIdEditRouteImport } from './routes/tunnel-groups.$id_.edit'
-import { Route as TenantsIdEditRouteImport } from './routes/tenants.$id_.edit'
-import { Route as TagsIdEditRouteImport } from './routes/tags.$id_.edit'
-import { Route as SupportContractsIdEditRouteImport } from './routes/support-contracts.$id_.edit'
-import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
-import { Route as StaticRoutesIdEditRouteImport } from './routes/static-routes.$id_.edit'
-import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
-import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
-import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
-import { Route as ScriptsRunsRunIdRouteImport } from './routes/scripts.runs.$runId'
-import { Route as RoutingPoliciesIdEditRouteImport } from './routes/routing-policies.$id_.edit'
-import { Route as RoutingKeychainsIdEditRouteImport } from './routes/routing-keychains.$id_.edit'
-import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
-import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
-import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
-import { Route as RacksIdEditRouteImport } from './routes/racks.$id_.edit'
-import { Route as RackTypesIdEditRouteImport } from './routes/rack-types.$id_.edit'
-import { Route as RackRolesIdEditRouteImport } from './routes/rack-roles.$id_.edit'
-import { Route as ProvidersIdEditRouteImport } from './routes/providers.$id_.edit'
-import { Route as ProviderNetworksIdEditRouteImport } from './routes/provider-networks.$id_.edit'
-import { Route as PrefixesIdEditRouteImport } from './routes/prefixes.$id_.edit'
-import { Route as PrefixListsIdEditRouteImport } from './routes/prefix-lists.$id_.edit'
-import { Route as PowerPanelsIdEditRouteImport } from './routes/power-panels.$id_.edit'
-import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.edit'
-import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
-import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
-import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
-import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
-import { Route as OspfAreasIdEditRouteImport } from './routes/ospf-areas.$id_.edit'
-import { Route as MonitoringSlaNewRouteImport } from './routes/monitoring_.sla.new'
-import { Route as MonitoringSlaIdRouteImport } from './routes/monitoring_.sla.$id'
-import { Route as MonitoringChecksIdRouteImport } from './routes/monitoring_.checks.$id'
-import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
-import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
-import { Route as MaintenanceIdEditRouteImport } from './routes/maintenance.$id_.edit'
-import { Route as LocationsIdEditRouteImport } from './routes/locations.$id_.edit'
-import { Route as L2vpnsIdEditRouteImport } from './routes/l2vpns.$id_.edit'
-import { Route as IpsecProfilesIdEditRouteImport } from './routes/ipsec-profiles.$id_.edit'
-import { Route as IpsIdEditRouteImport } from './routes/ips.$id_.edit'
-import { Route as IpRolesIdEditRouteImport } from './routes/ip-roles.$id_.edit'
-import { Route as IpRangesIdEditRouteImport } from './routes/ip-ranges.$id_.edit'
-import { Route as InterfacesIdEditRouteImport } from './routes/interfaces.$id_.edit'
-import { Route as GroupsIdEditRouteImport } from './routes/groups.$id_.edit'
-import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id_.edit'
-import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
-import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
-import { Route as EthernetSegmentsIdEditRouteImport } from './routes/ethernet-segments.$id_.edit'
-import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
-import { Route as DevicesIdComplianceRouteImport } from './routes/devices.$id_.compliance'
-import { Route as DeviceTypesIdEditRouteImport } from './routes/device-types.$id_.edit'
-import { Route as DeviceRolesIdEditRouteImport } from './routes/device-roles.$id_.edit'
-import { Route as CustomFieldsIdEditRouteImport } from './routes/custom-fields.$id_.edit'
-import { Route as CustomFieldGroupsIdEditRouteImport } from './routes/custom-field-groups.$id_.edit'
-import { Route as ContactsIdEditRouteImport } from './routes/contacts.$id_.edit'
-import { Route as ContactRolesIdEditRouteImport } from './routes/contact-roles.$id_.edit'
-import { Route as ContactGroupsIdEditRouteImport } from './routes/contact-groups.$id_.edit'
-import { Route as ConfigContextsIdEditRouteImport } from './routes/config-contexts.$id_.edit'
-import { Route as ConfigBundlesIdEditRouteImport } from './routes/config-bundles.$id_.edit'
-import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id_.edit'
-import { Route as CommunityListsIdEditRouteImport } from './routes/community-lists.$id_.edit'
-import { Route as CommunitiesIdEditRouteImport } from './routes/communities.$id_.edit'
-import { Route as ClustersIdEditRouteImport } from './routes/clusters.$id_.edit'
-import { Route as ClusterTypesIdEditRouteImport } from './routes/cluster-types.$id_.edit'
-import { Route as ClusterGroupsIdEditRouteImport } from './routes/cluster-groups.$id_.edit'
-import { Route as CircuitsIdEditRouteImport } from './routes/circuits.$id_.edit'
-import { Route as CircuitTypesIdEditRouteImport } from './routes/circuit-types.$id_.edit'
-import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
-import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
-import { Route as CabinetsIdEditRouteImport } from './routes/cabinets.$id_.edit'
-import { Route as CabinetTypesIdEditRouteImport } from './routes/cabinet-types.$id_.edit'
-import { Route as CabinetRolesIdEditRouteImport } from './routes/cabinet-roles.$id_.edit'
-import { Route as BgpSessionsIdEditRouteImport } from './routes/bgp-sessions.$id_.edit'
-import { Route as BgpPeerGroupsIdEditRouteImport } from './routes/bgp-peer-groups.$id_.edit'
-import { Route as BfdProfilesIdEditRouteImport } from './routes/bfd-profiles.$id_.edit'
-import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
-import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
-import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$id_.edit'
-import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
+import { Route as AggregatesNewRouteImport } from './routes/aggregates.new'
+import { Route as AlertRulesNewRouteImport } from './routes/alert-rules.new'
+import { Route as ApplicationGroupsIndexRouteImport } from './routes/application-groups.index'
+import { Route as ApplicationGroupsIdRouteImport } from './routes/application-groups.$id'
+import { Route as ApplicationGroupsNewRouteImport } from './routes/application-groups.new'
+import { Route as ApplicationsIndexRouteImport } from './routes/applications.index'
+import { Route as ApplicationsIdRouteImport } from './routes/applications.$id'
+import { Route as ApplicationsNewRouteImport } from './routes/applications.new'
+import { Route as AreaTypesIndexRouteImport } from './routes/area-types.index'
+import { Route as AreaTypesIdRouteImport } from './routes/area-types.$id'
+import { Route as AreaTypesNewRouteImport } from './routes/area-types.new'
+import { Route as AsPathListsIndexRouteImport } from './routes/as-path-lists.index'
+import { Route as AsPathListsIdRouteImport } from './routes/as-path-lists.$id'
+import { Route as AsPathListsNewRouteImport } from './routes/as-path-lists.new'
+import { Route as AsnsIndexRouteImport } from './routes/asns.index'
+import { Route as AsnsIdRouteImport } from './routes/asns.$id'
+import { Route as AsnsNewRouteImport } from './routes/asns.new'
+import { Route as AuditLogIdRouteImport } from './routes/audit-log_.$id'
+import { Route as AutomationTargetsIndexRouteImport } from './routes/automation-targets.index'
+import { Route as AutomationTargetsIdRouteImport } from './routes/automation-targets.$id'
+import { Route as AutomationTargetsNewRouteImport } from './routes/automation-targets.new'
+import { Route as AutomationTargetsSetupRouteImport } from './routes/automation-targets.setup'
+import { Route as BfdProfilesIndexRouteImport } from './routes/bfd-profiles.index'
+import { Route as BfdProfilesIdRouteImport } from './routes/bfd-profiles.$id'
+import { Route as BfdProfilesNewRouteImport } from './routes/bfd-profiles.new'
+import { Route as BgpInstancesIndexRouteImport } from './routes/bgp-instances.index'
+import { Route as BgpPeerGroupsIndexRouteImport } from './routes/bgp-peer-groups.index'
+import { Route as BgpPeerGroupsIdRouteImport } from './routes/bgp-peer-groups.$id'
+import { Route as BgpPeerGroupsNewRouteImport } from './routes/bgp-peer-groups.new'
+import { Route as BgpSessionsIndexRouteImport } from './routes/bgp-sessions.index'
+import { Route as BgpSessionsIdRouteImport } from './routes/bgp-sessions.$id'
+import { Route as BgpSessionsNewRouteImport } from './routes/bgp-sessions.new'
+import { Route as CabinetRolesIndexRouteImport } from './routes/cabinet-roles.index'
+import { Route as CabinetRolesIdRouteImport } from './routes/cabinet-roles.$id'
+import { Route as CabinetRolesNewRouteImport } from './routes/cabinet-roles.new'
+import { Route as CabinetTypesIndexRouteImport } from './routes/cabinet-types.index'
+import { Route as CabinetTypesIdRouteImport } from './routes/cabinet-types.$id'
+import { Route as CabinetTypesNewRouteImport } from './routes/cabinet-types.new'
+import { Route as CabinetsIndexRouteImport } from './routes/cabinets.index'
+import { Route as CabinetsIdRouteImport } from './routes/cabinets.$id'
+import { Route as CabinetsNewRouteImport } from './routes/cabinets.new'
+import { Route as CablesIndexRouteImport } from './routes/cables.index'
+import { Route as CablesIdRouteImport } from './routes/cables.$id'
+import { Route as CablesNewRouteImport } from './routes/cables.new'
+import { Route as CertificateIssuersIndexRouteImport } from './routes/certificate-issuers.index'
+import { Route as CertificateRequestsIndexRouteImport } from './routes/certificate-requests.index'
+import { Route as CertificateRequestsIdRouteImport } from './routes/certificate-requests.$id'
+import { Route as CertificatesIndexRouteImport } from './routes/certificates.index'
+import { Route as CertificatesIdRouteImport } from './routes/certificates.$id'
+import { Route as ChangeLogIdRouteImport } from './routes/change-log_.$id'
+import { Route as ChannelsNewRouteImport } from './routes/channels.new'
+import { Route as CircuitTypesIndexRouteImport } from './routes/circuit-types.index'
+import { Route as CircuitTypesIdRouteImport } from './routes/circuit-types.$id'
+import { Route as CircuitTypesNewRouteImport } from './routes/circuit-types.new'
+import { Route as CircuitsIndexRouteImport } from './routes/circuits.index'
+import { Route as CircuitsIdRouteImport } from './routes/circuits.$id'
+import { Route as CircuitsNewRouteImport } from './routes/circuits.new'
+import { Route as ClusterGroupsIndexRouteImport } from './routes/cluster-groups.index'
+import { Route as ClusterGroupsIdRouteImport } from './routes/cluster-groups.$id'
+import { Route as ClusterGroupsNewRouteImport } from './routes/cluster-groups.new'
+import { Route as ClusterTypesIndexRouteImport } from './routes/cluster-types.index'
+import { Route as ClusterTypesIdRouteImport } from './routes/cluster-types.$id'
+import { Route as ClusterTypesNewRouteImport } from './routes/cluster-types.new'
+import { Route as ClustersIndexRouteImport } from './routes/clusters.index'
+import { Route as ClustersIdRouteImport } from './routes/clusters.$id'
+import { Route as ClustersNewRouteImport } from './routes/clusters.new'
+import { Route as CommunitiesIndexRouteImport } from './routes/communities.index'
+import { Route as CommunitiesIdRouteImport } from './routes/communities.$id'
+import { Route as CommunitiesNewRouteImport } from './routes/communities.new'
+import { Route as CommunityListsIndexRouteImport } from './routes/community-lists.index'
+import { Route as CommunityListsIdRouteImport } from './routes/community-lists.$id'
+import { Route as CommunityListsNewRouteImport } from './routes/community-lists.new'
+import { Route as ComplianceRulesIdRouteImport } from './routes/compliance-rules.$id'
+import { Route as ComplianceRulesNewRouteImport } from './routes/compliance-rules.new'
+import { Route as ConfigBundlesIndexRouteImport } from './routes/config-bundles.index'
+import { Route as ConfigBundlesIdRouteImport } from './routes/config-bundles.$id'
+import { Route as ConfigBundlesNewRouteImport } from './routes/config-bundles.new'
+import { Route as ConfigContextsIndexRouteImport } from './routes/config-contexts.index'
+import { Route as ConfigContextsIdRouteImport } from './routes/config-contexts.$id'
+import { Route as ConfigContextsNewRouteImport } from './routes/config-contexts.new'
+import { Route as ContactGroupsIndexRouteImport } from './routes/contact-groups.index'
+import { Route as ContactGroupsIdRouteImport } from './routes/contact-groups.$id'
+import { Route as ContactGroupsNewRouteImport } from './routes/contact-groups.new'
+import { Route as ContactRolesIndexRouteImport } from './routes/contact-roles.index'
+import { Route as ContactRolesIdRouteImport } from './routes/contact-roles.$id'
+import { Route as ContactRolesNewRouteImport } from './routes/contact-roles.new'
+import { Route as ContactsIndexRouteImport } from './routes/contacts.index'
+import { Route as ContactsIdRouteImport } from './routes/contacts.$id'
+import { Route as ContactsNewRouteImport } from './routes/contacts.new'
+import { Route as CoolingFeedsIndexRouteImport } from './routes/cooling-feeds.index'
+import { Route as CoolingFeedsIdRouteImport } from './routes/cooling-feeds.$id'
+import { Route as CoolingFeedsNewRouteImport } from './routes/cooling-feeds.new'
+import { Route as CoolingSourcesIndexRouteImport } from './routes/cooling-sources.index'
+import { Route as CoolingSourcesIdRouteImport } from './routes/cooling-sources.$id'
+import { Route as CoolingSourcesNewRouteImport } from './routes/cooling-sources.new'
+import { Route as CustomFieldGroupsIndexRouteImport } from './routes/custom-field-groups.index'
+import { Route as CustomFieldGroupsIdRouteImport } from './routes/custom-field-groups.$id'
+import { Route as CustomFieldGroupsNewRouteImport } from './routes/custom-field-groups.new'
+import { Route as CustomFieldsIndexRouteImport } from './routes/custom-fields.index'
+import { Route as CustomFieldsIdRouteImport } from './routes/custom-fields.$id'
+import { Route as CustomFieldsNewRouteImport } from './routes/custom-fields.new'
+import { Route as DashboardsIndexRouteImport } from './routes/dashboards.index'
+import { Route as DashboardsIdRouteImport } from './routes/dashboards.$id'
+import { Route as DeviceProfilesIndexRouteImport } from './routes/device-profiles.index'
+import { Route as DeviceProfilesIdRouteImport } from './routes/device-profiles.$id'
+import { Route as DeviceProfilesNewRouteImport } from './routes/device-profiles.new'
+import { Route as DeviceRolesIndexRouteImport } from './routes/device-roles.index'
+import { Route as DeviceRolesIdRouteImport } from './routes/device-roles.$id'
+import { Route as DeviceRolesNewRouteImport } from './routes/device-roles.new'
+import { Route as DeviceTypesIndexRouteImport } from './routes/device-types.index'
+import { Route as DeviceTypesIdRouteImport } from './routes/device-types.$id'
+import { Route as DeviceTypesNewRouteImport } from './routes/device-types.new'
+import { Route as DevicesIndexRouteImport } from './routes/devices.index'
+import { Route as DevicesIdRouteImport } from './routes/devices.$id'
+import { Route as DevicesNewRouteImport } from './routes/devices.new'
+import { Route as DhcpLeasesIndexRouteImport } from './routes/dhcp-leases.index'
+import { Route as DhcpReservationsIndexRouteImport } from './routes/dhcp-reservations.index'
+import { Route as DhcpScopesIndexRouteImport } from './routes/dhcp-scopes.index'
+import { Route as DnsNamesNameRouteImport } from './routes/dns-names.$name'
+import { Route as DnsRecordsIndexRouteImport } from './routes/dns-records.index'
+import { Route as DnsRecordsIdRouteImport } from './routes/dns-records.$id'
+import { Route as DnsZonesIndexRouteImport } from './routes/dns-zones.index'
+import { Route as DnsZonesIdRouteImport } from './routes/dns-zones.$id'
+import { Route as EigrpInstancesIndexRouteImport } from './routes/eigrp-instances.index'
+import { Route as EolProductsIndexRouteImport } from './routes/eol-products.index'
+import { Route as EolProductsIdRouteImport } from './routes/eol-products.$id'
+import { Route as EolProductsNewRouteImport } from './routes/eol-products.new'
+import { Route as EthernetSegmentsIndexRouteImport } from './routes/ethernet-segments.index'
+import { Route as EthernetSegmentsIdRouteImport } from './routes/ethernet-segments.$id'
+import { Route as EthernetSegmentsNewRouteImport } from './routes/ethernet-segments.new'
+import { Route as ExportTemplatesIndexRouteImport } from './routes/export-templates.index'
+import { Route as ExportTemplatesIdRouteImport } from './routes/export-templates.$id'
+import { Route as ExportTemplatesNewRouteImport } from './routes/export-templates.new'
+import { Route as FhrpGroupsIndexRouteImport } from './routes/fhrp-groups.index'
+import { Route as FhrpGroupsIdRouteImport } from './routes/fhrp-groups.$id'
+import { Route as FhrpGroupsNewRouteImport } from './routes/fhrp-groups.new'
+import { Route as FloorTileTypesIndexRouteImport } from './routes/floor-tile-types.index'
+import { Route as FloorTileTypesIdRouteImport } from './routes/floor-tile-types.$id'
+import { Route as FloorTileTypesNewRouteImport } from './routes/floor-tile-types.new'
+import { Route as FloorplansIndexRouteImport } from './routes/floorplans.index'
+import { Route as FloorplansIdRouteImport } from './routes/floorplans.$id'
+import { Route as FloorplansNewRouteImport } from './routes/floorplans.new'
+import { Route as GroupsIndexRouteImport } from './routes/groups.index'
+import { Route as GroupsNewRouteImport } from './routes/groups.new'
+import { Route as ImportIndexRouteImport } from './routes/import.index'
+import { Route as ImportNetboxRouteImport } from './routes/import.netbox'
+import { Route as InterfacesIndexRouteImport } from './routes/interfaces.index'
+import { Route as InterfacesIdRouteImport } from './routes/interfaces.$id'
+import { Route as InterfacesBulkRouteImport } from './routes/interfaces.bulk'
+import { Route as InterfacesNewRouteImport } from './routes/interfaces.new'
+import { Route as IpRangesIndexRouteImport } from './routes/ip-ranges.index'
+import { Route as IpRangesIdRouteImport } from './routes/ip-ranges.$id'
+import { Route as IpRangesNewRouteImport } from './routes/ip-ranges.new'
+import { Route as IpRolesIndexRouteImport } from './routes/ip-roles.index'
+import { Route as IpRolesIdRouteImport } from './routes/ip-roles.$id'
+import { Route as IpRolesNewRouteImport } from './routes/ip-roles.new'
+import { Route as IpsIndexRouteImport } from './routes/ips.index'
+import { Route as IpsIdRouteImport } from './routes/ips.$id'
+import { Route as IpsBulkEditRouteImport } from './routes/ips.bulk-edit'
+import { Route as IpsNewRouteImport } from './routes/ips.new'
+import { Route as IpsecProfilesIndexRouteImport } from './routes/ipsec-profiles.index'
+import { Route as IpsecProfilesIdRouteImport } from './routes/ipsec-profiles.$id'
+import { Route as IpsecProfilesNewRouteImport } from './routes/ipsec-profiles.new'
+import { Route as IsisInstancesIndexRouteImport } from './routes/isis-instances.index'
+import { Route as JobsIndexRouteImport } from './routes/jobs.index'
+import { Route as JobsIdRouteImport } from './routes/jobs.$id'
+import { Route as L2vpnsIndexRouteImport } from './routes/l2vpns.index'
+import { Route as L2vpnsIdRouteImport } from './routes/l2vpns.$id'
+import { Route as L2vpnsNewRouteImport } from './routes/l2vpns.new'
+import { Route as LabelTemplatesIndexRouteImport } from './routes/label-templates.index'
+import { Route as LocationTypesIndexRouteImport } from './routes/location-types.index'
+import { Route as LocationTypesIdRouteImport } from './routes/location-types.$id'
+import { Route as LocationTypesNewRouteImport } from './routes/location-types.new'
+import { Route as LocationsIndexRouteImport } from './routes/locations.index'
+import { Route as LocationsIdRouteImport } from './routes/locations.$id'
+import { Route as LocationsNewRouteImport } from './routes/locations.new'
+import { Route as MacsIndexRouteImport } from './routes/macs.index'
+import { Route as MacsMacRouteImport } from './routes/macs.$mac'
+import { Route as MaintenanceIndexRouteImport } from './routes/maintenance.index'
+import { Route as MaintenanceNewRouteImport } from './routes/maintenance.new'
+import { Route as ManufacturersIndexRouteImport } from './routes/manufacturers.index'
+import { Route as ManufacturersIdRouteImport } from './routes/manufacturers.$id'
+import { Route as ManufacturersNewRouteImport } from './routes/manufacturers.new'
+import { Route as ModuleTypesIndexRouteImport } from './routes/module-types.index'
+import { Route as ModuleTypesIdRouteImport } from './routes/module-types.$id'
+import { Route as ModuleTypesNewRouteImport } from './routes/module-types.new'
+import { Route as NatRulesIndexRouteImport } from './routes/nat-rules.index'
+import { Route as NatRulesIdRouteImport } from './routes/nat-rules.$id'
+import { Route as OspfAreasIndexRouteImport } from './routes/ospf-areas.index'
+import { Route as OspfAreasIdRouteImport } from './routes/ospf-areas.$id'
+import { Route as OspfAreasNewRouteImport } from './routes/ospf-areas.new'
+import { Route as OspfInstancesIndexRouteImport } from './routes/ospf-instances.index'
+import { Route as OxidizedIndexRouteImport } from './routes/oxidized.index'
+import { Route as PermissionsIndexRouteImport } from './routes/permissions.index'
+import { Route as PermissionsNewRouteImport } from './routes/permissions.new'
+import { Route as PlanningIndexRouteImport } from './routes/planning.index'
+import { Route as PlanningBoardIdRouteImport } from './routes/planning.$boardId'
+import { Route as PlanningCalendarRouteImport } from './routes/planning.calendar'
+import { Route as PlatformGroupsIndexRouteImport } from './routes/platform-groups.index'
+import { Route as PlatformGroupsIdRouteImport } from './routes/platform-groups.$id'
+import { Route as PlatformGroupsNewRouteImport } from './routes/platform-groups.new'
+import { Route as PlatformsIndexRouteImport } from './routes/platforms.index'
+import { Route as PlatformsIdRouteImport } from './routes/platforms.$id'
+import { Route as PlatformsNewRouteImport } from './routes/platforms.new'
+import { Route as PortReservationsIndexRouteImport } from './routes/port-reservations.index'
+import { Route as PowerFeedsIndexRouteImport } from './routes/power-feeds.index'
+import { Route as PowerFeedsIdRouteImport } from './routes/power-feeds.$id'
+import { Route as PowerFeedsNewRouteImport } from './routes/power-feeds.new'
+import { Route as PowerPanelsIndexRouteImport } from './routes/power-panels.index'
+import { Route as PowerPanelsIdRouteImport } from './routes/power-panels.$id'
+import { Route as PowerPanelsNewRouteImport } from './routes/power-panels.new'
+import { Route as PrefixListsIndexRouteImport } from './routes/prefix-lists.index'
+import { Route as PrefixListsIdRouteImport } from './routes/prefix-lists.$id'
+import { Route as PrefixListsNewRouteImport } from './routes/prefix-lists.new'
+import { Route as PrefixesIndexRouteImport } from './routes/prefixes.index'
+import { Route as PrefixesIdRouteImport } from './routes/prefixes.$id'
+import { Route as PrefixesBulkEditRouteImport } from './routes/prefixes.bulk-edit'
+import { Route as PrefixesNewRouteImport } from './routes/prefixes.new'
+import { Route as ProviderNetworksIndexRouteImport } from './routes/provider-networks.index'
+import { Route as ProviderNetworksIdRouteImport } from './routes/provider-networks.$id'
+import { Route as ProviderNetworksNewRouteImport } from './routes/provider-networks.new'
+import { Route as ProvidersIndexRouteImport } from './routes/providers.index'
+import { Route as ProvidersIdRouteImport } from './routes/providers.$id'
+import { Route as ProvidersNewRouteImport } from './routes/providers.new'
+import { Route as PrtgIndexRouteImport } from './routes/prtg.index'
+import { Route as RackRolesIndexRouteImport } from './routes/rack-roles.index'
+import { Route as RackRolesIdRouteImport } from './routes/rack-roles.$id'
+import { Route as RackRolesNewRouteImport } from './routes/rack-roles.new'
+import { Route as RackTypesIndexRouteImport } from './routes/rack-types.index'
+import { Route as RackTypesIdRouteImport } from './routes/rack-types.$id'
+import { Route as RackTypesNewRouteImport } from './routes/rack-types.new'
+import { Route as RacksIndexRouteImport } from './routes/racks.index'
+import { Route as RacksIdRouteImport } from './routes/racks.$id'
+import { Route as RacksElevationsRouteImport } from './routes/racks.elevations'
+import { Route as RacksNewRouteImport } from './routes/racks.new'
+import { Route as RegionsIndexRouteImport } from './routes/regions.index'
+import { Route as RegionsIdRouteImport } from './routes/regions.$id'
+import { Route as RegionsNewRouteImport } from './routes/regions.new'
+import { Route as RirsIndexRouteImport } from './routes/rirs.index'
+import { Route as RirsIdRouteImport } from './routes/rirs.$id'
+import { Route as RirsNewRouteImport } from './routes/rirs.new'
+import { Route as RoomsIndexRouteImport } from './routes/rooms.index'
+import { Route as RoomsIdRouteImport } from './routes/rooms.$id'
+import { Route as RoomsNewRouteImport } from './routes/rooms.new'
+import { Route as RouteTargetsIndexRouteImport } from './routes/route-targets.index'
+import { Route as RouteTargetsIdRouteImport } from './routes/route-targets.$id'
+import { Route as RouteTargetsNewRouteImport } from './routes/route-targets.new'
+import { Route as RoutingKeychainsIndexRouteImport } from './routes/routing-keychains.index'
+import { Route as RoutingKeychainsIdRouteImport } from './routes/routing-keychains.$id'
+import { Route as RoutingKeychainsNewRouteImport } from './routes/routing-keychains.new'
+import { Route as RoutingPoliciesIndexRouteImport } from './routes/routing-policies.index'
+import { Route as RoutingPoliciesIdRouteImport } from './routes/routing-policies.$id'
+import { Route as RoutingPoliciesNewRouteImport } from './routes/routing-policies.new'
+import { Route as ScriptsIndexRouteImport } from './routes/scripts.index'
+import { Route as ScriptsIdRouteImport } from './routes/scripts.$id'
+import { Route as ServiceTemplatesIndexRouteImport } from './routes/service-templates.index'
+import { Route as ServiceTemplatesIdRouteImport } from './routes/service-templates.$id'
+import { Route as ServiceTemplatesNewRouteImport } from './routes/service-templates.new'
+import { Route as ServicesIndexRouteImport } from './routes/services.index'
+import { Route as ServicesIdRouteImport } from './routes/services.$id'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsAdminRouteImport } from './routes/settings.admin'
+import { Route as SettingsBackupsRouteImport } from './routes/settings.backups'
+import { Route as SettingsComponentsRouteImport } from './routes/settings.components'
+import { Route as SettingsConnectRouteImport } from './routes/settings.connect'
+import { Route as SettingsDeviceFieldsRouteImport } from './routes/settings.device-fields'
+import { Route as SettingsDirectoryRouteImport } from './routes/settings.directory'
+import { Route as SettingsEmailRouteImport } from './routes/settings.email'
+import { Route as SettingsFloorplanRouteImport } from './routes/settings.floorplan'
+import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
+import { Route as SettingsLdapRouteImport } from './routes/settings.ldap'
+import { Route as SettingsMapsRouteImport } from './routes/settings.maps'
+import { Route as SettingsMonitoringRouteImport } from './routes/settings.monitoring'
+import { Route as SettingsMonitoringDefaultsRouteImport } from './routes/settings.monitoring-defaults'
+import { Route as SettingsPluginsRouteImport } from './routes/settings.plugins'
+import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
+import { Route as SettingsSecurityRouteImport } from './routes/settings.security'
+import { Route as SettingsSeparationRouteImport } from './routes/settings.separation'
+import { Route as SettingsSiteRouteImport } from './routes/settings.site'
+import { Route as SettingsSitesRouteImport } from './routes/settings.sites'
+import { Route as SettingsSnmpRouteImport } from './routes/settings.snmp'
+import { Route as SettingsSnmpSensorsRouteImport } from './routes/settings.snmp-sensors'
+import { Route as SettingsSsoRouteImport } from './routes/settings.sso'
+import { Route as SettingsTableDefaultsRouteImport } from './routes/settings.table-defaults'
+import { Route as SettingsTenantRouteImport } from './routes/settings.tenant'
+import { Route as SettingsTenantEmailRouteImport } from './routes/settings.tenant-email'
+import { Route as SettingsTenantLdapRouteImport } from './routes/settings.tenant-ldap'
+import { Route as SettingsTopologyRouteImport } from './routes/settings.topology'
+import { Route as SettingsUpdatesRouteImport } from './routes/settings.updates'
+import { Route as SilencesNewRouteImport } from './routes/silences.new'
+import { Route as SitesIndexRouteImport } from './routes/sites.index'
+import { Route as SitesIdRouteImport } from './routes/sites.$id'
+import { Route as SitesBulkEditRouteImport } from './routes/sites.bulk-edit'
+import { Route as SitesNewRouteImport } from './routes/sites.new'
+import { Route as StaticRoutesIndexRouteImport } from './routes/static-routes.index'
+import { Route as StaticRoutesIdRouteImport } from './routes/static-routes.$id'
+import { Route as StaticRoutesNewRouteImport } from './routes/static-routes.new'
+import { Route as StatusesIndexRouteImport } from './routes/statuses.index'
+import { Route as StatusesIdRouteImport } from './routes/statuses.$id'
+import { Route as StatusesNewRouteImport } from './routes/statuses.new'
+import { Route as SupportContractsIndexRouteImport } from './routes/support-contracts.index'
+import { Route as SupportContractsIdRouteImport } from './routes/support-contracts.$id'
+import { Route as SupportContractsNewRouteImport } from './routes/support-contracts.new'
+import { Route as TagsIndexRouteImport } from './routes/tags.index'
+import { Route as TagsIdRouteImport } from './routes/tags.$id'
+import { Route as TagsNewRouteImport } from './routes/tags.new'
+import { Route as TenantsIndexRouteImport } from './routes/tenants.index'
+import { Route as TenantsIdRouteImport } from './routes/tenants.$id'
+import { Route as TenantsNewRouteImport } from './routes/tenants.new'
+import { Route as TopologyIndexRouteImport } from './routes/topology.index'
+import { Route as TunnelGroupsIndexRouteImport } from './routes/tunnel-groups.index'
+import { Route as TunnelGroupsIdRouteImport } from './routes/tunnel-groups.$id'
+import { Route as TunnelGroupsNewRouteImport } from './routes/tunnel-groups.new'
+import { Route as TunnelsIndexRouteImport } from './routes/tunnels.index'
+import { Route as TunnelsIdRouteImport } from './routes/tunnels.$id'
+import { Route as TunnelsNewRouteImport } from './routes/tunnels.new'
+import { Route as UsersIndexRouteImport } from './routes/users.index'
+import { Route as UsersNewRouteImport } from './routes/users.new'
+import { Route as VirtualChassisIndexRouteImport } from './routes/virtual-chassis.index'
+import { Route as VirtualChassisIdRouteImport } from './routes/virtual-chassis.$id'
+import { Route as VirtualChassisBulkEditRouteImport } from './routes/virtual-chassis.bulk-edit'
+import { Route as VirtualChassisNewRouteImport } from './routes/virtual-chassis.new'
+import { Route as VirtualMachinesIndexRouteImport } from './routes/virtual-machines.index'
+import { Route as VirtualMachinesIdRouteImport } from './routes/virtual-machines.$id'
+import { Route as VirtualMachinesNewRouteImport } from './routes/virtual-machines.new'
+import { Route as VirtualSwitchesIndexRouteImport } from './routes/virtual-switches.index'
+import { Route as VirtualSwitchesIdRouteImport } from './routes/virtual-switches.$id'
+import { Route as VirtualTopologyIndexRouteImport } from './routes/virtual-topology.index'
+import { Route as VirtualizationSourcesIndexRouteImport } from './routes/virtualization-sources.index'
+import { Route as VirtualizationSourcesIdRouteImport } from './routes/virtualization-sources.$id'
+import { Route as VlanGroupsIndexRouteImport } from './routes/vlan-groups.index'
+import { Route as VlanGroupsIdRouteImport } from './routes/vlan-groups.$id'
+import { Route as VlanGroupsNewRouteImport } from './routes/vlan-groups.new'
+import { Route as VlansIndexRouteImport } from './routes/vlans.index'
+import { Route as VlansIdRouteImport } from './routes/vlans.$id'
+import { Route as VlansBulkEditRouteImport } from './routes/vlans.bulk-edit'
+import { Route as VlansNewRouteImport } from './routes/vlans.new'
+import { Route as VmGroupsIndexRouteImport } from './routes/vm-groups.index'
+import { Route as VmGroupsIdRouteImport } from './routes/vm-groups.$id'
+import { Route as VmGroupsNewRouteImport } from './routes/vm-groups.new'
+import { Route as VrfsIndexRouteImport } from './routes/vrfs.index'
+import { Route as VrfsIdRouteImport } from './routes/vrfs.$id'
+import { Route as VrfsNewRouteImport } from './routes/vrfs.new'
+import { Route as VtepsIndexRouteImport } from './routes/vteps.index'
+import { Route as WatchedEndpointsIndexRouteImport } from './routes/watched-endpoints.index'
+import { Route as WebhooksIndexRouteImport } from './routes/webhooks.index'
+import { Route as WebhooksNewRouteImport } from './routes/webhooks.new'
+import { Route as WindowsServersIndexRouteImport } from './routes/windows-servers.index'
+import { Route as WindowsServersIdRouteImport } from './routes/windows-servers.$id'
+import { Route as WirelessLanGroupsIndexRouteImport } from './routes/wireless-lan-groups.index'
+import { Route as WirelessLanGroupsIdRouteImport } from './routes/wireless-lan-groups.$id'
+import { Route as WirelessLanGroupsNewRouteImport } from './routes/wireless-lan-groups.new'
+import { Route as WirelessLansIndexRouteImport } from './routes/wireless-lans.index'
+import { Route as WirelessLansIdRouteImport } from './routes/wireless-lans.$id'
+import { Route as WirelessLansNewRouteImport } from './routes/wireless-lans.new'
+import { Route as ZabbixIndexRouteImport } from './routes/zabbix.index'
+import { Route as ZonesIndexRouteImport } from './routes/zones.index'
+import { Route as ZonesIdRouteImport } from './routes/zones.$id'
+import { Route as ZonesNewRouteImport } from './routes/zones.new'
 import { Route as AggregatesIdEditRouteImport } from './routes/aggregates.$id_.edit'
-import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
-import { Route as MonitoringSlaTemplatesNewRouteImport } from './routes/monitoring_.sla.templates.new'
-import { Route as MonitoringSlaTemplatesIdRouteImport } from './routes/monitoring_.sla.templates.$id'
-import { Route as MonitoringSlaIdEditRouteImport } from './routes/monitoring_.sla.$id_.edit'
+import { Route as AlertRulesIdEditRouteImport } from './routes/alert-rules.$id_.edit'
+import { Route as ApplicationGroupsIdEditRouteImport } from './routes/application-groups.$id_.edit'
+import { Route as ApplicationsIdEditRouteImport } from './routes/applications.$id_.edit'
+import { Route as AreaTypesIdEditRouteImport } from './routes/area-types.$id_.edit'
+import { Route as AsPathListsIdEditRouteImport } from './routes/as-path-lists.$id_.edit'
+import { Route as AsnsIdEditRouteImport } from './routes/asns.$id_.edit'
+import { Route as AutomationTargetsIdEditRouteImport } from './routes/automation-targets.$id_.edit'
+import { Route as BfdProfilesIdEditRouteImport } from './routes/bfd-profiles.$id_.edit'
+import { Route as BgpPeerGroupsIdEditRouteImport } from './routes/bgp-peer-groups.$id_.edit'
+import { Route as BgpSessionsIdEditRouteImport } from './routes/bgp-sessions.$id_.edit'
+import { Route as CabinetRolesIdEditRouteImport } from './routes/cabinet-roles.$id_.edit'
+import { Route as CabinetTypesIdEditRouteImport } from './routes/cabinet-types.$id_.edit'
+import { Route as CabinetsIdEditRouteImport } from './routes/cabinets.$id_.edit'
+import { Route as CablesIdEditRouteImport } from './routes/cables.$id_.edit'
+import { Route as ChannelsIdEditRouteImport } from './routes/channels.$id_.edit'
+import { Route as CircuitTypesIdEditRouteImport } from './routes/circuit-types.$id_.edit'
+import { Route as CircuitsIdEditRouteImport } from './routes/circuits.$id_.edit'
+import { Route as ClusterGroupsIdEditRouteImport } from './routes/cluster-groups.$id_.edit'
+import { Route as ClusterTypesIdEditRouteImport } from './routes/cluster-types.$id_.edit'
+import { Route as ClustersIdEditRouteImport } from './routes/clusters.$id_.edit'
+import { Route as CommunitiesIdEditRouteImport } from './routes/communities.$id_.edit'
+import { Route as CommunityListsIdEditRouteImport } from './routes/community-lists.$id_.edit'
+import { Route as ComplianceRulesIdEditRouteImport } from './routes/compliance-rules.$id_.edit'
+import { Route as ConfigBundlesIdEditRouteImport } from './routes/config-bundles.$id_.edit'
+import { Route as ConfigContextsIdEditRouteImport } from './routes/config-contexts.$id_.edit'
+import { Route as ContactGroupsIdEditRouteImport } from './routes/contact-groups.$id_.edit'
+import { Route as ContactRolesIdEditRouteImport } from './routes/contact-roles.$id_.edit'
+import { Route as ContactsIdEditRouteImport } from './routes/contacts.$id_.edit'
+import { Route as CoolingFeedsIdEditRouteImport } from './routes/cooling-feeds.$id_.edit'
+import { Route as CoolingSourcesIdEditRouteImport } from './routes/cooling-sources.$id_.edit'
+import { Route as CustomFieldGroupsIdEditRouteImport } from './routes/custom-field-groups.$id_.edit'
+import { Route as CustomFieldsIdEditRouteImport } from './routes/custom-fields.$id_.edit'
+import { Route as DeviceProfilesIdEditRouteImport } from './routes/device-profiles.$id_.edit'
+import { Route as DeviceRolesIdEditRouteImport } from './routes/device-roles.$id_.edit'
+import { Route as DeviceTypesIdEditRouteImport } from './routes/device-types.$id_.edit'
+import { Route as DevicesIdComplianceRouteImport } from './routes/devices.$id_.compliance'
+import { Route as DevicesIdEditRouteImport } from './routes/devices.$id_.edit'
+import { Route as EolProductsIdEditRouteImport } from './routes/eol-products.$id_.edit'
+import { Route as EthernetSegmentsIdEditRouteImport } from './routes/ethernet-segments.$id_.edit'
+import { Route as ExportTemplatesIdEditRouteImport } from './routes/export-templates.$id_.edit'
+import { Route as FhrpGroupsIdEditRouteImport } from './routes/fhrp-groups.$id_.edit'
+import { Route as FloorTileTypesIdEditRouteImport } from './routes/floor-tile-types.$id_.edit'
+import { Route as FloorplansStacksIdRouteImport } from './routes/floorplans.stacks.$id'
+import { Route as GroupsIdEditRouteImport } from './routes/groups.$id_.edit'
+import { Route as InterfacesIdEditRouteImport } from './routes/interfaces.$id_.edit'
+import { Route as IpRangesIdEditRouteImport } from './routes/ip-ranges.$id_.edit'
+import { Route as IpRolesIdEditRouteImport } from './routes/ip-roles.$id_.edit'
+import { Route as IpsIdEditRouteImport } from './routes/ips.$id_.edit'
+import { Route as IpsecProfilesIdEditRouteImport } from './routes/ipsec-profiles.$id_.edit'
+import { Route as L2vpnsIdEditRouteImport } from './routes/l2vpns.$id_.edit'
+import { Route as LocationTypesIdEditRouteImport } from './routes/location-types.$id_.edit'
+import { Route as LocationsIdEditRouteImport } from './routes/locations.$id_.edit'
+import { Route as MaintenanceIdEditRouteImport } from './routes/maintenance.$id_.edit'
+import { Route as ManufacturersIdEditRouteImport } from './routes/manufacturers.$id_.edit'
+import { Route as ModuleTypesIdEditRouteImport } from './routes/module-types.$id_.edit'
+import { Route as MonitoringChecksIdRouteImport } from './routes/monitoring_.checks.$id'
+import { Route as MonitoringSlaIdRouteImport } from './routes/monitoring_.sla.$id'
+import { Route as MonitoringSlaNewRouteImport } from './routes/monitoring_.sla.new'
+import { Route as OspfAreasIdEditRouteImport } from './routes/ospf-areas.$id_.edit'
+import { Route as PSlugSplatRouteImport } from './routes/p.$slug.$'
+import { Route as PermissionsIdEditRouteImport } from './routes/permissions.$id_.edit'
+import { Route as PlatformGroupsIdEditRouteImport } from './routes/platform-groups.$id_.edit'
+import { Route as PlatformsIdEditRouteImport } from './routes/platforms.$id_.edit'
+import { Route as PowerFeedsIdEditRouteImport } from './routes/power-feeds.$id_.edit'
+import { Route as PowerPanelsIdEditRouteImport } from './routes/power-panels.$id_.edit'
+import { Route as PrefixListsIdEditRouteImport } from './routes/prefix-lists.$id_.edit'
+import { Route as PrefixesIdEditRouteImport } from './routes/prefixes.$id_.edit'
+import { Route as ProviderNetworksIdEditRouteImport } from './routes/provider-networks.$id_.edit'
+import { Route as ProvidersIdEditRouteImport } from './routes/providers.$id_.edit'
+import { Route as RackRolesIdEditRouteImport } from './routes/rack-roles.$id_.edit'
+import { Route as RackTypesIdEditRouteImport } from './routes/rack-types.$id_.edit'
+import { Route as RacksIdEditRouteImport } from './routes/racks.$id_.edit'
+import { Route as RegionsIdEditRouteImport } from './routes/regions.$id_.edit'
+import { Route as RirsIdEditRouteImport } from './routes/rirs.$id_.edit'
+import { Route as RoomsIdEditRouteImport } from './routes/rooms.$id_.edit'
+import { Route as RouteTargetsIdEditRouteImport } from './routes/route-targets.$id_.edit'
+import { Route as RoutingKeychainsIdEditRouteImport } from './routes/routing-keychains.$id_.edit'
+import { Route as RoutingPoliciesIdEditRouteImport } from './routes/routing-policies.$id_.edit'
+import { Route as ScriptsRunsRunIdRouteImport } from './routes/scripts.runs.$runId'
+import { Route as ServiceTemplatesIdEditRouteImport } from './routes/service-templates.$id_.edit'
+import { Route as SilencesIdEditRouteImport } from './routes/silences.$id_.edit'
+import { Route as SitesIdEditRouteImport } from './routes/sites.$id_.edit'
+import { Route as StaticRoutesIdEditRouteImport } from './routes/static-routes.$id_.edit'
+import { Route as StatusesIdEditRouteImport } from './routes/statuses.$id_.edit'
+import { Route as SupportContractsIdEditRouteImport } from './routes/support-contracts.$id_.edit'
+import { Route as TagsIdEditRouteImport } from './routes/tags.$id_.edit'
+import { Route as TenantsIdEditRouteImport } from './routes/tenants.$id_.edit'
+import { Route as TunnelGroupsIdEditRouteImport } from './routes/tunnel-groups.$id_.edit'
+import { Route as TunnelsIdEditRouteImport } from './routes/tunnels.$id_.edit'
+import { Route as UsersIdEditRouteImport } from './routes/users.$id_.edit'
+import { Route as VirtualChassisIdEditRouteImport } from './routes/virtual-chassis.$id_.edit'
+import { Route as VirtualMachinesIdEditRouteImport } from './routes/virtual-machines.$id_.edit'
+import { Route as VlanGroupsIdEditRouteImport } from './routes/vlan-groups.$id_.edit'
+import { Route as VlansIdEditRouteImport } from './routes/vlans.$id_.edit'
+import { Route as VmGroupsIdEditRouteImport } from './routes/vm-groups.$id_.edit'
+import { Route as VrfsIdEditRouteImport } from './routes/vrfs.$id_.edit'
+import { Route as WebhooksIdEditRouteImport } from './routes/webhooks.$id_.edit'
+import { Route as WirelessLanGroupsIdEditRouteImport } from './routes/wireless-lan-groups.$id_.edit'
+import { Route as WirelessLansIdEditRouteImport } from './routes/wireless-lans.$id_.edit'
+import { Route as ZonesIdEditRouteImport } from './routes/zones.$id_.edit'
 import { Route as LTenantTypeNumidRouteImport } from './routes/l.$tenant.$type.$numid'
+import { Route as MonitoringSlaIdEditRouteImport } from './routes/monitoring_.sla.$id_.edit'
+import { Route as MonitoringSlaTemplatesIdRouteImport } from './routes/monitoring_.sla.templates.$id'
+import { Route as MonitoringSlaTemplatesNewRouteImport } from './routes/monitoring_.sla.templates.new'
+import { Route as PlanningBoardIdTasksTaskIdRouteImport } from './routes/planning.$boardId_.tasks.$taskId'
 import { Route as MonitoringSlaTemplatesIdEditRouteImport } from './routes/monitoring_.sla.templates.$id_.edit'
 
-const ZonesRoute = ZonesRouteImport.update({
-  id: '/zones',
-  path: '/zones',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WirelessLansRoute = WirelessLansRouteImport.update({
-  id: '/wireless-lans',
-  path: '/wireless-lans',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WirelessLanGroupsRoute = WirelessLanGroupsRouteImport.update({
-  id: '/wireless-lan-groups',
-  path: '/wireless-lan-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WebhooksRoute = WebhooksRouteImport.update({
-  id: '/webhooks',
-  path: '/webhooks',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VrfsRoute = VrfsRouteImport.update({
-  id: '/vrfs',
-  path: '/vrfs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VlansRoute = VlansRouteImport.update({
-  id: '/vlans',
-  path: '/vlans',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VlanGroupsRoute = VlanGroupsRouteImport.update({
-  id: '/vlan-groups',
-  path: '/vlan-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VirtualChassisRoute = VirtualChassisRouteImport.update({
-  id: '/virtual-chassis',
-  path: '/virtual-chassis',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UsersRoute = UsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TunnelsRoute = TunnelsRouteImport.update({
-  id: '/tunnels',
-  path: '/tunnels',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TunnelGroupsRoute = TunnelGroupsRouteImport.update({
-  id: '/tunnel-groups',
-  path: '/tunnel-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TopologyRoute = TopologyRouteImport.update({
-  id: '/topology',
-  path: '/topology',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TenantsRoute = TenantsRouteImport.update({
-  id: '/tenants',
-  path: '/tenants',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TagsRoute = TagsRouteImport.update({
-  id: '/tags',
-  path: '/tags',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SupportContractsRoute = SupportContractsRouteImport.update({
-  id: '/support-contracts',
-  path: '/support-contracts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StatusesRoute = StatusesRouteImport.update({
-  id: '/statuses',
-  path: '/statuses',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StaticRoutesRoute = StaticRoutesRouteImport.update({
-  id: '/static-routes',
-  path: '/static-routes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SitesRoute = SitesRouteImport.update({
-  id: '/sites',
-  path: '/sites',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SiteMapRoute = SiteMapRouteImport.update({
-  id: '/site-map',
-  path: '/site-map',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetPasswordRoute = SetPasswordRouteImport.update({
-  id: '/set-password',
-  path: '/set-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SearchRoute = SearchRouteImport.update({
-  id: '/search',
-  path: '/search',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SavedFiltersRoute = SavedFiltersRouteImport.update({
-  id: '/saved-filters',
-  path: '/saved-filters',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RoutingPoliciesRoute = RoutingPoliciesRouteImport.update({
-  id: '/routing-policies',
-  path: '/routing-policies',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RoutingKeychainsRoute = RoutingKeychainsRouteImport.update({
-  id: '/routing-keychains',
-  path: '/routing-keychains',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RouteTargetsRoute = RouteTargetsRouteImport.update({
-  id: '/route-targets',
-  path: '/route-targets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RirsRoute = RirsRouteImport.update({
-  id: '/rirs',
-  path: '/rirs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RegionsRoute = RegionsRouteImport.update({
-  id: '/regions',
-  path: '/regions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RackTypesRoute = RackTypesRouteImport.update({
-  id: '/rack-types',
-  path: '/rack-types',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProvidersRoute = ProvidersRouteImport.update({
-  id: '/providers',
-  path: '/providers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProviderNetworksRoute = ProviderNetworksRouteImport.update({
-  id: '/provider-networks',
-  path: '/provider-networks',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrefixesRoute = PrefixesRouteImport.update({
-  id: '/prefixes',
-  path: '/prefixes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrefixListsRoute = PrefixListsRouteImport.update({
-  id: '/prefix-lists',
-  path: '/prefix-lists',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PowerPanelsRoute = PowerPanelsRouteImport.update({
-  id: '/power-panels',
-  path: '/power-panels',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PowerFeedsRoute = PowerFeedsRouteImport.update({
-  id: '/power-feeds',
-  path: '/power-feeds',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PortUtilizationRoute = PortUtilizationRouteImport.update({
-  id: '/port-utilization',
-  path: '/port-utilization',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PermissionsRoute = PermissionsRouteImport.update({
-  id: '/permissions',
-  path: '/permissions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OspfAreasRoute = OspfAreasRouteImport.update({
-  id: '/ospf-areas',
-  path: '/ospf-areas',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MonitoringEnginesRoute = MonitoringEnginesRouteImport.update({
-  id: '/monitoring-engines',
-  path: '/monitoring-engines',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MonitoringRoute = MonitoringRouteImport.update({
-  id: '/monitoring',
-  path: '/monitoring',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ModuleTypesRoute = ModuleTypesRouteImport.update({
-  id: '/module-types',
-  path: '/module-types',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ManufacturersRoute = ManufacturersRouteImport.update({
-  id: '/manufacturers',
-  path: '/manufacturers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MacsRoute = MacsRouteImport.update({
-  id: '/macs',
-  path: '/macs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LocationsRoute = LocationsRouteImport.update({
-  id: '/locations',
-  path: '/locations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const L2vpnsRoute = L2vpnsRouteImport.update({
-  id: '/l2vpns',
-  path: '/l2vpns',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpsecProfilesRoute = IpsecProfilesRouteImport.update({
-  id: '/ipsec-profiles',
-  path: '/ipsec-profiles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpStatusesRoute = IpStatusesRouteImport.update({
-  id: '/ip-statuses',
-  path: '/ip-statuses',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpRolesRoute = IpRolesRouteImport.update({
-  id: '/ip-roles',
-  path: '/ip-roles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpRangesRoute = IpRangesRouteImport.update({
-  id: '/ip-ranges',
-  path: '/ip-ranges',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InterfacesRoute = InterfacesRouteImport.update({
-  id: '/interfaces',
-  path: '/interfaces',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ImportRoute = ImportRouteImport.update({
-  id: '/import',
-  path: '/import',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GroupsRoute = GroupsRouteImport.update({
-  id: '/groups',
-  path: '/groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FloorplansRoute = FloorplansRouteImport.update({
-  id: '/floorplans',
-  path: '/floorplans',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FloorTileTypesRoute = FloorTileTypesRouteImport.update({
-  id: '/floor-tile-types',
-  path: '/floor-tile-types',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FiberCablesRoute = FiberCablesRouteImport.update({
-  id: '/fiber-cables',
-  path: '/fiber-cables',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FiberRoute = FiberRouteImport.update({
-  id: '/fiber',
-  path: '/fiber',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FhrpGroupsRoute = FhrpGroupsRouteImport.update({
-  id: '/fhrp-groups',
-  path: '/fhrp-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ExportTemplatesRoute = ExportTemplatesRouteImport.update({
-  id: '/export-templates',
-  path: '/export-templates',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EthernetSegmentsRoute = EthernetSegmentsRouteImport.update({
-  id: '/ethernet-segments',
-  path: '/ethernet-segments',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevicesRoute = DevicesRouteImport.update({
-  id: '/devices',
-  path: '/devices',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeviceTypesRoute = DeviceTypesRouteImport.update({
-  id: '/device-types',
-  path: '/device-types',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeployRunsRoute = DeployRunsRouteImport.update({
-  id: '/deploy-runs',
-  path: '/deploy-runs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomFieldsRoute = CustomFieldsRouteImport.update({
-  id: '/custom-fields',
-  path: '/custom-fields',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomFieldGroupsRoute = CustomFieldGroupsRouteImport.update({
-  id: '/custom-field-groups',
-  path: '/custom-field-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContactsRoute = ContactsRouteImport.update({
-  id: '/contacts',
-  path: '/contacts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContactRolesRoute = ContactRolesRouteImport.update({
-  id: '/contact-roles',
-  path: '/contact-roles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ContactGroupsRoute = ContactGroupsRouteImport.update({
-  id: '/contact-groups',
-  path: '/contact-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConfigDriftRoute = ConfigDriftRouteImport.update({
-  id: '/config-drift',
-  path: '/config-drift',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConfigContextsRoute = ConfigContextsRouteImport.update({
-  id: '/config-contexts',
-  path: '/config-contexts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConfigBundlesRoute = ConfigBundlesRouteImport.update({
-  id: '/config-bundles',
-  path: '/config-bundles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ComplianceRoute = ComplianceRouteImport.update({
-  id: '/compliance',
-  path: '/compliance',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CommunityListsRoute = CommunityListsRouteImport.update({
-  id: '/community-lists',
-  path: '/community-lists',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CommunitiesRoute = CommunitiesRouteImport.update({
-  id: '/communities',
-  path: '/communities',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CircuitsRoute = CircuitsRouteImport.update({
-  id: '/circuits',
-  path: '/circuits',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CircuitTypesRoute = CircuitTypesRouteImport.update({
-  id: '/circuit-types',
-  path: '/circuit-types',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangeLogRoute = ChangeLogRouteImport.update({
-  id: '/change-log',
-  path: '/change-log',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CablesRoute = CablesRouteImport.update({
-  id: '/cables',
-  path: '/cables',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BgpSessionsRoute = BgpSessionsRouteImport.update({
-  id: '/bgp-sessions',
-  path: '/bgp-sessions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BgpPeerGroupsRoute = BgpPeerGroupsRouteImport.update({
-  id: '/bgp-peer-groups',
-  path: '/bgp-peer-groups',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BfdProfilesRoute = BfdProfilesRouteImport.update({
-  id: '/bfd-profiles',
-  path: '/bfd-profiles',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutomationTargetsRoute = AutomationTargetsRouteImport.update({
-  id: '/automation-targets',
-  path: '/automation-targets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuditLogRoute = AuditLogRouteImport.update({
-  id: '/audit-log',
-  path: '/audit-log',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AsnsRoute = AsnsRouteImport.update({
-  id: '/asns',
-  path: '/asns',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AsPathListsRoute = AsPathListsRouteImport.update({
-  id: '/as-path-lists',
-  path: '/as-path-lists',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AlertsRoute = AlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AggregatesRoute = AggregatesRouteImport.update({
-  id: '/aggregates',
-  path: '/aggregates',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentAccessRoute = AgentAccessRouteImport.update({
@@ -975,510 +584,709 @@ const AgentAccessRoute = AgentAccessRouteImport.update({
   path: '/agent-access',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AggregatesRoute = AggregatesRouteImport.update({
+  id: '/aggregates',
+  path: '/aggregates',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ZonesIndexRoute = ZonesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ZonesRoute,
-} as any)
-const ZabbixIndexRoute = ZabbixIndexRouteImport.update({
-  id: '/zabbix/',
-  path: '/zabbix/',
+const AlertsRoute = AlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WirelessLansIndexRoute = WirelessLansIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => WirelessLansRoute,
-} as any)
-const WirelessLanGroupsIndexRoute = WirelessLanGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => WirelessLanGroupsRoute,
-} as any)
-const WindowsServersIndexRoute = WindowsServersIndexRouteImport.update({
-  id: '/windows-servers/',
-  path: '/windows-servers/',
+const ApplicationMapRoute = ApplicationMapRouteImport.update({
+  id: '/application-map',
+  path: '/application-map',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebhooksIndexRoute = WebhooksIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => WebhooksRoute,
-} as any)
-const WatchedEndpointsIndexRoute = WatchedEndpointsIndexRouteImport.update({
-  id: '/watched-endpoints/',
-  path: '/watched-endpoints/',
+const AreaTypesRoute = AreaTypesRouteImport.update({
+  id: '/area-types',
+  path: '/area-types',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VtepsIndexRoute = VtepsIndexRouteImport.update({
-  id: '/vteps/',
-  path: '/vteps/',
+const AsPathListsRoute = AsPathListsRouteImport.update({
+  id: '/as-path-lists',
+  path: '/as-path-lists',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VrfsIndexRoute = VrfsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => VrfsRoute,
-} as any)
-const VmGroupsIndexRoute = VmGroupsIndexRouteImport.update({
-  id: '/vm-groups/',
-  path: '/vm-groups/',
+const AsnsRoute = AsnsRouteImport.update({
+  id: '/asns',
+  path: '/asns',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VlansIndexRoute = VlansIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => VlansRoute,
-} as any)
-const VlanGroupsIndexRoute = VlanGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => VlanGroupsRoute,
-} as any)
-const VirtualizationSourcesIndexRoute =
-  VirtualizationSourcesIndexRouteImport.update({
-    id: '/virtualization-sources/',
-    path: '/virtualization-sources/',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const VirtualTopologyIndexRoute = VirtualTopologyIndexRouteImport.update({
-  id: '/virtual-topology/',
-  path: '/virtual-topology/',
+const AuditLogRoute = AuditLogRouteImport.update({
+  id: '/audit-log',
+  path: '/audit-log',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualSwitchesIndexRoute = VirtualSwitchesIndexRouteImport.update({
-  id: '/virtual-switches/',
-  path: '/virtual-switches/',
+const AutomationTargetsRoute = AutomationTargetsRouteImport.update({
+  id: '/automation-targets',
+  path: '/automation-targets',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualMachinesIndexRoute = VirtualMachinesIndexRouteImport.update({
-  id: '/virtual-machines/',
-  path: '/virtual-machines/',
+const BfdProfilesRoute = BfdProfilesRouteImport.update({
+  id: '/bfd-profiles',
+  path: '/bfd-profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualChassisIndexRoute = VirtualChassisIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => VirtualChassisRoute,
-} as any)
-const UsersIndexRoute = UsersIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => UsersRoute,
-} as any)
-const TunnelsIndexRoute = TunnelsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TunnelsRoute,
-} as any)
-const TunnelGroupsIndexRoute = TunnelGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TunnelGroupsRoute,
-} as any)
-const TopologyIndexRoute = TopologyIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TopologyRoute,
-} as any)
-const TenantsIndexRoute = TenantsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TenantsRoute,
-} as any)
-const TagsIndexRoute = TagsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => TagsRoute,
-} as any)
-const SupportContractsIndexRoute = SupportContractsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => SupportContractsRoute,
-} as any)
-const StatusesIndexRoute = StatusesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => StatusesRoute,
-} as any)
-const StaticRoutesIndexRoute = StaticRoutesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => StaticRoutesRoute,
-} as any)
-const SitesIndexRoute = SitesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => SitesRoute,
-} as any)
-const SettingsIndexRoute = SettingsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const ServicesIndexRoute = ServicesIndexRouteImport.update({
-  id: '/services/',
-  path: '/services/',
+const BgpPeerGroupsRoute = BgpPeerGroupsRouteImport.update({
+  id: '/bgp-peer-groups',
+  path: '/bgp-peer-groups',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ServiceTemplatesIndexRoute = ServiceTemplatesIndexRouteImport.update({
-  id: '/service-templates/',
-  path: '/service-templates/',
+const BgpSessionsRoute = BgpSessionsRouteImport.update({
+  id: '/bgp-sessions',
+  path: '/bgp-sessions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScriptsIndexRoute = ScriptsIndexRouteImport.update({
-  id: '/scripts/',
-  path: '/scripts/',
+const CablesRoute = CablesRouteImport.update({
+  id: '/cables',
+  path: '/cables',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RoutingPoliciesIndexRoute = RoutingPoliciesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RoutingPoliciesRoute,
-} as any)
-const RoutingKeychainsIndexRoute = RoutingKeychainsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RoutingKeychainsRoute,
-} as any)
-const RouteTargetsIndexRoute = RouteTargetsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RouteTargetsRoute,
-} as any)
-const RirsIndexRoute = RirsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RirsRoute,
-} as any)
-const RegionsIndexRoute = RegionsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RegionsRoute,
-} as any)
-const RacksIndexRoute = RacksIndexRouteImport.update({
-  id: '/racks/',
-  path: '/racks/',
+const ChangeLogRoute = ChangeLogRouteImport.update({
+  id: '/change-log',
+  path: '/change-log',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RackTypesIndexRoute = RackTypesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RackTypesRoute,
-} as any)
-const RackRolesIndexRoute = RackRolesIndexRouteImport.update({
-  id: '/rack-roles/',
-  path: '/rack-roles/',
+const CircuitTypesRoute = CircuitTypesRouteImport.update({
+  id: '/circuit-types',
+  path: '/circuit-types',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProvidersIndexRoute = ProvidersIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProvidersRoute,
-} as any)
-const ProviderNetworksIndexRoute = ProviderNetworksIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProviderNetworksRoute,
-} as any)
-const PrefixesIndexRoute = PrefixesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PrefixesRoute,
-} as any)
-const PrefixListsIndexRoute = PrefixListsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PrefixListsRoute,
-} as any)
-const PowerPanelsIndexRoute = PowerPanelsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PowerPanelsRoute,
-} as any)
-const PowerFeedsIndexRoute = PowerFeedsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PowerFeedsRoute,
-} as any)
-const PortReservationsIndexRoute = PortReservationsIndexRouteImport.update({
-  id: '/port-reservations/',
-  path: '/port-reservations/',
+const CircuitsRoute = CircuitsRouteImport.update({
+  id: '/circuits',
+  path: '/circuits',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlatformsIndexRoute = PlatformsIndexRouteImport.update({
-  id: '/platforms/',
-  path: '/platforms/',
+const CommunitiesRoute = CommunitiesRouteImport.update({
+  id: '/communities',
+  path: '/communities',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlatformGroupsIndexRoute = PlatformGroupsIndexRouteImport.update({
-  id: '/platform-groups/',
-  path: '/platform-groups/',
+const CommunityListsRoute = CommunityListsRouteImport.update({
+  id: '/community-lists',
+  path: '/community-lists',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlanningIndexRoute = PlanningIndexRouteImport.update({
-  id: '/planning/',
-  path: '/planning/',
+const ComplianceRoute = ComplianceRouteImport.update({
+  id: '/compliance',
+  path: '/compliance',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => PermissionsRoute,
-} as any)
-const OxidizedIndexRoute = OxidizedIndexRouteImport.update({
-  id: '/oxidized/',
-  path: '/oxidized/',
+const ConfigBundlesRoute = ConfigBundlesRouteImport.update({
+  id: '/config-bundles',
+  path: '/config-bundles',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OspfInstancesIndexRoute = OspfInstancesIndexRouteImport.update({
-  id: '/ospf-instances/',
-  path: '/ospf-instances/',
+const ConfigContextsRoute = ConfigContextsRouteImport.update({
+  id: '/config-contexts',
+  path: '/config-contexts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OspfAreasIndexRoute = OspfAreasIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => OspfAreasRoute,
-} as any)
-const NatRulesIndexRoute = NatRulesIndexRouteImport.update({
-  id: '/nat-rules/',
-  path: '/nat-rules/',
+const ConfigDriftRoute = ConfigDriftRouteImport.update({
+  id: '/config-drift',
+  path: '/config-drift',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ModuleTypesIndexRoute = ModuleTypesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ModuleTypesRoute,
-} as any)
-const ManufacturersIndexRoute = ManufacturersIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ManufacturersRoute,
-} as any)
-const MaintenanceIndexRoute = MaintenanceIndexRouteImport.update({
-  id: '/maintenance/',
-  path: '/maintenance/',
+const ContactGroupsRoute = ContactGroupsRouteImport.update({
+  id: '/contact-groups',
+  path: '/contact-groups',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MacsIndexRoute = MacsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => MacsRoute,
-} as any)
-const LocationsIndexRoute = LocationsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => LocationsRoute,
-} as any)
-const LabelTemplatesIndexRoute = LabelTemplatesIndexRouteImport.update({
-  id: '/label-templates/',
-  path: '/label-templates/',
+const ContactRolesRoute = ContactRolesRouteImport.update({
+  id: '/contact-roles',
+  path: '/contact-roles',
   getParentRoute: () => rootRouteImport,
 } as any)
-const L2vpnsIndexRoute = L2vpnsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => L2vpnsRoute,
-} as any)
-const JobsIndexRoute = JobsIndexRouteImport.update({
-  id: '/jobs/',
-  path: '/jobs/',
+const ContactsRoute = ContactsRouteImport.update({
+  id: '/contacts',
+  path: '/contacts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IsisInstancesIndexRoute = IsisInstancesIndexRouteImport.update({
-  id: '/isis-instances/',
-  path: '/isis-instances/',
+const CoolingFeedsRoute = CoolingFeedsRouteImport.update({
+  id: '/cooling-feeds',
+  path: '/cooling-feeds',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IpsecProfilesIndexRoute = IpsecProfilesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => IpsecProfilesRoute,
-} as any)
-const IpsIndexRoute = IpsIndexRouteImport.update({
-  id: '/ips/',
-  path: '/ips/',
+const CoolingSourcesRoute = CoolingSourcesRouteImport.update({
+  id: '/cooling-sources',
+  path: '/cooling-sources',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IpRolesIndexRoute = IpRolesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => IpRolesRoute,
-} as any)
-const IpRangesIndexRoute = IpRangesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => IpRangesRoute,
-} as any)
-const InterfacesIndexRoute = InterfacesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => InterfacesRoute,
-} as any)
-const ImportIndexRoute = ImportIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ImportRoute,
-} as any)
-const GroupsIndexRoute = GroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => GroupsRoute,
-} as any)
-const FloorplansIndexRoute = FloorplansIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => FloorplansRoute,
-} as any)
-const FloorTileTypesIndexRoute = FloorTileTypesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => FloorTileTypesRoute,
-} as any)
-const FhrpGroupsIndexRoute = FhrpGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => FhrpGroupsRoute,
-} as any)
-const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ExportTemplatesRoute,
-} as any)
-const EthernetSegmentsIndexRoute = EthernetSegmentsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => EthernetSegmentsRoute,
-} as any)
-const EigrpInstancesIndexRoute = EigrpInstancesIndexRouteImport.update({
-  id: '/eigrp-instances/',
-  path: '/eigrp-instances/',
+const CustomFieldGroupsRoute = CustomFieldGroupsRouteImport.update({
+  id: '/custom-field-groups',
+  path: '/custom-field-groups',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DnsZonesIndexRoute = DnsZonesIndexRouteImport.update({
-  id: '/dns-zones/',
-  path: '/dns-zones/',
+const CustomFieldsRoute = CustomFieldsRouteImport.update({
+  id: '/custom-fields',
+  path: '/custom-fields',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DnsRecordsIndexRoute = DnsRecordsIndexRouteImport.update({
-  id: '/dns-records/',
-  path: '/dns-records/',
+const DeployRunsRoute = DeployRunsRouteImport.update({
+  id: '/deploy-runs',
+  path: '/deploy-runs',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DhcpScopesIndexRoute = DhcpScopesIndexRouteImport.update({
-  id: '/dhcp-scopes/',
-  path: '/dhcp-scopes/',
+const DeviceTypesRoute = DeviceTypesRouteImport.update({
+  id: '/device-types',
+  path: '/device-types',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DhcpReservationsIndexRoute = DhcpReservationsIndexRouteImport.update({
-  id: '/dhcp-reservations/',
-  path: '/dhcp-reservations/',
+const DevicesRoute = DevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DhcpLeasesIndexRoute = DhcpLeasesIndexRouteImport.update({
-  id: '/dhcp-leases/',
-  path: '/dhcp-leases/',
+const EthernetSegmentsRoute = EthernetSegmentsRouteImport.update({
+  id: '/ethernet-segments',
+  path: '/ethernet-segments',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DevicesIndexRoute = DevicesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => DevicesRoute,
-} as any)
-const DeviceTypesIndexRoute = DeviceTypesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => DeviceTypesRoute,
-} as any)
-const DeviceRolesIndexRoute = DeviceRolesIndexRouteImport.update({
-  id: '/device-roles/',
-  path: '/device-roles/',
+const ExportTemplatesRoute = ExportTemplatesRouteImport.update({
+  id: '/export-templates',
+  path: '/export-templates',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
-  id: '/dashboards/',
-  path: '/dashboards/',
+const FhrpGroupsRoute = FhrpGroupsRouteImport.update({
+  id: '/fhrp-groups',
+  path: '/fhrp-groups',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CustomFieldsIndexRoute = CustomFieldsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => CustomFieldsRoute,
-} as any)
-const CustomFieldGroupsIndexRoute = CustomFieldGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => CustomFieldGroupsRoute,
-} as any)
-const ContactsIndexRoute = ContactsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ContactsRoute,
-} as any)
-const ContactRolesIndexRoute = ContactRolesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ContactRolesRoute,
-} as any)
-const ContactGroupsIndexRoute = ContactGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ContactGroupsRoute,
-} as any)
-const ConfigContextsIndexRoute = ConfigContextsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ConfigContextsRoute,
-} as any)
-const ConfigBundlesIndexRoute = ConfigBundlesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ConfigBundlesRoute,
-} as any)
-const CommunityListsIndexRoute = CommunityListsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => CommunityListsRoute,
-} as any)
-const CommunitiesIndexRoute = CommunitiesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => CommunitiesRoute,
-} as any)
-const ClustersIndexRoute = ClustersIndexRouteImport.update({
-  id: '/clusters/',
-  path: '/clusters/',
+const FiberRoute = FiberRouteImport.update({
+  id: '/fiber',
+  path: '/fiber',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClusterTypesIndexRoute = ClusterTypesIndexRouteImport.update({
-  id: '/cluster-types/',
-  path: '/cluster-types/',
+const FiberCablesRoute = FiberCablesRouteImport.update({
+  id: '/fiber-cables',
+  path: '/fiber-cables',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClusterGroupsIndexRoute = ClusterGroupsIndexRouteImport.update({
-  id: '/cluster-groups/',
-  path: '/cluster-groups/',
+const FloorTileTypesRoute = FloorTileTypesRouteImport.update({
+  id: '/floor-tile-types',
+  path: '/floor-tile-types',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CircuitsIndexRoute = CircuitsIndexRouteImport.update({
+const FloorplansRoute = FloorplansRouteImport.update({
+  id: '/floorplans',
+  path: '/floorplans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupsRoute = GroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InterfacesRoute = InterfacesRouteImport.update({
+  id: '/interfaces',
+  path: '/interfaces',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpRangesRoute = IpRangesRouteImport.update({
+  id: '/ip-ranges',
+  path: '/ip-ranges',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpRolesRoute = IpRolesRouteImport.update({
+  id: '/ip-roles',
+  path: '/ip-roles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpStatusesRoute = IpStatusesRouteImport.update({
+  id: '/ip-statuses',
+  path: '/ip-statuses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsecProfilesRoute = IpsecProfilesRouteImport.update({
+  id: '/ipsec-profiles',
+  path: '/ipsec-profiles',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const L2vpnsRoute = L2vpnsRouteImport.update({
+  id: '/l2vpns',
+  path: '/l2vpns',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LifecycleRoute = LifecycleRouteImport.update({
+  id: '/lifecycle',
+  path: '/lifecycle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocationTypesRoute = LocationTypesRouteImport.update({
+  id: '/location-types',
+  path: '/location-types',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocationsRoute = LocationsRouteImport.update({
+  id: '/locations',
+  path: '/locations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MacsRoute = MacsRouteImport.update({
+  id: '/macs',
+  path: '/macs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManufacturersRoute = ManufacturersRouteImport.update({
+  id: '/manufacturers',
+  path: '/manufacturers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModuleTypesRoute = ModuleTypesRouteImport.update({
+  id: '/module-types',
+  path: '/module-types',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringRoute = MonitoringRouteImport.update({
+  id: '/monitoring',
+  path: '/monitoring',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringEnginesRoute = MonitoringEnginesRouteImport.update({
+  id: '/monitoring-engines',
+  path: '/monitoring-engines',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OspfAreasRoute = OspfAreasRouteImport.update({
+  id: '/ospf-areas',
+  path: '/ospf-areas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PermissionsRoute = PermissionsRouteImport.update({
+  id: '/permissions',
+  path: '/permissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortUtilizationRoute = PortUtilizationRouteImport.update({
+  id: '/port-utilization',
+  path: '/port-utilization',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PowerFeedsRoute = PowerFeedsRouteImport.update({
+  id: '/power-feeds',
+  path: '/power-feeds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PowerPanelsRoute = PowerPanelsRouteImport.update({
+  id: '/power-panels',
+  path: '/power-panels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrefixListsRoute = PrefixListsRouteImport.update({
+  id: '/prefix-lists',
+  path: '/prefix-lists',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrefixesRoute = PrefixesRouteImport.update({
+  id: '/prefixes',
+  path: '/prefixes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProviderNetworksRoute = ProviderNetworksRouteImport.update({
+  id: '/provider-networks',
+  path: '/provider-networks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProvidersRoute = ProvidersRouteImport.update({
+  id: '/providers',
+  path: '/providers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RackTypesRoute = RackTypesRouteImport.update({
+  id: '/rack-types',
+  path: '/rack-types',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegionsRoute = RegionsRouteImport.update({
+  id: '/regions',
+  path: '/regions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RirsRoute = RirsRouteImport.update({
+  id: '/rirs',
+  path: '/rirs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RouteTargetsRoute = RouteTargetsRouteImport.update({
+  id: '/route-targets',
+  path: '/route-targets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingKeychainsRoute = RoutingKeychainsRouteImport.update({
+  id: '/routing-keychains',
+  path: '/routing-keychains',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoutingPoliciesRoute = RoutingPoliciesRouteImport.update({
+  id: '/routing-policies',
+  path: '/routing-policies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedFiltersRoute = SavedFiltersRouteImport.update({
+  id: '/saved-filters',
+  path: '/saved-filters',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetPasswordRoute = SetPasswordRouteImport.update({
+  id: '/set-password',
+  path: '/set-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SiteMapRoute = SiteMapRouteImport.update({
+  id: '/site-map',
+  path: '/site-map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitesRoute = SitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StaticRoutesRoute = StaticRoutesRouteImport.update({
+  id: '/static-routes',
+  path: '/static-routes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatusesRoute = StatusesRouteImport.update({
+  id: '/statuses',
+  path: '/statuses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportContractsRoute = SupportContractsRouteImport.update({
+  id: '/support-contracts',
+  path: '/support-contracts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TagsRoute = TagsRouteImport.update({
+  id: '/tags',
+  path: '/tags',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TenantsRoute = TenantsRouteImport.update({
+  id: '/tenants',
+  path: '/tenants',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TopologyRoute = TopologyRouteImport.update({
+  id: '/topology',
+  path: '/topology',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TunnelGroupsRoute = TunnelGroupsRouteImport.update({
+  id: '/tunnel-groups',
+  path: '/tunnel-groups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TunnelsRoute = TunnelsRouteImport.update({
+  id: '/tunnels',
+  path: '/tunnels',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VirtualChassisRoute = VirtualChassisRouteImport.update({
+  id: '/virtual-chassis',
+  path: '/virtual-chassis',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VlanGroupsRoute = VlanGroupsRouteImport.update({
+  id: '/vlan-groups',
+  path: '/vlan-groups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VlansRoute = VlansRouteImport.update({
+  id: '/vlans',
+  path: '/vlans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VrfsRoute = VrfsRouteImport.update({
+  id: '/vrfs',
+  path: '/vrfs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksRoute = WebhooksRouteImport.update({
+  id: '/webhooks',
+  path: '/webhooks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WirelessLanGroupsRoute = WirelessLanGroupsRouteImport.update({
+  id: '/wireless-lan-groups',
+  path: '/wireless-lan-groups',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WirelessLansRoute = WirelessLansRouteImport.update({
+  id: '/wireless-lans',
+  path: '/wireless-lans',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ZonesRoute = ZonesRouteImport.update({
+  id: '/zones',
+  path: '/zones',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AggregatesIndexRoute = AggregatesIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => CircuitsRoute,
+  getParentRoute: () => AggregatesRoute,
 } as any)
-const CircuitTypesIndexRoute = CircuitTypesIndexRouteImport.update({
+const AggregatesIdRoute = AggregatesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AggregatesRoute,
+} as any)
+const AggregatesNewRoute = AggregatesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AggregatesRoute,
+} as any)
+const AlertRulesNewRoute = AlertRulesNewRouteImport.update({
+  id: '/alert-rules/new',
+  path: '/alert-rules/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationGroupsIndexRoute = ApplicationGroupsIndexRouteImport.update({
+  id: '/application-groups/',
+  path: '/application-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationGroupsIdRoute = ApplicationGroupsIdRouteImport.update({
+  id: '/application-groups/$id',
+  path: '/application-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationGroupsNewRoute = ApplicationGroupsNewRouteImport.update({
+  id: '/application-groups/new',
+  path: '/application-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsIndexRoute = ApplicationsIndexRouteImport.update({
+  id: '/applications/',
+  path: '/applications/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsIdRoute = ApplicationsIdRouteImport.update({
+  id: '/applications/$id',
+  path: '/applications/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApplicationsNewRoute = ApplicationsNewRouteImport.update({
+  id: '/applications/new',
+  path: '/applications/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AreaTypesIndexRoute = AreaTypesIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => CircuitTypesRoute,
+  getParentRoute: () => AreaTypesRoute,
 } as any)
-const CertificatesIndexRoute = CertificatesIndexRouteImport.update({
-  id: '/certificates/',
-  path: '/certificates/',
+const AreaTypesIdRoute = AreaTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AreaTypesRoute,
+} as any)
+const AreaTypesNewRoute = AreaTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AreaTypesRoute,
+} as any)
+const AsPathListsIndexRoute = AsPathListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
+const AsPathListsIdRoute = AsPathListsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
+const AsPathListsNewRoute = AsPathListsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AsPathListsRoute,
+} as any)
+const AsnsIndexRoute = AsnsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AsnsRoute,
+} as any)
+const AsnsIdRoute = AsnsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AsnsRoute,
+} as any)
+const AsnsNewRoute = AsnsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AsnsRoute,
+} as any)
+const AuditLogIdRoute = AuditLogIdRouteImport.update({
+  id: '/audit-log_/$id',
+  path: '/audit-log/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutomationTargetsIndexRoute = AutomationTargetsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const AutomationTargetsIdRoute = AutomationTargetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const AutomationTargetsNewRoute = AutomationTargetsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const AutomationTargetsSetupRoute = AutomationTargetsSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const BfdProfilesIndexRoute = BfdProfilesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
+const BfdProfilesIdRoute = BfdProfilesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
+const BfdProfilesNewRoute = BfdProfilesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
+const BgpInstancesIndexRoute = BgpInstancesIndexRouteImport.update({
+  id: '/bgp-instances/',
+  path: '/bgp-instances/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BgpPeerGroupsIndexRoute = BgpPeerGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpPeerGroupsIdRoute = BgpPeerGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpPeerGroupsNewRoute = BgpPeerGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpSessionsIndexRoute = BgpSessionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpSessionsIdRoute = BgpSessionsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const BgpSessionsNewRoute = BgpSessionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const CabinetRolesIndexRoute = CabinetRolesIndexRouteImport.update({
+  id: '/cabinet-roles/',
+  path: '/cabinet-roles/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesIdRoute = CabinetRolesIdRouteImport.update({
+  id: '/cabinet-roles/$id',
+  path: '/cabinet-roles/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetRolesNewRoute = CabinetRolesNewRouteImport.update({
+  id: '/cabinet-roles/new',
+  path: '/cabinet-roles/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesIndexRoute = CabinetTypesIndexRouteImport.update({
+  id: '/cabinet-types/',
+  path: '/cabinet-types/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesIdRoute = CabinetTypesIdRouteImport.update({
+  id: '/cabinet-types/$id',
+  path: '/cabinet-types/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetTypesNewRoute = CabinetTypesNewRouteImport.update({
+  id: '/cabinet-types/new',
+  path: '/cabinet-types/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetsIndexRoute = CabinetsIndexRouteImport.update({
+  id: '/cabinets/',
+  path: '/cabinets/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetsIdRoute = CabinetsIdRouteImport.update({
+  id: '/cabinets/$id',
+  path: '/cabinets/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CabinetsNewRoute = CabinetsNewRouteImport.update({
+  id: '/cabinets/new',
+  path: '/cabinets/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CablesIndexRoute = CablesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CablesRoute,
+} as any)
+const CablesIdRoute = CablesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CablesRoute,
+} as any)
+const CablesNewRoute = CablesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CablesRoute,
+} as any)
+const CertificateIssuersIndexRoute = CertificateIssuersIndexRouteImport.update({
+  id: '/certificate-issuers/',
+  path: '/certificate-issuers/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CertificateRequestsIndexRoute =
@@ -1487,359 +1295,1139 @@ const CertificateRequestsIndexRoute =
     path: '/certificate-requests/',
     getParentRoute: () => rootRouteImport,
   } as any)
-const CertificateIssuersIndexRoute = CertificateIssuersIndexRouteImport.update({
-  id: '/certificate-issuers/',
-  path: '/certificate-issuers/',
+const CertificateRequestsIdRoute = CertificateRequestsIdRouteImport.update({
+  id: '/certificate-requests/$id',
+  path: '/certificate-requests/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CablesIndexRoute = CablesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => CablesRoute,
-} as any)
-const CabinetsIndexRoute = CabinetsIndexRouteImport.update({
-  id: '/cabinets/',
-  path: '/cabinets/',
+const CertificatesIndexRoute = CertificatesIndexRouteImport.update({
+  id: '/certificates/',
+  path: '/certificates/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CabinetTypesIndexRoute = CabinetTypesIndexRouteImport.update({
-  id: '/cabinet-types/',
-  path: '/cabinet-types/',
+const CertificatesIdRoute = CertificatesIdRouteImport.update({
+  id: '/certificates/$id',
+  path: '/certificates/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CabinetRolesIndexRoute = CabinetRolesIndexRouteImport.update({
-  id: '/cabinet-roles/',
-  path: '/cabinet-roles/',
+const ChangeLogIdRoute = ChangeLogIdRouteImport.update({
+  id: '/change-log_/$id',
+  path: '/change-log/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BgpSessionsIndexRoute = BgpSessionsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => BgpSessionsRoute,
-} as any)
-const BgpPeerGroupsIndexRoute = BgpPeerGroupsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => BgpPeerGroupsRoute,
-} as any)
-const BgpInstancesIndexRoute = BgpInstancesIndexRouteImport.update({
-  id: '/bgp-instances/',
-  path: '/bgp-instances/',
+const ChannelsNewRoute = ChannelsNewRouteImport.update({
+  id: '/channels/new',
+  path: '/channels/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BfdProfilesIndexRoute = BfdProfilesIndexRouteImport.update({
+const CircuitTypesIndexRoute = CircuitTypesIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => BfdProfilesRoute,
+  getParentRoute: () => CircuitTypesRoute,
 } as any)
-const AutomationTargetsIndexRoute = AutomationTargetsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AutomationTargetsRoute,
-} as any)
-const AsnsIndexRoute = AsnsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AsnsRoute,
-} as any)
-const AsPathListsIndexRoute = AsPathListsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AsPathListsRoute,
-} as any)
-const AggregatesIndexRoute = AggregatesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AggregatesRoute,
-} as any)
-const ZonesNewRoute = ZonesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ZonesRoute,
-} as any)
-const ZonesIdRoute = ZonesIdRouteImport.update({
+const CircuitTypesIdRoute = CircuitTypesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => ZonesRoute,
+  getParentRoute: () => CircuitTypesRoute,
 } as any)
-const WirelessLansNewRoute = WirelessLansNewRouteImport.update({
+const CircuitTypesNewRoute = CircuitTypesNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => WirelessLansRoute,
+  getParentRoute: () => CircuitTypesRoute,
 } as any)
-const WirelessLansIdRoute = WirelessLansIdRouteImport.update({
+const CircuitsIndexRoute = CircuitsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CircuitsRoute,
+} as any)
+const CircuitsIdRoute = CircuitsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => WirelessLansRoute,
+  getParentRoute: () => CircuitsRoute,
 } as any)
-const WirelessLanGroupsNewRoute = WirelessLanGroupsNewRouteImport.update({
+const CircuitsNewRoute = CircuitsNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => WirelessLanGroupsRoute,
+  getParentRoute: () => CircuitsRoute,
 } as any)
-const WirelessLanGroupsIdRoute = WirelessLanGroupsIdRouteImport.update({
+const ClusterGroupsIndexRoute = ClusterGroupsIndexRouteImport.update({
+  id: '/cluster-groups/',
+  path: '/cluster-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterGroupsIdRoute = ClusterGroupsIdRouteImport.update({
+  id: '/cluster-groups/$id',
+  path: '/cluster-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterGroupsNewRoute = ClusterGroupsNewRouteImport.update({
+  id: '/cluster-groups/new',
+  path: '/cluster-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterTypesIndexRoute = ClusterTypesIndexRouteImport.update({
+  id: '/cluster-types/',
+  path: '/cluster-types/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterTypesIdRoute = ClusterTypesIdRouteImport.update({
+  id: '/cluster-types/$id',
+  path: '/cluster-types/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterTypesNewRoute = ClusterTypesNewRouteImport.update({
+  id: '/cluster-types/new',
+  path: '/cluster-types/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClustersIndexRoute = ClustersIndexRouteImport.update({
+  id: '/clusters/',
+  path: '/clusters/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClustersIdRoute = ClustersIdRouteImport.update({
+  id: '/clusters/$id',
+  path: '/clusters/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClustersNewRoute = ClustersNewRouteImport.update({
+  id: '/clusters/new',
+  path: '/clusters/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CommunitiesIndexRoute = CommunitiesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
+const CommunitiesIdRoute = CommunitiesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => WirelessLanGroupsRoute,
+  getParentRoute: () => CommunitiesRoute,
 } as any)
-const WindowsServersIdRoute = WindowsServersIdRouteImport.update({
-  id: '/windows-servers/$id',
-  path: '/windows-servers/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WebhooksNewRoute = WebhooksNewRouteImport.update({
+const CommunitiesNewRoute = CommunitiesNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => WebhooksRoute,
+  getParentRoute: () => CommunitiesRoute,
 } as any)
-const VrfsNewRoute = VrfsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => VrfsRoute,
+const CommunityListsIndexRoute = CommunityListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CommunityListsRoute,
 } as any)
-const VrfsIdRoute = VrfsIdRouteImport.update({
+const CommunityListsIdRoute = CommunityListsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => VrfsRoute,
+  getParentRoute: () => CommunityListsRoute,
 } as any)
-const VmGroupsNewRoute = VmGroupsNewRouteImport.update({
-  id: '/vm-groups/new',
-  path: '/vm-groups/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VmGroupsIdRoute = VmGroupsIdRouteImport.update({
-  id: '/vm-groups/$id',
-  path: '/vm-groups/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VlansNewRoute = VlansNewRouteImport.update({
+const CommunityListsNewRoute = CommunityListsNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => VlansRoute,
+  getParentRoute: () => CommunityListsRoute,
 } as any)
-const VlansBulkEditRoute = VlansBulkEditRouteImport.update({
+const ComplianceRulesIdRoute = ComplianceRulesIdRouteImport.update({
+  id: '/compliance-rules/$id',
+  path: '/compliance-rules/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComplianceRulesNewRoute = ComplianceRulesNewRouteImport.update({
+  id: '/compliance-rules/new',
+  path: '/compliance-rules/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfigBundlesIndexRoute = ConfigBundlesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConfigBundlesRoute,
+} as any)
+const ConfigBundlesIdRoute = ConfigBundlesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ConfigBundlesRoute,
+} as any)
+const ConfigBundlesNewRoute = ConfigBundlesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ConfigBundlesRoute,
+} as any)
+const ConfigContextsIndexRoute = ConfigContextsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ConfigContextsIdRoute = ConfigContextsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ConfigContextsNewRoute = ConfigContextsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ContactGroupsIndexRoute = ContactGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ContactGroupsRoute,
+} as any)
+const ContactGroupsIdRoute = ContactGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ContactGroupsRoute,
+} as any)
+const ContactGroupsNewRoute = ContactGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ContactGroupsRoute,
+} as any)
+const ContactRolesIndexRoute = ContactRolesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ContactRolesRoute,
+} as any)
+const ContactRolesIdRoute = ContactRolesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ContactRolesRoute,
+} as any)
+const ContactRolesNewRoute = ContactRolesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ContactRolesRoute,
+} as any)
+const ContactsIndexRoute = ContactsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ContactsRoute,
+} as any)
+const ContactsIdRoute = ContactsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ContactsRoute,
+} as any)
+const ContactsNewRoute = ContactsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ContactsRoute,
+} as any)
+const CoolingFeedsIndexRoute = CoolingFeedsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CoolingFeedsRoute,
+} as any)
+const CoolingFeedsIdRoute = CoolingFeedsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CoolingFeedsRoute,
+} as any)
+const CoolingFeedsNewRoute = CoolingFeedsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CoolingFeedsRoute,
+} as any)
+const CoolingSourcesIndexRoute = CoolingSourcesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CoolingSourcesRoute,
+} as any)
+const CoolingSourcesIdRoute = CoolingSourcesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CoolingSourcesRoute,
+} as any)
+const CoolingSourcesNewRoute = CoolingSourcesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CoolingSourcesRoute,
+} as any)
+const CustomFieldGroupsIndexRoute = CustomFieldGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CustomFieldGroupsRoute,
+} as any)
+const CustomFieldGroupsIdRoute = CustomFieldGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CustomFieldGroupsRoute,
+} as any)
+const CustomFieldGroupsNewRoute = CustomFieldGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CustomFieldGroupsRoute,
+} as any)
+const CustomFieldsIndexRoute = CustomFieldsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CustomFieldsRoute,
+} as any)
+const CustomFieldsIdRoute = CustomFieldsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => CustomFieldsRoute,
+} as any)
+const CustomFieldsNewRoute = CustomFieldsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => CustomFieldsRoute,
+} as any)
+const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
+  id: '/dashboards/',
+  path: '/dashboards/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardsIdRoute = DashboardsIdRouteImport.update({
+  id: '/dashboards/$id',
+  path: '/dashboards/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceProfilesIndexRoute = DeviceProfilesIndexRouteImport.update({
+  id: '/device-profiles/',
+  path: '/device-profiles/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceProfilesIdRoute = DeviceProfilesIdRouteImport.update({
+  id: '/device-profiles/$id',
+  path: '/device-profiles/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceProfilesNewRoute = DeviceProfilesNewRouteImport.update({
+  id: '/device-profiles/new',
+  path: '/device-profiles/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceRolesIndexRoute = DeviceRolesIndexRouteImport.update({
+  id: '/device-roles/',
+  path: '/device-roles/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceRolesIdRoute = DeviceRolesIdRouteImport.update({
+  id: '/device-roles/$id',
+  path: '/device-roles/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceRolesNewRoute = DeviceRolesNewRouteImport.update({
+  id: '/device-roles/new',
+  path: '/device-roles/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceTypesIndexRoute = DeviceTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DeviceTypesRoute,
+} as any)
+const DeviceTypesIdRoute = DeviceTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => DeviceTypesRoute,
+} as any)
+const DeviceTypesNewRoute = DeviceTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => DeviceTypesRoute,
+} as any)
+const DevicesIndexRoute = DevicesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const DevicesIdRoute = DevicesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const DevicesNewRoute = DevicesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const DhcpLeasesIndexRoute = DhcpLeasesIndexRouteImport.update({
+  id: '/dhcp-leases/',
+  path: '/dhcp-leases/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DhcpReservationsIndexRoute = DhcpReservationsIndexRouteImport.update({
+  id: '/dhcp-reservations/',
+  path: '/dhcp-reservations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DhcpScopesIndexRoute = DhcpScopesIndexRouteImport.update({
+  id: '/dhcp-scopes/',
+  path: '/dhcp-scopes/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsNamesNameRoute = DnsNamesNameRouteImport.update({
+  id: '/dns-names/$name',
+  path: '/dns-names/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsRecordsIndexRoute = DnsRecordsIndexRouteImport.update({
+  id: '/dns-records/',
+  path: '/dns-records/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsRecordsIdRoute = DnsRecordsIdRouteImport.update({
+  id: '/dns-records/$id',
+  path: '/dns-records/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsZonesIndexRoute = DnsZonesIndexRouteImport.update({
+  id: '/dns-zones/',
+  path: '/dns-zones/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
+  id: '/dns-zones/$id',
+  path: '/dns-zones/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EigrpInstancesIndexRoute = EigrpInstancesIndexRouteImport.update({
+  id: '/eigrp-instances/',
+  path: '/eigrp-instances/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EolProductsIndexRoute = EolProductsIndexRouteImport.update({
+  id: '/eol-products/',
+  path: '/eol-products/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EolProductsIdRoute = EolProductsIdRouteImport.update({
+  id: '/eol-products/$id',
+  path: '/eol-products/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EolProductsNewRoute = EolProductsNewRouteImport.update({
+  id: '/eol-products/new',
+  path: '/eol-products/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EthernetSegmentsIndexRoute = EthernetSegmentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const EthernetSegmentsIdRoute = EthernetSegmentsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const EthernetSegmentsNewRoute = EthernetSegmentsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const ExportTemplatesIndexRoute = ExportTemplatesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const ExportTemplatesNewRoute = ExportTemplatesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const FhrpGroupsIndexRoute = FhrpGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => FhrpGroupsRoute,
+} as any)
+const FhrpGroupsIdRoute = FhrpGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => FhrpGroupsRoute,
+} as any)
+const FhrpGroupsNewRoute = FhrpGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => FhrpGroupsRoute,
+} as any)
+const FloorTileTypesIndexRoute = FloorTileTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => FloorTileTypesRoute,
+} as any)
+const FloorTileTypesIdRoute = FloorTileTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => FloorTileTypesRoute,
+} as any)
+const FloorTileTypesNewRoute = FloorTileTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => FloorTileTypesRoute,
+} as any)
+const FloorplansIndexRoute = FloorplansIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => FloorplansRoute,
+} as any)
+const FloorplansIdRoute = FloorplansIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => FloorplansRoute,
+} as any)
+const FloorplansNewRoute = FloorplansNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => FloorplansRoute,
+} as any)
+const GroupsIndexRoute = GroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GroupsRoute,
+} as any)
+const GroupsNewRoute = GroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => GroupsRoute,
+} as any)
+const ImportIndexRoute = ImportIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ImportRoute,
+} as any)
+const ImportNetboxRoute = ImportNetboxRouteImport.update({
+  id: '/netbox',
+  path: '/netbox',
+  getParentRoute: () => ImportRoute,
+} as any)
+const InterfacesIndexRoute = InterfacesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => InterfacesRoute,
+} as any)
+const InterfacesIdRoute = InterfacesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => InterfacesRoute,
+} as any)
+const InterfacesBulkRoute = InterfacesBulkRouteImport.update({
+  id: '/bulk',
+  path: '/bulk',
+  getParentRoute: () => InterfacesRoute,
+} as any)
+const InterfacesNewRoute = InterfacesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => InterfacesRoute,
+} as any)
+const IpRangesIndexRoute = IpRangesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => IpRangesRoute,
+} as any)
+const IpRangesIdRoute = IpRangesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => IpRangesRoute,
+} as any)
+const IpRangesNewRoute = IpRangesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => IpRangesRoute,
+} as any)
+const IpRolesIndexRoute = IpRolesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => IpRolesRoute,
+} as any)
+const IpRolesIdRoute = IpRolesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => IpRolesRoute,
+} as any)
+const IpRolesNewRoute = IpRolesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => IpRolesRoute,
+} as any)
+const IpsIndexRoute = IpsIndexRouteImport.update({
+  id: '/ips/',
+  path: '/ips/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsIdRoute = IpsIdRouteImport.update({
+  id: '/ips/$id',
+  path: '/ips/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsBulkEditRoute = IpsBulkEditRouteImport.update({
+  id: '/ips/bulk-edit',
+  path: '/ips/bulk-edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsNewRoute = IpsNewRouteImport.update({
+  id: '/ips/new',
+  path: '/ips/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsecProfilesIndexRoute = IpsecProfilesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => IpsecProfilesRoute,
+} as any)
+const IpsecProfilesIdRoute = IpsecProfilesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => IpsecProfilesRoute,
+} as any)
+const IpsecProfilesNewRoute = IpsecProfilesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => IpsecProfilesRoute,
+} as any)
+const IsisInstancesIndexRoute = IsisInstancesIndexRouteImport.update({
+  id: '/isis-instances/',
+  path: '/isis-instances/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsIndexRoute = JobsIndexRouteImport.update({
+  id: '/jobs/',
+  path: '/jobs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsIdRoute = JobsIdRouteImport.update({
+  id: '/jobs/$id',
+  path: '/jobs/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const L2vpnsIndexRoute = L2vpnsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => L2vpnsRoute,
+} as any)
+const L2vpnsIdRoute = L2vpnsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => L2vpnsRoute,
+} as any)
+const L2vpnsNewRoute = L2vpnsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => L2vpnsRoute,
+} as any)
+const LabelTemplatesIndexRoute = LabelTemplatesIndexRouteImport.update({
+  id: '/label-templates/',
+  path: '/label-templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocationTypesIndexRoute = LocationTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LocationTypesRoute,
+} as any)
+const LocationTypesIdRoute = LocationTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => LocationTypesRoute,
+} as any)
+const LocationTypesNewRoute = LocationTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => LocationTypesRoute,
+} as any)
+const LocationsIndexRoute = LocationsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LocationsRoute,
+} as any)
+const LocationsIdRoute = LocationsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => LocationsRoute,
+} as any)
+const LocationsNewRoute = LocationsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => LocationsRoute,
+} as any)
+const MacsIndexRoute = MacsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MacsRoute,
+} as any)
+const MacsMacRoute = MacsMacRouteImport.update({
+  id: '/$mac',
+  path: '/$mac',
+  getParentRoute: () => MacsRoute,
+} as any)
+const MaintenanceIndexRoute = MaintenanceIndexRouteImport.update({
+  id: '/maintenance/',
+  path: '/maintenance/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaintenanceNewRoute = MaintenanceNewRouteImport.update({
+  id: '/maintenance/new',
+  path: '/maintenance/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManufacturersIndexRoute = ManufacturersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ManufacturersRoute,
+} as any)
+const ManufacturersIdRoute = ManufacturersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ManufacturersRoute,
+} as any)
+const ManufacturersNewRoute = ManufacturersNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ManufacturersRoute,
+} as any)
+const ModuleTypesIndexRoute = ModuleTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ModuleTypesRoute,
+} as any)
+const ModuleTypesIdRoute = ModuleTypesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ModuleTypesRoute,
+} as any)
+const ModuleTypesNewRoute = ModuleTypesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ModuleTypesRoute,
+} as any)
+const NatRulesIndexRoute = NatRulesIndexRouteImport.update({
+  id: '/nat-rules/',
+  path: '/nat-rules/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NatRulesIdRoute = NatRulesIdRouteImport.update({
+  id: '/nat-rules/$id',
+  path: '/nat-rules/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OspfAreasIndexRoute = OspfAreasIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
+const OspfAreasIdRoute = OspfAreasIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
+const OspfAreasNewRoute = OspfAreasNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
+const OspfInstancesIndexRoute = OspfInstancesIndexRouteImport.update({
+  id: '/ospf-instances/',
+  path: '/ospf-instances/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OxidizedIndexRoute = OxidizedIndexRouteImport.update({
+  id: '/oxidized/',
+  path: '/oxidized/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PermissionsIndexRoute = PermissionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PermissionsRoute,
+} as any)
+const PermissionsNewRoute = PermissionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PermissionsRoute,
+} as any)
+const PlanningIndexRoute = PlanningIndexRouteImport.update({
+  id: '/planning/',
+  path: '/planning/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanningBoardIdRoute = PlanningBoardIdRouteImport.update({
+  id: '/planning/$boardId',
+  path: '/planning/$boardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanningCalendarRoute = PlanningCalendarRouteImport.update({
+  id: '/planning/calendar',
+  path: '/planning/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformGroupsIndexRoute = PlatformGroupsIndexRouteImport.update({
+  id: '/platform-groups/',
+  path: '/platform-groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformGroupsIdRoute = PlatformGroupsIdRouteImport.update({
+  id: '/platform-groups/$id',
+  path: '/platform-groups/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformGroupsNewRoute = PlatformGroupsNewRouteImport.update({
+  id: '/platform-groups/new',
+  path: '/platform-groups/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformsIndexRoute = PlatformsIndexRouteImport.update({
+  id: '/platforms/',
+  path: '/platforms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformsIdRoute = PlatformsIdRouteImport.update({
+  id: '/platforms/$id',
+  path: '/platforms/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformsNewRoute = PlatformsNewRouteImport.update({
+  id: '/platforms/new',
+  path: '/platforms/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortReservationsIndexRoute = PortReservationsIndexRouteImport.update({
+  id: '/port-reservations/',
+  path: '/port-reservations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PowerFeedsIndexRoute = PowerFeedsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PowerFeedsIdRoute = PowerFeedsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PowerFeedsNewRoute = PowerFeedsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PowerPanelsIndexRoute = PowerPanelsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PowerPanelsRoute,
+} as any)
+const PowerPanelsIdRoute = PowerPanelsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PowerPanelsRoute,
+} as any)
+const PowerPanelsNewRoute = PowerPanelsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PowerPanelsRoute,
+} as any)
+const PrefixListsIndexRoute = PrefixListsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PrefixListsRoute,
+} as any)
+const PrefixListsIdRoute = PrefixListsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PrefixListsRoute,
+} as any)
+const PrefixListsNewRoute = PrefixListsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PrefixListsRoute,
+} as any)
+const PrefixesIndexRoute = PrefixesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PrefixesRoute,
+} as any)
+const PrefixesIdRoute = PrefixesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PrefixesRoute,
+} as any)
+const PrefixesBulkEditRoute = PrefixesBulkEditRouteImport.update({
   id: '/bulk-edit',
   path: '/bulk-edit',
-  getParentRoute: () => VlansRoute,
+  getParentRoute: () => PrefixesRoute,
 } as any)
-const VlansIdRoute = VlansIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => VlansRoute,
-} as any)
-const VlanGroupsNewRoute = VlanGroupsNewRouteImport.update({
+const PrefixesNewRoute = PrefixesNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => VlanGroupsRoute,
+  getParentRoute: () => PrefixesRoute,
 } as any)
-const VlanGroupsIdRoute = VlanGroupsIdRouteImport.update({
+const ProviderNetworksIndexRoute = ProviderNetworksIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProviderNetworksRoute,
+} as any)
+const ProviderNetworksIdRoute = ProviderNetworksIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => VlanGroupsRoute,
+  getParentRoute: () => ProviderNetworksRoute,
 } as any)
-const VirtualizationSourcesIdRoute = VirtualizationSourcesIdRouteImport.update({
-  id: '/virtualization-sources/$id',
-  path: '/virtualization-sources/$id',
+const ProviderNetworksNewRoute = ProviderNetworksNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ProviderNetworksRoute,
+} as any)
+const ProvidersIndexRoute = ProvidersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProvidersRoute,
+} as any)
+const ProvidersIdRoute = ProvidersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ProvidersRoute,
+} as any)
+const ProvidersNewRoute = ProvidersNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ProvidersRoute,
+} as any)
+const PrtgIndexRoute = PrtgIndexRouteImport.update({
+  id: '/prtg/',
+  path: '/prtg/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualSwitchesIdRoute = VirtualSwitchesIdRouteImport.update({
-  id: '/virtual-switches/$id',
-  path: '/virtual-switches/$id',
+const RackRolesIndexRoute = RackRolesIndexRouteImport.update({
+  id: '/rack-roles/',
+  path: '/rack-roles/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualMachinesNewRoute = VirtualMachinesNewRouteImport.update({
-  id: '/virtual-machines/new',
-  path: '/virtual-machines/new',
+const RackRolesIdRoute = RackRolesIdRouteImport.update({
+  id: '/rack-roles/$id',
+  path: '/rack-roles/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualMachinesIdRoute = VirtualMachinesIdRouteImport.update({
-  id: '/virtual-machines/$id',
-  path: '/virtual-machines/$id',
+const RackRolesNewRoute = RackRolesNewRouteImport.update({
+  id: '/rack-roles/new',
+  path: '/rack-roles/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VirtualChassisNewRoute = VirtualChassisNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => VirtualChassisRoute,
+const RackTypesIndexRoute = RackTypesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RackTypesRoute,
 } as any)
-const VirtualChassisBulkEditRoute = VirtualChassisBulkEditRouteImport.update({
-  id: '/bulk-edit',
-  path: '/bulk-edit',
-  getParentRoute: () => VirtualChassisRoute,
-} as any)
-const VirtualChassisIdRoute = VirtualChassisIdRouteImport.update({
+const RackTypesIdRoute = RackTypesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => VirtualChassisRoute,
+  getParentRoute: () => RackTypesRoute,
 } as any)
-const UsersNewRoute = UsersNewRouteImport.update({
+const RackTypesNewRoute = RackTypesNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => UsersRoute,
+  getParentRoute: () => RackTypesRoute,
 } as any)
-const TunnelsNewRoute = TunnelsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => TunnelsRoute,
-} as any)
-const TunnelsIdRoute = TunnelsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => TunnelsRoute,
-} as any)
-const TunnelGroupsNewRoute = TunnelGroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => TunnelGroupsRoute,
-} as any)
-const TunnelGroupsIdRoute = TunnelGroupsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => TunnelGroupsRoute,
-} as any)
-const TenantsNewRoute = TenantsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => TenantsRoute,
-} as any)
-const TenantsIdRoute = TenantsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => TenantsRoute,
-} as any)
-const TagsNewRoute = TagsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => TagsRoute,
-} as any)
-const TagsIdRoute = TagsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => TagsRoute,
-} as any)
-const SupportContractsNewRoute = SupportContractsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => SupportContractsRoute,
-} as any)
-const SupportContractsIdRoute = SupportContractsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => SupportContractsRoute,
-} as any)
-const StatusesNewRoute = StatusesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => StatusesRoute,
-} as any)
-const StatusesIdRoute = StatusesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => StatusesRoute,
-} as any)
-const StaticRoutesNewRoute = StaticRoutesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => StaticRoutesRoute,
-} as any)
-const StaticRoutesIdRoute = StaticRoutesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => StaticRoutesRoute,
-} as any)
-const SitesNewRoute = SitesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => SitesRoute,
-} as any)
-const SitesBulkEditRoute = SitesBulkEditRouteImport.update({
-  id: '/bulk-edit',
-  path: '/bulk-edit',
-  getParentRoute: () => SitesRoute,
-} as any)
-const SitesIdRoute = SitesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => SitesRoute,
-} as any)
-const SilencesNewRoute = SilencesNewRouteImport.update({
-  id: '/silences/new',
-  path: '/silences/new',
+const RacksIndexRoute = RacksIndexRouteImport.update({
+  id: '/racks/',
+  path: '/racks/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsUpdatesRoute = SettingsUpdatesRouteImport.update({
-  id: '/updates',
-  path: '/updates',
+const RacksIdRoute = RacksIdRouteImport.update({
+  id: '/racks/$id',
+  path: '/racks/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RacksElevationsRoute = RacksElevationsRouteImport.update({
+  id: '/racks/elevations',
+  path: '/racks/elevations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RacksNewRoute = RacksNewRouteImport.update({
+  id: '/racks/new',
+  path: '/racks/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegionsIndexRoute = RegionsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RegionsRoute,
+} as any)
+const RegionsIdRoute = RegionsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RegionsRoute,
+} as any)
+const RegionsNewRoute = RegionsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RegionsRoute,
+} as any)
+const RirsIndexRoute = RirsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RirsRoute,
+} as any)
+const RirsIdRoute = RirsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RirsRoute,
+} as any)
+const RirsNewRoute = RirsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RirsRoute,
+} as any)
+const RoomsIndexRoute = RoomsIndexRouteImport.update({
+  id: '/rooms/',
+  path: '/rooms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoomsIdRoute = RoomsIdRouteImport.update({
+  id: '/rooms/$id',
+  path: '/rooms/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RoomsNewRoute = RoomsNewRouteImport.update({
+  id: '/rooms/new',
+  path: '/rooms/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RouteTargetsIndexRoute = RouteTargetsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RouteTargetsRoute,
+} as any)
+const RouteTargetsIdRoute = RouteTargetsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RouteTargetsRoute,
+} as any)
+const RouteTargetsNewRoute = RouteTargetsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RouteTargetsRoute,
+} as any)
+const RoutingKeychainsIndexRoute = RoutingKeychainsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
+const RoutingKeychainsIdRoute = RoutingKeychainsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
+const RoutingKeychainsNewRoute = RoutingKeychainsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
+const RoutingPoliciesIndexRoute = RoutingPoliciesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingPoliciesIdRoute = RoutingPoliciesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const RoutingPoliciesNewRoute = RoutingPoliciesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const ScriptsIndexRoute = ScriptsIndexRouteImport.update({
+  id: '/scripts/',
+  path: '/scripts/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScriptsIdRoute = ScriptsIdRouteImport.update({
+  id: '/scripts/$id',
+  path: '/scripts/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiceTemplatesIndexRoute = ServiceTemplatesIndexRouteImport.update({
+  id: '/service-templates/',
+  path: '/service-templates/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiceTemplatesIdRoute = ServiceTemplatesIdRouteImport.update({
+  id: '/service-templates/$id',
+  path: '/service-templates/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiceTemplatesNewRoute = ServiceTemplatesNewRouteImport.update({
+  id: '/service-templates/new',
+  path: '/service-templates/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServicesIndexRoute = ServicesIndexRouteImport.update({
+  id: '/services/',
+  path: '/services/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServicesIdRoute = ServicesIdRouteImport.update({
+  id: '/services/$id',
+  path: '/services/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsTopologyRoute = SettingsTopologyRouteImport.update({
-  id: '/topology',
-  path: '/topology',
+const SettingsAdminRoute = SettingsAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsTenantLdapRoute = SettingsTenantLdapRouteImport.update({
-  id: '/tenant-ldap',
-  path: '/tenant-ldap',
+const SettingsBackupsRoute = SettingsBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsTenantEmailRoute = SettingsTenantEmailRouteImport.update({
-  id: '/tenant-email',
-  path: '/tenant-email',
+const SettingsComponentsRoute = SettingsComponentsRouteImport.update({
+  id: '/components',
+  path: '/components',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsTenantRoute = SettingsTenantRouteImport.update({
-  id: '/tenant',
-  path: '/tenant',
+const SettingsConnectRoute = SettingsConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsTableDefaultsRoute = SettingsTableDefaultsRouteImport.update({
-  id: '/table-defaults',
-  path: '/table-defaults',
+const SettingsDeviceFieldsRoute = SettingsDeviceFieldsRouteImport.update({
+  id: '/device-fields',
+  path: '/device-fields',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSsoRoute = SettingsSsoRouteImport.update({
-  id: '/sso',
-  path: '/sso',
+const SettingsDirectoryRoute = SettingsDirectoryRouteImport.update({
+  id: '/directory',
+  path: '/directory',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSnmpSensorsRoute = SettingsSnmpSensorsRouteImport.update({
-  id: '/snmp-sensors',
-  path: '/snmp-sensors',
+const SettingsEmailRoute = SettingsEmailRouteImport.update({
+  id: '/email',
+  path: '/email',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSnmpRoute = SettingsSnmpRouteImport.update({
-  id: '/snmp',
-  path: '/snmp',
+const SettingsFloorplanRoute = SettingsFloorplanRouteImport.update({
+  id: '/floorplan',
+  path: '/floorplan',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSitesRoute = SettingsSitesRouteImport.update({
-  id: '/sites',
-  path: '/sites',
+const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSiteRoute = SettingsSiteRouteImport.update({
-  id: '/site',
-  path: '/site',
+const SettingsLdapRoute = SettingsLdapRouteImport.update({
+  id: '/ldap',
+  path: '/ldap',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSeparationRoute = SettingsSeparationRouteImport.update({
-  id: '/separation',
-  path: '/separation',
+const SettingsMapsRoute = SettingsMapsRouteImport.update({
+  id: '/maps',
+  path: '/maps',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
-  id: '/security',
-  path: '/security',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
-  id: '/preferences',
-  path: '/preferences',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsPluginsRoute = SettingsPluginsRouteImport.update({
-  id: '/plugins',
-  path: '/plugins',
+const SettingsMonitoringRoute = SettingsMonitoringRouteImport.update({
+  id: '/monitoring',
+  path: '/monitoring',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsMonitoringDefaultsRoute =
@@ -1848,1209 +2436,490 @@ const SettingsMonitoringDefaultsRoute =
     path: '/monitoring-defaults',
     getParentRoute: () => SettingsRoute,
   } as any)
-const SettingsMonitoringRoute = SettingsMonitoringRouteImport.update({
-  id: '/monitoring',
-  path: '/monitoring',
+const SettingsPluginsRoute = SettingsPluginsRouteImport.update({
+  id: '/plugins',
+  path: '/plugins',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsMapsRoute = SettingsMapsRouteImport.update({
-  id: '/maps',
-  path: '/maps',
+const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
+  id: '/preferences',
+  path: '/preferences',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsLdapRoute = SettingsLdapRouteImport.update({
-  id: '/ldap',
-  path: '/ldap',
+const SettingsSecurityRoute = SettingsSecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsIntegrationsRoute = SettingsIntegrationsRouteImport.update({
-  id: '/integrations',
-  path: '/integrations',
+const SettingsSeparationRoute = SettingsSeparationRouteImport.update({
+  id: '/separation',
+  path: '/separation',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsFloorplanRoute = SettingsFloorplanRouteImport.update({
-  id: '/floorplan',
-  path: '/floorplan',
+const SettingsSiteRoute = SettingsSiteRouteImport.update({
+  id: '/site',
+  path: '/site',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsEmailRoute = SettingsEmailRouteImport.update({
-  id: '/email',
-  path: '/email',
+const SettingsSitesRoute = SettingsSitesRouteImport.update({
+  id: '/sites',
+  path: '/sites',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsDirectoryRoute = SettingsDirectoryRouteImport.update({
-  id: '/directory',
-  path: '/directory',
+const SettingsSnmpRoute = SettingsSnmpRouteImport.update({
+  id: '/snmp',
+  path: '/snmp',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsDeviceFieldsRoute = SettingsDeviceFieldsRouteImport.update({
-  id: '/device-fields',
-  path: '/device-fields',
+const SettingsSnmpSensorsRoute = SettingsSnmpSensorsRouteImport.update({
+  id: '/snmp-sensors',
+  path: '/snmp-sensors',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsConnectRoute = SettingsConnectRouteImport.update({
-  id: '/connect',
-  path: '/connect',
+const SettingsSsoRoute = SettingsSsoRouteImport.update({
+  id: '/sso',
+  path: '/sso',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsComponentsRoute = SettingsComponentsRouteImport.update({
-  id: '/components',
-  path: '/components',
+const SettingsTableDefaultsRoute = SettingsTableDefaultsRouteImport.update({
+  id: '/table-defaults',
+  path: '/table-defaults',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsBackupsRoute = SettingsBackupsRouteImport.update({
-  id: '/backups',
-  path: '/backups',
+const SettingsTenantRoute = SettingsTenantRouteImport.update({
+  id: '/tenant',
+  path: '/tenant',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsAdminRoute = SettingsAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const SettingsTenantEmailRoute = SettingsTenantEmailRouteImport.update({
+  id: '/tenant-email',
+  path: '/tenant-email',
   getParentRoute: () => SettingsRoute,
 } as any)
-const ServicesIdRoute = ServicesIdRouteImport.update({
-  id: '/services/$id',
-  path: '/services/$id',
+const SettingsTenantLdapRoute = SettingsTenantLdapRouteImport.update({
+  id: '/tenant-ldap',
+  path: '/tenant-ldap',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsTopologyRoute = SettingsTopologyRouteImport.update({
+  id: '/topology',
+  path: '/topology',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsUpdatesRoute = SettingsUpdatesRouteImport.update({
+  id: '/updates',
+  path: '/updates',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SilencesNewRoute = SilencesNewRouteImport.update({
+  id: '/silences/new',
+  path: '/silences/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ServiceTemplatesNewRoute = ServiceTemplatesNewRouteImport.update({
-  id: '/service-templates/new',
-  path: '/service-templates/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ServiceTemplatesIdRoute = ServiceTemplatesIdRouteImport.update({
-  id: '/service-templates/$id',
-  path: '/service-templates/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ScriptsIdRoute = ScriptsIdRouteImport.update({
-  id: '/scripts/$id',
-  path: '/scripts/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RoutingPoliciesNewRoute = RoutingPoliciesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RoutingPoliciesRoute,
-} as any)
-const RoutingPoliciesIdRoute = RoutingPoliciesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RoutingPoliciesRoute,
-} as any)
-const RoutingKeychainsNewRoute = RoutingKeychainsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RoutingKeychainsRoute,
-} as any)
-const RoutingKeychainsIdRoute = RoutingKeychainsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RoutingKeychainsRoute,
-} as any)
-const RouteTargetsNewRoute = RouteTargetsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RouteTargetsRoute,
-} as any)
-const RouteTargetsIdRoute = RouteTargetsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RouteTargetsRoute,
-} as any)
-const RirsNewRoute = RirsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RirsRoute,
-} as any)
-const RirsIdRoute = RirsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RirsRoute,
-} as any)
-const RegionsNewRoute = RegionsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RegionsRoute,
-} as any)
-const RegionsIdRoute = RegionsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RegionsRoute,
-} as any)
-const RacksNewRoute = RacksNewRouteImport.update({
-  id: '/racks/new',
-  path: '/racks/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RacksElevationsRoute = RacksElevationsRouteImport.update({
-  id: '/racks/elevations',
-  path: '/racks/elevations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RacksIdRoute = RacksIdRouteImport.update({
-  id: '/racks/$id',
-  path: '/racks/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RackTypesNewRoute = RackTypesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => RackTypesRoute,
-} as any)
-const RackTypesIdRoute = RackTypesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => RackTypesRoute,
-} as any)
-const RackRolesNewRoute = RackRolesNewRouteImport.update({
-  id: '/rack-roles/new',
-  path: '/rack-roles/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RackRolesIdRoute = RackRolesIdRouteImport.update({
-  id: '/rack-roles/$id',
-  path: '/rack-roles/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProvidersNewRoute = ProvidersNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ProvidersRoute,
-} as any)
-const ProvidersIdRoute = ProvidersIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ProvidersRoute,
-} as any)
-const ProviderNetworksNewRoute = ProviderNetworksNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ProviderNetworksRoute,
-} as any)
-const ProviderNetworksIdRoute = ProviderNetworksIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ProviderNetworksRoute,
-} as any)
-const PrefixesNewRoute = PrefixesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PrefixesRoute,
-} as any)
-const PrefixesBulkEditRoute = PrefixesBulkEditRouteImport.update({
-  id: '/bulk-edit',
-  path: '/bulk-edit',
-  getParentRoute: () => PrefixesRoute,
-} as any)
-const PrefixesIdRoute = PrefixesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PrefixesRoute,
-} as any)
-const PrefixListsNewRoute = PrefixListsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PrefixListsRoute,
-} as any)
-const PrefixListsIdRoute = PrefixListsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PrefixListsRoute,
-} as any)
-const PowerPanelsNewRoute = PowerPanelsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PowerPanelsRoute,
-} as any)
-const PowerPanelsIdRoute = PowerPanelsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PowerPanelsRoute,
-} as any)
-const PowerFeedsNewRoute = PowerFeedsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PowerFeedsRoute,
-} as any)
-const PowerFeedsIdRoute = PowerFeedsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PowerFeedsRoute,
-} as any)
-const PlatformsNewRoute = PlatformsNewRouteImport.update({
-  id: '/platforms/new',
-  path: '/platforms/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlatformsIdRoute = PlatformsIdRouteImport.update({
-  id: '/platforms/$id',
-  path: '/platforms/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlatformGroupsNewRoute = PlatformGroupsNewRouteImport.update({
-  id: '/platform-groups/new',
-  path: '/platform-groups/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlatformGroupsIdRoute = PlatformGroupsIdRouteImport.update({
-  id: '/platform-groups/$id',
-  path: '/platform-groups/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlanningCalendarRoute = PlanningCalendarRouteImport.update({
-  id: '/planning/calendar',
-  path: '/planning/calendar',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PlanningBoardIdRoute = PlanningBoardIdRouteImport.update({
-  id: '/planning/$boardId',
-  path: '/planning/$boardId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PermissionsNewRoute = PermissionsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => PermissionsRoute,
-} as any)
-const OspfAreasNewRoute = OspfAreasNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => OspfAreasRoute,
-} as any)
-const OspfAreasIdRoute = OspfAreasIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => OspfAreasRoute,
-} as any)
-const NatRulesIdRoute = NatRulesIdRouteImport.update({
-  id: '/nat-rules/$id',
-  path: '/nat-rules/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ModuleTypesNewRoute = ModuleTypesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ModuleTypesRoute,
-} as any)
-const ModuleTypesIdRoute = ModuleTypesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ModuleTypesRoute,
-} as any)
-const ManufacturersNewRoute = ManufacturersNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ManufacturersRoute,
-} as any)
-const ManufacturersIdRoute = ManufacturersIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ManufacturersRoute,
-} as any)
-const MaintenanceNewRoute = MaintenanceNewRouteImport.update({
-  id: '/maintenance/new',
-  path: '/maintenance/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MacsMacRoute = MacsMacRouteImport.update({
-  id: '/$mac',
-  path: '/$mac',
-  getParentRoute: () => MacsRoute,
-} as any)
-const LocationsNewRoute = LocationsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => LocationsRoute,
-} as any)
-const LocationsIdRoute = LocationsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => LocationsRoute,
-} as any)
-const L2vpnsNewRoute = L2vpnsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => L2vpnsRoute,
-} as any)
-const L2vpnsIdRoute = L2vpnsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => L2vpnsRoute,
-} as any)
-const JobsIdRoute = JobsIdRouteImport.update({
-  id: '/jobs/$id',
-  path: '/jobs/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpsecProfilesNewRoute = IpsecProfilesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => IpsecProfilesRoute,
-} as any)
-const IpsecProfilesIdRoute = IpsecProfilesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => IpsecProfilesRoute,
-} as any)
-const IpsNewRoute = IpsNewRouteImport.update({
-  id: '/ips/new',
-  path: '/ips/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpsBulkEditRoute = IpsBulkEditRouteImport.update({
-  id: '/ips/bulk-edit',
-  path: '/ips/bulk-edit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpsIdRoute = IpsIdRouteImport.update({
-  id: '/ips/$id',
-  path: '/ips/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const IpRolesNewRoute = IpRolesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => IpRolesRoute,
-} as any)
-const IpRolesIdRoute = IpRolesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => IpRolesRoute,
-} as any)
-const IpRangesNewRoute = IpRangesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => IpRangesRoute,
-} as any)
-const IpRangesIdRoute = IpRangesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => IpRangesRoute,
-} as any)
-const InterfacesNewRoute = InterfacesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => InterfacesRoute,
-} as any)
-const InterfacesBulkRoute = InterfacesBulkRouteImport.update({
-  id: '/bulk',
-  path: '/bulk',
-  getParentRoute: () => InterfacesRoute,
-} as any)
-const InterfacesIdRoute = InterfacesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => InterfacesRoute,
-} as any)
-const ImportNetboxRoute = ImportNetboxRouteImport.update({
-  id: '/netbox',
-  path: '/netbox',
-  getParentRoute: () => ImportRoute,
-} as any)
-const GroupsNewRoute = GroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => GroupsRoute,
-} as any)
-const FloorplansNewRoute = FloorplansNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => FloorplansRoute,
-} as any)
-const FloorplansIdRoute = FloorplansIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => FloorplansRoute,
-} as any)
-const FloorTileTypesNewRoute = FloorTileTypesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => FloorTileTypesRoute,
-} as any)
-const FloorTileTypesIdRoute = FloorTileTypesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => FloorTileTypesRoute,
-} as any)
-const FhrpGroupsNewRoute = FhrpGroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => FhrpGroupsRoute,
-} as any)
-const FhrpGroupsIdRoute = FhrpGroupsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => FhrpGroupsRoute,
-} as any)
-const ExportTemplatesNewRoute = ExportTemplatesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ExportTemplatesRoute,
-} as any)
-const ExportTemplatesIdRoute = ExportTemplatesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ExportTemplatesRoute,
-} as any)
-const EthernetSegmentsNewRoute = EthernetSegmentsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => EthernetSegmentsRoute,
-} as any)
-const EthernetSegmentsIdRoute = EthernetSegmentsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => EthernetSegmentsRoute,
-} as any)
-const DnsZonesIdRoute = DnsZonesIdRouteImport.update({
-  id: '/dns-zones/$id',
-  path: '/dns-zones/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DnsRecordsIdRoute = DnsRecordsIdRouteImport.update({
-  id: '/dns-records/$id',
-  path: '/dns-records/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DnsNamesNameRoute = DnsNamesNameRouteImport.update({
-  id: '/dns-names/$name',
-  path: '/dns-names/$name',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DevicesNewRoute = DevicesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => DevicesRoute,
-} as any)
-const DevicesIdRoute = DevicesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => DevicesRoute,
-} as any)
-const DeviceTypesNewRoute = DeviceTypesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => DeviceTypesRoute,
-} as any)
-const DeviceTypesIdRoute = DeviceTypesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => DeviceTypesRoute,
-} as any)
-const DeviceRolesNewRoute = DeviceRolesNewRouteImport.update({
-  id: '/device-roles/new',
-  path: '/device-roles/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DeviceRolesIdRoute = DeviceRolesIdRouteImport.update({
-  id: '/device-roles/$id',
-  path: '/device-roles/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardsIdRoute = DashboardsIdRouteImport.update({
-  id: '/dashboards/$id',
-  path: '/dashboards/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CustomFieldsNewRoute = CustomFieldsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CustomFieldsRoute,
-} as any)
-const CustomFieldsIdRoute = CustomFieldsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CustomFieldsRoute,
-} as any)
-const CustomFieldGroupsNewRoute = CustomFieldGroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CustomFieldGroupsRoute,
-} as any)
-const CustomFieldGroupsIdRoute = CustomFieldGroupsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CustomFieldGroupsRoute,
-} as any)
-const ContactsNewRoute = ContactsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ContactsRoute,
-} as any)
-const ContactsIdRoute = ContactsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ContactsRoute,
-} as any)
-const ContactRolesNewRoute = ContactRolesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ContactRolesRoute,
-} as any)
-const ContactRolesIdRoute = ContactRolesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ContactRolesRoute,
-} as any)
-const ContactGroupsNewRoute = ContactGroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ContactGroupsRoute,
-} as any)
-const ContactGroupsIdRoute = ContactGroupsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ContactGroupsRoute,
-} as any)
-const ConfigContextsNewRoute = ConfigContextsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ConfigContextsRoute,
-} as any)
-const ConfigContextsIdRoute = ConfigContextsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ConfigContextsRoute,
-} as any)
-const ConfigBundlesNewRoute = ConfigBundlesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => ConfigBundlesRoute,
-} as any)
-const ConfigBundlesIdRoute = ConfigBundlesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => ConfigBundlesRoute,
-} as any)
-const ComplianceRulesNewRoute = ComplianceRulesNewRouteImport.update({
-  id: '/compliance-rules/new',
-  path: '/compliance-rules/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ComplianceRulesIdRoute = ComplianceRulesIdRouteImport.update({
-  id: '/compliance-rules/$id',
-  path: '/compliance-rules/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CommunityListsNewRoute = CommunityListsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CommunityListsRoute,
-} as any)
-const CommunityListsIdRoute = CommunityListsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CommunityListsRoute,
-} as any)
-const CommunitiesNewRoute = CommunitiesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CommunitiesRoute,
-} as any)
-const CommunitiesIdRoute = CommunitiesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CommunitiesRoute,
-} as any)
-const ClustersNewRoute = ClustersNewRouteImport.update({
-  id: '/clusters/new',
-  path: '/clusters/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClustersIdRoute = ClustersIdRouteImport.update({
-  id: '/clusters/$id',
-  path: '/clusters/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClusterTypesNewRoute = ClusterTypesNewRouteImport.update({
-  id: '/cluster-types/new',
-  path: '/cluster-types/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClusterTypesIdRoute = ClusterTypesIdRouteImport.update({
-  id: '/cluster-types/$id',
-  path: '/cluster-types/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClusterGroupsNewRoute = ClusterGroupsNewRouteImport.update({
-  id: '/cluster-groups/new',
-  path: '/cluster-groups/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClusterGroupsIdRoute = ClusterGroupsIdRouteImport.update({
-  id: '/cluster-groups/$id',
-  path: '/cluster-groups/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CircuitsNewRoute = CircuitsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CircuitsRoute,
-} as any)
-const CircuitsIdRoute = CircuitsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CircuitsRoute,
-} as any)
-const CircuitTypesNewRoute = CircuitTypesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CircuitTypesRoute,
-} as any)
-const CircuitTypesIdRoute = CircuitTypesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CircuitTypesRoute,
-} as any)
-const ChannelsNewRoute = ChannelsNewRouteImport.update({
-  id: '/channels/new',
-  path: '/channels/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangeLogIdRoute = ChangeLogIdRouteImport.update({
-  id: '/change-log_/$id',
-  path: '/change-log/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CertificatesIdRoute = CertificatesIdRouteImport.update({
-  id: '/certificates/$id',
-  path: '/certificates/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CertificateRequestsIdRoute = CertificateRequestsIdRouteImport.update({
-  id: '/certificate-requests/$id',
-  path: '/certificate-requests/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CablesNewRoute = CablesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => CablesRoute,
-} as any)
-const CablesIdRoute = CablesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => CablesRoute,
-} as any)
-const CabinetsNewRoute = CabinetsNewRouteImport.update({
-  id: '/cabinets/new',
-  path: '/cabinets/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CabinetsIdRoute = CabinetsIdRouteImport.update({
-  id: '/cabinets/$id',
-  path: '/cabinets/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CabinetTypesNewRoute = CabinetTypesNewRouteImport.update({
-  id: '/cabinet-types/new',
-  path: '/cabinet-types/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CabinetTypesIdRoute = CabinetTypesIdRouteImport.update({
-  id: '/cabinet-types/$id',
-  path: '/cabinet-types/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CabinetRolesNewRoute = CabinetRolesNewRouteImport.update({
-  id: '/cabinet-roles/new',
-  path: '/cabinet-roles/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CabinetRolesIdRoute = CabinetRolesIdRouteImport.update({
-  id: '/cabinet-roles/$id',
-  path: '/cabinet-roles/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BgpSessionsNewRoute = BgpSessionsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => BgpSessionsRoute,
-} as any)
-const BgpSessionsIdRoute = BgpSessionsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => BgpSessionsRoute,
-} as any)
-const BgpPeerGroupsNewRoute = BgpPeerGroupsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => BgpPeerGroupsRoute,
-} as any)
-const BgpPeerGroupsIdRoute = BgpPeerGroupsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => BgpPeerGroupsRoute,
-} as any)
-const BfdProfilesNewRoute = BfdProfilesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => BfdProfilesRoute,
-} as any)
-const BfdProfilesIdRoute = BfdProfilesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => BfdProfilesRoute,
-} as any)
-const AutomationTargetsSetupRoute = AutomationTargetsSetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => AutomationTargetsRoute,
-} as any)
-const AutomationTargetsNewRoute = AutomationTargetsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AutomationTargetsRoute,
-} as any)
-const AutomationTargetsIdRoute = AutomationTargetsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AutomationTargetsRoute,
-} as any)
-const AuditLogIdRoute = AuditLogIdRouteImport.update({
-  id: '/audit-log_/$id',
-  path: '/audit-log/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AsnsNewRoute = AsnsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AsnsRoute,
-} as any)
-const AsnsIdRoute = AsnsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AsnsRoute,
-} as any)
-const AsPathListsNewRoute = AsPathListsNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AsPathListsRoute,
-} as any)
-const AsPathListsIdRoute = AsPathListsIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AsPathListsRoute,
-} as any)
-const AlertRulesNewRoute = AlertRulesNewRouteImport.update({
-  id: '/alert-rules/new',
-  path: '/alert-rules/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AggregatesNewRoute = AggregatesNewRouteImport.update({
-  id: '/new',
-  path: '/new',
-  getParentRoute: () => AggregatesRoute,
-} as any)
-const AggregatesIdRoute = AggregatesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AggregatesRoute,
-} as any)
-const ZonesIdEditRoute = ZonesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ZonesRoute,
-} as any)
-const WirelessLansIdEditRoute = WirelessLansIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => WirelessLansRoute,
-} as any)
-const WirelessLanGroupsIdEditRoute = WirelessLanGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => WirelessLanGroupsRoute,
-} as any)
-const WebhooksIdEditRoute = WebhooksIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => WebhooksRoute,
-} as any)
-const VrfsIdEditRoute = VrfsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => VrfsRoute,
-} as any)
-const VmGroupsIdEditRoute = VmGroupsIdEditRouteImport.update({
-  id: '/vm-groups/$id_/edit',
-  path: '/vm-groups/$id/edit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VlansIdEditRoute = VlansIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => VlansRoute,
-} as any)
-const VlanGroupsIdEditRoute = VlanGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => VlanGroupsRoute,
-} as any)
-const VirtualMachinesIdEditRoute = VirtualMachinesIdEditRouteImport.update({
-  id: '/virtual-machines/$id_/edit',
-  path: '/virtual-machines/$id/edit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VirtualChassisIdEditRoute = VirtualChassisIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => VirtualChassisRoute,
-} as any)
-const UsersIdEditRoute = UsersIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => UsersRoute,
-} as any)
-const TunnelsIdEditRoute = TunnelsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => TunnelsRoute,
-} as any)
-const TunnelGroupsIdEditRoute = TunnelGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => TunnelGroupsRoute,
-} as any)
-const TenantsIdEditRoute = TenantsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => TenantsRoute,
-} as any)
-const TagsIdEditRoute = TagsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => TagsRoute,
-} as any)
-const SupportContractsIdEditRoute = SupportContractsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => SupportContractsRoute,
-} as any)
-const StatusesIdEditRoute = StatusesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => StatusesRoute,
-} as any)
-const StaticRoutesIdEditRoute = StaticRoutesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => StaticRoutesRoute,
-} as any)
-const SitesIdEditRoute = SitesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
+const SitesIndexRoute = SitesIndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => SitesRoute,
 } as any)
-const SilencesIdEditRoute = SilencesIdEditRouteImport.update({
-  id: '/silences/$id_/edit',
-  path: '/silences/$id/edit',
+const SitesIdRoute = SitesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SitesRoute,
+} as any)
+const SitesBulkEditRoute = SitesBulkEditRouteImport.update({
+  id: '/bulk-edit',
+  path: '/bulk-edit',
+  getParentRoute: () => SitesRoute,
+} as any)
+const SitesNewRoute = SitesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => SitesRoute,
+} as any)
+const StaticRoutesIndexRoute = StaticRoutesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
+const StaticRoutesIdRoute = StaticRoutesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
+const StaticRoutesNewRoute = StaticRoutesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
+const StatusesIndexRoute = StatusesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StatusesRoute,
+} as any)
+const StatusesIdRoute = StatusesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => StatusesRoute,
+} as any)
+const StatusesNewRoute = StatusesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => StatusesRoute,
+} as any)
+const SupportContractsIndexRoute = SupportContractsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SupportContractsRoute,
+} as any)
+const SupportContractsIdRoute = SupportContractsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SupportContractsRoute,
+} as any)
+const SupportContractsNewRoute = SupportContractsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => SupportContractsRoute,
+} as any)
+const TagsIndexRoute = TagsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TagsRoute,
+} as any)
+const TagsIdRoute = TagsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TagsRoute,
+} as any)
+const TagsNewRoute = TagsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => TagsRoute,
+} as any)
+const TenantsIndexRoute = TenantsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TenantsRoute,
+} as any)
+const TenantsIdRoute = TenantsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TenantsRoute,
+} as any)
+const TenantsNewRoute = TenantsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => TenantsRoute,
+} as any)
+const TopologyIndexRoute = TopologyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TopologyRoute,
+} as any)
+const TunnelGroupsIndexRoute = TunnelGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TunnelGroupsRoute,
+} as any)
+const TunnelGroupsIdRoute = TunnelGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TunnelGroupsRoute,
+} as any)
+const TunnelGroupsNewRoute = TunnelGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => TunnelGroupsRoute,
+} as any)
+const TunnelsIndexRoute = TunnelsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TunnelsRoute,
+} as any)
+const TunnelsIdRoute = TunnelsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => TunnelsRoute,
+} as any)
+const TunnelsNewRoute = TunnelsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => TunnelsRoute,
+} as any)
+const UsersIndexRoute = UsersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => UsersRoute,
+} as any)
+const UsersNewRoute = UsersNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => UsersRoute,
+} as any)
+const VirtualChassisIndexRoute = VirtualChassisIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualChassisIdRoute = VirtualChassisIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualChassisBulkEditRoute = VirtualChassisBulkEditRouteImport.update({
+  id: '/bulk-edit',
+  path: '/bulk-edit',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualChassisNewRoute = VirtualChassisNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualMachinesIndexRoute = VirtualMachinesIndexRouteImport.update({
+  id: '/virtual-machines/',
+  path: '/virtual-machines/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ServiceTemplatesIdEditRoute = ServiceTemplatesIdEditRouteImport.update({
-  id: '/service-templates/$id_/edit',
-  path: '/service-templates/$id/edit',
+const VirtualMachinesIdRoute = VirtualMachinesIdRouteImport.update({
+  id: '/virtual-machines/$id',
+  path: '/virtual-machines/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScriptsRunsRunIdRoute = ScriptsRunsRunIdRouteImport.update({
-  id: '/scripts/runs/$runId',
-  path: '/scripts/runs/$runId',
+const VirtualMachinesNewRoute = VirtualMachinesNewRouteImport.update({
+  id: '/virtual-machines/new',
+  path: '/virtual-machines/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RoutingPoliciesIdEditRoute = RoutingPoliciesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RoutingPoliciesRoute,
-} as any)
-const RoutingKeychainsIdEditRoute = RoutingKeychainsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RoutingKeychainsRoute,
-} as any)
-const RouteTargetsIdEditRoute = RouteTargetsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RouteTargetsRoute,
-} as any)
-const RirsIdEditRoute = RirsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RirsRoute,
-} as any)
-const RegionsIdEditRoute = RegionsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RegionsRoute,
-} as any)
-const RacksIdEditRoute = RacksIdEditRouteImport.update({
-  id: '/racks/$id_/edit',
-  path: '/racks/$id/edit',
+const VirtualSwitchesIndexRoute = VirtualSwitchesIndexRouteImport.update({
+  id: '/virtual-switches/',
+  path: '/virtual-switches/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RackTypesIdEditRoute = RackTypesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => RackTypesRoute,
-} as any)
-const RackRolesIdEditRoute = RackRolesIdEditRouteImport.update({
-  id: '/rack-roles/$id_/edit',
-  path: '/rack-roles/$id/edit',
+const VirtualSwitchesIdRoute = VirtualSwitchesIdRouteImport.update({
+  id: '/virtual-switches/$id',
+  path: '/virtual-switches/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProvidersIdEditRoute = ProvidersIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ProvidersRoute,
-} as any)
-const ProviderNetworksIdEditRoute = ProviderNetworksIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ProviderNetworksRoute,
-} as any)
-const PrefixesIdEditRoute = PrefixesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => PrefixesRoute,
-} as any)
-const PrefixListsIdEditRoute = PrefixListsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => PrefixListsRoute,
-} as any)
-const PowerPanelsIdEditRoute = PowerPanelsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => PowerPanelsRoute,
-} as any)
-const PowerFeedsIdEditRoute = PowerFeedsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => PowerFeedsRoute,
-} as any)
-const PlatformsIdEditRoute = PlatformsIdEditRouteImport.update({
-  id: '/platforms/$id_/edit',
-  path: '/platforms/$id/edit',
+const VirtualTopologyIndexRoute = VirtualTopologyIndexRouteImport.update({
+  id: '/virtual-topology/',
+  path: '/virtual-topology/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlatformGroupsIdEditRoute = PlatformGroupsIdEditRouteImport.update({
-  id: '/platform-groups/$id_/edit',
-  path: '/platform-groups/$id/edit',
+const VirtualizationSourcesIndexRoute =
+  VirtualizationSourcesIndexRouteImport.update({
+    id: '/virtualization-sources/',
+    path: '/virtualization-sources/',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const VirtualizationSourcesIdRoute = VirtualizationSourcesIdRouteImport.update({
+  id: '/virtualization-sources/$id',
+  path: '/virtualization-sources/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PermissionsIdEditRoute = PermissionsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => PermissionsRoute,
+const VlanGroupsIndexRoute = VlanGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VlanGroupsRoute,
 } as any)
-const PSlugSplatRoute = PSlugSplatRouteImport.update({
-  id: '/p/$slug/$',
-  path: '/p/$slug/$',
+const VlanGroupsIdRoute = VlanGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => VlanGroupsRoute,
+} as any)
+const VlanGroupsNewRoute = VlanGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => VlanGroupsRoute,
+} as any)
+const VlansIndexRoute = VlansIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VlansRoute,
+} as any)
+const VlansIdRoute = VlansIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => VlansRoute,
+} as any)
+const VlansBulkEditRoute = VlansBulkEditRouteImport.update({
+  id: '/bulk-edit',
+  path: '/bulk-edit',
+  getParentRoute: () => VlansRoute,
+} as any)
+const VlansNewRoute = VlansNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => VlansRoute,
+} as any)
+const VmGroupsIndexRoute = VmGroupsIndexRouteImport.update({
+  id: '/vm-groups/',
+  path: '/vm-groups/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OspfAreasIdEditRoute = OspfAreasIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => OspfAreasRoute,
-} as any)
-const MonitoringSlaNewRoute = MonitoringSlaNewRouteImport.update({
-  id: '/monitoring_/sla/new',
-  path: '/monitoring/sla/new',
+const VmGroupsIdRoute = VmGroupsIdRouteImport.update({
+  id: '/vm-groups/$id',
+  path: '/vm-groups/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MonitoringSlaIdRoute = MonitoringSlaIdRouteImport.update({
-  id: '/monitoring_/sla/$id',
-  path: '/monitoring/sla/$id',
+const VmGroupsNewRoute = VmGroupsNewRouteImport.update({
+  id: '/vm-groups/new',
+  path: '/vm-groups/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MonitoringChecksIdRoute = MonitoringChecksIdRouteImport.update({
-  id: '/monitoring_/checks/$id',
-  path: '/monitoring/checks/$id',
+const VrfsIndexRoute = VrfsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => VrfsRoute,
+} as any)
+const VrfsIdRoute = VrfsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => VrfsRoute,
+} as any)
+const VrfsNewRoute = VrfsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => VrfsRoute,
+} as any)
+const VtepsIndexRoute = VtepsIndexRouteImport.update({
+  id: '/vteps/',
+  path: '/vteps/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ModuleTypesIdEditRoute = ModuleTypesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ModuleTypesRoute,
-} as any)
-const ManufacturersIdEditRoute = ManufacturersIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ManufacturersRoute,
-} as any)
-const MaintenanceIdEditRoute = MaintenanceIdEditRouteImport.update({
-  id: '/maintenance/$id_/edit',
-  path: '/maintenance/$id/edit',
+const WatchedEndpointsIndexRoute = WatchedEndpointsIndexRouteImport.update({
+  id: '/watched-endpoints/',
+  path: '/watched-endpoints/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LocationsIdEditRoute = LocationsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => LocationsRoute,
+const WebhooksIndexRoute = WebhooksIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WebhooksRoute,
 } as any)
-const L2vpnsIdEditRoute = L2vpnsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => L2vpnsRoute,
+const WebhooksNewRoute = WebhooksNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WebhooksRoute,
 } as any)
-const IpsecProfilesIdEditRoute = IpsecProfilesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => IpsecProfilesRoute,
-} as any)
-const IpsIdEditRoute = IpsIdEditRouteImport.update({
-  id: '/ips/$id_/edit',
-  path: '/ips/$id/edit',
+const WindowsServersIndexRoute = WindowsServersIndexRouteImport.update({
+  id: '/windows-servers/',
+  path: '/windows-servers/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IpRolesIdEditRoute = IpRolesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => IpRolesRoute,
-} as any)
-const IpRangesIdEditRoute = IpRangesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => IpRangesRoute,
-} as any)
-const InterfacesIdEditRoute = InterfacesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => InterfacesRoute,
-} as any)
-const GroupsIdEditRoute = GroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => GroupsRoute,
-} as any)
-const FloorTileTypesIdEditRoute = FloorTileTypesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => FloorTileTypesRoute,
-} as any)
-const FhrpGroupsIdEditRoute = FhrpGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => FhrpGroupsRoute,
-} as any)
-const ExportTemplatesIdEditRoute = ExportTemplatesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ExportTemplatesRoute,
-} as any)
-const EthernetSegmentsIdEditRoute = EthernetSegmentsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => EthernetSegmentsRoute,
-} as any)
-const DevicesIdEditRoute = DevicesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => DevicesRoute,
-} as any)
-const DevicesIdComplianceRoute = DevicesIdComplianceRouteImport.update({
-  id: '/$id_/compliance',
-  path: '/$id/compliance',
-  getParentRoute: () => DevicesRoute,
-} as any)
-const DeviceTypesIdEditRoute = DeviceTypesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => DeviceTypesRoute,
-} as any)
-const DeviceRolesIdEditRoute = DeviceRolesIdEditRouteImport.update({
-  id: '/device-roles/$id_/edit',
-  path: '/device-roles/$id/edit',
+const WindowsServersIdRoute = WindowsServersIdRouteImport.update({
+  id: '/windows-servers/$id',
+  path: '/windows-servers/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CustomFieldsIdEditRoute = CustomFieldsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => CustomFieldsRoute,
+const WirelessLanGroupsIndexRoute = WirelessLanGroupsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WirelessLanGroupsRoute,
 } as any)
-const CustomFieldGroupsIdEditRoute = CustomFieldGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => CustomFieldGroupsRoute,
+const WirelessLanGroupsIdRoute = WirelessLanGroupsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WirelessLanGroupsRoute,
 } as any)
-const ContactsIdEditRoute = ContactsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ContactsRoute,
+const WirelessLanGroupsNewRoute = WirelessLanGroupsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WirelessLanGroupsRoute,
 } as any)
-const ContactRolesIdEditRoute = ContactRolesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ContactRolesRoute,
+const WirelessLansIndexRoute = WirelessLansIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WirelessLansRoute,
 } as any)
-const ContactGroupsIdEditRoute = ContactGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ContactGroupsRoute,
+const WirelessLansIdRoute = WirelessLansIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WirelessLansRoute,
 } as any)
-const ConfigContextsIdEditRoute = ConfigContextsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ConfigContextsRoute,
+const WirelessLansNewRoute = WirelessLansNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WirelessLansRoute,
 } as any)
-const ConfigBundlesIdEditRoute = ConfigBundlesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => ConfigBundlesRoute,
-} as any)
-const ComplianceRulesIdEditRoute = ComplianceRulesIdEditRouteImport.update({
-  id: '/compliance-rules/$id_/edit',
-  path: '/compliance-rules/$id/edit',
+const ZabbixIndexRoute = ZabbixIndexRouteImport.update({
+  id: '/zabbix/',
+  path: '/zabbix/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CommunityListsIdEditRoute = CommunityListsIdEditRouteImport.update({
+const ZonesIndexRoute = ZonesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ZonesRoute,
+} as any)
+const ZonesIdRoute = ZonesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ZonesRoute,
+} as any)
+const ZonesNewRoute = ZonesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => ZonesRoute,
+} as any)
+const AggregatesIdEditRoute = AggregatesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => CommunityListsRoute,
+  getParentRoute: () => AggregatesRoute,
 } as any)
-const CommunitiesIdEditRoute = CommunitiesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => CommunitiesRoute,
-} as any)
-const ClustersIdEditRoute = ClustersIdEditRouteImport.update({
-  id: '/clusters/$id_/edit',
-  path: '/clusters/$id/edit',
+const AlertRulesIdEditRoute = AlertRulesIdEditRouteImport.update({
+  id: '/alert-rules/$id_/edit',
+  path: '/alert-rules/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClusterTypesIdEditRoute = ClusterTypesIdEditRouteImport.update({
-  id: '/cluster-types/$id_/edit',
-  path: '/cluster-types/$id/edit',
+const ApplicationGroupsIdEditRoute = ApplicationGroupsIdEditRouteImport.update({
+  id: '/application-groups/$id_/edit',
+  path: '/application-groups/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClusterGroupsIdEditRoute = ClusterGroupsIdEditRouteImport.update({
-  id: '/cluster-groups/$id_/edit',
-  path: '/cluster-groups/$id/edit',
+const ApplicationsIdEditRoute = ApplicationsIdEditRouteImport.update({
+  id: '/applications/$id_/edit',
+  path: '/applications/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CircuitsIdEditRoute = CircuitsIdEditRouteImport.update({
+const AreaTypesIdEditRoute = AreaTypesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => CircuitsRoute,
+  getParentRoute: () => AreaTypesRoute,
 } as any)
-const CircuitTypesIdEditRoute = CircuitTypesIdEditRouteImport.update({
+const AsPathListsIdEditRoute = AsPathListsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => CircuitTypesRoute,
+  getParentRoute: () => AsPathListsRoute,
 } as any)
-const ChannelsIdEditRoute = ChannelsIdEditRouteImport.update({
-  id: '/channels/$id_/edit',
-  path: '/channels/$id/edit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CablesIdEditRoute = CablesIdEditRouteImport.update({
+const AsnsIdEditRoute = AsnsIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => CablesRoute,
+  getParentRoute: () => AsnsRoute,
 } as any)
-const CabinetsIdEditRoute = CabinetsIdEditRouteImport.update({
-  id: '/cabinets/$id_/edit',
-  path: '/cabinets/$id/edit',
+const AutomationTargetsIdEditRoute = AutomationTargetsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => AutomationTargetsRoute,
+} as any)
+const BfdProfilesIdEditRoute = BfdProfilesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BfdProfilesRoute,
+} as any)
+const BgpPeerGroupsIdEditRoute = BgpPeerGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BgpPeerGroupsRoute,
+} as any)
+const BgpSessionsIdEditRoute = BgpSessionsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => BgpSessionsRoute,
+} as any)
+const CabinetRolesIdEditRoute = CabinetRolesIdEditRouteImport.update({
+  id: '/cabinet-roles/$id_/edit',
+  path: '/cabinet-roles/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CabinetTypesIdEditRoute = CabinetTypesIdEditRouteImport.update({
@@ -3058,55 +2927,460 @@ const CabinetTypesIdEditRoute = CabinetTypesIdEditRouteImport.update({
   path: '/cabinet-types/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CabinetRolesIdEditRoute = CabinetRolesIdEditRouteImport.update({
-  id: '/cabinet-roles/$id_/edit',
-  path: '/cabinet-roles/$id/edit',
+const CabinetsIdEditRoute = CabinetsIdEditRouteImport.update({
+  id: '/cabinets/$id_/edit',
+  path: '/cabinets/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BgpSessionsIdEditRoute = BgpSessionsIdEditRouteImport.update({
+const CablesIdEditRoute = CablesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => BgpSessionsRoute,
+  getParentRoute: () => CablesRoute,
 } as any)
-const BgpPeerGroupsIdEditRoute = BgpPeerGroupsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => BgpPeerGroupsRoute,
-} as any)
-const BfdProfilesIdEditRoute = BfdProfilesIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => BfdProfilesRoute,
-} as any)
-const AutomationTargetsIdEditRoute = AutomationTargetsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => AutomationTargetsRoute,
-} as any)
-const AsnsIdEditRoute = AsnsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => AsnsRoute,
-} as any)
-const AsPathListsIdEditRoute = AsPathListsIdEditRouteImport.update({
-  id: '/$id_/edit',
-  path: '/$id/edit',
-  getParentRoute: () => AsPathListsRoute,
-} as any)
-const AlertRulesIdEditRoute = AlertRulesIdEditRouteImport.update({
-  id: '/alert-rules/$id_/edit',
-  path: '/alert-rules/$id/edit',
+const ChannelsIdEditRoute = ChannelsIdEditRouteImport.update({
+  id: '/channels/$id_/edit',
+  path: '/channels/$id/edit',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AggregatesIdEditRoute = AggregatesIdEditRouteImport.update({
+const CircuitTypesIdEditRoute = CircuitTypesIdEditRouteImport.update({
   id: '/$id_/edit',
   path: '/$id/edit',
-  getParentRoute: () => AggregatesRoute,
+  getParentRoute: () => CircuitTypesRoute,
 } as any)
-const PlanningBoardIdTasksTaskIdRoute =
-  PlanningBoardIdTasksTaskIdRouteImport.update({
-    id: '/planning/$boardId_/tasks/$taskId',
-    path: '/planning/$boardId/tasks/$taskId',
+const CircuitsIdEditRoute = CircuitsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CircuitsRoute,
+} as any)
+const ClusterGroupsIdEditRoute = ClusterGroupsIdEditRouteImport.update({
+  id: '/cluster-groups/$id_/edit',
+  path: '/cluster-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClusterTypesIdEditRoute = ClusterTypesIdEditRouteImport.update({
+  id: '/cluster-types/$id_/edit',
+  path: '/cluster-types/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClustersIdEditRoute = ClustersIdEditRouteImport.update({
+  id: '/clusters/$id_/edit',
+  path: '/clusters/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CommunitiesIdEditRoute = CommunitiesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CommunitiesRoute,
+} as any)
+const CommunityListsIdEditRoute = CommunityListsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CommunityListsRoute,
+} as any)
+const ComplianceRulesIdEditRoute = ComplianceRulesIdEditRouteImport.update({
+  id: '/compliance-rules/$id_/edit',
+  path: '/compliance-rules/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfigBundlesIdEditRoute = ConfigBundlesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ConfigBundlesRoute,
+} as any)
+const ConfigContextsIdEditRoute = ConfigContextsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ConfigContextsRoute,
+} as any)
+const ContactGroupsIdEditRoute = ContactGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ContactGroupsRoute,
+} as any)
+const ContactRolesIdEditRoute = ContactRolesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ContactRolesRoute,
+} as any)
+const ContactsIdEditRoute = ContactsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ContactsRoute,
+} as any)
+const CoolingFeedsIdEditRoute = CoolingFeedsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CoolingFeedsRoute,
+} as any)
+const CoolingSourcesIdEditRoute = CoolingSourcesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CoolingSourcesRoute,
+} as any)
+const CustomFieldGroupsIdEditRoute = CustomFieldGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CustomFieldGroupsRoute,
+} as any)
+const CustomFieldsIdEditRoute = CustomFieldsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => CustomFieldsRoute,
+} as any)
+const DeviceProfilesIdEditRoute = DeviceProfilesIdEditRouteImport.update({
+  id: '/device-profiles/$id_/edit',
+  path: '/device-profiles/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceRolesIdEditRoute = DeviceRolesIdEditRouteImport.update({
+  id: '/device-roles/$id_/edit',
+  path: '/device-roles/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeviceTypesIdEditRoute = DeviceTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => DeviceTypesRoute,
+} as any)
+const DevicesIdComplianceRoute = DevicesIdComplianceRouteImport.update({
+  id: '/$id_/compliance',
+  path: '/$id/compliance',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const DevicesIdEditRoute = DevicesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => DevicesRoute,
+} as any)
+const EolProductsIdEditRoute = EolProductsIdEditRouteImport.update({
+  id: '/eol-products/$id_/edit',
+  path: '/eol-products/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EthernetSegmentsIdEditRoute = EthernetSegmentsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => EthernetSegmentsRoute,
+} as any)
+const ExportTemplatesIdEditRoute = ExportTemplatesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ExportTemplatesRoute,
+} as any)
+const FhrpGroupsIdEditRoute = FhrpGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => FhrpGroupsRoute,
+} as any)
+const FloorTileTypesIdEditRoute = FloorTileTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => FloorTileTypesRoute,
+} as any)
+const FloorplansStacksIdRoute = FloorplansStacksIdRouteImport.update({
+  id: '/stacks/$id',
+  path: '/stacks/$id',
+  getParentRoute: () => FloorplansRoute,
+} as any)
+const GroupsIdEditRoute = GroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => GroupsRoute,
+} as any)
+const InterfacesIdEditRoute = InterfacesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => InterfacesRoute,
+} as any)
+const IpRangesIdEditRoute = IpRangesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => IpRangesRoute,
+} as any)
+const IpRolesIdEditRoute = IpRolesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => IpRolesRoute,
+} as any)
+const IpsIdEditRoute = IpsIdEditRouteImport.update({
+  id: '/ips/$id_/edit',
+  path: '/ips/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IpsecProfilesIdEditRoute = IpsecProfilesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => IpsecProfilesRoute,
+} as any)
+const L2vpnsIdEditRoute = L2vpnsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => L2vpnsRoute,
+} as any)
+const LocationTypesIdEditRoute = LocationTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => LocationTypesRoute,
+} as any)
+const LocationsIdEditRoute = LocationsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => LocationsRoute,
+} as any)
+const MaintenanceIdEditRoute = MaintenanceIdEditRouteImport.update({
+  id: '/maintenance/$id_/edit',
+  path: '/maintenance/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManufacturersIdEditRoute = ManufacturersIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ManufacturersRoute,
+} as any)
+const ModuleTypesIdEditRoute = ModuleTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ModuleTypesRoute,
+} as any)
+const MonitoringChecksIdRoute = MonitoringChecksIdRouteImport.update({
+  id: '/monitoring_/checks/$id',
+  path: '/monitoring/checks/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringSlaIdRoute = MonitoringSlaIdRouteImport.update({
+  id: '/monitoring_/sla/$id',
+  path: '/monitoring/sla/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringSlaNewRoute = MonitoringSlaNewRouteImport.update({
+  id: '/monitoring_/sla/new',
+  path: '/monitoring/sla/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OspfAreasIdEditRoute = OspfAreasIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => OspfAreasRoute,
+} as any)
+const PSlugSplatRoute = PSlugSplatRouteImport.update({
+  id: '/p/$slug/$',
+  path: '/p/$slug/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PermissionsIdEditRoute = PermissionsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PermissionsRoute,
+} as any)
+const PlatformGroupsIdEditRoute = PlatformGroupsIdEditRouteImport.update({
+  id: '/platform-groups/$id_/edit',
+  path: '/platform-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformsIdEditRoute = PlatformsIdEditRouteImport.update({
+  id: '/platforms/$id_/edit',
+  path: '/platforms/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PowerFeedsIdEditRoute = PowerFeedsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PowerFeedsRoute,
+} as any)
+const PowerPanelsIdEditRoute = PowerPanelsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PowerPanelsRoute,
+} as any)
+const PrefixListsIdEditRoute = PrefixListsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PrefixListsRoute,
+} as any)
+const PrefixesIdEditRoute = PrefixesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => PrefixesRoute,
+} as any)
+const ProviderNetworksIdEditRoute = ProviderNetworksIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ProviderNetworksRoute,
+} as any)
+const ProvidersIdEditRoute = ProvidersIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ProvidersRoute,
+} as any)
+const RackRolesIdEditRoute = RackRolesIdEditRouteImport.update({
+  id: '/rack-roles/$id_/edit',
+  path: '/rack-roles/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RackTypesIdEditRoute = RackTypesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RackTypesRoute,
+} as any)
+const RacksIdEditRoute = RacksIdEditRouteImport.update({
+  id: '/racks/$id_/edit',
+  path: '/racks/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegionsIdEditRoute = RegionsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RegionsRoute,
+} as any)
+const RirsIdEditRoute = RirsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RirsRoute,
+} as any)
+const RoomsIdEditRoute = RoomsIdEditRouteImport.update({
+  id: '/rooms/$id_/edit',
+  path: '/rooms/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RouteTargetsIdEditRoute = RouteTargetsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RouteTargetsRoute,
+} as any)
+const RoutingKeychainsIdEditRoute = RoutingKeychainsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RoutingKeychainsRoute,
+} as any)
+const RoutingPoliciesIdEditRoute = RoutingPoliciesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => RoutingPoliciesRoute,
+} as any)
+const ScriptsRunsRunIdRoute = ScriptsRunsRunIdRouteImport.update({
+  id: '/scripts/runs/$runId',
+  path: '/scripts/runs/$runId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiceTemplatesIdEditRoute = ServiceTemplatesIdEditRouteImport.update({
+  id: '/service-templates/$id_/edit',
+  path: '/service-templates/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SilencesIdEditRoute = SilencesIdEditRouteImport.update({
+  id: '/silences/$id_/edit',
+  path: '/silences/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitesIdEditRoute = SitesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => SitesRoute,
+} as any)
+const StaticRoutesIdEditRoute = StaticRoutesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => StaticRoutesRoute,
+} as any)
+const StatusesIdEditRoute = StatusesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => StatusesRoute,
+} as any)
+const SupportContractsIdEditRoute = SupportContractsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => SupportContractsRoute,
+} as any)
+const TagsIdEditRoute = TagsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => TagsRoute,
+} as any)
+const TenantsIdEditRoute = TenantsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => TenantsRoute,
+} as any)
+const TunnelGroupsIdEditRoute = TunnelGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => TunnelGroupsRoute,
+} as any)
+const TunnelsIdEditRoute = TunnelsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => TunnelsRoute,
+} as any)
+const UsersIdEditRoute = UsersIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => UsersRoute,
+} as any)
+const VirtualChassisIdEditRoute = VirtualChassisIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => VirtualChassisRoute,
+} as any)
+const VirtualMachinesIdEditRoute = VirtualMachinesIdEditRouteImport.update({
+  id: '/virtual-machines/$id_/edit',
+  path: '/virtual-machines/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VlanGroupsIdEditRoute = VlanGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => VlanGroupsRoute,
+} as any)
+const VlansIdEditRoute = VlansIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => VlansRoute,
+} as any)
+const VmGroupsIdEditRoute = VmGroupsIdEditRouteImport.update({
+  id: '/vm-groups/$id_/edit',
+  path: '/vm-groups/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VrfsIdEditRoute = VrfsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => VrfsRoute,
+} as any)
+const WebhooksIdEditRoute = WebhooksIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => WebhooksRoute,
+} as any)
+const WirelessLanGroupsIdEditRoute = WirelessLanGroupsIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => WirelessLanGroupsRoute,
+} as any)
+const WirelessLansIdEditRoute = WirelessLansIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => WirelessLansRoute,
+} as any)
+const ZonesIdEditRoute = ZonesIdEditRouteImport.update({
+  id: '/$id_/edit',
+  path: '/$id/edit',
+  getParentRoute: () => ZonesRoute,
+} as any)
+const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
+  id: '/l/$tenant/$type/$numid',
+  path: '/l/$tenant/$type/$numid',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringSlaIdEditRoute = MonitoringSlaIdEditRouteImport.update({
+  id: '/monitoring_/sla/$id_/edit',
+  path: '/monitoring/sla/$id/edit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitoringSlaTemplatesIdRoute =
+  MonitoringSlaTemplatesIdRouteImport.update({
+    id: '/monitoring_/sla/templates/$id',
+    path: '/monitoring/sla/templates/$id',
     getParentRoute: () => rootRouteImport,
   } as any)
 const MonitoringSlaTemplatesNewRoute =
@@ -3115,22 +3389,12 @@ const MonitoringSlaTemplatesNewRoute =
     path: '/monitoring/sla/templates/new',
     getParentRoute: () => rootRouteImport,
   } as any)
-const MonitoringSlaTemplatesIdRoute =
-  MonitoringSlaTemplatesIdRouteImport.update({
-    id: '/monitoring_/sla/templates/$id',
-    path: '/monitoring/sla/templates/$id',
+const PlanningBoardIdTasksTaskIdRoute =
+  PlanningBoardIdTasksTaskIdRouteImport.update({
+    id: '/planning/$boardId_/tasks/$taskId',
+    path: '/planning/$boardId/tasks/$taskId',
     getParentRoute: () => rootRouteImport,
   } as any)
-const MonitoringSlaIdEditRoute = MonitoringSlaIdEditRouteImport.update({
-  id: '/monitoring_/sla/$id_/edit',
-  path: '/monitoring/sla/$id/edit',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LTenantTypeNumidRoute = LTenantTypeNumidRouteImport.update({
-  id: '/l/$tenant/$type/$numid',
-  path: '/l/$tenant/$type/$numid',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const MonitoringSlaTemplatesIdEditRoute =
   MonitoringSlaTemplatesIdEditRouteImport.update({
     id: '/monitoring_/sla/templates/$id_/edit',
@@ -3143,6 +3407,8 @@ export interface FileRoutesByFullPath {
   '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/application-map': typeof ApplicationMapRoute
+  '/area-types': typeof AreaTypesRouteWithChildren
   '/as-path-lists': typeof AsPathListsRouteWithChildren
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
@@ -3163,6 +3429,8 @@ export interface FileRoutesByFullPath {
   '/contact-groups': typeof ContactGroupsRouteWithChildren
   '/contact-roles': typeof ContactRolesRouteWithChildren
   '/contacts': typeof ContactsRouteWithChildren
+  '/cooling-feeds': typeof CoolingFeedsRouteWithChildren
+  '/cooling-sources': typeof CoolingSourcesRouteWithChildren
   '/custom-field-groups': typeof CustomFieldGroupsRouteWithChildren
   '/custom-fields': typeof CustomFieldsRouteWithChildren
   '/deploy-runs': typeof DeployRunsRoute
@@ -3183,6 +3451,8 @@ export interface FileRoutesByFullPath {
   '/ip-statuses': typeof IpStatusesRoute
   '/ipsec-profiles': typeof IpsecProfilesRouteWithChildren
   '/l2vpns': typeof L2vpnsRouteWithChildren
+  '/lifecycle': typeof LifecycleRoute
+  '/location-types': typeof LocationTypesRouteWithChildren
   '/locations': typeof LocationsRouteWithChildren
   '/login': typeof LoginRoute
   '/macs': typeof MacsRouteWithChildren
@@ -3232,6 +3502,12 @@ export interface FileRoutesByFullPath {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/application-groups/$id': typeof ApplicationGroupsIdRoute
+  '/application-groups/new': typeof ApplicationGroupsNewRoute
+  '/applications/$id': typeof ApplicationsIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/area-types/$id': typeof AreaTypesIdRoute
+  '/area-types/new': typeof AreaTypesNewRoute
   '/as-path-lists/$id': typeof AsPathListsIdRoute
   '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
@@ -3284,11 +3560,17 @@ export interface FileRoutesByFullPath {
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/cooling-feeds/$id': typeof CoolingFeedsIdRoute
+  '/cooling-feeds/new': typeof CoolingFeedsNewRoute
+  '/cooling-sources/$id': typeof CoolingSourcesIdRoute
+  '/cooling-sources/new': typeof CoolingSourcesNewRoute
   '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
   '/dashboards/$id': typeof DashboardsIdRoute
+  '/device-profiles/$id': typeof DeviceProfilesIdRoute
+  '/device-profiles/new': typeof DeviceProfilesNewRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -3298,6 +3580,8 @@ export interface FileRoutesByFullPath {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/eol-products/$id': typeof EolProductsIdRoute
+  '/eol-products/new': typeof EolProductsNewRoute
   '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
   '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
@@ -3325,6 +3609,8 @@ export interface FileRoutesByFullPath {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/location-types/$id': typeof LocationTypesIdRoute
+  '/location-types/new': typeof LocationTypesNewRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -3367,6 +3653,8 @@ export interface FileRoutesByFullPath {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/rooms/$id': typeof RoomsIdRoute
+  '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
   '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
@@ -3449,6 +3737,9 @@ export interface FileRoutesByFullPath {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates/': typeof AggregatesIndexRoute
+  '/application-groups/': typeof ApplicationGroupsIndexRoute
+  '/applications/': typeof ApplicationsIndexRoute
+  '/area-types/': typeof AreaTypesIndexRoute
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
@@ -3475,9 +3766,12 @@ export interface FileRoutesByFullPath {
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/cooling-feeds/': typeof CoolingFeedsIndexRoute
+  '/cooling-sources/': typeof CoolingSourcesIndexRoute
   '/custom-field-groups/': typeof CustomFieldGroupsIndexRoute
   '/custom-fields/': typeof CustomFieldsIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
+  '/device-profiles/': typeof DeviceProfilesIndexRoute
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
@@ -3487,6 +3781,7 @@ export interface FileRoutesByFullPath {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/eol-products/': typeof EolProductsIndexRoute
   '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
@@ -3503,6 +3798,7 @@ export interface FileRoutesByFullPath {
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
   '/label-templates/': typeof LabelTemplatesIndexRoute
+  '/location-types/': typeof LocationTypesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
   '/maintenance/': typeof MaintenanceIndexRoute
@@ -3523,11 +3819,13 @@ export interface FileRoutesByFullPath {
   '/prefixes/': typeof PrefixesIndexRoute
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
+  '/prtg/': typeof PrtgIndexRoute
   '/rack-roles/': typeof RackRolesIndexRoute
   '/rack-types/': typeof RackTypesIndexRoute
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
+  '/rooms/': typeof RoomsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
   '/routing-keychains/': typeof RoutingKeychainsIndexRoute
   '/routing-policies/': typeof RoutingPoliciesIndexRoute
@@ -3564,6 +3862,9 @@ export interface FileRoutesByFullPath {
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
+  '/application-groups/$id/edit': typeof ApplicationGroupsIdEditRoute
+  '/applications/$id/edit': typeof ApplicationsIdEditRoute
+  '/area-types/$id/edit': typeof AreaTypesIdEditRoute
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
@@ -3588,16 +3889,21 @@ export interface FileRoutesByFullPath {
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id/edit': typeof ContactRolesIdEditRoute
   '/contacts/$id/edit': typeof ContactsIdEditRoute
+  '/cooling-feeds/$id/edit': typeof CoolingFeedsIdEditRoute
+  '/cooling-sources/$id/edit': typeof CoolingSourcesIdEditRoute
   '/custom-field-groups/$id/edit': typeof CustomFieldGroupsIdEditRoute
   '/custom-fields/$id/edit': typeof CustomFieldsIdEditRoute
+  '/device-profiles/$id/edit': typeof DeviceProfilesIdEditRoute
   '/device-roles/$id/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/eol-products/$id/edit': typeof EolProductsIdEditRoute
   '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
+  '/floorplans/stacks/$id': typeof FloorplansStacksIdRoute
   '/groups/$id/edit': typeof GroupsIdEditRoute
   '/interfaces/$id/edit': typeof InterfacesIdEditRoute
   '/ip-ranges/$id/edit': typeof IpRangesIdEditRoute
@@ -3605,6 +3911,7 @@ export interface FileRoutesByFullPath {
   '/ips/$id/edit': typeof IpsIdEditRoute
   '/ipsec-profiles/$id/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id/edit': typeof L2vpnsIdEditRoute
+  '/location-types/$id/edit': typeof LocationTypesIdEditRoute
   '/locations/$id/edit': typeof LocationsIdEditRoute
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
@@ -3628,6 +3935,7 @@ export interface FileRoutesByFullPath {
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
+  '/rooms/$id/edit': typeof RoomsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
@@ -3664,6 +3972,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agent-access': typeof AgentAccessRoute
   '/alerts': typeof AlertsRoute
+  '/application-map': typeof ApplicationMapRoute
   '/audit-log': typeof AuditLogRoute
   '/change-log': typeof ChangeLogRoute
   '/compliance': typeof ComplianceRoute
@@ -3672,6 +3981,7 @@ export interface FileRoutesByTo {
   '/fiber': typeof FiberRoute
   '/fiber-cables': typeof FiberCablesRoute
   '/ip-statuses': typeof IpStatusesRoute
+  '/lifecycle': typeof LifecycleRoute
   '/login': typeof LoginRoute
   '/monitoring': typeof MonitoringRoute
   '/monitoring-engines': typeof MonitoringEnginesRoute
@@ -3684,6 +3994,12 @@ export interface FileRoutesByTo {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/application-groups/$id': typeof ApplicationGroupsIdRoute
+  '/application-groups/new': typeof ApplicationGroupsNewRoute
+  '/applications/$id': typeof ApplicationsIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/area-types/$id': typeof AreaTypesIdRoute
+  '/area-types/new': typeof AreaTypesNewRoute
   '/as-path-lists/$id': typeof AsPathListsIdRoute
   '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
@@ -3736,11 +4052,17 @@ export interface FileRoutesByTo {
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/cooling-feeds/$id': typeof CoolingFeedsIdRoute
+  '/cooling-feeds/new': typeof CoolingFeedsNewRoute
+  '/cooling-sources/$id': typeof CoolingSourcesIdRoute
+  '/cooling-sources/new': typeof CoolingSourcesNewRoute
   '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
   '/dashboards/$id': typeof DashboardsIdRoute
+  '/device-profiles/$id': typeof DeviceProfilesIdRoute
+  '/device-profiles/new': typeof DeviceProfilesNewRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -3750,6 +4072,8 @@ export interface FileRoutesByTo {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/eol-products/$id': typeof EolProductsIdRoute
+  '/eol-products/new': typeof EolProductsNewRoute
   '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
   '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
@@ -3777,6 +4101,8 @@ export interface FileRoutesByTo {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/location-types/$id': typeof LocationTypesIdRoute
+  '/location-types/new': typeof LocationTypesNewRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -3819,6 +4145,8 @@ export interface FileRoutesByTo {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/rooms/$id': typeof RoomsIdRoute
+  '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
   '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
@@ -3901,6 +4229,9 @@ export interface FileRoutesByTo {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates': typeof AggregatesIndexRoute
+  '/application-groups': typeof ApplicationGroupsIndexRoute
+  '/applications': typeof ApplicationsIndexRoute
+  '/area-types': typeof AreaTypesIndexRoute
   '/as-path-lists': typeof AsPathListsIndexRoute
   '/asns': typeof AsnsIndexRoute
   '/automation-targets': typeof AutomationTargetsIndexRoute
@@ -3927,9 +4258,12 @@ export interface FileRoutesByTo {
   '/contact-groups': typeof ContactGroupsIndexRoute
   '/contact-roles': typeof ContactRolesIndexRoute
   '/contacts': typeof ContactsIndexRoute
+  '/cooling-feeds': typeof CoolingFeedsIndexRoute
+  '/cooling-sources': typeof CoolingSourcesIndexRoute
   '/custom-field-groups': typeof CustomFieldGroupsIndexRoute
   '/custom-fields': typeof CustomFieldsIndexRoute
   '/dashboards': typeof DashboardsIndexRoute
+  '/device-profiles': typeof DeviceProfilesIndexRoute
   '/device-roles': typeof DeviceRolesIndexRoute
   '/device-types': typeof DeviceTypesIndexRoute
   '/devices': typeof DevicesIndexRoute
@@ -3939,6 +4273,7 @@ export interface FileRoutesByTo {
   '/dns-records': typeof DnsRecordsIndexRoute
   '/dns-zones': typeof DnsZonesIndexRoute
   '/eigrp-instances': typeof EigrpInstancesIndexRoute
+  '/eol-products': typeof EolProductsIndexRoute
   '/ethernet-segments': typeof EthernetSegmentsIndexRoute
   '/export-templates': typeof ExportTemplatesIndexRoute
   '/fhrp-groups': typeof FhrpGroupsIndexRoute
@@ -3955,6 +4290,7 @@ export interface FileRoutesByTo {
   '/jobs': typeof JobsIndexRoute
   '/l2vpns': typeof L2vpnsIndexRoute
   '/label-templates': typeof LabelTemplatesIndexRoute
+  '/location-types': typeof LocationTypesIndexRoute
   '/locations': typeof LocationsIndexRoute
   '/macs': typeof MacsIndexRoute
   '/maintenance': typeof MaintenanceIndexRoute
@@ -3975,11 +4311,13 @@ export interface FileRoutesByTo {
   '/prefixes': typeof PrefixesIndexRoute
   '/provider-networks': typeof ProviderNetworksIndexRoute
   '/providers': typeof ProvidersIndexRoute
+  '/prtg': typeof PrtgIndexRoute
   '/rack-roles': typeof RackRolesIndexRoute
   '/rack-types': typeof RackTypesIndexRoute
   '/racks': typeof RacksIndexRoute
   '/regions': typeof RegionsIndexRoute
   '/rirs': typeof RirsIndexRoute
+  '/rooms': typeof RoomsIndexRoute
   '/route-targets': typeof RouteTargetsIndexRoute
   '/routing-keychains': typeof RoutingKeychainsIndexRoute
   '/routing-policies': typeof RoutingPoliciesIndexRoute
@@ -4016,6 +4354,9 @@ export interface FileRoutesByTo {
   '/zones': typeof ZonesIndexRoute
   '/aggregates/$id/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id/edit': typeof AlertRulesIdEditRoute
+  '/application-groups/$id/edit': typeof ApplicationGroupsIdEditRoute
+  '/applications/$id/edit': typeof ApplicationsIdEditRoute
+  '/area-types/$id/edit': typeof AreaTypesIdEditRoute
   '/as-path-lists/$id/edit': typeof AsPathListsIdEditRoute
   '/asns/$id/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id/edit': typeof AutomationTargetsIdEditRoute
@@ -4040,16 +4381,21 @@ export interface FileRoutesByTo {
   '/contact-groups/$id/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id/edit': typeof ContactRolesIdEditRoute
   '/contacts/$id/edit': typeof ContactsIdEditRoute
+  '/cooling-feeds/$id/edit': typeof CoolingFeedsIdEditRoute
+  '/cooling-sources/$id/edit': typeof CoolingSourcesIdEditRoute
   '/custom-field-groups/$id/edit': typeof CustomFieldGroupsIdEditRoute
   '/custom-fields/$id/edit': typeof CustomFieldsIdEditRoute
+  '/device-profiles/$id/edit': typeof DeviceProfilesIdEditRoute
   '/device-roles/$id/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id/edit': typeof DevicesIdEditRoute
+  '/eol-products/$id/edit': typeof EolProductsIdEditRoute
   '/ethernet-segments/$id/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id/edit': typeof FloorTileTypesIdEditRoute
+  '/floorplans/stacks/$id': typeof FloorplansStacksIdRoute
   '/groups/$id/edit': typeof GroupsIdEditRoute
   '/interfaces/$id/edit': typeof InterfacesIdEditRoute
   '/ip-ranges/$id/edit': typeof IpRangesIdEditRoute
@@ -4057,6 +4403,7 @@ export interface FileRoutesByTo {
   '/ips/$id/edit': typeof IpsIdEditRoute
   '/ipsec-profiles/$id/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id/edit': typeof L2vpnsIdEditRoute
+  '/location-types/$id/edit': typeof LocationTypesIdEditRoute
   '/locations/$id/edit': typeof LocationsIdEditRoute
   '/maintenance/$id/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id/edit': typeof ManufacturersIdEditRoute
@@ -4080,6 +4427,7 @@ export interface FileRoutesByTo {
   '/racks/$id/edit': typeof RacksIdEditRoute
   '/regions/$id/edit': typeof RegionsIdEditRoute
   '/rirs/$id/edit': typeof RirsIdEditRoute
+  '/rooms/$id/edit': typeof RoomsIdEditRoute
   '/route-targets/$id/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id/edit': typeof RoutingPoliciesIdEditRoute
@@ -4118,6 +4466,8 @@ export interface FileRoutesById {
   '/agent-access': typeof AgentAccessRoute
   '/aggregates': typeof AggregatesRouteWithChildren
   '/alerts': typeof AlertsRoute
+  '/application-map': typeof ApplicationMapRoute
+  '/area-types': typeof AreaTypesRouteWithChildren
   '/as-path-lists': typeof AsPathListsRouteWithChildren
   '/asns': typeof AsnsRouteWithChildren
   '/audit-log': typeof AuditLogRoute
@@ -4138,6 +4488,8 @@ export interface FileRoutesById {
   '/contact-groups': typeof ContactGroupsRouteWithChildren
   '/contact-roles': typeof ContactRolesRouteWithChildren
   '/contacts': typeof ContactsRouteWithChildren
+  '/cooling-feeds': typeof CoolingFeedsRouteWithChildren
+  '/cooling-sources': typeof CoolingSourcesRouteWithChildren
   '/custom-field-groups': typeof CustomFieldGroupsRouteWithChildren
   '/custom-fields': typeof CustomFieldsRouteWithChildren
   '/deploy-runs': typeof DeployRunsRoute
@@ -4158,6 +4510,8 @@ export interface FileRoutesById {
   '/ip-statuses': typeof IpStatusesRoute
   '/ipsec-profiles': typeof IpsecProfilesRouteWithChildren
   '/l2vpns': typeof L2vpnsRouteWithChildren
+  '/lifecycle': typeof LifecycleRoute
+  '/location-types': typeof LocationTypesRouteWithChildren
   '/locations': typeof LocationsRouteWithChildren
   '/login': typeof LoginRoute
   '/macs': typeof MacsRouteWithChildren
@@ -4207,6 +4561,12 @@ export interface FileRoutesById {
   '/aggregates/$id': typeof AggregatesIdRoute
   '/aggregates/new': typeof AggregatesNewRoute
   '/alert-rules/new': typeof AlertRulesNewRoute
+  '/application-groups/$id': typeof ApplicationGroupsIdRoute
+  '/application-groups/new': typeof ApplicationGroupsNewRoute
+  '/applications/$id': typeof ApplicationsIdRoute
+  '/applications/new': typeof ApplicationsNewRoute
+  '/area-types/$id': typeof AreaTypesIdRoute
+  '/area-types/new': typeof AreaTypesNewRoute
   '/as-path-lists/$id': typeof AsPathListsIdRoute
   '/as-path-lists/new': typeof AsPathListsNewRoute
   '/asns/$id': typeof AsnsIdRoute
@@ -4259,11 +4619,17 @@ export interface FileRoutesById {
   '/contact-roles/new': typeof ContactRolesNewRoute
   '/contacts/$id': typeof ContactsIdRoute
   '/contacts/new': typeof ContactsNewRoute
+  '/cooling-feeds/$id': typeof CoolingFeedsIdRoute
+  '/cooling-feeds/new': typeof CoolingFeedsNewRoute
+  '/cooling-sources/$id': typeof CoolingSourcesIdRoute
+  '/cooling-sources/new': typeof CoolingSourcesNewRoute
   '/custom-field-groups/$id': typeof CustomFieldGroupsIdRoute
   '/custom-field-groups/new': typeof CustomFieldGroupsNewRoute
   '/custom-fields/$id': typeof CustomFieldsIdRoute
   '/custom-fields/new': typeof CustomFieldsNewRoute
   '/dashboards/$id': typeof DashboardsIdRoute
+  '/device-profiles/$id': typeof DeviceProfilesIdRoute
+  '/device-profiles/new': typeof DeviceProfilesNewRoute
   '/device-roles/$id': typeof DeviceRolesIdRoute
   '/device-roles/new': typeof DeviceRolesNewRoute
   '/device-types/$id': typeof DeviceTypesIdRoute
@@ -4273,6 +4639,8 @@ export interface FileRoutesById {
   '/dns-names/$name': typeof DnsNamesNameRoute
   '/dns-records/$id': typeof DnsRecordsIdRoute
   '/dns-zones/$id': typeof DnsZonesIdRoute
+  '/eol-products/$id': typeof EolProductsIdRoute
+  '/eol-products/new': typeof EolProductsNewRoute
   '/ethernet-segments/$id': typeof EthernetSegmentsIdRoute
   '/ethernet-segments/new': typeof EthernetSegmentsNewRoute
   '/export-templates/$id': typeof ExportTemplatesIdRoute
@@ -4300,6 +4668,8 @@ export interface FileRoutesById {
   '/jobs/$id': typeof JobsIdRoute
   '/l2vpns/$id': typeof L2vpnsIdRoute
   '/l2vpns/new': typeof L2vpnsNewRoute
+  '/location-types/$id': typeof LocationTypesIdRoute
+  '/location-types/new': typeof LocationTypesNewRoute
   '/locations/$id': typeof LocationsIdRoute
   '/locations/new': typeof LocationsNewRoute
   '/macs/$mac': typeof MacsMacRoute
@@ -4342,6 +4712,8 @@ export interface FileRoutesById {
   '/regions/new': typeof RegionsNewRoute
   '/rirs/$id': typeof RirsIdRoute
   '/rirs/new': typeof RirsNewRoute
+  '/rooms/$id': typeof RoomsIdRoute
+  '/rooms/new': typeof RoomsNewRoute
   '/route-targets/$id': typeof RouteTargetsIdRoute
   '/route-targets/new': typeof RouteTargetsNewRoute
   '/routing-keychains/$id': typeof RoutingKeychainsIdRoute
@@ -4424,6 +4796,9 @@ export interface FileRoutesById {
   '/zones/$id': typeof ZonesIdRoute
   '/zones/new': typeof ZonesNewRoute
   '/aggregates/': typeof AggregatesIndexRoute
+  '/application-groups/': typeof ApplicationGroupsIndexRoute
+  '/applications/': typeof ApplicationsIndexRoute
+  '/area-types/': typeof AreaTypesIndexRoute
   '/as-path-lists/': typeof AsPathListsIndexRoute
   '/asns/': typeof AsnsIndexRoute
   '/automation-targets/': typeof AutomationTargetsIndexRoute
@@ -4450,9 +4825,12 @@ export interface FileRoutesById {
   '/contact-groups/': typeof ContactGroupsIndexRoute
   '/contact-roles/': typeof ContactRolesIndexRoute
   '/contacts/': typeof ContactsIndexRoute
+  '/cooling-feeds/': typeof CoolingFeedsIndexRoute
+  '/cooling-sources/': typeof CoolingSourcesIndexRoute
   '/custom-field-groups/': typeof CustomFieldGroupsIndexRoute
   '/custom-fields/': typeof CustomFieldsIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
+  '/device-profiles/': typeof DeviceProfilesIndexRoute
   '/device-roles/': typeof DeviceRolesIndexRoute
   '/device-types/': typeof DeviceTypesIndexRoute
   '/devices/': typeof DevicesIndexRoute
@@ -4462,6 +4840,7 @@ export interface FileRoutesById {
   '/dns-records/': typeof DnsRecordsIndexRoute
   '/dns-zones/': typeof DnsZonesIndexRoute
   '/eigrp-instances/': typeof EigrpInstancesIndexRoute
+  '/eol-products/': typeof EolProductsIndexRoute
   '/ethernet-segments/': typeof EthernetSegmentsIndexRoute
   '/export-templates/': typeof ExportTemplatesIndexRoute
   '/fhrp-groups/': typeof FhrpGroupsIndexRoute
@@ -4478,6 +4857,7 @@ export interface FileRoutesById {
   '/jobs/': typeof JobsIndexRoute
   '/l2vpns/': typeof L2vpnsIndexRoute
   '/label-templates/': typeof LabelTemplatesIndexRoute
+  '/location-types/': typeof LocationTypesIndexRoute
   '/locations/': typeof LocationsIndexRoute
   '/macs/': typeof MacsIndexRoute
   '/maintenance/': typeof MaintenanceIndexRoute
@@ -4498,11 +4878,13 @@ export interface FileRoutesById {
   '/prefixes/': typeof PrefixesIndexRoute
   '/provider-networks/': typeof ProviderNetworksIndexRoute
   '/providers/': typeof ProvidersIndexRoute
+  '/prtg/': typeof PrtgIndexRoute
   '/rack-roles/': typeof RackRolesIndexRoute
   '/rack-types/': typeof RackTypesIndexRoute
   '/racks/': typeof RacksIndexRoute
   '/regions/': typeof RegionsIndexRoute
   '/rirs/': typeof RirsIndexRoute
+  '/rooms/': typeof RoomsIndexRoute
   '/route-targets/': typeof RouteTargetsIndexRoute
   '/routing-keychains/': typeof RoutingKeychainsIndexRoute
   '/routing-policies/': typeof RoutingPoliciesIndexRoute
@@ -4539,6 +4921,9 @@ export interface FileRoutesById {
   '/zones/': typeof ZonesIndexRoute
   '/aggregates/$id_/edit': typeof AggregatesIdEditRoute
   '/alert-rules/$id_/edit': typeof AlertRulesIdEditRoute
+  '/application-groups/$id_/edit': typeof ApplicationGroupsIdEditRoute
+  '/applications/$id_/edit': typeof ApplicationsIdEditRoute
+  '/area-types/$id_/edit': typeof AreaTypesIdEditRoute
   '/as-path-lists/$id_/edit': typeof AsPathListsIdEditRoute
   '/asns/$id_/edit': typeof AsnsIdEditRoute
   '/automation-targets/$id_/edit': typeof AutomationTargetsIdEditRoute
@@ -4563,16 +4948,21 @@ export interface FileRoutesById {
   '/contact-groups/$id_/edit': typeof ContactGroupsIdEditRoute
   '/contact-roles/$id_/edit': typeof ContactRolesIdEditRoute
   '/contacts/$id_/edit': typeof ContactsIdEditRoute
+  '/cooling-feeds/$id_/edit': typeof CoolingFeedsIdEditRoute
+  '/cooling-sources/$id_/edit': typeof CoolingSourcesIdEditRoute
   '/custom-field-groups/$id_/edit': typeof CustomFieldGroupsIdEditRoute
   '/custom-fields/$id_/edit': typeof CustomFieldsIdEditRoute
+  '/device-profiles/$id_/edit': typeof DeviceProfilesIdEditRoute
   '/device-roles/$id_/edit': typeof DeviceRolesIdEditRoute
   '/device-types/$id_/edit': typeof DeviceTypesIdEditRoute
   '/devices/$id_/compliance': typeof DevicesIdComplianceRoute
   '/devices/$id_/edit': typeof DevicesIdEditRoute
+  '/eol-products/$id_/edit': typeof EolProductsIdEditRoute
   '/ethernet-segments/$id_/edit': typeof EthernetSegmentsIdEditRoute
   '/export-templates/$id_/edit': typeof ExportTemplatesIdEditRoute
   '/fhrp-groups/$id_/edit': typeof FhrpGroupsIdEditRoute
   '/floor-tile-types/$id_/edit': typeof FloorTileTypesIdEditRoute
+  '/floorplans/stacks/$id': typeof FloorplansStacksIdRoute
   '/groups/$id_/edit': typeof GroupsIdEditRoute
   '/interfaces/$id_/edit': typeof InterfacesIdEditRoute
   '/ip-ranges/$id_/edit': typeof IpRangesIdEditRoute
@@ -4580,6 +4970,7 @@ export interface FileRoutesById {
   '/ips/$id_/edit': typeof IpsIdEditRoute
   '/ipsec-profiles/$id_/edit': typeof IpsecProfilesIdEditRoute
   '/l2vpns/$id_/edit': typeof L2vpnsIdEditRoute
+  '/location-types/$id_/edit': typeof LocationTypesIdEditRoute
   '/locations/$id_/edit': typeof LocationsIdEditRoute
   '/maintenance/$id_/edit': typeof MaintenanceIdEditRoute
   '/manufacturers/$id_/edit': typeof ManufacturersIdEditRoute
@@ -4603,6 +4994,7 @@ export interface FileRoutesById {
   '/racks/$id_/edit': typeof RacksIdEditRoute
   '/regions/$id_/edit': typeof RegionsIdEditRoute
   '/rirs/$id_/edit': typeof RirsIdEditRoute
+  '/rooms/$id_/edit': typeof RoomsIdEditRoute
   '/route-targets/$id_/edit': typeof RouteTargetsIdEditRoute
   '/routing-keychains/$id_/edit': typeof RoutingKeychainsIdEditRoute
   '/routing-policies/$id_/edit': typeof RoutingPoliciesIdEditRoute
@@ -4642,6 +5034,8 @@ export interface FileRouteTypes {
     | '/agent-access'
     | '/aggregates'
     | '/alerts'
+    | '/application-map'
+    | '/area-types'
     | '/as-path-lists'
     | '/asns'
     | '/audit-log'
@@ -4662,6 +5056,8 @@ export interface FileRouteTypes {
     | '/contact-groups'
     | '/contact-roles'
     | '/contacts'
+    | '/cooling-feeds'
+    | '/cooling-sources'
     | '/custom-field-groups'
     | '/custom-fields'
     | '/deploy-runs'
@@ -4682,6 +5078,8 @@ export interface FileRouteTypes {
     | '/ip-statuses'
     | '/ipsec-profiles'
     | '/l2vpns'
+    | '/lifecycle'
+    | '/location-types'
     | '/locations'
     | '/login'
     | '/macs'
@@ -4731,6 +5129,12 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/application-groups/$id'
+    | '/application-groups/new'
+    | '/applications/$id'
+    | '/applications/new'
+    | '/area-types/$id'
+    | '/area-types/new'
     | '/as-path-lists/$id'
     | '/as-path-lists/new'
     | '/asns/$id'
@@ -4783,11 +5187,17 @@ export interface FileRouteTypes {
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/cooling-feeds/$id'
+    | '/cooling-feeds/new'
+    | '/cooling-sources/$id'
+    | '/cooling-sources/new'
     | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
     | '/dashboards/$id'
+    | '/device-profiles/$id'
+    | '/device-profiles/new'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -4797,6 +5207,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/eol-products/$id'
+    | '/eol-products/new'
     | '/ethernet-segments/$id'
     | '/ethernet-segments/new'
     | '/export-templates/$id'
@@ -4824,6 +5236,8 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/location-types/$id'
+    | '/location-types/new'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -4866,6 +5280,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/rooms/$id'
+    | '/rooms/new'
     | '/route-targets/$id'
     | '/route-targets/new'
     | '/routing-keychains/$id'
@@ -4948,6 +5364,9 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates/'
+    | '/application-groups/'
+    | '/applications/'
+    | '/area-types/'
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
@@ -4974,9 +5393,12 @@ export interface FileRouteTypes {
     | '/contact-groups/'
     | '/contact-roles/'
     | '/contacts/'
+    | '/cooling-feeds/'
+    | '/cooling-sources/'
     | '/custom-field-groups/'
     | '/custom-fields/'
     | '/dashboards/'
+    | '/device-profiles/'
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
@@ -4986,6 +5408,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/eol-products/'
     | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
@@ -5002,6 +5425,7 @@ export interface FileRouteTypes {
     | '/jobs/'
     | '/l2vpns/'
     | '/label-templates/'
+    | '/location-types/'
     | '/locations/'
     | '/macs/'
     | '/maintenance/'
@@ -5022,11 +5446,13 @@ export interface FileRouteTypes {
     | '/prefixes/'
     | '/provider-networks/'
     | '/providers/'
+    | '/prtg/'
     | '/rack-roles/'
     | '/rack-types/'
     | '/racks/'
     | '/regions/'
     | '/rirs/'
+    | '/rooms/'
     | '/route-targets/'
     | '/routing-keychains/'
     | '/routing-policies/'
@@ -5063,6 +5489,9 @@ export interface FileRouteTypes {
     | '/zones/'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
+    | '/application-groups/$id/edit'
+    | '/applications/$id/edit'
+    | '/area-types/$id/edit'
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
@@ -5087,16 +5516,21 @@ export interface FileRouteTypes {
     | '/contact-groups/$id/edit'
     | '/contact-roles/$id/edit'
     | '/contacts/$id/edit'
+    | '/cooling-feeds/$id/edit'
+    | '/cooling-sources/$id/edit'
     | '/custom-field-groups/$id/edit'
     | '/custom-fields/$id/edit'
+    | '/device-profiles/$id/edit'
     | '/device-roles/$id/edit'
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/eol-products/$id/edit'
     | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
+    | '/floorplans/stacks/$id'
     | '/groups/$id/edit'
     | '/interfaces/$id/edit'
     | '/ip-ranges/$id/edit'
@@ -5104,6 +5538,7 @@ export interface FileRouteTypes {
     | '/ips/$id/edit'
     | '/ipsec-profiles/$id/edit'
     | '/l2vpns/$id/edit'
+    | '/location-types/$id/edit'
     | '/locations/$id/edit'
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
@@ -5127,6 +5562,7 @@ export interface FileRouteTypes {
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
+    | '/rooms/$id/edit'
     | '/route-targets/$id/edit'
     | '/routing-keychains/$id/edit'
     | '/routing-policies/$id/edit'
@@ -5163,6 +5599,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agent-access'
     | '/alerts'
+    | '/application-map'
     | '/audit-log'
     | '/change-log'
     | '/compliance'
@@ -5171,6 +5608,7 @@ export interface FileRouteTypes {
     | '/fiber'
     | '/fiber-cables'
     | '/ip-statuses'
+    | '/lifecycle'
     | '/login'
     | '/monitoring'
     | '/monitoring-engines'
@@ -5183,6 +5621,12 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/application-groups/$id'
+    | '/application-groups/new'
+    | '/applications/$id'
+    | '/applications/new'
+    | '/area-types/$id'
+    | '/area-types/new'
     | '/as-path-lists/$id'
     | '/as-path-lists/new'
     | '/asns/$id'
@@ -5235,11 +5679,17 @@ export interface FileRouteTypes {
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/cooling-feeds/$id'
+    | '/cooling-feeds/new'
+    | '/cooling-sources/$id'
+    | '/cooling-sources/new'
     | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
     | '/dashboards/$id'
+    | '/device-profiles/$id'
+    | '/device-profiles/new'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -5249,6 +5699,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/eol-products/$id'
+    | '/eol-products/new'
     | '/ethernet-segments/$id'
     | '/ethernet-segments/new'
     | '/export-templates/$id'
@@ -5276,6 +5728,8 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/location-types/$id'
+    | '/location-types/new'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -5318,6 +5772,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/rooms/$id'
+    | '/rooms/new'
     | '/route-targets/$id'
     | '/route-targets/new'
     | '/routing-keychains/$id'
@@ -5400,6 +5856,9 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates'
+    | '/application-groups'
+    | '/applications'
+    | '/area-types'
     | '/as-path-lists'
     | '/asns'
     | '/automation-targets'
@@ -5426,9 +5885,12 @@ export interface FileRouteTypes {
     | '/contact-groups'
     | '/contact-roles'
     | '/contacts'
+    | '/cooling-feeds'
+    | '/cooling-sources'
     | '/custom-field-groups'
     | '/custom-fields'
     | '/dashboards'
+    | '/device-profiles'
     | '/device-roles'
     | '/device-types'
     | '/devices'
@@ -5438,6 +5900,7 @@ export interface FileRouteTypes {
     | '/dns-records'
     | '/dns-zones'
     | '/eigrp-instances'
+    | '/eol-products'
     | '/ethernet-segments'
     | '/export-templates'
     | '/fhrp-groups'
@@ -5454,6 +5917,7 @@ export interface FileRouteTypes {
     | '/jobs'
     | '/l2vpns'
     | '/label-templates'
+    | '/location-types'
     | '/locations'
     | '/macs'
     | '/maintenance'
@@ -5474,11 +5938,13 @@ export interface FileRouteTypes {
     | '/prefixes'
     | '/provider-networks'
     | '/providers'
+    | '/prtg'
     | '/rack-roles'
     | '/rack-types'
     | '/racks'
     | '/regions'
     | '/rirs'
+    | '/rooms'
     | '/route-targets'
     | '/routing-keychains'
     | '/routing-policies'
@@ -5515,6 +5981,9 @@ export interface FileRouteTypes {
     | '/zones'
     | '/aggregates/$id/edit'
     | '/alert-rules/$id/edit'
+    | '/application-groups/$id/edit'
+    | '/applications/$id/edit'
+    | '/area-types/$id/edit'
     | '/as-path-lists/$id/edit'
     | '/asns/$id/edit'
     | '/automation-targets/$id/edit'
@@ -5539,16 +6008,21 @@ export interface FileRouteTypes {
     | '/contact-groups/$id/edit'
     | '/contact-roles/$id/edit'
     | '/contacts/$id/edit'
+    | '/cooling-feeds/$id/edit'
+    | '/cooling-sources/$id/edit'
     | '/custom-field-groups/$id/edit'
     | '/custom-fields/$id/edit'
+    | '/device-profiles/$id/edit'
     | '/device-roles/$id/edit'
     | '/device-types/$id/edit'
     | '/devices/$id/compliance'
     | '/devices/$id/edit'
+    | '/eol-products/$id/edit'
     | '/ethernet-segments/$id/edit'
     | '/export-templates/$id/edit'
     | '/fhrp-groups/$id/edit'
     | '/floor-tile-types/$id/edit'
+    | '/floorplans/stacks/$id'
     | '/groups/$id/edit'
     | '/interfaces/$id/edit'
     | '/ip-ranges/$id/edit'
@@ -5556,6 +6030,7 @@ export interface FileRouteTypes {
     | '/ips/$id/edit'
     | '/ipsec-profiles/$id/edit'
     | '/l2vpns/$id/edit'
+    | '/location-types/$id/edit'
     | '/locations/$id/edit'
     | '/maintenance/$id/edit'
     | '/manufacturers/$id/edit'
@@ -5579,6 +6054,7 @@ export interface FileRouteTypes {
     | '/racks/$id/edit'
     | '/regions/$id/edit'
     | '/rirs/$id/edit'
+    | '/rooms/$id/edit'
     | '/route-targets/$id/edit'
     | '/routing-keychains/$id/edit'
     | '/routing-policies/$id/edit'
@@ -5616,6 +6092,8 @@ export interface FileRouteTypes {
     | '/agent-access'
     | '/aggregates'
     | '/alerts'
+    | '/application-map'
+    | '/area-types'
     | '/as-path-lists'
     | '/asns'
     | '/audit-log'
@@ -5636,6 +6114,8 @@ export interface FileRouteTypes {
     | '/contact-groups'
     | '/contact-roles'
     | '/contacts'
+    | '/cooling-feeds'
+    | '/cooling-sources'
     | '/custom-field-groups'
     | '/custom-fields'
     | '/deploy-runs'
@@ -5656,6 +6136,8 @@ export interface FileRouteTypes {
     | '/ip-statuses'
     | '/ipsec-profiles'
     | '/l2vpns'
+    | '/lifecycle'
+    | '/location-types'
     | '/locations'
     | '/login'
     | '/macs'
@@ -5705,6 +6187,12 @@ export interface FileRouteTypes {
     | '/aggregates/$id'
     | '/aggregates/new'
     | '/alert-rules/new'
+    | '/application-groups/$id'
+    | '/application-groups/new'
+    | '/applications/$id'
+    | '/applications/new'
+    | '/area-types/$id'
+    | '/area-types/new'
     | '/as-path-lists/$id'
     | '/as-path-lists/new'
     | '/asns/$id'
@@ -5757,11 +6245,17 @@ export interface FileRouteTypes {
     | '/contact-roles/new'
     | '/contacts/$id'
     | '/contacts/new'
+    | '/cooling-feeds/$id'
+    | '/cooling-feeds/new'
+    | '/cooling-sources/$id'
+    | '/cooling-sources/new'
     | '/custom-field-groups/$id'
     | '/custom-field-groups/new'
     | '/custom-fields/$id'
     | '/custom-fields/new'
     | '/dashboards/$id'
+    | '/device-profiles/$id'
+    | '/device-profiles/new'
     | '/device-roles/$id'
     | '/device-roles/new'
     | '/device-types/$id'
@@ -5771,6 +6265,8 @@ export interface FileRouteTypes {
     | '/dns-names/$name'
     | '/dns-records/$id'
     | '/dns-zones/$id'
+    | '/eol-products/$id'
+    | '/eol-products/new'
     | '/ethernet-segments/$id'
     | '/ethernet-segments/new'
     | '/export-templates/$id'
@@ -5798,6 +6294,8 @@ export interface FileRouteTypes {
     | '/jobs/$id'
     | '/l2vpns/$id'
     | '/l2vpns/new'
+    | '/location-types/$id'
+    | '/location-types/new'
     | '/locations/$id'
     | '/locations/new'
     | '/macs/$mac'
@@ -5840,6 +6338,8 @@ export interface FileRouteTypes {
     | '/regions/new'
     | '/rirs/$id'
     | '/rirs/new'
+    | '/rooms/$id'
+    | '/rooms/new'
     | '/route-targets/$id'
     | '/route-targets/new'
     | '/routing-keychains/$id'
@@ -5922,6 +6422,9 @@ export interface FileRouteTypes {
     | '/zones/$id'
     | '/zones/new'
     | '/aggregates/'
+    | '/application-groups/'
+    | '/applications/'
+    | '/area-types/'
     | '/as-path-lists/'
     | '/asns/'
     | '/automation-targets/'
@@ -5948,9 +6451,12 @@ export interface FileRouteTypes {
     | '/contact-groups/'
     | '/contact-roles/'
     | '/contacts/'
+    | '/cooling-feeds/'
+    | '/cooling-sources/'
     | '/custom-field-groups/'
     | '/custom-fields/'
     | '/dashboards/'
+    | '/device-profiles/'
     | '/device-roles/'
     | '/device-types/'
     | '/devices/'
@@ -5960,6 +6466,7 @@ export interface FileRouteTypes {
     | '/dns-records/'
     | '/dns-zones/'
     | '/eigrp-instances/'
+    | '/eol-products/'
     | '/ethernet-segments/'
     | '/export-templates/'
     | '/fhrp-groups/'
@@ -5976,6 +6483,7 @@ export interface FileRouteTypes {
     | '/jobs/'
     | '/l2vpns/'
     | '/label-templates/'
+    | '/location-types/'
     | '/locations/'
     | '/macs/'
     | '/maintenance/'
@@ -5996,11 +6504,13 @@ export interface FileRouteTypes {
     | '/prefixes/'
     | '/provider-networks/'
     | '/providers/'
+    | '/prtg/'
     | '/rack-roles/'
     | '/rack-types/'
     | '/racks/'
     | '/regions/'
     | '/rirs/'
+    | '/rooms/'
     | '/route-targets/'
     | '/routing-keychains/'
     | '/routing-policies/'
@@ -6037,6 +6547,9 @@ export interface FileRouteTypes {
     | '/zones/'
     | '/aggregates/$id_/edit'
     | '/alert-rules/$id_/edit'
+    | '/application-groups/$id_/edit'
+    | '/applications/$id_/edit'
+    | '/area-types/$id_/edit'
     | '/as-path-lists/$id_/edit'
     | '/asns/$id_/edit'
     | '/automation-targets/$id_/edit'
@@ -6061,16 +6574,21 @@ export interface FileRouteTypes {
     | '/contact-groups/$id_/edit'
     | '/contact-roles/$id_/edit'
     | '/contacts/$id_/edit'
+    | '/cooling-feeds/$id_/edit'
+    | '/cooling-sources/$id_/edit'
     | '/custom-field-groups/$id_/edit'
     | '/custom-fields/$id_/edit'
+    | '/device-profiles/$id_/edit'
     | '/device-roles/$id_/edit'
     | '/device-types/$id_/edit'
     | '/devices/$id_/compliance'
     | '/devices/$id_/edit'
+    | '/eol-products/$id_/edit'
     | '/ethernet-segments/$id_/edit'
     | '/export-templates/$id_/edit'
     | '/fhrp-groups/$id_/edit'
     | '/floor-tile-types/$id_/edit'
+    | '/floorplans/stacks/$id'
     | '/groups/$id_/edit'
     | '/interfaces/$id_/edit'
     | '/ip-ranges/$id_/edit'
@@ -6078,6 +6596,7 @@ export interface FileRouteTypes {
     | '/ips/$id_/edit'
     | '/ipsec-profiles/$id_/edit'
     | '/l2vpns/$id_/edit'
+    | '/location-types/$id_/edit'
     | '/locations/$id_/edit'
     | '/maintenance/$id_/edit'
     | '/manufacturers/$id_/edit'
@@ -6101,6 +6620,7 @@ export interface FileRouteTypes {
     | '/racks/$id_/edit'
     | '/regions/$id_/edit'
     | '/rirs/$id_/edit'
+    | '/rooms/$id_/edit'
     | '/route-targets/$id_/edit'
     | '/routing-keychains/$id_/edit'
     | '/routing-policies/$id_/edit'
@@ -6139,6 +6659,8 @@ export interface RootRouteChildren {
   AgentAccessRoute: typeof AgentAccessRoute
   AggregatesRoute: typeof AggregatesRouteWithChildren
   AlertsRoute: typeof AlertsRoute
+  ApplicationMapRoute: typeof ApplicationMapRoute
+  AreaTypesRoute: typeof AreaTypesRouteWithChildren
   AsPathListsRoute: typeof AsPathListsRouteWithChildren
   AsnsRoute: typeof AsnsRouteWithChildren
   AuditLogRoute: typeof AuditLogRoute
@@ -6159,6 +6681,8 @@ export interface RootRouteChildren {
   ContactGroupsRoute: typeof ContactGroupsRouteWithChildren
   ContactRolesRoute: typeof ContactRolesRouteWithChildren
   ContactsRoute: typeof ContactsRouteWithChildren
+  CoolingFeedsRoute: typeof CoolingFeedsRouteWithChildren
+  CoolingSourcesRoute: typeof CoolingSourcesRouteWithChildren
   CustomFieldGroupsRoute: typeof CustomFieldGroupsRouteWithChildren
   CustomFieldsRoute: typeof CustomFieldsRouteWithChildren
   DeployRunsRoute: typeof DeployRunsRoute
@@ -6179,6 +6703,8 @@ export interface RootRouteChildren {
   IpStatusesRoute: typeof IpStatusesRoute
   IpsecProfilesRoute: typeof IpsecProfilesRouteWithChildren
   L2vpnsRoute: typeof L2vpnsRouteWithChildren
+  LifecycleRoute: typeof LifecycleRoute
+  LocationTypesRoute: typeof LocationTypesRouteWithChildren
   LocationsRoute: typeof LocationsRouteWithChildren
   LoginRoute: typeof LoginRoute
   MacsRoute: typeof MacsRouteWithChildren
@@ -6226,6 +6752,10 @@ export interface RootRouteChildren {
   WirelessLansRoute: typeof WirelessLansRouteWithChildren
   ZonesRoute: typeof ZonesRouteWithChildren
   AlertRulesNewRoute: typeof AlertRulesNewRoute
+  ApplicationGroupsIdRoute: typeof ApplicationGroupsIdRoute
+  ApplicationGroupsNewRoute: typeof ApplicationGroupsNewRoute
+  ApplicationsIdRoute: typeof ApplicationsIdRoute
+  ApplicationsNewRoute: typeof ApplicationsNewRoute
   AuditLogIdRoute: typeof AuditLogIdRoute
   CabinetRolesIdRoute: typeof CabinetRolesIdRoute
   CabinetRolesNewRoute: typeof CabinetRolesNewRoute
@@ -6246,11 +6776,15 @@ export interface RootRouteChildren {
   ComplianceRulesIdRoute: typeof ComplianceRulesIdRoute
   ComplianceRulesNewRoute: typeof ComplianceRulesNewRoute
   DashboardsIdRoute: typeof DashboardsIdRoute
+  DeviceProfilesIdRoute: typeof DeviceProfilesIdRoute
+  DeviceProfilesNewRoute: typeof DeviceProfilesNewRoute
   DeviceRolesIdRoute: typeof DeviceRolesIdRoute
   DeviceRolesNewRoute: typeof DeviceRolesNewRoute
   DnsNamesNameRoute: typeof DnsNamesNameRoute
   DnsRecordsIdRoute: typeof DnsRecordsIdRoute
   DnsZonesIdRoute: typeof DnsZonesIdRoute
+  EolProductsIdRoute: typeof EolProductsIdRoute
+  EolProductsNewRoute: typeof EolProductsNewRoute
   IpsIdRoute: typeof IpsIdRoute
   IpsBulkEditRoute: typeof IpsBulkEditRoute
   IpsNewRoute: typeof IpsNewRoute
@@ -6268,6 +6802,8 @@ export interface RootRouteChildren {
   RacksIdRoute: typeof RacksIdRoute
   RacksElevationsRoute: typeof RacksElevationsRoute
   RacksNewRoute: typeof RacksNewRoute
+  RoomsIdRoute: typeof RoomsIdRoute
+  RoomsNewRoute: typeof RoomsNewRoute
   ScriptsIdRoute: typeof ScriptsIdRoute
   ServiceTemplatesIdRoute: typeof ServiceTemplatesIdRoute
   ServiceTemplatesNewRoute: typeof ServiceTemplatesNewRoute
@@ -6280,6 +6816,8 @@ export interface RootRouteChildren {
   VmGroupsIdRoute: typeof VmGroupsIdRoute
   VmGroupsNewRoute: typeof VmGroupsNewRoute
   WindowsServersIdRoute: typeof WindowsServersIdRoute
+  ApplicationGroupsIndexRoute: typeof ApplicationGroupsIndexRoute
+  ApplicationsIndexRoute: typeof ApplicationsIndexRoute
   BgpInstancesIndexRoute: typeof BgpInstancesIndexRoute
   CabinetRolesIndexRoute: typeof CabinetRolesIndexRoute
   CabinetTypesIndexRoute: typeof CabinetTypesIndexRoute
@@ -6291,6 +6829,7 @@ export interface RootRouteChildren {
   ClusterTypesIndexRoute: typeof ClusterTypesIndexRoute
   ClustersIndexRoute: typeof ClustersIndexRoute
   DashboardsIndexRoute: typeof DashboardsIndexRoute
+  DeviceProfilesIndexRoute: typeof DeviceProfilesIndexRoute
   DeviceRolesIndexRoute: typeof DeviceRolesIndexRoute
   DhcpLeasesIndexRoute: typeof DhcpLeasesIndexRoute
   DhcpReservationsIndexRoute: typeof DhcpReservationsIndexRoute
@@ -6298,6 +6837,7 @@ export interface RootRouteChildren {
   DnsRecordsIndexRoute: typeof DnsRecordsIndexRoute
   DnsZonesIndexRoute: typeof DnsZonesIndexRoute
   EigrpInstancesIndexRoute: typeof EigrpInstancesIndexRoute
+  EolProductsIndexRoute: typeof EolProductsIndexRoute
   IpsIndexRoute: typeof IpsIndexRoute
   IsisInstancesIndexRoute: typeof IsisInstancesIndexRoute
   JobsIndexRoute: typeof JobsIndexRoute
@@ -6310,8 +6850,10 @@ export interface RootRouteChildren {
   PlatformGroupsIndexRoute: typeof PlatformGroupsIndexRoute
   PlatformsIndexRoute: typeof PlatformsIndexRoute
   PortReservationsIndexRoute: typeof PortReservationsIndexRoute
+  PrtgIndexRoute: typeof PrtgIndexRoute
   RackRolesIndexRoute: typeof RackRolesIndexRoute
   RacksIndexRoute: typeof RacksIndexRoute
+  RoomsIndexRoute: typeof RoomsIndexRoute
   ScriptsIndexRoute: typeof ScriptsIndexRoute
   ServiceTemplatesIndexRoute: typeof ServiceTemplatesIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
@@ -6325,6 +6867,8 @@ export interface RootRouteChildren {
   WindowsServersIndexRoute: typeof WindowsServersIndexRoute
   ZabbixIndexRoute: typeof ZabbixIndexRoute
   AlertRulesIdEditRoute: typeof AlertRulesIdEditRoute
+  ApplicationGroupsIdEditRoute: typeof ApplicationGroupsIdEditRoute
+  ApplicationsIdEditRoute: typeof ApplicationsIdEditRoute
   CabinetRolesIdEditRoute: typeof CabinetRolesIdEditRoute
   CabinetTypesIdEditRoute: typeof CabinetTypesIdEditRoute
   CabinetsIdEditRoute: typeof CabinetsIdEditRoute
@@ -6333,7 +6877,9 @@ export interface RootRouteChildren {
   ClusterTypesIdEditRoute: typeof ClusterTypesIdEditRoute
   ClustersIdEditRoute: typeof ClustersIdEditRoute
   ComplianceRulesIdEditRoute: typeof ComplianceRulesIdEditRoute
+  DeviceProfilesIdEditRoute: typeof DeviceProfilesIdEditRoute
   DeviceRolesIdEditRoute: typeof DeviceRolesIdEditRoute
+  EolProductsIdEditRoute: typeof EolProductsIdEditRoute
   IpsIdEditRoute: typeof IpsIdEditRoute
   MaintenanceIdEditRoute: typeof MaintenanceIdEditRoute
   MonitoringChecksIdRoute: typeof MonitoringChecksIdRoute
@@ -6344,6 +6890,7 @@ export interface RootRouteChildren {
   PlatformsIdEditRoute: typeof PlatformsIdEditRoute
   RackRolesIdEditRoute: typeof RackRolesIdEditRoute
   RacksIdEditRoute: typeof RacksIdEditRoute
+  RoomsIdEditRoute: typeof RoomsIdEditRoute
   ScriptsRunsRunIdRoute: typeof ScriptsRunsRunIdRoute
   ServiceTemplatesIdEditRoute: typeof ServiceTemplatesIdEditRoute
   SilencesIdEditRoute: typeof SilencesIdEditRoute
@@ -6359,620 +6906,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/zones': {
-      id: '/zones'
-      path: '/zones'
-      fullPath: '/zones'
-      preLoaderRoute: typeof ZonesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/wireless-lans': {
-      id: '/wireless-lans'
-      path: '/wireless-lans'
-      fullPath: '/wireless-lans'
-      preLoaderRoute: typeof WirelessLansRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/wireless-lan-groups': {
-      id: '/wireless-lan-groups'
-      path: '/wireless-lan-groups'
-      fullPath: '/wireless-lan-groups'
-      preLoaderRoute: typeof WirelessLanGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/webhooks': {
-      id: '/webhooks'
-      path: '/webhooks'
-      fullPath: '/webhooks'
-      preLoaderRoute: typeof WebhooksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vrfs': {
-      id: '/vrfs'
-      path: '/vrfs'
-      fullPath: '/vrfs'
-      preLoaderRoute: typeof VrfsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vlans': {
-      id: '/vlans'
-      path: '/vlans'
-      fullPath: '/vlans'
-      preLoaderRoute: typeof VlansRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vlan-groups': {
-      id: '/vlan-groups'
-      path: '/vlan-groups'
-      fullPath: '/vlan-groups'
-      preLoaderRoute: typeof VlanGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/virtual-chassis': {
-      id: '/virtual-chassis'
-      path: '/virtual-chassis'
-      fullPath: '/virtual-chassis'
-      preLoaderRoute: typeof VirtualChassisRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/users': {
-      id: '/users'
-      path: '/users'
-      fullPath: '/users'
-      preLoaderRoute: typeof UsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tunnels': {
-      id: '/tunnels'
-      path: '/tunnels'
-      fullPath: '/tunnels'
-      preLoaderRoute: typeof TunnelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tunnel-groups': {
-      id: '/tunnel-groups'
-      path: '/tunnel-groups'
-      fullPath: '/tunnel-groups'
-      preLoaderRoute: typeof TunnelGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/topology': {
-      id: '/topology'
-      path: '/topology'
-      fullPath: '/topology'
-      preLoaderRoute: typeof TopologyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tenants': {
-      id: '/tenants'
-      path: '/tenants'
-      fullPath: '/tenants'
-      preLoaderRoute: typeof TenantsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tags': {
-      id: '/tags'
-      path: '/tags'
-      fullPath: '/tags'
-      preLoaderRoute: typeof TagsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/support-contracts': {
-      id: '/support-contracts'
-      path: '/support-contracts'
-      fullPath: '/support-contracts'
-      preLoaderRoute: typeof SupportContractsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/statuses': {
-      id: '/statuses'
-      path: '/statuses'
-      fullPath: '/statuses'
-      preLoaderRoute: typeof StatusesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/static-routes': {
-      id: '/static-routes'
-      path: '/static-routes'
-      fullPath: '/static-routes'
-      preLoaderRoute: typeof StaticRoutesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sites': {
-      id: '/sites'
-      path: '/sites'
-      fullPath: '/sites'
-      preLoaderRoute: typeof SitesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/site-map': {
-      id: '/site-map'
-      path: '/site-map'
-      fullPath: '/site-map'
-      preLoaderRoute: typeof SiteMapRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/set-password': {
-      id: '/set-password'
-      path: '/set-password'
-      fullPath: '/set-password'
-      preLoaderRoute: typeof SetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/search': {
-      id: '/search'
-      path: '/search'
-      fullPath: '/search'
-      preLoaderRoute: typeof SearchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/saved-filters': {
-      id: '/saved-filters'
-      path: '/saved-filters'
-      fullPath: '/saved-filters'
-      preLoaderRoute: typeof SavedFiltersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/routing-policies': {
-      id: '/routing-policies'
-      path: '/routing-policies'
-      fullPath: '/routing-policies'
-      preLoaderRoute: typeof RoutingPoliciesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/routing-keychains': {
-      id: '/routing-keychains'
-      path: '/routing-keychains'
-      fullPath: '/routing-keychains'
-      preLoaderRoute: typeof RoutingKeychainsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/route-targets': {
-      id: '/route-targets'
-      path: '/route-targets'
-      fullPath: '/route-targets'
-      preLoaderRoute: typeof RouteTargetsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rirs': {
-      id: '/rirs'
-      path: '/rirs'
-      fullPath: '/rirs'
-      preLoaderRoute: typeof RirsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/regions': {
-      id: '/regions'
-      path: '/regions'
-      fullPath: '/regions'
-      preLoaderRoute: typeof RegionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rack-types': {
-      id: '/rack-types'
-      path: '/rack-types'
-      fullPath: '/rack-types'
-      preLoaderRoute: typeof RackTypesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/providers': {
-      id: '/providers'
-      path: '/providers'
-      fullPath: '/providers'
-      preLoaderRoute: typeof ProvidersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/provider-networks': {
-      id: '/provider-networks'
-      path: '/provider-networks'
-      fullPath: '/provider-networks'
-      preLoaderRoute: typeof ProviderNetworksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prefixes': {
-      id: '/prefixes'
-      path: '/prefixes'
-      fullPath: '/prefixes'
-      preLoaderRoute: typeof PrefixesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/prefix-lists': {
-      id: '/prefix-lists'
-      path: '/prefix-lists'
-      fullPath: '/prefix-lists'
-      preLoaderRoute: typeof PrefixListsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/power-panels': {
-      id: '/power-panels'
-      path: '/power-panels'
-      fullPath: '/power-panels'
-      preLoaderRoute: typeof PowerPanelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/power-feeds': {
-      id: '/power-feeds'
-      path: '/power-feeds'
-      fullPath: '/power-feeds'
-      preLoaderRoute: typeof PowerFeedsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/port-utilization': {
-      id: '/port-utilization'
-      path: '/port-utilization'
-      fullPath: '/port-utilization'
-      preLoaderRoute: typeof PortUtilizationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/permissions': {
-      id: '/permissions'
-      path: '/permissions'
-      fullPath: '/permissions'
-      preLoaderRoute: typeof PermissionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ospf-areas': {
-      id: '/ospf-areas'
-      path: '/ospf-areas'
-      fullPath: '/ospf-areas'
-      preLoaderRoute: typeof OspfAreasRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/monitoring-engines': {
-      id: '/monitoring-engines'
-      path: '/monitoring-engines'
-      fullPath: '/monitoring-engines'
-      preLoaderRoute: typeof MonitoringEnginesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/monitoring': {
-      id: '/monitoring'
-      path: '/monitoring'
-      fullPath: '/monitoring'
-      preLoaderRoute: typeof MonitoringRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/module-types': {
-      id: '/module-types'
-      path: '/module-types'
-      fullPath: '/module-types'
-      preLoaderRoute: typeof ModuleTypesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/manufacturers': {
-      id: '/manufacturers'
-      path: '/manufacturers'
-      fullPath: '/manufacturers'
-      preLoaderRoute: typeof ManufacturersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/macs': {
-      id: '/macs'
-      path: '/macs'
-      fullPath: '/macs'
-      preLoaderRoute: typeof MacsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/locations': {
-      id: '/locations'
-      path: '/locations'
-      fullPath: '/locations'
-      preLoaderRoute: typeof LocationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/l2vpns': {
-      id: '/l2vpns'
-      path: '/l2vpns'
-      fullPath: '/l2vpns'
-      preLoaderRoute: typeof L2vpnsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ipsec-profiles': {
-      id: '/ipsec-profiles'
-      path: '/ipsec-profiles'
-      fullPath: '/ipsec-profiles'
-      preLoaderRoute: typeof IpsecProfilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ip-statuses': {
-      id: '/ip-statuses'
-      path: '/ip-statuses'
-      fullPath: '/ip-statuses'
-      preLoaderRoute: typeof IpStatusesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ip-roles': {
-      id: '/ip-roles'
-      path: '/ip-roles'
-      fullPath: '/ip-roles'
-      preLoaderRoute: typeof IpRolesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ip-ranges': {
-      id: '/ip-ranges'
-      path: '/ip-ranges'
-      fullPath: '/ip-ranges'
-      preLoaderRoute: typeof IpRangesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/interfaces': {
-      id: '/interfaces'
-      path: '/interfaces'
-      fullPath: '/interfaces'
-      preLoaderRoute: typeof InterfacesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/import': {
-      id: '/import'
-      path: '/import'
-      fullPath: '/import'
-      preLoaderRoute: typeof ImportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/groups': {
-      id: '/groups'
-      path: '/groups'
-      fullPath: '/groups'
-      preLoaderRoute: typeof GroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/floorplans': {
-      id: '/floorplans'
-      path: '/floorplans'
-      fullPath: '/floorplans'
-      preLoaderRoute: typeof FloorplansRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/floor-tile-types': {
-      id: '/floor-tile-types'
-      path: '/floor-tile-types'
-      fullPath: '/floor-tile-types'
-      preLoaderRoute: typeof FloorTileTypesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fiber-cables': {
-      id: '/fiber-cables'
-      path: '/fiber-cables'
-      fullPath: '/fiber-cables'
-      preLoaderRoute: typeof FiberCablesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fiber': {
-      id: '/fiber'
-      path: '/fiber'
-      fullPath: '/fiber'
-      preLoaderRoute: typeof FiberRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/fhrp-groups': {
-      id: '/fhrp-groups'
-      path: '/fhrp-groups'
-      fullPath: '/fhrp-groups'
-      preLoaderRoute: typeof FhrpGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/export-templates': {
-      id: '/export-templates'
-      path: '/export-templates'
-      fullPath: '/export-templates'
-      preLoaderRoute: typeof ExportTemplatesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ethernet-segments': {
-      id: '/ethernet-segments'
-      path: '/ethernet-segments'
-      fullPath: '/ethernet-segments'
-      preLoaderRoute: typeof EthernetSegmentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/devices': {
-      id: '/devices'
-      path: '/devices'
-      fullPath: '/devices'
-      preLoaderRoute: typeof DevicesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/device-types': {
-      id: '/device-types'
-      path: '/device-types'
-      fullPath: '/device-types'
-      preLoaderRoute: typeof DeviceTypesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/deploy-runs': {
-      id: '/deploy-runs'
-      path: '/deploy-runs'
-      fullPath: '/deploy-runs'
-      preLoaderRoute: typeof DeployRunsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/custom-fields': {
-      id: '/custom-fields'
-      path: '/custom-fields'
-      fullPath: '/custom-fields'
-      preLoaderRoute: typeof CustomFieldsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/custom-field-groups': {
-      id: '/custom-field-groups'
-      path: '/custom-field-groups'
-      fullPath: '/custom-field-groups'
-      preLoaderRoute: typeof CustomFieldGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contacts': {
-      id: '/contacts'
-      path: '/contacts'
-      fullPath: '/contacts'
-      preLoaderRoute: typeof ContactsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contact-roles': {
-      id: '/contact-roles'
-      path: '/contact-roles'
-      fullPath: '/contact-roles'
-      preLoaderRoute: typeof ContactRolesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/contact-groups': {
-      id: '/contact-groups'
-      path: '/contact-groups'
-      fullPath: '/contact-groups'
-      preLoaderRoute: typeof ContactGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/config-drift': {
-      id: '/config-drift'
-      path: '/config-drift'
-      fullPath: '/config-drift'
-      preLoaderRoute: typeof ConfigDriftRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/config-contexts': {
-      id: '/config-contexts'
-      path: '/config-contexts'
-      fullPath: '/config-contexts'
-      preLoaderRoute: typeof ConfigContextsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/config-bundles': {
-      id: '/config-bundles'
-      path: '/config-bundles'
-      fullPath: '/config-bundles'
-      preLoaderRoute: typeof ConfigBundlesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/compliance': {
-      id: '/compliance'
-      path: '/compliance'
-      fullPath: '/compliance'
-      preLoaderRoute: typeof ComplianceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/community-lists': {
-      id: '/community-lists'
-      path: '/community-lists'
-      fullPath: '/community-lists'
-      preLoaderRoute: typeof CommunityListsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/communities': {
-      id: '/communities'
-      path: '/communities'
-      fullPath: '/communities'
-      preLoaderRoute: typeof CommunitiesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circuits': {
-      id: '/circuits'
-      path: '/circuits'
-      fullPath: '/circuits'
-      preLoaderRoute: typeof CircuitsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circuit-types': {
-      id: '/circuit-types'
-      path: '/circuit-types'
-      fullPath: '/circuit-types'
-      preLoaderRoute: typeof CircuitTypesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/change-log': {
-      id: '/change-log'
-      path: '/change-log'
-      fullPath: '/change-log'
-      preLoaderRoute: typeof ChangeLogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cables': {
-      id: '/cables'
-      path: '/cables'
-      fullPath: '/cables'
-      preLoaderRoute: typeof CablesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bgp-sessions': {
-      id: '/bgp-sessions'
-      path: '/bgp-sessions'
-      fullPath: '/bgp-sessions'
-      preLoaderRoute: typeof BgpSessionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bgp-peer-groups': {
-      id: '/bgp-peer-groups'
-      path: '/bgp-peer-groups'
-      fullPath: '/bgp-peer-groups'
-      preLoaderRoute: typeof BgpPeerGroupsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bfd-profiles': {
-      id: '/bfd-profiles'
-      path: '/bfd-profiles'
-      fullPath: '/bfd-profiles'
-      preLoaderRoute: typeof BfdProfilesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/automation-targets': {
-      id: '/automation-targets'
-      path: '/automation-targets'
-      fullPath: '/automation-targets'
-      preLoaderRoute: typeof AutomationTargetsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/audit-log': {
-      id: '/audit-log'
-      path: '/audit-log'
-      fullPath: '/audit-log'
-      preLoaderRoute: typeof AuditLogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/asns': {
-      id: '/asns'
-      path: '/asns'
-      fullPath: '/asns'
-      preLoaderRoute: typeof AsnsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/as-path-lists': {
-      id: '/as-path-lists'
-      path: '/as-path-lists'
-      fullPath: '/as-path-lists'
-      preLoaderRoute: typeof AsPathListsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/alerts': {
-      id: '/alerts'
-      path: '/alerts'
-      fullPath: '/alerts'
-      preLoaderRoute: typeof AlertsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/aggregates': {
-      id: '/aggregates'
-      path: '/aggregates'
-      fullPath: '/aggregates'
-      preLoaderRoute: typeof AggregatesRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/agent-access': {
@@ -6982,2335 +6920,669 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgentAccessRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/aggregates': {
+      id: '/aggregates'
+      path: '/aggregates'
+      fullPath: '/aggregates'
+      preLoaderRoute: typeof AggregatesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/zones/': {
-      id: '/zones/'
-      path: '/'
-      fullPath: '/zones/'
-      preLoaderRoute: typeof ZonesIndexRouteImport
-      parentRoute: typeof ZonesRoute
-    }
-    '/zabbix/': {
-      id: '/zabbix/'
-      path: '/zabbix'
-      fullPath: '/zabbix/'
-      preLoaderRoute: typeof ZabbixIndexRouteImport
+    '/alerts': {
+      id: '/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/wireless-lans/': {
-      id: '/wireless-lans/'
-      path: '/'
-      fullPath: '/wireless-lans/'
-      preLoaderRoute: typeof WirelessLansIndexRouteImport
-      parentRoute: typeof WirelessLansRoute
-    }
-    '/wireless-lan-groups/': {
-      id: '/wireless-lan-groups/'
-      path: '/'
-      fullPath: '/wireless-lan-groups/'
-      preLoaderRoute: typeof WirelessLanGroupsIndexRouteImport
-      parentRoute: typeof WirelessLanGroupsRoute
-    }
-    '/windows-servers/': {
-      id: '/windows-servers/'
-      path: '/windows-servers'
-      fullPath: '/windows-servers/'
-      preLoaderRoute: typeof WindowsServersIndexRouteImport
+    '/application-map': {
+      id: '/application-map'
+      path: '/application-map'
+      fullPath: '/application-map'
+      preLoaderRoute: typeof ApplicationMapRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/webhooks/': {
-      id: '/webhooks/'
-      path: '/'
-      fullPath: '/webhooks/'
-      preLoaderRoute: typeof WebhooksIndexRouteImport
-      parentRoute: typeof WebhooksRoute
-    }
-    '/watched-endpoints/': {
-      id: '/watched-endpoints/'
-      path: '/watched-endpoints'
-      fullPath: '/watched-endpoints/'
-      preLoaderRoute: typeof WatchedEndpointsIndexRouteImport
+    '/area-types': {
+      id: '/area-types'
+      path: '/area-types'
+      fullPath: '/area-types'
+      preLoaderRoute: typeof AreaTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/vteps/': {
-      id: '/vteps/'
-      path: '/vteps'
-      fullPath: '/vteps/'
-      preLoaderRoute: typeof VtepsIndexRouteImport
+    '/as-path-lists': {
+      id: '/as-path-lists'
+      path: '/as-path-lists'
+      fullPath: '/as-path-lists'
+      preLoaderRoute: typeof AsPathListsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/vrfs/': {
-      id: '/vrfs/'
-      path: '/'
-      fullPath: '/vrfs/'
-      preLoaderRoute: typeof VrfsIndexRouteImport
-      parentRoute: typeof VrfsRoute
-    }
-    '/vm-groups/': {
-      id: '/vm-groups/'
-      path: '/vm-groups'
-      fullPath: '/vm-groups/'
-      preLoaderRoute: typeof VmGroupsIndexRouteImport
+    '/asns': {
+      id: '/asns'
+      path: '/asns'
+      fullPath: '/asns'
+      preLoaderRoute: typeof AsnsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/vlans/': {
-      id: '/vlans/'
-      path: '/'
-      fullPath: '/vlans/'
-      preLoaderRoute: typeof VlansIndexRouteImport
-      parentRoute: typeof VlansRoute
-    }
-    '/vlan-groups/': {
-      id: '/vlan-groups/'
-      path: '/'
-      fullPath: '/vlan-groups/'
-      preLoaderRoute: typeof VlanGroupsIndexRouteImport
-      parentRoute: typeof VlanGroupsRoute
-    }
-    '/virtualization-sources/': {
-      id: '/virtualization-sources/'
-      path: '/virtualization-sources'
-      fullPath: '/virtualization-sources/'
-      preLoaderRoute: typeof VirtualizationSourcesIndexRouteImport
+    '/audit-log': {
+      id: '/audit-log'
+      path: '/audit-log'
+      fullPath: '/audit-log'
+      preLoaderRoute: typeof AuditLogRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/virtual-topology/': {
-      id: '/virtual-topology/'
-      path: '/virtual-topology'
-      fullPath: '/virtual-topology/'
-      preLoaderRoute: typeof VirtualTopologyIndexRouteImport
+    '/automation-targets': {
+      id: '/automation-targets'
+      path: '/automation-targets'
+      fullPath: '/automation-targets'
+      preLoaderRoute: typeof AutomationTargetsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/virtual-switches/': {
-      id: '/virtual-switches/'
-      path: '/virtual-switches'
-      fullPath: '/virtual-switches/'
-      preLoaderRoute: typeof VirtualSwitchesIndexRouteImport
+    '/bfd-profiles': {
+      id: '/bfd-profiles'
+      path: '/bfd-profiles'
+      fullPath: '/bfd-profiles'
+      preLoaderRoute: typeof BfdProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/virtual-machines/': {
-      id: '/virtual-machines/'
-      path: '/virtual-machines'
-      fullPath: '/virtual-machines/'
-      preLoaderRoute: typeof VirtualMachinesIndexRouteImport
+    '/bgp-peer-groups': {
+      id: '/bgp-peer-groups'
+      path: '/bgp-peer-groups'
+      fullPath: '/bgp-peer-groups'
+      preLoaderRoute: typeof BgpPeerGroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/virtual-chassis/': {
-      id: '/virtual-chassis/'
-      path: '/'
-      fullPath: '/virtual-chassis/'
-      preLoaderRoute: typeof VirtualChassisIndexRouteImport
-      parentRoute: typeof VirtualChassisRoute
-    }
-    '/users/': {
-      id: '/users/'
-      path: '/'
-      fullPath: '/users/'
-      preLoaderRoute: typeof UsersIndexRouteImport
-      parentRoute: typeof UsersRoute
-    }
-    '/tunnels/': {
-      id: '/tunnels/'
-      path: '/'
-      fullPath: '/tunnels/'
-      preLoaderRoute: typeof TunnelsIndexRouteImport
-      parentRoute: typeof TunnelsRoute
-    }
-    '/tunnel-groups/': {
-      id: '/tunnel-groups/'
-      path: '/'
-      fullPath: '/tunnel-groups/'
-      preLoaderRoute: typeof TunnelGroupsIndexRouteImport
-      parentRoute: typeof TunnelGroupsRoute
-    }
-    '/topology/': {
-      id: '/topology/'
-      path: '/'
-      fullPath: '/topology/'
-      preLoaderRoute: typeof TopologyIndexRouteImport
-      parentRoute: typeof TopologyRoute
-    }
-    '/tenants/': {
-      id: '/tenants/'
-      path: '/'
-      fullPath: '/tenants/'
-      preLoaderRoute: typeof TenantsIndexRouteImport
-      parentRoute: typeof TenantsRoute
-    }
-    '/tags/': {
-      id: '/tags/'
-      path: '/'
-      fullPath: '/tags/'
-      preLoaderRoute: typeof TagsIndexRouteImport
-      parentRoute: typeof TagsRoute
-    }
-    '/support-contracts/': {
-      id: '/support-contracts/'
-      path: '/'
-      fullPath: '/support-contracts/'
-      preLoaderRoute: typeof SupportContractsIndexRouteImport
-      parentRoute: typeof SupportContractsRoute
-    }
-    '/statuses/': {
-      id: '/statuses/'
-      path: '/'
-      fullPath: '/statuses/'
-      preLoaderRoute: typeof StatusesIndexRouteImport
-      parentRoute: typeof StatusesRoute
-    }
-    '/static-routes/': {
-      id: '/static-routes/'
-      path: '/'
-      fullPath: '/static-routes/'
-      preLoaderRoute: typeof StaticRoutesIndexRouteImport
-      parentRoute: typeof StaticRoutesRoute
-    }
-    '/sites/': {
-      id: '/sites/'
-      path: '/'
-      fullPath: '/sites/'
-      preLoaderRoute: typeof SitesIndexRouteImport
-      parentRoute: typeof SitesRoute
-    }
-    '/settings/': {
-      id: '/settings/'
-      path: '/'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof SettingsIndexRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/services/': {
-      id: '/services/'
-      path: '/services'
-      fullPath: '/services/'
-      preLoaderRoute: typeof ServicesIndexRouteImport
+    '/bgp-sessions': {
+      id: '/bgp-sessions'
+      path: '/bgp-sessions'
+      fullPath: '/bgp-sessions'
+      preLoaderRoute: typeof BgpSessionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/service-templates/': {
-      id: '/service-templates/'
-      path: '/service-templates'
-      fullPath: '/service-templates/'
-      preLoaderRoute: typeof ServiceTemplatesIndexRouteImport
+    '/cables': {
+      id: '/cables'
+      path: '/cables'
+      fullPath: '/cables'
+      preLoaderRoute: typeof CablesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scripts/': {
-      id: '/scripts/'
-      path: '/scripts'
-      fullPath: '/scripts/'
-      preLoaderRoute: typeof ScriptsIndexRouteImport
+    '/change-log': {
+      id: '/change-log'
+      path: '/change-log'
+      fullPath: '/change-log'
+      preLoaderRoute: typeof ChangeLogRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/routing-policies/': {
-      id: '/routing-policies/'
-      path: '/'
-      fullPath: '/routing-policies/'
-      preLoaderRoute: typeof RoutingPoliciesIndexRouteImport
-      parentRoute: typeof RoutingPoliciesRoute
-    }
-    '/routing-keychains/': {
-      id: '/routing-keychains/'
-      path: '/'
-      fullPath: '/routing-keychains/'
-      preLoaderRoute: typeof RoutingKeychainsIndexRouteImport
-      parentRoute: typeof RoutingKeychainsRoute
-    }
-    '/route-targets/': {
-      id: '/route-targets/'
-      path: '/'
-      fullPath: '/route-targets/'
-      preLoaderRoute: typeof RouteTargetsIndexRouteImport
-      parentRoute: typeof RouteTargetsRoute
-    }
-    '/rirs/': {
-      id: '/rirs/'
-      path: '/'
-      fullPath: '/rirs/'
-      preLoaderRoute: typeof RirsIndexRouteImport
-      parentRoute: typeof RirsRoute
-    }
-    '/regions/': {
-      id: '/regions/'
-      path: '/'
-      fullPath: '/regions/'
-      preLoaderRoute: typeof RegionsIndexRouteImport
-      parentRoute: typeof RegionsRoute
-    }
-    '/racks/': {
-      id: '/racks/'
-      path: '/racks'
-      fullPath: '/racks/'
-      preLoaderRoute: typeof RacksIndexRouteImport
+    '/circuit-types': {
+      id: '/circuit-types'
+      path: '/circuit-types'
+      fullPath: '/circuit-types'
+      preLoaderRoute: typeof CircuitTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/rack-types/': {
-      id: '/rack-types/'
-      path: '/'
-      fullPath: '/rack-types/'
-      preLoaderRoute: typeof RackTypesIndexRouteImport
-      parentRoute: typeof RackTypesRoute
-    }
-    '/rack-roles/': {
-      id: '/rack-roles/'
-      path: '/rack-roles'
-      fullPath: '/rack-roles/'
-      preLoaderRoute: typeof RackRolesIndexRouteImport
+    '/circuits': {
+      id: '/circuits'
+      path: '/circuits'
+      fullPath: '/circuits'
+      preLoaderRoute: typeof CircuitsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/providers/': {
-      id: '/providers/'
-      path: '/'
-      fullPath: '/providers/'
-      preLoaderRoute: typeof ProvidersIndexRouteImport
-      parentRoute: typeof ProvidersRoute
-    }
-    '/provider-networks/': {
-      id: '/provider-networks/'
-      path: '/'
-      fullPath: '/provider-networks/'
-      preLoaderRoute: typeof ProviderNetworksIndexRouteImport
-      parentRoute: typeof ProviderNetworksRoute
-    }
-    '/prefixes/': {
-      id: '/prefixes/'
-      path: '/'
-      fullPath: '/prefixes/'
-      preLoaderRoute: typeof PrefixesIndexRouteImport
-      parentRoute: typeof PrefixesRoute
-    }
-    '/prefix-lists/': {
-      id: '/prefix-lists/'
-      path: '/'
-      fullPath: '/prefix-lists/'
-      preLoaderRoute: typeof PrefixListsIndexRouteImport
-      parentRoute: typeof PrefixListsRoute
-    }
-    '/power-panels/': {
-      id: '/power-panels/'
-      path: '/'
-      fullPath: '/power-panels/'
-      preLoaderRoute: typeof PowerPanelsIndexRouteImport
-      parentRoute: typeof PowerPanelsRoute
-    }
-    '/power-feeds/': {
-      id: '/power-feeds/'
-      path: '/'
-      fullPath: '/power-feeds/'
-      preLoaderRoute: typeof PowerFeedsIndexRouteImport
-      parentRoute: typeof PowerFeedsRoute
-    }
-    '/port-reservations/': {
-      id: '/port-reservations/'
-      path: '/port-reservations'
-      fullPath: '/port-reservations/'
-      preLoaderRoute: typeof PortReservationsIndexRouteImport
+    '/communities': {
+      id: '/communities'
+      path: '/communities'
+      fullPath: '/communities'
+      preLoaderRoute: typeof CommunitiesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/platforms/': {
-      id: '/platforms/'
-      path: '/platforms'
-      fullPath: '/platforms/'
-      preLoaderRoute: typeof PlatformsIndexRouteImport
+    '/community-lists': {
+      id: '/community-lists'
+      path: '/community-lists'
+      fullPath: '/community-lists'
+      preLoaderRoute: typeof CommunityListsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/platform-groups/': {
-      id: '/platform-groups/'
-      path: '/platform-groups'
-      fullPath: '/platform-groups/'
-      preLoaderRoute: typeof PlatformGroupsIndexRouteImport
+    '/compliance': {
+      id: '/compliance'
+      path: '/compliance'
+      fullPath: '/compliance'
+      preLoaderRoute: typeof ComplianceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/planning/': {
-      id: '/planning/'
-      path: '/planning'
-      fullPath: '/planning/'
-      preLoaderRoute: typeof PlanningIndexRouteImport
+    '/config-bundles': {
+      id: '/config-bundles'
+      path: '/config-bundles'
+      fullPath: '/config-bundles'
+      preLoaderRoute: typeof ConfigBundlesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/permissions/': {
-      id: '/permissions/'
-      path: '/'
-      fullPath: '/permissions/'
-      preLoaderRoute: typeof PermissionsIndexRouteImport
-      parentRoute: typeof PermissionsRoute
-    }
-    '/oxidized/': {
-      id: '/oxidized/'
-      path: '/oxidized'
-      fullPath: '/oxidized/'
-      preLoaderRoute: typeof OxidizedIndexRouteImport
+    '/config-contexts': {
+      id: '/config-contexts'
+      path: '/config-contexts'
+      fullPath: '/config-contexts'
+      preLoaderRoute: typeof ConfigContextsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ospf-instances/': {
-      id: '/ospf-instances/'
-      path: '/ospf-instances'
-      fullPath: '/ospf-instances/'
-      preLoaderRoute: typeof OspfInstancesIndexRouteImport
+    '/config-drift': {
+      id: '/config-drift'
+      path: '/config-drift'
+      fullPath: '/config-drift'
+      preLoaderRoute: typeof ConfigDriftRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ospf-areas/': {
-      id: '/ospf-areas/'
-      path: '/'
-      fullPath: '/ospf-areas/'
-      preLoaderRoute: typeof OspfAreasIndexRouteImport
-      parentRoute: typeof OspfAreasRoute
-    }
-    '/nat-rules/': {
-      id: '/nat-rules/'
-      path: '/nat-rules'
-      fullPath: '/nat-rules/'
-      preLoaderRoute: typeof NatRulesIndexRouteImport
+    '/contact-groups': {
+      id: '/contact-groups'
+      path: '/contact-groups'
+      fullPath: '/contact-groups'
+      preLoaderRoute: typeof ContactGroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/module-types/': {
-      id: '/module-types/'
-      path: '/'
-      fullPath: '/module-types/'
-      preLoaderRoute: typeof ModuleTypesIndexRouteImport
-      parentRoute: typeof ModuleTypesRoute
-    }
-    '/manufacturers/': {
-      id: '/manufacturers/'
-      path: '/'
-      fullPath: '/manufacturers/'
-      preLoaderRoute: typeof ManufacturersIndexRouteImport
-      parentRoute: typeof ManufacturersRoute
-    }
-    '/maintenance/': {
-      id: '/maintenance/'
-      path: '/maintenance'
-      fullPath: '/maintenance/'
-      preLoaderRoute: typeof MaintenanceIndexRouteImport
+    '/contact-roles': {
+      id: '/contact-roles'
+      path: '/contact-roles'
+      fullPath: '/contact-roles'
+      preLoaderRoute: typeof ContactRolesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/macs/': {
-      id: '/macs/'
-      path: '/'
-      fullPath: '/macs/'
-      preLoaderRoute: typeof MacsIndexRouteImport
-      parentRoute: typeof MacsRoute
-    }
-    '/locations/': {
-      id: '/locations/'
-      path: '/'
-      fullPath: '/locations/'
-      preLoaderRoute: typeof LocationsIndexRouteImport
-      parentRoute: typeof LocationsRoute
-    }
-    '/label-templates/': {
-      id: '/label-templates/'
-      path: '/label-templates'
-      fullPath: '/label-templates/'
-      preLoaderRoute: typeof LabelTemplatesIndexRouteImport
+    '/contacts': {
+      id: '/contacts'
+      path: '/contacts'
+      fullPath: '/contacts'
+      preLoaderRoute: typeof ContactsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/l2vpns/': {
-      id: '/l2vpns/'
-      path: '/'
-      fullPath: '/l2vpns/'
-      preLoaderRoute: typeof L2vpnsIndexRouteImport
-      parentRoute: typeof L2vpnsRoute
-    }
-    '/jobs/': {
-      id: '/jobs/'
-      path: '/jobs'
-      fullPath: '/jobs/'
-      preLoaderRoute: typeof JobsIndexRouteImport
+    '/cooling-feeds': {
+      id: '/cooling-feeds'
+      path: '/cooling-feeds'
+      fullPath: '/cooling-feeds'
+      preLoaderRoute: typeof CoolingFeedsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/isis-instances/': {
-      id: '/isis-instances/'
-      path: '/isis-instances'
-      fullPath: '/isis-instances/'
-      preLoaderRoute: typeof IsisInstancesIndexRouteImport
+    '/cooling-sources': {
+      id: '/cooling-sources'
+      path: '/cooling-sources'
+      fullPath: '/cooling-sources'
+      preLoaderRoute: typeof CoolingSourcesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ipsec-profiles/': {
-      id: '/ipsec-profiles/'
-      path: '/'
-      fullPath: '/ipsec-profiles/'
-      preLoaderRoute: typeof IpsecProfilesIndexRouteImport
-      parentRoute: typeof IpsecProfilesRoute
-    }
-    '/ips/': {
-      id: '/ips/'
-      path: '/ips'
-      fullPath: '/ips/'
-      preLoaderRoute: typeof IpsIndexRouteImport
+    '/custom-field-groups': {
+      id: '/custom-field-groups'
+      path: '/custom-field-groups'
+      fullPath: '/custom-field-groups'
+      preLoaderRoute: typeof CustomFieldGroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ip-roles/': {
-      id: '/ip-roles/'
-      path: '/'
-      fullPath: '/ip-roles/'
-      preLoaderRoute: typeof IpRolesIndexRouteImport
-      parentRoute: typeof IpRolesRoute
-    }
-    '/ip-ranges/': {
-      id: '/ip-ranges/'
-      path: '/'
-      fullPath: '/ip-ranges/'
-      preLoaderRoute: typeof IpRangesIndexRouteImport
-      parentRoute: typeof IpRangesRoute
-    }
-    '/interfaces/': {
-      id: '/interfaces/'
-      path: '/'
-      fullPath: '/interfaces/'
-      preLoaderRoute: typeof InterfacesIndexRouteImport
-      parentRoute: typeof InterfacesRoute
-    }
-    '/import/': {
-      id: '/import/'
-      path: '/'
-      fullPath: '/import/'
-      preLoaderRoute: typeof ImportIndexRouteImport
-      parentRoute: typeof ImportRoute
-    }
-    '/groups/': {
-      id: '/groups/'
-      path: '/'
-      fullPath: '/groups/'
-      preLoaderRoute: typeof GroupsIndexRouteImport
-      parentRoute: typeof GroupsRoute
-    }
-    '/floorplans/': {
-      id: '/floorplans/'
-      path: '/'
-      fullPath: '/floorplans/'
-      preLoaderRoute: typeof FloorplansIndexRouteImport
-      parentRoute: typeof FloorplansRoute
-    }
-    '/floor-tile-types/': {
-      id: '/floor-tile-types/'
-      path: '/'
-      fullPath: '/floor-tile-types/'
-      preLoaderRoute: typeof FloorTileTypesIndexRouteImport
-      parentRoute: typeof FloorTileTypesRoute
-    }
-    '/fhrp-groups/': {
-      id: '/fhrp-groups/'
-      path: '/'
-      fullPath: '/fhrp-groups/'
-      preLoaderRoute: typeof FhrpGroupsIndexRouteImport
-      parentRoute: typeof FhrpGroupsRoute
-    }
-    '/export-templates/': {
-      id: '/export-templates/'
-      path: '/'
-      fullPath: '/export-templates/'
-      preLoaderRoute: typeof ExportTemplatesIndexRouteImport
-      parentRoute: typeof ExportTemplatesRoute
-    }
-    '/ethernet-segments/': {
-      id: '/ethernet-segments/'
-      path: '/'
-      fullPath: '/ethernet-segments/'
-      preLoaderRoute: typeof EthernetSegmentsIndexRouteImport
-      parentRoute: typeof EthernetSegmentsRoute
-    }
-    '/eigrp-instances/': {
-      id: '/eigrp-instances/'
-      path: '/eigrp-instances'
-      fullPath: '/eigrp-instances/'
-      preLoaderRoute: typeof EigrpInstancesIndexRouteImport
+    '/custom-fields': {
+      id: '/custom-fields'
+      path: '/custom-fields'
+      fullPath: '/custom-fields'
+      preLoaderRoute: typeof CustomFieldsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dns-zones/': {
-      id: '/dns-zones/'
-      path: '/dns-zones'
-      fullPath: '/dns-zones/'
-      preLoaderRoute: typeof DnsZonesIndexRouteImport
+    '/deploy-runs': {
+      id: '/deploy-runs'
+      path: '/deploy-runs'
+      fullPath: '/deploy-runs'
+      preLoaderRoute: typeof DeployRunsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dns-records/': {
-      id: '/dns-records/'
-      path: '/dns-records'
-      fullPath: '/dns-records/'
-      preLoaderRoute: typeof DnsRecordsIndexRouteImport
+    '/device-types': {
+      id: '/device-types'
+      path: '/device-types'
+      fullPath: '/device-types'
+      preLoaderRoute: typeof DeviceTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dhcp-scopes/': {
-      id: '/dhcp-scopes/'
-      path: '/dhcp-scopes'
-      fullPath: '/dhcp-scopes/'
-      preLoaderRoute: typeof DhcpScopesIndexRouteImport
+    '/devices': {
+      id: '/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof DevicesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dhcp-reservations/': {
-      id: '/dhcp-reservations/'
-      path: '/dhcp-reservations'
-      fullPath: '/dhcp-reservations/'
-      preLoaderRoute: typeof DhcpReservationsIndexRouteImport
+    '/ethernet-segments': {
+      id: '/ethernet-segments'
+      path: '/ethernet-segments'
+      fullPath: '/ethernet-segments'
+      preLoaderRoute: typeof EthernetSegmentsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dhcp-leases/': {
-      id: '/dhcp-leases/'
-      path: '/dhcp-leases'
-      fullPath: '/dhcp-leases/'
-      preLoaderRoute: typeof DhcpLeasesIndexRouteImport
+    '/export-templates': {
+      id: '/export-templates'
+      path: '/export-templates'
+      fullPath: '/export-templates'
+      preLoaderRoute: typeof ExportTemplatesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/devices/': {
-      id: '/devices/'
-      path: '/'
-      fullPath: '/devices/'
-      preLoaderRoute: typeof DevicesIndexRouteImport
-      parentRoute: typeof DevicesRoute
-    }
-    '/device-types/': {
-      id: '/device-types/'
-      path: '/'
-      fullPath: '/device-types/'
-      preLoaderRoute: typeof DeviceTypesIndexRouteImport
-      parentRoute: typeof DeviceTypesRoute
-    }
-    '/device-roles/': {
-      id: '/device-roles/'
-      path: '/device-roles'
-      fullPath: '/device-roles/'
-      preLoaderRoute: typeof DeviceRolesIndexRouteImport
+    '/fhrp-groups': {
+      id: '/fhrp-groups'
+      path: '/fhrp-groups'
+      fullPath: '/fhrp-groups'
+      preLoaderRoute: typeof FhrpGroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/dashboards/': {
-      id: '/dashboards/'
-      path: '/dashboards'
-      fullPath: '/dashboards/'
-      preLoaderRoute: typeof DashboardsIndexRouteImport
+    '/fiber': {
+      id: '/fiber'
+      path: '/fiber'
+      fullPath: '/fiber'
+      preLoaderRoute: typeof FiberRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/custom-fields/': {
-      id: '/custom-fields/'
-      path: '/'
-      fullPath: '/custom-fields/'
-      preLoaderRoute: typeof CustomFieldsIndexRouteImport
-      parentRoute: typeof CustomFieldsRoute
-    }
-    '/custom-field-groups/': {
-      id: '/custom-field-groups/'
-      path: '/'
-      fullPath: '/custom-field-groups/'
-      preLoaderRoute: typeof CustomFieldGroupsIndexRouteImport
-      parentRoute: typeof CustomFieldGroupsRoute
-    }
-    '/contacts/': {
-      id: '/contacts/'
-      path: '/'
-      fullPath: '/contacts/'
-      preLoaderRoute: typeof ContactsIndexRouteImport
-      parentRoute: typeof ContactsRoute
-    }
-    '/contact-roles/': {
-      id: '/contact-roles/'
-      path: '/'
-      fullPath: '/contact-roles/'
-      preLoaderRoute: typeof ContactRolesIndexRouteImport
-      parentRoute: typeof ContactRolesRoute
-    }
-    '/contact-groups/': {
-      id: '/contact-groups/'
-      path: '/'
-      fullPath: '/contact-groups/'
-      preLoaderRoute: typeof ContactGroupsIndexRouteImport
-      parentRoute: typeof ContactGroupsRoute
-    }
-    '/config-contexts/': {
-      id: '/config-contexts/'
-      path: '/'
-      fullPath: '/config-contexts/'
-      preLoaderRoute: typeof ConfigContextsIndexRouteImport
-      parentRoute: typeof ConfigContextsRoute
-    }
-    '/config-bundles/': {
-      id: '/config-bundles/'
-      path: '/'
-      fullPath: '/config-bundles/'
-      preLoaderRoute: typeof ConfigBundlesIndexRouteImport
-      parentRoute: typeof ConfigBundlesRoute
-    }
-    '/community-lists/': {
-      id: '/community-lists/'
-      path: '/'
-      fullPath: '/community-lists/'
-      preLoaderRoute: typeof CommunityListsIndexRouteImport
-      parentRoute: typeof CommunityListsRoute
-    }
-    '/communities/': {
-      id: '/communities/'
-      path: '/'
-      fullPath: '/communities/'
-      preLoaderRoute: typeof CommunitiesIndexRouteImport
-      parentRoute: typeof CommunitiesRoute
-    }
-    '/clusters/': {
-      id: '/clusters/'
-      path: '/clusters'
-      fullPath: '/clusters/'
-      preLoaderRoute: typeof ClustersIndexRouteImport
+    '/fiber-cables': {
+      id: '/fiber-cables'
+      path: '/fiber-cables'
+      fullPath: '/fiber-cables'
+      preLoaderRoute: typeof FiberCablesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cluster-types/': {
-      id: '/cluster-types/'
-      path: '/cluster-types'
-      fullPath: '/cluster-types/'
-      preLoaderRoute: typeof ClusterTypesIndexRouteImport
+    '/floor-tile-types': {
+      id: '/floor-tile-types'
+      path: '/floor-tile-types'
+      fullPath: '/floor-tile-types'
+      preLoaderRoute: typeof FloorTileTypesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cluster-groups/': {
-      id: '/cluster-groups/'
-      path: '/cluster-groups'
-      fullPath: '/cluster-groups/'
-      preLoaderRoute: typeof ClusterGroupsIndexRouteImport
+    '/floorplans': {
+      id: '/floorplans'
+      path: '/floorplans'
+      fullPath: '/floorplans'
+      preLoaderRoute: typeof FloorplansRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/circuits/': {
-      id: '/circuits/'
-      path: '/'
-      fullPath: '/circuits/'
-      preLoaderRoute: typeof CircuitsIndexRouteImport
-      parentRoute: typeof CircuitsRoute
-    }
-    '/circuit-types/': {
-      id: '/circuit-types/'
-      path: '/'
-      fullPath: '/circuit-types/'
-      preLoaderRoute: typeof CircuitTypesIndexRouteImport
-      parentRoute: typeof CircuitTypesRoute
-    }
-    '/certificates/': {
-      id: '/certificates/'
-      path: '/certificates'
-      fullPath: '/certificates/'
-      preLoaderRoute: typeof CertificatesIndexRouteImport
+    '/groups': {
+      id: '/groups'
+      path: '/groups'
+      fullPath: '/groups'
+      preLoaderRoute: typeof GroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/certificate-requests/': {
-      id: '/certificate-requests/'
-      path: '/certificate-requests'
-      fullPath: '/certificate-requests/'
-      preLoaderRoute: typeof CertificateRequestsIndexRouteImport
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/certificate-issuers/': {
-      id: '/certificate-issuers/'
-      path: '/certificate-issuers'
-      fullPath: '/certificate-issuers/'
-      preLoaderRoute: typeof CertificateIssuersIndexRouteImport
+    '/interfaces': {
+      id: '/interfaces'
+      path: '/interfaces'
+      fullPath: '/interfaces'
+      preLoaderRoute: typeof InterfacesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cables/': {
-      id: '/cables/'
-      path: '/'
-      fullPath: '/cables/'
-      preLoaderRoute: typeof CablesIndexRouteImport
-      parentRoute: typeof CablesRoute
-    }
-    '/cabinets/': {
-      id: '/cabinets/'
-      path: '/cabinets'
-      fullPath: '/cabinets/'
-      preLoaderRoute: typeof CabinetsIndexRouteImport
+    '/ip-ranges': {
+      id: '/ip-ranges'
+      path: '/ip-ranges'
+      fullPath: '/ip-ranges'
+      preLoaderRoute: typeof IpRangesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cabinet-types/': {
-      id: '/cabinet-types/'
-      path: '/cabinet-types'
-      fullPath: '/cabinet-types/'
-      preLoaderRoute: typeof CabinetTypesIndexRouteImport
+    '/ip-roles': {
+      id: '/ip-roles'
+      path: '/ip-roles'
+      fullPath: '/ip-roles'
+      preLoaderRoute: typeof IpRolesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cabinet-roles/': {
-      id: '/cabinet-roles/'
-      path: '/cabinet-roles'
-      fullPath: '/cabinet-roles/'
-      preLoaderRoute: typeof CabinetRolesIndexRouteImport
+    '/ip-statuses': {
+      id: '/ip-statuses'
+      path: '/ip-statuses'
+      fullPath: '/ip-statuses'
+      preLoaderRoute: typeof IpStatusesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/bgp-sessions/': {
-      id: '/bgp-sessions/'
-      path: '/'
-      fullPath: '/bgp-sessions/'
-      preLoaderRoute: typeof BgpSessionsIndexRouteImport
-      parentRoute: typeof BgpSessionsRoute
-    }
-    '/bgp-peer-groups/': {
-      id: '/bgp-peer-groups/'
-      path: '/'
-      fullPath: '/bgp-peer-groups/'
-      preLoaderRoute: typeof BgpPeerGroupsIndexRouteImport
-      parentRoute: typeof BgpPeerGroupsRoute
-    }
-    '/bgp-instances/': {
-      id: '/bgp-instances/'
-      path: '/bgp-instances'
-      fullPath: '/bgp-instances/'
-      preLoaderRoute: typeof BgpInstancesIndexRouteImport
+    '/ipsec-profiles': {
+      id: '/ipsec-profiles'
+      path: '/ipsec-profiles'
+      fullPath: '/ipsec-profiles'
+      preLoaderRoute: typeof IpsecProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/bfd-profiles/': {
-      id: '/bfd-profiles/'
-      path: '/'
-      fullPath: '/bfd-profiles/'
-      preLoaderRoute: typeof BfdProfilesIndexRouteImport
-      parentRoute: typeof BfdProfilesRoute
+    '/l2vpns': {
+      id: '/l2vpns'
+      path: '/l2vpns'
+      fullPath: '/l2vpns'
+      preLoaderRoute: typeof L2vpnsRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/automation-targets/': {
-      id: '/automation-targets/'
-      path: '/'
-      fullPath: '/automation-targets/'
-      preLoaderRoute: typeof AutomationTargetsIndexRouteImport
-      parentRoute: typeof AutomationTargetsRoute
+    '/lifecycle': {
+      id: '/lifecycle'
+      path: '/lifecycle'
+      fullPath: '/lifecycle'
+      preLoaderRoute: typeof LifecycleRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/asns/': {
-      id: '/asns/'
-      path: '/'
-      fullPath: '/asns/'
-      preLoaderRoute: typeof AsnsIndexRouteImport
-      parentRoute: typeof AsnsRoute
+    '/location-types': {
+      id: '/location-types'
+      path: '/location-types'
+      fullPath: '/location-types'
+      preLoaderRoute: typeof LocationTypesRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/as-path-lists/': {
-      id: '/as-path-lists/'
-      path: '/'
-      fullPath: '/as-path-lists/'
-      preLoaderRoute: typeof AsPathListsIndexRouteImport
-      parentRoute: typeof AsPathListsRoute
+    '/locations': {
+      id: '/locations'
+      path: '/locations'
+      fullPath: '/locations'
+      preLoaderRoute: typeof LocationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/macs': {
+      id: '/macs'
+      path: '/macs'
+      fullPath: '/macs'
+      preLoaderRoute: typeof MacsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manufacturers': {
+      id: '/manufacturers'
+      path: '/manufacturers'
+      fullPath: '/manufacturers'
+      preLoaderRoute: typeof ManufacturersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/module-types': {
+      id: '/module-types'
+      path: '/module-types'
+      fullPath: '/module-types'
+      preLoaderRoute: typeof ModuleTypesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring': {
+      id: '/monitoring'
+      path: '/monitoring'
+      fullPath: '/monitoring'
+      preLoaderRoute: typeof MonitoringRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring-engines': {
+      id: '/monitoring-engines'
+      path: '/monitoring-engines'
+      fullPath: '/monitoring-engines'
+      preLoaderRoute: typeof MonitoringEnginesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ospf-areas': {
+      id: '/ospf-areas'
+      path: '/ospf-areas'
+      fullPath: '/ospf-areas'
+      preLoaderRoute: typeof OspfAreasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/permissions': {
+      id: '/permissions'
+      path: '/permissions'
+      fullPath: '/permissions'
+      preLoaderRoute: typeof PermissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/port-utilization': {
+      id: '/port-utilization'
+      path: '/port-utilization'
+      fullPath: '/port-utilization'
+      preLoaderRoute: typeof PortUtilizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/power-feeds': {
+      id: '/power-feeds'
+      path: '/power-feeds'
+      fullPath: '/power-feeds'
+      preLoaderRoute: typeof PowerFeedsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/power-panels': {
+      id: '/power-panels'
+      path: '/power-panels'
+      fullPath: '/power-panels'
+      preLoaderRoute: typeof PowerPanelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prefix-lists': {
+      id: '/prefix-lists'
+      path: '/prefix-lists'
+      fullPath: '/prefix-lists'
+      preLoaderRoute: typeof PrefixListsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prefixes': {
+      id: '/prefixes'
+      path: '/prefixes'
+      fullPath: '/prefixes'
+      preLoaderRoute: typeof PrefixesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/provider-networks': {
+      id: '/provider-networks'
+      path: '/provider-networks'
+      fullPath: '/provider-networks'
+      preLoaderRoute: typeof ProviderNetworksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/providers': {
+      id: '/providers'
+      path: '/providers'
+      fullPath: '/providers'
+      preLoaderRoute: typeof ProvidersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-types': {
+      id: '/rack-types'
+      path: '/rack-types'
+      fullPath: '/rack-types'
+      preLoaderRoute: typeof RackTypesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regions': {
+      id: '/regions'
+      path: '/regions'
+      fullPath: '/regions'
+      preLoaderRoute: typeof RegionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rirs': {
+      id: '/rirs'
+      path: '/rirs'
+      fullPath: '/rirs'
+      preLoaderRoute: typeof RirsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/route-targets': {
+      id: '/route-targets'
+      path: '/route-targets'
+      fullPath: '/route-targets'
+      preLoaderRoute: typeof RouteTargetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routing-keychains': {
+      id: '/routing-keychains'
+      path: '/routing-keychains'
+      fullPath: '/routing-keychains'
+      preLoaderRoute: typeof RoutingKeychainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/routing-policies': {
+      id: '/routing-policies'
+      path: '/routing-policies'
+      fullPath: '/routing-policies'
+      preLoaderRoute: typeof RoutingPoliciesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-filters': {
+      id: '/saved-filters'
+      path: '/saved-filters'
+      fullPath: '/saved-filters'
+      preLoaderRoute: typeof SavedFiltersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/set-password': {
+      id: '/set-password'
+      path: '/set-password'
+      fullPath: '/set-password'
+      preLoaderRoute: typeof SetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/site-map': {
+      id: '/site-map'
+      path: '/site-map'
+      fullPath: '/site-map'
+      preLoaderRoute: typeof SiteMapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sites': {
+      id: '/sites'
+      path: '/sites'
+      fullPath: '/sites'
+      preLoaderRoute: typeof SitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/static-routes': {
+      id: '/static-routes'
+      path: '/static-routes'
+      fullPath: '/static-routes'
+      preLoaderRoute: typeof StaticRoutesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/statuses': {
+      id: '/statuses'
+      path: '/statuses'
+      fullPath: '/statuses'
+      preLoaderRoute: typeof StatusesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support-contracts': {
+      id: '/support-contracts'
+      path: '/support-contracts'
+      fullPath: '/support-contracts'
+      preLoaderRoute: typeof SupportContractsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tags': {
+      id: '/tags'
+      path: '/tags'
+      fullPath: '/tags'
+      preLoaderRoute: typeof TagsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tenants': {
+      id: '/tenants'
+      path: '/tenants'
+      fullPath: '/tenants'
+      preLoaderRoute: typeof TenantsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/topology': {
+      id: '/topology'
+      path: '/topology'
+      fullPath: '/topology'
+      preLoaderRoute: typeof TopologyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tunnel-groups': {
+      id: '/tunnel-groups'
+      path: '/tunnel-groups'
+      fullPath: '/tunnel-groups'
+      preLoaderRoute: typeof TunnelGroupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tunnels': {
+      id: '/tunnels'
+      path: '/tunnels'
+      fullPath: '/tunnels'
+      preLoaderRoute: typeof TunnelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-chassis': {
+      id: '/virtual-chassis'
+      path: '/virtual-chassis'
+      fullPath: '/virtual-chassis'
+      preLoaderRoute: typeof VirtualChassisRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vlan-groups': {
+      id: '/vlan-groups'
+      path: '/vlan-groups'
+      fullPath: '/vlan-groups'
+      preLoaderRoute: typeof VlanGroupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vlans': {
+      id: '/vlans'
+      path: '/vlans'
+      fullPath: '/vlans'
+      preLoaderRoute: typeof VlansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vrfs': {
+      id: '/vrfs'
+      path: '/vrfs'
+      fullPath: '/vrfs'
+      preLoaderRoute: typeof VrfsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks': {
+      id: '/webhooks'
+      path: '/webhooks'
+      fullPath: '/webhooks'
+      preLoaderRoute: typeof WebhooksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wireless-lan-groups': {
+      id: '/wireless-lan-groups'
+      path: '/wireless-lan-groups'
+      fullPath: '/wireless-lan-groups'
+      preLoaderRoute: typeof WirelessLanGroupsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wireless-lans': {
+      id: '/wireless-lans'
+      path: '/wireless-lans'
+      fullPath: '/wireless-lans'
+      preLoaderRoute: typeof WirelessLansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/zones': {
+      id: '/zones'
+      path: '/zones'
+      fullPath: '/zones'
+      preLoaderRoute: typeof ZonesRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/aggregates/': {
       id: '/aggregates/'
       path: '/'
       fullPath: '/aggregates/'
       preLoaderRoute: typeof AggregatesIndexRouteImport
-      parentRoute: typeof AggregatesRoute
-    }
-    '/zones/new': {
-      id: '/zones/new'
-      path: '/new'
-      fullPath: '/zones/new'
-      preLoaderRoute: typeof ZonesNewRouteImport
-      parentRoute: typeof ZonesRoute
-    }
-    '/zones/$id': {
-      id: '/zones/$id'
-      path: '/$id'
-      fullPath: '/zones/$id'
-      preLoaderRoute: typeof ZonesIdRouteImport
-      parentRoute: typeof ZonesRoute
-    }
-    '/wireless-lans/new': {
-      id: '/wireless-lans/new'
-      path: '/new'
-      fullPath: '/wireless-lans/new'
-      preLoaderRoute: typeof WirelessLansNewRouteImport
-      parentRoute: typeof WirelessLansRoute
-    }
-    '/wireless-lans/$id': {
-      id: '/wireless-lans/$id'
-      path: '/$id'
-      fullPath: '/wireless-lans/$id'
-      preLoaderRoute: typeof WirelessLansIdRouteImport
-      parentRoute: typeof WirelessLansRoute
-    }
-    '/wireless-lan-groups/new': {
-      id: '/wireless-lan-groups/new'
-      path: '/new'
-      fullPath: '/wireless-lan-groups/new'
-      preLoaderRoute: typeof WirelessLanGroupsNewRouteImport
-      parentRoute: typeof WirelessLanGroupsRoute
-    }
-    '/wireless-lan-groups/$id': {
-      id: '/wireless-lan-groups/$id'
-      path: '/$id'
-      fullPath: '/wireless-lan-groups/$id'
-      preLoaderRoute: typeof WirelessLanGroupsIdRouteImport
-      parentRoute: typeof WirelessLanGroupsRoute
-    }
-    '/windows-servers/$id': {
-      id: '/windows-servers/$id'
-      path: '/windows-servers/$id'
-      fullPath: '/windows-servers/$id'
-      preLoaderRoute: typeof WindowsServersIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/webhooks/new': {
-      id: '/webhooks/new'
-      path: '/new'
-      fullPath: '/webhooks/new'
-      preLoaderRoute: typeof WebhooksNewRouteImport
-      parentRoute: typeof WebhooksRoute
-    }
-    '/vrfs/new': {
-      id: '/vrfs/new'
-      path: '/new'
-      fullPath: '/vrfs/new'
-      preLoaderRoute: typeof VrfsNewRouteImport
-      parentRoute: typeof VrfsRoute
-    }
-    '/vrfs/$id': {
-      id: '/vrfs/$id'
-      path: '/$id'
-      fullPath: '/vrfs/$id'
-      preLoaderRoute: typeof VrfsIdRouteImport
-      parentRoute: typeof VrfsRoute
-    }
-    '/vm-groups/new': {
-      id: '/vm-groups/new'
-      path: '/vm-groups/new'
-      fullPath: '/vm-groups/new'
-      preLoaderRoute: typeof VmGroupsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vm-groups/$id': {
-      id: '/vm-groups/$id'
-      path: '/vm-groups/$id'
-      fullPath: '/vm-groups/$id'
-      preLoaderRoute: typeof VmGroupsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/vlans/new': {
-      id: '/vlans/new'
-      path: '/new'
-      fullPath: '/vlans/new'
-      preLoaderRoute: typeof VlansNewRouteImport
-      parentRoute: typeof VlansRoute
-    }
-    '/vlans/bulk-edit': {
-      id: '/vlans/bulk-edit'
-      path: '/bulk-edit'
-      fullPath: '/vlans/bulk-edit'
-      preLoaderRoute: typeof VlansBulkEditRouteImport
-      parentRoute: typeof VlansRoute
-    }
-    '/vlans/$id': {
-      id: '/vlans/$id'
-      path: '/$id'
-      fullPath: '/vlans/$id'
-      preLoaderRoute: typeof VlansIdRouteImport
-      parentRoute: typeof VlansRoute
-    }
-    '/vlan-groups/new': {
-      id: '/vlan-groups/new'
-      path: '/new'
-      fullPath: '/vlan-groups/new'
-      preLoaderRoute: typeof VlanGroupsNewRouteImport
-      parentRoute: typeof VlanGroupsRoute
-    }
-    '/vlan-groups/$id': {
-      id: '/vlan-groups/$id'
-      path: '/$id'
-      fullPath: '/vlan-groups/$id'
-      preLoaderRoute: typeof VlanGroupsIdRouteImport
-      parentRoute: typeof VlanGroupsRoute
-    }
-    '/virtualization-sources/$id': {
-      id: '/virtualization-sources/$id'
-      path: '/virtualization-sources/$id'
-      fullPath: '/virtualization-sources/$id'
-      preLoaderRoute: typeof VirtualizationSourcesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/virtual-switches/$id': {
-      id: '/virtual-switches/$id'
-      path: '/virtual-switches/$id'
-      fullPath: '/virtual-switches/$id'
-      preLoaderRoute: typeof VirtualSwitchesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/virtual-machines/new': {
-      id: '/virtual-machines/new'
-      path: '/virtual-machines/new'
-      fullPath: '/virtual-machines/new'
-      preLoaderRoute: typeof VirtualMachinesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/virtual-machines/$id': {
-      id: '/virtual-machines/$id'
-      path: '/virtual-machines/$id'
-      fullPath: '/virtual-machines/$id'
-      preLoaderRoute: typeof VirtualMachinesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/virtual-chassis/new': {
-      id: '/virtual-chassis/new'
-      path: '/new'
-      fullPath: '/virtual-chassis/new'
-      preLoaderRoute: typeof VirtualChassisNewRouteImport
-      parentRoute: typeof VirtualChassisRoute
-    }
-    '/virtual-chassis/bulk-edit': {
-      id: '/virtual-chassis/bulk-edit'
-      path: '/bulk-edit'
-      fullPath: '/virtual-chassis/bulk-edit'
-      preLoaderRoute: typeof VirtualChassisBulkEditRouteImport
-      parentRoute: typeof VirtualChassisRoute
-    }
-    '/virtual-chassis/$id': {
-      id: '/virtual-chassis/$id'
-      path: '/$id'
-      fullPath: '/virtual-chassis/$id'
-      preLoaderRoute: typeof VirtualChassisIdRouteImport
-      parentRoute: typeof VirtualChassisRoute
-    }
-    '/users/new': {
-      id: '/users/new'
-      path: '/new'
-      fullPath: '/users/new'
-      preLoaderRoute: typeof UsersNewRouteImport
-      parentRoute: typeof UsersRoute
-    }
-    '/tunnels/new': {
-      id: '/tunnels/new'
-      path: '/new'
-      fullPath: '/tunnels/new'
-      preLoaderRoute: typeof TunnelsNewRouteImport
-      parentRoute: typeof TunnelsRoute
-    }
-    '/tunnels/$id': {
-      id: '/tunnels/$id'
-      path: '/$id'
-      fullPath: '/tunnels/$id'
-      preLoaderRoute: typeof TunnelsIdRouteImport
-      parentRoute: typeof TunnelsRoute
-    }
-    '/tunnel-groups/new': {
-      id: '/tunnel-groups/new'
-      path: '/new'
-      fullPath: '/tunnel-groups/new'
-      preLoaderRoute: typeof TunnelGroupsNewRouteImport
-      parentRoute: typeof TunnelGroupsRoute
-    }
-    '/tunnel-groups/$id': {
-      id: '/tunnel-groups/$id'
-      path: '/$id'
-      fullPath: '/tunnel-groups/$id'
-      preLoaderRoute: typeof TunnelGroupsIdRouteImport
-      parentRoute: typeof TunnelGroupsRoute
-    }
-    '/tenants/new': {
-      id: '/tenants/new'
-      path: '/new'
-      fullPath: '/tenants/new'
-      preLoaderRoute: typeof TenantsNewRouteImport
-      parentRoute: typeof TenantsRoute
-    }
-    '/tenants/$id': {
-      id: '/tenants/$id'
-      path: '/$id'
-      fullPath: '/tenants/$id'
-      preLoaderRoute: typeof TenantsIdRouteImport
-      parentRoute: typeof TenantsRoute
-    }
-    '/tags/new': {
-      id: '/tags/new'
-      path: '/new'
-      fullPath: '/tags/new'
-      preLoaderRoute: typeof TagsNewRouteImport
-      parentRoute: typeof TagsRoute
-    }
-    '/tags/$id': {
-      id: '/tags/$id'
-      path: '/$id'
-      fullPath: '/tags/$id'
-      preLoaderRoute: typeof TagsIdRouteImport
-      parentRoute: typeof TagsRoute
-    }
-    '/support-contracts/new': {
-      id: '/support-contracts/new'
-      path: '/new'
-      fullPath: '/support-contracts/new'
-      preLoaderRoute: typeof SupportContractsNewRouteImport
-      parentRoute: typeof SupportContractsRoute
-    }
-    '/support-contracts/$id': {
-      id: '/support-contracts/$id'
-      path: '/$id'
-      fullPath: '/support-contracts/$id'
-      preLoaderRoute: typeof SupportContractsIdRouteImport
-      parentRoute: typeof SupportContractsRoute
-    }
-    '/statuses/new': {
-      id: '/statuses/new'
-      path: '/new'
-      fullPath: '/statuses/new'
-      preLoaderRoute: typeof StatusesNewRouteImport
-      parentRoute: typeof StatusesRoute
-    }
-    '/statuses/$id': {
-      id: '/statuses/$id'
-      path: '/$id'
-      fullPath: '/statuses/$id'
-      preLoaderRoute: typeof StatusesIdRouteImport
-      parentRoute: typeof StatusesRoute
-    }
-    '/static-routes/new': {
-      id: '/static-routes/new'
-      path: '/new'
-      fullPath: '/static-routes/new'
-      preLoaderRoute: typeof StaticRoutesNewRouteImport
-      parentRoute: typeof StaticRoutesRoute
-    }
-    '/static-routes/$id': {
-      id: '/static-routes/$id'
-      path: '/$id'
-      fullPath: '/static-routes/$id'
-      preLoaderRoute: typeof StaticRoutesIdRouteImport
-      parentRoute: typeof StaticRoutesRoute
-    }
-    '/sites/new': {
-      id: '/sites/new'
-      path: '/new'
-      fullPath: '/sites/new'
-      preLoaderRoute: typeof SitesNewRouteImport
-      parentRoute: typeof SitesRoute
-    }
-    '/sites/bulk-edit': {
-      id: '/sites/bulk-edit'
-      path: '/bulk-edit'
-      fullPath: '/sites/bulk-edit'
-      preLoaderRoute: typeof SitesBulkEditRouteImport
-      parentRoute: typeof SitesRoute
-    }
-    '/sites/$id': {
-      id: '/sites/$id'
-      path: '/$id'
-      fullPath: '/sites/$id'
-      preLoaderRoute: typeof SitesIdRouteImport
-      parentRoute: typeof SitesRoute
-    }
-    '/silences/new': {
-      id: '/silences/new'
-      path: '/silences/new'
-      fullPath: '/silences/new'
-      preLoaderRoute: typeof SilencesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings/updates': {
-      id: '/settings/updates'
-      path: '/updates'
-      fullPath: '/settings/updates'
-      preLoaderRoute: typeof SettingsUpdatesRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/topology': {
-      id: '/settings/topology'
-      path: '/topology'
-      fullPath: '/settings/topology'
-      preLoaderRoute: typeof SettingsTopologyRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/tenant-ldap': {
-      id: '/settings/tenant-ldap'
-      path: '/tenant-ldap'
-      fullPath: '/settings/tenant-ldap'
-      preLoaderRoute: typeof SettingsTenantLdapRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/tenant-email': {
-      id: '/settings/tenant-email'
-      path: '/tenant-email'
-      fullPath: '/settings/tenant-email'
-      preLoaderRoute: typeof SettingsTenantEmailRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/tenant': {
-      id: '/settings/tenant'
-      path: '/tenant'
-      fullPath: '/settings/tenant'
-      preLoaderRoute: typeof SettingsTenantRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/table-defaults': {
-      id: '/settings/table-defaults'
-      path: '/table-defaults'
-      fullPath: '/settings/table-defaults'
-      preLoaderRoute: typeof SettingsTableDefaultsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/sso': {
-      id: '/settings/sso'
-      path: '/sso'
-      fullPath: '/settings/sso'
-      preLoaderRoute: typeof SettingsSsoRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/snmp-sensors': {
-      id: '/settings/snmp-sensors'
-      path: '/snmp-sensors'
-      fullPath: '/settings/snmp-sensors'
-      preLoaderRoute: typeof SettingsSnmpSensorsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/snmp': {
-      id: '/settings/snmp'
-      path: '/snmp'
-      fullPath: '/settings/snmp'
-      preLoaderRoute: typeof SettingsSnmpRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/sites': {
-      id: '/settings/sites'
-      path: '/sites'
-      fullPath: '/settings/sites'
-      preLoaderRoute: typeof SettingsSitesRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/site': {
-      id: '/settings/site'
-      path: '/site'
-      fullPath: '/settings/site'
-      preLoaderRoute: typeof SettingsSiteRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/separation': {
-      id: '/settings/separation'
-      path: '/separation'
-      fullPath: '/settings/separation'
-      preLoaderRoute: typeof SettingsSeparationRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/security': {
-      id: '/settings/security'
-      path: '/security'
-      fullPath: '/settings/security'
-      preLoaderRoute: typeof SettingsSecurityRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/preferences': {
-      id: '/settings/preferences'
-      path: '/preferences'
-      fullPath: '/settings/preferences'
-      preLoaderRoute: typeof SettingsPreferencesRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/plugins': {
-      id: '/settings/plugins'
-      path: '/plugins'
-      fullPath: '/settings/plugins'
-      preLoaderRoute: typeof SettingsPluginsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/monitoring-defaults': {
-      id: '/settings/monitoring-defaults'
-      path: '/monitoring-defaults'
-      fullPath: '/settings/monitoring-defaults'
-      preLoaderRoute: typeof SettingsMonitoringDefaultsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/monitoring': {
-      id: '/settings/monitoring'
-      path: '/monitoring'
-      fullPath: '/settings/monitoring'
-      preLoaderRoute: typeof SettingsMonitoringRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/maps': {
-      id: '/settings/maps'
-      path: '/maps'
-      fullPath: '/settings/maps'
-      preLoaderRoute: typeof SettingsMapsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/ldap': {
-      id: '/settings/ldap'
-      path: '/ldap'
-      fullPath: '/settings/ldap'
-      preLoaderRoute: typeof SettingsLdapRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/integrations': {
-      id: '/settings/integrations'
-      path: '/integrations'
-      fullPath: '/settings/integrations'
-      preLoaderRoute: typeof SettingsIntegrationsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/floorplan': {
-      id: '/settings/floorplan'
-      path: '/floorplan'
-      fullPath: '/settings/floorplan'
-      preLoaderRoute: typeof SettingsFloorplanRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/email': {
-      id: '/settings/email'
-      path: '/email'
-      fullPath: '/settings/email'
-      preLoaderRoute: typeof SettingsEmailRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/directory': {
-      id: '/settings/directory'
-      path: '/directory'
-      fullPath: '/settings/directory'
-      preLoaderRoute: typeof SettingsDirectoryRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/device-fields': {
-      id: '/settings/device-fields'
-      path: '/device-fields'
-      fullPath: '/settings/device-fields'
-      preLoaderRoute: typeof SettingsDeviceFieldsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/connect': {
-      id: '/settings/connect'
-      path: '/connect'
-      fullPath: '/settings/connect'
-      preLoaderRoute: typeof SettingsConnectRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/components': {
-      id: '/settings/components'
-      path: '/components'
-      fullPath: '/settings/components'
-      preLoaderRoute: typeof SettingsComponentsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/backups': {
-      id: '/settings/backups'
-      path: '/backups'
-      fullPath: '/settings/backups'
-      preLoaderRoute: typeof SettingsBackupsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/admin': {
-      id: '/settings/admin'
-      path: '/admin'
-      fullPath: '/settings/admin'
-      preLoaderRoute: typeof SettingsAdminRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/services/$id': {
-      id: '/services/$id'
-      path: '/services/$id'
-      fullPath: '/services/$id'
-      preLoaderRoute: typeof ServicesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/service-templates/new': {
-      id: '/service-templates/new'
-      path: '/service-templates/new'
-      fullPath: '/service-templates/new'
-      preLoaderRoute: typeof ServiceTemplatesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/service-templates/$id': {
-      id: '/service-templates/$id'
-      path: '/service-templates/$id'
-      fullPath: '/service-templates/$id'
-      preLoaderRoute: typeof ServiceTemplatesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/scripts/$id': {
-      id: '/scripts/$id'
-      path: '/scripts/$id'
-      fullPath: '/scripts/$id'
-      preLoaderRoute: typeof ScriptsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/routing-policies/new': {
-      id: '/routing-policies/new'
-      path: '/new'
-      fullPath: '/routing-policies/new'
-      preLoaderRoute: typeof RoutingPoliciesNewRouteImport
-      parentRoute: typeof RoutingPoliciesRoute
-    }
-    '/routing-policies/$id': {
-      id: '/routing-policies/$id'
-      path: '/$id'
-      fullPath: '/routing-policies/$id'
-      preLoaderRoute: typeof RoutingPoliciesIdRouteImport
-      parentRoute: typeof RoutingPoliciesRoute
-    }
-    '/routing-keychains/new': {
-      id: '/routing-keychains/new'
-      path: '/new'
-      fullPath: '/routing-keychains/new'
-      preLoaderRoute: typeof RoutingKeychainsNewRouteImport
-      parentRoute: typeof RoutingKeychainsRoute
-    }
-    '/routing-keychains/$id': {
-      id: '/routing-keychains/$id'
-      path: '/$id'
-      fullPath: '/routing-keychains/$id'
-      preLoaderRoute: typeof RoutingKeychainsIdRouteImport
-      parentRoute: typeof RoutingKeychainsRoute
-    }
-    '/route-targets/new': {
-      id: '/route-targets/new'
-      path: '/new'
-      fullPath: '/route-targets/new'
-      preLoaderRoute: typeof RouteTargetsNewRouteImport
-      parentRoute: typeof RouteTargetsRoute
-    }
-    '/route-targets/$id': {
-      id: '/route-targets/$id'
-      path: '/$id'
-      fullPath: '/route-targets/$id'
-      preLoaderRoute: typeof RouteTargetsIdRouteImport
-      parentRoute: typeof RouteTargetsRoute
-    }
-    '/rirs/new': {
-      id: '/rirs/new'
-      path: '/new'
-      fullPath: '/rirs/new'
-      preLoaderRoute: typeof RirsNewRouteImport
-      parentRoute: typeof RirsRoute
-    }
-    '/rirs/$id': {
-      id: '/rirs/$id'
-      path: '/$id'
-      fullPath: '/rirs/$id'
-      preLoaderRoute: typeof RirsIdRouteImport
-      parentRoute: typeof RirsRoute
-    }
-    '/regions/new': {
-      id: '/regions/new'
-      path: '/new'
-      fullPath: '/regions/new'
-      preLoaderRoute: typeof RegionsNewRouteImport
-      parentRoute: typeof RegionsRoute
-    }
-    '/regions/$id': {
-      id: '/regions/$id'
-      path: '/$id'
-      fullPath: '/regions/$id'
-      preLoaderRoute: typeof RegionsIdRouteImport
-      parentRoute: typeof RegionsRoute
-    }
-    '/racks/new': {
-      id: '/racks/new'
-      path: '/racks/new'
-      fullPath: '/racks/new'
-      preLoaderRoute: typeof RacksNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/racks/elevations': {
-      id: '/racks/elevations'
-      path: '/racks/elevations'
-      fullPath: '/racks/elevations'
-      preLoaderRoute: typeof RacksElevationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/racks/$id': {
-      id: '/racks/$id'
-      path: '/racks/$id'
-      fullPath: '/racks/$id'
-      preLoaderRoute: typeof RacksIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rack-types/new': {
-      id: '/rack-types/new'
-      path: '/new'
-      fullPath: '/rack-types/new'
-      preLoaderRoute: typeof RackTypesNewRouteImport
-      parentRoute: typeof RackTypesRoute
-    }
-    '/rack-types/$id': {
-      id: '/rack-types/$id'
-      path: '/$id'
-      fullPath: '/rack-types/$id'
-      preLoaderRoute: typeof RackTypesIdRouteImport
-      parentRoute: typeof RackTypesRoute
-    }
-    '/rack-roles/new': {
-      id: '/rack-roles/new'
-      path: '/rack-roles/new'
-      fullPath: '/rack-roles/new'
-      preLoaderRoute: typeof RackRolesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rack-roles/$id': {
-      id: '/rack-roles/$id'
-      path: '/rack-roles/$id'
-      fullPath: '/rack-roles/$id'
-      preLoaderRoute: typeof RackRolesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/providers/new': {
-      id: '/providers/new'
-      path: '/new'
-      fullPath: '/providers/new'
-      preLoaderRoute: typeof ProvidersNewRouteImport
-      parentRoute: typeof ProvidersRoute
-    }
-    '/providers/$id': {
-      id: '/providers/$id'
-      path: '/$id'
-      fullPath: '/providers/$id'
-      preLoaderRoute: typeof ProvidersIdRouteImport
-      parentRoute: typeof ProvidersRoute
-    }
-    '/provider-networks/new': {
-      id: '/provider-networks/new'
-      path: '/new'
-      fullPath: '/provider-networks/new'
-      preLoaderRoute: typeof ProviderNetworksNewRouteImport
-      parentRoute: typeof ProviderNetworksRoute
-    }
-    '/provider-networks/$id': {
-      id: '/provider-networks/$id'
-      path: '/$id'
-      fullPath: '/provider-networks/$id'
-      preLoaderRoute: typeof ProviderNetworksIdRouteImport
-      parentRoute: typeof ProviderNetworksRoute
-    }
-    '/prefixes/new': {
-      id: '/prefixes/new'
-      path: '/new'
-      fullPath: '/prefixes/new'
-      preLoaderRoute: typeof PrefixesNewRouteImport
-      parentRoute: typeof PrefixesRoute
-    }
-    '/prefixes/bulk-edit': {
-      id: '/prefixes/bulk-edit'
-      path: '/bulk-edit'
-      fullPath: '/prefixes/bulk-edit'
-      preLoaderRoute: typeof PrefixesBulkEditRouteImport
-      parentRoute: typeof PrefixesRoute
-    }
-    '/prefixes/$id': {
-      id: '/prefixes/$id'
-      path: '/$id'
-      fullPath: '/prefixes/$id'
-      preLoaderRoute: typeof PrefixesIdRouteImport
-      parentRoute: typeof PrefixesRoute
-    }
-    '/prefix-lists/new': {
-      id: '/prefix-lists/new'
-      path: '/new'
-      fullPath: '/prefix-lists/new'
-      preLoaderRoute: typeof PrefixListsNewRouteImport
-      parentRoute: typeof PrefixListsRoute
-    }
-    '/prefix-lists/$id': {
-      id: '/prefix-lists/$id'
-      path: '/$id'
-      fullPath: '/prefix-lists/$id'
-      preLoaderRoute: typeof PrefixListsIdRouteImport
-      parentRoute: typeof PrefixListsRoute
-    }
-    '/power-panels/new': {
-      id: '/power-panels/new'
-      path: '/new'
-      fullPath: '/power-panels/new'
-      preLoaderRoute: typeof PowerPanelsNewRouteImport
-      parentRoute: typeof PowerPanelsRoute
-    }
-    '/power-panels/$id': {
-      id: '/power-panels/$id'
-      path: '/$id'
-      fullPath: '/power-panels/$id'
-      preLoaderRoute: typeof PowerPanelsIdRouteImport
-      parentRoute: typeof PowerPanelsRoute
-    }
-    '/power-feeds/new': {
-      id: '/power-feeds/new'
-      path: '/new'
-      fullPath: '/power-feeds/new'
-      preLoaderRoute: typeof PowerFeedsNewRouteImport
-      parentRoute: typeof PowerFeedsRoute
-    }
-    '/power-feeds/$id': {
-      id: '/power-feeds/$id'
-      path: '/$id'
-      fullPath: '/power-feeds/$id'
-      preLoaderRoute: typeof PowerFeedsIdRouteImport
-      parentRoute: typeof PowerFeedsRoute
-    }
-    '/platforms/new': {
-      id: '/platforms/new'
-      path: '/platforms/new'
-      fullPath: '/platforms/new'
-      preLoaderRoute: typeof PlatformsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/platforms/$id': {
-      id: '/platforms/$id'
-      path: '/platforms/$id'
-      fullPath: '/platforms/$id'
-      preLoaderRoute: typeof PlatformsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/platform-groups/new': {
-      id: '/platform-groups/new'
-      path: '/platform-groups/new'
-      fullPath: '/platform-groups/new'
-      preLoaderRoute: typeof PlatformGroupsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/platform-groups/$id': {
-      id: '/platform-groups/$id'
-      path: '/platform-groups/$id'
-      fullPath: '/platform-groups/$id'
-      preLoaderRoute: typeof PlatformGroupsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/planning/calendar': {
-      id: '/planning/calendar'
-      path: '/planning/calendar'
-      fullPath: '/planning/calendar'
-      preLoaderRoute: typeof PlanningCalendarRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/planning/$boardId': {
-      id: '/planning/$boardId'
-      path: '/planning/$boardId'
-      fullPath: '/planning/$boardId'
-      preLoaderRoute: typeof PlanningBoardIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/permissions/new': {
-      id: '/permissions/new'
-      path: '/new'
-      fullPath: '/permissions/new'
-      preLoaderRoute: typeof PermissionsNewRouteImport
-      parentRoute: typeof PermissionsRoute
-    }
-    '/ospf-areas/new': {
-      id: '/ospf-areas/new'
-      path: '/new'
-      fullPath: '/ospf-areas/new'
-      preLoaderRoute: typeof OspfAreasNewRouteImport
-      parentRoute: typeof OspfAreasRoute
-    }
-    '/ospf-areas/$id': {
-      id: '/ospf-areas/$id'
-      path: '/$id'
-      fullPath: '/ospf-areas/$id'
-      preLoaderRoute: typeof OspfAreasIdRouteImport
-      parentRoute: typeof OspfAreasRoute
-    }
-    '/nat-rules/$id': {
-      id: '/nat-rules/$id'
-      path: '/nat-rules/$id'
-      fullPath: '/nat-rules/$id'
-      preLoaderRoute: typeof NatRulesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/module-types/new': {
-      id: '/module-types/new'
-      path: '/new'
-      fullPath: '/module-types/new'
-      preLoaderRoute: typeof ModuleTypesNewRouteImport
-      parentRoute: typeof ModuleTypesRoute
-    }
-    '/module-types/$id': {
-      id: '/module-types/$id'
-      path: '/$id'
-      fullPath: '/module-types/$id'
-      preLoaderRoute: typeof ModuleTypesIdRouteImport
-      parentRoute: typeof ModuleTypesRoute
-    }
-    '/manufacturers/new': {
-      id: '/manufacturers/new'
-      path: '/new'
-      fullPath: '/manufacturers/new'
-      preLoaderRoute: typeof ManufacturersNewRouteImport
-      parentRoute: typeof ManufacturersRoute
-    }
-    '/manufacturers/$id': {
-      id: '/manufacturers/$id'
-      path: '/$id'
-      fullPath: '/manufacturers/$id'
-      preLoaderRoute: typeof ManufacturersIdRouteImport
-      parentRoute: typeof ManufacturersRoute
-    }
-    '/maintenance/new': {
-      id: '/maintenance/new'
-      path: '/maintenance/new'
-      fullPath: '/maintenance/new'
-      preLoaderRoute: typeof MaintenanceNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/macs/$mac': {
-      id: '/macs/$mac'
-      path: '/$mac'
-      fullPath: '/macs/$mac'
-      preLoaderRoute: typeof MacsMacRouteImport
-      parentRoute: typeof MacsRoute
-    }
-    '/locations/new': {
-      id: '/locations/new'
-      path: '/new'
-      fullPath: '/locations/new'
-      preLoaderRoute: typeof LocationsNewRouteImport
-      parentRoute: typeof LocationsRoute
-    }
-    '/locations/$id': {
-      id: '/locations/$id'
-      path: '/$id'
-      fullPath: '/locations/$id'
-      preLoaderRoute: typeof LocationsIdRouteImport
-      parentRoute: typeof LocationsRoute
-    }
-    '/l2vpns/new': {
-      id: '/l2vpns/new'
-      path: '/new'
-      fullPath: '/l2vpns/new'
-      preLoaderRoute: typeof L2vpnsNewRouteImport
-      parentRoute: typeof L2vpnsRoute
-    }
-    '/l2vpns/$id': {
-      id: '/l2vpns/$id'
-      path: '/$id'
-      fullPath: '/l2vpns/$id'
-      preLoaderRoute: typeof L2vpnsIdRouteImport
-      parentRoute: typeof L2vpnsRoute
-    }
-    '/jobs/$id': {
-      id: '/jobs/$id'
-      path: '/jobs/$id'
-      fullPath: '/jobs/$id'
-      preLoaderRoute: typeof JobsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ipsec-profiles/new': {
-      id: '/ipsec-profiles/new'
-      path: '/new'
-      fullPath: '/ipsec-profiles/new'
-      preLoaderRoute: typeof IpsecProfilesNewRouteImport
-      parentRoute: typeof IpsecProfilesRoute
-    }
-    '/ipsec-profiles/$id': {
-      id: '/ipsec-profiles/$id'
-      path: '/$id'
-      fullPath: '/ipsec-profiles/$id'
-      preLoaderRoute: typeof IpsecProfilesIdRouteImport
-      parentRoute: typeof IpsecProfilesRoute
-    }
-    '/ips/new': {
-      id: '/ips/new'
-      path: '/ips/new'
-      fullPath: '/ips/new'
-      preLoaderRoute: typeof IpsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ips/bulk-edit': {
-      id: '/ips/bulk-edit'
-      path: '/ips/bulk-edit'
-      fullPath: '/ips/bulk-edit'
-      preLoaderRoute: typeof IpsBulkEditRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ips/$id': {
-      id: '/ips/$id'
-      path: '/ips/$id'
-      fullPath: '/ips/$id'
-      preLoaderRoute: typeof IpsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/ip-roles/new': {
-      id: '/ip-roles/new'
-      path: '/new'
-      fullPath: '/ip-roles/new'
-      preLoaderRoute: typeof IpRolesNewRouteImport
-      parentRoute: typeof IpRolesRoute
-    }
-    '/ip-roles/$id': {
-      id: '/ip-roles/$id'
-      path: '/$id'
-      fullPath: '/ip-roles/$id'
-      preLoaderRoute: typeof IpRolesIdRouteImport
-      parentRoute: typeof IpRolesRoute
-    }
-    '/ip-ranges/new': {
-      id: '/ip-ranges/new'
-      path: '/new'
-      fullPath: '/ip-ranges/new'
-      preLoaderRoute: typeof IpRangesNewRouteImport
-      parentRoute: typeof IpRangesRoute
-    }
-    '/ip-ranges/$id': {
-      id: '/ip-ranges/$id'
-      path: '/$id'
-      fullPath: '/ip-ranges/$id'
-      preLoaderRoute: typeof IpRangesIdRouteImport
-      parentRoute: typeof IpRangesRoute
-    }
-    '/interfaces/new': {
-      id: '/interfaces/new'
-      path: '/new'
-      fullPath: '/interfaces/new'
-      preLoaderRoute: typeof InterfacesNewRouteImport
-      parentRoute: typeof InterfacesRoute
-    }
-    '/interfaces/bulk': {
-      id: '/interfaces/bulk'
-      path: '/bulk'
-      fullPath: '/interfaces/bulk'
-      preLoaderRoute: typeof InterfacesBulkRouteImport
-      parentRoute: typeof InterfacesRoute
-    }
-    '/interfaces/$id': {
-      id: '/interfaces/$id'
-      path: '/$id'
-      fullPath: '/interfaces/$id'
-      preLoaderRoute: typeof InterfacesIdRouteImport
-      parentRoute: typeof InterfacesRoute
-    }
-    '/import/netbox': {
-      id: '/import/netbox'
-      path: '/netbox'
-      fullPath: '/import/netbox'
-      preLoaderRoute: typeof ImportNetboxRouteImport
-      parentRoute: typeof ImportRoute
-    }
-    '/groups/new': {
-      id: '/groups/new'
-      path: '/new'
-      fullPath: '/groups/new'
-      preLoaderRoute: typeof GroupsNewRouteImport
-      parentRoute: typeof GroupsRoute
-    }
-    '/floorplans/new': {
-      id: '/floorplans/new'
-      path: '/new'
-      fullPath: '/floorplans/new'
-      preLoaderRoute: typeof FloorplansNewRouteImport
-      parentRoute: typeof FloorplansRoute
-    }
-    '/floorplans/$id': {
-      id: '/floorplans/$id'
-      path: '/$id'
-      fullPath: '/floorplans/$id'
-      preLoaderRoute: typeof FloorplansIdRouteImport
-      parentRoute: typeof FloorplansRoute
-    }
-    '/floor-tile-types/new': {
-      id: '/floor-tile-types/new'
-      path: '/new'
-      fullPath: '/floor-tile-types/new'
-      preLoaderRoute: typeof FloorTileTypesNewRouteImport
-      parentRoute: typeof FloorTileTypesRoute
-    }
-    '/floor-tile-types/$id': {
-      id: '/floor-tile-types/$id'
-      path: '/$id'
-      fullPath: '/floor-tile-types/$id'
-      preLoaderRoute: typeof FloorTileTypesIdRouteImport
-      parentRoute: typeof FloorTileTypesRoute
-    }
-    '/fhrp-groups/new': {
-      id: '/fhrp-groups/new'
-      path: '/new'
-      fullPath: '/fhrp-groups/new'
-      preLoaderRoute: typeof FhrpGroupsNewRouteImport
-      parentRoute: typeof FhrpGroupsRoute
-    }
-    '/fhrp-groups/$id': {
-      id: '/fhrp-groups/$id'
-      path: '/$id'
-      fullPath: '/fhrp-groups/$id'
-      preLoaderRoute: typeof FhrpGroupsIdRouteImport
-      parentRoute: typeof FhrpGroupsRoute
-    }
-    '/export-templates/new': {
-      id: '/export-templates/new'
-      path: '/new'
-      fullPath: '/export-templates/new'
-      preLoaderRoute: typeof ExportTemplatesNewRouteImport
-      parentRoute: typeof ExportTemplatesRoute
-    }
-    '/export-templates/$id': {
-      id: '/export-templates/$id'
-      path: '/$id'
-      fullPath: '/export-templates/$id'
-      preLoaderRoute: typeof ExportTemplatesIdRouteImport
-      parentRoute: typeof ExportTemplatesRoute
-    }
-    '/ethernet-segments/new': {
-      id: '/ethernet-segments/new'
-      path: '/new'
-      fullPath: '/ethernet-segments/new'
-      preLoaderRoute: typeof EthernetSegmentsNewRouteImport
-      parentRoute: typeof EthernetSegmentsRoute
-    }
-    '/ethernet-segments/$id': {
-      id: '/ethernet-segments/$id'
-      path: '/$id'
-      fullPath: '/ethernet-segments/$id'
-      preLoaderRoute: typeof EthernetSegmentsIdRouteImport
-      parentRoute: typeof EthernetSegmentsRoute
-    }
-    '/dns-zones/$id': {
-      id: '/dns-zones/$id'
-      path: '/dns-zones/$id'
-      fullPath: '/dns-zones/$id'
-      preLoaderRoute: typeof DnsZonesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dns-records/$id': {
-      id: '/dns-records/$id'
-      path: '/dns-records/$id'
-      fullPath: '/dns-records/$id'
-      preLoaderRoute: typeof DnsRecordsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dns-names/$name': {
-      id: '/dns-names/$name'
-      path: '/dns-names/$name'
-      fullPath: '/dns-names/$name'
-      preLoaderRoute: typeof DnsNamesNameRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/devices/new': {
-      id: '/devices/new'
-      path: '/new'
-      fullPath: '/devices/new'
-      preLoaderRoute: typeof DevicesNewRouteImport
-      parentRoute: typeof DevicesRoute
-    }
-    '/devices/$id': {
-      id: '/devices/$id'
-      path: '/$id'
-      fullPath: '/devices/$id'
-      preLoaderRoute: typeof DevicesIdRouteImport
-      parentRoute: typeof DevicesRoute
-    }
-    '/device-types/new': {
-      id: '/device-types/new'
-      path: '/new'
-      fullPath: '/device-types/new'
-      preLoaderRoute: typeof DeviceTypesNewRouteImport
-      parentRoute: typeof DeviceTypesRoute
-    }
-    '/device-types/$id': {
-      id: '/device-types/$id'
-      path: '/$id'
-      fullPath: '/device-types/$id'
-      preLoaderRoute: typeof DeviceTypesIdRouteImport
-      parentRoute: typeof DeviceTypesRoute
-    }
-    '/device-roles/new': {
-      id: '/device-roles/new'
-      path: '/device-roles/new'
-      fullPath: '/device-roles/new'
-      preLoaderRoute: typeof DeviceRolesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/device-roles/$id': {
-      id: '/device-roles/$id'
-      path: '/device-roles/$id'
-      fullPath: '/device-roles/$id'
-      preLoaderRoute: typeof DeviceRolesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboards/$id': {
-      id: '/dashboards/$id'
-      path: '/dashboards/$id'
-      fullPath: '/dashboards/$id'
-      preLoaderRoute: typeof DashboardsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/custom-fields/new': {
-      id: '/custom-fields/new'
-      path: '/new'
-      fullPath: '/custom-fields/new'
-      preLoaderRoute: typeof CustomFieldsNewRouteImport
-      parentRoute: typeof CustomFieldsRoute
-    }
-    '/custom-fields/$id': {
-      id: '/custom-fields/$id'
-      path: '/$id'
-      fullPath: '/custom-fields/$id'
-      preLoaderRoute: typeof CustomFieldsIdRouteImport
-      parentRoute: typeof CustomFieldsRoute
-    }
-    '/custom-field-groups/new': {
-      id: '/custom-field-groups/new'
-      path: '/new'
-      fullPath: '/custom-field-groups/new'
-      preLoaderRoute: typeof CustomFieldGroupsNewRouteImport
-      parentRoute: typeof CustomFieldGroupsRoute
-    }
-    '/custom-field-groups/$id': {
-      id: '/custom-field-groups/$id'
-      path: '/$id'
-      fullPath: '/custom-field-groups/$id'
-      preLoaderRoute: typeof CustomFieldGroupsIdRouteImport
-      parentRoute: typeof CustomFieldGroupsRoute
-    }
-    '/contacts/new': {
-      id: '/contacts/new'
-      path: '/new'
-      fullPath: '/contacts/new'
-      preLoaderRoute: typeof ContactsNewRouteImport
-      parentRoute: typeof ContactsRoute
-    }
-    '/contacts/$id': {
-      id: '/contacts/$id'
-      path: '/$id'
-      fullPath: '/contacts/$id'
-      preLoaderRoute: typeof ContactsIdRouteImport
-      parentRoute: typeof ContactsRoute
-    }
-    '/contact-roles/new': {
-      id: '/contact-roles/new'
-      path: '/new'
-      fullPath: '/contact-roles/new'
-      preLoaderRoute: typeof ContactRolesNewRouteImport
-      parentRoute: typeof ContactRolesRoute
-    }
-    '/contact-roles/$id': {
-      id: '/contact-roles/$id'
-      path: '/$id'
-      fullPath: '/contact-roles/$id'
-      preLoaderRoute: typeof ContactRolesIdRouteImport
-      parentRoute: typeof ContactRolesRoute
-    }
-    '/contact-groups/new': {
-      id: '/contact-groups/new'
-      path: '/new'
-      fullPath: '/contact-groups/new'
-      preLoaderRoute: typeof ContactGroupsNewRouteImport
-      parentRoute: typeof ContactGroupsRoute
-    }
-    '/contact-groups/$id': {
-      id: '/contact-groups/$id'
-      path: '/$id'
-      fullPath: '/contact-groups/$id'
-      preLoaderRoute: typeof ContactGroupsIdRouteImport
-      parentRoute: typeof ContactGroupsRoute
-    }
-    '/config-contexts/new': {
-      id: '/config-contexts/new'
-      path: '/new'
-      fullPath: '/config-contexts/new'
-      preLoaderRoute: typeof ConfigContextsNewRouteImport
-      parentRoute: typeof ConfigContextsRoute
-    }
-    '/config-contexts/$id': {
-      id: '/config-contexts/$id'
-      path: '/$id'
-      fullPath: '/config-contexts/$id'
-      preLoaderRoute: typeof ConfigContextsIdRouteImport
-      parentRoute: typeof ConfigContextsRoute
-    }
-    '/config-bundles/new': {
-      id: '/config-bundles/new'
-      path: '/new'
-      fullPath: '/config-bundles/new'
-      preLoaderRoute: typeof ConfigBundlesNewRouteImport
-      parentRoute: typeof ConfigBundlesRoute
-    }
-    '/config-bundles/$id': {
-      id: '/config-bundles/$id'
-      path: '/$id'
-      fullPath: '/config-bundles/$id'
-      preLoaderRoute: typeof ConfigBundlesIdRouteImport
-      parentRoute: typeof ConfigBundlesRoute
-    }
-    '/compliance-rules/new': {
-      id: '/compliance-rules/new'
-      path: '/compliance-rules/new'
-      fullPath: '/compliance-rules/new'
-      preLoaderRoute: typeof ComplianceRulesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/compliance-rules/$id': {
-      id: '/compliance-rules/$id'
-      path: '/compliance-rules/$id'
-      fullPath: '/compliance-rules/$id'
-      preLoaderRoute: typeof ComplianceRulesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/community-lists/new': {
-      id: '/community-lists/new'
-      path: '/new'
-      fullPath: '/community-lists/new'
-      preLoaderRoute: typeof CommunityListsNewRouteImport
-      parentRoute: typeof CommunityListsRoute
-    }
-    '/community-lists/$id': {
-      id: '/community-lists/$id'
-      path: '/$id'
-      fullPath: '/community-lists/$id'
-      preLoaderRoute: typeof CommunityListsIdRouteImport
-      parentRoute: typeof CommunityListsRoute
-    }
-    '/communities/new': {
-      id: '/communities/new'
-      path: '/new'
-      fullPath: '/communities/new'
-      preLoaderRoute: typeof CommunitiesNewRouteImport
-      parentRoute: typeof CommunitiesRoute
-    }
-    '/communities/$id': {
-      id: '/communities/$id'
-      path: '/$id'
-      fullPath: '/communities/$id'
-      preLoaderRoute: typeof CommunitiesIdRouteImport
-      parentRoute: typeof CommunitiesRoute
-    }
-    '/clusters/new': {
-      id: '/clusters/new'
-      path: '/clusters/new'
-      fullPath: '/clusters/new'
-      preLoaderRoute: typeof ClustersNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/clusters/$id': {
-      id: '/clusters/$id'
-      path: '/clusters/$id'
-      fullPath: '/clusters/$id'
-      preLoaderRoute: typeof ClustersIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cluster-types/new': {
-      id: '/cluster-types/new'
-      path: '/cluster-types/new'
-      fullPath: '/cluster-types/new'
-      preLoaderRoute: typeof ClusterTypesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cluster-types/$id': {
-      id: '/cluster-types/$id'
-      path: '/cluster-types/$id'
-      fullPath: '/cluster-types/$id'
-      preLoaderRoute: typeof ClusterTypesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cluster-groups/new': {
-      id: '/cluster-groups/new'
-      path: '/cluster-groups/new'
-      fullPath: '/cluster-groups/new'
-      preLoaderRoute: typeof ClusterGroupsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cluster-groups/$id': {
-      id: '/cluster-groups/$id'
-      path: '/cluster-groups/$id'
-      fullPath: '/cluster-groups/$id'
-      preLoaderRoute: typeof ClusterGroupsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circuits/new': {
-      id: '/circuits/new'
-      path: '/new'
-      fullPath: '/circuits/new'
-      preLoaderRoute: typeof CircuitsNewRouteImport
-      parentRoute: typeof CircuitsRoute
-    }
-    '/circuits/$id': {
-      id: '/circuits/$id'
-      path: '/$id'
-      fullPath: '/circuits/$id'
-      preLoaderRoute: typeof CircuitsIdRouteImport
-      parentRoute: typeof CircuitsRoute
-    }
-    '/circuit-types/new': {
-      id: '/circuit-types/new'
-      path: '/new'
-      fullPath: '/circuit-types/new'
-      preLoaderRoute: typeof CircuitTypesNewRouteImport
-      parentRoute: typeof CircuitTypesRoute
-    }
-    '/circuit-types/$id': {
-      id: '/circuit-types/$id'
-      path: '/$id'
-      fullPath: '/circuit-types/$id'
-      preLoaderRoute: typeof CircuitTypesIdRouteImport
-      parentRoute: typeof CircuitTypesRoute
-    }
-    '/channels/new': {
-      id: '/channels/new'
-      path: '/channels/new'
-      fullPath: '/channels/new'
-      preLoaderRoute: typeof ChannelsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/change-log_/$id': {
-      id: '/change-log_/$id'
-      path: '/change-log/$id'
-      fullPath: '/change-log/$id'
-      preLoaderRoute: typeof ChangeLogIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/certificates/$id': {
-      id: '/certificates/$id'
-      path: '/certificates/$id'
-      fullPath: '/certificates/$id'
-      preLoaderRoute: typeof CertificatesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/certificate-requests/$id': {
-      id: '/certificate-requests/$id'
-      path: '/certificate-requests/$id'
-      fullPath: '/certificate-requests/$id'
-      preLoaderRoute: typeof CertificateRequestsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cables/new': {
-      id: '/cables/new'
-      path: '/new'
-      fullPath: '/cables/new'
-      preLoaderRoute: typeof CablesNewRouteImport
-      parentRoute: typeof CablesRoute
-    }
-    '/cables/$id': {
-      id: '/cables/$id'
-      path: '/$id'
-      fullPath: '/cables/$id'
-      preLoaderRoute: typeof CablesIdRouteImport
-      parentRoute: typeof CablesRoute
-    }
-    '/cabinets/new': {
-      id: '/cabinets/new'
-      path: '/cabinets/new'
-      fullPath: '/cabinets/new'
-      preLoaderRoute: typeof CabinetsNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cabinets/$id': {
-      id: '/cabinets/$id'
-      path: '/cabinets/$id'
-      fullPath: '/cabinets/$id'
-      preLoaderRoute: typeof CabinetsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cabinet-types/new': {
-      id: '/cabinet-types/new'
-      path: '/cabinet-types/new'
-      fullPath: '/cabinet-types/new'
-      preLoaderRoute: typeof CabinetTypesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cabinet-types/$id': {
-      id: '/cabinet-types/$id'
-      path: '/cabinet-types/$id'
-      fullPath: '/cabinet-types/$id'
-      preLoaderRoute: typeof CabinetTypesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cabinet-roles/new': {
-      id: '/cabinet-roles/new'
-      path: '/cabinet-roles/new'
-      fullPath: '/cabinet-roles/new'
-      preLoaderRoute: typeof CabinetRolesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cabinet-roles/$id': {
-      id: '/cabinet-roles/$id'
-      path: '/cabinet-roles/$id'
-      fullPath: '/cabinet-roles/$id'
-      preLoaderRoute: typeof CabinetRolesIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bgp-sessions/new': {
-      id: '/bgp-sessions/new'
-      path: '/new'
-      fullPath: '/bgp-sessions/new'
-      preLoaderRoute: typeof BgpSessionsNewRouteImport
-      parentRoute: typeof BgpSessionsRoute
-    }
-    '/bgp-sessions/$id': {
-      id: '/bgp-sessions/$id'
-      path: '/$id'
-      fullPath: '/bgp-sessions/$id'
-      preLoaderRoute: typeof BgpSessionsIdRouteImport
-      parentRoute: typeof BgpSessionsRoute
-    }
-    '/bgp-peer-groups/new': {
-      id: '/bgp-peer-groups/new'
-      path: '/new'
-      fullPath: '/bgp-peer-groups/new'
-      preLoaderRoute: typeof BgpPeerGroupsNewRouteImport
-      parentRoute: typeof BgpPeerGroupsRoute
-    }
-    '/bgp-peer-groups/$id': {
-      id: '/bgp-peer-groups/$id'
-      path: '/$id'
-      fullPath: '/bgp-peer-groups/$id'
-      preLoaderRoute: typeof BgpPeerGroupsIdRouteImport
-      parentRoute: typeof BgpPeerGroupsRoute
-    }
-    '/bfd-profiles/new': {
-      id: '/bfd-profiles/new'
-      path: '/new'
-      fullPath: '/bfd-profiles/new'
-      preLoaderRoute: typeof BfdProfilesNewRouteImport
-      parentRoute: typeof BfdProfilesRoute
-    }
-    '/bfd-profiles/$id': {
-      id: '/bfd-profiles/$id'
-      path: '/$id'
-      fullPath: '/bfd-profiles/$id'
-      preLoaderRoute: typeof BfdProfilesIdRouteImport
-      parentRoute: typeof BfdProfilesRoute
-    }
-    '/automation-targets/setup': {
-      id: '/automation-targets/setup'
-      path: '/setup'
-      fullPath: '/automation-targets/setup'
-      preLoaderRoute: typeof AutomationTargetsSetupRouteImport
-      parentRoute: typeof AutomationTargetsRoute
-    }
-    '/automation-targets/new': {
-      id: '/automation-targets/new'
-      path: '/new'
-      fullPath: '/automation-targets/new'
-      preLoaderRoute: typeof AutomationTargetsNewRouteImport
-      parentRoute: typeof AutomationTargetsRoute
-    }
-    '/automation-targets/$id': {
-      id: '/automation-targets/$id'
-      path: '/$id'
-      fullPath: '/automation-targets/$id'
-      preLoaderRoute: typeof AutomationTargetsIdRouteImport
-      parentRoute: typeof AutomationTargetsRoute
-    }
-    '/audit-log_/$id': {
-      id: '/audit-log_/$id'
-      path: '/audit-log/$id'
-      fullPath: '/audit-log/$id'
-      preLoaderRoute: typeof AuditLogIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/asns/new': {
-      id: '/asns/new'
-      path: '/new'
-      fullPath: '/asns/new'
-      preLoaderRoute: typeof AsnsNewRouteImport
-      parentRoute: typeof AsnsRoute
-    }
-    '/asns/$id': {
-      id: '/asns/$id'
-      path: '/$id'
-      fullPath: '/asns/$id'
-      preLoaderRoute: typeof AsnsIdRouteImport
-      parentRoute: typeof AsnsRoute
-    }
-    '/as-path-lists/new': {
-      id: '/as-path-lists/new'
-      path: '/new'
-      fullPath: '/as-path-lists/new'
-      preLoaderRoute: typeof AsPathListsNewRouteImport
-      parentRoute: typeof AsPathListsRoute
-    }
-    '/as-path-lists/$id': {
-      id: '/as-path-lists/$id'
-      path: '/$id'
-      fullPath: '/as-path-lists/$id'
-      preLoaderRoute: typeof AsPathListsIdRouteImport
-      parentRoute: typeof AsPathListsRoute
-    }
-    '/alert-rules/new': {
-      id: '/alert-rules/new'
-      path: '/alert-rules/new'
-      fullPath: '/alert-rules/new'
-      preLoaderRoute: typeof AlertRulesNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/aggregates/new': {
-      id: '/aggregates/new'
-      path: '/new'
-      fullPath: '/aggregates/new'
-      preLoaderRoute: typeof AggregatesNewRouteImport
       parentRoute: typeof AggregatesRoute
     }
     '/aggregates/$id': {
@@ -9320,571 +7592,2601 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AggregatesIdRouteImport
       parentRoute: typeof AggregatesRoute
     }
-    '/zones/$id_/edit': {
-      id: '/zones/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/zones/$id/edit'
-      preLoaderRoute: typeof ZonesIdEditRouteImport
-      parentRoute: typeof ZonesRoute
+    '/aggregates/new': {
+      id: '/aggregates/new'
+      path: '/new'
+      fullPath: '/aggregates/new'
+      preLoaderRoute: typeof AggregatesNewRouteImport
+      parentRoute: typeof AggregatesRoute
     }
-    '/wireless-lans/$id_/edit': {
-      id: '/wireless-lans/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/wireless-lans/$id/edit'
-      preLoaderRoute: typeof WirelessLansIdEditRouteImport
-      parentRoute: typeof WirelessLansRoute
-    }
-    '/wireless-lan-groups/$id_/edit': {
-      id: '/wireless-lan-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/wireless-lan-groups/$id/edit'
-      preLoaderRoute: typeof WirelessLanGroupsIdEditRouteImport
-      parentRoute: typeof WirelessLanGroupsRoute
-    }
-    '/webhooks/$id_/edit': {
-      id: '/webhooks/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/webhooks/$id/edit'
-      preLoaderRoute: typeof WebhooksIdEditRouteImport
-      parentRoute: typeof WebhooksRoute
-    }
-    '/vrfs/$id_/edit': {
-      id: '/vrfs/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/vrfs/$id/edit'
-      preLoaderRoute: typeof VrfsIdEditRouteImport
-      parentRoute: typeof VrfsRoute
-    }
-    '/vm-groups/$id_/edit': {
-      id: '/vm-groups/$id_/edit'
-      path: '/vm-groups/$id/edit'
-      fullPath: '/vm-groups/$id/edit'
-      preLoaderRoute: typeof VmGroupsIdEditRouteImport
+    '/alert-rules/new': {
+      id: '/alert-rules/new'
+      path: '/alert-rules/new'
+      fullPath: '/alert-rules/new'
+      preLoaderRoute: typeof AlertRulesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/vlans/$id_/edit': {
-      id: '/vlans/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/vlans/$id/edit'
-      preLoaderRoute: typeof VlansIdEditRouteImport
-      parentRoute: typeof VlansRoute
-    }
-    '/vlan-groups/$id_/edit': {
-      id: '/vlan-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/vlan-groups/$id/edit'
-      preLoaderRoute: typeof VlanGroupsIdEditRouteImport
-      parentRoute: typeof VlanGroupsRoute
-    }
-    '/virtual-machines/$id_/edit': {
-      id: '/virtual-machines/$id_/edit'
-      path: '/virtual-machines/$id/edit'
-      fullPath: '/virtual-machines/$id/edit'
-      preLoaderRoute: typeof VirtualMachinesIdEditRouteImport
+    '/application-groups/': {
+      id: '/application-groups/'
+      path: '/application-groups'
+      fullPath: '/application-groups/'
+      preLoaderRoute: typeof ApplicationGroupsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/virtual-chassis/$id_/edit': {
-      id: '/virtual-chassis/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/virtual-chassis/$id/edit'
-      preLoaderRoute: typeof VirtualChassisIdEditRouteImport
-      parentRoute: typeof VirtualChassisRoute
-    }
-    '/users/$id_/edit': {
-      id: '/users/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/users/$id/edit'
-      preLoaderRoute: typeof UsersIdEditRouteImport
-      parentRoute: typeof UsersRoute
-    }
-    '/tunnels/$id_/edit': {
-      id: '/tunnels/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/tunnels/$id/edit'
-      preLoaderRoute: typeof TunnelsIdEditRouteImport
-      parentRoute: typeof TunnelsRoute
-    }
-    '/tunnel-groups/$id_/edit': {
-      id: '/tunnel-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/tunnel-groups/$id/edit'
-      preLoaderRoute: typeof TunnelGroupsIdEditRouteImport
-      parentRoute: typeof TunnelGroupsRoute
-    }
-    '/tenants/$id_/edit': {
-      id: '/tenants/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/tenants/$id/edit'
-      preLoaderRoute: typeof TenantsIdEditRouteImport
-      parentRoute: typeof TenantsRoute
-    }
-    '/tags/$id_/edit': {
-      id: '/tags/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/tags/$id/edit'
-      preLoaderRoute: typeof TagsIdEditRouteImport
-      parentRoute: typeof TagsRoute
-    }
-    '/support-contracts/$id_/edit': {
-      id: '/support-contracts/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/support-contracts/$id/edit'
-      preLoaderRoute: typeof SupportContractsIdEditRouteImport
-      parentRoute: typeof SupportContractsRoute
-    }
-    '/statuses/$id_/edit': {
-      id: '/statuses/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/statuses/$id/edit'
-      preLoaderRoute: typeof StatusesIdEditRouteImport
-      parentRoute: typeof StatusesRoute
-    }
-    '/static-routes/$id_/edit': {
-      id: '/static-routes/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/static-routes/$id/edit'
-      preLoaderRoute: typeof StaticRoutesIdEditRouteImport
-      parentRoute: typeof StaticRoutesRoute
-    }
-    '/sites/$id_/edit': {
-      id: '/sites/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/sites/$id/edit'
-      preLoaderRoute: typeof SitesIdEditRouteImport
-      parentRoute: typeof SitesRoute
-    }
-    '/silences/$id_/edit': {
-      id: '/silences/$id_/edit'
-      path: '/silences/$id/edit'
-      fullPath: '/silences/$id/edit'
-      preLoaderRoute: typeof SilencesIdEditRouteImport
+    '/application-groups/$id': {
+      id: '/application-groups/$id'
+      path: '/application-groups/$id'
+      fullPath: '/application-groups/$id'
+      preLoaderRoute: typeof ApplicationGroupsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/service-templates/$id_/edit': {
-      id: '/service-templates/$id_/edit'
-      path: '/service-templates/$id/edit'
-      fullPath: '/service-templates/$id/edit'
-      preLoaderRoute: typeof ServiceTemplatesIdEditRouteImport
+    '/application-groups/new': {
+      id: '/application-groups/new'
+      path: '/application-groups/new'
+      fullPath: '/application-groups/new'
+      preLoaderRoute: typeof ApplicationGroupsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scripts/runs/$runId': {
-      id: '/scripts/runs/$runId'
-      path: '/scripts/runs/$runId'
-      fullPath: '/scripts/runs/$runId'
-      preLoaderRoute: typeof ScriptsRunsRunIdRouteImport
+    '/applications/': {
+      id: '/applications/'
+      path: '/applications'
+      fullPath: '/applications/'
+      preLoaderRoute: typeof ApplicationsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/routing-policies/$id_/edit': {
-      id: '/routing-policies/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/routing-policies/$id/edit'
-      preLoaderRoute: typeof RoutingPoliciesIdEditRouteImport
-      parentRoute: typeof RoutingPoliciesRoute
-    }
-    '/routing-keychains/$id_/edit': {
-      id: '/routing-keychains/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/routing-keychains/$id/edit'
-      preLoaderRoute: typeof RoutingKeychainsIdEditRouteImport
-      parentRoute: typeof RoutingKeychainsRoute
-    }
-    '/route-targets/$id_/edit': {
-      id: '/route-targets/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/route-targets/$id/edit'
-      preLoaderRoute: typeof RouteTargetsIdEditRouteImport
-      parentRoute: typeof RouteTargetsRoute
-    }
-    '/rirs/$id_/edit': {
-      id: '/rirs/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/rirs/$id/edit'
-      preLoaderRoute: typeof RirsIdEditRouteImport
-      parentRoute: typeof RirsRoute
-    }
-    '/regions/$id_/edit': {
-      id: '/regions/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/regions/$id/edit'
-      preLoaderRoute: typeof RegionsIdEditRouteImport
-      parentRoute: typeof RegionsRoute
-    }
-    '/racks/$id_/edit': {
-      id: '/racks/$id_/edit'
-      path: '/racks/$id/edit'
-      fullPath: '/racks/$id/edit'
-      preLoaderRoute: typeof RacksIdEditRouteImport
+    '/applications/$id': {
+      id: '/applications/$id'
+      path: '/applications/$id'
+      fullPath: '/applications/$id'
+      preLoaderRoute: typeof ApplicationsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/rack-types/$id_/edit': {
-      id: '/rack-types/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/rack-types/$id/edit'
-      preLoaderRoute: typeof RackTypesIdEditRouteImport
-      parentRoute: typeof RackTypesRoute
-    }
-    '/rack-roles/$id_/edit': {
-      id: '/rack-roles/$id_/edit'
-      path: '/rack-roles/$id/edit'
-      fullPath: '/rack-roles/$id/edit'
-      preLoaderRoute: typeof RackRolesIdEditRouteImport
+    '/applications/new': {
+      id: '/applications/new'
+      path: '/applications/new'
+      fullPath: '/applications/new'
+      preLoaderRoute: typeof ApplicationsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/providers/$id_/edit': {
-      id: '/providers/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/providers/$id/edit'
-      preLoaderRoute: typeof ProvidersIdEditRouteImport
-      parentRoute: typeof ProvidersRoute
+    '/area-types/': {
+      id: '/area-types/'
+      path: '/'
+      fullPath: '/area-types/'
+      preLoaderRoute: typeof AreaTypesIndexRouteImport
+      parentRoute: typeof AreaTypesRoute
     }
-    '/provider-networks/$id_/edit': {
-      id: '/provider-networks/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/provider-networks/$id/edit'
-      preLoaderRoute: typeof ProviderNetworksIdEditRouteImport
-      parentRoute: typeof ProviderNetworksRoute
+    '/area-types/$id': {
+      id: '/area-types/$id'
+      path: '/$id'
+      fullPath: '/area-types/$id'
+      preLoaderRoute: typeof AreaTypesIdRouteImport
+      parentRoute: typeof AreaTypesRoute
     }
-    '/prefixes/$id_/edit': {
-      id: '/prefixes/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/prefixes/$id/edit'
-      preLoaderRoute: typeof PrefixesIdEditRouteImport
-      parentRoute: typeof PrefixesRoute
+    '/area-types/new': {
+      id: '/area-types/new'
+      path: '/new'
+      fullPath: '/area-types/new'
+      preLoaderRoute: typeof AreaTypesNewRouteImport
+      parentRoute: typeof AreaTypesRoute
     }
-    '/prefix-lists/$id_/edit': {
-      id: '/prefix-lists/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/prefix-lists/$id/edit'
-      preLoaderRoute: typeof PrefixListsIdEditRouteImport
-      parentRoute: typeof PrefixListsRoute
+    '/as-path-lists/': {
+      id: '/as-path-lists/'
+      path: '/'
+      fullPath: '/as-path-lists/'
+      preLoaderRoute: typeof AsPathListsIndexRouteImport
+      parentRoute: typeof AsPathListsRoute
     }
-    '/power-panels/$id_/edit': {
-      id: '/power-panels/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/power-panels/$id/edit'
-      preLoaderRoute: typeof PowerPanelsIdEditRouteImport
-      parentRoute: typeof PowerPanelsRoute
+    '/as-path-lists/$id': {
+      id: '/as-path-lists/$id'
+      path: '/$id'
+      fullPath: '/as-path-lists/$id'
+      preLoaderRoute: typeof AsPathListsIdRouteImport
+      parentRoute: typeof AsPathListsRoute
     }
-    '/power-feeds/$id_/edit': {
-      id: '/power-feeds/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/power-feeds/$id/edit'
-      preLoaderRoute: typeof PowerFeedsIdEditRouteImport
-      parentRoute: typeof PowerFeedsRoute
+    '/as-path-lists/new': {
+      id: '/as-path-lists/new'
+      path: '/new'
+      fullPath: '/as-path-lists/new'
+      preLoaderRoute: typeof AsPathListsNewRouteImport
+      parentRoute: typeof AsPathListsRoute
     }
-    '/platforms/$id_/edit': {
-      id: '/platforms/$id_/edit'
-      path: '/platforms/$id/edit'
-      fullPath: '/platforms/$id/edit'
-      preLoaderRoute: typeof PlatformsIdEditRouteImport
+    '/asns/': {
+      id: '/asns/'
+      path: '/'
+      fullPath: '/asns/'
+      preLoaderRoute: typeof AsnsIndexRouteImport
+      parentRoute: typeof AsnsRoute
+    }
+    '/asns/$id': {
+      id: '/asns/$id'
+      path: '/$id'
+      fullPath: '/asns/$id'
+      preLoaderRoute: typeof AsnsIdRouteImport
+      parentRoute: typeof AsnsRoute
+    }
+    '/asns/new': {
+      id: '/asns/new'
+      path: '/new'
+      fullPath: '/asns/new'
+      preLoaderRoute: typeof AsnsNewRouteImport
+      parentRoute: typeof AsnsRoute
+    }
+    '/audit-log_/$id': {
+      id: '/audit-log_/$id'
+      path: '/audit-log/$id'
+      fullPath: '/audit-log/$id'
+      preLoaderRoute: typeof AuditLogIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/platform-groups/$id_/edit': {
-      id: '/platform-groups/$id_/edit'
-      path: '/platform-groups/$id/edit'
-      fullPath: '/platform-groups/$id/edit'
-      preLoaderRoute: typeof PlatformGroupsIdEditRouteImport
+    '/automation-targets/': {
+      id: '/automation-targets/'
+      path: '/'
+      fullPath: '/automation-targets/'
+      preLoaderRoute: typeof AutomationTargetsIndexRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/automation-targets/$id': {
+      id: '/automation-targets/$id'
+      path: '/$id'
+      fullPath: '/automation-targets/$id'
+      preLoaderRoute: typeof AutomationTargetsIdRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/automation-targets/new': {
+      id: '/automation-targets/new'
+      path: '/new'
+      fullPath: '/automation-targets/new'
+      preLoaderRoute: typeof AutomationTargetsNewRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/automation-targets/setup': {
+      id: '/automation-targets/setup'
+      path: '/setup'
+      fullPath: '/automation-targets/setup'
+      preLoaderRoute: typeof AutomationTargetsSetupRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/bfd-profiles/': {
+      id: '/bfd-profiles/'
+      path: '/'
+      fullPath: '/bfd-profiles/'
+      preLoaderRoute: typeof BfdProfilesIndexRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
+    '/bfd-profiles/$id': {
+      id: '/bfd-profiles/$id'
+      path: '/$id'
+      fullPath: '/bfd-profiles/$id'
+      preLoaderRoute: typeof BfdProfilesIdRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
+    '/bfd-profiles/new': {
+      id: '/bfd-profiles/new'
+      path: '/new'
+      fullPath: '/bfd-profiles/new'
+      preLoaderRoute: typeof BfdProfilesNewRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
+    '/bgp-instances/': {
+      id: '/bgp-instances/'
+      path: '/bgp-instances'
+      fullPath: '/bgp-instances/'
+      preLoaderRoute: typeof BgpInstancesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/permissions/$id_/edit': {
-      id: '/permissions/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/permissions/$id/edit'
-      preLoaderRoute: typeof PermissionsIdEditRouteImport
-      parentRoute: typeof PermissionsRoute
+    '/bgp-peer-groups/': {
+      id: '/bgp-peer-groups/'
+      path: '/'
+      fullPath: '/bgp-peer-groups/'
+      preLoaderRoute: typeof BgpPeerGroupsIndexRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
     }
-    '/p/$slug/$': {
-      id: '/p/$slug/$'
-      path: '/p/$slug/$'
-      fullPath: '/p/$slug/$'
-      preLoaderRoute: typeof PSlugSplatRouteImport
+    '/bgp-peer-groups/$id': {
+      id: '/bgp-peer-groups/$id'
+      path: '/$id'
+      fullPath: '/bgp-peer-groups/$id'
+      preLoaderRoute: typeof BgpPeerGroupsIdRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
+    '/bgp-peer-groups/new': {
+      id: '/bgp-peer-groups/new'
+      path: '/new'
+      fullPath: '/bgp-peer-groups/new'
+      preLoaderRoute: typeof BgpPeerGroupsNewRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
+    '/bgp-sessions/': {
+      id: '/bgp-sessions/'
+      path: '/'
+      fullPath: '/bgp-sessions/'
+      preLoaderRoute: typeof BgpSessionsIndexRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-sessions/$id': {
+      id: '/bgp-sessions/$id'
+      path: '/$id'
+      fullPath: '/bgp-sessions/$id'
+      preLoaderRoute: typeof BgpSessionsIdRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/bgp-sessions/new': {
+      id: '/bgp-sessions/new'
+      path: '/new'
+      fullPath: '/bgp-sessions/new'
+      preLoaderRoute: typeof BgpSessionsNewRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/cabinet-roles/': {
+      id: '/cabinet-roles/'
+      path: '/cabinet-roles'
+      fullPath: '/cabinet-roles/'
+      preLoaderRoute: typeof CabinetRolesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ospf-areas/$id_/edit': {
-      id: '/ospf-areas/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/ospf-areas/$id/edit'
-      preLoaderRoute: typeof OspfAreasIdEditRouteImport
-      parentRoute: typeof OspfAreasRoute
-    }
-    '/monitoring_/sla/new': {
-      id: '/monitoring_/sla/new'
-      path: '/monitoring/sla/new'
-      fullPath: '/monitoring/sla/new'
-      preLoaderRoute: typeof MonitoringSlaNewRouteImport
+    '/cabinet-roles/$id': {
+      id: '/cabinet-roles/$id'
+      path: '/cabinet-roles/$id'
+      fullPath: '/cabinet-roles/$id'
+      preLoaderRoute: typeof CabinetRolesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitoring_/sla/$id': {
-      id: '/monitoring_/sla/$id'
-      path: '/monitoring/sla/$id'
-      fullPath: '/monitoring/sla/$id'
-      preLoaderRoute: typeof MonitoringSlaIdRouteImport
+    '/cabinet-roles/new': {
+      id: '/cabinet-roles/new'
+      path: '/cabinet-roles/new'
+      fullPath: '/cabinet-roles/new'
+      preLoaderRoute: typeof CabinetRolesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitoring_/checks/$id': {
-      id: '/monitoring_/checks/$id'
-      path: '/monitoring/checks/$id'
-      fullPath: '/monitoring/checks/$id'
-      preLoaderRoute: typeof MonitoringChecksIdRouteImport
+    '/cabinet-types/': {
+      id: '/cabinet-types/'
+      path: '/cabinet-types'
+      fullPath: '/cabinet-types/'
+      preLoaderRoute: typeof CabinetTypesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/module-types/$id_/edit': {
-      id: '/module-types/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/module-types/$id/edit'
-      preLoaderRoute: typeof ModuleTypesIdEditRouteImport
-      parentRoute: typeof ModuleTypesRoute
-    }
-    '/manufacturers/$id_/edit': {
-      id: '/manufacturers/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/manufacturers/$id/edit'
-      preLoaderRoute: typeof ManufacturersIdEditRouteImport
-      parentRoute: typeof ManufacturersRoute
-    }
-    '/maintenance/$id_/edit': {
-      id: '/maintenance/$id_/edit'
-      path: '/maintenance/$id/edit'
-      fullPath: '/maintenance/$id/edit'
-      preLoaderRoute: typeof MaintenanceIdEditRouteImport
+    '/cabinet-types/$id': {
+      id: '/cabinet-types/$id'
+      path: '/cabinet-types/$id'
+      fullPath: '/cabinet-types/$id'
+      preLoaderRoute: typeof CabinetTypesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/locations/$id_/edit': {
-      id: '/locations/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/locations/$id/edit'
-      preLoaderRoute: typeof LocationsIdEditRouteImport
-      parentRoute: typeof LocationsRoute
-    }
-    '/l2vpns/$id_/edit': {
-      id: '/l2vpns/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/l2vpns/$id/edit'
-      preLoaderRoute: typeof L2vpnsIdEditRouteImport
-      parentRoute: typeof L2vpnsRoute
-    }
-    '/ipsec-profiles/$id_/edit': {
-      id: '/ipsec-profiles/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/ipsec-profiles/$id/edit'
-      preLoaderRoute: typeof IpsecProfilesIdEditRouteImport
-      parentRoute: typeof IpsecProfilesRoute
-    }
-    '/ips/$id_/edit': {
-      id: '/ips/$id_/edit'
-      path: '/ips/$id/edit'
-      fullPath: '/ips/$id/edit'
-      preLoaderRoute: typeof IpsIdEditRouteImport
+    '/cabinet-types/new': {
+      id: '/cabinet-types/new'
+      path: '/cabinet-types/new'
+      fullPath: '/cabinet-types/new'
+      preLoaderRoute: typeof CabinetTypesNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/ip-roles/$id_/edit': {
-      id: '/ip-roles/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/ip-roles/$id/edit'
-      preLoaderRoute: typeof IpRolesIdEditRouteImport
-      parentRoute: typeof IpRolesRoute
-    }
-    '/ip-ranges/$id_/edit': {
-      id: '/ip-ranges/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/ip-ranges/$id/edit'
-      preLoaderRoute: typeof IpRangesIdEditRouteImport
-      parentRoute: typeof IpRangesRoute
-    }
-    '/interfaces/$id_/edit': {
-      id: '/interfaces/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/interfaces/$id/edit'
-      preLoaderRoute: typeof InterfacesIdEditRouteImport
-      parentRoute: typeof InterfacesRoute
-    }
-    '/groups/$id_/edit': {
-      id: '/groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/groups/$id/edit'
-      preLoaderRoute: typeof GroupsIdEditRouteImport
-      parentRoute: typeof GroupsRoute
-    }
-    '/floor-tile-types/$id_/edit': {
-      id: '/floor-tile-types/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/floor-tile-types/$id/edit'
-      preLoaderRoute: typeof FloorTileTypesIdEditRouteImport
-      parentRoute: typeof FloorTileTypesRoute
-    }
-    '/fhrp-groups/$id_/edit': {
-      id: '/fhrp-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/fhrp-groups/$id/edit'
-      preLoaderRoute: typeof FhrpGroupsIdEditRouteImport
-      parentRoute: typeof FhrpGroupsRoute
-    }
-    '/export-templates/$id_/edit': {
-      id: '/export-templates/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/export-templates/$id/edit'
-      preLoaderRoute: typeof ExportTemplatesIdEditRouteImport
-      parentRoute: typeof ExportTemplatesRoute
-    }
-    '/ethernet-segments/$id_/edit': {
-      id: '/ethernet-segments/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/ethernet-segments/$id/edit'
-      preLoaderRoute: typeof EthernetSegmentsIdEditRouteImport
-      parentRoute: typeof EthernetSegmentsRoute
-    }
-    '/devices/$id_/edit': {
-      id: '/devices/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/devices/$id/edit'
-      preLoaderRoute: typeof DevicesIdEditRouteImport
-      parentRoute: typeof DevicesRoute
-    }
-    '/devices/$id_/compliance': {
-      id: '/devices/$id_/compliance'
-      path: '/$id/compliance'
-      fullPath: '/devices/$id/compliance'
-      preLoaderRoute: typeof DevicesIdComplianceRouteImport
-      parentRoute: typeof DevicesRoute
-    }
-    '/device-types/$id_/edit': {
-      id: '/device-types/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/device-types/$id/edit'
-      preLoaderRoute: typeof DeviceTypesIdEditRouteImport
-      parentRoute: typeof DeviceTypesRoute
-    }
-    '/device-roles/$id_/edit': {
-      id: '/device-roles/$id_/edit'
-      path: '/device-roles/$id/edit'
-      fullPath: '/device-roles/$id/edit'
-      preLoaderRoute: typeof DeviceRolesIdEditRouteImport
+    '/cabinets/': {
+      id: '/cabinets/'
+      path: '/cabinets'
+      fullPath: '/cabinets/'
+      preLoaderRoute: typeof CabinetsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/custom-fields/$id_/edit': {
-      id: '/custom-fields/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/custom-fields/$id/edit'
-      preLoaderRoute: typeof CustomFieldsIdEditRouteImport
-      parentRoute: typeof CustomFieldsRoute
-    }
-    '/custom-field-groups/$id_/edit': {
-      id: '/custom-field-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/custom-field-groups/$id/edit'
-      preLoaderRoute: typeof CustomFieldGroupsIdEditRouteImport
-      parentRoute: typeof CustomFieldGroupsRoute
-    }
-    '/contacts/$id_/edit': {
-      id: '/contacts/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/contacts/$id/edit'
-      preLoaderRoute: typeof ContactsIdEditRouteImport
-      parentRoute: typeof ContactsRoute
-    }
-    '/contact-roles/$id_/edit': {
-      id: '/contact-roles/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/contact-roles/$id/edit'
-      preLoaderRoute: typeof ContactRolesIdEditRouteImport
-      parentRoute: typeof ContactRolesRoute
-    }
-    '/contact-groups/$id_/edit': {
-      id: '/contact-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/contact-groups/$id/edit'
-      preLoaderRoute: typeof ContactGroupsIdEditRouteImport
-      parentRoute: typeof ContactGroupsRoute
-    }
-    '/config-contexts/$id_/edit': {
-      id: '/config-contexts/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/config-contexts/$id/edit'
-      preLoaderRoute: typeof ConfigContextsIdEditRouteImport
-      parentRoute: typeof ConfigContextsRoute
-    }
-    '/config-bundles/$id_/edit': {
-      id: '/config-bundles/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/config-bundles/$id/edit'
-      preLoaderRoute: typeof ConfigBundlesIdEditRouteImport
-      parentRoute: typeof ConfigBundlesRoute
-    }
-    '/compliance-rules/$id_/edit': {
-      id: '/compliance-rules/$id_/edit'
-      path: '/compliance-rules/$id/edit'
-      fullPath: '/compliance-rules/$id/edit'
-      preLoaderRoute: typeof ComplianceRulesIdEditRouteImport
+    '/cabinets/$id': {
+      id: '/cabinets/$id'
+      path: '/cabinets/$id'
+      fullPath: '/cabinets/$id'
+      preLoaderRoute: typeof CabinetsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/community-lists/$id_/edit': {
-      id: '/community-lists/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/community-lists/$id/edit'
-      preLoaderRoute: typeof CommunityListsIdEditRouteImport
-      parentRoute: typeof CommunityListsRoute
-    }
-    '/communities/$id_/edit': {
-      id: '/communities/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/communities/$id/edit'
-      preLoaderRoute: typeof CommunitiesIdEditRouteImport
-      parentRoute: typeof CommunitiesRoute
-    }
-    '/clusters/$id_/edit': {
-      id: '/clusters/$id_/edit'
-      path: '/clusters/$id/edit'
-      fullPath: '/clusters/$id/edit'
-      preLoaderRoute: typeof ClustersIdEditRouteImport
+    '/cabinets/new': {
+      id: '/cabinets/new'
+      path: '/cabinets/new'
+      fullPath: '/cabinets/new'
+      preLoaderRoute: typeof CabinetsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cluster-types/$id_/edit': {
-      id: '/cluster-types/$id_/edit'
-      path: '/cluster-types/$id/edit'
-      fullPath: '/cluster-types/$id/edit'
-      preLoaderRoute: typeof ClusterTypesIdEditRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cluster-groups/$id_/edit': {
-      id: '/cluster-groups/$id_/edit'
-      path: '/cluster-groups/$id/edit'
-      fullPath: '/cluster-groups/$id/edit'
-      preLoaderRoute: typeof ClusterGroupsIdEditRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circuits/$id_/edit': {
-      id: '/circuits/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/circuits/$id/edit'
-      preLoaderRoute: typeof CircuitsIdEditRouteImport
-      parentRoute: typeof CircuitsRoute
-    }
-    '/circuit-types/$id_/edit': {
-      id: '/circuit-types/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/circuit-types/$id/edit'
-      preLoaderRoute: typeof CircuitTypesIdEditRouteImport
-      parentRoute: typeof CircuitTypesRoute
-    }
-    '/channels/$id_/edit': {
-      id: '/channels/$id_/edit'
-      path: '/channels/$id/edit'
-      fullPath: '/channels/$id/edit'
-      preLoaderRoute: typeof ChannelsIdEditRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cables/$id_/edit': {
-      id: '/cables/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/cables/$id/edit'
-      preLoaderRoute: typeof CablesIdEditRouteImport
+    '/cables/': {
+      id: '/cables/'
+      path: '/'
+      fullPath: '/cables/'
+      preLoaderRoute: typeof CablesIndexRouteImport
       parentRoute: typeof CablesRoute
     }
-    '/cabinets/$id_/edit': {
-      id: '/cabinets/$id_/edit'
-      path: '/cabinets/$id/edit'
-      fullPath: '/cabinets/$id/edit'
-      preLoaderRoute: typeof CabinetsIdEditRouteImport
+    '/cables/$id': {
+      id: '/cables/$id'
+      path: '/$id'
+      fullPath: '/cables/$id'
+      preLoaderRoute: typeof CablesIdRouteImport
+      parentRoute: typeof CablesRoute
+    }
+    '/cables/new': {
+      id: '/cables/new'
+      path: '/new'
+      fullPath: '/cables/new'
+      preLoaderRoute: typeof CablesNewRouteImport
+      parentRoute: typeof CablesRoute
+    }
+    '/certificate-issuers/': {
+      id: '/certificate-issuers/'
+      path: '/certificate-issuers'
+      fullPath: '/certificate-issuers/'
+      preLoaderRoute: typeof CertificateIssuersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificate-requests/': {
+      id: '/certificate-requests/'
+      path: '/certificate-requests'
+      fullPath: '/certificate-requests/'
+      preLoaderRoute: typeof CertificateRequestsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificate-requests/$id': {
+      id: '/certificate-requests/$id'
+      path: '/certificate-requests/$id'
+      fullPath: '/certificate-requests/$id'
+      preLoaderRoute: typeof CertificateRequestsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificates/': {
+      id: '/certificates/'
+      path: '/certificates'
+      fullPath: '/certificates/'
+      preLoaderRoute: typeof CertificatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/certificates/$id': {
+      id: '/certificates/$id'
+      path: '/certificates/$id'
+      fullPath: '/certificates/$id'
+      preLoaderRoute: typeof CertificatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/change-log_/$id': {
+      id: '/change-log_/$id'
+      path: '/change-log/$id'
+      fullPath: '/change-log/$id'
+      preLoaderRoute: typeof ChangeLogIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/channels/new': {
+      id: '/channels/new'
+      path: '/channels/new'
+      fullPath: '/channels/new'
+      preLoaderRoute: typeof ChannelsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/circuit-types/': {
+      id: '/circuit-types/'
+      path: '/'
+      fullPath: '/circuit-types/'
+      preLoaderRoute: typeof CircuitTypesIndexRouteImport
+      parentRoute: typeof CircuitTypesRoute
+    }
+    '/circuit-types/$id': {
+      id: '/circuit-types/$id'
+      path: '/$id'
+      fullPath: '/circuit-types/$id'
+      preLoaderRoute: typeof CircuitTypesIdRouteImport
+      parentRoute: typeof CircuitTypesRoute
+    }
+    '/circuit-types/new': {
+      id: '/circuit-types/new'
+      path: '/new'
+      fullPath: '/circuit-types/new'
+      preLoaderRoute: typeof CircuitTypesNewRouteImport
+      parentRoute: typeof CircuitTypesRoute
+    }
+    '/circuits/': {
+      id: '/circuits/'
+      path: '/'
+      fullPath: '/circuits/'
+      preLoaderRoute: typeof CircuitsIndexRouteImport
+      parentRoute: typeof CircuitsRoute
+    }
+    '/circuits/$id': {
+      id: '/circuits/$id'
+      path: '/$id'
+      fullPath: '/circuits/$id'
+      preLoaderRoute: typeof CircuitsIdRouteImport
+      parentRoute: typeof CircuitsRoute
+    }
+    '/circuits/new': {
+      id: '/circuits/new'
+      path: '/new'
+      fullPath: '/circuits/new'
+      preLoaderRoute: typeof CircuitsNewRouteImport
+      parentRoute: typeof CircuitsRoute
+    }
+    '/cluster-groups/': {
+      id: '/cluster-groups/'
+      path: '/cluster-groups'
+      fullPath: '/cluster-groups/'
+      preLoaderRoute: typeof ClusterGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cluster-groups/$id': {
+      id: '/cluster-groups/$id'
+      path: '/cluster-groups/$id'
+      fullPath: '/cluster-groups/$id'
+      preLoaderRoute: typeof ClusterGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cluster-groups/new': {
+      id: '/cluster-groups/new'
+      path: '/cluster-groups/new'
+      fullPath: '/cluster-groups/new'
+      preLoaderRoute: typeof ClusterGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cluster-types/': {
+      id: '/cluster-types/'
+      path: '/cluster-types'
+      fullPath: '/cluster-types/'
+      preLoaderRoute: typeof ClusterTypesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cluster-types/$id': {
+      id: '/cluster-types/$id'
+      path: '/cluster-types/$id'
+      fullPath: '/cluster-types/$id'
+      preLoaderRoute: typeof ClusterTypesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cluster-types/new': {
+      id: '/cluster-types/new'
+      path: '/cluster-types/new'
+      fullPath: '/cluster-types/new'
+      preLoaderRoute: typeof ClusterTypesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clusters/': {
+      id: '/clusters/'
+      path: '/clusters'
+      fullPath: '/clusters/'
+      preLoaderRoute: typeof ClustersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clusters/$id': {
+      id: '/clusters/$id'
+      path: '/clusters/$id'
+      fullPath: '/clusters/$id'
+      preLoaderRoute: typeof ClustersIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clusters/new': {
+      id: '/clusters/new'
+      path: '/clusters/new'
+      fullPath: '/clusters/new'
+      preLoaderRoute: typeof ClustersNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/communities/': {
+      id: '/communities/'
+      path: '/'
+      fullPath: '/communities/'
+      preLoaderRoute: typeof CommunitiesIndexRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
+    '/communities/$id': {
+      id: '/communities/$id'
+      path: '/$id'
+      fullPath: '/communities/$id'
+      preLoaderRoute: typeof CommunitiesIdRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
+    '/communities/new': {
+      id: '/communities/new'
+      path: '/new'
+      fullPath: '/communities/new'
+      preLoaderRoute: typeof CommunitiesNewRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
+    '/community-lists/': {
+      id: '/community-lists/'
+      path: '/'
+      fullPath: '/community-lists/'
+      preLoaderRoute: typeof CommunityListsIndexRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/community-lists/$id': {
+      id: '/community-lists/$id'
+      path: '/$id'
+      fullPath: '/community-lists/$id'
+      preLoaderRoute: typeof CommunityListsIdRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/community-lists/new': {
+      id: '/community-lists/new'
+      path: '/new'
+      fullPath: '/community-lists/new'
+      preLoaderRoute: typeof CommunityListsNewRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/compliance-rules/$id': {
+      id: '/compliance-rules/$id'
+      path: '/compliance-rules/$id'
+      fullPath: '/compliance-rules/$id'
+      preLoaderRoute: typeof ComplianceRulesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compliance-rules/new': {
+      id: '/compliance-rules/new'
+      path: '/compliance-rules/new'
+      fullPath: '/compliance-rules/new'
+      preLoaderRoute: typeof ComplianceRulesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/config-bundles/': {
+      id: '/config-bundles/'
+      path: '/'
+      fullPath: '/config-bundles/'
+      preLoaderRoute: typeof ConfigBundlesIndexRouteImport
+      parentRoute: typeof ConfigBundlesRoute
+    }
+    '/config-bundles/$id': {
+      id: '/config-bundles/$id'
+      path: '/$id'
+      fullPath: '/config-bundles/$id'
+      preLoaderRoute: typeof ConfigBundlesIdRouteImport
+      parentRoute: typeof ConfigBundlesRoute
+    }
+    '/config-bundles/new': {
+      id: '/config-bundles/new'
+      path: '/new'
+      fullPath: '/config-bundles/new'
+      preLoaderRoute: typeof ConfigBundlesNewRouteImport
+      parentRoute: typeof ConfigBundlesRoute
+    }
+    '/config-contexts/': {
+      id: '/config-contexts/'
+      path: '/'
+      fullPath: '/config-contexts/'
+      preLoaderRoute: typeof ConfigContextsIndexRouteImport
+      parentRoute: typeof ConfigContextsRoute
+    }
+    '/config-contexts/$id': {
+      id: '/config-contexts/$id'
+      path: '/$id'
+      fullPath: '/config-contexts/$id'
+      preLoaderRoute: typeof ConfigContextsIdRouteImport
+      parentRoute: typeof ConfigContextsRoute
+    }
+    '/config-contexts/new': {
+      id: '/config-contexts/new'
+      path: '/new'
+      fullPath: '/config-contexts/new'
+      preLoaderRoute: typeof ConfigContextsNewRouteImport
+      parentRoute: typeof ConfigContextsRoute
+    }
+    '/contact-groups/': {
+      id: '/contact-groups/'
+      path: '/'
+      fullPath: '/contact-groups/'
+      preLoaderRoute: typeof ContactGroupsIndexRouteImport
+      parentRoute: typeof ContactGroupsRoute
+    }
+    '/contact-groups/$id': {
+      id: '/contact-groups/$id'
+      path: '/$id'
+      fullPath: '/contact-groups/$id'
+      preLoaderRoute: typeof ContactGroupsIdRouteImport
+      parentRoute: typeof ContactGroupsRoute
+    }
+    '/contact-groups/new': {
+      id: '/contact-groups/new'
+      path: '/new'
+      fullPath: '/contact-groups/new'
+      preLoaderRoute: typeof ContactGroupsNewRouteImport
+      parentRoute: typeof ContactGroupsRoute
+    }
+    '/contact-roles/': {
+      id: '/contact-roles/'
+      path: '/'
+      fullPath: '/contact-roles/'
+      preLoaderRoute: typeof ContactRolesIndexRouteImport
+      parentRoute: typeof ContactRolesRoute
+    }
+    '/contact-roles/$id': {
+      id: '/contact-roles/$id'
+      path: '/$id'
+      fullPath: '/contact-roles/$id'
+      preLoaderRoute: typeof ContactRolesIdRouteImport
+      parentRoute: typeof ContactRolesRoute
+    }
+    '/contact-roles/new': {
+      id: '/contact-roles/new'
+      path: '/new'
+      fullPath: '/contact-roles/new'
+      preLoaderRoute: typeof ContactRolesNewRouteImport
+      parentRoute: typeof ContactRolesRoute
+    }
+    '/contacts/': {
+      id: '/contacts/'
+      path: '/'
+      fullPath: '/contacts/'
+      preLoaderRoute: typeof ContactsIndexRouteImport
+      parentRoute: typeof ContactsRoute
+    }
+    '/contacts/$id': {
+      id: '/contacts/$id'
+      path: '/$id'
+      fullPath: '/contacts/$id'
+      preLoaderRoute: typeof ContactsIdRouteImport
+      parentRoute: typeof ContactsRoute
+    }
+    '/contacts/new': {
+      id: '/contacts/new'
+      path: '/new'
+      fullPath: '/contacts/new'
+      preLoaderRoute: typeof ContactsNewRouteImport
+      parentRoute: typeof ContactsRoute
+    }
+    '/cooling-feeds/': {
+      id: '/cooling-feeds/'
+      path: '/'
+      fullPath: '/cooling-feeds/'
+      preLoaderRoute: typeof CoolingFeedsIndexRouteImport
+      parentRoute: typeof CoolingFeedsRoute
+    }
+    '/cooling-feeds/$id': {
+      id: '/cooling-feeds/$id'
+      path: '/$id'
+      fullPath: '/cooling-feeds/$id'
+      preLoaderRoute: typeof CoolingFeedsIdRouteImport
+      parentRoute: typeof CoolingFeedsRoute
+    }
+    '/cooling-feeds/new': {
+      id: '/cooling-feeds/new'
+      path: '/new'
+      fullPath: '/cooling-feeds/new'
+      preLoaderRoute: typeof CoolingFeedsNewRouteImport
+      parentRoute: typeof CoolingFeedsRoute
+    }
+    '/cooling-sources/': {
+      id: '/cooling-sources/'
+      path: '/'
+      fullPath: '/cooling-sources/'
+      preLoaderRoute: typeof CoolingSourcesIndexRouteImport
+      parentRoute: typeof CoolingSourcesRoute
+    }
+    '/cooling-sources/$id': {
+      id: '/cooling-sources/$id'
+      path: '/$id'
+      fullPath: '/cooling-sources/$id'
+      preLoaderRoute: typeof CoolingSourcesIdRouteImport
+      parentRoute: typeof CoolingSourcesRoute
+    }
+    '/cooling-sources/new': {
+      id: '/cooling-sources/new'
+      path: '/new'
+      fullPath: '/cooling-sources/new'
+      preLoaderRoute: typeof CoolingSourcesNewRouteImport
+      parentRoute: typeof CoolingSourcesRoute
+    }
+    '/custom-field-groups/': {
+      id: '/custom-field-groups/'
+      path: '/'
+      fullPath: '/custom-field-groups/'
+      preLoaderRoute: typeof CustomFieldGroupsIndexRouteImport
+      parentRoute: typeof CustomFieldGroupsRoute
+    }
+    '/custom-field-groups/$id': {
+      id: '/custom-field-groups/$id'
+      path: '/$id'
+      fullPath: '/custom-field-groups/$id'
+      preLoaderRoute: typeof CustomFieldGroupsIdRouteImport
+      parentRoute: typeof CustomFieldGroupsRoute
+    }
+    '/custom-field-groups/new': {
+      id: '/custom-field-groups/new'
+      path: '/new'
+      fullPath: '/custom-field-groups/new'
+      preLoaderRoute: typeof CustomFieldGroupsNewRouteImport
+      parentRoute: typeof CustomFieldGroupsRoute
+    }
+    '/custom-fields/': {
+      id: '/custom-fields/'
+      path: '/'
+      fullPath: '/custom-fields/'
+      preLoaderRoute: typeof CustomFieldsIndexRouteImport
+      parentRoute: typeof CustomFieldsRoute
+    }
+    '/custom-fields/$id': {
+      id: '/custom-fields/$id'
+      path: '/$id'
+      fullPath: '/custom-fields/$id'
+      preLoaderRoute: typeof CustomFieldsIdRouteImport
+      parentRoute: typeof CustomFieldsRoute
+    }
+    '/custom-fields/new': {
+      id: '/custom-fields/new'
+      path: '/new'
+      fullPath: '/custom-fields/new'
+      preLoaderRoute: typeof CustomFieldsNewRouteImport
+      parentRoute: typeof CustomFieldsRoute
+    }
+    '/dashboards/': {
+      id: '/dashboards/'
+      path: '/dashboards'
+      fullPath: '/dashboards/'
+      preLoaderRoute: typeof DashboardsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboards/$id': {
+      id: '/dashboards/$id'
+      path: '/dashboards/$id'
+      fullPath: '/dashboards/$id'
+      preLoaderRoute: typeof DashboardsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-profiles/': {
+      id: '/device-profiles/'
+      path: '/device-profiles'
+      fullPath: '/device-profiles/'
+      preLoaderRoute: typeof DeviceProfilesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-profiles/$id': {
+      id: '/device-profiles/$id'
+      path: '/device-profiles/$id'
+      fullPath: '/device-profiles/$id'
+      preLoaderRoute: typeof DeviceProfilesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-profiles/new': {
+      id: '/device-profiles/new'
+      path: '/device-profiles/new'
+      fullPath: '/device-profiles/new'
+      preLoaderRoute: typeof DeviceProfilesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-roles/': {
+      id: '/device-roles/'
+      path: '/device-roles'
+      fullPath: '/device-roles/'
+      preLoaderRoute: typeof DeviceRolesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-roles/$id': {
+      id: '/device-roles/$id'
+      path: '/device-roles/$id'
+      fullPath: '/device-roles/$id'
+      preLoaderRoute: typeof DeviceRolesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-roles/new': {
+      id: '/device-roles/new'
+      path: '/device-roles/new'
+      fullPath: '/device-roles/new'
+      preLoaderRoute: typeof DeviceRolesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-types/': {
+      id: '/device-types/'
+      path: '/'
+      fullPath: '/device-types/'
+      preLoaderRoute: typeof DeviceTypesIndexRouteImport
+      parentRoute: typeof DeviceTypesRoute
+    }
+    '/device-types/$id': {
+      id: '/device-types/$id'
+      path: '/$id'
+      fullPath: '/device-types/$id'
+      preLoaderRoute: typeof DeviceTypesIdRouteImport
+      parentRoute: typeof DeviceTypesRoute
+    }
+    '/device-types/new': {
+      id: '/device-types/new'
+      path: '/new'
+      fullPath: '/device-types/new'
+      preLoaderRoute: typeof DeviceTypesNewRouteImport
+      parentRoute: typeof DeviceTypesRoute
+    }
+    '/devices/': {
+      id: '/devices/'
+      path: '/'
+      fullPath: '/devices/'
+      preLoaderRoute: typeof DevicesIndexRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/devices/$id': {
+      id: '/devices/$id'
+      path: '/$id'
+      fullPath: '/devices/$id'
+      preLoaderRoute: typeof DevicesIdRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/devices/new': {
+      id: '/devices/new'
+      path: '/new'
+      fullPath: '/devices/new'
+      preLoaderRoute: typeof DevicesNewRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/dhcp-leases/': {
+      id: '/dhcp-leases/'
+      path: '/dhcp-leases'
+      fullPath: '/dhcp-leases/'
+      preLoaderRoute: typeof DhcpLeasesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dhcp-reservations/': {
+      id: '/dhcp-reservations/'
+      path: '/dhcp-reservations'
+      fullPath: '/dhcp-reservations/'
+      preLoaderRoute: typeof DhcpReservationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dhcp-scopes/': {
+      id: '/dhcp-scopes/'
+      path: '/dhcp-scopes'
+      fullPath: '/dhcp-scopes/'
+      preLoaderRoute: typeof DhcpScopesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-names/$name': {
+      id: '/dns-names/$name'
+      path: '/dns-names/$name'
+      fullPath: '/dns-names/$name'
+      preLoaderRoute: typeof DnsNamesNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-records/': {
+      id: '/dns-records/'
+      path: '/dns-records'
+      fullPath: '/dns-records/'
+      preLoaderRoute: typeof DnsRecordsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-records/$id': {
+      id: '/dns-records/$id'
+      path: '/dns-records/$id'
+      fullPath: '/dns-records/$id'
+      preLoaderRoute: typeof DnsRecordsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-zones/': {
+      id: '/dns-zones/'
+      path: '/dns-zones'
+      fullPath: '/dns-zones/'
+      preLoaderRoute: typeof DnsZonesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dns-zones/$id': {
+      id: '/dns-zones/$id'
+      path: '/dns-zones/$id'
+      fullPath: '/dns-zones/$id'
+      preLoaderRoute: typeof DnsZonesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/eigrp-instances/': {
+      id: '/eigrp-instances/'
+      path: '/eigrp-instances'
+      fullPath: '/eigrp-instances/'
+      preLoaderRoute: typeof EigrpInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/eol-products/': {
+      id: '/eol-products/'
+      path: '/eol-products'
+      fullPath: '/eol-products/'
+      preLoaderRoute: typeof EolProductsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/eol-products/$id': {
+      id: '/eol-products/$id'
+      path: '/eol-products/$id'
+      fullPath: '/eol-products/$id'
+      preLoaderRoute: typeof EolProductsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/eol-products/new': {
+      id: '/eol-products/new'
+      path: '/eol-products/new'
+      fullPath: '/eol-products/new'
+      preLoaderRoute: typeof EolProductsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ethernet-segments/': {
+      id: '/ethernet-segments/'
+      path: '/'
+      fullPath: '/ethernet-segments/'
+      preLoaderRoute: typeof EthernetSegmentsIndexRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/ethernet-segments/$id': {
+      id: '/ethernet-segments/$id'
+      path: '/$id'
+      fullPath: '/ethernet-segments/$id'
+      preLoaderRoute: typeof EthernetSegmentsIdRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/ethernet-segments/new': {
+      id: '/ethernet-segments/new'
+      path: '/new'
+      fullPath: '/ethernet-segments/new'
+      preLoaderRoute: typeof EthernetSegmentsNewRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/export-templates/': {
+      id: '/export-templates/'
+      path: '/'
+      fullPath: '/export-templates/'
+      preLoaderRoute: typeof ExportTemplatesIndexRouteImport
+      parentRoute: typeof ExportTemplatesRoute
+    }
+    '/export-templates/$id': {
+      id: '/export-templates/$id'
+      path: '/$id'
+      fullPath: '/export-templates/$id'
+      preLoaderRoute: typeof ExportTemplatesIdRouteImport
+      parentRoute: typeof ExportTemplatesRoute
+    }
+    '/export-templates/new': {
+      id: '/export-templates/new'
+      path: '/new'
+      fullPath: '/export-templates/new'
+      preLoaderRoute: typeof ExportTemplatesNewRouteImport
+      parentRoute: typeof ExportTemplatesRoute
+    }
+    '/fhrp-groups/': {
+      id: '/fhrp-groups/'
+      path: '/'
+      fullPath: '/fhrp-groups/'
+      preLoaderRoute: typeof FhrpGroupsIndexRouteImport
+      parentRoute: typeof FhrpGroupsRoute
+    }
+    '/fhrp-groups/$id': {
+      id: '/fhrp-groups/$id'
+      path: '/$id'
+      fullPath: '/fhrp-groups/$id'
+      preLoaderRoute: typeof FhrpGroupsIdRouteImport
+      parentRoute: typeof FhrpGroupsRoute
+    }
+    '/fhrp-groups/new': {
+      id: '/fhrp-groups/new'
+      path: '/new'
+      fullPath: '/fhrp-groups/new'
+      preLoaderRoute: typeof FhrpGroupsNewRouteImport
+      parentRoute: typeof FhrpGroupsRoute
+    }
+    '/floor-tile-types/': {
+      id: '/floor-tile-types/'
+      path: '/'
+      fullPath: '/floor-tile-types/'
+      preLoaderRoute: typeof FloorTileTypesIndexRouteImport
+      parentRoute: typeof FloorTileTypesRoute
+    }
+    '/floor-tile-types/$id': {
+      id: '/floor-tile-types/$id'
+      path: '/$id'
+      fullPath: '/floor-tile-types/$id'
+      preLoaderRoute: typeof FloorTileTypesIdRouteImport
+      parentRoute: typeof FloorTileTypesRoute
+    }
+    '/floor-tile-types/new': {
+      id: '/floor-tile-types/new'
+      path: '/new'
+      fullPath: '/floor-tile-types/new'
+      preLoaderRoute: typeof FloorTileTypesNewRouteImport
+      parentRoute: typeof FloorTileTypesRoute
+    }
+    '/floorplans/': {
+      id: '/floorplans/'
+      path: '/'
+      fullPath: '/floorplans/'
+      preLoaderRoute: typeof FloorplansIndexRouteImport
+      parentRoute: typeof FloorplansRoute
+    }
+    '/floorplans/$id': {
+      id: '/floorplans/$id'
+      path: '/$id'
+      fullPath: '/floorplans/$id'
+      preLoaderRoute: typeof FloorplansIdRouteImport
+      parentRoute: typeof FloorplansRoute
+    }
+    '/floorplans/new': {
+      id: '/floorplans/new'
+      path: '/new'
+      fullPath: '/floorplans/new'
+      preLoaderRoute: typeof FloorplansNewRouteImport
+      parentRoute: typeof FloorplansRoute
+    }
+    '/groups/': {
+      id: '/groups/'
+      path: '/'
+      fullPath: '/groups/'
+      preLoaderRoute: typeof GroupsIndexRouteImport
+      parentRoute: typeof GroupsRoute
+    }
+    '/groups/new': {
+      id: '/groups/new'
+      path: '/new'
+      fullPath: '/groups/new'
+      preLoaderRoute: typeof GroupsNewRouteImport
+      parentRoute: typeof GroupsRoute
+    }
+    '/import/': {
+      id: '/import/'
+      path: '/'
+      fullPath: '/import/'
+      preLoaderRoute: typeof ImportIndexRouteImport
+      parentRoute: typeof ImportRoute
+    }
+    '/import/netbox': {
+      id: '/import/netbox'
+      path: '/netbox'
+      fullPath: '/import/netbox'
+      preLoaderRoute: typeof ImportNetboxRouteImport
+      parentRoute: typeof ImportRoute
+    }
+    '/interfaces/': {
+      id: '/interfaces/'
+      path: '/'
+      fullPath: '/interfaces/'
+      preLoaderRoute: typeof InterfacesIndexRouteImport
+      parentRoute: typeof InterfacesRoute
+    }
+    '/interfaces/$id': {
+      id: '/interfaces/$id'
+      path: '/$id'
+      fullPath: '/interfaces/$id'
+      preLoaderRoute: typeof InterfacesIdRouteImport
+      parentRoute: typeof InterfacesRoute
+    }
+    '/interfaces/bulk': {
+      id: '/interfaces/bulk'
+      path: '/bulk'
+      fullPath: '/interfaces/bulk'
+      preLoaderRoute: typeof InterfacesBulkRouteImport
+      parentRoute: typeof InterfacesRoute
+    }
+    '/interfaces/new': {
+      id: '/interfaces/new'
+      path: '/new'
+      fullPath: '/interfaces/new'
+      preLoaderRoute: typeof InterfacesNewRouteImport
+      parentRoute: typeof InterfacesRoute
+    }
+    '/ip-ranges/': {
+      id: '/ip-ranges/'
+      path: '/'
+      fullPath: '/ip-ranges/'
+      preLoaderRoute: typeof IpRangesIndexRouteImport
+      parentRoute: typeof IpRangesRoute
+    }
+    '/ip-ranges/$id': {
+      id: '/ip-ranges/$id'
+      path: '/$id'
+      fullPath: '/ip-ranges/$id'
+      preLoaderRoute: typeof IpRangesIdRouteImport
+      parentRoute: typeof IpRangesRoute
+    }
+    '/ip-ranges/new': {
+      id: '/ip-ranges/new'
+      path: '/new'
+      fullPath: '/ip-ranges/new'
+      preLoaderRoute: typeof IpRangesNewRouteImport
+      parentRoute: typeof IpRangesRoute
+    }
+    '/ip-roles/': {
+      id: '/ip-roles/'
+      path: '/'
+      fullPath: '/ip-roles/'
+      preLoaderRoute: typeof IpRolesIndexRouteImport
+      parentRoute: typeof IpRolesRoute
+    }
+    '/ip-roles/$id': {
+      id: '/ip-roles/$id'
+      path: '/$id'
+      fullPath: '/ip-roles/$id'
+      preLoaderRoute: typeof IpRolesIdRouteImport
+      parentRoute: typeof IpRolesRoute
+    }
+    '/ip-roles/new': {
+      id: '/ip-roles/new'
+      path: '/new'
+      fullPath: '/ip-roles/new'
+      preLoaderRoute: typeof IpRolesNewRouteImport
+      parentRoute: typeof IpRolesRoute
+    }
+    '/ips/': {
+      id: '/ips/'
+      path: '/ips'
+      fullPath: '/ips/'
+      preLoaderRoute: typeof IpsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ips/$id': {
+      id: '/ips/$id'
+      path: '/ips/$id'
+      fullPath: '/ips/$id'
+      preLoaderRoute: typeof IpsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ips/bulk-edit': {
+      id: '/ips/bulk-edit'
+      path: '/ips/bulk-edit'
+      fullPath: '/ips/bulk-edit'
+      preLoaderRoute: typeof IpsBulkEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ips/new': {
+      id: '/ips/new'
+      path: '/ips/new'
+      fullPath: '/ips/new'
+      preLoaderRoute: typeof IpsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ipsec-profiles/': {
+      id: '/ipsec-profiles/'
+      path: '/'
+      fullPath: '/ipsec-profiles/'
+      preLoaderRoute: typeof IpsecProfilesIndexRouteImport
+      parentRoute: typeof IpsecProfilesRoute
+    }
+    '/ipsec-profiles/$id': {
+      id: '/ipsec-profiles/$id'
+      path: '/$id'
+      fullPath: '/ipsec-profiles/$id'
+      preLoaderRoute: typeof IpsecProfilesIdRouteImport
+      parentRoute: typeof IpsecProfilesRoute
+    }
+    '/ipsec-profiles/new': {
+      id: '/ipsec-profiles/new'
+      path: '/new'
+      fullPath: '/ipsec-profiles/new'
+      preLoaderRoute: typeof IpsecProfilesNewRouteImport
+      parentRoute: typeof IpsecProfilesRoute
+    }
+    '/isis-instances/': {
+      id: '/isis-instances/'
+      path: '/isis-instances'
+      fullPath: '/isis-instances/'
+      preLoaderRoute: typeof IsisInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs/': {
+      id: '/jobs/'
+      path: '/jobs'
+      fullPath: '/jobs/'
+      preLoaderRoute: typeof JobsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs/$id': {
+      id: '/jobs/$id'
+      path: '/jobs/$id'
+      fullPath: '/jobs/$id'
+      preLoaderRoute: typeof JobsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/l2vpns/': {
+      id: '/l2vpns/'
+      path: '/'
+      fullPath: '/l2vpns/'
+      preLoaderRoute: typeof L2vpnsIndexRouteImport
+      parentRoute: typeof L2vpnsRoute
+    }
+    '/l2vpns/$id': {
+      id: '/l2vpns/$id'
+      path: '/$id'
+      fullPath: '/l2vpns/$id'
+      preLoaderRoute: typeof L2vpnsIdRouteImport
+      parentRoute: typeof L2vpnsRoute
+    }
+    '/l2vpns/new': {
+      id: '/l2vpns/new'
+      path: '/new'
+      fullPath: '/l2vpns/new'
+      preLoaderRoute: typeof L2vpnsNewRouteImport
+      parentRoute: typeof L2vpnsRoute
+    }
+    '/label-templates/': {
+      id: '/label-templates/'
+      path: '/label-templates'
+      fullPath: '/label-templates/'
+      preLoaderRoute: typeof LabelTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/location-types/': {
+      id: '/location-types/'
+      path: '/'
+      fullPath: '/location-types/'
+      preLoaderRoute: typeof LocationTypesIndexRouteImport
+      parentRoute: typeof LocationTypesRoute
+    }
+    '/location-types/$id': {
+      id: '/location-types/$id'
+      path: '/$id'
+      fullPath: '/location-types/$id'
+      preLoaderRoute: typeof LocationTypesIdRouteImport
+      parentRoute: typeof LocationTypesRoute
+    }
+    '/location-types/new': {
+      id: '/location-types/new'
+      path: '/new'
+      fullPath: '/location-types/new'
+      preLoaderRoute: typeof LocationTypesNewRouteImport
+      parentRoute: typeof LocationTypesRoute
+    }
+    '/locations/': {
+      id: '/locations/'
+      path: '/'
+      fullPath: '/locations/'
+      preLoaderRoute: typeof LocationsIndexRouteImport
+      parentRoute: typeof LocationsRoute
+    }
+    '/locations/$id': {
+      id: '/locations/$id'
+      path: '/$id'
+      fullPath: '/locations/$id'
+      preLoaderRoute: typeof LocationsIdRouteImport
+      parentRoute: typeof LocationsRoute
+    }
+    '/locations/new': {
+      id: '/locations/new'
+      path: '/new'
+      fullPath: '/locations/new'
+      preLoaderRoute: typeof LocationsNewRouteImport
+      parentRoute: typeof LocationsRoute
+    }
+    '/macs/': {
+      id: '/macs/'
+      path: '/'
+      fullPath: '/macs/'
+      preLoaderRoute: typeof MacsIndexRouteImport
+      parentRoute: typeof MacsRoute
+    }
+    '/macs/$mac': {
+      id: '/macs/$mac'
+      path: '/$mac'
+      fullPath: '/macs/$mac'
+      preLoaderRoute: typeof MacsMacRouteImport
+      parentRoute: typeof MacsRoute
+    }
+    '/maintenance/': {
+      id: '/maintenance/'
+      path: '/maintenance'
+      fullPath: '/maintenance/'
+      preLoaderRoute: typeof MaintenanceIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/maintenance/new': {
+      id: '/maintenance/new'
+      path: '/maintenance/new'
+      fullPath: '/maintenance/new'
+      preLoaderRoute: typeof MaintenanceNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manufacturers/': {
+      id: '/manufacturers/'
+      path: '/'
+      fullPath: '/manufacturers/'
+      preLoaderRoute: typeof ManufacturersIndexRouteImport
+      parentRoute: typeof ManufacturersRoute
+    }
+    '/manufacturers/$id': {
+      id: '/manufacturers/$id'
+      path: '/$id'
+      fullPath: '/manufacturers/$id'
+      preLoaderRoute: typeof ManufacturersIdRouteImport
+      parentRoute: typeof ManufacturersRoute
+    }
+    '/manufacturers/new': {
+      id: '/manufacturers/new'
+      path: '/new'
+      fullPath: '/manufacturers/new'
+      preLoaderRoute: typeof ManufacturersNewRouteImport
+      parentRoute: typeof ManufacturersRoute
+    }
+    '/module-types/': {
+      id: '/module-types/'
+      path: '/'
+      fullPath: '/module-types/'
+      preLoaderRoute: typeof ModuleTypesIndexRouteImport
+      parentRoute: typeof ModuleTypesRoute
+    }
+    '/module-types/$id': {
+      id: '/module-types/$id'
+      path: '/$id'
+      fullPath: '/module-types/$id'
+      preLoaderRoute: typeof ModuleTypesIdRouteImport
+      parentRoute: typeof ModuleTypesRoute
+    }
+    '/module-types/new': {
+      id: '/module-types/new'
+      path: '/new'
+      fullPath: '/module-types/new'
+      preLoaderRoute: typeof ModuleTypesNewRouteImport
+      parentRoute: typeof ModuleTypesRoute
+    }
+    '/nat-rules/': {
+      id: '/nat-rules/'
+      path: '/nat-rules'
+      fullPath: '/nat-rules/'
+      preLoaderRoute: typeof NatRulesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nat-rules/$id': {
+      id: '/nat-rules/$id'
+      path: '/nat-rules/$id'
+      fullPath: '/nat-rules/$id'
+      preLoaderRoute: typeof NatRulesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ospf-areas/': {
+      id: '/ospf-areas/'
+      path: '/'
+      fullPath: '/ospf-areas/'
+      preLoaderRoute: typeof OspfAreasIndexRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
+    '/ospf-areas/$id': {
+      id: '/ospf-areas/$id'
+      path: '/$id'
+      fullPath: '/ospf-areas/$id'
+      preLoaderRoute: typeof OspfAreasIdRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
+    '/ospf-areas/new': {
+      id: '/ospf-areas/new'
+      path: '/new'
+      fullPath: '/ospf-areas/new'
+      preLoaderRoute: typeof OspfAreasNewRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
+    '/ospf-instances/': {
+      id: '/ospf-instances/'
+      path: '/ospf-instances'
+      fullPath: '/ospf-instances/'
+      preLoaderRoute: typeof OspfInstancesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oxidized/': {
+      id: '/oxidized/'
+      path: '/oxidized'
+      fullPath: '/oxidized/'
+      preLoaderRoute: typeof OxidizedIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/permissions/': {
+      id: '/permissions/'
+      path: '/'
+      fullPath: '/permissions/'
+      preLoaderRoute: typeof PermissionsIndexRouteImport
+      parentRoute: typeof PermissionsRoute
+    }
+    '/permissions/new': {
+      id: '/permissions/new'
+      path: '/new'
+      fullPath: '/permissions/new'
+      preLoaderRoute: typeof PermissionsNewRouteImport
+      parentRoute: typeof PermissionsRoute
+    }
+    '/planning/': {
+      id: '/planning/'
+      path: '/planning'
+      fullPath: '/planning/'
+      preLoaderRoute: typeof PlanningIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/$boardId': {
+      id: '/planning/$boardId'
+      path: '/planning/$boardId'
+      fullPath: '/planning/$boardId'
+      preLoaderRoute: typeof PlanningBoardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/calendar': {
+      id: '/planning/calendar'
+      path: '/planning/calendar'
+      fullPath: '/planning/calendar'
+      preLoaderRoute: typeof PlanningCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform-groups/': {
+      id: '/platform-groups/'
+      path: '/platform-groups'
+      fullPath: '/platform-groups/'
+      preLoaderRoute: typeof PlatformGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform-groups/$id': {
+      id: '/platform-groups/$id'
+      path: '/platform-groups/$id'
+      fullPath: '/platform-groups/$id'
+      preLoaderRoute: typeof PlatformGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform-groups/new': {
+      id: '/platform-groups/new'
+      path: '/platform-groups/new'
+      fullPath: '/platform-groups/new'
+      preLoaderRoute: typeof PlatformGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platforms/': {
+      id: '/platforms/'
+      path: '/platforms'
+      fullPath: '/platforms/'
+      preLoaderRoute: typeof PlatformsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platforms/$id': {
+      id: '/platforms/$id'
+      path: '/platforms/$id'
+      fullPath: '/platforms/$id'
+      preLoaderRoute: typeof PlatformsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platforms/new': {
+      id: '/platforms/new'
+      path: '/platforms/new'
+      fullPath: '/platforms/new'
+      preLoaderRoute: typeof PlatformsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/port-reservations/': {
+      id: '/port-reservations/'
+      path: '/port-reservations'
+      fullPath: '/port-reservations/'
+      preLoaderRoute: typeof PortReservationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/power-feeds/': {
+      id: '/power-feeds/'
+      path: '/'
+      fullPath: '/power-feeds/'
+      preLoaderRoute: typeof PowerFeedsIndexRouteImport
+      parentRoute: typeof PowerFeedsRoute
+    }
+    '/power-feeds/$id': {
+      id: '/power-feeds/$id'
+      path: '/$id'
+      fullPath: '/power-feeds/$id'
+      preLoaderRoute: typeof PowerFeedsIdRouteImport
+      parentRoute: typeof PowerFeedsRoute
+    }
+    '/power-feeds/new': {
+      id: '/power-feeds/new'
+      path: '/new'
+      fullPath: '/power-feeds/new'
+      preLoaderRoute: typeof PowerFeedsNewRouteImport
+      parentRoute: typeof PowerFeedsRoute
+    }
+    '/power-panels/': {
+      id: '/power-panels/'
+      path: '/'
+      fullPath: '/power-panels/'
+      preLoaderRoute: typeof PowerPanelsIndexRouteImport
+      parentRoute: typeof PowerPanelsRoute
+    }
+    '/power-panels/$id': {
+      id: '/power-panels/$id'
+      path: '/$id'
+      fullPath: '/power-panels/$id'
+      preLoaderRoute: typeof PowerPanelsIdRouteImport
+      parentRoute: typeof PowerPanelsRoute
+    }
+    '/power-panels/new': {
+      id: '/power-panels/new'
+      path: '/new'
+      fullPath: '/power-panels/new'
+      preLoaderRoute: typeof PowerPanelsNewRouteImport
+      parentRoute: typeof PowerPanelsRoute
+    }
+    '/prefix-lists/': {
+      id: '/prefix-lists/'
+      path: '/'
+      fullPath: '/prefix-lists/'
+      preLoaderRoute: typeof PrefixListsIndexRouteImport
+      parentRoute: typeof PrefixListsRoute
+    }
+    '/prefix-lists/$id': {
+      id: '/prefix-lists/$id'
+      path: '/$id'
+      fullPath: '/prefix-lists/$id'
+      preLoaderRoute: typeof PrefixListsIdRouteImport
+      parentRoute: typeof PrefixListsRoute
+    }
+    '/prefix-lists/new': {
+      id: '/prefix-lists/new'
+      path: '/new'
+      fullPath: '/prefix-lists/new'
+      preLoaderRoute: typeof PrefixListsNewRouteImport
+      parentRoute: typeof PrefixListsRoute
+    }
+    '/prefixes/': {
+      id: '/prefixes/'
+      path: '/'
+      fullPath: '/prefixes/'
+      preLoaderRoute: typeof PrefixesIndexRouteImport
+      parentRoute: typeof PrefixesRoute
+    }
+    '/prefixes/$id': {
+      id: '/prefixes/$id'
+      path: '/$id'
+      fullPath: '/prefixes/$id'
+      preLoaderRoute: typeof PrefixesIdRouteImport
+      parentRoute: typeof PrefixesRoute
+    }
+    '/prefixes/bulk-edit': {
+      id: '/prefixes/bulk-edit'
+      path: '/bulk-edit'
+      fullPath: '/prefixes/bulk-edit'
+      preLoaderRoute: typeof PrefixesBulkEditRouteImport
+      parentRoute: typeof PrefixesRoute
+    }
+    '/prefixes/new': {
+      id: '/prefixes/new'
+      path: '/new'
+      fullPath: '/prefixes/new'
+      preLoaderRoute: typeof PrefixesNewRouteImport
+      parentRoute: typeof PrefixesRoute
+    }
+    '/provider-networks/': {
+      id: '/provider-networks/'
+      path: '/'
+      fullPath: '/provider-networks/'
+      preLoaderRoute: typeof ProviderNetworksIndexRouteImport
+      parentRoute: typeof ProviderNetworksRoute
+    }
+    '/provider-networks/$id': {
+      id: '/provider-networks/$id'
+      path: '/$id'
+      fullPath: '/provider-networks/$id'
+      preLoaderRoute: typeof ProviderNetworksIdRouteImport
+      parentRoute: typeof ProviderNetworksRoute
+    }
+    '/provider-networks/new': {
+      id: '/provider-networks/new'
+      path: '/new'
+      fullPath: '/provider-networks/new'
+      preLoaderRoute: typeof ProviderNetworksNewRouteImport
+      parentRoute: typeof ProviderNetworksRoute
+    }
+    '/providers/': {
+      id: '/providers/'
+      path: '/'
+      fullPath: '/providers/'
+      preLoaderRoute: typeof ProvidersIndexRouteImport
+      parentRoute: typeof ProvidersRoute
+    }
+    '/providers/$id': {
+      id: '/providers/$id'
+      path: '/$id'
+      fullPath: '/providers/$id'
+      preLoaderRoute: typeof ProvidersIdRouteImport
+      parentRoute: typeof ProvidersRoute
+    }
+    '/providers/new': {
+      id: '/providers/new'
+      path: '/new'
+      fullPath: '/providers/new'
+      preLoaderRoute: typeof ProvidersNewRouteImport
+      parentRoute: typeof ProvidersRoute
+    }
+    '/prtg/': {
+      id: '/prtg/'
+      path: '/prtg'
+      fullPath: '/prtg/'
+      preLoaderRoute: typeof PrtgIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-roles/': {
+      id: '/rack-roles/'
+      path: '/rack-roles'
+      fullPath: '/rack-roles/'
+      preLoaderRoute: typeof RackRolesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-roles/$id': {
+      id: '/rack-roles/$id'
+      path: '/rack-roles/$id'
+      fullPath: '/rack-roles/$id'
+      preLoaderRoute: typeof RackRolesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-roles/new': {
+      id: '/rack-roles/new'
+      path: '/rack-roles/new'
+      fullPath: '/rack-roles/new'
+      preLoaderRoute: typeof RackRolesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-types/': {
+      id: '/rack-types/'
+      path: '/'
+      fullPath: '/rack-types/'
+      preLoaderRoute: typeof RackTypesIndexRouteImport
+      parentRoute: typeof RackTypesRoute
+    }
+    '/rack-types/$id': {
+      id: '/rack-types/$id'
+      path: '/$id'
+      fullPath: '/rack-types/$id'
+      preLoaderRoute: typeof RackTypesIdRouteImport
+      parentRoute: typeof RackTypesRoute
+    }
+    '/rack-types/new': {
+      id: '/rack-types/new'
+      path: '/new'
+      fullPath: '/rack-types/new'
+      preLoaderRoute: typeof RackTypesNewRouteImport
+      parentRoute: typeof RackTypesRoute
+    }
+    '/racks/': {
+      id: '/racks/'
+      path: '/racks'
+      fullPath: '/racks/'
+      preLoaderRoute: typeof RacksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/racks/$id': {
+      id: '/racks/$id'
+      path: '/racks/$id'
+      fullPath: '/racks/$id'
+      preLoaderRoute: typeof RacksIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/racks/elevations': {
+      id: '/racks/elevations'
+      path: '/racks/elevations'
+      fullPath: '/racks/elevations'
+      preLoaderRoute: typeof RacksElevationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/racks/new': {
+      id: '/racks/new'
+      path: '/racks/new'
+      fullPath: '/racks/new'
+      preLoaderRoute: typeof RacksNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regions/': {
+      id: '/regions/'
+      path: '/'
+      fullPath: '/regions/'
+      preLoaderRoute: typeof RegionsIndexRouteImport
+      parentRoute: typeof RegionsRoute
+    }
+    '/regions/$id': {
+      id: '/regions/$id'
+      path: '/$id'
+      fullPath: '/regions/$id'
+      preLoaderRoute: typeof RegionsIdRouteImport
+      parentRoute: typeof RegionsRoute
+    }
+    '/regions/new': {
+      id: '/regions/new'
+      path: '/new'
+      fullPath: '/regions/new'
+      preLoaderRoute: typeof RegionsNewRouteImport
+      parentRoute: typeof RegionsRoute
+    }
+    '/rirs/': {
+      id: '/rirs/'
+      path: '/'
+      fullPath: '/rirs/'
+      preLoaderRoute: typeof RirsIndexRouteImport
+      parentRoute: typeof RirsRoute
+    }
+    '/rirs/$id': {
+      id: '/rirs/$id'
+      path: '/$id'
+      fullPath: '/rirs/$id'
+      preLoaderRoute: typeof RirsIdRouteImport
+      parentRoute: typeof RirsRoute
+    }
+    '/rirs/new': {
+      id: '/rirs/new'
+      path: '/new'
+      fullPath: '/rirs/new'
+      preLoaderRoute: typeof RirsNewRouteImport
+      parentRoute: typeof RirsRoute
+    }
+    '/rooms/': {
+      id: '/rooms/'
+      path: '/rooms'
+      fullPath: '/rooms/'
+      preLoaderRoute: typeof RoomsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rooms/$id': {
+      id: '/rooms/$id'
+      path: '/rooms/$id'
+      fullPath: '/rooms/$id'
+      preLoaderRoute: typeof RoomsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rooms/new': {
+      id: '/rooms/new'
+      path: '/rooms/new'
+      fullPath: '/rooms/new'
+      preLoaderRoute: typeof RoomsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/route-targets/': {
+      id: '/route-targets/'
+      path: '/'
+      fullPath: '/route-targets/'
+      preLoaderRoute: typeof RouteTargetsIndexRouteImport
+      parentRoute: typeof RouteTargetsRoute
+    }
+    '/route-targets/$id': {
+      id: '/route-targets/$id'
+      path: '/$id'
+      fullPath: '/route-targets/$id'
+      preLoaderRoute: typeof RouteTargetsIdRouteImport
+      parentRoute: typeof RouteTargetsRoute
+    }
+    '/route-targets/new': {
+      id: '/route-targets/new'
+      path: '/new'
+      fullPath: '/route-targets/new'
+      preLoaderRoute: typeof RouteTargetsNewRouteImport
+      parentRoute: typeof RouteTargetsRoute
+    }
+    '/routing-keychains/': {
+      id: '/routing-keychains/'
+      path: '/'
+      fullPath: '/routing-keychains/'
+      preLoaderRoute: typeof RoutingKeychainsIndexRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
+    '/routing-keychains/$id': {
+      id: '/routing-keychains/$id'
+      path: '/$id'
+      fullPath: '/routing-keychains/$id'
+      preLoaderRoute: typeof RoutingKeychainsIdRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
+    '/routing-keychains/new': {
+      id: '/routing-keychains/new'
+      path: '/new'
+      fullPath: '/routing-keychains/new'
+      preLoaderRoute: typeof RoutingKeychainsNewRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
+    '/routing-policies/': {
+      id: '/routing-policies/'
+      path: '/'
+      fullPath: '/routing-policies/'
+      preLoaderRoute: typeof RoutingPoliciesIndexRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-policies/$id': {
+      id: '/routing-policies/$id'
+      path: '/$id'
+      fullPath: '/routing-policies/$id'
+      preLoaderRoute: typeof RoutingPoliciesIdRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/routing-policies/new': {
+      id: '/routing-policies/new'
+      path: '/new'
+      fullPath: '/routing-policies/new'
+      preLoaderRoute: typeof RoutingPoliciesNewRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/scripts/': {
+      id: '/scripts/'
+      path: '/scripts'
+      fullPath: '/scripts/'
+      preLoaderRoute: typeof ScriptsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scripts/$id': {
+      id: '/scripts/$id'
+      path: '/scripts/$id'
+      fullPath: '/scripts/$id'
+      preLoaderRoute: typeof ScriptsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/service-templates/': {
+      id: '/service-templates/'
+      path: '/service-templates'
+      fullPath: '/service-templates/'
+      preLoaderRoute: typeof ServiceTemplatesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/service-templates/$id': {
+      id: '/service-templates/$id'
+      path: '/service-templates/$id'
+      fullPath: '/service-templates/$id'
+      preLoaderRoute: typeof ServiceTemplatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/service-templates/new': {
+      id: '/service-templates/new'
+      path: '/service-templates/new'
+      fullPath: '/service-templates/new'
+      preLoaderRoute: typeof ServiceTemplatesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/services/': {
+      id: '/services/'
+      path: '/services'
+      fullPath: '/services/'
+      preLoaderRoute: typeof ServicesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/services/$id': {
+      id: '/services/$id'
+      path: '/services/$id'
+      fullPath: '/services/$id'
+      preLoaderRoute: typeof ServicesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/admin': {
+      id: '/settings/admin'
+      path: '/admin'
+      fullPath: '/settings/admin'
+      preLoaderRoute: typeof SettingsAdminRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/backups': {
+      id: '/settings/backups'
+      path: '/backups'
+      fullPath: '/settings/backups'
+      preLoaderRoute: typeof SettingsBackupsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/components': {
+      id: '/settings/components'
+      path: '/components'
+      fullPath: '/settings/components'
+      preLoaderRoute: typeof SettingsComponentsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/connect': {
+      id: '/settings/connect'
+      path: '/connect'
+      fullPath: '/settings/connect'
+      preLoaderRoute: typeof SettingsConnectRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/device-fields': {
+      id: '/settings/device-fields'
+      path: '/device-fields'
+      fullPath: '/settings/device-fields'
+      preLoaderRoute: typeof SettingsDeviceFieldsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/directory': {
+      id: '/settings/directory'
+      path: '/directory'
+      fullPath: '/settings/directory'
+      preLoaderRoute: typeof SettingsDirectoryRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/email': {
+      id: '/settings/email'
+      path: '/email'
+      fullPath: '/settings/email'
+      preLoaderRoute: typeof SettingsEmailRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/floorplan': {
+      id: '/settings/floorplan'
+      path: '/floorplan'
+      fullPath: '/settings/floorplan'
+      preLoaderRoute: typeof SettingsFloorplanRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/integrations': {
+      id: '/settings/integrations'
+      path: '/integrations'
+      fullPath: '/settings/integrations'
+      preLoaderRoute: typeof SettingsIntegrationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/ldap': {
+      id: '/settings/ldap'
+      path: '/ldap'
+      fullPath: '/settings/ldap'
+      preLoaderRoute: typeof SettingsLdapRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/maps': {
+      id: '/settings/maps'
+      path: '/maps'
+      fullPath: '/settings/maps'
+      preLoaderRoute: typeof SettingsMapsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/monitoring': {
+      id: '/settings/monitoring'
+      path: '/monitoring'
+      fullPath: '/settings/monitoring'
+      preLoaderRoute: typeof SettingsMonitoringRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/monitoring-defaults': {
+      id: '/settings/monitoring-defaults'
+      path: '/monitoring-defaults'
+      fullPath: '/settings/monitoring-defaults'
+      preLoaderRoute: typeof SettingsMonitoringDefaultsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/plugins': {
+      id: '/settings/plugins'
+      path: '/plugins'
+      fullPath: '/settings/plugins'
+      preLoaderRoute: typeof SettingsPluginsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/preferences': {
+      id: '/settings/preferences'
+      path: '/preferences'
+      fullPath: '/settings/preferences'
+      preLoaderRoute: typeof SettingsPreferencesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/security': {
+      id: '/settings/security'
+      path: '/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof SettingsSecurityRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/separation': {
+      id: '/settings/separation'
+      path: '/separation'
+      fullPath: '/settings/separation'
+      preLoaderRoute: typeof SettingsSeparationRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/site': {
+      id: '/settings/site'
+      path: '/site'
+      fullPath: '/settings/site'
+      preLoaderRoute: typeof SettingsSiteRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/sites': {
+      id: '/settings/sites'
+      path: '/sites'
+      fullPath: '/settings/sites'
+      preLoaderRoute: typeof SettingsSitesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/snmp': {
+      id: '/settings/snmp'
+      path: '/snmp'
+      fullPath: '/settings/snmp'
+      preLoaderRoute: typeof SettingsSnmpRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/snmp-sensors': {
+      id: '/settings/snmp-sensors'
+      path: '/snmp-sensors'
+      fullPath: '/settings/snmp-sensors'
+      preLoaderRoute: typeof SettingsSnmpSensorsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/sso': {
+      id: '/settings/sso'
+      path: '/sso'
+      fullPath: '/settings/sso'
+      preLoaderRoute: typeof SettingsSsoRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/table-defaults': {
+      id: '/settings/table-defaults'
+      path: '/table-defaults'
+      fullPath: '/settings/table-defaults'
+      preLoaderRoute: typeof SettingsTableDefaultsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/tenant': {
+      id: '/settings/tenant'
+      path: '/tenant'
+      fullPath: '/settings/tenant'
+      preLoaderRoute: typeof SettingsTenantRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/tenant-email': {
+      id: '/settings/tenant-email'
+      path: '/tenant-email'
+      fullPath: '/settings/tenant-email'
+      preLoaderRoute: typeof SettingsTenantEmailRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/tenant-ldap': {
+      id: '/settings/tenant-ldap'
+      path: '/tenant-ldap'
+      fullPath: '/settings/tenant-ldap'
+      preLoaderRoute: typeof SettingsTenantLdapRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/topology': {
+      id: '/settings/topology'
+      path: '/topology'
+      fullPath: '/settings/topology'
+      preLoaderRoute: typeof SettingsTopologyRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/updates': {
+      id: '/settings/updates'
+      path: '/updates'
+      fullPath: '/settings/updates'
+      preLoaderRoute: typeof SettingsUpdatesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/silences/new': {
+      id: '/silences/new'
+      path: '/silences/new'
+      fullPath: '/silences/new'
+      preLoaderRoute: typeof SilencesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sites/': {
+      id: '/sites/'
+      path: '/'
+      fullPath: '/sites/'
+      preLoaderRoute: typeof SitesIndexRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/sites/$id': {
+      id: '/sites/$id'
+      path: '/$id'
+      fullPath: '/sites/$id'
+      preLoaderRoute: typeof SitesIdRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/sites/bulk-edit': {
+      id: '/sites/bulk-edit'
+      path: '/bulk-edit'
+      fullPath: '/sites/bulk-edit'
+      preLoaderRoute: typeof SitesBulkEditRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/sites/new': {
+      id: '/sites/new'
+      path: '/new'
+      fullPath: '/sites/new'
+      preLoaderRoute: typeof SitesNewRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/static-routes/': {
+      id: '/static-routes/'
+      path: '/'
+      fullPath: '/static-routes/'
+      preLoaderRoute: typeof StaticRoutesIndexRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
+    '/static-routes/$id': {
+      id: '/static-routes/$id'
+      path: '/$id'
+      fullPath: '/static-routes/$id'
+      preLoaderRoute: typeof StaticRoutesIdRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
+    '/static-routes/new': {
+      id: '/static-routes/new'
+      path: '/new'
+      fullPath: '/static-routes/new'
+      preLoaderRoute: typeof StaticRoutesNewRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
+    '/statuses/': {
+      id: '/statuses/'
+      path: '/'
+      fullPath: '/statuses/'
+      preLoaderRoute: typeof StatusesIndexRouteImport
+      parentRoute: typeof StatusesRoute
+    }
+    '/statuses/$id': {
+      id: '/statuses/$id'
+      path: '/$id'
+      fullPath: '/statuses/$id'
+      preLoaderRoute: typeof StatusesIdRouteImport
+      parentRoute: typeof StatusesRoute
+    }
+    '/statuses/new': {
+      id: '/statuses/new'
+      path: '/new'
+      fullPath: '/statuses/new'
+      preLoaderRoute: typeof StatusesNewRouteImport
+      parentRoute: typeof StatusesRoute
+    }
+    '/support-contracts/': {
+      id: '/support-contracts/'
+      path: '/'
+      fullPath: '/support-contracts/'
+      preLoaderRoute: typeof SupportContractsIndexRouteImport
+      parentRoute: typeof SupportContractsRoute
+    }
+    '/support-contracts/$id': {
+      id: '/support-contracts/$id'
+      path: '/$id'
+      fullPath: '/support-contracts/$id'
+      preLoaderRoute: typeof SupportContractsIdRouteImport
+      parentRoute: typeof SupportContractsRoute
+    }
+    '/support-contracts/new': {
+      id: '/support-contracts/new'
+      path: '/new'
+      fullPath: '/support-contracts/new'
+      preLoaderRoute: typeof SupportContractsNewRouteImport
+      parentRoute: typeof SupportContractsRoute
+    }
+    '/tags/': {
+      id: '/tags/'
+      path: '/'
+      fullPath: '/tags/'
+      preLoaderRoute: typeof TagsIndexRouteImport
+      parentRoute: typeof TagsRoute
+    }
+    '/tags/$id': {
+      id: '/tags/$id'
+      path: '/$id'
+      fullPath: '/tags/$id'
+      preLoaderRoute: typeof TagsIdRouteImport
+      parentRoute: typeof TagsRoute
+    }
+    '/tags/new': {
+      id: '/tags/new'
+      path: '/new'
+      fullPath: '/tags/new'
+      preLoaderRoute: typeof TagsNewRouteImport
+      parentRoute: typeof TagsRoute
+    }
+    '/tenants/': {
+      id: '/tenants/'
+      path: '/'
+      fullPath: '/tenants/'
+      preLoaderRoute: typeof TenantsIndexRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/tenants/$id': {
+      id: '/tenants/$id'
+      path: '/$id'
+      fullPath: '/tenants/$id'
+      preLoaderRoute: typeof TenantsIdRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/tenants/new': {
+      id: '/tenants/new'
+      path: '/new'
+      fullPath: '/tenants/new'
+      preLoaderRoute: typeof TenantsNewRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/topology/': {
+      id: '/topology/'
+      path: '/'
+      fullPath: '/topology/'
+      preLoaderRoute: typeof TopologyIndexRouteImport
+      parentRoute: typeof TopologyRoute
+    }
+    '/tunnel-groups/': {
+      id: '/tunnel-groups/'
+      path: '/'
+      fullPath: '/tunnel-groups/'
+      preLoaderRoute: typeof TunnelGroupsIndexRouteImport
+      parentRoute: typeof TunnelGroupsRoute
+    }
+    '/tunnel-groups/$id': {
+      id: '/tunnel-groups/$id'
+      path: '/$id'
+      fullPath: '/tunnel-groups/$id'
+      preLoaderRoute: typeof TunnelGroupsIdRouteImport
+      parentRoute: typeof TunnelGroupsRoute
+    }
+    '/tunnel-groups/new': {
+      id: '/tunnel-groups/new'
+      path: '/new'
+      fullPath: '/tunnel-groups/new'
+      preLoaderRoute: typeof TunnelGroupsNewRouteImport
+      parentRoute: typeof TunnelGroupsRoute
+    }
+    '/tunnels/': {
+      id: '/tunnels/'
+      path: '/'
+      fullPath: '/tunnels/'
+      preLoaderRoute: typeof TunnelsIndexRouteImport
+      parentRoute: typeof TunnelsRoute
+    }
+    '/tunnels/$id': {
+      id: '/tunnels/$id'
+      path: '/$id'
+      fullPath: '/tunnels/$id'
+      preLoaderRoute: typeof TunnelsIdRouteImport
+      parentRoute: typeof TunnelsRoute
+    }
+    '/tunnels/new': {
+      id: '/tunnels/new'
+      path: '/new'
+      fullPath: '/tunnels/new'
+      preLoaderRoute: typeof TunnelsNewRouteImport
+      parentRoute: typeof TunnelsRoute
+    }
+    '/users/': {
+      id: '/users/'
+      path: '/'
+      fullPath: '/users/'
+      preLoaderRoute: typeof UsersIndexRouteImport
+      parentRoute: typeof UsersRoute
+    }
+    '/users/new': {
+      id: '/users/new'
+      path: '/new'
+      fullPath: '/users/new'
+      preLoaderRoute: typeof UsersNewRouteImport
+      parentRoute: typeof UsersRoute
+    }
+    '/virtual-chassis/': {
+      id: '/virtual-chassis/'
+      path: '/'
+      fullPath: '/virtual-chassis/'
+      preLoaderRoute: typeof VirtualChassisIndexRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-chassis/$id': {
+      id: '/virtual-chassis/$id'
+      path: '/$id'
+      fullPath: '/virtual-chassis/$id'
+      preLoaderRoute: typeof VirtualChassisIdRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-chassis/bulk-edit': {
+      id: '/virtual-chassis/bulk-edit'
+      path: '/bulk-edit'
+      fullPath: '/virtual-chassis/bulk-edit'
+      preLoaderRoute: typeof VirtualChassisBulkEditRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-chassis/new': {
+      id: '/virtual-chassis/new'
+      path: '/new'
+      fullPath: '/virtual-chassis/new'
+      preLoaderRoute: typeof VirtualChassisNewRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-machines/': {
+      id: '/virtual-machines/'
+      path: '/virtual-machines'
+      fullPath: '/virtual-machines/'
+      preLoaderRoute: typeof VirtualMachinesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-machines/$id': {
+      id: '/virtual-machines/$id'
+      path: '/virtual-machines/$id'
+      fullPath: '/virtual-machines/$id'
+      preLoaderRoute: typeof VirtualMachinesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-machines/new': {
+      id: '/virtual-machines/new'
+      path: '/virtual-machines/new'
+      fullPath: '/virtual-machines/new'
+      preLoaderRoute: typeof VirtualMachinesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-switches/': {
+      id: '/virtual-switches/'
+      path: '/virtual-switches'
+      fullPath: '/virtual-switches/'
+      preLoaderRoute: typeof VirtualSwitchesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-switches/$id': {
+      id: '/virtual-switches/$id'
+      path: '/virtual-switches/$id'
+      fullPath: '/virtual-switches/$id'
+      preLoaderRoute: typeof VirtualSwitchesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtual-topology/': {
+      id: '/virtual-topology/'
+      path: '/virtual-topology'
+      fullPath: '/virtual-topology/'
+      preLoaderRoute: typeof VirtualTopologyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtualization-sources/': {
+      id: '/virtualization-sources/'
+      path: '/virtualization-sources'
+      fullPath: '/virtualization-sources/'
+      preLoaderRoute: typeof VirtualizationSourcesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/virtualization-sources/$id': {
+      id: '/virtualization-sources/$id'
+      path: '/virtualization-sources/$id'
+      fullPath: '/virtualization-sources/$id'
+      preLoaderRoute: typeof VirtualizationSourcesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vlan-groups/': {
+      id: '/vlan-groups/'
+      path: '/'
+      fullPath: '/vlan-groups/'
+      preLoaderRoute: typeof VlanGroupsIndexRouteImport
+      parentRoute: typeof VlanGroupsRoute
+    }
+    '/vlan-groups/$id': {
+      id: '/vlan-groups/$id'
+      path: '/$id'
+      fullPath: '/vlan-groups/$id'
+      preLoaderRoute: typeof VlanGroupsIdRouteImport
+      parentRoute: typeof VlanGroupsRoute
+    }
+    '/vlan-groups/new': {
+      id: '/vlan-groups/new'
+      path: '/new'
+      fullPath: '/vlan-groups/new'
+      preLoaderRoute: typeof VlanGroupsNewRouteImport
+      parentRoute: typeof VlanGroupsRoute
+    }
+    '/vlans/': {
+      id: '/vlans/'
+      path: '/'
+      fullPath: '/vlans/'
+      preLoaderRoute: typeof VlansIndexRouteImport
+      parentRoute: typeof VlansRoute
+    }
+    '/vlans/$id': {
+      id: '/vlans/$id'
+      path: '/$id'
+      fullPath: '/vlans/$id'
+      preLoaderRoute: typeof VlansIdRouteImport
+      parentRoute: typeof VlansRoute
+    }
+    '/vlans/bulk-edit': {
+      id: '/vlans/bulk-edit'
+      path: '/bulk-edit'
+      fullPath: '/vlans/bulk-edit'
+      preLoaderRoute: typeof VlansBulkEditRouteImport
+      parentRoute: typeof VlansRoute
+    }
+    '/vlans/new': {
+      id: '/vlans/new'
+      path: '/new'
+      fullPath: '/vlans/new'
+      preLoaderRoute: typeof VlansNewRouteImport
+      parentRoute: typeof VlansRoute
+    }
+    '/vm-groups/': {
+      id: '/vm-groups/'
+      path: '/vm-groups'
+      fullPath: '/vm-groups/'
+      preLoaderRoute: typeof VmGroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vm-groups/$id': {
+      id: '/vm-groups/$id'
+      path: '/vm-groups/$id'
+      fullPath: '/vm-groups/$id'
+      preLoaderRoute: typeof VmGroupsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vm-groups/new': {
+      id: '/vm-groups/new'
+      path: '/vm-groups/new'
+      fullPath: '/vm-groups/new'
+      preLoaderRoute: typeof VmGroupsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vrfs/': {
+      id: '/vrfs/'
+      path: '/'
+      fullPath: '/vrfs/'
+      preLoaderRoute: typeof VrfsIndexRouteImport
+      parentRoute: typeof VrfsRoute
+    }
+    '/vrfs/$id': {
+      id: '/vrfs/$id'
+      path: '/$id'
+      fullPath: '/vrfs/$id'
+      preLoaderRoute: typeof VrfsIdRouteImport
+      parentRoute: typeof VrfsRoute
+    }
+    '/vrfs/new': {
+      id: '/vrfs/new'
+      path: '/new'
+      fullPath: '/vrfs/new'
+      preLoaderRoute: typeof VrfsNewRouteImport
+      parentRoute: typeof VrfsRoute
+    }
+    '/vteps/': {
+      id: '/vteps/'
+      path: '/vteps'
+      fullPath: '/vteps/'
+      preLoaderRoute: typeof VtepsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/watched-endpoints/': {
+      id: '/watched-endpoints/'
+      path: '/watched-endpoints'
+      fullPath: '/watched-endpoints/'
+      preLoaderRoute: typeof WatchedEndpointsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/': {
+      id: '/webhooks/'
+      path: '/'
+      fullPath: '/webhooks/'
+      preLoaderRoute: typeof WebhooksIndexRouteImport
+      parentRoute: typeof WebhooksRoute
+    }
+    '/webhooks/new': {
+      id: '/webhooks/new'
+      path: '/new'
+      fullPath: '/webhooks/new'
+      preLoaderRoute: typeof WebhooksNewRouteImport
+      parentRoute: typeof WebhooksRoute
+    }
+    '/windows-servers/': {
+      id: '/windows-servers/'
+      path: '/windows-servers'
+      fullPath: '/windows-servers/'
+      preLoaderRoute: typeof WindowsServersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/windows-servers/$id': {
+      id: '/windows-servers/$id'
+      path: '/windows-servers/$id'
+      fullPath: '/windows-servers/$id'
+      preLoaderRoute: typeof WindowsServersIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/wireless-lan-groups/': {
+      id: '/wireless-lan-groups/'
+      path: '/'
+      fullPath: '/wireless-lan-groups/'
+      preLoaderRoute: typeof WirelessLanGroupsIndexRouteImport
+      parentRoute: typeof WirelessLanGroupsRoute
+    }
+    '/wireless-lan-groups/$id': {
+      id: '/wireless-lan-groups/$id'
+      path: '/$id'
+      fullPath: '/wireless-lan-groups/$id'
+      preLoaderRoute: typeof WirelessLanGroupsIdRouteImport
+      parentRoute: typeof WirelessLanGroupsRoute
+    }
+    '/wireless-lan-groups/new': {
+      id: '/wireless-lan-groups/new'
+      path: '/new'
+      fullPath: '/wireless-lan-groups/new'
+      preLoaderRoute: typeof WirelessLanGroupsNewRouteImport
+      parentRoute: typeof WirelessLanGroupsRoute
+    }
+    '/wireless-lans/': {
+      id: '/wireless-lans/'
+      path: '/'
+      fullPath: '/wireless-lans/'
+      preLoaderRoute: typeof WirelessLansIndexRouteImport
+      parentRoute: typeof WirelessLansRoute
+    }
+    '/wireless-lans/$id': {
+      id: '/wireless-lans/$id'
+      path: '/$id'
+      fullPath: '/wireless-lans/$id'
+      preLoaderRoute: typeof WirelessLansIdRouteImport
+      parentRoute: typeof WirelessLansRoute
+    }
+    '/wireless-lans/new': {
+      id: '/wireless-lans/new'
+      path: '/new'
+      fullPath: '/wireless-lans/new'
+      preLoaderRoute: typeof WirelessLansNewRouteImport
+      parentRoute: typeof WirelessLansRoute
+    }
+    '/zabbix/': {
+      id: '/zabbix/'
+      path: '/zabbix'
+      fullPath: '/zabbix/'
+      preLoaderRoute: typeof ZabbixIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/zones/': {
+      id: '/zones/'
+      path: '/'
+      fullPath: '/zones/'
+      preLoaderRoute: typeof ZonesIndexRouteImport
+      parentRoute: typeof ZonesRoute
+    }
+    '/zones/$id': {
+      id: '/zones/$id'
+      path: '/$id'
+      fullPath: '/zones/$id'
+      preLoaderRoute: typeof ZonesIdRouteImport
+      parentRoute: typeof ZonesRoute
+    }
+    '/zones/new': {
+      id: '/zones/new'
+      path: '/new'
+      fullPath: '/zones/new'
+      preLoaderRoute: typeof ZonesNewRouteImport
+      parentRoute: typeof ZonesRoute
+    }
+    '/aggregates/$id_/edit': {
+      id: '/aggregates/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/aggregates/$id/edit'
+      preLoaderRoute: typeof AggregatesIdEditRouteImport
+      parentRoute: typeof AggregatesRoute
+    }
+    '/alert-rules/$id_/edit': {
+      id: '/alert-rules/$id_/edit'
+      path: '/alert-rules/$id/edit'
+      fullPath: '/alert-rules/$id/edit'
+      preLoaderRoute: typeof AlertRulesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/application-groups/$id_/edit': {
+      id: '/application-groups/$id_/edit'
+      path: '/application-groups/$id/edit'
+      fullPath: '/application-groups/$id/edit'
+      preLoaderRoute: typeof ApplicationGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/applications/$id_/edit': {
+      id: '/applications/$id_/edit'
+      path: '/applications/$id/edit'
+      fullPath: '/applications/$id/edit'
+      preLoaderRoute: typeof ApplicationsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/area-types/$id_/edit': {
+      id: '/area-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/area-types/$id/edit'
+      preLoaderRoute: typeof AreaTypesIdEditRouteImport
+      parentRoute: typeof AreaTypesRoute
+    }
+    '/as-path-lists/$id_/edit': {
+      id: '/as-path-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/as-path-lists/$id/edit'
+      preLoaderRoute: typeof AsPathListsIdEditRouteImport
+      parentRoute: typeof AsPathListsRoute
+    }
+    '/asns/$id_/edit': {
+      id: '/asns/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/asns/$id/edit'
+      preLoaderRoute: typeof AsnsIdEditRouteImport
+      parentRoute: typeof AsnsRoute
+    }
+    '/automation-targets/$id_/edit': {
+      id: '/automation-targets/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/automation-targets/$id/edit'
+      preLoaderRoute: typeof AutomationTargetsIdEditRouteImport
+      parentRoute: typeof AutomationTargetsRoute
+    }
+    '/bfd-profiles/$id_/edit': {
+      id: '/bfd-profiles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bfd-profiles/$id/edit'
+      preLoaderRoute: typeof BfdProfilesIdEditRouteImport
+      parentRoute: typeof BfdProfilesRoute
+    }
+    '/bgp-peer-groups/$id_/edit': {
+      id: '/bgp-peer-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bgp-peer-groups/$id/edit'
+      preLoaderRoute: typeof BgpPeerGroupsIdEditRouteImport
+      parentRoute: typeof BgpPeerGroupsRoute
+    }
+    '/bgp-sessions/$id_/edit': {
+      id: '/bgp-sessions/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/bgp-sessions/$id/edit'
+      preLoaderRoute: typeof BgpSessionsIdEditRouteImport
+      parentRoute: typeof BgpSessionsRoute
+    }
+    '/cabinet-roles/$id_/edit': {
+      id: '/cabinet-roles/$id_/edit'
+      path: '/cabinet-roles/$id/edit'
+      fullPath: '/cabinet-roles/$id/edit'
+      preLoaderRoute: typeof CabinetRolesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cabinet-types/$id_/edit': {
@@ -9894,88 +10196,627 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CabinetTypesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cabinet-roles/$id_/edit': {
-      id: '/cabinet-roles/$id_/edit'
-      path: '/cabinet-roles/$id/edit'
-      fullPath: '/cabinet-roles/$id/edit'
-      preLoaderRoute: typeof CabinetRolesIdEditRouteImport
+    '/cabinets/$id_/edit': {
+      id: '/cabinets/$id_/edit'
+      path: '/cabinets/$id/edit'
+      fullPath: '/cabinets/$id/edit'
+      preLoaderRoute: typeof CabinetsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/bgp-sessions/$id_/edit': {
-      id: '/bgp-sessions/$id_/edit'
+    '/cables/$id_/edit': {
+      id: '/cables/$id_/edit'
       path: '/$id/edit'
-      fullPath: '/bgp-sessions/$id/edit'
-      preLoaderRoute: typeof BgpSessionsIdEditRouteImport
-      parentRoute: typeof BgpSessionsRoute
+      fullPath: '/cables/$id/edit'
+      preLoaderRoute: typeof CablesIdEditRouteImport
+      parentRoute: typeof CablesRoute
     }
-    '/bgp-peer-groups/$id_/edit': {
-      id: '/bgp-peer-groups/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/bgp-peer-groups/$id/edit'
-      preLoaderRoute: typeof BgpPeerGroupsIdEditRouteImport
-      parentRoute: typeof BgpPeerGroupsRoute
-    }
-    '/bfd-profiles/$id_/edit': {
-      id: '/bfd-profiles/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/bfd-profiles/$id/edit'
-      preLoaderRoute: typeof BfdProfilesIdEditRouteImport
-      parentRoute: typeof BfdProfilesRoute
-    }
-    '/automation-targets/$id_/edit': {
-      id: '/automation-targets/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/automation-targets/$id/edit'
-      preLoaderRoute: typeof AutomationTargetsIdEditRouteImport
-      parentRoute: typeof AutomationTargetsRoute
-    }
-    '/asns/$id_/edit': {
-      id: '/asns/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/asns/$id/edit'
-      preLoaderRoute: typeof AsnsIdEditRouteImport
-      parentRoute: typeof AsnsRoute
-    }
-    '/as-path-lists/$id_/edit': {
-      id: '/as-path-lists/$id_/edit'
-      path: '/$id/edit'
-      fullPath: '/as-path-lists/$id/edit'
-      preLoaderRoute: typeof AsPathListsIdEditRouteImport
-      parentRoute: typeof AsPathListsRoute
-    }
-    '/alert-rules/$id_/edit': {
-      id: '/alert-rules/$id_/edit'
-      path: '/alert-rules/$id/edit'
-      fullPath: '/alert-rules/$id/edit'
-      preLoaderRoute: typeof AlertRulesIdEditRouteImport
+    '/channels/$id_/edit': {
+      id: '/channels/$id_/edit'
+      path: '/channels/$id/edit'
+      fullPath: '/channels/$id/edit'
+      preLoaderRoute: typeof ChannelsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/aggregates/$id_/edit': {
-      id: '/aggregates/$id_/edit'
+    '/circuit-types/$id_/edit': {
+      id: '/circuit-types/$id_/edit'
       path: '/$id/edit'
-      fullPath: '/aggregates/$id/edit'
-      preLoaderRoute: typeof AggregatesIdEditRouteImport
-      parentRoute: typeof AggregatesRoute
+      fullPath: '/circuit-types/$id/edit'
+      preLoaderRoute: typeof CircuitTypesIdEditRouteImport
+      parentRoute: typeof CircuitTypesRoute
     }
-    '/planning/$boardId_/tasks/$taskId': {
-      id: '/planning/$boardId_/tasks/$taskId'
-      path: '/planning/$boardId/tasks/$taskId'
-      fullPath: '/planning/$boardId/tasks/$taskId'
-      preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
+    '/circuits/$id_/edit': {
+      id: '/circuits/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/circuits/$id/edit'
+      preLoaderRoute: typeof CircuitsIdEditRouteImport
+      parentRoute: typeof CircuitsRoute
+    }
+    '/cluster-groups/$id_/edit': {
+      id: '/cluster-groups/$id_/edit'
+      path: '/cluster-groups/$id/edit'
+      fullPath: '/cluster-groups/$id/edit'
+      preLoaderRoute: typeof ClusterGroupsIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitoring_/sla/templates/new': {
-      id: '/monitoring_/sla/templates/new'
-      path: '/monitoring/sla/templates/new'
-      fullPath: '/monitoring/sla/templates/new'
-      preLoaderRoute: typeof MonitoringSlaTemplatesNewRouteImport
+    '/cluster-types/$id_/edit': {
+      id: '/cluster-types/$id_/edit'
+      path: '/cluster-types/$id/edit'
+      fullPath: '/cluster-types/$id/edit'
+      preLoaderRoute: typeof ClusterTypesIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitoring_/sla/templates/$id': {
-      id: '/monitoring_/sla/templates/$id'
-      path: '/monitoring/sla/templates/$id'
-      fullPath: '/monitoring/sla/templates/$id'
-      preLoaderRoute: typeof MonitoringSlaTemplatesIdRouteImport
+    '/clusters/$id_/edit': {
+      id: '/clusters/$id_/edit'
+      path: '/clusters/$id/edit'
+      fullPath: '/clusters/$id/edit'
+      preLoaderRoute: typeof ClustersIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/communities/$id_/edit': {
+      id: '/communities/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/communities/$id/edit'
+      preLoaderRoute: typeof CommunitiesIdEditRouteImport
+      parentRoute: typeof CommunitiesRoute
+    }
+    '/community-lists/$id_/edit': {
+      id: '/community-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/community-lists/$id/edit'
+      preLoaderRoute: typeof CommunityListsIdEditRouteImport
+      parentRoute: typeof CommunityListsRoute
+    }
+    '/compliance-rules/$id_/edit': {
+      id: '/compliance-rules/$id_/edit'
+      path: '/compliance-rules/$id/edit'
+      fullPath: '/compliance-rules/$id/edit'
+      preLoaderRoute: typeof ComplianceRulesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/config-bundles/$id_/edit': {
+      id: '/config-bundles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/config-bundles/$id/edit'
+      preLoaderRoute: typeof ConfigBundlesIdEditRouteImport
+      parentRoute: typeof ConfigBundlesRoute
+    }
+    '/config-contexts/$id_/edit': {
+      id: '/config-contexts/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/config-contexts/$id/edit'
+      preLoaderRoute: typeof ConfigContextsIdEditRouteImport
+      parentRoute: typeof ConfigContextsRoute
+    }
+    '/contact-groups/$id_/edit': {
+      id: '/contact-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/contact-groups/$id/edit'
+      preLoaderRoute: typeof ContactGroupsIdEditRouteImport
+      parentRoute: typeof ContactGroupsRoute
+    }
+    '/contact-roles/$id_/edit': {
+      id: '/contact-roles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/contact-roles/$id/edit'
+      preLoaderRoute: typeof ContactRolesIdEditRouteImport
+      parentRoute: typeof ContactRolesRoute
+    }
+    '/contacts/$id_/edit': {
+      id: '/contacts/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/contacts/$id/edit'
+      preLoaderRoute: typeof ContactsIdEditRouteImport
+      parentRoute: typeof ContactsRoute
+    }
+    '/cooling-feeds/$id_/edit': {
+      id: '/cooling-feeds/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/cooling-feeds/$id/edit'
+      preLoaderRoute: typeof CoolingFeedsIdEditRouteImport
+      parentRoute: typeof CoolingFeedsRoute
+    }
+    '/cooling-sources/$id_/edit': {
+      id: '/cooling-sources/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/cooling-sources/$id/edit'
+      preLoaderRoute: typeof CoolingSourcesIdEditRouteImport
+      parentRoute: typeof CoolingSourcesRoute
+    }
+    '/custom-field-groups/$id_/edit': {
+      id: '/custom-field-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/custom-field-groups/$id/edit'
+      preLoaderRoute: typeof CustomFieldGroupsIdEditRouteImport
+      parentRoute: typeof CustomFieldGroupsRoute
+    }
+    '/custom-fields/$id_/edit': {
+      id: '/custom-fields/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/custom-fields/$id/edit'
+      preLoaderRoute: typeof CustomFieldsIdEditRouteImport
+      parentRoute: typeof CustomFieldsRoute
+    }
+    '/device-profiles/$id_/edit': {
+      id: '/device-profiles/$id_/edit'
+      path: '/device-profiles/$id/edit'
+      fullPath: '/device-profiles/$id/edit'
+      preLoaderRoute: typeof DeviceProfilesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-roles/$id_/edit': {
+      id: '/device-roles/$id_/edit'
+      path: '/device-roles/$id/edit'
+      fullPath: '/device-roles/$id/edit'
+      preLoaderRoute: typeof DeviceRolesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device-types/$id_/edit': {
+      id: '/device-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/device-types/$id/edit'
+      preLoaderRoute: typeof DeviceTypesIdEditRouteImport
+      parentRoute: typeof DeviceTypesRoute
+    }
+    '/devices/$id_/compliance': {
+      id: '/devices/$id_/compliance'
+      path: '/$id/compliance'
+      fullPath: '/devices/$id/compliance'
+      preLoaderRoute: typeof DevicesIdComplianceRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/devices/$id_/edit': {
+      id: '/devices/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/devices/$id/edit'
+      preLoaderRoute: typeof DevicesIdEditRouteImport
+      parentRoute: typeof DevicesRoute
+    }
+    '/eol-products/$id_/edit': {
+      id: '/eol-products/$id_/edit'
+      path: '/eol-products/$id/edit'
+      fullPath: '/eol-products/$id/edit'
+      preLoaderRoute: typeof EolProductsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ethernet-segments/$id_/edit': {
+      id: '/ethernet-segments/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ethernet-segments/$id/edit'
+      preLoaderRoute: typeof EthernetSegmentsIdEditRouteImport
+      parentRoute: typeof EthernetSegmentsRoute
+    }
+    '/export-templates/$id_/edit': {
+      id: '/export-templates/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/export-templates/$id/edit'
+      preLoaderRoute: typeof ExportTemplatesIdEditRouteImport
+      parentRoute: typeof ExportTemplatesRoute
+    }
+    '/fhrp-groups/$id_/edit': {
+      id: '/fhrp-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/fhrp-groups/$id/edit'
+      preLoaderRoute: typeof FhrpGroupsIdEditRouteImport
+      parentRoute: typeof FhrpGroupsRoute
+    }
+    '/floor-tile-types/$id_/edit': {
+      id: '/floor-tile-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/floor-tile-types/$id/edit'
+      preLoaderRoute: typeof FloorTileTypesIdEditRouteImport
+      parentRoute: typeof FloorTileTypesRoute
+    }
+    '/floorplans/stacks/$id': {
+      id: '/floorplans/stacks/$id'
+      path: '/stacks/$id'
+      fullPath: '/floorplans/stacks/$id'
+      preLoaderRoute: typeof FloorplansStacksIdRouteImport
+      parentRoute: typeof FloorplansRoute
+    }
+    '/groups/$id_/edit': {
+      id: '/groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/groups/$id/edit'
+      preLoaderRoute: typeof GroupsIdEditRouteImport
+      parentRoute: typeof GroupsRoute
+    }
+    '/interfaces/$id_/edit': {
+      id: '/interfaces/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/interfaces/$id/edit'
+      preLoaderRoute: typeof InterfacesIdEditRouteImport
+      parentRoute: typeof InterfacesRoute
+    }
+    '/ip-ranges/$id_/edit': {
+      id: '/ip-ranges/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ip-ranges/$id/edit'
+      preLoaderRoute: typeof IpRangesIdEditRouteImport
+      parentRoute: typeof IpRangesRoute
+    }
+    '/ip-roles/$id_/edit': {
+      id: '/ip-roles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ip-roles/$id/edit'
+      preLoaderRoute: typeof IpRolesIdEditRouteImport
+      parentRoute: typeof IpRolesRoute
+    }
+    '/ips/$id_/edit': {
+      id: '/ips/$id_/edit'
+      path: '/ips/$id/edit'
+      fullPath: '/ips/$id/edit'
+      preLoaderRoute: typeof IpsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ipsec-profiles/$id_/edit': {
+      id: '/ipsec-profiles/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ipsec-profiles/$id/edit'
+      preLoaderRoute: typeof IpsecProfilesIdEditRouteImport
+      parentRoute: typeof IpsecProfilesRoute
+    }
+    '/l2vpns/$id_/edit': {
+      id: '/l2vpns/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/l2vpns/$id/edit'
+      preLoaderRoute: typeof L2vpnsIdEditRouteImport
+      parentRoute: typeof L2vpnsRoute
+    }
+    '/location-types/$id_/edit': {
+      id: '/location-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/location-types/$id/edit'
+      preLoaderRoute: typeof LocationTypesIdEditRouteImport
+      parentRoute: typeof LocationTypesRoute
+    }
+    '/locations/$id_/edit': {
+      id: '/locations/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/locations/$id/edit'
+      preLoaderRoute: typeof LocationsIdEditRouteImport
+      parentRoute: typeof LocationsRoute
+    }
+    '/maintenance/$id_/edit': {
+      id: '/maintenance/$id_/edit'
+      path: '/maintenance/$id/edit'
+      fullPath: '/maintenance/$id/edit'
+      preLoaderRoute: typeof MaintenanceIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manufacturers/$id_/edit': {
+      id: '/manufacturers/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/manufacturers/$id/edit'
+      preLoaderRoute: typeof ManufacturersIdEditRouteImport
+      parentRoute: typeof ManufacturersRoute
+    }
+    '/module-types/$id_/edit': {
+      id: '/module-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/module-types/$id/edit'
+      preLoaderRoute: typeof ModuleTypesIdEditRouteImport
+      parentRoute: typeof ModuleTypesRoute
+    }
+    '/monitoring_/checks/$id': {
+      id: '/monitoring_/checks/$id'
+      path: '/monitoring/checks/$id'
+      fullPath: '/monitoring/checks/$id'
+      preLoaderRoute: typeof MonitoringChecksIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/$id': {
+      id: '/monitoring_/sla/$id'
+      path: '/monitoring/sla/$id'
+      fullPath: '/monitoring/sla/$id'
+      preLoaderRoute: typeof MonitoringSlaIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/new': {
+      id: '/monitoring_/sla/new'
+      path: '/monitoring/sla/new'
+      fullPath: '/monitoring/sla/new'
+      preLoaderRoute: typeof MonitoringSlaNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ospf-areas/$id_/edit': {
+      id: '/ospf-areas/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/ospf-areas/$id/edit'
+      preLoaderRoute: typeof OspfAreasIdEditRouteImport
+      parentRoute: typeof OspfAreasRoute
+    }
+    '/p/$slug/$': {
+      id: '/p/$slug/$'
+      path: '/p/$slug/$'
+      fullPath: '/p/$slug/$'
+      preLoaderRoute: typeof PSlugSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/permissions/$id_/edit': {
+      id: '/permissions/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/permissions/$id/edit'
+      preLoaderRoute: typeof PermissionsIdEditRouteImport
+      parentRoute: typeof PermissionsRoute
+    }
+    '/platform-groups/$id_/edit': {
+      id: '/platform-groups/$id_/edit'
+      path: '/platform-groups/$id/edit'
+      fullPath: '/platform-groups/$id/edit'
+      preLoaderRoute: typeof PlatformGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platforms/$id_/edit': {
+      id: '/platforms/$id_/edit'
+      path: '/platforms/$id/edit'
+      fullPath: '/platforms/$id/edit'
+      preLoaderRoute: typeof PlatformsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/power-feeds/$id_/edit': {
+      id: '/power-feeds/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/power-feeds/$id/edit'
+      preLoaderRoute: typeof PowerFeedsIdEditRouteImport
+      parentRoute: typeof PowerFeedsRoute
+    }
+    '/power-panels/$id_/edit': {
+      id: '/power-panels/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/power-panels/$id/edit'
+      preLoaderRoute: typeof PowerPanelsIdEditRouteImport
+      parentRoute: typeof PowerPanelsRoute
+    }
+    '/prefix-lists/$id_/edit': {
+      id: '/prefix-lists/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/prefix-lists/$id/edit'
+      preLoaderRoute: typeof PrefixListsIdEditRouteImport
+      parentRoute: typeof PrefixListsRoute
+    }
+    '/prefixes/$id_/edit': {
+      id: '/prefixes/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/prefixes/$id/edit'
+      preLoaderRoute: typeof PrefixesIdEditRouteImport
+      parentRoute: typeof PrefixesRoute
+    }
+    '/provider-networks/$id_/edit': {
+      id: '/provider-networks/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/provider-networks/$id/edit'
+      preLoaderRoute: typeof ProviderNetworksIdEditRouteImport
+      parentRoute: typeof ProviderNetworksRoute
+    }
+    '/providers/$id_/edit': {
+      id: '/providers/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/providers/$id/edit'
+      preLoaderRoute: typeof ProvidersIdEditRouteImport
+      parentRoute: typeof ProvidersRoute
+    }
+    '/rack-roles/$id_/edit': {
+      id: '/rack-roles/$id_/edit'
+      path: '/rack-roles/$id/edit'
+      fullPath: '/rack-roles/$id/edit'
+      preLoaderRoute: typeof RackRolesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rack-types/$id_/edit': {
+      id: '/rack-types/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/rack-types/$id/edit'
+      preLoaderRoute: typeof RackTypesIdEditRouteImport
+      parentRoute: typeof RackTypesRoute
+    }
+    '/racks/$id_/edit': {
+      id: '/racks/$id_/edit'
+      path: '/racks/$id/edit'
+      fullPath: '/racks/$id/edit'
+      preLoaderRoute: typeof RacksIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/regions/$id_/edit': {
+      id: '/regions/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/regions/$id/edit'
+      preLoaderRoute: typeof RegionsIdEditRouteImport
+      parentRoute: typeof RegionsRoute
+    }
+    '/rirs/$id_/edit': {
+      id: '/rirs/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/rirs/$id/edit'
+      preLoaderRoute: typeof RirsIdEditRouteImport
+      parentRoute: typeof RirsRoute
+    }
+    '/rooms/$id_/edit': {
+      id: '/rooms/$id_/edit'
+      path: '/rooms/$id/edit'
+      fullPath: '/rooms/$id/edit'
+      preLoaderRoute: typeof RoomsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/route-targets/$id_/edit': {
+      id: '/route-targets/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/route-targets/$id/edit'
+      preLoaderRoute: typeof RouteTargetsIdEditRouteImport
+      parentRoute: typeof RouteTargetsRoute
+    }
+    '/routing-keychains/$id_/edit': {
+      id: '/routing-keychains/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/routing-keychains/$id/edit'
+      preLoaderRoute: typeof RoutingKeychainsIdEditRouteImport
+      parentRoute: typeof RoutingKeychainsRoute
+    }
+    '/routing-policies/$id_/edit': {
+      id: '/routing-policies/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/routing-policies/$id/edit'
+      preLoaderRoute: typeof RoutingPoliciesIdEditRouteImport
+      parentRoute: typeof RoutingPoliciesRoute
+    }
+    '/scripts/runs/$runId': {
+      id: '/scripts/runs/$runId'
+      path: '/scripts/runs/$runId'
+      fullPath: '/scripts/runs/$runId'
+      preLoaderRoute: typeof ScriptsRunsRunIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/service-templates/$id_/edit': {
+      id: '/service-templates/$id_/edit'
+      path: '/service-templates/$id/edit'
+      fullPath: '/service-templates/$id/edit'
+      preLoaderRoute: typeof ServiceTemplatesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/silences/$id_/edit': {
+      id: '/silences/$id_/edit'
+      path: '/silences/$id/edit'
+      fullPath: '/silences/$id/edit'
+      preLoaderRoute: typeof SilencesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sites/$id_/edit': {
+      id: '/sites/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/sites/$id/edit'
+      preLoaderRoute: typeof SitesIdEditRouteImport
+      parentRoute: typeof SitesRoute
+    }
+    '/static-routes/$id_/edit': {
+      id: '/static-routes/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/static-routes/$id/edit'
+      preLoaderRoute: typeof StaticRoutesIdEditRouteImport
+      parentRoute: typeof StaticRoutesRoute
+    }
+    '/statuses/$id_/edit': {
+      id: '/statuses/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/statuses/$id/edit'
+      preLoaderRoute: typeof StatusesIdEditRouteImport
+      parentRoute: typeof StatusesRoute
+    }
+    '/support-contracts/$id_/edit': {
+      id: '/support-contracts/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/support-contracts/$id/edit'
+      preLoaderRoute: typeof SupportContractsIdEditRouteImport
+      parentRoute: typeof SupportContractsRoute
+    }
+    '/tags/$id_/edit': {
+      id: '/tags/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/tags/$id/edit'
+      preLoaderRoute: typeof TagsIdEditRouteImport
+      parentRoute: typeof TagsRoute
+    }
+    '/tenants/$id_/edit': {
+      id: '/tenants/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/tenants/$id/edit'
+      preLoaderRoute: typeof TenantsIdEditRouteImport
+      parentRoute: typeof TenantsRoute
+    }
+    '/tunnel-groups/$id_/edit': {
+      id: '/tunnel-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/tunnel-groups/$id/edit'
+      preLoaderRoute: typeof TunnelGroupsIdEditRouteImport
+      parentRoute: typeof TunnelGroupsRoute
+    }
+    '/tunnels/$id_/edit': {
+      id: '/tunnels/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/tunnels/$id/edit'
+      preLoaderRoute: typeof TunnelsIdEditRouteImport
+      parentRoute: typeof TunnelsRoute
+    }
+    '/users/$id_/edit': {
+      id: '/users/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/users/$id/edit'
+      preLoaderRoute: typeof UsersIdEditRouteImport
+      parentRoute: typeof UsersRoute
+    }
+    '/virtual-chassis/$id_/edit': {
+      id: '/virtual-chassis/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/virtual-chassis/$id/edit'
+      preLoaderRoute: typeof VirtualChassisIdEditRouteImport
+      parentRoute: typeof VirtualChassisRoute
+    }
+    '/virtual-machines/$id_/edit': {
+      id: '/virtual-machines/$id_/edit'
+      path: '/virtual-machines/$id/edit'
+      fullPath: '/virtual-machines/$id/edit'
+      preLoaderRoute: typeof VirtualMachinesIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vlan-groups/$id_/edit': {
+      id: '/vlan-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/vlan-groups/$id/edit'
+      preLoaderRoute: typeof VlanGroupsIdEditRouteImport
+      parentRoute: typeof VlanGroupsRoute
+    }
+    '/vlans/$id_/edit': {
+      id: '/vlans/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/vlans/$id/edit'
+      preLoaderRoute: typeof VlansIdEditRouteImport
+      parentRoute: typeof VlansRoute
+    }
+    '/vm-groups/$id_/edit': {
+      id: '/vm-groups/$id_/edit'
+      path: '/vm-groups/$id/edit'
+      fullPath: '/vm-groups/$id/edit'
+      preLoaderRoute: typeof VmGroupsIdEditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/vrfs/$id_/edit': {
+      id: '/vrfs/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/vrfs/$id/edit'
+      preLoaderRoute: typeof VrfsIdEditRouteImport
+      parentRoute: typeof VrfsRoute
+    }
+    '/webhooks/$id_/edit': {
+      id: '/webhooks/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/webhooks/$id/edit'
+      preLoaderRoute: typeof WebhooksIdEditRouteImport
+      parentRoute: typeof WebhooksRoute
+    }
+    '/wireless-lan-groups/$id_/edit': {
+      id: '/wireless-lan-groups/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/wireless-lan-groups/$id/edit'
+      preLoaderRoute: typeof WirelessLanGroupsIdEditRouteImport
+      parentRoute: typeof WirelessLanGroupsRoute
+    }
+    '/wireless-lans/$id_/edit': {
+      id: '/wireless-lans/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/wireless-lans/$id/edit'
+      preLoaderRoute: typeof WirelessLansIdEditRouteImport
+      parentRoute: typeof WirelessLansRoute
+    }
+    '/zones/$id_/edit': {
+      id: '/zones/$id_/edit'
+      path: '/$id/edit'
+      fullPath: '/zones/$id/edit'
+      preLoaderRoute: typeof ZonesIdEditRouteImport
+      parentRoute: typeof ZonesRoute
+    }
+    '/l/$tenant/$type/$numid': {
+      id: '/l/$tenant/$type/$numid'
+      path: '/l/$tenant/$type/$numid'
+      fullPath: '/l/$tenant/$type/$numid'
+      preLoaderRoute: typeof LTenantTypeNumidRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/monitoring_/sla/$id_/edit': {
@@ -9985,11 +10826,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MonitoringSlaIdEditRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/l/$tenant/$type/$numid': {
-      id: '/l/$tenant/$type/$numid'
-      path: '/l/$tenant/$type/$numid'
-      fullPath: '/l/$tenant/$type/$numid'
-      preLoaderRoute: typeof LTenantTypeNumidRouteImport
+    '/monitoring_/sla/templates/$id': {
+      id: '/monitoring_/sla/templates/$id'
+      path: '/monitoring/sla/templates/$id'
+      fullPath: '/monitoring/sla/templates/$id'
+      preLoaderRoute: typeof MonitoringSlaTemplatesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitoring_/sla/templates/new': {
+      id: '/monitoring_/sla/templates/new'
+      path: '/monitoring/sla/templates/new'
+      fullPath: '/monitoring/sla/templates/new'
+      preLoaderRoute: typeof MonitoringSlaTemplatesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planning/$boardId_/tasks/$taskId': {
+      id: '/planning/$boardId_/tasks/$taskId'
+      path: '/planning/$boardId/tasks/$taskId'
+      fullPath: '/planning/$boardId/tasks/$taskId'
+      preLoaderRoute: typeof PlanningBoardIdTasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/monitoring_/sla/templates/$id_/edit': {
@@ -10018,6 +10873,24 @@ const AggregatesRouteChildren: AggregatesRouteChildren = {
 
 const AggregatesRouteWithChildren = AggregatesRoute._addFileChildren(
   AggregatesRouteChildren,
+)
+
+interface AreaTypesRouteChildren {
+  AreaTypesIdRoute: typeof AreaTypesIdRoute
+  AreaTypesNewRoute: typeof AreaTypesNewRoute
+  AreaTypesIndexRoute: typeof AreaTypesIndexRoute
+  AreaTypesIdEditRoute: typeof AreaTypesIdEditRoute
+}
+
+const AreaTypesRouteChildren: AreaTypesRouteChildren = {
+  AreaTypesIdRoute: AreaTypesIdRoute,
+  AreaTypesNewRoute: AreaTypesNewRoute,
+  AreaTypesIndexRoute: AreaTypesIndexRoute,
+  AreaTypesIdEditRoute: AreaTypesIdEditRoute,
+}
+
+const AreaTypesRouteWithChildren = AreaTypesRoute._addFileChildren(
+  AreaTypesRouteChildren,
 )
 
 interface AsPathListsRouteChildren {
@@ -10306,6 +11179,42 @@ const ContactsRouteWithChildren = ContactsRoute._addFileChildren(
   ContactsRouteChildren,
 )
 
+interface CoolingFeedsRouteChildren {
+  CoolingFeedsIdRoute: typeof CoolingFeedsIdRoute
+  CoolingFeedsNewRoute: typeof CoolingFeedsNewRoute
+  CoolingFeedsIndexRoute: typeof CoolingFeedsIndexRoute
+  CoolingFeedsIdEditRoute: typeof CoolingFeedsIdEditRoute
+}
+
+const CoolingFeedsRouteChildren: CoolingFeedsRouteChildren = {
+  CoolingFeedsIdRoute: CoolingFeedsIdRoute,
+  CoolingFeedsNewRoute: CoolingFeedsNewRoute,
+  CoolingFeedsIndexRoute: CoolingFeedsIndexRoute,
+  CoolingFeedsIdEditRoute: CoolingFeedsIdEditRoute,
+}
+
+const CoolingFeedsRouteWithChildren = CoolingFeedsRoute._addFileChildren(
+  CoolingFeedsRouteChildren,
+)
+
+interface CoolingSourcesRouteChildren {
+  CoolingSourcesIdRoute: typeof CoolingSourcesIdRoute
+  CoolingSourcesNewRoute: typeof CoolingSourcesNewRoute
+  CoolingSourcesIndexRoute: typeof CoolingSourcesIndexRoute
+  CoolingSourcesIdEditRoute: typeof CoolingSourcesIdEditRoute
+}
+
+const CoolingSourcesRouteChildren: CoolingSourcesRouteChildren = {
+  CoolingSourcesIdRoute: CoolingSourcesIdRoute,
+  CoolingSourcesNewRoute: CoolingSourcesNewRoute,
+  CoolingSourcesIndexRoute: CoolingSourcesIndexRoute,
+  CoolingSourcesIdEditRoute: CoolingSourcesIdEditRoute,
+}
+
+const CoolingSourcesRouteWithChildren = CoolingSourcesRoute._addFileChildren(
+  CoolingSourcesRouteChildren,
+)
+
 interface CustomFieldGroupsRouteChildren {
   CustomFieldGroupsIdRoute: typeof CustomFieldGroupsIdRoute
   CustomFieldGroupsNewRoute: typeof CustomFieldGroupsNewRoute
@@ -10453,12 +11362,14 @@ interface FloorplansRouteChildren {
   FloorplansIdRoute: typeof FloorplansIdRoute
   FloorplansNewRoute: typeof FloorplansNewRoute
   FloorplansIndexRoute: typeof FloorplansIndexRoute
+  FloorplansStacksIdRoute: typeof FloorplansStacksIdRoute
 }
 
 const FloorplansRouteChildren: FloorplansRouteChildren = {
   FloorplansIdRoute: FloorplansIdRoute,
   FloorplansNewRoute: FloorplansNewRoute,
   FloorplansIndexRoute: FloorplansIndexRoute,
+  FloorplansStacksIdRoute: FloorplansStacksIdRoute,
 }
 
 const FloorplansRouteWithChildren = FloorplansRoute._addFileChildren(
@@ -10582,6 +11493,24 @@ const L2vpnsRouteChildren: L2vpnsRouteChildren = {
 
 const L2vpnsRouteWithChildren =
   L2vpnsRoute._addFileChildren(L2vpnsRouteChildren)
+
+interface LocationTypesRouteChildren {
+  LocationTypesIdRoute: typeof LocationTypesIdRoute
+  LocationTypesNewRoute: typeof LocationTypesNewRoute
+  LocationTypesIndexRoute: typeof LocationTypesIndexRoute
+  LocationTypesIdEditRoute: typeof LocationTypesIdEditRoute
+}
+
+const LocationTypesRouteChildren: LocationTypesRouteChildren = {
+  LocationTypesIdRoute: LocationTypesIdRoute,
+  LocationTypesNewRoute: LocationTypesNewRoute,
+  LocationTypesIndexRoute: LocationTypesIndexRoute,
+  LocationTypesIdEditRoute: LocationTypesIdEditRoute,
+}
+
+const LocationTypesRouteWithChildren = LocationTypesRoute._addFileChildren(
+  LocationTypesRouteChildren,
+)
 
 interface LocationsRouteChildren {
   LocationsIdRoute: typeof LocationsIdRoute
@@ -11273,6 +12202,8 @@ const rootRouteChildren: RootRouteChildren = {
   AgentAccessRoute: AgentAccessRoute,
   AggregatesRoute: AggregatesRouteWithChildren,
   AlertsRoute: AlertsRoute,
+  ApplicationMapRoute: ApplicationMapRoute,
+  AreaTypesRoute: AreaTypesRouteWithChildren,
   AsPathListsRoute: AsPathListsRouteWithChildren,
   AsnsRoute: AsnsRouteWithChildren,
   AuditLogRoute: AuditLogRoute,
@@ -11293,6 +12224,8 @@ const rootRouteChildren: RootRouteChildren = {
   ContactGroupsRoute: ContactGroupsRouteWithChildren,
   ContactRolesRoute: ContactRolesRouteWithChildren,
   ContactsRoute: ContactsRouteWithChildren,
+  CoolingFeedsRoute: CoolingFeedsRouteWithChildren,
+  CoolingSourcesRoute: CoolingSourcesRouteWithChildren,
   CustomFieldGroupsRoute: CustomFieldGroupsRouteWithChildren,
   CustomFieldsRoute: CustomFieldsRouteWithChildren,
   DeployRunsRoute: DeployRunsRoute,
@@ -11313,6 +12246,8 @@ const rootRouteChildren: RootRouteChildren = {
   IpStatusesRoute: IpStatusesRoute,
   IpsecProfilesRoute: IpsecProfilesRouteWithChildren,
   L2vpnsRoute: L2vpnsRouteWithChildren,
+  LifecycleRoute: LifecycleRoute,
+  LocationTypesRoute: LocationTypesRouteWithChildren,
   LocationsRoute: LocationsRouteWithChildren,
   LoginRoute: LoginRoute,
   MacsRoute: MacsRouteWithChildren,
@@ -11360,6 +12295,10 @@ const rootRouteChildren: RootRouteChildren = {
   WirelessLansRoute: WirelessLansRouteWithChildren,
   ZonesRoute: ZonesRouteWithChildren,
   AlertRulesNewRoute: AlertRulesNewRoute,
+  ApplicationGroupsIdRoute: ApplicationGroupsIdRoute,
+  ApplicationGroupsNewRoute: ApplicationGroupsNewRoute,
+  ApplicationsIdRoute: ApplicationsIdRoute,
+  ApplicationsNewRoute: ApplicationsNewRoute,
   AuditLogIdRoute: AuditLogIdRoute,
   CabinetRolesIdRoute: CabinetRolesIdRoute,
   CabinetRolesNewRoute: CabinetRolesNewRoute,
@@ -11380,11 +12319,15 @@ const rootRouteChildren: RootRouteChildren = {
   ComplianceRulesIdRoute: ComplianceRulesIdRoute,
   ComplianceRulesNewRoute: ComplianceRulesNewRoute,
   DashboardsIdRoute: DashboardsIdRoute,
+  DeviceProfilesIdRoute: DeviceProfilesIdRoute,
+  DeviceProfilesNewRoute: DeviceProfilesNewRoute,
   DeviceRolesIdRoute: DeviceRolesIdRoute,
   DeviceRolesNewRoute: DeviceRolesNewRoute,
   DnsNamesNameRoute: DnsNamesNameRoute,
   DnsRecordsIdRoute: DnsRecordsIdRoute,
   DnsZonesIdRoute: DnsZonesIdRoute,
+  EolProductsIdRoute: EolProductsIdRoute,
+  EolProductsNewRoute: EolProductsNewRoute,
   IpsIdRoute: IpsIdRoute,
   IpsBulkEditRoute: IpsBulkEditRoute,
   IpsNewRoute: IpsNewRoute,
@@ -11402,6 +12345,8 @@ const rootRouteChildren: RootRouteChildren = {
   RacksIdRoute: RacksIdRoute,
   RacksElevationsRoute: RacksElevationsRoute,
   RacksNewRoute: RacksNewRoute,
+  RoomsIdRoute: RoomsIdRoute,
+  RoomsNewRoute: RoomsNewRoute,
   ScriptsIdRoute: ScriptsIdRoute,
   ServiceTemplatesIdRoute: ServiceTemplatesIdRoute,
   ServiceTemplatesNewRoute: ServiceTemplatesNewRoute,
@@ -11414,6 +12359,8 @@ const rootRouteChildren: RootRouteChildren = {
   VmGroupsIdRoute: VmGroupsIdRoute,
   VmGroupsNewRoute: VmGroupsNewRoute,
   WindowsServersIdRoute: WindowsServersIdRoute,
+  ApplicationGroupsIndexRoute: ApplicationGroupsIndexRoute,
+  ApplicationsIndexRoute: ApplicationsIndexRoute,
   BgpInstancesIndexRoute: BgpInstancesIndexRoute,
   CabinetRolesIndexRoute: CabinetRolesIndexRoute,
   CabinetTypesIndexRoute: CabinetTypesIndexRoute,
@@ -11425,6 +12372,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterTypesIndexRoute: ClusterTypesIndexRoute,
   ClustersIndexRoute: ClustersIndexRoute,
   DashboardsIndexRoute: DashboardsIndexRoute,
+  DeviceProfilesIndexRoute: DeviceProfilesIndexRoute,
   DeviceRolesIndexRoute: DeviceRolesIndexRoute,
   DhcpLeasesIndexRoute: DhcpLeasesIndexRoute,
   DhcpReservationsIndexRoute: DhcpReservationsIndexRoute,
@@ -11432,6 +12380,7 @@ const rootRouteChildren: RootRouteChildren = {
   DnsRecordsIndexRoute: DnsRecordsIndexRoute,
   DnsZonesIndexRoute: DnsZonesIndexRoute,
   EigrpInstancesIndexRoute: EigrpInstancesIndexRoute,
+  EolProductsIndexRoute: EolProductsIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
   IsisInstancesIndexRoute: IsisInstancesIndexRoute,
   JobsIndexRoute: JobsIndexRoute,
@@ -11444,8 +12393,10 @@ const rootRouteChildren: RootRouteChildren = {
   PlatformGroupsIndexRoute: PlatformGroupsIndexRoute,
   PlatformsIndexRoute: PlatformsIndexRoute,
   PortReservationsIndexRoute: PortReservationsIndexRoute,
+  PrtgIndexRoute: PrtgIndexRoute,
   RackRolesIndexRoute: RackRolesIndexRoute,
   RacksIndexRoute: RacksIndexRoute,
+  RoomsIndexRoute: RoomsIndexRoute,
   ScriptsIndexRoute: ScriptsIndexRoute,
   ServiceTemplatesIndexRoute: ServiceTemplatesIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
@@ -11459,6 +12410,8 @@ const rootRouteChildren: RootRouteChildren = {
   WindowsServersIndexRoute: WindowsServersIndexRoute,
   ZabbixIndexRoute: ZabbixIndexRoute,
   AlertRulesIdEditRoute: AlertRulesIdEditRoute,
+  ApplicationGroupsIdEditRoute: ApplicationGroupsIdEditRoute,
+  ApplicationsIdEditRoute: ApplicationsIdEditRoute,
   CabinetRolesIdEditRoute: CabinetRolesIdEditRoute,
   CabinetTypesIdEditRoute: CabinetTypesIdEditRoute,
   CabinetsIdEditRoute: CabinetsIdEditRoute,
@@ -11467,7 +12420,9 @@ const rootRouteChildren: RootRouteChildren = {
   ClusterTypesIdEditRoute: ClusterTypesIdEditRoute,
   ClustersIdEditRoute: ClustersIdEditRoute,
   ComplianceRulesIdEditRoute: ComplianceRulesIdEditRoute,
+  DeviceProfilesIdEditRoute: DeviceProfilesIdEditRoute,
   DeviceRolesIdEditRoute: DeviceRolesIdEditRoute,
+  EolProductsIdEditRoute: EolProductsIdEditRoute,
   IpsIdEditRoute: IpsIdEditRoute,
   MaintenanceIdEditRoute: MaintenanceIdEditRoute,
   MonitoringChecksIdRoute: MonitoringChecksIdRoute,
@@ -11478,6 +12433,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlatformsIdEditRoute: PlatformsIdEditRoute,
   RackRolesIdEditRoute: RackRolesIdEditRoute,
   RacksIdEditRoute: RacksIdEditRoute,
+  RoomsIdEditRoute: RoomsIdEditRoute,
   ScriptsRunsRunIdRoute: ScriptsRunsRunIdRoute,
   ServiceTemplatesIdEditRoute: ServiceTemplatesIdEditRoute,
   SilencesIdEditRoute: SilencesIdEditRoute,

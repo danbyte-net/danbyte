@@ -94,6 +94,18 @@ export function segLength(points: readonly Pt[], seg: number): number {
   return a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 0
 }
 
+/** The upright box round a run's points. */
+export function pointsBoundsOf(points: readonly Pt[]) {
+  const xs = points.map((p) => p[0])
+  const ys = points.map((p) => p[1])
+  return {
+    minX: Math.min(...xs),
+    minY: Math.min(...ys),
+    maxX: Math.max(...xs),
+    maxY: Math.max(...ys),
+  }
+}
+
 export function runLength(points: readonly Pt[]): number {
   let n = 0
   for (let i = 0; i < points.length - 1; i++) n += segLength(points, i)

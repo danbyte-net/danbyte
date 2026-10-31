@@ -9,6 +9,7 @@ import type {
   FloorPlanTray,
 } from "@/lib/api"
 import { FloorCanvas } from "./floor-canvas"
+import { structureOf } from "./structure"
 
 // A tile linked to a DIN-rail cabinet on the 2D plan: named after the
 // cabinet unless labelled, its device count from the live state in its
@@ -400,9 +401,9 @@ describe("trays while picking a cable's run", () => {
     ...t,
   })) as unknown as FloorPlanTray[]
   const trayGroup = (c: HTMLElement, name: string) =>
-    [...c.querySelectorAll("title")].find((t) =>
-      t.textContent?.startsWith(name)
-    )!.parentElement!
+    c.querySelector<SVGGElement>(
+      `[data-tray="${trays.find((t) => t.name === name)!.id}"]`
+    )!
 
   function drawTrays(props: Partial<React.ComponentProps<typeof FloorCanvas>>) {
     return render(
@@ -436,7 +437,12 @@ describe("trays while picking a cable's run", () => {
 
   it("an unsaved run is not selected for editing", () => {
     const onSelectTray = vi.fn()
-    const { container } = drawTrays({ mode: "cable", onSelectTray })
+    // The kept run is not a tray of the draft; T-03 is.
+    const { container } = drawTrays({
+      mode: "cable",
+      onSelectTray,
+      structure: structureOf([], trays.slice(0, 1), []),
+    })
     fireEvent.pointerDown(trayGroup(container, "Run 1"), { button: 0 })
     expect(onSelectTray).not.toHaveBeenCalledWith("new-5")
     fireEvent.pointerDown(trayGroup(container, "T-03"), { button: 0 })

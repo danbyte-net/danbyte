@@ -1,6 +1,7 @@
 import {
   BrickWall,
   Cable,
+  DoorOpen,
   Crop,
   LayoutGrid,
   MousePointer2,
@@ -43,6 +44,7 @@ export const TOOLS: {
     key: "w",
     icon: BrickWall,
   },
+  { tool: "door", label: "Door", key: "d", icon: DoorOpen },
   { tool: "trays", label: "Cable trays", key: "c", icon: Cable },
   { tool: "snapshot", label: "Snapshot", key: "s", icon: Crop },
 ]

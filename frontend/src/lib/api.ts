@@ -12106,13 +12106,24 @@ export interface FloorPlanRoomMismatch {
 /** A 409 from a save: a row changed (or deleted) elsewhere. A cable's
  * stored route (`cable_path`) or its length (`cable`) carry the cable's id. */
 export interface FloorPlanConflict {
-  kind: "tile" | "area" | "label" | "cable_path" | "cable"
+  kind:
+    | "tile"
+    | "area"
+    | "label"
+    | "wall"
+    | "tray"
+    | "raised_floor"
+    | "cable_path"
+    | "cable"
   id: string
   /** The row as it is now; null when it was deleted. */
   current:
     | FloorPlanTile
     | FloorPlanArea
     | FloorPlanLabel
+    | FloorPlanWall
+    | FloorPlanTray
+    | RaisedFloorArea
     | StoredCablePath
     | CableLengthNow
     | null

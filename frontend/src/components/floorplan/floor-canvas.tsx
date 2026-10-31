@@ -8,6 +8,7 @@ import type {
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
+  RaisedFloorArea,
 } from "@/lib/api"
 import {
   DropdownMenu,
@@ -18,6 +19,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { PointerMenu } from "@/components/pointer-menu"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 import type { Pt } from "./cable-route"
@@ -56,7 +62,21 @@ import { usePanZoom } from "./use-pan-zoom"
 import { useShapeGestures } from "./use-shape-gestures"
 import type { ShapeTool } from "./use-shape-gestures"
 import type { NewAreaGeometry } from "./use-shape-edits"
-import { WallShape } from "./wall-layer"
+import { WallShape, wallStrokePx } from "./wall-layer"
+import {
+  DoorHandles,
+  RectHandles,
+  RunHandles,
+  StructureOverlay,
+} from "./structure-handles"
+import {
+  nearestSegment,
+  pointsBoundsOf,
+  runsTouch,
+  structureLists,
+} from "./structure"
+import type { RunRow, StructShape } from "./structure"
+import { useStructureGestures } from "./use-structure-gestures"
 
 // The plan's geometry and its rules live in canvas-geometry.ts and each layer
 // in its own module; the canvas re-exports what its callers import from here.
@@ -79,6 +99,7 @@ const LOCKED_OPACITY = 0.5
 const NO_CABLES: FloorPlanCablePath[] = []
 const NO_IDS: string[] = []
 const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
+const NO_STRUCT: StructShape[] = []
 
 /** Imperative handle for parent-driven camera moves (fit, focus a tile). */
 export interface FloorCanvasApi {
@@ -163,38 +184,40 @@ export interface FloorCanvasProps {
   showZoneLabels?: boolean
   /** Outline photo tiles that are not selected. */
   photoOutlines?: boolean
-  // ── Raised-floor areas (Structure mode) ────────────────────────────────
+  // ── Raised floors and walls (Structure mode) ───────────────────────────
   /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
-  raisedFloors?: {
-    id: string
-    x: number
-    y: number
-    width: number
-    height: number
-    plenum_mm: number
-    label: string
-    color: string
-  }[]
+  raisedFloors?: RaisedFloorArea[]
   selectedAreaId?: string | null
-  /** Structure mode: an area outline was clicked. */
+  /** Structure mode: a raised floor was clicked. */
   onSelectArea?: (id: string | null) => void
-  /** Structure mode: an area was dragged/resized - persist its new rect. */
-  onAreaRectChange?: (
-    id: string,
-    rect: { x: number; y: number; width: number; height: number }
-  ) => void
-  // ── Walls (Structure mode) ─────────────────────────────────────────────
   /** Wall polylines with door openings - drawn in ALL modes; interactive
-   * (select / move / place doors) only in Structure mode. */
+   * (select, drag, doors) only in Structure mode. */
   walls?: FloorPlanWall[]
   selectedWallId?: string | null
   onSelectWall?: (id: string | null) => void
-  /** Structure mode: a whole-wall drag ended - persist the translated points. */
-  onMoveWall?: (id: string, points: [number, number][]) => void
-  /** "Add door" is armed: the next click on a wall segment drops an opening. */
+  /** The Door tool (or "Add door"): a press on a wall draws a door. */
   doorArmed?: boolean
-  /** Door placement: segment `seg` of wall `id` was clicked, `at` cells along it. */
-  onPlaceDoor?: (id: string, seg: number, at: number) => void
+  /** The walls, trays and raised floors of the draft - what the pointer
+   * edits; a tray not among them (a kept run) is drawn only. */
+  structure?: StructShape[]
+  /** A drag of structure dropped: rows changed (one removed after a
+   * join) - one undo step. */
+  onCommitStructure?: (c: { update: StructShape[]; remove?: string[] }) => void
+  /** A door drawn along segment `seg` of a wall, `t0` to `t1` cells. */
+  onAddDoor?: (wallId: string, seg: number, t0: number, t1: number) => void
+  selectedDoor?: { wallId: string; index: number } | null
+  onSelectDoor?: (door: { wallId: string; index: number } | null) => void
+  /** Walls or trays picked with Shift or Ctrl/⌘ (two that touch join). */
+  structSel?: ReadonlySet<string>
+  onToggleStruct?: (id: string) => void
+  /** What the right-click menu offers on a wall, door, tray or raised
+   * floor, and "Add walls around" on areas. */
+  structureActions?: StructureActions
+  /** Floats above the selected wall, door, tray or raised floor (Edit). */
+  structureToolbar?: React.ReactNode
+  /** Areas picked with Ctrl/⌘ - walls go round all of them at once. */
+  areaSel?: ReadonlySet<string>
+  onToggleArea?: (id: string) => void
   // ── Cable trays ────────────────────────────────────────────────────────
   /** "layout" edits tiles; "cable" draws/selects trays. */
   mode?: "layout" | "cable" | "structure"
@@ -206,8 +229,6 @@ export interface FloorCanvasProps {
   drawPoints?: [number, number][]
   onAddDrawPoint?: (pt: [number, number]) => void
   onFinishDraw?: () => void
-  /** Persist a moved/reshaped tray's new points (drag whole tray or a vertex). */
-  onMoveTray?: (id: string, points: [number, number][]) => void
   /** Tray edit mode: hide all cables and make every tray reshapeable (drag
    * points, add/remove bends). A toggle, not per-tray. */
   trayEditMode?: boolean
@@ -304,6 +325,30 @@ export interface FloorCanvasProps {
   className?: string
 }
 
+/** What the right-click menu offers on structure, at the point pressed. */
+export interface StructureActions {
+  addDoorAt?: (wallId: string, seg: number, t: number) => void
+  addBendAt?: (id: string, seg: number, t: number) => void
+  splitAt?: (id: string, seg: number, t: number) => void
+  join?: (aId: string, bId: string) => void
+  flipDoor?: (wallId: string, index: number) => void
+  deleteDoor?: (wallId: string, index: number) => void
+  deleteRow?: (id: string) => void
+  /** Walls round these areas. */
+  wallsAround?: (areaIds: string[]) => void
+}
+
+/** What a right-click on structure hit. */
+type StructMenu = {
+  x: number
+  y: number
+  id: string
+  part: StructShape["part"]
+  seg?: number
+  t?: number
+  door?: number
+}
+
 /** What a right-click on empty plan space offers, at its cell point. */
 export interface EmptyActions {
   placeAt?: (at: Pt) => void
@@ -330,29 +375,7 @@ type DragState =
   | { mode: "paint"; start: CellPoint; end: CellPoint }
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
   | { mode: "snapshot"; start: CellPoint; end: CellPoint }
-  | { mode: "area-move"; id: string; grabDx: number; grabDy: number }
-  | { mode: "area-resize"; id: string; origin: CellPoint }
-  | {
-      mode: "tray-move"
-      id: string
-      grab: [number, number]
-      orig: [number, number][]
-      moved: boolean
-    }
-  | {
-      mode: "tray-vertex"
-      id: string
-      index: number
-      moved: boolean
-      inserted?: boolean
-    }
-  | {
-      mode: "wall-move"
-      id: string
-      grab: [number, number]
-      orig: [number, number][]
-      moved: boolean
-    }
+
 
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
@@ -371,13 +394,21 @@ export function FloorCanvas({
   raisedFloors,
   selectedAreaId,
   onSelectArea,
-  onAreaRectChange,
   walls = [],
   selectedWallId = null,
   onSelectWall,
-  onMoveWall,
   doorArmed = false,
-  onPlaceDoor,
+  structure = NO_STRUCT,
+  onCommitStructure,
+  onAddDoor,
+  selectedDoor = null,
+  onSelectDoor,
+  structSel,
+  onToggleStruct,
+  structureActions,
+  structureToolbar,
+  areaSel,
+  onToggleArea,
   onSelect,
   multiSelectedIds,
   onToggleSelect,
@@ -409,7 +440,6 @@ export function FloorCanvas({
   drawPoints,
   onAddDrawPoint,
   onFinishDraw,
-  onMoveTray,
   trayEditMode = false,
   trayPick,
   cablePaths = NO_CABLES,
@@ -454,32 +484,18 @@ export function FloorCanvas({
   // Point-pick mode: where the press started, to tell a click from a pan.
   const pickStart = useRef<{ x: number; y: number } | null>(null)
   const paintPreview = useRef<SVGRectElement>(null)
-  // Structure mode: the area being dragged/resized, rendered over the query
-  // data until release commits it (server validates overlap/bounds).
-  const [areaDraft, setAreaDraft] = useState<{
-    id: string
-    x: number
-    y: number
-    width: number
-    height: number
-  } | null>(null)
   const drawPreview = useRef<SVGPolylineElement>(null)
-  // Live points of the tray being dragged/reshaped (null = none).
-  const [trayDraft, setTrayDraft] = useState<{
-    id: string
-    points: [number, number][]
-  } | null>(null)
-  // Live points of the wall being moved (whole-run translate).
-  const [wallDraft, setWallDraft] = useState<{
-    id: string
-    points: [number, number][]
-  } | null>(null)
+  // A hint beside the handle under the pointer: what dragging it does.
+  const [hint, setHint] = useState<{ text: string; x: number; y: number } | null>(
+    null
+  )
+  // A right-click on a wall, door, tray or raised floor.
+  const [structMenu, setStructMenu] = useState<StructMenu | null>(null)
   // Right-click menu: screen-relative position + what's under the cursor.
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
     y: number
     tile: FloorPlanTile | null
-    vertex?: { trayId: string; index: number }
     /** The cell point right-clicked. */
     at?: Pt
   } | null>(null)
@@ -577,6 +593,32 @@ export function FloorCanvas({
       startPan(e)
     },
   })
+  const structG = useStructureGestures({
+    svgRef,
+    toWorld,
+    zoom: t.k,
+    plan,
+    structure,
+    editable,
+    onCommit: onCommitStructure,
+    onAddDoor,
+    onSelectDoor,
+  })
+  const shownRow = <R extends { id: string }>(r: R): R =>
+    (structG.preview.rows.get(r.id) as R | undefined) ?? r
+  const structRow = (id: string) => {
+    const r = structure.find((x) => x.id === id)
+    return r ? shownRow(r) : undefined
+  }
+  const showHint = (text: string | null, e?: React.PointerEvent) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!text || !e || !rect || structG.active() || drag.current) {
+      setHint(null)
+      return
+    }
+    setHint({ text, x: e.clientX - rect.left, y: e.clientY - rect.top - 10 })
+  }
+  const structLive = editable && !drawing
   // Right-click on an area, a label or a polygon's point.
   const [shapeMenu, setShapeMenu] = useState<{
     x: number
@@ -781,6 +823,7 @@ export function FloorCanvas({
       onSelect?.(null)
       onSelectArea?.(null)
       onSelectWall?.(null)
+      onSelectDoor?.(null)
       onSelectCable?.(null)
       onSelectShape?.(null)
     }
@@ -866,13 +909,9 @@ export function FloorCanvas({
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-  // Raw pointer position in cell units (no snapping) - for whole-tray moves.
-  const toCellRaw = (e: React.PointerEvent): [number, number] => {
-    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
-    return [w.x / CELL, w.y / CELL]
-  }
 
-  // Grab a tray body → select it; in edit mode, arm a whole-tray move.
+  // Grab a tray body → select it (Shift or Ctrl/⌘: pick it to join) and
+  // drag it whole.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
     if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
@@ -880,33 +919,19 @@ export function FloorCanvas({
       trayPick.onPick(tray.id)
       return
     }
-    // A tray of the unsaved draft (a kept run) is not edited here.
-    if (tray.id.startsWith("new-")) return
-    onSelectTray?.(tray.id)
-    if (!editable || !trayEditMode) return
-    drag.current = {
-      mode: "tray-move",
-      id: tray.id,
-      grab: toCellRaw(e),
-      orig: tray.points.map((p) => [p[0], p[1]]),
-      moved: false,
+    // A run "After placing" kept (not yet a tray of the draft) is not
+    // edited here.
+    const row = structRow(tray.id)
+    if (!row || row.part !== "tray") return
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && onToggleStruct) {
+      onToggleStruct(row.id)
+      return
     }
-    e.currentTarget.setPointerCapture(e.pointerId)
+    onSelectTray?.(tray.id)
+    structG.runDown(row, e)
   }
 
-  // Grab a selected tray's vertex → reshape that point.
-  const handleVertexDown = (
-    tray: FloorPlanTray,
-    index: number,
-    e: React.PointerEvent
-  ) => {
-    if (e.button !== 0 || !editable) return
-    e.stopPropagation()
-    drag.current = { mode: "tray-vertex", id: tray.id, index, moved: false }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-
-  // Click a segment's "+" handle → insert a bend there, then drag it.
+  // "+" in tray edit mode: a bend in the middle of the segment, at once.
   const handleInsertBend = (
     tray: FloorPlanTray,
     segIndex: number,
@@ -914,70 +939,45 @@ export function FloorCanvas({
   ) => {
     if (e.button !== 0 || !editable) return
     e.stopPropagation()
-    const a = tray.points[segIndex]
-    const b = tray.points[segIndex + 1]
-    const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-    const points = [
-      ...tray.points.slice(0, segIndex + 1),
-      mid,
-      ...tray.points.slice(segIndex + 1),
-    ]
-    setTrayDraft({ id: tray.id, points })
-    drag.current = {
-      mode: "tray-vertex",
-      id: tray.id,
-      index: segIndex + 1,
-      moved: false,
-      inserted: true,
-    }
-    e.currentTarget.setPointerCapture(e.pointerId)
-  }
-
-  // Remove a vertex (keeps a tray at ≥2 points).
-  const removeVertex = (trayId: string, index: number) => {
-    const tray = trays.find((x) => x.id === trayId)
-    if (!tray || tray.points.length <= 2) return
-    onMoveTray?.(
-      trayId,
-      tray.points.filter((_, i) => i !== index)
+    const row = structRow(tray.id)
+    if (!row || row.part !== "tray") return
+    const a = row.points[segIndex]
+    const b = row.points[segIndex + 1]
+    structureActions?.addBendAt?.(
+      row.id,
+      segIndex,
+      Math.hypot(b[0] - a[0], b[1] - a[1]) / 2
     )
   }
 
-  // Grab a wall body → select it; in Structure mode, arm a whole-run move.
+  // Grab a wall body → select it (Shift or Ctrl/⌘: pick it to join) and
+  // drag it whole.
   const handleWallDown = (wall: FloorPlanWall, e: React.PointerEvent) => {
     if (e.button !== 0 || isLocked(wall.id)) return
     e.stopPropagation()
-    onSelectWall?.(wall.id)
-    if (!editable) return
-    drag.current = {
-      mode: "wall-move",
-      id: wall.id,
-      grab: toCellRaw(e),
-      orig: wall.points.map((p) => [p[0], p[1]]),
-      moved: false,
+    const row = structRow(wall.id)
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && onToggleStruct && row) {
+      onToggleStruct(wall.id)
+      return
     }
+    onSelectWall?.(wall.id)
+    onSelectDoor?.(null)
+    if (row && row.part === "wall") structG.runDown(row, e)
   }
 
-  // Armed door placement: project the click onto the segment → cells along it.
-  const handleWallSegmentClick = (
-    wall: FloorPlanWall,
+  /** Where the pointer falls along segment `seg` of a run, in cells. */
+  const tAlong = (
+    points: [number, number][],
     seg: number,
-    e: React.PointerEvent
+    e: { clientX: number; clientY: number }
   ) => {
-    if (!doorArmed || !onPlaceDoor) return
-    e.stopPropagation()
-    const [cx, cy] = toCellRaw(e)
-    const [ax, ay] = wall.points[seg]
-    const [bx, by] = wall.points[seg + 1]
-    const dx = bx - ax
-    const dy = by - ay
-    const len = Math.hypot(dx, dy)
-    if (len < 1e-9) return
-    const at = Math.max(
-      0,
-      Math.min(len, ((cx - ax) * dx + (cy - ay) * dy) / len)
-    )
-    onPlaceDoor(wall.id, seg, at)
+    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
+    const [ax, ay] = points[seg]
+    const [bx, by] = points[seg + 1]
+    const len = Math.hypot(bx - ax, by - ay) || 1
+    const v =
+      ((w.x / CELL - ax) * (bx - ax) + (w.y / CELL - ay) * (by - ay)) / len
+    return Math.max(0, Math.min(len, v))
   }
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -985,8 +985,9 @@ export function FloorCanvas({
       const w = toWorld(svgRef.current, e.clientX, e.clientY)
       pointerAt.current = [w.x / CELL, w.y / CELL]
     }
-    // Areas, labels and free tiles: their own gestures.
+    // Areas, labels and free tiles, and structure: their own gestures.
     if (shapeG.move(e)) return
+    if (structG.move(e)) return
     // Tray drawing: trail a dashed preview from the last vertex to the cursor.
     if (drawPoints) {
       const [cx, cy] = toLattice(e)
@@ -1040,61 +1041,6 @@ export function FloorCanvas({
       const h = Math.max(1, c.y - d.origin.y + 1)
       if (w !== tile.width || h !== tile.height)
         onChangeTile?.(d.id, { width: w, height: h })
-    } else if (d.mode === "tray-move") {
-      // Translate every vertex by the cursor delta, snapped to the 0.5 grid.
-      const [rx, ry] = toCellRaw(e)
-      const dxc = Math.round((rx - d.grab[0]) * 2) / 2
-      const dyc = Math.round((ry - d.grab[1]) * 2) / 2
-      const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
-      const pts = d.orig.map(([x, y]): [number, number] => [
-        clamp(x + dxc, plan.grid_width),
-        clamp(y + dyc, plan.grid_height),
-      ])
-      if (dxc !== 0 || dyc !== 0) d.moved = true
-      setTrayDraft({ id: d.id, points: pts })
-    } else if (d.mode === "tray-vertex") {
-      // Move the grabbed vertex to the (magnetically snapped) cursor.
-      const tray = trays.find((x) => x.id === d.id)
-      if (!tray) return
-      const base = trayDraft?.id === d.id ? trayDraft.points : tray.points
-      const pts = base.map((p): [number, number] => [p[0], p[1]])
-      pts[d.index] = toLattice(e)
-      d.moved = true
-      setTrayDraft({ id: d.id, points: pts })
-    } else if (d.mode === "wall-move") {
-      // Translate every vertex by the cursor delta, snapped to the 0.5 grid.
-      const [rx, ry] = toCellRaw(e)
-      const dxc = Math.round((rx - d.grab[0]) * 2) / 2
-      const dyc = Math.round((ry - d.grab[1]) * 2) / 2
-      const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
-      const pts = d.orig.map(([x, y]): [number, number] => [
-        clamp(x + dxc, plan.grid_width),
-        clamp(y + dyc, plan.grid_height),
-      ])
-      if (dxc !== 0 || dyc !== 0) d.moved = true
-      setWallDraft({ id: d.id, points: pts })
-    } else if (d.mode === "area-move") {
-      const a = raisedFloors?.find((x) => x.id === d.id)
-      if (a) {
-        setAreaDraft({
-          id: a.id,
-          x: Math.max(0, Math.round(c.x - d.grabDx)),
-          y: Math.max(0, Math.round(c.y - d.grabDy)),
-          width: a.width,
-          height: a.height,
-        })
-      }
-    } else if (d.mode === "area-resize") {
-      const a = raisedFloors?.find((x) => x.id === d.id)
-      if (a) {
-        setAreaDraft({
-          id: a.id,
-          x: a.x,
-          y: a.y,
-          width: Math.max(1, Math.round(c.x - d.origin.x)),
-          height: Math.max(1, Math.round(c.y - d.origin.y)),
-        })
-      }
     } else {
       d.end = c
       // Imperative preview - avoids re-rendering every tile per pointermove.
@@ -1112,6 +1058,7 @@ export function FloorCanvas({
 
   const handleUp = (e?: React.PointerEvent) => {
     if (e && shapeG.up(e)) return
+    if (structG.up(e)) return
     const d = drag.current
     drag.current = null
     if (!d) return
@@ -1131,36 +1078,6 @@ export function FloorCanvas({
     } else if (d.mode === "snapshot") {
       paintPreview.current?.setAttribute("visibility", "hidden")
       onSnapshotRect?.(paintRect(d.start, d.end))
-    } else if (d.mode === "area-move" || d.mode === "area-resize") {
-      setAreaDraft((draft) => {
-        if (draft && draft.id === d.id) {
-          const a = raisedFloors?.find((x) => x.id === d.id)
-          const changed =
-            !a ||
-            a.x !== draft.x ||
-            a.y !== draft.y ||
-            a.width !== draft.width ||
-            a.height !== draft.height
-          if (changed)
-            onAreaRectChange?.(d.id, {
-              x: draft.x,
-              y: draft.y,
-              width: draft.width,
-              height: draft.height,
-            })
-        }
-        return null
-      })
-    } else if (d.mode === "tray-move" || d.mode === "tray-vertex") {
-      // Persist a drag, OR a "+"-click that inserted a bend without dragging.
-      const changed = d.moved || (d.mode === "tray-vertex" && d.inserted)
-      if (changed && trayDraft?.id === d.id)
-        onMoveTray?.(d.id, trayDraft.points)
-      setTrayDraft(null)
-    } else if (d.mode === "wall-move") {
-      if (d.moved && wallDraft?.id === d.id)
-        onMoveWall?.(d.id, wallDraft.points)
-      setWallDraft(null)
     }
   }
 
@@ -1169,6 +1086,7 @@ export function FloorCanvas({
   // drag snaps back, and an open undo step closes.
   const cancelDrag = () => {
     shapeG.cancel()
+    structG.cancel()
     const d = drag.current
     drag.current = null
     pickStart.current = null
@@ -1182,9 +1100,6 @@ export function FloorCanvas({
       d.mode === "snapshot"
     )
       paintPreview.current?.setAttribute("visibility", "hidden")
-    setAreaDraft(null)
-    setTrayDraft(null)
-    setWallDraft(null)
   }
 
   // Right-click → a small menu; hit-test which non-zone tile is under it.
@@ -1195,6 +1110,71 @@ export function FloorCanvas({
     const rect = svg.getBoundingClientRect()
     const wx = (e.clientX - rect.left - t.x) / t.k / CELL
     const wy = (e.clientY - rect.top - t.y) / t.k / CELL
+    // Editing: a door, a wall or a tray under the pointer (they draw over
+    // the rest), then a raised floor in Structure mode, get their own menu.
+    if (editable && structureActions) {
+      const slack = 6 / (CELL * t.k)
+      const { walls: wallRows, trays: trayRows, raised } =
+        structureLists(structure)
+      const runHit = (rows: RunRow[], extra: (r: RunRow) => number) => {
+        let best: { row: RunRow; seg: number; t: number; d: number } | null =
+          null
+        for (const r of rows) {
+          if (isLocked(r.id)) continue
+          const n = nearestSegment(r.points, [wx, wy])
+          if (n && n.dist <= extra(r) + slack && (!best || n.dist < best.d))
+            best = { row: r, seg: n.seg, t: n.t, d: n.dist }
+        }
+        return best
+      }
+      const trayHit =
+        showTrays && mode === "cable"
+          ? runHit(trayRows, () => 5 / CELL)
+          : null
+      const wallHit = runHit(
+        wallRows,
+        (r) => wallStrokePx(r as FloorPlanWall, plan.cell_mm) / 2 / CELL
+      )
+      const hit = trayHit ?? wallHit
+      if (hit) {
+        const door =
+          hit.row.part === "wall"
+            ? hit.row.openings.findIndex(
+                (o) => o.seg === hit.seg && hit.t >= o.from && hit.t <= o.to
+              )
+            : -1
+        setStructMenu({
+          x: e.clientX,
+          y: e.clientY,
+          id: hit.row.id,
+          part: hit.row.part,
+          seg: hit.seg,
+          t: hit.t,
+          door: door >= 0 ? door : undefined,
+        })
+        if (hit.row.part === "wall") {
+          onSelectWall?.(hit.row.id)
+          onSelectDoor?.(door >= 0 ? { wallId: hit.row.id, index: door } : null)
+        } else onSelectTray?.(hit.row.id)
+        return
+      }
+      const rf =
+        mode === "structure"
+          ? raised.find(
+              (r) =>
+                !isLocked(r.id) &&
+                wx >= r.x &&
+                wx <= r.x + r.width &&
+                wy >= r.y &&
+                wy <= r.y + r.height
+            )
+          : undefined
+      if (rf) {
+        setStructMenu({ x: e.clientX, y: e.clientY, id: rf.id, part: rf.part })
+        onSelectArea?.(rf.id)
+        return
+      }
+    }
     // Editing: a label or an area under the pointer gets its own menu
     // (forward, back, delete) - labels first, they draw on top.
     if (editable && mode === "layout") {
@@ -1422,6 +1402,7 @@ export function FloorCanvas({
           pickStart.current = null
           pointerAt.current = null
           setOpensHint(null)
+          setHint(null)
           if (pinchUp(e)) return
           handleUp(e)
         }}
@@ -1435,6 +1416,7 @@ export function FloorCanvas({
             (armed && editable) ||
             snapshotting ||
             drawing ||
+            (doorArmed && editable && mode === "structure") ||
             onPickPoint ||
             (editable && mode === "layout" && shapeTool)
               ? "crosshair"
@@ -1502,52 +1484,32 @@ export function FloorCanvas({
           {/* Raised-floor areas - construction context under everything.
               Interactive (selectable) only in Structure mode. */}
           {(raisedFloors ?? []).map((raw) => {
-            // While dragging/resizing, render the draft rect instead.
-            const a =
-              areaDraft && areaDraft.id === raw.id
-                ? { ...raw, ...areaDraft }
-                : raw
+            // While dragged or resized, as it will drop.
+            const a = shownRow(raw)
             const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
             // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
             const labelFits = a.width * CELL - 12 >= labelText.length * 5.6
+            const live = mode === "structure" && !isLocked(a.id) && !drawing
             return (
               <g
                 key={a.id}
+                data-raised={a.id}
                 opacity={isLocked(a.id) ? LOCKED_OPACITY : undefined}
                 onPointerDown={
-                  isLocked(a.id)
-                    ? undefined
-                    : mode === "structure" && editable
-                      ? (e) => {
-                          if (e.button !== 0) return
-                          e.stopPropagation()
-                          onSelectArea?.(a.id)
-                          e.currentTarget.setPointerCapture(e.pointerId)
-                          const c = toCell(e)
-                          drag.current = {
-                            mode: "area-move",
-                            id: a.id,
-                            grabDx: c.x - a.x,
-                            grabDy: c.y - a.y,
-                          }
-                        }
-                      : mode === "structure"
-                        ? (e) => {
-                            e.stopPropagation()
-                            onSelectArea?.(a.id)
-                          }
-                        : undefined
+                  live
+                    ? (e) => {
+                        if (e.button !== 0) return
+                        e.stopPropagation()
+                        onSelectArea?.(a.id)
+                        const row = structRow(a.id)
+                        if (row?.part === "raised_floor") structG.rectDown(row, e)
+                      }
+                    : undefined
                 }
                 style={{
-                  cursor:
-                    mode === "structure"
-                      ? editable
-                        ? "move"
-                        : "pointer"
-                      : undefined,
-                  pointerEvents:
-                    mode === "structure" && !isLocked(a.id) ? "auto" : "none",
+                  cursor: live ? (editable ? "move" : "pointer") : undefined,
+                  pointerEvents: live ? "auto" : "none",
                 }}
               >
                 <rect
@@ -1574,30 +1536,6 @@ export function FloorCanvas({
                     {labelText}
                   </text>
                 )}
-                {mode === "structure" &&
-                  editable &&
-                  a.id === selectedAreaId && (
-                    // Bottom-right resize grip, same drag pattern as tiles.
-                    <rect
-                      x={(a.x + a.width) * CELL - 7}
-                      y={(a.y + a.height) * CELL - 7}
-                      width={10}
-                      height={10}
-                      rx={2}
-                      fill={a.color || "#71717a"}
-                      style={{ cursor: "nwse-resize" }}
-                      onPointerDown={(e) => {
-                        if (e.button !== 0) return
-                        e.stopPropagation()
-                        e.currentTarget.setPointerCapture(e.pointerId)
-                        drag.current = {
-                          mode: "area-resize",
-                          id: a.id,
-                          origin: { x: a.x, y: a.y },
-                        }
-                      }}
-                    />
-                  )}
               </g>
             )
           })}
@@ -1613,7 +1551,20 @@ export function FloorCanvas({
                 selected={a.id === selectedShapeId}
                 zoom={t.k}
                 interactive={shapesLive && !isLocked(a.id)}
-                onPointerDown={(e) => shapeG.shapeDown(a, e)}
+                multiSelected={!!areaSel?.has(a.id)}
+                onPointerDown={(e) => {
+                  if (
+                    editable &&
+                    onToggleArea &&
+                    e.button === 0 &&
+                    (e.ctrlKey || e.metaKey)
+                  ) {
+                    e.stopPropagation()
+                    onToggleArea(a.id)
+                    return
+                  }
+                  shapeG.shapeDown(a, e)
+                }}
                 onEdgeDoubleClick={
                   editable && a.id === selectedShapeId
                     ? (seg, e) => shapeG.addVertex(a.id, seg, e)
@@ -1644,23 +1595,40 @@ export function FloorCanvas({
           {/* Walls - the structural print, in every mode: solid spans broken
               by door gaps with threshold ticks. Interactive (select / move /
               place doors) only in Structure mode. */}
-          {walls.map((w) => (
-            <WallShape
-              key={w.id}
-              wall={
-                wallDraft?.id === w.id ? { ...w, points: wallDraft.points } : w
-              }
-              cellMM={plan.cell_mm}
-              selected={w.id === selectedWallId}
-              interactive={mode === "structure" && !drawing && !isLocked(w.id)}
-              editable={
-                editable && mode === "structure" && !drawing && !isLocked(w.id)
-              }
-              doorArmed={doorArmed}
-              onPointerDown={(e) => handleWallDown(w, e)}
-              onSegmentClick={(seg, e) => handleWallSegmentClick(w, seg, e)}
-            />
-          ))}
+          {walls.map((w) => {
+            const live = mode === "structure" && !drawing && !isLocked(w.id)
+            return (
+              <WallShape
+                key={w.id}
+                wall={shownRow(w)}
+                cellMM={plan.cell_mm}
+                selected={w.id === selectedWallId || !!structSel?.has(w.id)}
+                interactive={live}
+                doorArmed={doorArmed && editable}
+                selectedDoor={
+                  selectedDoor?.wallId === w.id ? selectedDoor.index : null
+                }
+                onBodyDown={(_seg, e) => handleWallDown(w, e)}
+                onSegmentDown={(seg, e) => {
+                  const row = structRow(w.id)
+                  if (!row || row.part !== "wall") return
+                  onSelectWall?.(w.id)
+                  structG.doorDrawDown(row, seg, e)
+                }}
+                onSegmentDoubleClick={(seg, e) => {
+                  if (!editable) return
+                  e.stopPropagation()
+                  structureActions?.splitAt?.(w.id, seg, tAlong(w.points, seg, e))
+                }}
+                onDoorDown={(index, e) => {
+                  if (e.button !== 0) return
+                  e.stopPropagation()
+                  onSelectWall?.(w.id)
+                  structG.doorSlideDown(w.id, index, e)
+                }}
+              />
+            )
+          })}
 
           {/* Cable trays - drawn above tiles so the run reads on a builder's
               print. Clickable only in cable mode so layout editing is undisturbed. */}
@@ -1672,51 +1640,31 @@ export function FloorCanvas({
               return (
                 <TrayShape
                   key={tray.id}
-                  tray={
-                    trayDraft?.id === tray.id
-                      ? { ...tray, points: trayDraft.points }
-                      : tray
-                  }
+                  tray={shownRow(tray)}
                   selected={
                     trayPick
                       ? trayPick.picked.includes(tray.id)
-                      : tray.id === selectedTrayId
+                      : tray.id === selectedTrayId || !!structSel?.has(tray.id)
                   }
                   interactive={
                     trayPick
                       ? !isLocked(tray.id)
-                      : mode === "cable" &&
-                        !drawing &&
-                        !isLocked(tray.id) &&
-                        !tray.id.startsWith("new-")
+                      : mode === "cable" && !drawing && !isLocked(tray.id)
                   }
-                  editable={
-                    editable &&
-                    !trayPick &&
-                    mode === "cable" &&
-                    !drawing &&
-                    trayEditMode &&
-                    !isLocked(tray.id) &&
-                    !tray.id.startsWith("new-")
-                  }
-                  editing={isEditing}
+                  editable={false}
+                  editing={isEditing && editable}
                   dimmed={isLocked(tray.id)}
                   onPointerDown={(e) => handleTrayDown(tray, e)}
-                  onDoubleClick={() => onSelectTray?.(tray.id)}
-                  onVertexDown={(index, e) => handleVertexDown(tray, index, e)}
-                  onInsertBend={(seg, e) => handleInsertBend(tray, seg, e)}
-                  onVertexContext={(index, ev) => {
-                    ev.preventDefault()
-                    ev.stopPropagation()
-                    const rect = svgRef.current?.getBoundingClientRect()
-                    if (!rect) return
-                    setCtxMenu({
-                      x: ev.clientX - rect.left,
-                      y: ev.clientY - rect.top,
-                      tile: null,
-                      vertex: { trayId: tray.id, index },
-                    })
+                  onDoubleClick={(e) => {
+                    const row = structRow(tray.id)
+                    if (!editable || !row || row.part !== "tray") return
+                    const w = toWorld(svgRef.current!, e.clientX, e.clientY)
+                    const n = nearestSegment(row.points, [w.x / CELL, w.y / CELL])
+                    if (n) structureActions?.splitAt?.(row.id, n.seg, n.t)
                   }}
+                  onVertexDown={() => {}}
+                  onInsertBend={(seg, e) => handleInsertBend(tray, seg, e)}
+                  onVertexContext={() => {}}
                 />
               )
             })}
@@ -1819,6 +1767,68 @@ export function FloorCanvas({
           )}
           <DrawPreview gestures={shapeG} width={gw} height={gh} zoom={t.k} />
 
+          {/* The selected wall's, tray's, raised floor's or door's handles. */}
+          {structLive &&
+            (() => {
+              const out: React.ReactNode[] = []
+              const run =
+                mode === "structure" && selectedWallId && !selectedDoor
+                  ? structRow(selectedWallId)
+                  : mode === "cable" && selectedTrayId && !trayPick
+                    ? structRow(selectedTrayId)
+                    : undefined
+              if (run && run.part !== "raised_floor" && !isLocked(run.id))
+                out.push(
+                  <RunHandles
+                    key="run"
+                    row={run}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                  />
+                )
+              const rf =
+                mode === "structure" && selectedAreaId
+                  ? structRow(selectedAreaId)
+                  : undefined
+              if (rf?.part === "raised_floor" && !isLocked(rf.id))
+                out.push(
+                  <RectHandles
+                    key="rf"
+                    row={rf}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                  />
+                )
+              const dw =
+                mode === "structure" && selectedDoor
+                  ? structRow(selectedDoor.wallId)
+                  : undefined
+              if (dw?.part === "wall" && selectedDoor && !isLocked(dw.id))
+                out.push(
+                  <DoorHandles
+                    key="door"
+                    wall={dw}
+                    index={selectedDoor.index}
+                    zoom={t.k}
+                    gestures={structG}
+                    hint={showHint}
+                    onFlip={() =>
+                      structureActions?.flipDoor?.(dw.id, selectedDoor.index)
+                    }
+                  />
+                )
+              return out
+            })()}
+          <StructureOverlay
+            preview={structG.preview}
+            walls={structureLists(structure).walls}
+            zoom={t.k}
+            width={gw}
+            height={gh}
+          />
+
           {/* In-progress tray preview (imperatively positioned) */}
           {drawing && (
             <polyline
@@ -1853,10 +1863,38 @@ export function FloorCanvas({
 
       {/* The floating toolbar, just above the selection. */}
       {(() => {
-        if (!selectionToolbar || !editable || mode !== "layout" || shapeTool)
-          return null
+        if (!editable || shapeTool || drawing) return null
         let b: ReturnType<typeof boxBounds> | null = null
-        if (selectedShape) b = shapeBounds(selectedShape, plan.cell_mm)
+        if (mode !== "layout") {
+          if (!structureToolbar || structG.active()) return null
+          const id =
+            selectedDoor?.wallId ??
+            (mode === "structure"
+              ? (selectedWallId ?? selectedAreaId)
+              : selectedTrayId)
+          const r = id ? structRow(id) : undefined
+          if (!r) return null
+          b =
+            r.part === "raised_floor"
+              ? {
+                  minX: r.x,
+                  minY: r.y,
+                  maxX: r.x + r.width,
+                  maxY: r.y + r.height,
+                }
+              : pointsBoundsOf(r.points)
+        } else if (!selectionToolbar) return null
+        else if (areaSel && areaSel.size > 1) {
+          const picked = shapes.filter((s) => areaSel.has(s.id))
+          const all = picked.map((s) => shapeBounds(s, plan.cell_mm))
+          if (all.length)
+            b = {
+              minX: Math.min(...all.map((x) => x.minX)),
+              minY: Math.min(...all.map((x) => x.minY)),
+              maxX: Math.max(...all.map((x) => x.maxX)),
+              maxY: Math.max(...all.map((x) => x.maxY)),
+            }
+        } else if (selectedShape) b = shapeBounds(selectedShape, plan.cell_mm)
         else if (selectedId && !multiSelectedIds?.size) {
           const tl = tiles.find((x) => x.id === selectedId)
           if (tl) b = boxBounds(tileBox(tl))
@@ -1872,7 +1910,7 @@ export function FloorCanvas({
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {selectionToolbar}
+            {mode === "layout" ? selectionToolbar : structureToolbar}
           </div>
         )
       })()}
@@ -1887,6 +1925,112 @@ export function FloorCanvas({
           {opensHint.text}
         </div>
       )}
+
+      {/* What dragging the handle under the pointer does. */}
+      {hint && (
+        <Tooltip open>
+          <TooltipTrigger asChild>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute"
+              style={{ left: hint.x, top: hint.y }}
+            />
+          </TooltipTrigger>
+          <TooltipContent side="top" variant="default">
+            {hint.text}
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* A wall's, door's, tray's or raised floor's menu. */}
+      <PointerMenu
+        menu={structMenu}
+        onClose={() => setStructMenu(null)}
+        label="Structure"
+        keys={(m) => ({
+          Delete: () =>
+            m.door !== undefined
+              ? structureActions?.deleteDoor?.(m.id, m.door)
+              : structureActions?.deleteRow?.(m.id),
+        })}
+      >
+        {(m) => {
+          const a = structureActions
+          if (!a) return null
+          const item = (label: string, fn?: () => void, destructive = false) =>
+            fn ? (
+              <DropdownMenuItem
+                key={label}
+                variant={destructive ? "destructive" : undefined}
+                onSelect={fn}
+              >
+                {label}
+              </DropdownMenuItem>
+            ) : null
+          if (m.part === "raised_floor")
+            return item(
+              "Delete raised floor",
+              a.deleteRow && (() => a.deleteRow!(m.id)),
+              true
+            )
+          if (m.door !== undefined) {
+            const door = m.door
+            return (
+              <>
+                {item(
+                  "Flip swing",
+                  a.flipDoor && (() => a.flipDoor!(m.id, door))
+                )}
+                <DropdownMenuSeparator />
+                {item(
+                  "Delete door",
+                  a.deleteDoor && (() => a.deleteDoor!(m.id, door)),
+                  true
+                )}
+              </>
+            )
+          }
+          const seg = m.seg ?? 0
+          const at = m.t ?? 0
+          const row = structure.find((r) => r.id === m.id)
+          // The other run picked, when the two meet end to end.
+          const mate =
+            row && row.part !== "raised_floor" && structSel
+              ? structure.find(
+                  (r) =>
+                    r.id !== row.id &&
+                    structSel.has(r.id) &&
+                    r.part === row.part &&
+                    runsTouch(r as RunRow, row)
+                )
+              : undefined
+          return (
+            <>
+              {m.part === "wall" &&
+                item(
+                  "Add door here",
+                  a.addDoorAt && (() => a.addDoorAt!(m.id, seg, at))
+                )}
+              {item(
+                "Add bend here",
+                a.addBendAt && (() => a.addBendAt!(m.id, seg, at))
+              )}
+              {item("Split here", a.splitAt && (() => a.splitAt!(m.id, seg, at)))}
+              {mate &&
+                item(
+                  m.part === "wall" ? "Join walls" : "Join trays",
+                  a.join && (() => a.join!(mate.id, m.id))
+                )}
+              <DropdownMenuSeparator />
+              {item(
+                m.part === "wall" ? "Delete wall" : "Delete tray",
+                a.deleteRow && (() => a.deleteRow!(m.id)),
+                true
+              )}
+            </>
+          )
+        }}
+      </PointerMenu>
 
       {/* An area's or label's menu, and a polygon point's. */}
       <PointerMenu
@@ -1928,6 +2072,21 @@ export function FloorCanvas({
               {s.kind === "area" && onSnapshotShape && (
                 <DropdownMenuItem onSelect={() => onSnapshotShape(s.id)}>
                   {snapshotAreaLabel(s)}
+                </DropdownMenuItem>
+              )}
+              {s.kind === "area" && structureActions?.wallsAround && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const ids =
+                      areaSel && areaSel.size > 1 && areaSel.has(s.id)
+                        ? [...areaSel]
+                        : [s.id]
+                    structureActions.wallsAround!(ids)
+                  }}
+                >
+                  {areaSel && areaSel.size > 1 && areaSel.has(s.id)
+                    ? `Add walls around these (${areaSel.size})`
+                    : "Add walls around this"}
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -1974,7 +2133,6 @@ export function FloorCanvas({
             className="w-auto min-w-40"
           >
             {!ctxMenu.tile &&
-              !ctxMenu.vertex &&
               ctxMenu.at &&
               emptyActions &&
               (() => {
@@ -2006,16 +2164,6 @@ export function FloorCanvas({
                   </>
                 )
               })()}
-            {ctxMenu.vertex && (
-              <DropdownMenuItem
-                onSelect={() => {
-                  removeVertex(ctxMenu.vertex!.trayId, ctxMenu.vertex!.index)
-                  setCtxMenu(null)
-                }}
-              >
-                Remove bend
-              </DropdownMenuItem>
-            )}
             {ctxMenu.tile && (
               <>
                 <DropdownMenuLabel className="truncate">

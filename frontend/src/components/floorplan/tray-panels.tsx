@@ -128,8 +128,11 @@ export function TrayInspector({
   onHighlightCable,
   onPatch,
   onDelete,
+  saved = true,
 }: {
   tray: FloorPlanTray
+  /** On the server: a new tray takes cables once the plan is saved. */
+  saved?: boolean
   highlightCableId: string | null
   editing: boolean
   onEditShape: () => void
@@ -161,7 +164,7 @@ export function TrayInspector({
         onClick={onEditShape}
       >
         <Spline className="h-3.5 w-3.5" />
-        {editing ? "Done editing shape" : "Edit shape (add bends, move)"}
+        {editing ? "Done editing shape" : "Edit shape"}
       </Button>
 
       <Field label="Name">
@@ -224,7 +227,9 @@ export function TrayInspector({
           Cables in this tray
         </span>
         {tray.cables.length === 0 && (
-          <p className="text-xs text-muted-foreground">None assigned yet.</p>
+          <p className="text-xs text-muted-foreground">
+            {saved ? "None assigned yet." : "Save the plan to add cables."}
+          </p>
         )}
         <ul className="grid gap-1">
           {tray.cables.map((c) => (
@@ -272,12 +277,14 @@ export function TrayInspector({
             </li>
           ))}
         </ul>
-        <CableAdd
-          excludeIds={tray.cables.map((c) => c.id)}
-          onAdd={(cableId) =>
-            onPatch({ cable_ids: [...tray.cables.map((c) => c.id), cableId] })
-          }
-        />
+        {saved && (
+          <CableAdd
+            excludeIds={tray.cables.map((c) => c.id)}
+            onAdd={(cableId) =>
+              onPatch({ cable_ids: [...tray.cables.map((c) => c.id), cableId] })
+            }
+          />
+        )}
       </div>
 
       <div className="mt-auto border-t border-border pt-3">

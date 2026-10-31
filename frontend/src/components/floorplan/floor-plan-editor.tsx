@@ -93,6 +93,8 @@ import { usePlanMutations } from "./use-plan-mutations"
 import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
 import { useStructureEdits } from "./use-structure-edits"
+import { structureLists } from "./structure"
+import { StructureToolbar } from "./structure-toolbar"
 import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
 import { shownLink } from "./shown-link"
 
@@ -127,7 +129,7 @@ export function FloorPlanEditor({
 
   const data = useFloorPlanData(id)
   const { planQuery, plan, tileTypes, roles, liveState, popoverCfg } = data
-  const { trays, areas, walls, cablePaths } = data
+  const { cablePaths } = data
   // Trays crossing at different heights do not join (cable-route.ts).
   const ceilingMm = plan?.ceiling_mm
   usePageTitle(
@@ -146,7 +148,31 @@ export function FloorPlanEditor({
   } = search
   const view3d = vizParam === "3d"
 
-  const ed = usePlanEditState(id, data.serverTiles, data.serverShapes)
+  const ed = usePlanEditState(
+    id,
+    data.serverTiles,
+    data.serverShapes,
+    data.serverStructure
+  )
+  // Walls, trays and raised floors as the draft holds them.
+  const { walls, trays: draftTrays, raised: areas } = useMemo(
+    () => structureLists(ed.structure),
+    [ed.structure]
+  )
+  // A tray's cables are written at once, outside the draft: shown as the
+  // server has them, unless the draft changed them (a join).
+  const trays = useMemo(() => {
+    const server = new Map(data.trays.map((t) => [t.id, t]))
+    return draftTrays.map((t) => {
+      const srv = server.get(t.id)
+      if (!srv || ed.dirtyIds.has(t.id)) return t
+      return {
+        ...t,
+        cables: srv.cables,
+        hidden_cable_count: srv.hidden_cable_count,
+      }
+    })
+  }, [draftTrays, data.trays, ed.dirtyIds])
   const { tiles, isDirty, selectedId, setSelectedId } = ed
   // An area opened while viewing (its room in the map panel).
   const [openArea, setOpenArea] = useState<string | null>(null)
@@ -209,7 +235,12 @@ export function FloorPlanEditor({
   const prefs = usePlanViewPrefs({ id, plan, canEdit, patchPlan })
   const { hidden, setHiddenPref, colorBy, showRacks, showObjects } = prefs
   const edits = useTileEdits({ id, plan, ed })
-  const structure = useStructureEdits({ id, plan, walls, ed })
+  const structure = useStructureEdits({
+    id,
+    plan,
+    ed,
+    onVersion: edits.rebaseVersion,
+  })
   const rawShapeEdits = useShapeEdits({ plan, ed })
   // Deleting an area or label with a Back button asks about its label on
   // the other plan first.
@@ -302,6 +333,11 @@ export function FloorPlanEditor({
       ed.setSelectedAreaId(null)
       ed.setAreaArmed(false)
       ed.setMultiSel(new Set())
+      ed.setSelectedWallId(null)
+      ed.setSelectedDoor(null)
+      ed.setDoorArmed(false)
+      ed.setStructSel(new Set())
+      ed.setAreaSel(new Set())
       // Leaving the trays must exit tray-edit - otherwise Layout stays
       // frozen (tiles unselectable, cables hidden).
       ed.setTrayEditMode(false)
@@ -549,7 +585,8 @@ export function FloorPlanEditor({
     const local =
       c.kind === "tile"
         ? tiles.find((t) => t.id === c.id)
-        : ed.shapes.find((sh) => sh.id === c.id)
+        : (ed.shapes.find((sh) => sh.id === c.id) ??
+          ed.structure.find((r) => r.id === c.id))
     const row = (local ?? c.current) as unknown as Record<
       string,
       unknown
@@ -558,9 +595,14 @@ export function FloorPlanEditor({
     const linked = row.linked as { name?: string } | null | undefined
     return (
       (row.label as string) ||
+      (c.kind === "tray" ? (row.name as string) : "") ||
       linked?.name ||
       (row.text as string) ||
       ((row.room as { name?: string } | null)?.name ?? "") ||
+      ({ wall: "Wall", tray: "Tray", raised_floor: "Raised floor" } as Record<
+        string,
+        string
+      >)[c.kind] ||
       c.kind
     )
   }
@@ -968,6 +1010,38 @@ export function FloorPlanEditor({
                     onDeleteShape={shapeEdits.deleteShape}
                     onSnapshotShape={snapshotShape}
                     onShapeBackLabel={setBackLabel}
+                    onWallsAround={liveView ? undefined : structure.wallsAroundAreas}
+                    areaPicks={[...ed.areaSel]}
+                  />
+                ) : undefined
+              }
+              structureToolbar={
+                editing ? (
+                  <StructureToolbar
+                    row={
+                      ed.structure.find(
+                        (r) =>
+                          r.id ===
+                          (ed.selectedDoor?.wallId ??
+                            (ed.mode === "structure"
+                              ? (ed.selectedWallId ?? ed.selectedAreaId)
+                              : ed.selectedTrayId))
+                      ) ?? null
+                    }
+                    door={ed.selectedDoor?.index ?? null}
+                    picked={ed.structure.filter((r) => ed.structSel.has(r.id))}
+                    doorArmed={ed.doorArmed || ed.tool === "door"}
+                    onArmDoor={() => ed.setDoorArmed((v) => !v)}
+                    onFlipDoor={(i) =>
+                      ed.selectedDoor &&
+                      structure.flipDoor(ed.selectedDoor.wallId, i)
+                    }
+                    onDeleteDoor={(i) =>
+                      ed.selectedDoor &&
+                      structure.deleteDoor(ed.selectedDoor.wallId, i)
+                    }
+                    onJoin={structure.join}
+                    onDelete={structure.deleteRow}
                   />
                 ) : undefined
               }
@@ -1187,7 +1261,11 @@ export function FloorPlanEditor({
         confirmLabel="Discard"
         destructive
         onConfirm={() => {
-          ed.draft.load(data.serverTiles ?? [], data.serverShapes ?? [])
+          ed.draft.load(
+            data.serverTiles ?? [],
+            data.serverShapes ?? [],
+            data.serverStructure ?? []
+          )
           setLeaveEditOpen(false)
           selectTool("select")
           setEdit(false)

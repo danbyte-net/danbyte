@@ -42,6 +42,7 @@ export function WallMesh({
     [wall.points, wall.openings, heightM]
   )
   const tint = wall.color || WALL_COLOR
+  const thick = wall.thickness_mm ? wall.thickness_mm / 1000 : WALL_THICKNESS_M
   const ghost = mode === "ghost"
   return (
     <group>
@@ -61,7 +62,7 @@ export function WallMesh({
             receiveShadow={!ghost}
           >
             <boxGeometry
-              args={[len + WALL_THICKNESS_M, b.y1 - b.y0, WALL_THICKNESS_M]}
+              args={[len + thick, b.y1 - b.y0, thick]}
             />
             {/* ONE material element, keyed by mode, every mode-dependent prop
                 explicit. A solid/ghost ternary of the same element type is

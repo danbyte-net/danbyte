@@ -669,7 +669,10 @@ function tileMarkup(
 function wallMarkup(wall: FloorPlanWall, cellMm: number): string {
   if (wall.points.length < 2) return ""
   const color = wall.color || PAPER_INK
-  const px = Math.max(3.5, (WALL_THICKNESS_M * 1000 * CELL) / cellMm)
+  const px = Math.max(
+    3.5,
+    ((wall.thickness_mm ?? WALL_THICKNESS_M * 1000) * CELL) / cellMm
+  )
   const solids = wallSegmentsWithOpenings(wall.points, wall.openings, 1).filter(
     (b) => b.y0 === 0
   )

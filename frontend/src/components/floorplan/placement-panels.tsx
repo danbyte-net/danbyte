@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowRight,
+  BrickWall,
   BringToFront,
   Crop,
   DoorOpen,
@@ -438,7 +439,13 @@ export function SelectionToolbar({
   onDeleteShape,
   onSnapshotShape,
   onShapeBackLabel,
+  onWallsAround,
+  areaPicks = [],
 }: {
+  /** Walls round these areas (one, or the ones picked). */
+  onWallsAround?: (areaIds: string[]) => void
+  /** The areas picked with Ctrl/⌘. */
+  areaPicks?: string[]
   /** A shape's Back button label changed on the server. */
   onShapeBackLabel?: (id: string, ref: FloorPlanBackLabelRef | null) => void
   plan: FloorPlan
@@ -456,6 +463,22 @@ export function SelectionToolbar({
   onDeleteShape: (id: string) => void
 }) {
   const free = plan.layout_mode === "free"
+  if (areaPicks.length > 1 && onWallsAround)
+    return (
+      <div
+        role="toolbar"
+        aria-label="Areas"
+        className="flex items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
+      >
+        <BarIconButton
+          label={`Add walls around these (${areaPicks.length})`}
+          tipSide="top"
+          onClick={() => onWallsAround(areaPicks)}
+        >
+          <BrickWall />
+        </BarIconButton>
+      </div>
+    )
   if (tile) {
     const l = shownLink(tile.linked)
     const area =
@@ -581,6 +604,15 @@ export function SelectionToolbar({
         onChange={(patch) => onChangeShape(shape.id, patch)}
         onBackLabel={(ref) => onShapeBackLabel?.(shape.id, ref)}
       />
+      {shape.kind === "area" && onWallsAround && (
+        <BarIconButton
+          label="Add walls around this"
+          tipSide="top"
+          onClick={() => onWallsAround([shape.id])}
+        >
+          <BrickWall />
+        </BarIconButton>
+      )}
       {shape.kind === "area" && onSnapshotShape && (
         <BarIconButton
           label={snapshotAreaLabel(shape)}

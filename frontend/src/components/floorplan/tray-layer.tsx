@@ -28,7 +28,7 @@ export function TrayShape({
   editing: boolean
   dimmed: boolean
   onPointerDown: (e: React.PointerEvent) => void
-  onDoubleClick: () => void
+  onDoubleClick: (e: React.MouseEvent) => void
   onVertexDown: (index: number, e: React.PointerEvent) => void
   onInsertBend: (segIndex: number, e: React.PointerEvent) => void
   onVertexContext: (index: number, e: React.MouseEvent) => void
@@ -46,6 +46,7 @@ export function TrayShape({
 
   return (
     <g
+      data-tray={tray.id}
       opacity={dimmed ? 0.3 : 1}
       onPointerDown={interactive ? onPointerDown : undefined}
       onDoubleClick={interactive ? onDoubleClick : undefined}
@@ -53,13 +54,6 @@ export function TrayShape({
         cursor: interactive ? (editable ? "move" : "pointer") : "default",
       }}
     >
-      <title>
-        {tray.name}
-        {tray.kind ? ` · ${tray.kind}` : ""} · {count} cable
-        {count === 1 ? "" : "s"}
-        {hidden > 0 ? ` · ${hidden} hidden` : ""}
-        {interactive && !editing ? " · double-click to edit shape" : ""}
-      </title>
       {/* Channel body - wide + faint. No centerline: the middle stays empty
           so a traced cable reads as running inside the tray. */}
       <polyline

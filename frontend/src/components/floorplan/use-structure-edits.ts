@@ -441,6 +441,34 @@ export function useStructureEdits({
     else setSelectedTrayId(merged.id)
   }
 
+  /** A bend put into a wall or tray at `t` cells along segment `seg`. */
+  const addBend = (rowId: string, seg: number, t: number) => {
+    const row = find(rowId)
+    if (!row || row.part === "raised_floor") return
+    const parts = splitRun(
+      row.points,
+      row.part === "wall" ? row.openings : [],
+      seg,
+      t,
+      grid
+    )
+    if (!parts) return
+    const joined = joinRuns(parts.a, parts.b)
+    if (!joined) return
+    change(rowId, {
+      points: joined.points,
+      ...(row.part === "wall" ? { openings: joined.openings } : {}),
+    } as Partial<StructShape>)
+  }
+  /** A wall, tray or raised floor deleted. */
+  const deleteRow = (rowId: string) => {
+    const row = find(rowId)
+    if (!row) return
+    if (row.part === "wall") deleteWall(rowId)
+    else if (row.part === "tray") deleteTray(rowId)
+    else deleteArea(rowId)
+  }
+
   // ── Drawing a wall or a tray ──────────────────────────────────────────
   const addDrawPoint = useCallback((pt: [number, number]) => {
     setDrawPoints((prev) => {
@@ -483,6 +511,8 @@ export function useStructureEdits({
     deleteTray,
     splitAt,
     join,
+    addBend,
+    deleteRow,
     addDrawPoint,
     finishDraw,
   }
