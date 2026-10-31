@@ -659,7 +659,11 @@ def _metrics_response(request, agreements, stem: str):
 class SlaAgreementViewSet(TenantScopedViewSet):
     queryset = SlaAgreement.objects.select_related(
         "customer", "holiday_calendar", "tenant", "template"
-    ).prefetch_related("sites")
+    ).prefetch_related(
+        # Both many-to-manys are serialised per row: without the channels
+        # here a list paid one query per agreement (#460).
+        "sites", "notify_channels",
+    )
     serializer_class = SlaAgreementSerializer
 
     def get_queryset(self):
