@@ -22,6 +22,7 @@ export function roomStamp({
   quality,
   tints,
   pointed,
+  readableNames = false,
 }: {
   showWalls: boolean
   showCables: boolean
@@ -38,6 +39,8 @@ export function roomStamp({
   tints?: ReadonlyMap<string, string>
   /** The rack tiles pointed at from outside the room. */
   pointed?: ReadonlySet<string>
+  /** Display > Object size: Readable. */
+  readableNames?: boolean
 }): string {
   return [
     showWalls,
@@ -53,5 +56,6 @@ export function roomStamp({
     quality,
     tints ? tintStamp(tints) : "",
     pointed ? [...pointed].sort().join(",") : "",
+    readableNames ? "readable" : "",
   ].join("|")
 }

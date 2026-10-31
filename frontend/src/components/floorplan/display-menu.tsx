@@ -29,6 +29,7 @@ import {
   readCableColorBy,
 } from "./cable-draw"
 import { ColorBySelect } from "./color-by-select"
+import type { ObjectSize } from "./readable"
 import type { PlanViewPrefs, ShellMode3D } from "./use-plan-view-prefs"
 
 /** The bar's Display popover: what the 2D plan draws, and - in 3D - what the
@@ -50,6 +51,7 @@ export function DisplayMenu({
     cableColorBy,
     showCableLabels,
     bundleCables,
+    objectSize,
     showPhotos,
     showPhotoOutlines,
     show3dU,
@@ -98,6 +100,19 @@ export function DisplayMenu({
             value={colorBy}
             onChange={(v) => setViewPref("color_by", v)}
           />
+          <div className="px-2 pt-1 pb-1.5">
+            <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+              Object size
+            </span>
+            <SegmentedTabs<ObjectSize>
+              value={objectSize}
+              onValueChange={(v) => setViewPref("object_size", v)}
+              items={[
+                { value: "real", label: "Real" },
+                { value: "readable", label: "Readable" },
+              ]}
+            />
+          </div>
           <div className="my-1 h-px bg-border" />
           <FormCheckbox
             label="Fit labels to tiles"

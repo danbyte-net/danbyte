@@ -235,6 +235,7 @@ export function PlanCanvas({
     showFov,
     showZoneLabels,
     showPhotoOutlines,
+    objectSize,
     showTrays,
     showCableLinks,
     cableColorBy,
@@ -394,6 +395,7 @@ export function PlanCanvas({
         showFov={showFov}
         showZoneLabels={showZoneLabels}
         photoOutlines={showPhotoOutlines}
+        objectSize={objectSize}
         mode={mode}
         trays={trays}
         showTrays={showTrays}

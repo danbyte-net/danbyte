@@ -889,6 +889,48 @@ single-cell tiles keep readable names) - the preference is saved on the plan;
 every device and rack tile that has a photo as its photo, and **Photo
 outlines** gives photo tiles their coloured outline (see [Photos](#photos)).
 
+**Object size** (under Color by) chooses how placed objects draw when you
+zoom out:
+
+- **Readable** (the default, on every plan that has not chosen Real) keeps
+  every placed object - device, rack, cabinet, patch
+  panel, any typed tile with its picture or icon - at least **28 px** on
+  screen. A tile smaller than that draws grown to 28 px along its longer
+  side, its aspect kept, centred on its true place and over its neighbours.
+  Its name moves under the symbol at a constant **11 px** on a halo, cut at
+  24 characters. Where names would overlap, the lower ranked ones hide:
+  racks, cabinets and devices win over planning tiles, then the larger
+  footprint. The selected and the hovered tile always show their name. Room
+  and area names, zone names and plan labels never drop below 11 px either.
+  A cable tray's channel stays at least **6 px** wide on screen, and its
+  name and cable count at least 11 px. Once a tile is 28 px or more on
+  screen nothing changes, so zoomed in Readable and Real look the same.
+- **Real** draws every tile and tray at its true size, as plans looked
+  before. Far out, a connected tile keeps only the 8 px marker described
+  under [Seeing cables A↔B](#seeing-cables-ab-routed-through-the-trays).
+
+The grown symbol is only drawn. It selects, hovers, drags and opens its
+right-click menu like the tile, but the tile's saved size and place never
+change, and a drag snaps the real tile. A grown tile has no resize grip:
+zoom in to resize. Cables still run from the tile's centre, and a stub
+(a cable with one end here) leaves from the grown symbol's edge.
+
+In the **3D** view, Readable draws every object's name as a label that
+faces the camera at one size on screen, whatever the distance. Names past
+400 m, behind the camera or off screen are left out. Overlapping names thin
+out the same way as in 2D, with the nearer one winning among equals. The
+objects themselves stay their real size in 3D.
+
+The **Export PDF** follows the setting at the sheet's scale: on paper
+objects are at least **5 mm** and names **2 mm** (about 5.7 pt), thinned the
+same way, and trays at least **1 mm** wide with their name and cable count
+at 2 mm, so a site-wide printout names what is on it. The PNG export is
+the canvas as you see it.
+
+Like the other Display choices, Object size is saved on the plan for those
+who may edit it. A viewer without change rights can switch it for
+themselves; it lasts for the session and is not saved.
+
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
 tile keeps its position, size, label, color and object link; only the look
@@ -1997,6 +2039,8 @@ away:
   screen draws as an 8 px marker in its colour, centred on the tile. It
   selects, hovers and drags like the tile; the tile's saved size and place
   do not change, and the marker goes when the tile is large enough to read.
+  With **Display → Object size: Readable** the whole symbol grows instead
+  (see Object size under [The editor](#the-editor)).
 - A run shorter than a few pixels on screen - two devices side by side -
   draws as a short bar in the cable's colour between its ends, with a count
   where several meet. Hover it for the popover, click it to trace.

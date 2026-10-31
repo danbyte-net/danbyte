@@ -1,6 +1,7 @@
 import type { FloorPlanTray } from "@/lib/api"
 
 import { CELL } from "./canvas-geometry"
+import { READABLE_FONT_PX, READABLE_TRAY_PX, fontGrow } from "./readable"
 
 /** Default tray color when the user hasn't picked one - neutral gray. */
 const TRAY_DEFAULT = "#71717a"
@@ -20,6 +21,8 @@ export function TrayShape({
   onVertexDown,
   onInsertBend,
   onVertexContext,
+  zoom = 1,
+  readable = false,
 }: {
   tray: FloorPlanTray
   selected: boolean
@@ -32,6 +35,12 @@ export function TrayShape({
   onVertexDown: (index: number, e: React.PointerEvent) => void
   onInsertBend: (segIndex: number, e: React.PointerEvent) => void
   onVertexContext: (index: number, e: React.MouseEvent) => void
+  /** The canvas zoom: screen px per plan px. */
+  zoom?: number
+  /** Readable (Display > Object size): the channel never thinner than
+   * READABLE_TRAY_PX on screen, its name and count never under
+   * READABLE_FONT_PX. */
+  readable?: boolean
 }) {
   if (tray.points.length < 2) return null
   const color = tray.color || TRAY_DEFAULT
@@ -43,6 +52,9 @@ export function TrayShape({
   // Show handles when editing this tray, or (for a quick reshape) when it's
   // the plain selection.
   const showHandles = editable && (editing || selected)
+  const body = editing || selected ? 11 : 10
+  const stroke = readable ? Math.max(body, READABLE_TRAY_PX / zoom) : body
+  const textGrow = readable ? fontGrow(10, zoom, READABLE_FONT_PX) : 1
 
   return (
     <g
@@ -61,7 +73,7 @@ export function TrayShape({
         fill="none"
         stroke={color}
         strokeOpacity={editing ? 0.6 : selected ? 0.5 : 0.3}
-        strokeWidth={editing || selected ? 11 : 10}
+        strokeWidth={stroke}
         strokeLinejoin="round"
         strokeLinecap="round"
         pointerEvents={interactive ? "stroke" : "none"}
@@ -117,12 +129,16 @@ export function TrayShape({
         ))}
       <text
         x={mid[0] * CELL}
-        y={mid[1] * CELL - 9}
+        y={mid[1] * CELL - Math.max(9 * textGrow, stroke / 2 + 4 * textGrow)}
         textAnchor="middle"
-        fontSize={10}
+        fontSize={10 * textGrow}
         fill={color}
         fontWeight={600}
         pointerEvents="none"
+        className={textGrow > 1 ? "stroke-background" : undefined}
+        strokeWidth={textGrow > 1 ? 3 * textGrow : undefined}
+        strokeLinejoin="round"
+        paintOrder="stroke"
       >
         {tray.name}
         {count > 0 ? ` · ${count}` : ""}
