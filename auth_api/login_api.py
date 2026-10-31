@@ -55,16 +55,15 @@ MFA_MAX_ACCOUNT_FAILURES = 15
 MFA_WINDOW = 900
 
 
-def _mfa_locked(user) -> bool:
-    return (cache.get(f"mfa-fail:{user.pk}") or 0) >= MFA_MAX_ACCOUNT_FAILURES
+def _reserve_mfa_attempt(user) -> bool:
+    """Count one code (or password) guess against the account's MFA limit
+    before it is checked; False means the limit is used up, answer 429.
 
-
-def _record_mfa_failure(user) -> None:
-    key = f"mfa-fail:{user.pk}"
-    try:
-        cache.incr(key)
-    except ValueError:
-        cache.set(key, 1, MFA_WINDOW)
+    Counting first, atomically, is what keeps parallel guesses under the
+    limit (#449): reading the counter and adding to it after the check let
+    every request in flight pass. A right guess clears the counter.
+    """
+    return _count_attempt(f"mfa-fail:{user.pk}", MFA_WINDOW) <= MFA_MAX_ACCOUNT_FAILURES
 
 
 def _clear_mfa_failures(user) -> None:
@@ -440,7 +439,7 @@ def mfa_verify_api(request):
 
     # Per-account lockout - independent of the pending blob, so re-authing with
     # the (known) password doesn't hand out a fresh batch of guesses.
-    if _mfa_locked(user):
+    if not _reserve_mfa_attempt(user):
         request.session.pop(SESSION_KEY, None)
         return JsonResponse(
             {"detail": "Too many incorrect codes - try again later."}, status=429
@@ -458,7 +457,6 @@ def mfa_verify_api(request):
         ok = _totp_consume(profile, (profile.secrets or {}).get("totp"), code)
 
     if not ok:
-        _record_mfa_failure(user)
         # Cap guesses per pending login so the 6-digit OTP / TOTP window can't be
         # brute-forced by someone who already has the password. Burn the pending
         # blob on lockout - they must restart (and re-enter the password).
@@ -644,7 +642,7 @@ def totp_confirm_api(request):
     pending = (profile.secrets or {}).get("totp_pending")
     if not pending:
         return JsonResponse({"detail": "Start TOTP setup first."}, status=400)
-    if _mfa_locked(user):
+    if not _reserve_mfa_attempt(user):
         request.session.pop(SESSION_KEY, None)
         return JsonResponse(
             {"detail": "Too many incorrect codes - try again later."}, status=429
@@ -652,7 +650,6 @@ def totp_confirm_api(request):
     # The confirming code is consumed too, so it can't be replayed at the
     # sign-in that follows.
     if not _totp_consume(profile, pending, code):
-        _record_mfa_failure(user)
         if pending_login is not None:
             # Same guess cap as the verify step: the pending login is burnt
             # when it's reached.
@@ -696,10 +693,6 @@ def totp_disable_api(request):
     password = data.get("password") or ""
     code = (data.get("code") or "").strip()
 
-    if _mfa_locked(user):
-        return JsonResponse(
-            {"detail": "Too many incorrect attempts - try again later."}, status=429
-        )
     if (
         profile.require_mfa
         and profile.mfa_totp_confirmed
@@ -711,13 +704,16 @@ def totp_disable_api(request):
                        "address first, or ask an administrator."},
             status=400,
         )
+    if not _reserve_mfa_attempt(user):
+        return JsonResponse(
+            {"detail": "Too many incorrect attempts - try again later."}, status=429
+        )
 
     ok = bool(code) and _totp_consume(profile, (profile.secrets or {}).get("totp"), code)
     if not ok and password:
         who = authenticate(request, username=user.get_username(), password=password)
         ok = who is not None and who.pk == user.pk
     if not ok:
-        _record_mfa_failure(user)
         return JsonResponse(
             {"detail": "Enter your password or a current authenticator code."},
             status=400,
