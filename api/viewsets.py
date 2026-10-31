@@ -11959,7 +11959,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         floor's objects placed on no plan (``&include_here=1``: on no other
         plan, those on this one last); ``?limit=`` (default 50, at most
         200). A device in a rack or a cabinet is placed with it and is not
-        offered."""
+        offered. On a plan made from the Site map a device reads
+        ``gps_cell`` when its GPS position is on the grid; ``?gps=1`` keeps
+        only those."""
         from auth_api import rbac
 
         from .floor_plan_placement import PLACEABLE, PLACEABLE_MAX, placeable
@@ -11997,6 +11999,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             include_here=params.get("include_here") in ("1", "true"),
             limit=limit,
             view=(src, crop) if crop is not None else None,
+            gps_only=params.get("gps") in ("1", "true"),
         )
         return Response({"results": rows})
 
@@ -12094,6 +12097,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "snapshot": "view",
         "unlink": "change",
         "from_map": "add",
+        "expand": "change",
+        "import_outlines": "change",
     }
 
     @extend_schema(
@@ -13361,12 +13366,45 @@ class FloorPlanViewSet(TenantScopedViewSet):
         `background_image` file to set, or `clear=1` to remove."""
         plan = self.get_object()
         self._not_on_view(plan, "The background")
+        if request.data.get("map_refresh"):
+            # Refresh map: the browser's render of the plan's box from the
+            # current tiles (api/floor_plan_geo.py).
+            from .floor_plan_geo import refresh_background
+
+            plan = refresh_background(request, plan)
+            return Response(FloorPlanSerializer(plan, context={"request": request}).data)
         if "background_image" in request.FILES:
             plan.background_image = request.FILES["background_image"]
+            # Not the map any more.
+            plan.geo_captured_at = None
+            plan.geo_basemap = ""
         if request.data.get("clear"):
             plan.background_image = None
+            plan.geo_captured_at = None
+            plan.geo_basemap = ""
         plan.save()
         return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+
+    @extend_schema(summary="Grow a plan made from the Site map to a larger box")
+    @action(detail=True, methods=["post"], url_path="expand",
+            parser_classes=[MultiPartParser, FormParser, ObjectJSONParser])
+    def expand(self, request, pk=None):
+        """``{"bbox": [s, w, n, e], "version"?}`` and optionally the
+        browser's render of the new box as ``background_image``: the grid
+        grows in whole cells and everything on the plan moves by the cells
+        added west and north, in one transaction (api/floor_plan_geo.py)."""
+        from .floor_plan_geo import expand
+
+        return expand(self, request, self.get_object())
+
+    @action(detail=True, methods=["post"], url_path="import-outlines")
+    def import_outlines(self, request, pk=None):
+        """The Site map outlines inside the plan's box that no area on it
+        stands for: ``dry_run`` lists them, ``apply`` adds the ticked ones as
+        areas (api/floor_plan_geo.py)."""
+        from .floor_plan_geo import import_outlines
+
+        return import_outlines(self, request, self.get_object())
 
     @action(detail=True, methods=["post"], url_path="tiles/bulk")
     def tiles_bulk(self, request, pk=None):

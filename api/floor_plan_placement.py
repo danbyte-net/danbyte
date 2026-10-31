@@ -69,7 +69,7 @@ def _ref(obj, *fields):
 
 def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
               near_location=None, unplaced=False, include_here=False, limit=50,
-              view=None):
+              view=None, gps_only=False):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
     location and the locations inside it - on a site-wide floor, which has
@@ -80,8 +80,15 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     coming last - the editor weighs them against its unsaved draft. A device
     in a rack or a cabinet is placed with it and
     never offered on its own. ``view`` - ``(source, crop)`` when ``plan`` is
-    a live view: "this floor" is then the source's tiles inside the crop."""
+    a live view: "this floor" is then the source's tiles inside the crop.
+
+    On a plan made from the Site map (or a view of one), a device whose GPS
+    position falls on the grid reads ``gps_cell`` - that position in the
+    plan's cells (the view's, for a view); ``gps_only`` keeps only those
+    devices (api/floor_plan_geo.py)."""
     from auth_api import rbac
+
+    from .floor_plan_geo import gps_cell, has_anchor, plan_frame
 
     site_id = plan.site_id or plan.location.site_id
     site_wide = plan.location_id is None
@@ -101,13 +108,24 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
         plan.__class__.objects.filter(tenant=tenant), user, tenant, "floorplan", "view"
     )
     here_floor = view[0] if view is not None else plan
+    anchored = has_anchor(here_floor)
+    if gps_only and not anchored:
+        return []
     rows = []
     for kind, (model, slug, link) in PLACEABLE.items():
         if kinds and kind not in kinds:
             continue
+        if gps_only and kind != "device":
+            continue
         qs = model.objects.filter(tenant=tenant, site_id=site_id)
         if kind == "device":
             qs = qs.filter(rack__isnull=True, cabinet__isnull=True)
+            if gps_only:
+                fr = plan_frame(here_floor)
+                qs = qs.filter(
+                    latitude__gte=fr.south, latitude__lte=fr.north,
+                    longitude__gte=fr.west, longitude__lte=fr.east,
+                )
         qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
         if q:
             qs = qs.filter(name__icontains=q)
@@ -175,9 +193,25 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
                     and (here_tiles is None or tile_id in here_tiles),
                 })
     photos = object_photos([(k, o) for k, _l, o in rows], user, tenant)
+
+    def at_gps(kind, obj):
+        if not anchored or kind != "device":
+            return None
+        cell = gps_cell(here_floor, obj.latitude, obj.longitude)
+        if cell is None or view is None:
+            return list(cell) if cell else None
+        crop = view[1]
+        x, y = cell[0] - crop.x, cell[1] - crop.y
+        if not (0 <= x <= crop.w and 0 <= y <= crop.h):
+            return None
+        return [round(x, 3), round(y, 3)]
+
     out = []
     for kind, _link, obj in rows:
         where = placed.get((kind, obj.pk), {"count": 0, "on": []})
+        cell = at_gps(kind, obj)
+        if gps_only and cell is None:
+            continue
         out.append({
             "kind": kind,
             "id": str(obj.pk),
@@ -190,6 +224,7 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
             "photo": photos.get((kind, obj.pk)),
             "placed_count": where["count"],
             "placed_on": where["on"],
+            "gps_cell": cell,
         })
     return out
 

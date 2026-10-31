@@ -38,6 +38,7 @@ const LAYERS: SiteMapLayers = {
   routes: true,
   regions: true,
   outlines: true,
+  plans: true,
 }
 
 function mount(over: Partial<Parameters<typeof SiteMapDisplayMenu>[0]> = {}) {
@@ -97,6 +98,12 @@ describe("SiteMapDisplayMenu", () => {
       within(screen.getByRole("region", { name: "Layers" })).getByText("Cables")
     )
     expect(p.onLayersChange).toHaveBeenCalledWith({ ...LAYERS, cables: false })
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Layers" })).getByText(
+        "Floor plans"
+      )
+    )
+    expect(p.onLayersChange).toHaveBeenCalledWith({ ...LAYERS, plans: false })
     fireEvent.click(
       within(screen.getByRole("region", { name: "Labels" })).getByText("Speed")
     )

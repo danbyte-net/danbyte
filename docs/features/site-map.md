@@ -495,6 +495,15 @@ no image. Reading tiles needs the tile server to send
 self-hosted tile server, add the header there. Danbyte's server never
 fetches tiles for this either.
 
+## Floor plan footprints
+
+A floor plan [made from the map](#new-floor-plan-from-this-view) keeps the
+box it spans. The map draws each one you may view as a faint dashed
+rectangle, named on hover (the floor plan and the floor); a click opens the
+plan. **Display → Layers → Floor plans** turns them on and off. A plan
+whose box was [expanded](floor-plans.md#expand) shows its new box. Plans of
+sites hidden in the sidebar are hidden with them.
+
 ## Placing a site from its address
 
 Besides dragging a pin in Layout mode or typing coordinates, the site form
@@ -606,6 +615,9 @@ you may view).
 
 `POST /api/floor-plans/from-map/` makes a floor plan from a box of the map;
 see [its API](floor-plans.md#plans-made-from-the-site-map).
+`plan_footprints` in `GET /api/site-map/` lists the floor plans with a geo
+anchor that you may view: `{id, name, stack, site_id, bbox}`, `bbox` being
+`[south, west, north, east]`.
 
 `GET /api/site-map/cables/` returns every cable with two placeable ends. An
 end carries the point it draws at, its `device_id` and its `site_id` - a

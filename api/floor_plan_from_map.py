@@ -327,7 +327,8 @@ def create_from_map(view, request):
     docs/features/floor-plans.md (Plans made from the Site map)."""
     from audit.context import cause
 
-    from .serializers import FloorPlanAreaSerializer, FloorPlanSerializer
+    from .floor_plan_geo import add_outline_areas, set_anchor
+    from .serializers import FloorPlanSerializer
     from .site_map_views import effective_tiles
     from .topology_views import _uuid_param
 
@@ -389,7 +390,6 @@ def create_from_map(view, request):
     }, context=view.get_serializer_context())
     plan_ser.is_valid(raise_exception=True)
 
-    created, skipped = 0, []
     with transaction.atomic(), cause("Made from the Site map"):
         plan = plan_ser.save(tenant=tenant)
         if not rbac.restrict_queryset(
@@ -398,27 +398,21 @@ def create_from_map(view, request):
             raise PermissionDenied(
                 "The created or updated object is outside your permission scope."
             )
+        # The geo anchor (api/floor_plan_geo.py): what Refresh map, Expand,
+        # the plan's footprint on the map and GPS placement work from.
+        set_anchor(
+            plan, [fr.south, fr.west, fr.north, fr.east], zoom=zoom,
+            basemap=basemap if upload is not None else "", captured=upload is not None,
+        )
         if upload is not None:
-            plan.background_image.save(f"site-map-{plan.pk.hex[:8]}.{ext}", upload, save=True)
-        for z, outline in enumerate(_visible_outlines(request, tenant, site)):
+            plan.background_image.save(f"site-map-{plan.pk.hex[:8]}.{ext}", upload, save=False)
+        plan.save()
+        pairs = []
+        for outline in _visible_outlines(request, tenant, site):
             pts = outline_cells(outline.points, fr)
-            if pts is None:
-                continue
-            label = outline.label or (outline.location.code if outline.location_id else "")
-            area = FloorPlanAreaSerializer(data={
-                "floor_plan_id": str(plan.pk),
-                "shape": "polygon",
-                "points": pts,
-                "location_id": str(outline.location_id) if outline.location_id else None,
-                "label": label[:64],
-                "color": outline.display_color or "",
-                "z": z,
-            }, context=view.get_serializer_context())
-            if area.is_valid():
-                area.save()
-                created += 1
-            else:
-                skipped.append(outline.display_label or str(outline.pk))
+            if pts is not None:
+                pairs.append((outline, pts))
+        created, skipped = add_outline_areas(view, plan, pairs)
     plan = FloorPlan.objects.select_related("site", "location", "stack").get(pk=plan.pk)
     data = FloorPlanSerializer(plan, context=view.get_serializer_context()).data
     data["areas_created"] = created

@@ -323,3 +323,66 @@ describe("Not placed", () => {
     expect(screen.getByText("sw-room")).toBeTruthy()
   })
 })
+
+describe("GPS placement", () => {
+  const geoPlan = {
+    ...plan,
+    geo: {
+      bbox: [56, 10, 56.001, 10.002],
+      mpc: 1,
+      zoom: 18,
+      basemap: "map",
+      captured_at: null,
+      attribution: "",
+    },
+  } as unknown as FloorPlan
+  const CAM = row({ id: "cam", name: "cam-1", gps_cell: [62.5, 55.25] })
+  const HERE = row({
+    id: "b",
+    name: "sw-here",
+    gps_cell: [3, 4],
+    placed_count: 1,
+    placed_on: [
+      {
+        floor_plan: { id: "p1", name: "Ground", stack: "" },
+        tile_id: "t9",
+        this_floor: true,
+      },
+    ],
+  })
+
+  beforeEach(() => {
+    apiMock.mockImplementation(async (path: string) =>
+      path.includes("gps=1") ? { results: [CAM, HERE] } : { results: ROWS }
+    )
+  })
+
+  it("places a device at its GPS position in one click", async () => {
+    const p = openPicker({ plan: geoPlan, onPlaceAt: vi.fn() })
+    await screen.findByText("cam-1")
+    expect(
+      apiMock.mock.calls.some(([path]) =>
+        path.includes("/placeable/?gps=1&kind=device")
+      )
+    ).toBe(true)
+    const group = document.querySelector(
+      '[data-group="At GPS position"]'
+    ) as HTMLElement
+    // What already stands on this floor is not offered again.
+    expect(within(group).queryByText("sw-here")).toBeNull()
+    fireEvent.click(
+      within(group).getByRole("button", { name: /Place at GPS position/ })
+    )
+    expect(p.onPlaceAt).toHaveBeenCalledWith([CAM], [62.5, 55.25])
+    expect(p.onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it("asks nothing for a plan not made from the map", async () => {
+    openPicker({ onPlaceAt: vi.fn() })
+    await screen.findByText("sw-room")
+    expect(apiMock.mock.calls.some(([path]) => path.includes("gps=1"))).toBe(
+      false
+    )
+    expect(document.querySelector('[data-group="At GPS position"]')).toBeNull()
+  })
+})

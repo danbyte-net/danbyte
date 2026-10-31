@@ -149,16 +149,23 @@ def site_map(request):
     # First few floor plans per site - the popover offers them as direct
     # jump-offs (the map → floorplan drill-down, like the plugin's
     # floorplan_link tiles).
+    # Plans made from the Site map keep the box they span: the map draws
+    # it as the plan's footprint (api/floor_plan_geo.py).
+    from .floor_plan_geo import footprint, has_anchor
+
     plans_by_site: dict = {}
     plan_counts: dict = {}
+    plan_footprints: list = []
     for fp in (
         rbac.restrict_queryset(
             FloorPlan.objects.filter(tenant=tenant),
             request.user, tenant, "floorplan", "view",
         )
-        .select_related("location")
+        .select_related("location", "stack")
         .order_by("name")
     ):
+        if has_anchor(fp):
+            plan_footprints.append(footprint(fp))
         site_id = fp.site_id or (fp.location.site_id if fp.location_id else None)
         plans_by_site.setdefault(site_id, [])
         plan_counts[site_id] = plan_counts.get(site_id, 0) + 1
@@ -336,6 +343,7 @@ def site_map(request):
         "devices": devices,
         "markers": markers,
         "regions": regions,
+        "plan_footprints": plan_footprints,
     })
 
 

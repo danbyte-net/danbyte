@@ -143,8 +143,9 @@ makes a site-wide floor plan from an area of the map:
   a location you may not view, are left out.
 
 The plan is an ordinary floor plan from then on: draw on it, add floors,
-replace the background. Its `state.from_map` keeps the box, the tile zoom,
-the basemap and the attribution it was made from.
+replace the background. It also keeps its tie to the map - its **geo
+anchor**, below. Its `state.from_map` keeps the box, the tile zoom, the
+basemap and the attribution as well.
 
 `POST /api/floor-plans/from-map/` (multipart, or JSON without an image)
 takes `name`, `site_id`, `bbox` (`[south, west, north, east]` in degrees,
@@ -156,6 +157,112 @@ new floor (201) with `areas_created` and `outlines_skipped` (the labels of
 outlines that did not make a valid area). Needs `floorplan · add` at the
 site; outlines are copied only with `sitemapoutline · view`. The server
 never fetches tiles: the image comes from the browser.
+
+#### The geo anchor
+
+A plan made from the Site map stores the box of the map its grid spans:
+`geo_bbox` (`[south, west, north, east]` in degrees), the metres one cell is
+(`geo_mpc`), and the basemap, tile zoom and date of its map background
+(`geo_basemap`, `geo_zoom`, `geo_captured_at`). The grid spans the box
+linearly in Web Mercator, as the background is stretched over it. Plans
+made before the anchor existed got it from their `state.from_map` when
+Danbyte was upgraded (migration `0242`); snapshots, live views and plans not
+made from the map have none and work as before. A copy of the plan
+(**Clone this floor**) keeps it; a snapshot does not.
+
+The editor's header reads **Map captured** with the date of the background
+after the grid size. Uploading another background through **Background**
+keeps the box but drops the capture date: the picture is no longer the map.
+
+`GET /api/floor-plans/<id>/` reads it as `geo`: `{bbox, mpc, zoom,
+basemap, captured_at, attribution}`, or `null`.
+
+#### Refresh map
+
+**Refresh map…** in the plan's name menu (with permission to change floor
+plans) renders the same box again from the current tiles, **Map** or
+**Satellite**, in your browser, and makes it the background. Everything
+drawn on the plan stays where it is; only the image and the capture date
+change, and the change log records it as *Map refreshed from the Site
+map*. When the browser can't read the tiles (see
+[New floor plan from this view](site-map.md#new-floor-plan-from-this-view))
+the dialog says so and the background stays as it is.
+
+`POST /api/floor-plans/<id>/background/` with `map_refresh=1`,
+`background_image` (checked like a new plan's: PNG, JPEG or WebP, at most
+20 MB, 8,192 pixels a side and 40 megapixels), `basemap` and `zoom`. It is
+refused on a plan with no geo anchor and on a live view.
+
+#### Expand
+
+**Expand…** in the same menu grows the plan's box. A small map shows the box
+(dashed) and the box it grows to, with a handle on each side to drag out;
+or type the metres to add on each side. Each side grows in whole cells of
+the plan's own size, so nothing already drawn is resampled; the line under
+the fields shows the new grid. A grid has at most 512 cells a side: a
+larger box is refused with the size it would make - expand less, or make a
+new plan from the Site map with larger cells. Expand only grows; a side
+dragged inwards stays where it is. It is not offered while the editor holds
+unsaved edits: save them first.
+
+Growing **west** or **north** moves every object on the plan by the cells
+added there, so each keeps its place on the ground:
+
+- tiles (risers included), areas, labels (back labels and a live view's own
+  buttons too), walls with their doors, trays, raised floors;
+- stored cable routes - moved with their tiles and trays, so they stay
+  current;
+- a CAD drawing's placement;
+- the rectangle of each live view of the plan (a view that follows an area
+  moves with the area).
+
+Growing east or south moves nothing. The whole change is one transaction:
+each moved object is in the change log with the cause *Expanded <plan>
+from the Site map*, so the change log shows what moved. If the plan was
+changed by someone else since you opened it, Expand is refused and nothing
+moves.
+
+The background is then rendered for the new box, as for a new plan. When
+the browser can't read the tiles, the plan still grows: the old picture is
+kept where it was on a larger canvas, the new margins left empty, and a
+note says to **Refresh map** once the tiles can be read.
+
+`POST /api/floor-plans/<id>/expand/` (multipart, or JSON without an image)
+takes `bbox` (the new box; it must hold the plan's), `version` (the plan's
+`updated_at` as you read it - a plan changed since answers 409 with it as
+it is now), and optionally `background_image` (the render of the new box,
+checked as above), `basemap` and `zoom`. It answers the plan with
+`expanded`: `left`, `top`, `right`, `bottom` (cells added), `moved` (how
+many of each kind moved) and `background` (`rendered`, `padded` or
+`none`). Needs `floorplan · change` on the plan; refused (400) on a plan
+with no geo anchor, a live view, a box that does not grow it or a grid over
+512 cells.
+
+#### Re-import outlines
+
+After a refresh or an expand, the dialog offers the
+[building outlines](site-map.md#building-outlines) of the plan's site
+inside the box that no area on the plan stands for yet - an outline linked
+to a location no area on the plan is linked to, or an unlinked outline no
+area of the same label or shape matches - ticked. **Add N as areas** adds
+the ticked ones as areas, as the original import made them; areas already
+drawn are not touched. **Skip** closes. When there are none the step is
+left out.
+
+`POST /api/floor-plans/<id>/import-outlines/` with `{"dry_run": true}`
+lists them (`{"outlines": [{id, label, location, color}]}`); `{"apply":
+[ids]}` adds those of them still on offer and answers `{"created",
+"skipped", "outlines"}`. Needs `floorplan · change` on the plan,
+`floorplanarea · add` to add, and `sitemapoutline · view` to see any.
+
+#### Footprint and GPS placement
+
+The plan's box is drawn on the Site map as its
+[footprint](site-map.md#floor-plan-footprints); a click opens the plan.
+
+Devices of the plan's site whose GPS position falls on the plan are listed
+first in the [Place picker](#the-place-picker), under **At GPS position**.
+**Place at GPS position** places one there in one click.
 
 ## CAD drawings
 
@@ -1110,6 +1217,13 @@ one floor, whichever way it is sent. Duplicates saved before this rule stay
 as they are and can still be edited.
 
 A placement is an ordinary edit: part of undo and of the next **Save**.
+
+On a [plan made from the Site map](#plans-made-from-the-site-map), the
+devices whose GPS coordinates fall on the plan come first, under **At GPS
+position**: **Place at GPS position** places one at the cell its
+coordinates convert to, in one click. Those already on this floor are not
+listed there. `GET …/placeable/` gives such a device `gps_cell` (`[x, y]`
+in the plan's cells, or a live view's); `?gps=1` lists only them.
 
 ### How a placed object looks
 

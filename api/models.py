@@ -9316,6 +9316,20 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         related_name="views",
     )
     source_margin = models.PositiveSmallIntegerField(default=0, db_default=0)
+    # The geo anchor of a plan made from the Site map
+    # (api/floor_plan_geo.py): the box of the map its grid spans,
+    # [south, west, north, east] in degrees, linear in Web Mercator across
+    # the grid; the metres one cell is there; the basemap and tile zoom of
+    # the background rendered for it, and when that was captured (null: no
+    # map background). Null ``geo_bbox``: a plan with no tie to the map.
+    geo_bbox = models.JSONField(null=True, blank=True)
+    geo_mpc = models.FloatField(null=True, blank=True)
+    geo_zoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    geo_basemap = models.CharField(
+        max_length=8, blank=True, default="", db_default="",
+        choices=[("", "None"), ("map", "Map"), ("sat", "Satellite")],
+    )
+    geo_captured_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]

@@ -27,10 +27,23 @@ import {
   RenameStackDialog,
 } from "./floor-dialogs"
 import { FloorSwitcher } from "./floor-switcher"
+import {
+  capturedLabel,
+  ExpandPlanDialog,
+  RefreshMapDialog,
+} from "./plan-map-dialogs"
 import { isLiveView, snapshotLabel } from "./snapshot"
 import { UnlinkViewDialog } from "./snapshot-dialogs"
 
-type Open = "add" | "manage" | "merge" | "rename" | "unlink" | null
+type Open =
+  | "add"
+  | "manage"
+  | "merge"
+  | "rename"
+  | "unlink"
+  | "refresh-map"
+  | "expand"
+  | null
 
 /** The editor's header: which floor plan, which floor, View or Edit, 2D or
  * 3D. */
@@ -83,6 +96,8 @@ export function PlanHeader({
   const title = stack?.name ?? plan.stack?.name ?? plan.name
   const menu = canEdit && stack
   const view = isLiveView(plan)
+  // A plan made from the Site map: its map can be refreshed and grown.
+  const geo = !view && plan.geo ? plan.geo : null
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6">
       <BarTip tip="Floor plans">
@@ -119,6 +134,22 @@ export function PlanHeader({
                   Unlink…
                 </DropdownMenuItem>
               )}
+              {geo && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => setOpen("refresh-map")}>
+                    Refresh map…
+                  </DropdownMenuItem>
+                  {/* Expand moves what is drawn: save the edits in hand
+                      first. */}
+                  <DropdownMenuItem
+                    disabled={isDirty}
+                    onSelect={() => setOpen("expand")}
+                  >
+                    Expand…
+                  </DropdownMenuItem>
+                </>
+              )}
               {canAdd && (
                 <>
                   <DropdownMenuSeparator />
@@ -141,6 +172,7 @@ export function PlanHeader({
             {plan.grid_width}×{plan.grid_height}
           </span>{" "}
           cells
+          {geo?.captured_at && <CapturedNote geo={geo} />}
         </p>
       </div>
       {plan.snapshot && <SnapshotChip plan={plan} />}
@@ -214,10 +246,30 @@ export function PlanHeader({
               onOpenChange={(o) => setOpen(o ? "unlink" : null)}
             />
           )}
+          {geo && (
+            <>
+              <RefreshMapDialog
+                plan={plan}
+                open={open === "refresh-map"}
+                onOpenChange={(o) => setOpen(o ? "refresh-map" : null)}
+              />
+              <ExpandPlanDialog
+                plan={plan}
+                open={open === "expand"}
+                onOpenChange={(o) => setOpen(o ? "expand" : null)}
+              />
+            </>
+          )}
         </>
       )}
     </header>
   )
+}
+
+/** " · Map captured <date>" on a plan made from the Site map. */
+function CapturedNote({ geo }: { geo: NonNullable<FloorPlan["geo"]> }) {
+  const { formatDate } = useDateFormat()
+  return <> · {capturedLabel(geo, formatDate)}</>
 }
 
 /** "View of HQ · Floor 2" (a live view) or "Copy of HQ · Floor 2 · <date>",
