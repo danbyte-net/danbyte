@@ -935,8 +935,9 @@ class VLANSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Taggabl
     )
 
     def get_prefix_count(self, obj) -> int:
+        # The prefixes the reader may view (#448).
         n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return n if n is not None else _visible_count(self, obj, "prefixes")
 
     @detail_only(0)
     def get_l2vpn_count(self, obj) -> int:
@@ -1227,11 +1228,20 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
         write_only=True, required=False, many=True,
     )
 
+    def _vrfs(self, obj, rel: str) -> list:
+        """The VRFs importing or exporting the target that the reader may
+        view (#448): the viewset prefetches only those; a lone instance
+        reads them."""
+        if rel in getattr(obj, "_prefetched_objects_cache", {}):
+            return list(getattr(obj, rel).all())
+        f = view_filter(self.context.get("request"), VRF)
+        return [] if f is None else list(getattr(obj, rel).filter(f))
+
     def get_import_vrf_count(self, obj) -> int:
-        return obj.importing_vrfs.count()
+        return len(self._vrfs(obj, "importing_vrfs"))
 
     def get_export_vrf_count(self, obj) -> int:
-        return obj.exporting_vrfs.count()
+        return len(self._vrfs(obj, "exporting_vrfs"))
 
     def get_vrf_count(self, obj) -> int:
         # Distinct VRFs importing OR exporting this target - the VRFs tab's
@@ -1239,8 +1249,8 @@ class RouteTargetSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixi
         # above can't simply be summed. Read through the viewset's prefetch
         # so the list costs no extra query per row.
         return len(
-            {v.pk for v in obj.importing_vrfs.all()}
-            | {v.pk for v in obj.exporting_vrfs.all()}
+            {v.pk for v in self._vrfs(obj, "importing_vrfs")}
+            | {v.pk for v in self._vrfs(obj, "exporting_vrfs")}
         )
 
     class Meta:
@@ -1283,18 +1293,19 @@ class VRFSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, Custo
     )
 
     # The list viewset annotates these once per page (#196); a lone instance
-    # (create/update responses) falls back to a live count.
+    # (create/update responses) falls back to a live count. Either way only
+    # the rows the reader may view: a VRF spans sites (#448).
     def get_prefix_count(self, obj) -> int:
         n = getattr(obj, "prefix_n", None)
-        return n if n is not None else obj.prefixes.count()
+        return n if n is not None else _visible_count(self, obj, "prefixes")
 
     def get_vlan_count(self, obj) -> int:
         n = getattr(obj, "vlan_n", None)
-        return n if n is not None else obj.vlans.count()
+        return n if n is not None else _visible_count(self, obj, "vlans")
 
     def get_ip_count(self, obj) -> int:
         n = getattr(obj, "ip_n", None)
-        return n if n is not None else obj.ip_addresses.count()
+        return n if n is not None else _visible_count(self, obj, "ip_addresses")
 
     # The routing tab counts are for the VRF's own page; the list never
     # renders them and they are a query per row.
@@ -6403,7 +6414,10 @@ class ClusterSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdMod
     vm_count = serializers.SerializerMethodField()
 
     def get_vm_count(self, obj) -> int:
-        return getattr(obj, "vm_count_annotated", 0) or 0
+        # The VMs the reader may view (#438); a lone instance (a create or
+        # update response) counts them.
+        n = getattr(obj, "vm_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "virtual_machines")
 
     class Meta:
         model = Cluster
@@ -10364,7 +10378,9 @@ class L2VPNSerializer(StatusSerializerMixin,
     vtep_count = serializers.SerializerMethodField()
 
     def get_termination_count(self, obj) -> int:
-        return obj.terminations.count()
+        # The ends the reader may view, as ``terminations`` lists (#448).
+        n = getattr(obj, "termination_count_annotated", None)
+        return n if n is not None else _visible_count(self, obj, "terminations")
 
     def get_vtep_count(self, obj) -> int:
         annotated = getattr(obj, "vtep_count_annotated", None)

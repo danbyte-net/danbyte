@@ -1942,11 +1942,12 @@ class VRFViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         # Per-row figures come with the page: one correlated count per
-        # related table, not three COUNT queries per VRF (#196).
+        # related table, not three COUNT queries per VRF (#196). A VRF spans
+        # sites, so each counts the rows the reader may view (#448).
         qs = qs.annotate(
-            prefix_n=_count_of(Prefix, "vrf"),
-            vlan_n=_count_of(VLAN, "vrf"),
-            ip_n=_count_of(IPAddress, "vrf"),
+            prefix_n=_visible_n(self, "prefixes"),
+            vlan_n=_visible_n(self, "vlans"),
+            ip_n=_visible_n(self, "ip_addresses"),
         )
         if not self.request:
             return qs
@@ -1997,6 +1998,15 @@ class RouteTargetViewSet(CatalogLocalityMixin, TenantScopedViewSet):
         qs = super().get_queryset()
         if not self.request:
             return qs
+        # The VRF counts are over the VRFs the reader may view (#448), so
+        # only those are prefetched.
+        f = view_filter(self.request, VRF)
+        vrfs = VRF.objects.none() if f is None else VRF.objects.filter(f)
+        qs = qs.prefetch_related(None).prefetch_related(
+            Prefetch("importing_vrfs", queryset=vrfs),
+            Prefetch("exporting_vrfs", queryset=vrfs),
+            TAGS,
+        )
         search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(description__icontains=search) | qs.filter(cf_text_q(qs.model, search))
@@ -2189,15 +2199,10 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # The prefix count as one subquery per page instead of a count per
         # row (#179). A subquery, not a join Count: the tags prefetch and a
         # joined aggregate would multiply.
+        # Only the prefixes the reader may view: a shared VLAN's prefixes
+        # may sit at other sites (#448).
         qs = super().get_queryset().annotate(
-            prefix_n=Coalesce(
-                Subquery(
-                    Prefix.objects.filter(vlan_id=OuterRef("pk"))
-                    .order_by().values("vlan_id")
-                    .annotate(c=Count("*")).values("c")[:1]
-                ),
-                0,
-            )
+            prefix_n=_visible_n(self, "prefixes")
         )
         if not self.request:
             return qs
@@ -9437,7 +9442,10 @@ class L2VPNViewSet(TenantScopedViewSet):
     pagination_class = StandardPagination
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # The ends the reader may view, as the nested list shows them (#448).
+        qs = super().get_queryset().annotate(
+            termination_count_annotated=_visible_n(self, "terminations")
+        )
         if self.request:
             search = self.request.query_params.get("search", "").strip()
             if search:
