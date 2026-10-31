@@ -9,12 +9,7 @@ import type {
 } from "@/lib/api"
 
 import { CableRouteCache } from "./cable-draw"
-import {
-  CLOSEUP_MM_PER_PX,
-  PAPER_INK,
-  planPaperScale,
-  planSvg,
-} from "./plan-svg"
+import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
 import type { PlanSvgCables } from "./plan-svg"
 import type { AreaShape } from "./shapes"
 
@@ -295,6 +290,40 @@ describe("planSvg cables", () => {
     expect(traced.querySelector("animate")).toBeNull()
   })
 
+  it("dashes inferred runs on a schedule's pages, sized for the paper", () => {
+    const inferred = [cable("9", { tray_ids: [] })]
+    const r = new CableRouteCache().routes(inferred, {
+      trays: [],
+      tiles,
+      ceilingMm: 3000,
+    })
+    const at = (mmPerPx: number) =>
+      parse(
+        planSvg({
+          plan,
+          tiles,
+          cables: {
+            paths: inferred,
+            routes: r,
+            colorBy: "status",
+            bundle: true,
+            labels: false,
+            mmPerPx,
+          },
+          fitContent: {
+            paper: { size: "a4", orientation: "landscape" },
+            mmPerPx,
+            box: { x: 0, y: 0, w: 480, h: 240 },
+          },
+        })
+      ).querySelector("[data-layer=cables] path")!
+    const path = at(3 / 40)
+    expect(path.getAttribute("stroke-dasharray")).toBeTruthy()
+    // The same paper width at another scale: twice the plan px at half.
+    const width = (p: Element) => Number(p.getAttribute("stroke-width"))
+    expect(width(at(1.5 / 40))).toBeCloseTo(width(path) * 2, 5)
+  })
+
   it("leaves the cables out when the links are off", () => {
     const svg = planSvg({ plan, tiles, trays: [tray] })
     expect(svg).not.toContain('data-layer="cables"')
@@ -457,20 +486,28 @@ describe("a drawing framed to its content", () => {
     expect(lines(draw(true))).toBeLessThan(lines(draw(false)))
   })
 
-  it("draws a close-up at its own paper scale, same frame", () => {
-    const closeup = planSvg({
-      plan: big as never,
-      tiles: [],
-      shapes: [hatched],
-      fitContent: {
-        paper: { size: "a4", orientation: "landscape" },
-        mmPerPx: CLOSEUP_MM_PER_PX,
-      },
-    })
-    const vb = (svg: string) => /viewBox="([^"]+)"/.exec(svg)![1]
-    expect(vb(closeup)).toBe(vb(draw(true)))
+  it("draws a close-up framed to its box at its own paper scale", () => {
+    const far = tile({ id: "far", x: 400, y: 200, label: "FAR" })
+    const near = tile({ id: "near", x: 110, y: 60, label: "NEAR" })
+    const box = { x: 90 * 40, y: 40 * 40, w: 80 * 40, h: 40 * 40 }
+    const closeup = (mmPerPx: number) =>
+      planSvg({
+        plan: big as never,
+        tiles: [near, far],
+        shapes: [hatched],
+        fitContent: {
+          paper: { size: "a4", orientation: "landscape" },
+          mmPerPx,
+          box,
+        },
+      })
+    const svg = closeup(3 / 40)
+    expect(/viewBox="([^"]+)"/.exec(svg)![1]).toBe("3600 1600 3200 1600")
+    // Only what reaches the box is drawn.
+    expect(svg).toContain("NEAR")
+    expect(svg).not.toContain("FAR")
     // Larger on paper: the hatch keeps its plan spacing, more lines.
-    const lines = (svg: string) => (svg.match(/<line /g) ?? []).length
-    expect(lines(closeup)).toBeGreaterThan(lines(draw(true)))
+    const lines = (s: string) => (s.match(/<line /g) ?? []).length
+    expect(lines(closeup(6 / 40))).toBeGreaterThan(lines(closeup(1 / 40)))
   })
 })

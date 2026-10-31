@@ -24,6 +24,8 @@ import { PAPERS, PAPER_LABELS } from "@/lib/diagram/sheet"
 import type { Paper, PaperChoice } from "@/lib/diagram/sheet"
 import { downloadBlob, toCsv, toXlsx } from "@/lib/table-export"
 
+import type { PlanBox } from "./plan-svg"
+
 /**
  * **Cable schedule**: the plan's cables as a pull sheet - every cable with
  * a route on this floor or an end on it, its ends, route, lengths and
@@ -162,6 +164,52 @@ export function scheduleTable(data: CableSchedule): {
   }
 }
 
+/** A close-up page as the server lays it out (`cable-schedule/closeups/`). */
+export interface CloseupPage {
+  label: string
+  box: [number, number, number, number]
+  mm_per_px: number
+  cables: number
+}
+
+/** The plan drawn for each close-up the PDF will have, by label: the
+ * server clusters the cable ends and scales each page; each is drawn
+ * framed to its box at its scale, so cables and hatches suit the paper. */
+export async function closeupSvgs(
+  planId: string,
+  sheet: PaperChoice,
+  overview: string,
+  draw: (
+    paper: PaperChoice,
+    closeup: { box: PlanBox; mmPerPx: number }
+  ) => Promise<string | null>
+): Promise<Record<string, string> | null> {
+  const vb = /viewBox="([^"]+)"/.exec(overview)?.[1]
+  if (!vb) return null
+  const params = new URLSearchParams({
+    size: sheet.size,
+    orientation: sheet.orientation,
+    closeups: "auto",
+    box: vb
+      .trim()
+      .split(/[\s,]+/)
+      .join(","),
+  })
+  const { pages } = await api<{ pages: CloseupPage[] }>(
+    `/api/floor-plans/${planId}/cable-schedule/closeups/?${params}`
+  )
+  const out: Record<string, string> = {}
+  for (const p of pages) {
+    const [x, y, w, h] = p.box
+    const svg = await draw(sheet, {
+      box: { x, y, w, h },
+      mmPerPx: p.mm_per_px,
+    })
+    if (svg) out[p.label] = svg
+  }
+  return Object.keys(out).length ? out : null
+}
+
 export function CableScheduleDialog({
   planId,
   planName,
@@ -173,9 +221,12 @@ export function CableScheduleDialog({
   planName: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** The plan with its routes, for the PDF's first page; `closeup`: drawn
-   * for the close-up pages' scale. */
-  planSvg?: (paper: PaperChoice, closeup?: boolean) => Promise<string | null>
+  /** The plan with its routes, for the PDF's first page; `closeup`: one
+   * close-up page, framed to its box at its scale. */
+  planSvg?: (
+    paper: PaperChoice,
+    closeup?: { box: PlanBox; mmPerPx: number }
+  ) => Promise<string | null>
 }) {
   const [group, setGroup] = useState<ScheduleGroup>("room")
   const [format, setFormat] = useState<ScheduleFormat>("pdf")
@@ -191,8 +242,10 @@ export function CableScheduleDialog({
       if (format === "pdf") {
         const sheet: PaperChoice = { size: paper, orientation: "landscape" }
         const svg = withPlan && planSvg ? await planSvg(sheet) : null
-        const detail =
-          svg && closeups && planSvg ? await planSvg(sheet, true) : null
+        const details =
+          svg && closeups && planSvg
+            ? await closeupSvgs(planId, sheet, svg, planSvg)
+            : null
         const { url } = await api<{ url: string }>(
           `/api/floor-plans/${planId}/cable-schedule/pdf/?print=1`,
           {
@@ -201,7 +254,7 @@ export function CableScheduleDialog({
               group,
               paper: sheet,
               ...(svg ? { svg, closeups: closeups ? "auto" : "off" } : {}),
-              ...(detail ? { detail_svg: detail } : {}),
+              ...(details ? { closeup_svgs: details } : {}),
             }),
           }
         )
