@@ -27,6 +27,8 @@ import {
   QuickAddDialog,
 } from "@/components/forms"
 
+import { OpensPicker } from "@/components/floorplan/opens-field"
+
 import type { Pt } from "./outline-geometry"
 
 /** The type a location made from the map gets: the catalog's "Building",
@@ -171,6 +173,24 @@ export function OutlineInspector({
           onBlur={() => label !== outline.label && onPatch({ label })}
           className="h-8 text-sm"
         />
+      </Field>
+      <Field
+        label="Opens"
+        info="Open floor plan opens this plan in place of the location's first floor."
+      >
+        {canEdit ? (
+          <OpensPicker
+            plan={null}
+            value={outline.opens ?? null}
+            hidden={!!outline.opens_hidden}
+            onChange={(ref) => onPatch({ opens_id: ref?.id ?? null })}
+          />
+        ) : (
+          <span className="text-[13px]">
+            {outline.opens?.name ??
+              (outline.opens_hidden ? "Hidden plan" : "-")}
+          </span>
+        )}
       </Field>
       <FormColor
         label="Color"

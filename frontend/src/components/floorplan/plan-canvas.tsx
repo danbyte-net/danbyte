@@ -103,7 +103,10 @@ export function PlanCanvas({
   onSnapshotShape,
   lockedIds,
   trayPick,
+  emptyActions,
 }: {
+  /** The right-click menu on empty plan space. */
+  emptyActions?: FloorCanvasProps["emptyActions"]
   /** Picking a cable's trays on the plan ("After placing"). */
   trayPick?: FloorCanvasProps["trayPick"]
   /** Edit, the Snapshot tool in hand: the dragged rectangle. */
@@ -403,6 +406,7 @@ export function PlanCanvas({
         onRestackShape={shapeEdits.restack}
         onOpenShape={onOpenShape}
         onDropRows={onDropRows}
+        emptyActions={emptyActions}
         selectionToolbar={selectionToolbar}
         onSnapshotRect={onSnapshotRect}
         onSnapshotShape={onSnapshotShape}

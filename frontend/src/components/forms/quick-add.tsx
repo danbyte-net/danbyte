@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "./field"
 import { FormCombobox } from "./combobox"
+import type { ComboboxOption } from "@/components/ui/combobox"
 import { apiErrorToast } from "@/lib/api-toast"
 
 type MiniNamed = { id: string; name: string }
@@ -31,17 +32,26 @@ export type QuickAddField =
       type?: "text" | "textarea"
       required?: boolean
       placeholder?: string
+      /** The value the dialog opens with. */
+      initial?: string
     }
   | {
       name: string
       label: string
       type: "combobox"
-      /** Picker endpoint returning `{results:[{id,name}]}`. */
-      endpoint: string
+      /** Picker endpoint returning `{results:[{id,name}]}` - or `options`. */
+      endpoint?: string
       /** react-query key to invalidate so the parent picker refreshes too. */
-      queryKey: string
+      queryKey?: string
+      /** The options as given (colour badges and all), in place of
+       * `endpoint` - e.g. the locations of a floor plan's site. */
+      options?: ComboboxOption[]
       required?: boolean
       placeholder?: string
+      /** The value the dialog opens with. */
+      initial?: string
+      /** The "none" row's label for an optional pick. */
+      noneLabel?: string
       /** Nested quick-add: a "+" on this inner picker too (e.g. create a
        * Cluster type from within the "new Cluster" dialog). */
       quickAdd?: { title: string; endpoint: string; fields: QuickAddField[] }
@@ -71,12 +81,32 @@ export function QuickAddDialog({
 }) {
   const [open, setOpen] = useState(false)
   const [vals, setVals] = useState<Record<string, string>>({})
+  // Each opening starts from the fields' initial values.
+  const openWith = (o: boolean) => {
+    if (o)
+      setVals(
+        Object.fromEntries(
+          fields.flatMap((f) => (f.initial ? [[f.name, f.initial]] : []))
+        )
+      )
+    setOpen(o)
+  }
 
   const create = useMutation({
     mutationFn: () =>
       api<MiniNamed>(endpoint, {
         method: "POST",
-        body: JSON.stringify({ ...fixed, ...vals }),
+        // An optional pick left empty is not sent.
+        body: JSON.stringify({
+          ...fixed,
+          ...Object.fromEntries(
+            Object.entries(vals).filter(
+              ([k, v]) =>
+                v !== "" ||
+                fields.find((f) => f.name === k)?.type !== "combobox"
+            )
+          ),
+        }),
       }),
     onSuccess: (obj) => {
       toast.success(`Created ${obj.name}`)
@@ -91,7 +121,7 @@ export function QuickAddDialog({
   const set = (name: string, v: string) => setVals((s) => ({ ...s, [name]: v }))
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={openWith}>
       <DialogTrigger asChild>
         <Button
           type="button"
@@ -166,18 +196,23 @@ function QuickAddCombobox({
 }) {
   const qc = useQueryClient()
   const q = useQuery({
-    queryKey: [field.queryKey],
-    queryFn: () => apiAll<MiniNamed>(field.endpoint),
+    queryKey: [field.queryKey ?? field.endpoint],
+    queryFn: () => apiAll<MiniNamed>(field.endpoint!),
+    enabled: !field.options && !!field.endpoint,
   })
   return (
     <FormCombobox
       label={field.label}
-      value={value}
+      value={value || null}
       onChange={onChange}
-      options={(q.data?.results ?? []).map((o) => ({
-        value: o.id,
-        label: o.name,
-      }))}
+      options={
+        field.options ??
+        (q.data?.results ?? []).map((o) => ({
+          value: o.id,
+          label: o.name,
+        }))
+      }
+      noneLabel={field.noneLabel}
       placeholder={field.placeholder ?? `Select ${field.label.toLowerCase()}…`}
       quickAdd={
         field.quickAdd ? (
@@ -186,7 +221,8 @@ function QuickAddCombobox({
             endpoint={field.quickAdd.endpoint}
             fields={field.quickAdd.fields}
             onCreated={(o) => {
-              qc.invalidateQueries({ queryKey: [field.queryKey] })
+              if (field.queryKey)
+                qc.invalidateQueries({ queryKey: [field.queryKey] })
               onChange(o.id)
             }}
           />

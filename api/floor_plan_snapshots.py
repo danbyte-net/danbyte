@@ -746,7 +746,8 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
         if c is None:
             continue
         name = _name(lb)
-        lb = _new(lb, dst, x=lb.x + dx, y=lb.y + dy)
+        # A copy keeps where a label opens, but is no plan's back label.
+        lb = _new(lb, dst, x=lb.x + dx, y=lb.y + dy, pair_id=None)
         if c == "edge":
             whole.append({"kind": "label", "id": str(lb.pk), "name": name})
 

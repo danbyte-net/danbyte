@@ -1,3 +1,5 @@
+import { Link2 } from "lucide-react"
+
 import { getLucideIcon } from "@/components/dynamic-icon"
 
 import { CELL } from "./canvas-geometry"
@@ -15,6 +17,7 @@ import {
   handlePoint,
   labelBox,
   labelFontCells,
+  labelPlate,
   patternRuns,
   polygonCentroid,
   rotateHandlePoint,
@@ -135,6 +138,24 @@ function AreaName({
   )
 }
 
+/** The link mark of an area or label that opens a plan: a small Lucide
+ * link icon at (x, y), its top left (world px). */
+const LINK_PX = 12
+function OpensMark({ x, y, ink }: { x: number; y: number; ink: string }) {
+  return (
+    <Link2
+      data-part="opens-mark"
+      x={x}
+      y={y}
+      width={LINK_PX}
+      height={LINK_PX}
+      color={ink}
+      strokeWidth={2.25}
+      pointerEvents="none"
+    />
+  )
+}
+
 /** An area: a tinted rectangle (turned about its centre) or polygon with
  * its name in its top left (a polygon: at its middle), its type's pattern
  * over the tint and its type's icon before the name. */
@@ -225,6 +246,13 @@ export function AreaShapeView({
             ink={ink}
           />
         )}
+        {(area.opens || area.opens_hidden) && (
+          <OpensMark
+            x={px(cx) - LINK_PX / 2}
+            y={px(cy) + (name ? NAME_PX : -LINK_PX / 2)}
+            ink={ink}
+          />
+        )}
       </g>
     )
   }
@@ -270,6 +298,13 @@ export function AreaShapeView({
           ink={ink}
         />
       )}
+      {(area.opens || area.opens_hidden) && w > LINK_PX + 8 && (
+        <OpensMark
+          x={px(area.x) + w - LINK_PX - 4}
+          y={px(area.y) + 4}
+          ink={ink}
+        />
+      )}
     </g>
   )
 }
@@ -279,11 +314,14 @@ export function LabelShapeView({
   label,
   cellMm,
   interactive,
+  viewing = false,
   onPointerDown,
 }: {
   label: LabelShape
   cellMm: number
   interactive: boolean
+  /** View: a click opens its link (a pointer, not a move cursor). */
+  viewing?: boolean
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
   const box = labelBox(label, cellMm)
@@ -303,6 +341,7 @@ export function LabelShapeView({
         ? px(box.x + box.width) - size * 0.3
         : px(box.x) + size * 0.3
   const color = labelColor(label.color)
+  const plate = labelPlate(label)
   return (
     <g
       data-label={label.id}
@@ -313,7 +352,7 @@ export function LabelShapeView({
       }
       onPointerDown={onPointerDown}
       style={{
-        cursor: interactive ? "move" : undefined,
+        cursor: interactive ? (viewing ? "pointer" : "move") : undefined,
         pointerEvents: interactive ? "auto" : "none",
       }}
     >
@@ -324,12 +363,20 @@ export function LabelShapeView({
         width={px(box.width)}
         height={px(box.height)}
         rx={Math.min(6, size * 0.2)}
-        className={label.plate ? "fill-background stroke-border" : undefined}
-        fill={label.plate ? undefined : "transparent"}
+        className={
+          label.plate
+            ? plate.fill
+              ? "stroke-border"
+              : "fill-background stroke-border"
+            : undefined
+        }
+        fill={label.plate ? (plate.fill ?? undefined) : "transparent"}
+        data-plate={plate.fill ?? undefined}
         strokeWidth={label.plate ? 1 : 0}
       />
       <text
-        className={color.className}
+        className={plate.ink ? undefined : color.className}
+        fill={plate.ink ?? undefined}
         fontSize={size}
         fontWeight={label.weight === "bold" ? 700 : 400}
         textAnchor={anchor}
@@ -345,6 +392,13 @@ export function LabelShapeView({
           </tspan>
         ))}
       </text>
+      {(label.opens || label.opens_hidden) && (
+        <OpensMark
+          x={px(box.x + box.width) + 2}
+          y={px(box.y)}
+          ink={plate.ink ?? color.paper}
+        />
+      )}
     </g>
   )
 }

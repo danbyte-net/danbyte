@@ -37,6 +37,7 @@ from .models import (
 )
 from .serializers import (
     TenantScopedPrimaryKeyRelatedField,
+    _OpensMixin,
     hex_color_or_blank,
     location_type_ref,
     polygon_is_simple,
@@ -97,7 +98,7 @@ def _location_ref(loc) -> dict | None:
     }
 
 
-class SiteMapOutlineSerializer(serializers.ModelSerializer):
+class SiteMapOutlineSerializer(_OpensMixin, serializers.ModelSerializer):
     """An outline on the Site map. ``display_label`` and ``display_color``
     are what the map draws: the outline's own label and colour, else its
     location's code (or name) and its location type's colour (or the
@@ -112,6 +113,13 @@ class SiteMapOutlineSerializer(serializers.ModelSerializer):
     points = serializers.JSONField()
     display_label = serializers.CharField(read_only=True)
     display_color = serializers.CharField(read_only=True)
+    # The floor plan "Open floor plan" opens (see _OpensMixin).
+    opens = serializers.SerializerMethodField()
+    opens_hidden = serializers.SerializerMethodField()
+    opens_id = TenantScopedPrimaryKeyRelatedField(
+        source="opens", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
@@ -136,6 +144,7 @@ class SiteMapOutlineSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"location_id": "Pick a location at this outline's site."}
                 )
+        self._check_opens(attrs)
         return attrs
 
     def _visible(self, location) -> bool:
@@ -151,9 +160,9 @@ class SiteMapOutlineSerializer(serializers.ModelSerializer):
         model = SiteMapOutline
         fields = ["id", "site_id", "location_id", "location", "points", "label", "color",
                   "z", "locked", "display_label", "display_color",
-                  "created_at", "updated_at"]
+                  "opens", "opens_id", "opens_hidden", "created_at", "updated_at"]
         read_only_fields = ["id", "location", "display_label", "display_color",
-                            "created_at", "updated_at"]
+                            "opens", "opens_hidden", "created_at", "updated_at"]
 
 
 def _subtree(location) -> list:
@@ -186,7 +195,7 @@ class SiteMapOutlineViewSet(TenantScopedViewSet):
         from .topology_views import _uuid_param
 
         qs = super().get_queryset().select_related(
-            "site", "location", "location__location_type"
+            "site", "location", "location__location_type", "opens__stack"
         )
         if not self.request:
             return qs
@@ -213,7 +222,8 @@ class SiteMapOutlineViewSet(TenantScopedViewSet):
                 "The location (with its type), counts of the sub-locations, rooms, "
                 "racks and devices in it and under it that the reader may view, its "
                 "floor plans and the site-wide ones, and `open_floor_id`: the floor "
-                "the map's Open floor plan button opens."
+                "the map's Open floor plan button opens - the outline's own Opens "
+                "target when it has one the reader may view."
             ),
         )},
     )
@@ -277,6 +287,11 @@ class SiteMapOutlineViewSet(TenantScopedViewSet):
                 "first_floor_id": str(ids_[0]) if ids_ else None,
             })
         open_floor = next((p["first_floor_id"] for p in plans if p["first_floor_id"]), None)
+        # The outline's own Opens target, when the reader may view it, wins.
+        if outline.opens_id and visible(
+            FloorPlan.objects.filter(tenant=tenant, pk=outline.opens_id), "floorplan"
+        ).exists():
+            open_floor = str(outline.opens_id)
         return Response({
             "id": str(outline.pk),
             "display_label": outline.display_label,

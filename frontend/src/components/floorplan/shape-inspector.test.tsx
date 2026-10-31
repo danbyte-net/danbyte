@@ -104,3 +104,20 @@ describe("a label's text and look", () => {
     expect(onChange).toHaveBeenCalledWith({ color: "blue" })
   })
 })
+
+describe("a label's plate colour", () => {
+  it("is offered once the plate is on, as swatches", () => {
+    inspect()
+    expect(screen.queryByRole("group", { name: "Plate colour" })).toBeNull()
+    cleanup()
+    const onChange = inspect({ plate: true })
+    const swatches = screen.getByRole("group", { name: "Plate colour" })
+    fireEvent.click(swatches.querySelector('[aria-label="Blue"]')!)
+    expect(onChange).toHaveBeenCalledWith({ plate_color: "blue" })
+    expect(
+      swatches
+        .querySelector('[aria-label="Default"]')!
+        .getAttribute("aria-pressed")
+    ).toBe("true")
+  })
+})

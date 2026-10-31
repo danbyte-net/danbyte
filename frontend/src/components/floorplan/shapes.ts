@@ -701,3 +701,69 @@ export function polygonPatch(points: Pt[]): Partial<FloorPlanArea> {
 export function byZ<T extends { z: number }>(a: T, b: T): number {
   return a.z - b.z
 }
+
+// ── Opens links and plates ─────────────────────────────────────────────────
+
+/** What a shape's Opens target is called: "Campus · B1", or the plan's
+ * name; null when it opens nothing the reader may view. */
+export function opensName(s: Pick<FloorPlanArea, "opens">): string | null {
+  const o = s.opens
+  if (!o) return null
+  return o.stack_name && o.stack_name !== o.name
+    ? `${o.stack_name} · ${o.name}`
+    : o.name
+}
+
+/** A label's plate fill (a fixed palette colour, or null for the theme's
+ * background) and the ink that reads over it - null to keep the text's
+ * own colour, which an explicitly set text colour always is. */
+export function labelPlate(
+  l: Pick<FloorPlanLabel, "plate" | "color"> &
+    Partial<Pick<FloorPlanLabel, "plate_color">>
+): { fill: string | null; ink: string | null } {
+  const token = l.plate ? (l.plate_color ?? "") : ""
+  const fill = token ? labelColor(token).paper : null
+  return { fill, ink: fill && !l.color ? readableText(fill) : null }
+}
+
+const centreOf = (s: PlanShape, cellMm: number): Pt => {
+  const b = shapeBounds(s, cellMm)
+  return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]
+}
+
+const holds = (s: AreaShape, p: Pt) =>
+  s.shape === "polygon" ? pointInPolygon(p, s.points) : pointInBox(p, s)
+
+/** The area drawn under or around `area` that stands for a location: the
+ * smallest whose outline holds its centre. */
+export function enclosingLocation(
+  area: AreaShape,
+  shapes: readonly PlanShape[],
+  cellMm: number
+): { id: string; name: string; color: string } | null {
+  const c = centreOf(area, cellMm)
+  let best: { size: number; loc: AreaShape["location"] } | null = null
+  for (const s of shapes) {
+    if (s.kind !== "area" || s.id === area.id || !s.location) continue
+    if (!holds(s, c)) continue
+    const sb = shapeBounds(s, cellMm)
+    const size = (sb.maxX - sb.minX) * (sb.maxY - sb.minY)
+    if (!best || size < best.size) best = { size, loc: s.location }
+  }
+  return best?.loc ?? null
+}
+
+/** The area a shape is a snapshot of: an area itself, a label the topmost
+ * area under its centre. */
+export function areaUnder(
+  shape: PlanShape,
+  shapes: readonly PlanShape[],
+  cellMm: number
+): AreaShape | null {
+  if (shape.kind === "area") return shape
+  const c = centreOf(shape, cellMm)
+  const hits = shapes.filter(
+    (s): s is AreaShape => s.kind === "area" && holds(s, c)
+  )
+  return hits.sort((a, b) => b.z - a.z)[0] ?? null
+}

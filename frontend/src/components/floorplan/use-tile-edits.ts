@@ -38,6 +38,12 @@ let tempCounter = 0
 export const tempId = () => `new-${++tempCounter}`
 export const isTemp = (id: string) => id.startsWith("new-")
 
+/** Where a shape opens, as a save sends it: left out while it opens a plan
+ * the editor may not view, so the save keeps it. */
+function opensBody(s: PlanShape): { opens_id?: string | null } {
+  return s.opens_hidden ? {} : { opens_id: s.opens?.id ?? null }
+}
+
 /** An area as the bulk endpoint takes it. */
 function areaBody(
   a: Extract<PlanShape, { kind: "area" }>
@@ -60,6 +66,7 @@ function areaBody(
     show_name: a.show_name,
     z: a.z,
     locked: a.locked,
+    ...opensBody(a),
   }
 }
 
@@ -79,8 +86,10 @@ function labelBody(
     align: l.align,
     color: l.color,
     plate: l.plate,
+    plate_color: l.plate_color ?? "",
     z: l.z,
     locked: l.locked,
+    ...opensBody(l),
   }
 }
 

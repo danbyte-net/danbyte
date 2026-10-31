@@ -1,6 +1,7 @@
 import type {
   DeviceRole,
   FloorPlan,
+  FloorPlanBackLabelRef,
   FloorPlanTile,
   FloorPlanTray,
   FloorPlanWall,
@@ -89,6 +90,13 @@ export function PlanInspector({
         shapeEdits.changeShape(shape.id, patch),
       onRestack: (dir: 1 | -1) => shapeEdits.restack(shape.id, dir),
       onDelete: () => shapeEdits.deleteShape(shape.id),
+      shapes,
+      // A Back button's label is on another plan: shown here, not an edit
+      // of this one.
+      onBackLabel: (ref: FloorPlanBackLabelRef | null) =>
+        ed.setShapes((prev) =>
+          prev.map((s) => (s.id === shape.id ? { ...s, back_label: ref } : s))
+        ),
     }
     return shape.kind === "area" ? (
       <ShapeAreaInspector
