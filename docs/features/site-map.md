@@ -447,7 +447,10 @@ rooms, racks and devices** are in it and under it (those you may view), and
 its **floor plans** - the floor plans of the location and of the locations
 inside it, then the site's [site-wide plans](floor-plans.md#site-wide-floor-plans).
 **Open floor plan** opens the first floor of the location's own floor plan
-(else of the site-wide one), **Open location** its page.
+(else of the site-wide one), **Open location** its page. An outline's
+**Opens** (in its inspector, from any floor plan, snapshot or live view you
+may view) replaces that: **Open floor plan** then opens the plan it names -
+unless you may not view it, when the location's first floor stays.
 
 Outlines are listed in the **Objects** sidebar and found by **Find on map**,
 by label, location name or code. **Display → Layers → Outlines** hides them
@@ -592,10 +595,14 @@ they're scriptable like everything else.
 Building outlines are `/api/site-map-outlines/` (`?site=`, `?location=`):
 `points` is a list of 3 to 500 `[lat, lng]` pairs (not closed - the last
 point joins the first; a repeated closing point is dropped), with
-`site_id`, `location_id`, `label`, `color`, `z` and `locked`. Each row also
-carries `display_label` and `display_color`, as the map draws them.
+`site_id`, `location_id`, `label`, `color`, `z`, `locked` and `opens_id` (a
+floor plan of the tenant you may view; `null` clears it). Each row also
+carries `display_label` and `display_color`, as the map draws them, and
+`opens` (`id`, `name`, `stack_name`, `kind`) - `null` with `opens_hidden`
+when you may not view it.
 `GET /api/site-map-outlines/<id>/drilldown/` returns the panel's counts,
-floor plans and `open_floor_id`.
+floor plans and `open_floor_id` (the outline's Opens target when it has one
+you may view).
 
 `POST /api/floor-plans/from-map/` makes a floor plan from a box of the map;
 see [its API](floor-plans.md#plans-made-from-the-site-map).

@@ -10481,7 +10481,7 @@ class FloorPlanMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = FloorPlan
-        fields = ["id", "name", "stack_name", "grid_width", "grid_height"]
+        fields = ["id", "name", "stack_name", "grid_width", "grid_height", "kind"]
 
 
 class FloorPlanFloorSerializer(serializers.ModelSerializer):
@@ -11669,7 +11669,88 @@ def polygon_is_simple(points) -> bool:
     return True
 
 
-class FloorPlanAreaSerializer(NumIdModelSerializer):
+def plan_access(context, plan_id, action="view") -> bool:
+    """Whether the request's user may ``action`` the floor plan ``plan_id``
+    of the active tenant (a view: its source too, for ``change``). Cached
+    per serialisation in ``context``; True without a request."""
+    request = context.get("request") if context else None
+    if request is None:
+        return True
+    cache = context.setdefault("_plan_access", {})
+    key = (str(plan_id), action)
+    if key not in cache:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(request)
+        plan = rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=plan_id, tenant=tenant),
+            request.user, tenant, "floorplan", action,
+        ).only("pk", "kind", "source_id").first()
+        ok = plan is not None
+        if ok and action != "view" and plan.kind == "view" and plan.source_id:
+            ok = plan_access(context, plan.source_id, action)
+        cache[key] = ok
+    return cache[key]
+
+
+def opens_ref(context, plan) -> dict:
+    """How an area, label or outline names the floor plan it opens."""
+    return {
+        "id": str(plan.pk),
+        "name": plan.name,
+        "stack_name": plan.stack.name if plan.stack_id else None,
+        "kind": plan.kind,
+        "can_change": plan_access(context, plan.pk, "change"),
+    }
+
+
+class _OpensMixin:
+    """``opens`` / ``opens_id`` / ``opens_hidden`` of a row a click opens a
+    floor plan from - an area or label of a floor, a Site map outline.
+
+    Write: ``opens_id`` is a floor plan (any floor, snapshot or live view) of
+    the tenant the writer may view, never the row's own plan; a write that
+    leaves it out keeps it. Read: ``opens`` ``{id, name, stack_name, kind,
+    can_change}``, or null with ``opens_hidden`` when the reader may not view
+    the target."""
+
+    def get_opens(self, obj):
+        if not obj.opens_id or not plan_access(self.context, obj.opens_id):
+            return None
+        return opens_ref(self.context, obj.opens)
+
+    def get_opens_hidden(self, obj) -> bool:
+        return bool(obj.opens_id) and not plan_access(self.context, obj.opens_id)
+
+    def _check_opens(self, attrs, own_plan=None):
+        target = attrs.get("opens")
+        if target is None:
+            return
+        if own_plan is not None and target.pk == own_plan.pk:
+            raise serializers.ValidationError(
+                {"opens_id": "Pick another plan than the one it is on."}
+            )
+        if not plan_access(self.context, target.pk):
+            raise serializers.ValidationError({"opens_id": "Pick a floor plan you can view."})
+
+
+def _back_label_ref(context, obj):
+    """The back label a shape's Back button made (on the plan it opens, or
+    that view's source), if the reader may view its plan."""
+    if not obj.opens_id:
+        return None
+    lb = (
+        FloorPlanLabel.objects.filter(pair_id=obj.pk, floor_plan__tenant_id=obj.floor_plan.tenant_id)
+        .select_related("floor_plan").first()
+    )
+    if lb is None or not plan_access(context, lb.floor_plan_id):
+        return None
+    return {"id": str(lb.pk), "floor_plan_id": str(lb.floor_plan_id),
+            "floor_plan_name": lb.floor_plan.name, "text": lb.text}
+
+
+class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
     """A room, a location or a plain area drawn on a floor: a rectangle
     turned about its centre, or a polygon. Linked to a room or a location of
     the floor's location (or one inside it) - of any location of the site on
@@ -11695,6 +11776,18 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         source="area_type", queryset=AreaType.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+
+    opens = serializers.SerializerMethodField()
+    opens_hidden = serializers.SerializerMethodField()
+    opens_id = TenantScopedPrimaryKeyRelatedField(
+        source="opens", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    back_label = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_back_label(self, obj):
+        return _back_label_ref(self.context, obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_area_type(self, obj):
@@ -11735,6 +11828,7 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
         get = lambda k, d=None: attrs.get(k, getattr(inst, k, d) if inst else d)  # noqa: E731
         plan = _plan_of(self, attrs)
         site_wide = plan is not None and plan.location_id is None
+        self._check_opens(attrs, plan)
 
         room, location = get("room"), get("location")
         if room is not None and location is not None:
@@ -11816,12 +11910,13 @@ class FloorPlanAreaSerializer(NumIdModelSerializer):
                   "rotation", "points", "room", "room_id", "location", "location_id",
                   "area_type", "area_type_id",
                   "label", "color", "fill_opacity", "border", "show_name", "z",
-                  "locked", "created_at", "updated_at"]
-        read_only_fields = ["id", "room", "location", "area_type", "created_at",
-                            "updated_at"]
+                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "created_at", "updated_at"]
+        read_only_fields = ["id", "room", "location", "area_type", "opens",
+                            "opens_hidden", "back_label", "created_at", "updated_at"]
 
 
-class FloorPlanLabelSerializer(NumIdModelSerializer):
+class FloorPlanLabelSerializer(_OpensMixin, NumIdModelSerializer):
     """Free text on a floor. ``font_mm`` is the text height on the floor in
     millimetres; ``width``/``height`` null size the box to the text."""
 
@@ -11830,6 +11925,17 @@ class FloorPlanLabelSerializer(NumIdModelSerializer):
         write_only=True, required=False,
     )
     text = serializers.CharField(max_length=500, trim_whitespace=True)
+    opens = serializers.SerializerMethodField()
+    opens_hidden = serializers.SerializerMethodField()
+    opens_id = TenantScopedPrimaryKeyRelatedField(
+        source="opens", queryset=FloorPlan.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    back_label = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_back_label(self, obj):
+        return _back_label_ref(self.context, obj)
 
     def validate_text(self, v):
         v = v.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -11852,14 +11958,18 @@ class FloorPlanLabelSerializer(NumIdModelSerializer):
             if k in attrs:
                 attrs[k] = _r3(v % 360 if k == "rotation" else v)
         _in_plan(self, attrs, get("x", 0.0), get("y", 0.0))
+        self._check_opens(attrs, _plan_of(self, attrs))
         return attrs
 
     class Meta:
         model = FloorPlanLabel
         fields = ["id", "floor_plan_id", "text", "x", "y", "width", "height",
-                  "rotation", "font_mm", "weight", "align", "color", "plate", "z",
-                  "locked", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+                  "rotation", "font_mm", "weight", "align", "color", "plate", "plate_color",
+                  "z",
+                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "pair_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "opens", "opens_hidden", "back_label", "pair_id",
+                            "created_at", "updated_at"]
 
 
 class CableRouteSerializer(_CableMembersMixin, NumIdModelSerializer):

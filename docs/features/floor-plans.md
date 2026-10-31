@@ -651,6 +651,7 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
 | `GET /api/floor-plans/?stack=<id>` | One floor plan's floors, in order. |
+| `GET /api/floor-plans/?source=<id>` | The snapshots (copies and live views) taken of one plan. |
 | `POST /api/floor-plans/<id>/move/` | `{"stack_id"}` - to another floor plan at the same site, on top of its floors. |
 | `POST /api/floor-plans/<id>/split/` | `{"name"?}` - make the floor a floor plan of its own (default: the floor's name). Answers the new floor plan (201). |
 
@@ -789,7 +790,13 @@ to **Select** and the inspector shows the new area:
   inside it), a **Location** (this floor's or one inside it), or **Just an
   area**. Rooms and locations are offered as their colour badges; **+**
   next to the Room picker makes a new room in this floor's location and
-  links the area to it (needs permission to add rooms). A linked
+  links the area to it (needs permission to add rooms). On a
+  [site-wide floor](#site-wide-floor-plans) - one made from the Site map -
+  the dialog also asks which **Location** the room is in, starting from the
+  location of an area drawn around the new one. **+** next to the Location
+  picker makes a location at the floor's site - its **Parent** (this floor's
+  location by default) and **Location type** optional - and links the area
+  to it (needs permission to add locations). A linked
   area wears the room's or location's colour - from its data, never from
   its name - and shows its name; a plain area takes a colour of its own,
   or its [area type's](#area-types).
@@ -844,6 +851,43 @@ and in view.
 **Snapshot.** **Snapshot this room…** on an area's right-click menu or its
 floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 
+### Opens links
+
+An area or a label can **open** another floor plan: a click on it in View
+goes there, as a click on a [floor-plan tile](#open-a-tile-type) does. Use
+it for "Go to B1" on a site plan, a building that opens its ground floor, or
+a room that opens its snapshot.
+
+- **Setting it.** **Opens…** on the floating toolbar, or the **Opens** row in
+  the inspector, picks the target from three groups: **Floors of this
+  plan**, **Snapshots of this plan** (its copies and live views) and **Other
+  floor plans** (searchable). **Make a snapshot of this…** makes a live view
+  of the area (a label: of the area it stands in) and links to it in one
+  step; it needs a saved area and permission to add floor plans. The arrow
+  next to the picker opens the target. Any floor of any floor plan,
+  snapshots and live views included, may be a target - never the plan the
+  shape is on.
+- **On the plan.** A linked area or label carries a small link mark; in
+  View, hovering it names the target ("Opens Campus · B1").
+- **Back button.** With a target set, the **Back button** switch puts a
+  label on the target that opens this plan back - "Back to Site" unless you
+  write your own text below the switch. Each side's text is its own:
+  renaming one never renames the other. The label lands in the target's
+  top left - on a live view, on the view's source in the view's top left,
+  so the view shows it - and is an ordinary label there, to move and
+  restyle. Picking another target offers to move the back label with it;
+  clearing the target, turning the switch off or deleting the shape offers
+  to delete it. The switch needs the shape saved and permission to change
+  the target (a live view's source too); without it, it is disabled and
+  says why.
+- **Who sees what.** The target must be a plan of the tenant you may view.
+  A reader who may not view it sees no name: the shape keeps its mark,
+  opens nothing and reads "Opens a hidden plan", and saving the plan keeps
+  the link.
+- **Copies.** A clone and a snapshot copy keep where each shape opens; a
+  copied back label becomes a plain label. On paper the link is a note
+  under the shape ("→ Campus · B1").
+
 ### Area types
 
 An **area type** says what a plain area is - *Parking*, *Fence*, *Road*,
@@ -897,7 +941,21 @@ to 5,000. Dragging a label's corner handle scales its text. A label also has
 **Bold**, alignment, a **colour** from a short palette (ink, muted, red,
 amber, green, blue, violet - the same on screen in either theme and on
 paper), an optional **plate** behind the text so it reads over lines, and a
-rotation. Labels draw over the tiles.
+rotation. The plate has a **Plate colour** of its own from the same palette
+(**Default** is the theme's background); over a coloured plate the text
+turns black or white, whichever reads, unless the label has a colour of its
+own. The PDF draws the same. Labels draw over the tiles. A label can
+[open another plan](#opens-links).
+
+### Right-click on the plan
+
+In Edit, a right-click on empty plan space offers **Place device here…**
+(the [Place picker](#the-place-picker); what you pick lands at the point,
+on the grid on a grid plan), **Draw room/area here** (what a click with the
+Room tool draws: a 3 × 3 area at the point, selected to resize and link),
+**Add label here** (a label at the
+point, its text ready to type) and **Fit to view**. In View, those who may
+edit get **Edit here**, which switches to Edit.
 
 ### Keyboard
 
@@ -930,7 +988,9 @@ colour; labels are 2D only.
 | Call | |
 |---|---|
 | `GET/POST/PATCH/DELETE /api/floor-plan-areas/` | `?floor_plan=<id>`. Write `floor_plan_id`, `shape` (`rect` or `polygon`), `x`, `y`, `width`, `height`, `rotation` (a rectangle: its upright box in cells, inside the grid, turned about its centre), `points` (a polygon: 3-200 `[x, y]` pairs inside the grid that do not cross; its box is worked out), `room_id` or `location_id` (at most one), `area_type_id` (a plain area only; linking a room or location drops it), `label`, `color`, `fill_opacity` (0-100), `border` (`solid`, `dashed`, `none`), `show_name`, `z`, `locked`. Reads `room` (`id`, `name`, `code`, `color`), `location` (`id`, `name`, `color`) and `area_type` (`id`, `name`, `color`, `pattern`, `icon`). |
-| `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `z`, `locked`. |
+| `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `plate_color` (the same tokens, `""` the background), `z`, `locked`. Reads `pair_id`: on a back label, the area or label whose Back button made it. |
+| Opens (areas and labels) | Write `opens_id` (a floor plan of the tenant you may view, not the shape's own; `null` clears it; left out, it is kept). Reads `opens` (`id`, `name`, `stack_name`, `kind`, `can_change`) - `null` with `opens_hidden: true` when you may not view the target - and `back_label` (`id`, `floor_plan_id`, `floor_plan_name`, `text`) or `null`. |
+| `POST /api/floor-plans/<id>/back-link/` | A shape's Back button: `{"kind": "area" \| "label", "id", "on": true, "target_id", "text"}` makes the back label on `target_id` (or moves it there, or renames it); `"on": false` deletes it. Needs `floorplan · change` on this plan and on the target (a live view's source too). Answers `{"back_label"}`. |
 | `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |
 
 A room must be one of the plan's location's rooms, or of a location nested
@@ -1097,7 +1157,8 @@ display choices it is saved on the plan for those who may edit it.
 A selected tile, area or label in Edit carries a small toolbar just above
 it, next to the inspector: **Set room** (see above), **Show as photo** or
 **Show as tile**, **Bring forward** and **Send back** (a free plan's tiles;
-areas and labels), **Lock** (areas and labels), **Link room** (areas) and
+areas and labels), **Lock** (areas and labels), **Link room** (areas),
+**Opens…** (areas and labels, see [Opens links](#opens-links)) and
 **Delete**.
 
 ### An empty floor

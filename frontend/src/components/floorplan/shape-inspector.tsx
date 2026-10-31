@@ -26,8 +26,10 @@ import type {
   AreaTypeRef,
   FloorPlan,
   FloorPlanAreaBorder,
+  FloorPlanBackLabelRef,
   FloorPlanLabelColor,
   Location,
+  LocationTypeRef,
   RoomOption,
 } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -45,10 +47,13 @@ import {
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 
+import { OpensEditor } from "./opens-field"
 import {
   LABEL_COLORS,
   LABEL_SIZES,
   areaName,
+  enclosingLocation,
+  labelPlate,
   labelPresetMm,
   labelPresetOf,
 } from "./shapes"
@@ -137,6 +142,121 @@ function useFloorLocations(plan: FloorPlan) {
     const inside = scopeLocationIds(plan, all)
     return all.filter((l) => inside.has(l.id))
   }, [q.data, plan])
+}
+
+const locationOptions = (rows: Location[]) =>
+  rows.map((l) => ({
+    value: l.id,
+    label: l.name,
+    color: l.color || null,
+    badge: true,
+  }))
+
+/** "+" on the Room picker: a room in the floor's location - on a site-wide
+ * floor, in the location picked in the dialog (the one drawn around the
+ * area first). */
+function NewRoomButton({
+  plan,
+  locations,
+  defaultLocationId,
+  onCreated,
+}: {
+  plan: FloorPlan
+  locations: Location[]
+  defaultLocationId: string | null
+  onCreated: (room: { id: string; name: string }) => void
+}) {
+  const qc = useQueryClient()
+  const done = (r: { id: string; name: string }) => {
+    void qc.invalidateQueries({ queryKey: ["rooms-picker"] })
+    void qc.invalidateQueries({ queryKey: ["rooms"] })
+    onCreated(r)
+  }
+  if (plan.location)
+    return (
+      <QuickAddDialog
+        title={`New room in ${plan.location.name}`}
+        endpoint="/api/rooms/"
+        fields={[{ name: "name", label: "Name", required: true }]}
+        fixed={{ location_id: plan.location.id }}
+        onCreated={done}
+      />
+    )
+  return (
+    <QuickAddDialog
+      title={`New room at ${plan.site.name}`}
+      endpoint="/api/rooms/"
+      fields={[
+        { name: "name", label: "Name", required: true },
+        {
+          name: "location_id",
+          label: "Location",
+          type: "combobox",
+          required: true,
+          options: locationOptions(locations),
+          initial: defaultLocationId ?? undefined,
+          placeholder: "Select a location…",
+        },
+      ]}
+      onCreated={done}
+    />
+  )
+}
+
+/** "+" on the Location picker: a location at the floor's site (inside the
+ * floor's location by default), its parent and type optional. */
+function NewLocationButton({
+  plan,
+  locations,
+  onCreated,
+}: {
+  plan: FloorPlan
+  locations: Location[]
+  onCreated: (loc: { id: string; name: string; color?: string }) => void
+}) {
+  const qc = useQueryClient()
+  const types = useQuery({
+    queryKey: ["location-types-picker"],
+    queryFn: () => apiAll<LocationTypeRef>("/api/location-types/?picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  return (
+    <QuickAddDialog
+      title={`New location at ${plan.site.name}`}
+      endpoint="/api/locations/"
+      fixed={{ site_id: plan.site.id }}
+      fields={[
+        { name: "name", label: "Name", required: true },
+        {
+          name: "parent_id",
+          label: "Parent",
+          type: "combobox",
+          options: locationOptions(locations),
+          initial: plan.location?.id,
+          noneLabel: "No parent",
+          placeholder: "Select a parent…",
+        },
+        {
+          name: "location_type_id",
+          label: "Location type",
+          type: "combobox",
+          options: (types.data?.results ?? []).map((t) => ({
+            value: t.id,
+            label: t.name,
+            color: t.color || null,
+            badge: true,
+          })),
+          noneLabel: "No type",
+          placeholder: "Select a type…",
+        },
+      ]}
+      onCreated={(l) => {
+        void qc.invalidateQueries({ queryKey: ["locations-of-site"] })
+        void qc.invalidateQueries({ queryKey: ["locations"] })
+        onCreated(l)
+      }}
+    />
+  )
 }
 
 type LinkKind = "room" | "location" | "none"
@@ -295,6 +415,8 @@ export function AreaInspector({
   onRestack,
   onDelete,
   onLinkColour,
+  shapes = [],
+  onBackLabel,
 }: {
   plan: FloorPlan
   area: AreaShape
@@ -303,6 +425,11 @@ export function AreaInspector({
   onDelete: () => void
   /** A room's or location's colour was changed: repaint its areas. */
   onLinkColour?: (kind: "room" | "location", id: string, color: string) => void
+  /** The floor's areas and labels: the location drawn around this area,
+   * the area a label's snapshot is of. */
+  shapes?: readonly PlanShape[]
+  /** Its Back button's label changed on the server. */
+  onBackLabel?: (ref: FloorPlanBackLabelRef | null) => void
 }) {
   // The floor's rooms, its sub-locations' included.
   const rooms = useQuery({
@@ -311,9 +438,9 @@ export function AreaInspector({
     staleTime: 5 * 60_000,
   })
   const locations = useFloorLocations(plan)
-  const qc = useQueryClient()
   const { canDo } = useMe()
   const canAddRoom = canDo("room", "add")
+  const canAddLocation = canDo("location", "add")
   const linked: LinkKind = area.room
     ? "room"
     : area.location
@@ -382,19 +509,18 @@ export function AreaInspector({
           searchPlaceholder="Search rooms…"
           emptyText="No rooms in this location."
           quickAdd={
-            canAddRoom && plan.location ? (
-              <QuickAddDialog
-                title={`New room in ${plan.location.name}`}
-                endpoint="/api/rooms/"
-                fields={[{ name: "name", label: "Name", required: true }]}
-                fixed={{ location_id: plan.location?.id }}
-                onCreated={(r) => {
-                  void qc.invalidateQueries({ queryKey: ["rooms-picker"] })
-                  void qc.invalidateQueries({ queryKey: ["rooms"] })
+            canAddRoom ? (
+              <NewRoomButton
+                plan={plan}
+                locations={locations}
+                defaultLocationId={
+                  enclosingLocation(area, shapes, plan.cell_mm)?.id ?? null
+                }
+                onCreated={(r) =>
                   onChange({
                     room: { id: r.id, name: r.name, code: "", color: "" },
                   })
-                }}
+                }
               />
             ) : undefined
           }
@@ -418,6 +544,19 @@ export function AreaInspector({
           }))}
           placeholder="Select a location…"
           searchPlaceholder="Search locations…"
+          quickAdd={
+            canAddLocation ? (
+              <NewLocationButton
+                plan={plan}
+                locations={locations}
+                onCreated={(l) =>
+                  onChange({
+                    location: { id: l.id, name: l.name, color: l.color ?? "" },
+                  })
+                }
+              />
+            ) : undefined
+          }
         />
       )}
       {link === "none" && <AreaTypeField area={area} onChange={onChange} />}
@@ -488,6 +627,13 @@ export function AreaInspector({
         checked={area.show_name}
         onChange={(v) => onChange({ show_name: v })}
       />
+      <OpensEditor
+        plan={plan}
+        shape={area}
+        shapes={shapes}
+        onChange={onChange}
+        onBackLabel={onBackLabel}
+      />
       {area.shape === "rect" && (
         <AngleField
           value={area.rotation}
@@ -506,12 +652,16 @@ export function LabelInspector({
   onChange,
   onRestack,
   onDelete,
+  shapes = [],
+  onBackLabel,
 }: {
   plan: FloorPlan
   label: LabelShape
   onChange: Patch
   onRestack: (dir: 1 | -1) => void
   onDelete: () => void
+  shapes?: readonly PlanShape[]
+  onBackLabel?: (ref: FloorPlanBackLabelRef | null) => void
 }) {
   const text = useRef<HTMLTextAreaElement>(null)
   // A new label opens with its text selected, so typing replaces it.
@@ -634,9 +784,64 @@ export function LabelInspector({
         checked={label.plate}
         onChange={(v) => onChange({ plate: v })}
       />
+      {label.plate && (
+        <Field
+          label="Plate colour"
+          info="The text reads over it unless its own colour is set."
+        >
+          <div
+            className="flex flex-wrap gap-1"
+            role="group"
+            aria-label="Plate colour"
+          >
+            {(Object.keys(LABEL_COLORS) as FloorPlanLabelColor[]).map((c) => {
+              const look = labelPlate({ ...label, plate: true, plate_color: c })
+              const name = c ? LABEL_COLORS[c].name : "Default"
+              const on = (label.plate_color ?? "") === c
+              return (
+                <button
+                  key={c || "default"}
+                  type="button"
+                  aria-pressed={on}
+                  aria-label={name}
+                  onClick={() => onChange({ plate_color: c })}
+                  className={cn(
+                    "flex h-7 w-8 items-center justify-center rounded-md border border-border hover:bg-muted/60",
+                    on && "border-primary/60 bg-accent"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-6 items-center justify-center rounded-md border border-border text-[9px] font-semibold",
+                      !look.fill && "bg-background"
+                    )}
+                    style={
+                      look.fill
+                        ? {
+                            background: look.fill,
+                            color: look.ink ?? undefined,
+                          }
+                        : undefined
+                    }
+                  >
+                    Aa
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+      )}
       <AngleField
         value={label.rotation}
         onChange={(rotation) => onChange({ rotation })}
+      />
+      <OpensEditor
+        plan={plan}
+        shape={label}
+        shapes={shapes}
+        onChange={onChange}
+        onBackLabel={onBackLabel}
       />
     </aside>
   )

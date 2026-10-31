@@ -12561,10 +12561,37 @@ export interface AreaTypeWritePayload {
   description?: string
 }
 
+/** The floor plan a click on an area, label or Site map outline opens
+ * (docs: floor-plans "Opens links"). */
+export interface FloorPlanOpensRef {
+  id: string
+  name: string
+  stack_name: string | null
+  kind: "plan" | "view"
+  /** Whether the reader may change it - a Back button needs it. */
+  can_change: boolean
+}
+
+/** The label a Back button keeps on the plan its shape opens. */
+export interface FloorPlanBackLabelRef {
+  id: string
+  floor_plan_id: string
+  floor_plan_name: string
+  text: string
+}
+
+/** What an area or label opens: absent from older payloads. */
+export interface FloorPlanOpensFields {
+  opens?: FloorPlanOpensRef | null
+  /** It opens a plan the reader may not view. */
+  opens_hidden?: boolean
+  back_label?: FloorPlanBackLabelRef | null
+}
+
 /** A room, a location or a plain area drawn on a floor: a rotated rectangle
  * or a polygon, under the tiles (docs: floor-plans "Rooms, areas and
  * labels"). Coordinates are cell units. */
-export interface FloorPlanArea {
+export interface FloorPlanArea extends FloorPlanOpensFields {
   id: string
   shape: "rect" | "polygon"
   /** The rectangle (polygon: its bounding box, read-only). */
@@ -12606,6 +12633,7 @@ export interface FloorPlanAreaWritePayload {
   room_id?: string | null
   location_id?: string | null
   area_type_id?: string | null
+  opens_id?: string | null
   label?: string
   color?: string
   fill_opacity?: number
@@ -12621,7 +12649,7 @@ export type FloorPlanLabelColor =
 
 /** Free text on a floor ("North side", "Loading dock"). Its size is the
  * text's height on the floor in millimetres, so it scales with the plan. */
-export interface FloorPlanLabel {
+export interface FloorPlanLabel extends FloorPlanOpensFields {
   id: string
   text: string
   x: number
@@ -12636,6 +12664,11 @@ export interface FloorPlanLabel {
   color: FloorPlanLabelColor
   /** An opaque chip behind the text, so it reads over lines. */
   plate: boolean
+  /** The plate's fill from the same palette; "" = the background. Absent
+   * from older payloads. */
+  plate_color?: FloorPlanLabelColor
+  /** A back label: the id of the area or label whose Back button made it. */
+  pair_id?: string | null
   z: number
   locked: boolean
   created_at: string
@@ -12655,6 +12688,8 @@ export interface FloorPlanLabelWritePayload {
   align?: FloorPlanLabel["align"]
   color?: FloorPlanLabelColor
   plate?: boolean
+  plate_color?: FloorPlanLabelColor
+  opens_id?: string | null
   z?: number
   locked?: boolean
 }
@@ -12780,6 +12815,9 @@ export interface SiteMapOutline {
   /** The colour drawn: its own, else the type's, else the location's; "" =
    * neutral. */
   display_color: string
+  /** The floor plan Open floor plan opens, in place of the location's. */
+  opens?: FloorPlanOpensRef | null
+  opens_hidden?: boolean
   created_at: string
   updated_at: string
 }
@@ -12799,6 +12837,7 @@ export interface SiteMapOutlineWritePayload {
   color?: string
   z?: number
   locked?: boolean
+  opens_id?: string | null
 }
 
 /** `GET /api/site-map-outlines/<id>/drilldown/` - what is inside it. */

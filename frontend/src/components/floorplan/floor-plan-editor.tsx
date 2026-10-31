@@ -44,6 +44,7 @@ import {
   visibleTiles as pickVisibleTiles,
 } from "./hidden"
 import { ObjectsSidebar } from "./objects-sidebar"
+import { BackLabelDeleteDialog } from "./opens-field"
 import { PlanCanvas } from "./plan-canvas"
 import { PlanDialogs } from "./plan-dialogs"
 import { PlanHeader } from "./plan-header"
@@ -71,7 +72,7 @@ import {
   usePlacedCables,
 } from "./place-cables"
 import type { AfterPlace, PlaceCablesApply } from "./place-cables"
-import type { Pt } from "./shapes"
+import type { PlanShape, Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
 import { shapeBounds } from "./shapes"
 import { SnapAllDialog } from "./snap-all-dialog"
@@ -209,7 +210,23 @@ export function FloorPlanEditor({
   const { hidden, setHiddenPref, colorBy, showRacks, showObjects } = prefs
   const edits = useTileEdits({ id, plan, ed })
   const structure = useStructureEdits({ id, plan, walls, ed })
-  const shapeEdits = useShapeEdits({ plan, ed })
+  const rawShapeEdits = useShapeEdits({ plan, ed })
+  // Deleting an area or label with a Back button asks about its label on
+  // the other plan first.
+  const [backDelete, setBackDelete] = useState<PlanShape | null>(null)
+  const shapeEdits = useMemo(
+    () => ({
+      ...rawShapeEdits,
+      deleteShape: (shapeId: string) => {
+        const s = ed.shapes.find((x) => x.id === shapeId)
+        if (s?.back_label) setBackDelete(s)
+        else rawShapeEdits.deleteShape(shapeId)
+      },
+    }),
+    [rawShapeEdits, ed.shapes]
+  )
+  // "Place device here…": where the picker's next pick lands.
+  const placePoint = useRef<Pt | null>(null)
 
   const shownTiles = useMemo(
     () => pickVisibleTiles(tiles, hidden),
@@ -454,17 +471,39 @@ export function FloorPlanEditor({
   // The objects on this floor as the editor holds it - the unsaved draft
   // included - for the picker's "On this floor" and the Not placed list.
   const onFloor = useMemo(() => placedOnFloor(tiles), [tiles])
-  const openPlace = useCallback(() => {
-    const api = canvasApi.current
-    setNear(
-      nearScope(
-        ed.shapes,
-        api?.pointerCell?.() ?? null,
-        api?.centerCell?.() ?? null
+  const openPlace = useCallback(
+    (at: Pt | null = null) => {
+      const api = canvasApi.current
+      placePoint.current = at
+      setNear(
+        nearScope(
+          ed.shapes,
+          at ?? api?.pointerCell?.() ?? null,
+          api?.centerCell?.() ?? null
+        )
       )
-    )
-    setPlaceOpen(true)
-  }, [ed.shapes])
+      setPlaceOpen(true)
+    },
+    [ed.shapes]
+  )
+  /** The Place picker's pick: at the right-clicked point, else the middle. */
+  const placePicked = useCallback(
+    (rows: FloorPlanPlaceable[]) => {
+      const at = placePoint.current
+      placePoint.current = null
+      if (at) placeAt(rows, at)
+      else placeAtCentre(rows)
+    },
+    [placeAt, placeAtCentre]
+  )
+  /** A shape's Back button label changed on the server (not an edit). */
+  const setBackLabel = useCallback(
+    (shapeId: string, ref: PlanShape["back_label"]) =>
+      ed.setShapes((prev) =>
+        prev.map((x) => (x.id === shapeId ? { ...x, back_label: ref } : x))
+      ),
+    [ed]
+  )
   const applyRoom = (prompt: RoomPromptState) =>
     setRooms.mutate(prompt, {
       onSuccess: () => {
@@ -528,7 +567,7 @@ export function FloorPlanEditor({
 
   const { stepHistory } = useEditorKeys({
     // P in View, for those who may edit: into Edit, then the picker.
-    onPlaceKey: openPlace,
+    onPlaceKey: () => openPlace(),
     canEdit: editing,
     canToggleEdit: canEdit,
     onToggleEdit: changeEditing,
@@ -745,9 +784,15 @@ export function FloorPlanEditor({
               plan={plan}
               onFloor={onFloor}
               open={placeOpen}
-              onOpenChange={(o) => (o ? openPlace() : setPlaceOpen(false))}
+              onOpenChange={(o) => {
+                if (o) openPlace()
+                else {
+                  placePoint.current = null
+                  setPlaceOpen(false)
+                }
+              }}
               near={near}
-              onPlace={placeAtCentre}
+              onPlace={placePicked}
               onShow={(tileId) => {
                 const tile = tiles.find((t) => t.id === tileId)
                 if (!tile) return
@@ -815,8 +860,52 @@ export function FloorPlanEditor({
               shapeEdits={shapeEdits}
               canEdit={editing}
               onOpenShape={(s) => {
+                // An Opens link goes to its plan, as a floor-plan tile does.
+                if (s.opens) {
+                  void nav({
+                    to: "/floorplans/$id",
+                    params: { id: s.opens.id },
+                  })
+                  return
+                }
                 if (s.kind === "area") setOpenArea(s.id)
               }}
+              emptyActions={
+                editing
+                  ? {
+                      placeAt: (at) => openPlace(at),
+                      drawAreaAt: (at) => {
+                        // What a click with the Room tool draws: a 3 × 3
+                        // area at the point, selected to resize and link.
+                        if (ed.mode !== "layout") selectTool("select")
+                        const size = 3
+                        const snap = (v: number, max: number) =>
+                          Math.max(
+                            0,
+                            Math.min(
+                              plan.layout_mode === "free"
+                                ? Math.round(v * 4) / 4
+                                : Math.floor(v),
+                              max - Math.min(size, max)
+                            )
+                          )
+                        shapeEdits.createArea({
+                          shape: "rect",
+                          x: snap(at[0], plan.grid_width),
+                          y: snap(at[1], plan.grid_height),
+                          width: Math.min(size, plan.grid_width),
+                          height: Math.min(size, plan.grid_height),
+                        })
+                      },
+                      addLabelAt: (at) => {
+                        if (ed.mode !== "layout") selectTool("select")
+                        shapeEdits.createLabel({ x: at[0], y: at[1] })
+                      },
+                    }
+                  : canEdit
+                    ? { editHere: () => changeEditing(true) }
+                    : undefined
+              }
               ed={ed}
               edits={edits}
               structure={structure}
@@ -878,6 +967,7 @@ export function FloorPlanEditor({
                     onRestackShape={shapeEdits.restack}
                     onDeleteShape={shapeEdits.deleteShape}
                     onSnapshotShape={snapshotShape}
+                    onShapeBackLabel={setBackLabel}
                   />
                 ) : undefined
               }
@@ -905,7 +995,7 @@ export function FloorPlanEditor({
                       ed.tool === "select" && (
                         <PlanEmptyState
                           onDrawRoom={() => selectTool("rect")}
-                          onPlace={openPlace}
+                          onPlace={() => openPlace()}
                         />
                       )}
                   </>
@@ -1076,6 +1166,12 @@ export function FloorPlanEditor({
           selectTool("select")
           void nav({ to: "/floorplans/$id", params: { id: made.id } })
         }}
+      />
+      <BackLabelDeleteDialog
+        plan={plan}
+        shape={backDelete}
+        onClose={() => setBackDelete(null)}
+        onDelete={rawShapeEdits.deleteShape}
       />
       <SnapAllDialog
         planId={plan.id}

@@ -38,6 +38,7 @@ import {
   boxBounds,
   byZ,
   labelBox,
+  opensName,
   pointInBox,
   pointInPolygon,
   polygonPatch,
@@ -297,7 +298,20 @@ export interface FloorCanvasProps {
   onDropRows?: (rows: FloorPlanPlaceable[], at: Pt) => void
   /** Floats above the one selected tile, area or label (Edit). */
   selectionToolbar?: React.ReactNode
+  /** The right-click menu on empty plan space: in Edit, place, draw and
+   * label at the point; in View, "Edit here" for those who may edit. */
+  emptyActions?: EmptyActions
   className?: string
+}
+
+/** What a right-click on empty plan space offers, at its cell point. */
+export interface EmptyActions {
+  placeAt?: (at: Pt) => void
+  drawAreaAt?: (at: Pt) => void
+  addLabelAt?: (at: Pt) => void
+  /** Paste what was copied, when anything was. */
+  pasteAt?: (at: Pt) => void
+  editHere?: (at: Pt) => void
 }
 
 type DragState =
@@ -430,6 +444,7 @@ export function FloorCanvas({
   onRestackShape,
   onDropRows,
   selectionToolbar,
+  emptyActions,
   className,
 }: FloorCanvasProps) {
   // The cell point under the pointer while it is over the plan.
@@ -465,6 +480,15 @@ export function FloorCanvas({
     y: number
     tile: FloorPlanTile | null
     vertex?: { trayId: string; index: number }
+    /** The cell point right-clicked. */
+    at?: Pt
+  } | null>(null)
+  // View: the name of the plan the area or label under the pointer opens.
+  const [opensHint, setOpensHint] = useState<{
+    id: string
+    x: number
+    y: number
+    text: string
   } | null>(null)
   const {
     t,
@@ -1203,6 +1227,38 @@ export function FloorCanvas({
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
       tile: hit ?? null,
+      at: [wx, wy],
+    })
+  }
+
+  /** View: the topmost area or label with an Opens link under the pointer
+   * names its target beside it - set only when that shape changes. */
+  const hoverOpens = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (editable) return
+    const svg = svgRef.current
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const p: Pt = [
+      (e.clientX - rect.left - t.x) / t.k / CELL,
+      (e.clientY - rect.top - t.y) / t.k / CELL,
+    ]
+    const hit = [...labels.slice().reverse(), ...areas.slice().reverse()].find(
+      (s) =>
+        (s.opens || s.opens_hidden) &&
+        (s.kind === "area" && s.shape === "polygon"
+          ? pointInPolygon(p, s.points)
+          : pointInBox(p, s.kind === "label" ? labelBox(s, plan.cell_mm) : s))
+    )
+    if (!hit) {
+      if (opensHint) setOpensHint(null)
+      return
+    }
+    if (opensHint?.id === hit.id) return
+    setOpensHint({
+      id: hit.id,
+      x: e.clientX - rect.left + 12,
+      y: e.clientY - rect.top + 14,
+      text: hit.opens ? `Opens ${opensName(hit)}` : "Opens a hidden plan",
     })
   }
 
@@ -1343,6 +1399,7 @@ export function FloorCanvas({
         onPointerMove={(e) => {
           if (pinchMove(e)) return
           handleMove(e)
+          hoverOpens(e)
         }}
         onPointerCancel={pinchUp}
         onPointerUp={(e) => {
@@ -1364,6 +1421,7 @@ export function FloorCanvas({
         onPointerLeave={(e) => {
           pickStart.current = null
           pointerAt.current = null
+          setOpensHint(null)
           if (pinchUp(e)) return
           handleUp(e)
         }}
@@ -1691,7 +1749,12 @@ export function FloorCanvas({
                 key={l.id}
                 label={l}
                 cellMm={plan.cell_mm}
-                interactive={shapesLive && editable && !isLocked(l.id)}
+                // View: a label takes the pointer only to open its link.
+                interactive={
+                  shapesLive &&
+                  (editable ? !isLocked(l.id) : !!(l.opens || l.opens_hidden))
+                }
+                viewing={!editable}
                 onPointerDown={(e) => shapeG.shapeDown(l, e)}
               />
             ))}
@@ -1813,6 +1876,17 @@ export function FloorCanvas({
         )
       })()}
 
+      {opensHint && !editable && (
+        <div
+          role="status"
+          data-part="opens-hint"
+          className="pointer-events-none absolute z-20 rounded-md border border-border bg-popover px-2 py-1 text-xs whitespace-nowrap shadow-md"
+          style={{ left: opensHint.x, top: opensHint.y }}
+        >
+          {opensHint.text}
+        </div>
+      )}
+
       {/* An area's or label's menu, and a polygon point's. */}
       <PointerMenu
         menu={shapeMenu}
@@ -1898,6 +1972,39 @@ export function FloorCanvas({
             sideOffset={0}
             className="w-auto min-w-40"
           >
+            {!ctxMenu.tile &&
+              !ctxMenu.vertex &&
+              ctxMenu.at &&
+              emptyActions &&
+              (() => {
+                const at = ctxMenu.at
+                const run = (fn?: (p: Pt) => void) => () => {
+                  setCtxMenu(null)
+                  fn?.(at)
+                }
+                const items = editable
+                  ? [
+                      ["Place device here…", emptyActions.placeAt],
+                      ["Draw room/area here", emptyActions.drawAreaAt],
+                      ["Add label here", emptyActions.addLabelAt],
+                      ["Paste", emptyActions.pasteAt],
+                    ]
+                  : [["Edit here", emptyActions.editHere]]
+                const shown = items.filter(
+                  (it): it is [string, (p: Pt) => void] => !!it[1]
+                )
+                if (!shown.length) return null
+                return (
+                  <>
+                    {shown.map(([label, fn]) => (
+                      <DropdownMenuItem key={label} onSelect={run(fn)}>
+                        {label}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                  </>
+                )
+              })()}
             {ctxMenu.vertex && (
               <DropdownMenuItem
                 onSelect={() => {

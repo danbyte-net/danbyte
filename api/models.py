@@ -10016,6 +10016,13 @@ class FloorPlanArea(TimestampedModel):
     show_name = models.BooleanField(default=True)
     z = models.SmallIntegerField(default=0, help_text="Draw order among areas.")
     locked = models.BooleanField(default=False)
+    # The floor plan a click on the area opens in View (any floor, snapshot
+    # or live view the writer may view); a reader who may not view it reads
+    # null and ``opens_hidden``.
+    opens = models.ForeignKey(
+        FloorPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_areas",
+    )
 
     class Meta:
         ordering = ["z", "created_at"]
@@ -10064,8 +10071,22 @@ class FloorPlanLabel(TimestampedModel):
     align = models.CharField(max_length=8, choices=ALIGNS, default="left")
     color = models.CharField(max_length=16, choices=COLORS, blank=True, default="")
     plate = models.BooleanField(default=False)
+    # The plate's fill, from the same palette; blank = the theme's
+    # background. The text reads over it unless its own colour is set.
+    plate_color = models.CharField(
+        max_length=16, choices=COLORS, blank=True, default="", db_default=""
+    )
     z = models.SmallIntegerField(default=0)
     locked = models.BooleanField(default=False)
+    # The floor plan a click on the label opens in View (see FloorPlanArea).
+    opens = models.ForeignKey(
+        FloorPlan, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_labels",
+    )
+    # A back label: the id of the area or label (on another plan) whose
+    # Back button made it. It opens that shape's plan; turning the button
+    # off deletes it. Copies and clones drop it.
+    pair_id = models.UUIDField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ["z", "created_at"]
@@ -10203,6 +10224,12 @@ class SiteMapOutline(TimestampedModel):
     color = models.CharField(max_length=7, blank=True, default="")
     z = models.SmallIntegerField(default=0, help_text="Draw order among outlines.")
     locked = models.BooleanField(default=False)
+    # The floor plan "Open floor plan" opens, in place of the location's
+    # first floor.
+    opens = models.ForeignKey(
+        "FloorPlan", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="opened_by_outlines",
+    )
 
     class Meta:
         ordering = ["z", "created_at"]

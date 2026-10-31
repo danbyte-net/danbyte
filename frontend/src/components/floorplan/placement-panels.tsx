@@ -6,6 +6,7 @@ import {
   Crop,
   DoorOpen,
   Image as ImageIcon,
+  Link2,
   Lock,
   LockOpen,
   SendToBack,
@@ -18,6 +19,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type {
   FloorPlan,
+  FloorPlanBackLabelRef,
   FloorPlanConflict,
   FloorPlanRoomMismatch,
   FloorPlanRoomRef,
@@ -51,7 +53,9 @@ import {
 } from "@/components/ui/popover"
 
 import { tileName } from "./canvas-geometry"
+import { OpensEditor } from "./opens-field"
 import { roomAreaAt } from "./placement"
+import { opensName } from "./shapes"
 import type { AreaShape, PlanShape } from "./shapes"
 import { snapshotAreaLabel } from "./snapshot"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
@@ -373,6 +377,48 @@ function AreaRoomButton({
   )
 }
 
+/** **Opens…**: where a click on the area or label goes in View, and its
+ * Back button - the inspector's Opens row in a popover. */
+function OpensButton({
+  plan,
+  shape,
+  shapes,
+  onChange,
+  onBackLabel,
+}: {
+  plan: FloorPlan
+  shape: PlanShape
+  shapes: PlanShape[]
+  onChange: (patch: Partial<PlanShape>) => void
+  onBackLabel?: (ref: FloorPlanBackLabelRef | null) => void
+}) {
+  const name = opensName(shape)
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 max-w-48 gap-1.5 text-xs"
+          data-part="opens-button"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          <span className="truncate">{name ? `Opens ${name}` : "Opens…"}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="grid w-72 gap-3 p-3">
+        <OpensEditor
+          plan={plan}
+          shape={shape}
+          shapes={shapes}
+          onChange={onChange}
+          onBackLabel={onBackLabel}
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /**
  * The small toolbar floating above the selection, next to the inspector:
  * lock, link a room, photo or icon, bring forward / send back, delete. A
@@ -391,7 +437,10 @@ export function SelectionToolbar({
   onRestackShape,
   onDeleteShape,
   onSnapshotShape,
+  onShapeBackLabel,
 }: {
+  /** A shape's Back button label changed on the server. */
+  onShapeBackLabel?: (id: string, ref: FloorPlanBackLabelRef | null) => void
   plan: FloorPlan
   tile: FloorPlanTile | null
   shape: PlanShape | null
@@ -525,6 +574,13 @@ export function SelectionToolbar({
           onChange={(patch) => onChangeShape(shape.id, patch)}
         />
       )}
+      <OpensButton
+        plan={plan}
+        shape={shape}
+        shapes={shapes}
+        onChange={(patch) => onChangeShape(shape.id, patch)}
+        onBackLabel={(ref) => onShapeBackLabel?.(shape.id, ref)}
+      />
       {shape.kind === "area" && onSnapshotShape && (
         <BarIconButton
           label={snapshotAreaLabel(shape)}

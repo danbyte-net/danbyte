@@ -33,7 +33,10 @@ import {
   byZ,
   labelBox,
   labelFontCells,
+  labelPlate,
+  opensName,
   polygonCentroid,
+  shapeBounds,
   tileBox,
   tileQuarter,
 } from "./shapes"
@@ -442,6 +445,20 @@ function areaMarkup(a: AreaShape): string {
   )
 }
 
+/** Where an area or label opens, as a note under it on paper ("→ B1"):
+ * the export cannot be clicked. */
+function opensNoteMarkup(s: PlanShape, cellMm: number): string {
+  const name = opensName(s)
+  if (!name) return ""
+  const b = shapeBounds(s, cellMm)
+  return text(`→ ${name}`, {
+    x: b.minX * CELL + 2,
+    y: b.maxY * CELL + 11,
+    "font-size": 9,
+    fill: "#71717a",
+  })
+}
+
 /** A label at its real size, in its paper ink. */
 function labelMarkup(l: LabelShape, cellMm: number): string {
   const box = labelBox(l, cellMm)
@@ -455,7 +472,8 @@ function labelMarkup(l: LabelShape, cellMm: number): string {
       : l.align === "right"
         ? (box.x + box.width) * CELL - size * 0.3
         : box.x * CELL + size * 0.3
-  const ink = labelColor(l.color).paper
+  const plate = labelPlate(l)
+  const ink = plate.ink ?? labelColor(l.color).paper
   const lines = l.text
     .split("\n")
     .map((line, i) =>
@@ -478,7 +496,7 @@ function labelMarkup(l: LabelShape, cellMm: number): string {
           width: box.width * CELL,
           height: box.height * CELL,
           rx: Math.min(6, size * 0.2),
-          fill: "#ffffff",
+          fill: plate.fill ?? "#ffffff",
           stroke: "#e4e4e7",
           "stroke-width": 1,
         })
@@ -800,6 +818,7 @@ export function planSvg({
   // Labels over everything, as on the canvas.
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm))
+  for (const s of shapes) body.push(opensNoteMarkup(s, plan.cell_mm))
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" ` +
     `width="${w}" height="${h}" font-family="Inter, sans-serif">` +

@@ -10780,12 +10780,12 @@ def _plan_tiles(plan):
 
 def _plan_areas(plan):
     return plan.areas.select_related(
-        "room", "location__location_type", "area_type"
+        "room", "location__location_type", "area_type", "opens__stack"
     ).order_by("z", "created_at", "id")
 
 
 def _plan_labels(plan):
-    return plan.labels.order_by("z", "created_at", "id")
+    return plan.labels.select_related("opens__stack").order_by("z", "created_at", "id")
 
 
 def plan_contents(request, tenant, src, crop=None) -> dict:
@@ -10949,7 +10949,8 @@ def _snap_tile(t, plan):
 class FloorPlanViewSet(TenantScopedViewSet):
     """Floor plans' floors. ``?stack=<id>`` lists one floor plan's floors in
     floor order; ``?location=``, ``?site=`` (site-wide floors and those of
-    its locations), ``?search=`` filter."""
+    its locations), ``?source=`` (the snapshots of a plan), ``?search=``
+    filter."""
 
     queryset = (
         FloorPlan.objects.select_related(
@@ -10986,6 +10987,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
             stack = _uuid_param(self.request.query_params, "stack")
             if stack:
                 qs = qs.filter(stack_id=stack).order_by("floor_order", NATURAL_NAME, "pk")
+            # The snapshots (copies and live views) taken of one plan.
+            source = _uuid_param(self.request.query_params, "source")
+            if source:
+                qs = qs.filter(source_id=source)
         if self.get_serializer_class() is FloorPlanSerializer:
             qs = qs.annotate(tile_count_annotated=_visible_n(self, "tiles"))
         return qs
@@ -11212,6 +11217,101 @@ class FloorPlanViewSet(TenantScopedViewSet):
             raise ValidationError({"area_id": ["That area is not in this view."]})
         return area, margin, snaps.Crop(x, y, x2 - x, y2 - y)
 
+    @action(detail=True, methods=["post"], url_path="back-link")
+    def back_link(self, request, pk=None):
+        """An area's or label's **Back button**: a label on the plan the
+        shape opens that opens this plan back. ``{"kind": "area" | "label",
+        "id", "on": true, "target_id", "text"}`` makes it (or moves it to
+        ``target_id``, or renames it); ``"on": false`` deletes it. On a live
+        view the label is written on the view's source, top-left inside the
+        crop, so the view shows it. Needs change on this plan and on the
+        target (its source, for a view). Answers ``{"back_label"}``."""
+        from audit.context import cause
+        from auth_api import rbac
+
+        from . import floor_plan_snapshots as snaps
+        from .serializers import _back_label_ref
+        from .topology_views import _uuid_param
+
+        tenant = self._tenant_or_403()
+        here = self.get_object()
+        self._orphan(here)
+        plan, _crop = self._resolved(here, "change")
+        if not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=here.pk), request.user, tenant, "floorplan", "change",
+        ).exists():
+            raise PermissionDenied("You may not change this plan.")
+        body = request.data if hasattr(request.data, "get") else {}
+        kind = body.get("kind")
+        if kind not in ("area", "label"):
+            raise ValidationError({"kind": ["area or label."]})
+        sid = _uuid_param({"id": body.get("id")}, "id")
+        rel, slug = (plan.areas, "floorplanarea") if kind == "area" \
+            else (plan.labels, "floorplanlabel")
+        shape = rbac.restrict_queryset(
+            rel.filter(pk=sid), request.user, tenant, slug, "view"
+        ).first() if sid else None
+        if shape is None:
+            raise ValidationError({"id": ["Unknown area or label on this plan. Save it first."]})
+        existing = list(FloorPlanLabel.objects.filter(
+            pair_id=shape.pk, floor_plan__tenant=tenant
+        ).select_related("floor_plan"))
+
+        def may_change(p):
+            return rbac.restrict_queryset(
+                FloorPlan.objects.filter(pk=p.pk), request.user, tenant, "floorplan", "change",
+            ).exists()
+
+        if not body.get("on"):
+            for lb in existing:
+                if not may_change(lb.floor_plan):
+                    raise PermissionDenied(f"You may not change {lb.floor_plan.name}.")
+            with transaction.atomic(), cause(f"Back button of {shape}"[:255]):
+                for lb in existing:
+                    lb.delete()
+            return Response({"back_label": None})
+
+        tid = _uuid_param({"target_id": body.get("target_id")}, "target_id")
+        target = FloorPlan.objects.filter(tenant=tenant, pk=tid).first() if tid else None
+        if target is None or not rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk=target.pk), request.user, tenant, "floorplan", "view",
+        ).exists():
+            raise ValidationError({"target_id": ["Unknown floor plan."]})
+        if target.pk in (here.pk, plan.pk):
+            raise ValidationError({"target_id": ["Pick another plan than this one."]})
+        if not may_change(target):
+            raise PermissionDenied(f"You may not change {target.name}.")
+        self._orphan(target)
+        dst, crop = self._resolved(target, "change")
+        if snaps.is_view(target) and not may_change(dst):
+            raise PermissionDenied(f"You may not change {dst.name}.")
+        text = body.get("text")
+        text = text.replace("\r\n", "\n").strip() if isinstance(text, str) else ""
+        if len(text) > 500:
+            raise ValidationError({"text": ["At most 500 characters."]})
+        here_name = here.name if not here.stack_id or here.stack.name == here.name \
+            else f"{here.stack.name} · {here.name}"
+        keep = next((lb for lb in existing if lb.floor_plan_id == dst.pk), None)
+        with transaction.atomic(), cause(f"Back button of {shape}"[:255]):
+            for lb in existing:
+                if lb is not keep:
+                    lb.delete()
+            if keep is not None:
+                keep.opens = here
+                if text:
+                    keep.text = text
+                keep.save()
+            else:
+                ox, oy = (crop.x, crop.y) if crop is not None else (0, 0)
+                FloorPlanLabel.objects.create(
+                    floor_plan=dst, text=text or f"Back to {here_name}"[:500],
+                    x=min(ox + 0.5, max(dst.grid_width - 1, 0)),
+                    y=min(oy + 0.5, max(dst.grid_height - 1, 0)),
+                    plate=True, opens=here, pair_id=shape.pk,
+                    z=(dst.labels.order_by("-z").values_list("z", flat=True).first() or 0) + 1,
+                )
+        return Response({"back_label": _back_label_ref({"request": request}, shape)})
+
     @action(detail=True, methods=["post"], url_path="unlink")
     def unlink(self, request, pk=None):
         """Turn a live view into an independent copy of what it shows now:
@@ -11309,6 +11409,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     obj.pk = None
                     obj.id = None
                     obj.floor_plan = dst
+                    if rel == "labels":
+                        # The clone's labels open what the original's do,
+                        # but none is another plan's back label.
+                        obj.pair_id = None
                     obj.save()
             _clone_drawing(src, dst)
         return Response(
@@ -13966,7 +14070,7 @@ class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
     about their centre, or polygons)."""
 
     queryset = FloorPlanArea.objects.select_related(
-        "floor_plan", "room", "location__location_type", "area_type"
+        "floor_plan", "room", "location__location_type", "area_type", "opens__stack"
     ).order_by("z", "created_at", "id")
     serializer_class = FloorPlanAreaSerializer
     snapshot_kind = "areas"
@@ -13975,7 +14079,7 @@ class FloorPlanAreaViewSet(_FloorPlanChildViewSet):
 class FloorPlanLabelViewSet(_FloorPlanChildViewSet):
     """Free text on a floor, sized in millimetres on the floor."""
 
-    queryset = FloorPlanLabel.objects.select_related("floor_plan").order_by(
+    queryset = FloorPlanLabel.objects.select_related("floor_plan", "opens__stack").order_by(
         "z", "created_at", "id"
     )
     serializer_class = FloorPlanLabelSerializer
