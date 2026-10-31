@@ -189,7 +189,6 @@ function RackView({
             target: start.target,
             maxDistance: dist * 2,
             minDistance: 0.15,
-            roomDiag: size,
             requestRef: flyToRef,
             keyboard: false,
             dollyThrough: false,

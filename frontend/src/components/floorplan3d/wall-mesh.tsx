@@ -15,12 +15,17 @@ const WALL_COLOR = "#27272a"
  * on the dark theme - so the ghost gets a tint the ground doesn't have. */
 const GHOST_COLOR = "#52525b"
 
+/** The selection blue racks wear (rack-mesh FRAME_SELECTED). */
+const SELECTED_COLOR = "#0ea5e9"
+
 /**
  * One wall polyline as solid boxes with door gaps and lintels - the 3D read
- * of what Structure mode drew. Render-only (owner's rule: build in 2D, view
- * in 3D): no pointer handlers, nothing raycastable, no animation, so the
- * demand frameloop never ticks for a wall. Spans extend half a thickness at
- * each end to close the corner joints of a multi-segment run.
+ * of what Structure mode drew. Never edited here (owner's rule: build in 2D,
+ * view in 3D) and never animated, so the demand frameloop never ticks for a
+ * wall. A solid wall is a navigation target only: a click selects the whole
+ * polyline, a double-click frames it. A ghost wall (x-ray) catches nothing,
+ * so the racks seen through it stay clickable. Spans extend half a
+ * thickness at each end to close the corner joints of a multi-segment run.
  *
  * X-ray ghosts walls (the room's one transparency convention); every other
  * shell mode leaves them at full height - a knee-cap variant shipped once
@@ -31,10 +36,15 @@ export function WallMesh({
   plan,
   wall,
   mode = "solid",
+  selected = false,
+  onPick,
 }: {
   plan: ScenePayload["plan"]
   wall: SceneWall
   mode?: "solid" | "ghost"
+  selected?: boolean
+  /** Clicked (`frame` false) or double-clicked (`frame` true). */
+  onPick?: (frame: boolean) => void
 }) {
   const heightM = mm(wall.height_mm ?? plan.ceiling_mm)
   const boxes = useMemo(
@@ -44,8 +54,26 @@ export function WallMesh({
   const tint = wall.color || WALL_COLOR
   const thick = wall.thickness_mm ? wall.thickness_mm / 1000 : WALL_THICKNESS_M
   const ghost = mode === "ghost"
+  const pickable = !ghost && !!onPick
   return (
-    <group>
+    <group
+      onClick={
+        pickable
+          ? (e) => {
+              e.stopPropagation()
+              onPick(false)
+            }
+          : undefined
+      }
+      onDoubleClick={
+        pickable
+          ? (e) => {
+              e.stopPropagation()
+              onPick(true)
+            }
+          : undefined
+      }
+    >
       {boxes.map((b, i) => {
         const [x0, z0] = cellToWorld(plan, b.x0, b.z0)
         const [x1, z1] = cellToWorld(plan, b.x1, b.z1)
@@ -54,10 +82,12 @@ export function WallMesh({
         const rot = -Math.atan2(z1 - z0, x1 - x0)
         return (
           <mesh
-            key={i}
+            // Keyed by mode: a ghost's no-op raycast is never diffed back
+            // to the default in place (see the material note below).
+            key={`${ghost ? "g" : "s"}${i}`}
             position={[(x0 + x1) / 2, (b.y0 + b.y1) / 2, (z0 + z1) / 2]}
             rotation={[0, rot, 0]}
-            raycast={() => null}
+            raycast={ghost ? () => null : undefined}
             castShadow={!ghost}
             receiveShadow={!ghost}
           >
@@ -73,7 +103,13 @@ export function WallMesh({
                 OPAQUE define always matches the mode. */}
             <meshStandardMaterial
               key={ghost ? "ghost" : "solid"}
-              color={ghost && !wall.color ? GHOST_COLOR : tint}
+              color={
+                selected
+                  ? SELECTED_COLOR
+                  : ghost && !wall.color
+                    ? GHOST_COLOR
+                    : tint
+              }
               roughness={0.92}
               transparent={ghost}
               opacity={ghost ? 0.3 : 1}

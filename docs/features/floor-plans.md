@@ -477,23 +477,30 @@ Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
 uploaded blueprint or CAD drawing textures it.
 
-- **Navigate**: drag to orbit, scroll to zoom, right-drag to pan.
-  **Keyboard**: the arrow keys or WASD glide the camera level with the floor
-  in the direction it faces - the way to walk the aisles - while **Space**
-  rises, **C** descends (PageUp/PageDown work too) and holding **Shift**
-  sprints at 4× speed. Speed tracks how far you are zoomed out, so close-up
-  moves are fine-grained and hall-scale hops are quick. The first key press
-  also pulls the orbit pivot to a few metres ahead of the camera, so
-  dragging looks around first-person-style while you walk; **double-click a
-  rack** to re-anchor the pivot on it and orbit for inspection, flying the
-  camera to its front.
-- **Zoom has no wall**: the wheel zooms right down to a few centimetres from
-  a faceplate, and scrolling past that point *walks the camera forward* -
-  through the rack front and out into the aisle behind it - so orbit turns
-  into fly exactly when orbiting stops being useful. Zoom-out reaches far
-  enough to frame a campus-sized plan, and wheel speed scales with room
-  size, so a closet and a 400-rack hall take about the same number of ticks
-  end to end.
+- **Navigate**: every gesture works on what is under the pointer, so a
+  site-wide plan is as quick to get around as a single room:
+
+    | Control | What it does |
+    | --- | --- |
+    | Scroll, or pinch | Zooms toward the point under the pointer - a rack, the floor, a building - and makes it the orbit centre. Each notch covers the same share of the distance to that point, so a far corner of a campus is a few notches away and the last metre never crawls. Zoom stops just short of the surface. |
+    | Drag | Orbits around the point under the pointer when pressed. ++alt++ + drag orbits around the current centre instead. One finger on a touch screen. |
+    | Right-drag, middle-drag, or ++shift++ + drag | Pans: the point pressed stays under the pointer, so near things move slowly and the distant floor quickly. Two fingers pan and pinch together. |
+    | Click | Selects a rack, cabinet, device, area (a building on a site plan) or wall. A press that drags never selects. |
+    | Double-click | Flies to frame what was clicked: a rack or cabinet face-on, a device at its faceplate, an area or wall from a three-quarter view. |
+    | ++f++ | On a selected rack, cabinet or device: flies to its front and turns **Focus** on. On a selected area or wall: frames it. |
+    | ++0++, ++home++, or **Fit all** | Flies back to the whole plan. |
+    | ++esc++ | Unwinds Focus, then isolation, then the selection - and flies back to the whole plan. |
+    | Arrows or WASD | Glide level with the floor in the direction the camera faces - the way to walk the aisles. ++space++ rises, ++c++ descends (++page-up++ / ++page-down++ too), holding ++shift++ sprints at 4x. Speed tracks the distance to the orbit centre. |
+
+    Any input interrupts a fly-to, and when the system asks for reduced
+    motion a fly-to lands at once instead of animating. The camera moves
+    without re-rendering the room, so navigating a large plan costs only
+    the drawing.
+- **Zoom has no wall**: at a rack's face, scrolling on walks the camera
+  forward - through the rack front and out into the aisle behind it - so
+  orbit turns into fly exactly when orbiting stops being useful. The floor
+  is never passed through. Zoom-out reaches far enough to frame a
+  campus-sized plan.
 - **Cabinet shell** (View menu, 3D): a three-position mode, not a checkbox.
   **Solid** closes every cabinet - side panels plus smoked-glass doors
   front and rear, so the gear reads as silhouettes - the room as a visitor
@@ -506,9 +513,9 @@ uploaded blueprint or CAD drawing textures it.
   The shell mode is independent of draw distance: how much detail a far
   cabinet gets is still the renderer's business.
 - **Focus** (++f++, or the button on a selected rack/device card): the
-  selection stays lit and everything else drops to a faint ghost. Click
-  another cabinet to move the spotlight; ++esc++ (or clicking empty floor)
-  lifts it.
+  selection stays lit and everything else drops to a faint ghost, and ++f++
+  flies the camera to it. Click another cabinet to move the spotlight;
+  ++esc++ (or clicking empty floor) lifts it.
 - **Isolate**: on a selected rack's card, **Isolate row** keeps just that
   row (the row axis is detected from how the hall actually lines up) and
   **Isolate zone** - offered when the rack stands in a zone - keeps

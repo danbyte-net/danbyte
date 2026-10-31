@@ -184,7 +184,7 @@ calibrated photo is clipped to its device, so are its ports. They resolve
 in one request when the view opens - the room's own, so the drift outline
 costs a check per device - and the key to their colours sits under the view.
 
-Drag to turn it and scroll to zoom. **Close door** and **Open door** swing
+Drag to turn it and scroll to zoom toward the pointer. **Close door** and **Open door** swing
 the door on its left-hand hinge (it snaps when the system asks for reduced
 motion); **Front** and **Rear** look straight at either side, as a
 double-click on the cabinet does; **PNG** downloads `<cabinet>-3d.png`.
