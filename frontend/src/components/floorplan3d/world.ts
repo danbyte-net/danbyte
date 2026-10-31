@@ -1430,15 +1430,9 @@ export function modelRotation(
 /** The size a model is fitted to (m), each axis only where it is known:
  * the type's recorded width/height/depth, else the rack-unit box. */
 export function modelTargetM(
-  dev: Pick<
-    SceneFloorDevice,
-    | "u_height"
-    | "rack_width"
-    | "is_full_depth"
-    | "width_mm"
-    | "height_mm"
-    | "depth_mm"
-  >
+  dev: Pick<SceneFloorDevice, "width_mm" | "height_mm" | "depth_mm">,
+  /** The tile's footprint in its own frame (m): the fallback target. */
+  footprint?: { w: number; d: number } | null
 ): { w?: number; h?: number; d?: number } | null {
   if (dev.width_mm || dev.height_mm || dev.depth_mm) {
     return {
@@ -1447,8 +1441,9 @@ export function modelTargetM(
       d: dev.depth_mm ? mm(dev.depth_mm) : undefined,
     }
   }
-  const box = floorDeviceBoxM(dev)
-  return box ? { w: box.w, h: box.h, d: box.d } : null
+  // No measured size: fill the tile it stands on. Never the rack-unit box,
+  // which would squeeze a printer or an access point into 44 mm.
+  return footprint ? { w: footprint.w, d: footprint.d } : null
 }
 
 /**
