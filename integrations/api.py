@@ -7,6 +7,7 @@ from rest_framework import serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from api.serializers import TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 
 from .models import DeviceConfigSnapshot, DeviceConfigState, Webhook
@@ -330,7 +331,7 @@ class DeployRunViewSet(TenantScopedViewSet):
         return Response(DeployRunSerializer(new).data, status=202)
 
 
-class DeviceConfigStateSerializer(serializers.ModelSerializer):
+class DeviceConfigStateSerializer(TenantScopedModelSerializer):
     template_name = serializers.CharField(
         source="template.name", read_only=True, default=None
     )

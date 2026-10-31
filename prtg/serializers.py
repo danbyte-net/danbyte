@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from rest_framework import serializers
 
 from api.models import DeviceRole, DeviceType, Site
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from . import status as st
 from .models import (
@@ -40,7 +40,7 @@ def _clean_url(value: str, what: str) -> str:
     return value
 
 
-class PrtgConnectionSerializer(serializers.ModelSerializer):
+class PrtgConnectionSerializer(TenantScopedModelSerializer):
     """The API key is write-only. The API says whether one is set, never what."""
 
     api_key = serializers.CharField(
@@ -74,7 +74,7 @@ class PrtgConnectionSerializer(serializers.ModelSerializer):
     list_columns_exclude = ("adopt_names",)
     #: What "register all" gives an object: a profile of this connection and
     #: a PRTG group or probe (object id; the path is kept for reading).
-    register_profile = serializers.PrimaryKeyRelatedField(
+    register_profile = TenantScopedPrimaryKeyRelatedField(
         queryset=PrtgSensorProfile.objects.all(), required=False, allow_null=True
     )
     register_profile_name = serializers.CharField(

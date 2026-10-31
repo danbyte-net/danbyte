@@ -1042,9 +1042,15 @@ def settings_view(request):
     if not can_manage_admin(request.user, tenant):
         return Response({"detail": "Admin access required."}, status=403)
     ser = MonitoringSettingsSerializer(
-        obj, data=request.data, partial=request.method == "PATCH"
+        obj, data=request.data, partial=request.method == "PATCH",
+        context={"request": request},
     )
     ser.is_valid(raise_exception=True)
+    vrf = ser.validated_data.get("snmp_default_vrf")
+    if vrf is not None and vrf.tenant_id != tenant.id:
+        return Response(
+            {"snmp_default_vrf_id": "Not in the active tenant."}, status=400
+        )
     # Guard: skip / flap-exclude statuses must belong to the active tenant.
     for field in ("skip_ip_statuses", "flap_exclude_ip_statuses"):
         for st in ser.validated_data.get(field, []):

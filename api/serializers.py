@@ -12,7 +12,7 @@ import os
 import re
 
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils.text import slugify
 from rest_framework.exceptions import APIException
 from rest_framework.fields import empty
@@ -345,6 +345,18 @@ _PARENT_TENANT_PATH = {
     "FloorPlanArea": "floor_plan__tenant",
 }
 
+# Models whose ownership is not one lookup path: the Q a row of the tenant
+# matches. A synced DHCP scope or DNS zone rides its connection's tenant (its
+# own tenant column stays NULL); a local one carries the tenant itself.
+def _bimodal_tenant_q(tenant):
+    return Q(connection__tenant=tenant) | Q(connection__isnull=True, tenant=tenant)
+
+
+_TENANT_Q = {
+    "DhcpScope": _bimodal_tenant_q,
+    "DnsZone": _bimodal_tenant_q,
+}
+
 
 class TenantScopedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
     """A ``PrimaryKeyRelatedField`` whose lookup queryset is scoped to the
@@ -379,14 +391,24 @@ class TenantScopedPrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
         tenant = _get_active_tenant(request)
         if tenant is None:
             return qs.none()
-        if model.__name__ in _NULLABLE_TENANT_MODELS:
+        if model.__name__ in _TENANT_Q:
+            scoped = qs.filter(_TENANT_Q[model.__name__](tenant))
+        elif model.__name__ in _NULLABLE_TENANT_MODELS:
             # Legacy/deployment-global rows (tenant NULL) stay referenceable.
-            from django.db.models import Q
-
             scoped = qs.filter(Q(**{path: tenant}) | Q(**{f"{path}__isnull": True}))
         else:
             scoped = qs.filter(**{path: tenant})
         return _site_fence(scoped, request, tenant)
+
+
+class TenantScopedModelSerializer(serializers.ModelSerializer):
+    """A ``ModelSerializer`` whose generated relation fields are
+    :class:`TenantScopedPrimaryKeyRelatedField`, so every FK/M2M taken from
+    ``Meta.fields`` resolves only inside the active tenant (and, under site
+    separation, the caller's sites). A foreign or unknown id is a 400 on that
+    field. Explicitly declared relation fields still pick their own class."""
+
+    serializer_related_field = TenantScopedPrimaryKeyRelatedField
 
 
 def _site_fence(qs, request, tenant):
@@ -407,8 +429,6 @@ def _site_fence(qs, request, tenant):
     editable = request._rbac_editable_sites
     if editable is None:
         return qs  # edits any site → no fence
-    from django.db.models import Q
-
     from api.models import Site
     from auth_api.site_paths import CATALOG_SITE_PATHS, SITE_PATHS
 
@@ -4784,7 +4804,7 @@ class AntennaSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
 
     cf_model = "antenna"
     device = serializers.SerializerMethodField()
-    device_id = serializers.PrimaryKeyRelatedField(
+    device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
     )
     tags = TagSerializer(many=True, read_only=True)
@@ -5273,7 +5293,7 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
 
 class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
     type = serializers.CharField(required=False, allow_blank=True)
-    module_type_id = serializers.PrimaryKeyRelatedField(
+    module_type_id = TenantScopedPrimaryKeyRelatedField(
         source="module_type", queryset=ModuleType.objects.all(),
         write_only=True,
     )
@@ -8950,7 +8970,7 @@ class CircuitTerminationSerializer(serializers.ModelSerializer):
         far = t.cable.terminations.exclude(id=t.id).first()
         return _termination_repr(far) if far is not None else None
 
-    circuit_id = serializers.PrimaryKeyRelatedField(
+    circuit_id = TenantScopedPrimaryKeyRelatedField(
         source="circuit", queryset=Circuit.objects.all(), write_only=True,
     )
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -9505,14 +9525,14 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
     outside_ip = serializers.SerializerMethodField()
     role_display = serializers.CharField(source="get_role_display", read_only=True)
 
-    tunnel_id = serializers.PrimaryKeyRelatedField(
+    tunnel_id = TenantScopedPrimaryKeyRelatedField(
         source="tunnel", queryset=Tunnel.objects.all(), write_only=True,
     )
-    interface_id = serializers.PrimaryKeyRelatedField(
+    interface_id = TenantScopedPrimaryKeyRelatedField(
         source="interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    vm_interface_id = serializers.PrimaryKeyRelatedField(
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="vm_interface", queryset=VMInterface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -10295,11 +10315,11 @@ class L2VPNTerminationSerializer(serializers.ModelSerializer):
         source="vlan", queryset=VLAN.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    interface_id = serializers.PrimaryKeyRelatedField(
+    interface_id = TenantScopedPrimaryKeyRelatedField(
         source="interface", queryset=Interface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
-    vm_interface_id = serializers.PrimaryKeyRelatedField(
+    vm_interface_id = TenantScopedPrimaryKeyRelatedField(
         source="vm_interface", queryset=VMInterface.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
