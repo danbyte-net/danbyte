@@ -118,7 +118,10 @@ export function DeviceDriftPanel({ deviceId }: { deviceId: string }) {
               )}
             </div>
             {q.data.status === "drift" ? (
-              <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+              <pre
+                tabIndex={0}
+                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+              >
                 {q.data.diff.split("\n").map((line, i) => (
                   <DiffLine key={i} line={line} />
                 ))}

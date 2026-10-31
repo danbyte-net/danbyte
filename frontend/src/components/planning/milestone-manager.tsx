@@ -170,6 +170,7 @@ function MilestoneRow({
         }}
       />
       <Input
+        aria-label="Milestone name"
         value={name}
         disabled={!canEdit}
         onChange={(e) => setName(e.target.value)}

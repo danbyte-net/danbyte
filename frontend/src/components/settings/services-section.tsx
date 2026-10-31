@@ -134,6 +134,7 @@ function WorkersControl({ workers }: { workers: WorkerConfig }) {
           max={workers.max}
           value={count}
           onChange={(e) => setCount(e.target.value)}
+          aria-label="Background workers"
           className="w-24"
         />
         <Button

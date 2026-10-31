@@ -461,7 +461,11 @@ export function WallInspector({
                     patchOpening(i, { hinge, side })
                   }}
                 >
-                  <SelectTrigger size="sm" className="h-7 w-full text-xs">
+                  <SelectTrigger
+                    aria-label="Swing"
+                    size="sm"
+                    className="h-7 w-full text-xs"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

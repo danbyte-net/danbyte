@@ -194,7 +194,7 @@ function StrandCell({
             value={status || "none"}
             onValueChange={(v) => setStatus(v === "none" ? "" : v)}
           >
-            <SelectTrigger className="h-8 text-xs">
+            <SelectTrigger aria-label="Status" className="h-8 text-xs">
               <SelectValue placeholder="-" />
             </SelectTrigger>
             <SelectContent>

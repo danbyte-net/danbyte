@@ -170,6 +170,7 @@ function VirtualTopologyPage() {
         </InfoTip>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Combobox
+            aria-label="Data source"
             value={source || null}
             onChange={(v) => setSource(v ?? "")}
             options={(sources.data?.results ?? []).map((s) => ({

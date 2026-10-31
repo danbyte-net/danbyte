@@ -175,7 +175,10 @@ function Body({ job }: { job: JobDetail }) {
 
           {job.args.length > 0 && (
             <Block title="Arguments">
-              <pre className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap"
+              >
                 {job.args.map((a, i) => `[${i}] ${a}`).join("\n")}
               </pre>
             </Block>
@@ -183,7 +186,10 @@ function Body({ job }: { job: JobDetail }) {
 
           {Object.keys(job.kwargs).length > 0 && (
             <Block title="Keyword arguments">
-              <pre className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap"
+              >
                 {Object.entries(job.kwargs)
                   .map(([k, v]) => `${k} = ${v}`)
                   .join("\n")}
@@ -193,7 +199,10 @@ function Body({ job }: { job: JobDetail }) {
 
           {job.result != null && (
             <Block title="Result">
-              <pre className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap text-emerald-700 dark:text-emerald-300">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap text-emerald-700 dark:text-emerald-300"
+              >
                 {job.result}
               </pre>
             </Block>
@@ -201,7 +210,10 @@ function Body({ job }: { job: JobDetail }) {
 
           {job.exc_info && (
             <Block title="Traceback" danger>
-              <pre className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap text-red-700 dark:text-red-300">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto font-mono text-[12px] whitespace-pre-wrap text-red-700 dark:text-red-300"
+              >
                 {job.exc_info}
               </pre>
             </Block>

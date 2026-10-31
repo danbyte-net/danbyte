@@ -259,7 +259,10 @@ function UpdatesSettingsPage() {
               app process (web and workers). Until then, writes can fail in
               confusing ways.
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {info.data.migration_drift.slice(0, 8).join("\n")}
               {info.data.migration_drift.length > 8
                 ? `\n… and ${info.data.migration_drift.length - 8} more`
@@ -282,7 +285,10 @@ function UpdatesSettingsPage() {
               service user, <code>manage.py migrate</code>, then restart every
               app process (web and workers).
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {info.data.pending_migrations.slice(0, 8).join("\n")}
               {info.data.pending_migrations.length > 8
                 ? `\n… and ${info.data.pending_migrations.length - 8} more`
@@ -301,7 +307,10 @@ function UpdatesSettingsPage() {
               recreate itself, so the in-app upgrade is disabled here. Upgrade
               from the host:
             </p>
-            <pre className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="mt-2 overflow-x-auto rounded bg-muted/60 p-2 font-mono text-[11px] leading-relaxed"
+            >
               {`git -C /opt/danbyte fetch --tags
 git -C /opt/danbyte checkout <version>
 docker compose -f docker-compose.prod.yml build
@@ -526,6 +535,7 @@ docker compose -f docker-compose.prod.yml up -d`}
             </p>
             <input
               type="file"
+              aria-label="Release bundle"
               accept=".tar.gz,.tgz,application/gzip"
               disabled={uploadUpgrade.isPending || upgrading || selfUpgradeOff}
               onChange={(e) => {
@@ -768,7 +778,10 @@ docker compose -f docker-compose.prod.yml up -d`}
                 <summary className="cursor-pointer text-muted-foreground">
                   Output of the failed step
                 </summary>
-                <pre className="mt-1 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap">
+                <pre
+                  tabIndex={0}
+                  className="mt-1 max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] whitespace-pre-wrap"
+                >
                   {st.error_tail}
                 </pre>
               </details>
@@ -969,7 +982,10 @@ function UpgradeNoteRow({
         </ul>
       )}
       {note.snippet && (
-        <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+        <pre
+          tabIndex={0}
+          className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs"
+        >
           {note.snippet}
         </pre>
       )}
@@ -1017,7 +1033,10 @@ function ByHand({ parts }: { parts: UpgradeNote[] }) {
             <div key={p.id} className="space-y-1">
               <div className="text-xs font-medium">{p.title}</div>
               <p className="text-xs text-muted-foreground">{p.body}</p>
-              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs"
+              >
                 {p.snippet}
               </pre>
             </div>

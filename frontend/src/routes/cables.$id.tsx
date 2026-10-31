@@ -134,7 +134,9 @@ function Body({ cable: c }: { cable: Cable }) {
     const ids = [...(c.a_terminations ?? []), ...(c.b_terminations ?? [])]
       // Off-box ends carry their owner's id under `device`; the topology map
       // takes device ids only, so don't hand it a circuit or a panel.
-      .filter((t) => t.kind !== "circuit_termination" && t.kind !== "power_feed")
+      .filter(
+        (t) => t.kind !== "circuit_termination" && t.kind !== "power_feed"
+      )
       .map((t) => t.device?.id)
       .filter((x): x is string => !!x)
     const uniq = [...new Set(ids)]
@@ -365,6 +367,7 @@ function CableFibers({ cable: c }: { cable: Cable }) {
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>Strands</span>
           <Input
+            aria-label="Strands"
             type="number"
             min={0}
             max={2048}

@@ -302,7 +302,7 @@ function CalendarPage() {
               setSearch({ board: v === ALL_BOARDS ? undefined : v })
             }
           >
-            <SelectTrigger className="h-8 w-44 text-xs">
+            <SelectTrigger aria-label="Board" className="h-8 w-44 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
