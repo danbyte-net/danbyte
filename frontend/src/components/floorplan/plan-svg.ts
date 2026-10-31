@@ -20,6 +20,7 @@ import {
 } from "@/components/floorplan3d/world"
 
 import {
+  PATTERN_GAP,
   PATTERN_STROKE,
   labelColor,
   areaColor,
@@ -103,6 +104,59 @@ export interface PlanSvgInput {
   showTrays?: boolean
   /** The cables, drawn as the canvas draws them at the paper's scale. */
   cables?: PlanSvgCables
+  /** Frame the drawing to what is on the plan (plus a margin) instead of
+   * the whole grid, scaled for `paper`: a thumbnail of a big site plan. */
+  fitContent?: { paper: PaperChoice }
+}
+
+/** Margin round the content when the drawing is framed to it (cells). */
+const FIT_MARGIN_CELLS = 2
+/** Hatch lines on paper: this far apart and at least this wide (mm). */
+const PAPER_PATTERN_GAP_MM = 2.5
+const PAPER_PATTERN_STROKE_MM = 0.25
+
+/** The plan px box round everything drawn - tiles, shapes, walls, trays -
+ * with a margin, clamped to the grid; null for an empty plan. */
+function contentBox(
+  plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm">,
+  tiles: readonly FloorPlanTile[],
+  shapes: readonly PlanShape[],
+  walls: readonly { points: readonly (readonly number[])[] }[],
+  trays: readonly { points: readonly (readonly number[])[] }[]
+): { x: number; y: number; w: number; h: number } | null {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  const add = (x: number, y: number) => {
+    minX = Math.min(minX, x)
+    minY = Math.min(minY, y)
+    maxX = Math.max(maxX, x)
+    maxY = Math.max(maxY, y)
+  }
+  for (const t of tiles) {
+    add(t.x, t.y)
+    add(t.x + t.width, t.y + t.height)
+  }
+  for (const sh of shapes) {
+    const b = shapeBounds(sh, plan.cell_mm)
+    add(b.minX, b.minY)
+    add(b.maxX, b.maxY)
+  }
+  for (const run of [...walls, ...trays])
+    for (const [x, y] of run.points) add(x, y)
+  if (!Number.isFinite(minX)) return null
+  const m = FIT_MARGIN_CELLS
+  const x0 = Math.max(0, minX - m)
+  const y0 = Math.max(0, minY - m)
+  const x1 = Math.min(plan.grid_width, maxX + m)
+  const y1 = Math.min(plan.grid_height, maxY + m)
+  return {
+    x: x0 * CELL,
+    y: y0 * CELL,
+    w: Math.max(CELL, (x1 - x0) * CELL),
+    h: Math.max(CELL, (y1 - y0) * CELL),
+  }
 }
 
 /** The cables for the drawing: the runs, their routes (use-cable-routes.ts)
@@ -322,9 +376,12 @@ function patternMarkup(
   a: AreaShape,
   color: string,
   clip: string,
-  box: { x: number; y: number; w: number; h: number }
+  box: { x: number; y: number; w: number; h: number },
+  pat: PatternScale = DEFAULT_PATTERN
 ): string {
-  const runs = patternRuns(areaPattern(a), box.x, box.y, box.w, box.h)
+  const runs = patternRuns(areaPattern(a), box.x, box.y, box.w, box.h, {
+    gap: pat.gap,
+  })
   if (!runs.length) return ""
   const id = `ap-${a.id}`.replace(/[^A-Za-z0-9_.-]/g, "_")
   const body = runs
@@ -341,7 +398,7 @@ function patternMarkup(
     `<clipPath id="${id}">${clip}</clipPath>` +
     `<g clip-path="url(#${id})" stroke="${color}" ` +
     `stroke-opacity="${PATTERN_STROKE.opacity}" ` +
-    `stroke-width="${PATTERN_STROKE.width}">${body}</g>`
+    `stroke-width="${pat.width}">${body}</g>`
   )
 }
 
@@ -384,7 +441,17 @@ function areaNameMarkup(
 }
 
 /** An area as the canvas draws it (shape-layer.tsx). */
-function areaMarkup(a: AreaShape): string {
+/** Hatch spacing and line width in plan px. */
+interface PatternScale {
+  gap: number
+  width: number
+}
+const DEFAULT_PATTERN: PatternScale = {
+  gap: PATTERN_GAP,
+  width: PATTERN_STROKE.width,
+}
+
+function areaMarkup(a: AreaShape, pat: PatternScale = DEFAULT_PATTERN): string {
   const color = areaColor(a)
   const ink = areaLabelColor(a)
   const name = a.show_name ? areaName(a) : ""
@@ -406,12 +473,18 @@ function areaMarkup(a: AreaShape): string {
     const by = Math.min(...ys)
     return (
       el("polygon", { points, "stroke-linejoin": "round", ...style }) +
-      patternMarkup(a, color, el("polygon", { points }), {
-        x: bx,
-        y: by,
-        w: Math.max(...xs) - bx,
-        h: Math.max(...ys) - by,
-      }) +
+      patternMarkup(
+        a,
+        color,
+        el("polygon", { points }),
+        {
+          x: bx,
+          y: by,
+          w: Math.max(...xs) - bx,
+          h: Math.max(...ys) - by,
+        },
+        pat
+      ) +
       (name
         ? areaNameMarkup(a, name, cx * CELL, cy * CELL + 4, "middle", ink)
         : "")
@@ -438,7 +511,8 @@ function areaMarkup(a: AreaShape): string {
       a,
       color,
       el("rect", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 3 }),
-      box
+      box,
+      pat
     ) +
     (name ? areaNameMarkup(a, name, box.x + 6, box.y + 15, "start", ink) : "") +
     "</g>"
@@ -771,9 +845,27 @@ export function planSvg({
   showZoneLabels = true,
   showTrays = true,
   cables,
+  fitContent,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
+  // Framed to the content: the view box, and the paper scale it gives, so
+  // hatches and cables are drawn for the paper and not for the full grid.
+  const frame = fitContent
+    ? contentBox(plan, tiles, shapes, walls, trays)
+    : null
+  let pat = DEFAULT_PATTERN
+  if (frame && fitContent) {
+    const mmPerPx = planPaperScale(
+      { grid_width: frame.w / CELL, grid_height: frame.h / CELL },
+      fitContent.paper
+    )
+    pat = {
+      gap: Math.max(PATTERN_GAP, PAPER_PATTERN_GAP_MM / mmPerPx),
+      width: Math.max(PATTERN_STROKE.width, PAPER_PATTERN_STROKE_MM / mmPerPx),
+    }
+    if (cables) cables = { ...cables, mmPerPx }
+  }
   const isZone = (t: FloorPlanTile) => t.tile_type?.is_zone ?? false
   const body: string[] = []
   for (const a of areas) {
@@ -797,7 +889,7 @@ export function planSvg({
   for (const t of tiles) if (isZone(t)) body.push(zoneMarkup(t, showZoneLabels))
   // Rooms and areas: over the zones, under the tiles.
   for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
-    body.push(areaMarkup(s))
+    body.push(areaMarkup(s, pat))
   const free = plan.layout_mode === "free"
   for (const t of tiles)
     if (!isZone(t)) {
@@ -822,9 +914,10 @@ export function planSvg({
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm))
   for (const s of shapes) body.push(opensNoteMarkup(s, plan.cell_mm))
+  const vb = frame ?? { x: 0, y: 0, w, h }
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" ` +
-    `width="${w}" height="${h}" font-family="Inter, sans-serif">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}" ` +
+    `width="${vb.w}" height="${vb.h}" font-family="Inter, sans-serif">` +
     body.join("") +
     "</svg>"
   )
