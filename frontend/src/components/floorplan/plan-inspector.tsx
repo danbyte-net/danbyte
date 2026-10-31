@@ -13,6 +13,8 @@ import {
   AreaInspector as ShapeAreaInspector,
   LabelInspector,
 } from "./shape-inspector"
+import { AreaWallsRow, WallLinkRow } from "./linked-walls"
+import { areaName } from "./shapes"
 import { AreaInspector, WallInspector } from "./structure-panels"
 import { TileInspector } from "./tile-inspector"
 import { TrayInspector } from "./tray-panels"
@@ -39,7 +41,10 @@ export function PlanInspector({
   tileTypes,
   roles,
   openTile,
+  onSelectWalls,
 }: {
+  /** The area's linked walls selected, in the walls tool. */
+  onSelectWalls?: (ids: string[]) => void
   shapeEdits: ShapeEdits
   plan: FloorPlan
   ed: PlanEditState
@@ -99,11 +104,21 @@ export function PlanInspector({
           prev.map((s) => (s.id === shape.id ? { ...s, back_label: ref } : s))
         ),
     }
+    const linked = shape.kind === "area" ? structure.linkedTo(shape.id) : []
     return shape.kind === "area" ? (
       <ShapeAreaInspector
         key={shape.id}
         area={shape}
         {...common}
+        walls={
+          linked.length > 0 && (
+            <AreaWallsRow
+              count={linked.length}
+              onSelect={() => onSelectWalls?.(linked.map((w) => w.id))}
+              onUnlink={() => structure.unlinkWalls(linked.map((w) => w.id))}
+            />
+          )
+        }
         // A room's or location's new colour shows on each of its areas at
         // once - a repaint, not an edit of the plan.
         onLinkColour={(kind, id, color) =>
@@ -168,11 +183,22 @@ export function PlanInspector({
       )
     )
   const wall = walls.find((w) => w.id === selectedWallId)
+  const source = wall?.source_area
+    ? shapes.find((s) => s.id === wall.source_area && s.kind === "area")
+    : undefined
   if (wall)
     return (
       <WallInspector
         key={wall.id}
         wall={wall}
+        link={
+          source?.kind === "area" && (
+            <WallLinkRow
+              areaName={areaName(source) || "Area"}
+              onUnlink={() => structure.unlinkWalls([wall.id])}
+            />
+          )
+        }
         cellMM={plan.cell_mm}
         ceilingMM={plan.ceiling_mm}
         doorArmed={doorArmed || ed.tool === "door"}

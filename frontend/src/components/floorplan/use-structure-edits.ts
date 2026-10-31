@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -12,16 +12,23 @@ import type {
 import { apiErrorToast } from "@/lib/api-toast"
 
 import { viaQuery } from "./snapshot"
+import { areaName } from "./shapes"
+import type { AreaShape, PlanShape, Pt } from "./shapes"
 import {
   areaOutline,
   doorFromDrag,
   fitOpenings,
   flipDoor,
   joinRuns,
+  linkedWallLabel,
+  outlineShift,
+  outlineWalls,
+  rebuildWalls,
   rectsOverlap,
+  runsMatch,
   splitRun,
   structureLists,
-  wallsAround,
+  translatePoints,
 } from "./structure"
 import type {
   RaisedRow,
@@ -30,7 +37,6 @@ import type {
   TrayRow,
   WallRow,
 } from "./structure"
-import type { Pt } from "./shapes"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { PlanEditState } from "./use-plan-edit-state"
 import { isTemp, tempId } from "./use-tile-edits"
@@ -59,6 +65,23 @@ export function rememberWallThickness(mm: number | null) {
 }
 
 const now = () => new Date().toISOString()
+
+/** Walls just made from areas, linked to them unless the toolbar's choice
+ * says otherwise: each wall with its area. */
+export interface WallLinkChoice {
+  pairs: { wallId: string; areaId: string }[]
+  /** The area's name, or null for walls round several areas. */
+  name: string | null
+}
+
+/** Rebuilding an area's linked walls would drop these doors: the walls'
+ * labels and the doors' numbers, asked before anything changes. */
+export interface WallUpdateDrops {
+  areaId: string
+  doors: string[]
+}
+
+const isArea = (s: PlanShape | undefined): s is AreaShape => s?.kind === "area"
 
 /** A new wall in the draft, from its points. */
 export function newWall(points: Pt[], extra: Partial<WallRow> = {}): WallRow {
@@ -112,6 +135,10 @@ export function useStructureEdits({
     setNamingPoints,
     mode,
   } = ed
+  // The link choice after "Add walls around this", and the doors an
+  // "Update walls" would drop, waiting for a yes.
+  const [linkChoice, setLinkChoice] = useState<WallLinkChoice | null>(null)
+  const [updateDrops, setUpdateDrops] = useState<WallUpdateDrops | null>(null)
   const grid = plan
     ? { w: plan.grid_width, h: plan.grid_height }
     : { w: 0, h: 0 }
@@ -312,24 +339,171 @@ export function useStructureEdits({
   }
 
   /** Walls round areas (rectangles at any turn, polygons): one per unbroken
-   * stretch of outline, joined at the corners, leaving out what a wall
-   * already runs along - one undo step. */
+   * stretch of outline, exactly on it, joined at the corners, leaving out
+   * what a wall already runs along - one undo step. Each is named after its
+   * area and linked to it; the toolbar then offers to keep the link. */
   const wallsAroundAreas = (areaIds: string[]) => {
     if (!plan) return
-    const outlines = ed.shapes
-      .filter((s) => s.kind === "area" && areaIds.includes(s.id))
-      .map((s) => areaOutline(s as Extract<typeof s, { kind: "area" }>))
-    const runs = wallsAround(outlines, structureLists(structure).walls, grid)
+    const areas = ed.shapes.filter(
+      (s): s is AreaShape => s.kind === "area" && areaIds.includes(s.id)
+    )
+    const runs = outlineWalls(
+      areas.map(areaOutline),
+      structureLists(structure).walls,
+      grid
+    )
     if (!runs.length) {
       toast.info("Walls already run all the way round.")
       return
     }
-    const made = runs.map((points) => newWall(points))
+    const made = runs.map((r) => {
+      const area = areas[r.outline]
+      const mine = runs.filter((x) => x.outline === r.outline)
+      return newWall(r.points, {
+        label: linkedWallLabel(areaName(area), mine.indexOf(r), mine.length),
+        source_area: area.id,
+      })
+    })
     commit({ create: made })
     setSelectedWallId(made[0].id)
+    setLinkChoice({
+      pairs: made.map((w) => ({ wallId: w.id, areaId: w.source_area! })),
+      name: areas.length === 1 ? areaName(areas[0]) || "Area" : null,
+    })
     toast.success(
       made.length === 1 ? "Added a wall" : `Added ${made.length} walls`
     )
+  }
+
+  /** The walls linked to an area, in the draft. */
+  const linkedTo = (areaId: string) =>
+    structureLists(structure).walls.filter((w) => w.source_area === areaId)
+
+  /** The link choice answered: the walls just made linked to their areas,
+   * or not. */
+  const setLinked = (on: boolean) => {
+    if (!linkChoice) return
+    const byWall = new Map(linkChoice.pairs.map((p) => [p.wallId, p.areaId]))
+    const update = structureLists(structure)
+      .walls.filter(
+        (w) =>
+          byWall.has(w.id) &&
+          (w.source_area ?? null) !== (on ? byWall.get(w.id)! : null)
+      )
+      .map((w) => ({ ...w, source_area: on ? byWall.get(w.id)! : null }))
+    if (update.length) commit({ update })
+  }
+
+  /** Walls no longer linked to their area (they stay where they are). */
+  const unlinkWalls = (wallIds: string[]) => {
+    const ids = new Set(wallIds)
+    const update = structureLists(structure)
+      .walls.filter((w) => ids.has(w.id) && w.source_area)
+      .map((w) => ({ ...w, source_area: null }))
+    if (update.length) commit({ update })
+  }
+
+  /**
+   * An area about to take `patch`: when that only moves it, its linked
+   * walls (and their doors) move with it - in the same step as the area,
+   * read from the draft itself so a drag never runs ahead of it.
+   */
+  const followArea = (areaId: string, patch: Partial<PlanShape>) => {
+    ed.draft.apply((d) => {
+      const before = d.shapes.find((s) => s.id === areaId)
+      if (!isArea(before)) return d
+      const shift = outlineShift(
+        areaOutline(before),
+        areaOutline({ ...before, ...patch } as AreaShape)
+      )
+      if (!shift) return d
+      const moved: string[] = []
+      const next = d.structure.map((r) => {
+        if (r.part !== "wall" || r.source_area !== areaId) return r
+        moved.push(r.id)
+        return {
+          ...r,
+          points: translatePoints(r.points, shift[0], shift[1], grid),
+        }
+      })
+      if (!moved.length) return d
+      const dirty = new Set(d.dirty)
+      for (const x of moved) dirty.add(x)
+      return { ...d, structure: next, dirty }
+    })
+  }
+
+  /** The runs an area's linked walls would be rebuilt to, along its
+   * outline as it is now; null when it has none. */
+  const rebuildOf = (areaId: string) => {
+    const area = ed.shapes.find((s) => s.id === areaId)
+    const linked = linkedTo(areaId)
+    if (!isArea(area) || !linked.length) return null
+    const ids = new Set(linked.map((w) => w.id))
+    const others = structureLists(structure).walls.filter((w) => !ids.has(w.id))
+    const runs = outlineWalls([areaOutline(area)], others, grid).map(
+      (r) => r.points
+    )
+    return { area, linked, runs }
+  }
+
+  /** Whether an area's linked walls no longer follow its outline (it was
+   * reshaped or turned, or a wall was edited by hand). */
+  const wallsOffOutline = (areaId: string) => {
+    const r = rebuildOf(areaId)
+    return !!r && !runsMatch(r.linked, r.runs)
+  }
+
+  /**
+   * "Update walls": an area's linked walls rebuilt along its outline - the
+   * same walls (their labels, heights, colours), new points, each door at
+   * its place along its stretch. When doors would no longer fit they are
+   * listed (`updateDrops`) and nothing changes until `force`.
+   */
+  const updateLinkedWalls = (areaId: string, force = false) => {
+    const r = rebuildOf(areaId)
+    if (!r) return
+    const { area, linked, runs } = r
+    const { openings, dropped } = rebuildWalls(linked, runs)
+    if (dropped.length && !force) {
+      setUpdateDrops({
+        areaId,
+        doors: dropped.map(
+          (d) => `${linked[d.wall].label || "Wall"}: door ${d.index + 1}`
+        ),
+      })
+      return
+    }
+    setUpdateDrops(null)
+    const name = areaName(area)
+    const update = linked.slice(0, runs.length).map((w, i) => ({
+      ...w,
+      points: runs[i],
+      openings: openings[i],
+    }))
+    const create = runs.slice(linked.length).map((points, k) =>
+      newWall(points, {
+        label: linkedWallLabel(name, linked.length + k, runs.length),
+        source_area: area.id,
+        height_mm: linked[0].height_mm,
+        thickness_mm: linked[0].thickness_mm ?? null,
+        color: linked[0].color,
+      })
+    )
+    commit({
+      update,
+      create,
+      remove: linked.slice(runs.length).map((w) => w.id),
+    })
+  }
+
+  /** An area being deleted: its linked walls deleted with it, or kept and
+   * unlinked - in the same step as the area's delete the caller makes. */
+  const settleAreaWalls = (areaId: string, walls: "delete" | "keep") => {
+    const linked = linkedTo(areaId)
+    if (!linked.length) return
+    if (walls === "delete") commit({ remove: linked.map((w) => w.id) })
+    else unlinkWalls(linked.map((w) => w.id))
   }
 
   // ── Trays ─────────────────────────────────────────────────────────────
@@ -545,6 +719,17 @@ export function useStructureEdits({
     flipDoor: flipDoorAt,
     deleteDoor,
     wallsAroundAreas,
+    linkChoice,
+    setLinkChoice,
+    setLinked,
+    linkedTo,
+    unlinkWalls,
+    followArea,
+    wallsOffOutline,
+    updateLinkedWalls,
+    updateDrops,
+    setUpdateDrops,
+    settleAreaWalls,
     createTray,
     patchTray,
     deleteTray,

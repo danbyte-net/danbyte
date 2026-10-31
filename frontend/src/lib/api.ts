@@ -12525,7 +12525,8 @@ export interface FloorPlanWallOpening {
 export interface FloorPlanWall {
   id: string
   label: string
-  /** [[x, y], …] in cell units, snapped to 0.5 steps (the tray lattice). */
+  /** [[x, y], …] in cell units, to 0.001 cell: on the half-cell lattice
+   * when drawn by hand, exactly on the outline when made from an area. */
   points: [number, number][]
   /** null = full height (the plan's ceiling). */
   height_mm: number | null
@@ -12533,6 +12534,9 @@ export interface FloorPlanWall {
   thickness_mm?: number | null
   color: string
   openings: FloorPlanWallOpening[]
+  /** The area the wall was made from, while linked to it: the wall moves
+   * with the area, and a reshape offers to rebuild it. */
+  source_area?: string | null
   created_at: string
   updated_at: string
 }
@@ -12641,6 +12645,9 @@ export interface FloorPlanArea extends FloorPlanOpensFields {
 
 export interface FloorPlanAreaWritePayload {
   floor_plan_id?: string
+  /** `bulk/` create only: the draft's id for the area, which a wall saved
+   * with it may name as its `source_area_id`. */
+  key?: string
   shape?: FloorPlanArea["shape"]
   x?: number
   y?: number
@@ -12816,6 +12823,9 @@ export interface FloorPlanWallWritePayload {
   thickness_mm?: number | null
   color?: string
   openings?: FloorPlanWallOpening[]
+  /** An area of the same plan - in a `bulk/` save also the draft key of an
+   * area created in it. null unlinks. */
+  source_area_id?: string | null
 }
 
 export interface FloorPlanTrayWritePayload {

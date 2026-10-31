@@ -188,6 +188,11 @@ export interface PlanDraftApi<T, TShape = unknown, TStruct = unknown> {
   setDeletedIds: (v: SetStateAction<ReadonlySet<string>>) => void
   cables: CableDraft
   setCables: (v: SetStateAction<CableDraft>) => void
+  /** An edit that reads and writes several parts of the draft at once
+   * (an area moved with its walls) - in the same step as its handler. */
+  apply: (
+    fn: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>
+  ) => void
   /** Edits until `endGesture` are one step (a drag). */
   beginGesture: () => void
   endGesture: () => void
@@ -362,6 +367,7 @@ export function usePlanDraft<
     setDeletedIds,
     cables: h.present.cables,
     setCables,
+    apply: edit,
     beginGesture,
     endGesture,
     gesturing,

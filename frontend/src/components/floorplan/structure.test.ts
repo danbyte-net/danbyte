@@ -17,6 +17,11 @@ import {
   slideDoor,
   snapRect,
   snapStructPoint,
+  linkedWallLabel,
+  outlineShift,
+  outlineWalls,
+  rebuildWalls,
+  runsMatch,
   splitRun,
   wallsAround,
 } from "./structure"
@@ -116,7 +121,7 @@ describe("walls from an outline", () => {
     ])
   })
 
-  it("follows a turned rectangle and a polygon, on the lattice", () => {
+  it("follows a turned rectangle and a polygon exactly", () => {
     const turned = wallsAround(
       [areaOutline(rect({ x: 4, y: 4, width: 4, height: 2, rotation: 90 }))],
       [],
@@ -147,10 +152,35 @@ describe("walls from an outline", () => {
     )[0]
     expect(poly).toEqual([
       [1, 1],
-      [5, 1],
+      [5.2, 1],
       [3, 4],
       [1, 1],
     ])
+  })
+
+  it("puts a rectangle turned off the quarter on its own corners", () => {
+    const area = rect({ x: 4, y: 3, width: 4, height: 2, rotation: 30 })
+    const corners = areaOutline(area)
+    const [run] = wallsAround([corners], [], grid)
+    expect(run).toHaveLength(5)
+    corners.forEach((c, i) => {
+      expect(run[i][0]).toBeCloseTo(c[0], 3)
+      expect(run[i][1]).toBeCloseTo(c[1], 3)
+    })
+    // Off the half-cell lattice: no corner was pulled onto it.
+    expect(run.some(([x]) => Math.abs(x * 2 - Math.round(x * 2)) > 0.01)).toBe(
+      true
+    )
+    expect(run[4]).toEqual(run[0])
+  })
+
+  it("names the outline each run follows", () => {
+    const runs = outlineWalls(
+      [areaOutline(rect()), areaOutline(rect({ id: "a2", x: 6 }))],
+      [],
+      grid
+    )
+    expect(runs.map((r) => r.outline)).toEqual([0, 1])
   })
 
   it("makes nothing when walls already run all the way round", () => {
@@ -381,13 +411,27 @@ describe("snapping a dragged point", () => {
     expect(s.guides).toEqual({ x: 4 })
   })
 
-  it("keeps to the lattice alone with Alt", () => {
+  it("places a point exactly where it is with Alt", () => {
     const s = snapStructPoint([4.2, 3.8], runs, { ...opts, free: true })
-    expect(s.p).toEqual([4, 4])
+    expect(s.p).toEqual([4.2, 3.8])
     expect(s.end).toBeUndefined()
     expect(
-      snapStructPoint([7.1, 4.3], runs, { ...opts, free: true }).p
-    ).toEqual([7, 4.5])
+      snapStructPoint([7.1234, 4.3], runs, { ...opts, free: true }).p
+    ).toEqual([7.123, 4.3])
+  })
+
+  it("lands on a wall off the lattice exactly, not beside it", () => {
+    const slanted = [
+      {
+        id: "s",
+        points: [
+          [1.3, 1],
+          [1.3, 9],
+        ] as Pt[],
+      },
+    ]
+    const s = snapStructPoint([1.4, 5.1], slanted, opts)
+    expect(s.p[0]).toBeCloseTo(1.3, 6)
   })
 
   it("pulls a raised floor's edge onto another's, on whole cells", () => {
@@ -399,5 +443,90 @@ describe("snapping a dragged point", () => {
     )
     expect(r.rect).toEqual({ x: 4, y: 0, width: 2, height: 2 })
     expect(r.guides.x).toBe(4)
+  })
+})
+
+describe("walls linked to an area", () => {
+  it("are named after it, numbered per stretch", () => {
+    expect(linkedWallLabel("Cage", 0, 1)).toBe("Cage walls")
+    expect(linkedWallLabel("Cage", 1, 3)).toBe("Cage walls 2")
+    expect(linkedWallLabel("", 0, 1)).toBe("Area walls")
+  })
+
+  it("tell a move from a reshape", () => {
+    const a = areaOutline(rect())
+    const moved = areaOutline(rect({ x: 3.25, y: 2.5 }))
+    const wider = areaOutline(rect({ width: 6 }))
+    const turned = areaOutline(rect({ rotation: 15 }))
+    expect(outlineShift(a, moved)).toEqual([1.25, 0.5])
+    expect(outlineShift(a, wider)).toBeNull()
+    expect(outlineShift(a, turned)).toBeNull()
+    expect(outlineShift(a, a)).toBeNull()
+  })
+
+  it("match runs in any order, either way round", () => {
+    const r: Pt[] = [
+      [0, 0],
+      [4, 0],
+      [4, 2],
+    ]
+    expect(runsMatch([{ points: [...r].reverse() }], [r])).toBe(true)
+    expect(runsMatch([{ points: r }], [r, r])).toBe(false)
+    expect(
+      runsMatch(
+        [
+          {
+            points: [
+              [0, 0],
+              [4, 0],
+              [4, 3],
+            ],
+          },
+        ],
+        [r]
+      )
+    ).toBe(false)
+  })
+
+  it("keep each door at its place along the stretch when rebuilt", () => {
+    // A 4x3 room grown to 8x3: a door half-way along the top edge (2 of 14
+    // cells round) lands at the same share of the new 22-cell run.
+    const old = wallsAround([areaOutline(rect())], [], grid)[0]
+    const grown = wallsAround([areaOutline(rect({ width: 8 }))], [], grid)[0]
+    const wall = {
+      points: old,
+      openings: [door({ seg: 0, from: 1.5, to: 2.5 })],
+    }
+    const { openings, dropped } = rebuildWalls([wall], [grown])
+    expect(dropped).toEqual([])
+    expect(openings[0]).toHaveLength(1)
+    const o = openings[0][0]
+    expect(o.to - o.from).toBeCloseTo(1, 6)
+    const share = 2 / 14
+    expect(o.seg).toBe(0)
+    expect((o.from + o.to) / 2).toBeCloseTo(share * 22, 2)
+  })
+
+  it("drop a door that no longer fits, and say which", () => {
+    const old = wallsAround([areaOutline(rect())], [], grid)[0]
+    const tiny = wallsAround(
+      [areaOutline(rect({ width: 1, height: 1 }))],
+      [],
+      grid
+    )[0]
+    const wall = {
+      points: old,
+      openings: [door({ seg: 0, from: 0.5, to: 3.5 })],
+    }
+    const { openings, dropped } = rebuildWalls([wall], [tiny])
+    expect(openings[0]).toEqual([])
+    expect(dropped).toEqual([{ wall: 0, index: 0 }])
+  })
+
+  it("drop the doors of a wall the rebuild has no run for", () => {
+    const old = wallsAround([areaOutline(rect())], [], grid)[0]
+    const wall = { points: old, openings: [door()] }
+    const { dropped } = rebuildWalls([wall, wall], [old])
+    expect(dropped).toEqual([{ wall: 1, index: 0 }])
   })
 })

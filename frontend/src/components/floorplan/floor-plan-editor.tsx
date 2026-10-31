@@ -57,6 +57,11 @@ import { BackLabelDeleteDialog } from "./opens-field"
 import { PlanCanvas } from "./plan-canvas"
 import { PlanDialogs } from "./plan-dialogs"
 import { PlanHeader } from "./plan-header"
+import {
+  AreaWallsDeleteDialog,
+  UpdateWallsCard,
+  WallLinkCard,
+} from "./linked-walls"
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
@@ -85,9 +90,9 @@ import {
 import { staleRouteIds } from "./cable-reroute"
 import { useMoveReroute } from "./use-move-reroute"
 import type { AfterPlace, PlaceCablesApply } from "./place-cables"
-import type { PlanShape, Pt } from "./shapes"
+import type { AreaShape, PlanShape, Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
-import { shapeBounds } from "./shapes"
+import { areaName, shapeBounds } from "./shapes"
 import { SnapAllDialog } from "./snap-all-dialog"
 import { edgeIds, isLiveView } from "./snapshot"
 import { SnapshotDialog } from "./snapshot-dialogs"
@@ -269,19 +274,37 @@ export function FloorPlanEditor({
   })
   const rawShapeEdits = useShapeEdits({ plan, ed })
   // Deleting an area or label with a Back button asks about its label on
-  // the other plan first.
+  // the other plan first; an area with linked walls asks about them.
   const [backDelete, setBackDelete] = useState<PlanShape | null>(null)
-  const shapeEdits = useMemo(
-    () => ({
-      ...rawShapeEdits,
-      deleteShape: (shapeId: string) => {
-        const s = ed.shapes.find((x) => x.id === shapeId)
-        if (s?.back_label) setBackDelete(s)
-        else rawShapeEdits.deleteShape(shapeId)
-      },
-    }),
-    [rawShapeEdits, ed.shapes]
-  )
+  const [wallsDelete, setWallsDelete] = useState<PlanShape | null>(null)
+  const deleteShapeNow = (s: PlanShape) => {
+    if (s.back_label) setBackDelete(s)
+    else rawShapeEdits.deleteShape(s.id)
+  }
+  const shapeEdits = {
+    ...rawShapeEdits,
+    // An area moved carries its linked walls, in the same step.
+    changeShape: (shapeId: string, patch: Partial<PlanShape>) => {
+      structure.followArea(shapeId, patch)
+      rawShapeEdits.changeShape(shapeId, patch)
+    },
+    deleteShape: (shapeId: string) => {
+      const s = ed.shapes.find((x) => x.id === shapeId)
+      if (!s) return
+      if (s.kind === "area" && structure.linkedTo(s.id).length)
+        setWallsDelete(s)
+      else deleteShapeNow(s)
+    },
+  }
+  // "Update walls": offered while a linked area is selected whose walls
+  // are off its outline, until dismissed for that outline.
+  const [fitDismissed, setFitDismissed] = useState<string | null>(null)
+  const fitArea = (() => {
+    const s = ed.shapes.find((x) => x.id === ed.selectedShapeId)
+    if (s?.kind !== "area" || !structure.wallsOffOutline(s.id)) return null
+    const key = `${s.id}:${s.x},${s.y},${s.width},${s.height},${s.rotation},${JSON.stringify(s.points)}`
+    return key === fitDismissed ? null : { area: s, key }
+  })()
   // "Place device here…": where the picker's next pick lands.
   const placePoint = useRef<Pt | null>(null)
 
@@ -1014,6 +1037,7 @@ export function FloorPlanEditor({
             areas={areas}
             tileTypes={tileTypes.data?.results}
             roles={roles.data?.results}
+            onDeleteRow={structure.deleteRow}
           />
         )}
 
@@ -1204,6 +1228,44 @@ export function FloorPlanEditor({
               overlays={
                 editing ? (
                   <>
+                    {structure.linkChoice &&
+                      walls.some((w) =>
+                        structure.linkChoice!.pairs.some(
+                          (p) => p.wallId === w.id
+                        )
+                      ) && (
+                        <WallLinkCard
+                          name={structure.linkChoice.name}
+                          count={structure.linkChoice.pairs.length}
+                          linked={walls.some(
+                            (w) =>
+                              !!w.source_area &&
+                              structure.linkChoice!.pairs.some(
+                                (p) => p.wallId === w.id
+                              )
+                          )}
+                          onLinked={structure.setLinked}
+                          onDismiss={() => structure.setLinkChoice(null)}
+                        />
+                      )}
+                    {!structure.linkChoice && fitArea && (
+                      <UpdateWallsCard
+                        name={areaName(fitArea.area) || "Area"}
+                        drops={
+                          structure.updateDrops?.areaId === fitArea.area.id
+                            ? structure.updateDrops.doors
+                            : null
+                        }
+                        onUpdate={() =>
+                          structure.updateLinkedWalls(fitArea.area.id)
+                        }
+                        onConfirmDrops={() =>
+                          structure.updateLinkedWalls(fitArea.area.id, true)
+                        }
+                        onCancelDrops={() => structure.setUpdateDrops(null)}
+                        onDismiss={() => setFitDismissed(fitArea.key)}
+                      />
+                    )}
                     {afterPlace && !placeCablesOpen && !connect && (
                       <AfterPlacingCard
                         room={afterPlace.room}
@@ -1331,6 +1393,11 @@ export function FloorPlanEditor({
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             openTile={openTile}
+            onSelectWalls={(ids) => {
+              selectTool("structure")
+              ed.setSelectedWallId(ids[0] ?? null)
+              if (ids.length > 1) ed.setStructSel(new Set(ids))
+            }}
           />
         )}
         {/* Outermost right aside, so it coexists with whichever inspector is
@@ -1448,6 +1515,18 @@ export function FloorPlanEditor({
         onCreated={(made) => {
           selectTool("select")
           void nav({ to: "/floorplans/$id", params: { id: made.id } })
+        }}
+      />
+      <AreaWallsDeleteDialog
+        name={wallsDelete ? areaName(wallsDelete as AreaShape) || "Area" : ""}
+        count={wallsDelete ? structure.linkedTo(wallsDelete.id).length : 0}
+        open={!!wallsDelete}
+        onOpenChange={(o) => !o && setWallsDelete(null)}
+        onDelete={(choice) => {
+          if (!wallsDelete) return
+          structure.settleAreaWalls(wallsDelete.id, choice)
+          deleteShapeNow(wallsDelete)
+          setWallsDelete(null)
         }}
       />
       <BackLabelDeleteDialog

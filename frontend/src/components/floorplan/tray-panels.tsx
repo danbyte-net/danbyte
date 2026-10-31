@@ -19,6 +19,7 @@ import {
 import { CableAdd } from "@/components/cable-add"
 import { Field } from "@/components/forms"
 import { BarTip } from "@/components/map-toolbar"
+import { RowDelete } from "./structure-panels"
 import { cn } from "@/lib/utils"
 
 /** Cables-mode left rail - draw control, edit toggle + the tray list. */
@@ -31,7 +32,10 @@ export function TrayRail({
   onSelectTray,
   onStartDraw,
   onCancelDraw,
+  onDeleteTray,
 }: {
+  /** A row's delete. */
+  onDeleteTray?: (id: string) => void
   trays: FloorPlanTray[]
   selectedTrayId: string | null
   drawing: boolean
@@ -95,24 +99,34 @@ export function TrayRail({
           </p>
         )}
         {trays.map((tray) => (
-          <button
+          <div
             key={tray.id}
-            type="button"
-            onClick={() => onSelectTray(tray.id)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted/60",
+              "flex items-center rounded-md pr-1 hover:bg-muted/60",
               tray.id === selectedTrayId && "bg-muted ring-1 ring-foreground/20"
             )}
           >
-            <span
-              className="h-3 w-3 shrink-0 rounded-full"
-              style={{ backgroundColor: tray.color || "#71717a" }}
-            />
-            <span className="truncate">{tray.name}</span>
-            <span className="num ml-auto text-[10px] text-muted-foreground">
-              {tray.cables.length}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => onSelectTray(tray.id)}
+              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-[13px]"
+            >
+              <span
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: tray.color || "#71717a" }}
+              />
+              <span className="truncate">{tray.name}</span>
+              <span className="num ml-auto text-[10px] text-muted-foreground">
+                {tray.cables.length}
+              </span>
+            </button>
+            {onDeleteTray && (
+              <RowDelete
+                label={`Delete ${tray.name || "tray"}`}
+                onClick={() => onDeleteTray(tray.id)}
+              />
+            )}
+          </div>
         ))}
       </div>
     </aside>

@@ -9887,9 +9887,14 @@ class FloorPlanRaisedFloorArea(TimestampedModel):
 
 
 class FloorPlanWall(TimestampedModel):
-    """A wall drawn on a floor plan: a polyline on the same half-cell lattice
-    trays use, so a wall can run along the boundary BETWEEN two tiles or down
-    the centreline OF a tile. ``openings`` are door/passage spans along the
+    """A wall drawn on a floor plan: a polyline in cell units. Drawn by hand
+    its points sit on the half-cell lattice trays use, so a wall can run
+    along the boundary BETWEEN two tiles or down the centreline OF a tile;
+    a wall made from an area's outline follows that outline exactly (any
+    point within the grid, to 0.001 cell). ``source_area`` is the area it
+    was made from while the two stay linked: the area carries its walls
+    when it moves, and the editor offers to rebuild them when it is
+    reshaped. ``openings`` are door/passage spans along the
     polyline's segments; v1 doors are pure geometry (no per-door metadata),
     so they live as JSON on the wall - one PATCH keeps wall + doors atomic,
     exactly how a tray keeps its whole geometry in ``points``.
@@ -9902,8 +9907,13 @@ class FloorPlanWall(TimestampedModel):
         FloorPlan, on_delete=models.CASCADE, related_name="walls"
     )
     label = models.CharField(max_length=64, blank=True, default="")
-    # [[x, y], …] in cell units snapped to the half-cell lattice.
+    # [[x, y], …] in cell units, rounded to 0.001 cell.
     points = models.JSONField(default=list)
+    source_area = models.ForeignKey(
+        "FloorPlanArea", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="linked_walls",
+        help_text="The area this wall was made from, while linked to it.",
+    )
     height_mm = models.PositiveSmallIntegerField(
         null=True, blank=True,
         validators=[MinValueValidator(200), MaxValueValidator(20000)],

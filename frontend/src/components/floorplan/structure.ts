@@ -22,7 +22,8 @@ export type StructShape =
 export type WallRow = Extract<StructShape, { part: "wall" }>
 export type TrayRow = Extract<StructShape, { part: "tray" }>
 export type RaisedRow = Extract<StructShape, { part: "raised_floor" }>
-/** A wall or a tray: a polyline on the half-cell lattice. */
+/** A wall or a tray: a polyline in cell units (a tray's on the half-cell
+ * lattice; a wall's anywhere, to 0.001 cell). */
 export type RunRow = WallRow | TrayRow
 
 /** The saved walls, trays and raised floors as the draft keeps them. */
@@ -67,6 +68,8 @@ export const wallThicknessMm = (w: Pick<FloorPlanWall, "thickness_mm">) =>
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000
 const r2 = (v: number) => Math.round(v * 100) / 100
+/** A door's end rounded, never past the end of its segment. */
+const capTo = (v: number, len: number) => Math.min(r2(v), len)
 export const onLattice = (v: number, step = LATTICE) =>
   Math.round(v / step) * step
 const clamp = (v: number, lo: number, hi: number) =>
@@ -86,6 +89,27 @@ export function latticePoint(p: Pt, grid: GridSize, step = LATTICE): Pt {
     clamp(onLattice(p[0], step), 0, grid.w),
     clamp(onLattice(p[1], step), 0, grid.h),
   ]
+}
+
+/** A point inside the grid at the place given, to 0.001 cell: a wall made
+ * from an outline follows it exactly. */
+export function exactPoint(p: Pt, grid: GridSize): Pt {
+  return [r3(clamp(p[0], 0, grid.w)), r3(clamp(p[1], 0, grid.h))]
+}
+
+/** A point on segment `seg` of a run: on the lattice when the lattice point
+ * lies on the segment (a hand-drawn run), else exactly where it is (a wall
+ * that follows an outline). */
+export function onRun(
+  points: readonly Pt[],
+  seg: number,
+  p: Pt,
+  grid: GridSize
+): Pt {
+  const snapped = latticePoint(p, grid)
+  return projectOnSegment(points, seg, snapped).dist < 1e-6
+    ? snapped
+    : exactPoint(p, grid)
 }
 
 export function segLength(points: readonly Pt[], seg: number): number {
@@ -198,27 +222,30 @@ const segmentsOf = (runs: readonly { points: readonly Pt[] }[]) =>
 
 /**
  * The walls to draw around outlines: one polyline per unbroken run of their
- * edges, joined at the corners (a whole outline is one closed run), on the
- * lattice walls use. Where a wall already runs along an edge (collinear,
- * within `tol` cells) that stretch is left out - so is one the outlines
- * share, drawn once. Stretches shorter than `tol` are dropped.
+ * edges, joined at the corners (a whole outline is one closed run), exactly
+ * on the outline (to 0.001 cell). Where a wall already runs along an edge
+ * (collinear, within `tol` cells) that stretch is left out - so is one the
+ * outlines share, drawn once. Stretches shorter than `tol` are dropped.
+ * Each run names the outline it follows (its index).
  */
-export function wallsAround(
+export function outlineWalls(
   outlines: readonly Pt[][],
   existing: readonly { points: readonly Pt[] }[],
   grid: GridSize,
   tol = 0.25
-): Pt[][] {
+): { outline: number; points: Pt[] }[] {
   const made: Pt[][] = []
-  for (const raw of outlines) {
-    // Corners on the lattice; repeats (a sliver edge snapped away) go.
+  const from: number[] = []
+  outlines.forEach((raw, oi) => {
+    // Corners exactly where the outline has them; repeats go.
     const ring: Pt[] = []
     for (const p of raw) {
-      const q = latticePoint(p, grid)
-      if (!ring.length || !same(ring[ring.length - 1], q)) ring.push(q)
+      const q = exactPoint(p, grid)
+      if (!ring.length || !same(ring[ring.length - 1], q, 1e-3)) ring.push(q)
     }
-    while (ring.length > 1 && same(ring[0], ring[ring.length - 1])) ring.pop()
-    if (ring.length < 2) continue
+    while (ring.length > 1 && same(ring[0], ring[ring.length - 1], 1e-3))
+      ring.pop()
+    if (ring.length < 2) return
     const covered = segmentsOf([
       ...existing,
       ...made.map((points) => ({ points })),
@@ -239,7 +266,7 @@ export function wallsAround(
       }
       if (len - cursor > tol) gaps.push([cursor, len])
       const at = (t: number): Pt =>
-        latticePoint(
+        exactPoint(
           [a[0] + ((b[0] - a[0]) * t) / len, a[1] + ((b[1] - a[1]) * t) / len],
           grid
         )
@@ -265,8 +292,127 @@ export function wallsAround(
       }
     }
     made.push(...runs)
+    from.push(...runs.map(() => oi))
+  })
+  return made.map((points, i) => ({ outline: from[i], points }))
+}
+
+/** {@link outlineWalls}, the runs alone. */
+export function wallsAround(
+  outlines: readonly Pt[][],
+  existing: readonly { points: readonly Pt[] }[],
+  grid: GridSize,
+  tol = 0.25
+): Pt[][] {
+  return outlineWalls(outlines, existing, grid, tol).map((r) => r.points)
+}
+
+// ── Walls linked to an area ──────────────────────────────────────────────
+
+/** What walls made from an area are called: "<name> walls", numbered when
+ * the outline gave several stretches. */
+export function linkedWallLabel(name: string, index: number, count: number) {
+  const base = `${name || "Area"} walls`
+  return (count > 1 ? `${base} ${index + 1}` : base).slice(0, 64)
+}
+
+/** How an area moved, when it only moved: the shift that takes the old
+ * outline onto the new one. Null when it was reshaped, turned or did not
+ * move. */
+export function outlineShift(before: Pt[], after: Pt[]): Pt | null {
+  if (!before.length || before.length !== after.length) return null
+  const dx = after[0][0] - before[0][0]
+  const dy = after[0][1] - before[0][1]
+  if (Math.abs(dx) < SAME_PT && Math.abs(dy) < SAME_PT) return null
+  const tol = 1e-4
+  for (let i = 0; i < before.length; i++)
+    if (
+      Math.abs(after[i][0] - before[i][0] - dx) > tol ||
+      Math.abs(after[i][1] - before[i][1] - dy) > tol
+    )
+      return null
+  return [dx, dy]
+}
+
+const samePolyline = (a: readonly Pt[], b: readonly Pt[], tol = 2e-3) => {
+  if (a.length !== b.length) return false
+  const fwd = a.every((p, i) => same(p, b[i], tol))
+  return fwd || a.every((p, i) => same(p, b[b.length - 1 - i], tol))
+}
+
+/** Whether walls already run where `runs` would put them: the same
+ * polylines, in any order, either way round. */
+export function runsMatch(
+  walls: readonly { points: readonly Pt[] }[],
+  runs: readonly Pt[][]
+): boolean {
+  if (walls.length !== runs.length) return false
+  const left = [...runs]
+  for (const w of walls) {
+    const i = left.findIndex((r) => samePolyline(w.points, r))
+    if (i < 0) return false
+    left.splice(i, 1)
   }
-  return made
+  return true
+}
+
+/** A door that does not fit the rebuilt walls: its old wall and index. */
+export interface DroppedDoor {
+  wall: number
+  index: number
+}
+
+/**
+ * Linked walls rebuilt along new runs: wall `i` takes run `i`; each door
+ * keeps its width and its place along the run, as a share of the run's
+ * length (slid into its segment when it would cross a corner). A door with
+ * no run, too wide for its segment, or on top of another goes - listed in
+ * `dropped`.
+ */
+export function rebuildWalls(
+  walls: readonly {
+    points: readonly Pt[]
+    openings: readonly FloorPlanWallOpening[]
+  }[],
+  runs: readonly Pt[][]
+): { openings: FloorPlanWallOpening[][]; dropped: DroppedDoor[] } {
+  const dropped: DroppedDoor[] = []
+  const openings = runs.map(() => [] as FloorPlanWallOpening[])
+  walls.forEach((w, wi) => {
+    const run = runs[wi] as Pt[] | undefined
+    const oldLen = runLength(w.points)
+    w.openings.forEach((o, index) => {
+      if (!run || oldLen < SAME_PT) {
+        dropped.push({ wall: wi, index })
+        return
+      }
+      let before = 0
+      for (let i = 0; i < o.seg; i++) before += segLength(w.points, i)
+      const share = (before + (o.from + o.to) / 2) / oldLen
+      const width = o.to - o.from
+      // The new run's segment the door's middle falls on.
+      let at = share * runLength(run)
+      let seg = 0
+      while (seg < run.length - 2 && at > segLength(run, seg)) {
+        at -= segLength(run, seg)
+        seg += 1
+      }
+      const len = segLength(run, seg)
+      const from = clamp(at - width / 2, 0, len - width)
+      const to = from + width
+      const kept = openings[wi]
+      if (
+        width > len + SAME_PT ||
+        kept.some((k) => k.seg === seg && from < k.to && k.from < to)
+      ) {
+        dropped.push({ wall: wi, index })
+        return
+      }
+      kept.push({ ...o, seg, from: r2(Math.max(0, from)), to: capTo(to, len) })
+    })
+    openings[wi]?.sort((x, y) => x.seg - y.seg || x.from - y.from)
+  })
+  return { openings, dropped }
 }
 
 // ── Doors ────────────────────────────────────────────────────────────────
@@ -322,7 +468,7 @@ export function doorFromDrag(
     to = clamp(Math.max(t0, t1), gap[0], gap[1])
     if (to - from < min) return null
   }
-  return { from: r2(from), to: r2(to) }
+  return { from: r2(from), to: capTo(to, segLength(points, seg)) }
 }
 
 /** One end of door `index` dragged to `t`: inside its gap, no narrower
@@ -342,7 +488,7 @@ export function resizeDoor(
   ]
   const min = DOOR_MIN_MM / cellMm
   if (end === "from") return { ...o, from: r2(clamp(t, gap[0], o.to - min)) }
-  return { ...o, to: r2(clamp(t, o.from + min, gap[1])) }
+  return { ...o, to: capTo(clamp(t, o.from + min, gap[1]), gap[1]) }
 }
 
 /** Door `index` slid `delta` cells along its segment, stopping at the
@@ -360,7 +506,7 @@ export function slideDoor(
   ]
   const w = o.to - o.from
   const from = clamp(o.from + delta, gap[0], gap[1] - w)
-  return { ...o, from: r2(from), to: r2(from + w) }
+  return { ...o, from: r2(from), to: capTo(from + w, gap[1]) }
 }
 
 /** The next way a door swings: hinged at the start, opening left, then
@@ -431,7 +577,7 @@ export function fitOpenings(
       const to = Math.min(o.to, limit)
       const from = to - w
       if (from < -SAME_PT) continue
-      kept.push({ ...o, from: r2(Math.max(0, from)), to: r2(to) })
+      kept.push({ ...o, from: r2(Math.max(0, from)), to: capTo(to, len) })
       limit = Math.max(0, from)
     }
     out.push(...kept.reverse())
@@ -506,7 +652,12 @@ export function splitRun(
   b: { points: Pt[]; openings: FloorPlanWallOpening[] }
 } | null {
   const len = segLength(points, seg)
-  const cut = latticePoint(pointAlong(points, seg, clamp(t, 0, len)), grid)
+  const cut = onRun(
+    points,
+    seg,
+    pointAlong(points, seg, clamp(t, 0, len)),
+    grid
+  )
   const along = projectOnSegment(points, seg, cut).t
   const at0 = same(cut, points[seg])
   const at1 = same(cut, points[seg + 1])
@@ -605,7 +756,7 @@ export interface StructSnap {
  * A dragged point snapped: onto another run's point or edge within `reach`
  * cells (the nearest point wins), else onto the lattice, then lined up with
  * a point of another run in x or y within `reach` - each alignment drawn as
- * a guide. `free` (Alt) keeps it to the lattice alone.
+ * a guide. `free` (Alt) places it exactly where it is (to 0.001 cell).
  */
 export function snapStructPoint(
   p: Pt,
@@ -620,8 +771,8 @@ export function snapStructPoint(
   }
 ): StructSnap {
   const step = opts.step ?? LATTICE
+  if (opts.free) return { p: exactPoint(p, opts.grid), guides: {} }
   const base = latticePoint(p, opts.grid, step)
-  if (opts.free) return { p: base, guides: {} }
   const others = runs.filter((r) => r.id !== opts.skip)
   let best: { p: Pt; d: number; end?: StructSnap["end"] } | null = null
   for (const r of others) {
@@ -642,7 +793,7 @@ export function snapStructPoint(
         const { t, dist } = projectOnSegment(r.points, seg, p)
         if (dist <= opts.reach && (!best || dist < best.d))
           best = {
-            p: latticePoint(pointAlong(r.points, seg, t), opts.grid, step),
+            p: onRun(r.points, seg, pointAlong(r.points, seg, t), opts.grid),
             d: dist,
           }
       }

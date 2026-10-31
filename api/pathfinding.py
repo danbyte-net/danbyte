@@ -452,13 +452,20 @@ def lattice_steps(polylines) -> set[tuple[int, int, int, int]]:
     return out
 
 
-def _wall_nodes(walls, step: float) -> tuple[set[Node], list[tuple[Pt, Pt]]]:
+def _on_lattice(v: float, step: float) -> bool:
+    return abs(v / step - round(v / step)) < 1e-6
+
+
+def _wall_nodes(
+    walls, step: float
+) -> tuple[set[Node], list[tuple[Pt, Pt, list[tuple[float, float]]]]]:
     """The lattice points on a wall outside its door openings, and the
-    wall segments that are neither horizontal nor vertical (a step can
-    cross those between two lattice points)."""
+    wall segments a step can cross between two lattice points - slanted
+    ones, and straight ones off the lattice lines (a wall made from an
+    area's outline) - each with its door spans."""
     on_wall: set[Node] = set()
     doors: set[Node] = set()
-    slanted: list[tuple[Pt, Pt]] = []
+    slanted: list[tuple[Pt, Pt, list[tuple[float, float]]]] = []
     for points, openings in walls:
         pts = [(float(p[0]), float(p[1])) for p in points or []]
         for seg, (s, e) in enumerate(zip(pts, pts[1:], strict=False)):
@@ -467,8 +474,12 @@ def _wall_nodes(walls, step: float) -> tuple[set[Node], list[tuple[Pt, Pt]]]:
                 for o in openings or []
                 if isinstance(o, dict) and o.get("seg") == seg
             ]
-            if abs(s[0] - e[0]) > _E and abs(s[1] - e[1]) > _E:
-                slanted.append((s, e))
+            vertical = abs(s[0] - e[0]) <= _E
+            horizontal = abs(s[1] - e[1]) <= _E
+            if not (vertical or horizontal) or (
+                vertical and not _on_lattice(s[0], step)
+            ) or (horizontal and not _on_lattice(s[1], step)):
+                slanted.append((s, e, spans))
             lo_x, hi_x = sorted((s[0], e[0]))
             lo_y, hi_y = sorted((s[1], e[1]))
             for ix in range(math.floor(lo_x / step), math.ceil(hi_x / step) + 1):
@@ -565,10 +576,14 @@ def suggest_run(
         if occupied(sides[0]) and occupied(sides[1]):
             return False
         p, q = (ux * step, uy * step), (vx * step, vy * step)
-        for s, e in slanted:
+        for s, e, spans in slanted:
             x = _segment_intersect(p, q, s, e)
-            if x is not None and _E < x[1] < 1 - _E and _E < x[2] < 1 - _E:
-                return False
+            # A wall's end counts: a step does not slip past it there.
+            if x is not None and _E < x[1] < 1 - _E:
+                # Through a door: a step crosses there.
+                at = x[2] * _dist(s, e)
+                if not any(f - _E <= at <= t + _E for f, t in spans):
+                    return False
         return True
 
     sx, sy = node_of(a)
