@@ -11323,11 +11323,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 spot = snaps.inside_corner(snaps.area_outline(area)) if area else None
                 if spot is not None:
                     bx, by = spot
+                # The back button looks like the button that leads there; an
+                # area's gets a size that reads on the target at fit zoom.
+                if isinstance(shape, FloorPlanLabel):
+                    style = {f: getattr(shape, f) for f in (
+                        "font_mm", "weight", "color", "plate", "plate_color")}
+                else:
+                    span = min(crop.w, crop.h) if crop is not None \
+                        else min(dst.grid_width, dst.grid_height)
+                    style = {"font_mm": int(min(5000, max(300, span * (dst.cell_mm or 600) * 0.03)))}
+                style.setdefault("plate", True)
                 FloorPlanLabel.objects.create(
                     floor_plan=dst, text=text or f"Back to {here_name}"[:500],
                     x=min(bx, max(dst.grid_width - 1, 0)),
                     y=min(by, max(dst.grid_height - 1, 0)),
-                    plate=True, opens=here, pair_id=shape.pk,
+                    **style,
+                    opens=here, pair_id=shape.pk,
                     shown_in=target if snaps.is_view(target) else None,
                     z=(dst.labels.order_by("-z").values_list("z", flat=True).first() or 0) + 1,
                 )

@@ -876,7 +876,9 @@ a room that opens its snapshot.
   top left - on a live view, on the view's source in the view's top left
   (just inside the room's outline when the view follows a room, so the
   dimming never covers it), shown only in that view (never on the source or its other views) - and
-  is an ordinary label there, to move and restyle. A live view also hides
+  is an ordinary label there, to move and restyle. It starts looking like
+  the button that leads there - a label's size, weight, colours and plate;
+  for an area, a size that reads on the target when it is fitted. A live view also hides
   the shapes of its source that open the view itself, so "Go to B1" shows
   on the main plan and "Go back" in the B1 view. Picking another target offers to move the back label with it;
   clearing the target, turning the switch off or deleting the shape offers

@@ -273,6 +273,9 @@ class BackLinkTests(_Fixture):
         view = FloorPlan.objects.get(pk=r.json()["id"])
         # "Go to B1" sits inside the crop and opens the view itself.
         self.label.opens = view
+        self.label.font_mm = 3000
+        self.label.plate = True
+        self.label.plate_color = "red"
         self.label.save()
         r = self.back({"kind": "label", "id": str(self.label.id), "on": True,
                        "target_id": str(view.id), "text": "Go back"})
@@ -280,6 +283,8 @@ class BackLinkTests(_Fixture):
         made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
         self.assertEqual(made.floor_plan_id, self.campus.id)
         self.assertEqual(made.shown_in_id, view.id)
+        # It looks like the button that leads there.
+        self.assertEqual((made.font_mm, made.plate, made.plate_color), (3000, True, "red"))
         in_view = [lb["id"] for lb in self.contents(view)["labels"]]
         self.assertEqual(in_view, [str(made.id)])
         on_source = [lb["id"] for lb in self.contents(self.campus)["labels"]]
