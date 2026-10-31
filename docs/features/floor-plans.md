@@ -426,6 +426,7 @@ floor plan, changing needs **change**.
 | `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
 | `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
 | `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
+| `GET /api/floor-plans/{id}/drawing/loops/?x=&y=` | [Detect outline](#detect-outline)'s pick: the smallest closed shape of a shown layer round the plan point (`x`, `y` in cells) - `{"points": [[x, y], ...], "layer"}` in cells, at most 200 corners. Needs only **view**. 404 when no closed shape holds the point, 409 until the drawing is ready, 400 on a live view. |
 | `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The same request while one is queued returns that one. At most 3 renders of a drawing queue at once; past that, 429 until one finishes. The last 12 are kept. |
 
 The drawing record:
@@ -808,6 +809,7 @@ Layout / Structure / Cables tabs of 0.18:
 | Select | ++v++ | Select, move, resize and turn what is on the plan |
 | Room or area | ++r++ | Drag a rectangle: a [room, location or plain area](#rooms-areas-and-labels) |
 | Polygon area | ++shift+r++ | Click its corners; ++enter++, a double-click or a click on the first point closes it |
+| Detect outline | ++o++ | Click a building or a room on the background: its outline, [proposed as an area](#detect-outline) |
 | Label | ++t++ | Click to place a [label](#labels) |
 | Tiles | ++g++ | The tile palette (Tiles / Background tabs) |
 | Walls and raised floors | ++w++ | What the Structure tab did: [raised floors](#raised-floors-structure-mode) and [walls](#walls-doors-structure-mode) |
@@ -966,6 +968,71 @@ and in view.
 **Snapshot.** **Snapshot this room…** on an area's right-click menu or its
 floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 
+### Detect outline
+
+**Detect outline** (++o++, or **Detect outline here** on the plan's
+right-click menu) draws an area by finding it: click a building on a map
+background, a room in a scanned plan or a closed shape in a CAD drawing,
+and its outline is proposed over the plan, dashed, a handle on each corner
+to drag. It works best on maps, CAD drawings and line drawings; satellite
+pictures have no clean edges to follow.
+
+The card over the plan picks how it looks:
+
+- **Colour** (a background picture) - grows a region from the clicked
+  pixel over every pixel whose colour is within the **Tolerance** of the
+  clicked one (1-40, as a percentage of the black-to-white distance;
+  default 8). A street map's building fill stops at its darker outline; a
+  tolerance too high runs into the land around it, and the card says to
+  lower it. House numbers and other marks inside the building are holes
+  and are ignored: only the outer edge counts.
+- **Fill room** (a line drawing or a scan) - pixels darker than the
+  **Threshold** (default 128 of 255) are walls; the white space round the
+  click is filled, its **Door gap** (metres, default 1.0) bridged so the
+  fill stops at the doorway instead of running into the next room. The
+  bridge is a square's width: the room keeps its sharp corners and gets no
+  bulge in the doorway. A room narrower than the gap is filled with a gap
+  as wide as the click allows.
+- **CAD shape** (a plan with a [CAD drawing](#cad-drawings)) - the smallest
+  closed shape of the drawing round the click: a closed polyline, a circle
+  or a hatch's boundary, on a layer that is shown. Its corners are the
+  drawing's own, so there is nothing to simplify or square. Lines that only
+  meet at their ends are not a closed shape.
+
+A picture's outline is then traced along the region's outer edge and
+cleaned up:
+
+- **Simplify** (0-2 cells, default a quarter) drops corners closer than that
+  to the line between their neighbours (never finer than two pixels of the
+  picture, the width of an anti-aliased edge).
+- **Square corners** (on by default) turns every edge within 8° of the
+  shape's main direction, or a quarter turn from it, onto it - a building
+  at 20° stays at 20° - lays each edge through the middle of the stair-step
+  edge it stands for, and drops jogs shorter than twice the simplify. Edges
+  far from the main direction keep their own.
+
+The card reads the corner count and the area in m², with **Accept**,
+**Accept + walls** and **Cancel** (++enter++ accepts, ++esc++ cancels).
+++shift++-click adds more outlines to the same batch; a plain click starts
+again. Moving a corner by hand keeps it until a setting changes.
+
+- **Accept** makes each outline a polygon area through the plan's draft,
+  like a drawn one: one undo step each, saved with **Save**. The inspector
+  opens on it to pick **Room**, **Location** or **Just an area** and a type.
+- **Accept + walls** also runs [Add walls around this](#walls-from-a-rooms-outline)
+  on each, linked to it, in the same undo step.
+
+Limits: the picture is read in the browser at up to 4 megapixels (a larger
+one is scaled down for the search, still several pixels a cell), the
+search runs in a background worker, and a region over half the picture is
+refused. An area takes 200 corners at most; a busier outline is simplified
+until it fits. Corners are kept inside the grid. A drawing's closed shapes
+are read on the server from the drawing as processed (never the uploaded
+file) and cached per render, at most 50,000 shapes of up to 5,000 points;
+the pick is `GET /api/floor-plans/<id>/drawing/loops/?x=&y=` (see the
+[drawing API](#api)). On a live view, picture outlines work and CAD shapes
+are picked on its source plan.
+
 ### Opens links
 
 An area or a label can **open** another floor plan: a click on it in View
@@ -1075,6 +1142,8 @@ In Edit, a right-click on empty plan space offers **Place device here…**
 (the [Place picker](#the-place-picker); what you pick lands at the point,
 on the grid on a grid plan), **Draw room/area here** (what a click with the
 Room tool draws: a 3 × 3 area at the point, selected to resize and link),
+**Detect outline here** (on a plan with a background picture or a drawing:
+[Detect outline](#detect-outline) at the point),
 **Add label here** (a label at the
 point, its text ready to type) and **Fit to view**. In View, those who may
 edit get **Edit here**, which switches to Edit.
@@ -1092,7 +1161,7 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 |---|---|
 | ++e++ | View / Edit |
 | ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
-| ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
+| ++v++ ++r++ ++shift+r++ ++o++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label - or wall, door, tray or raised floor |
 | ++d++ | The Door tool |
@@ -2718,4 +2787,5 @@ wall-plate ("drop") tiles with port assignments.
     free placement, the Place picker with rooms near the pointer, devices in
     their role's look or as their photo, a save that asks before it
     overwrites someone else's change, and snapshots: a rectangle of a floor
-    as an independent copy or a live view.
+    as an independent copy or a live view. Detect outline: a click on a
+    building, a room or a CAD shape proposes its area.

@@ -30,6 +30,8 @@ import type {
   PaletteEntry,
 } from "./floor-canvas"
 import { LinkedObjectLink } from "./linked-object-link"
+import { OutlinePanel, OutlinePreview } from "./outline-tool"
+import type { OutlineDetect } from "./outline-tool"
 import { AreaMask } from "./area-mask"
 import { isLiveView, viewBackgroundFrame, viewMask } from "./snapshot"
 import { SelectionBar } from "./selection-bar"
@@ -108,7 +110,10 @@ export function PlanCanvas({
   emptyActions,
   structureToolbar,
   onRerouteCable,
+  outline,
 }: {
+  /** Edit, the Detect outline tool in hand: its picks, preview and card. */
+  outline?: OutlineDetect
   /** Edit: "Re-route" on an out-of-date route's popover. */
   onRerouteCable?: (cableId: string) => void
   /** Edit: floats above the selected wall, door, tray or raised floor. */
@@ -440,6 +445,7 @@ export function PlanCanvas({
                 height={plan.grid_height}
               />
             )}
+            {outline && <OutlinePreview od={outline} />}
             {calibration.active && cad.drawing && (
               <CalibrateMarks
                 drawing={cad.drawing}
@@ -450,7 +456,13 @@ export function PlanCanvas({
             )}
           </>
         }
-        onPickPoint={calibration.active ? calibration.pick : undefined}
+        onPickPoint={
+          calibration.active
+            ? calibration.pick
+            : canEdit && outline?.active
+              ? outline.pick
+              : undefined
+        }
         shapes={shownShapes}
         selectedShapeId={selectedShapeId}
         shapeTool={
@@ -488,6 +500,9 @@ export function PlanCanvas({
           </div>
         )}
       {calibration.active && <CalibrateBar cal={calibration} />}
+      {canEdit && outline?.active && !calibration.active && (
+        <OutlinePanel od={outline} />
+      )}
       {drawingOpen && plan.drawing && (
         <CadPanel
           cad={cad}

@@ -242,7 +242,7 @@ describe("point-pick mode and the drawing underlay", () => {
     fireEvent.pointerUp(g, { button: 0, clientX: 140, clientY: 90 })
     expect(onOpen).not.toHaveBeenCalled()
     // The default view is translated by (40, 40) at zoom 1.
-    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 })
+    expect(onPick).toHaveBeenCalledWith({ x: 100, y: 50 }, { shiftKey: false })
   })
 
   it("a viewer's click goes to onClickTile; a double-click opens", () => {

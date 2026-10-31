@@ -18,7 +18,7 @@ import type { TileEdits } from "./use-tile-edits"
 import { slideDoor, translatePoints } from "./structure"
 
 /** The drawing tools: Esc puts them down before it clears a selection. */
-const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "label", "door"]
+const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "outline", "label", "door"]
 
 /** The editor's keyboard: E / Esc into and out of Edit, the tool keys,
  * H / Shift+H hide and show, Delete, Escape, arrows, Enter to finish a

@@ -341,12 +341,27 @@ export function useStructureEdits({
   /** Walls round areas (rectangles at any turn, polygons): one per unbroken
    * stretch of outline, exactly on it, joined at the corners, leaving out
    * what a wall already runs along - one undo step. Each is named after its
-   * area and linked to it; the toolbar then offers to keep the link. */
-  const wallsAroundAreas = (areaIds: string[]) => {
+   * area and linked to it; the toolbar then offers to keep the link.
+   * `extra` are areas made in the same step, not in the draft yet (Detect
+   * outline's Accept + walls); `appendLink` adds the walls to the link
+   * choice already on offer instead of replacing it. */
+  const wallsAroundAreas = (
+    areaIds: string[],
+    {
+      extra = [],
+      appendLink = false,
+    }: { extra?: AreaShape[]; appendLink?: boolean } = {}
+  ) => {
     if (!plan) return
-    const areas = ed.shapes.filter(
-      (s): s is AreaShape => s.kind === "area" && areaIds.includes(s.id)
-    )
+    const areas = [
+      ...ed.shapes.filter(
+        (s): s is AreaShape =>
+          s.kind === "area" &&
+          areaIds.includes(s.id) &&
+          !extra.some((x) => x.id === s.id)
+      ),
+      ...extra.filter((x) => areaIds.includes(x.id)),
+    ]
     const runs = outlineWalls(
       areas.map(areaOutline),
       structureLists(structure).walls,
@@ -366,10 +381,15 @@ export function useStructureEdits({
     })
     commit({ create: made })
     setSelectedWallId(made[0].id)
-    setLinkChoice({
-      pairs: made.map((w) => ({ wallId: w.id, areaId: w.source_area! })),
-      name: areas.length === 1 ? areaName(areas[0]) || "Area" : null,
-    })
+    const pairs = made.map((w) => ({ wallId: w.id, areaId: w.source_area! }))
+    setLinkChoice((prev) =>
+      appendLink && prev
+        ? { pairs: [...prev.pairs, ...pairs], name: null }
+        : {
+            pairs,
+            name: areas.length === 1 ? areaName(areas[0]) || "Area" : null,
+          }
+    )
     toast.success(
       made.length === 1 ? "Added a wall" : `Added ${made.length} walls`
     )

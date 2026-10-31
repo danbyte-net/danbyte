@@ -9,6 +9,7 @@ import {
   Pentagon,
   Square,
   Type,
+  WandSparkles,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -35,6 +36,12 @@ export const TOOLS: {
     key: "r",
     shift: true,
     icon: Pentagon,
+  },
+  {
+    tool: "outline",
+    label: "Detect outline",
+    key: "o",
+    icon: WandSparkles,
   },
   { tool: "label", label: "Label", key: "t", icon: Type },
   { tool: "tiles", label: "Tiles", key: "g", icon: LayoutGrid },

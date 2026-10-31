@@ -11736,6 +11736,40 @@ class FloorPlanViewSet(TenantScopedViewSet):
             "drawing": self._drawing_response(d).data,
         })
 
+    @action(detail=True, methods=["get"], url_path="drawing/loops")
+    def drawing_loops(self, request, pk=None):
+        """The smallest closed shape of the drawing round the plan point
+        ``?x=&y=`` (in cells), for Detect outline: ``{"points": [[x, y],
+        ...], "layer"}`` in cells, its corners the drawing's own (at most
+        200). 404 when no closed shape of a shown layer holds the point;
+        409 until the drawing is processed. Read from the processed
+        drawing, cached per render (api.cad_loops)."""
+        import math
+
+        from . import cad_loops
+
+        plan = self.get_object()
+        self._not_on_view(plan, "The drawing")
+        d = self._drawing_or_404(plan)
+        if d.status != "ready" or not d.rendered or not d.extents:
+            return Response({"detail": "The drawing is not processed yet."}, status=409)
+        point = []
+        for key in ("x", "y"):
+            try:
+                v = float(request.query_params.get(key, ""))
+            except (TypeError, ValueError):
+                v = math.nan
+            if not math.isfinite(v) or abs(v) > 100_000:
+                return Response({key: ["A number of cells."]}, status=400)
+            point.append(v)
+        try:
+            found = cad_loops.pick(d, plan.cell_mm, point[0], point[1])
+        except OSError:
+            return Response({"detail": "The drawing's file is missing."}, status=409)
+        if found is None:
+            raise NotFound("No closed shape here.")
+        return Response(found)
+
     @action(detail=True, methods=["get", "post"], url_path="drawing/render")
     def drawing_render(self, request, pk=None):
         """A server render with layers left out, for drawings too large to
