@@ -10825,7 +10825,9 @@ def plan_contents(request, tenant, src, crop=None, view=None) -> dict:
         "labels": (visible(
             _plan_labels(src).filter(Q(shown_in__isnull=True) | Q(shown_in_id=view.pk))
             .exclude(opens_id=view.pk) if view is not None
-            else _plan_labels(src).filter(shown_in__isnull=True),
+            else _plan_labels(src).exclude(
+                shown_in__kind="view", shown_in__source_id=src.pk
+            ),
             "floorplanlabel",
         ), FloorPlanLabelSerializer),
     }
