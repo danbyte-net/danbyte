@@ -11896,6 +11896,15 @@ class _OpensMixin:
         target = attrs.get("opens")
         if target is None:
             return
+        inst = getattr(self, "instance", None)
+        # A save that keeps the link (moving or restyling the shape) is never
+        # refused; a view's own back button lives on the view's source and
+        # opens that very plan.
+        if inst is not None and not isinstance(inst, (list, tuple)) and (
+            getattr(inst, "opens_id", None) == target.pk
+            or getattr(inst, "shown_in_id", None)
+        ):
+            return
         if own_plan is not None and target.pk == own_plan.pk:
             raise serializers.ValidationError(
                 {"opens_id": "Pick another plan than the one it is on."}
