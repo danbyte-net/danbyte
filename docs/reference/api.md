@@ -39,7 +39,9 @@ so the interactive docs work on **airgapped** installs with no CDN access.
   matter what the owning user may do - the right choice for reporting,
   inventory pulls, and AI assistants. Tokens are created and revoked from a
   signed-in session only: a request authenticated with a token can't create,
-  list or revoke tokens.
+  list or revoke tokens. One user holds at most 25 unexpired tokens
+  (`API_MAX_TOKENS_PER_USER`, see [Settings](settings.md#drf)); creating
+  another answers 400 until one is revoked or expires.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
@@ -94,10 +96,10 @@ Ask for the rows you need rather than the cap, and follow `next`: a big page
 takes seconds to build and holds a server worker while it does. A few
 10,000-row pages used to hold every worker at once, so the cap is 2,000.
 
-**Large pages are limited per token.** A request whose `page_size` is above
-**1,000** (`API_LARGE_PAGE_THRESHOLD`) is a large page, and one API token, or
-one signed-in user, may have **2** in flight at a time
-(`API_LARGE_PAGE_CONCURRENCY`). The next one answers `429 Too Many Requests`
+**Large pages are limited per user.** A request whose `page_size` is above
+**1,000** (`API_LARGE_PAGE_THRESHOLD`) is a large page, and one user may have
+**2** in flight at a time (`API_LARGE_PAGE_CONCURRENCY`), counted across
+their session and every API token they own. The next one answers `429 Too Many Requests`
 with a `Retry-After` header in seconds; wait that long and send it again.
 Pages of 1,000 rows or fewer are never held back, so a script that pages at
 1,000, as the loop above does, never meets the limit, and neither does the

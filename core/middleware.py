@@ -157,17 +157,46 @@ def _large_page_size(request) -> int | None:
     return size if size > settings.API_LARGE_PAGE_THRESHOLD else None
 
 
+TOKEN_OWNER_TTL = 300
+
+
+def _token_user_id(key_hash: str) -> int | None:
+    """The user behind an API token hash, cached for a few minutes; ``None``
+    when no token has that hash."""
+    cache_key = f"api:token-user:{key_hash}"
+    try:
+        hit = cache.get(cache_key)
+    except Exception:  # noqa: BLE001 - the cache is down: ask the database
+        hit = None
+    if hit is not None:
+        return hit or None  # 0 caches "no such token"
+    from auth_api.models import ApiToken
+
+    user_id = (
+        ApiToken.objects.filter(key_hash=key_hash).values_list("user_id", flat=True).first()
+    )
+    try:
+        cache.set(cache_key, user_id or 0, TOKEN_OWNER_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+    return user_id
+
+
 def _large_page_owner(request) -> str | None:
-    """Whose slots a request uses: the API token it carries, else the signed-in
-    user. The token is keyed by its hash, so a stray or forged one only ever
-    competes with itself (DRF refuses it right after)."""
+    """Whose slots a request uses: the user behind the API token it carries,
+    else the signed-in user. Every token of one user shares that user's slots,
+    so minting more tokens buys no more large pages (#457). A token no user
+    owns (stray or forged) is keyed by its hash and only ever competes with
+    itself; DRF refuses it right after."""
     from rest_framework.authentication import get_authorization_header
 
     parts = get_authorization_header(request).split()
     if len(parts) == 2 and parts[0].lower() == b"token":
         from auth_api.models import hash_api_key
 
-        return "t:" + hash_api_key(parts[1].decode("latin-1"))
+        key_hash = hash_api_key(parts[1].decode("latin-1"))
+        user_id = _token_user_id(key_hash)
+        return f"u:{user_id}" if user_id else "t:" + key_hash
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated:
         return f"u:{user.pk}"
@@ -176,7 +205,7 @@ def _large_page_owner(request) -> str | None:
 
 class LargePageGuardMiddleware:
     """At most ``API_LARGE_PAGE_CONCURRENCY`` large list pages in flight per
-    token or user (#452). A page above ``API_LARGE_PAGE_THRESHOLD`` rows
+    user, all of their tokens together (#452, #457). A page above ``API_LARGE_PAGE_THRESHOLD`` rows
     (1,000, the most the web app asks for) holds a worker for seconds; a
     handful of them used to hold every worker. Each request
     takes a slot (a Redis key with a TTL, so a request that dies without
