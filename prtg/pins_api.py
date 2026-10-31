@@ -30,6 +30,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.models import Interface, IPAddress, Service, VMInterface
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
@@ -96,8 +97,8 @@ def _parent_asked(data) -> tuple[str, str] | None:
         raise ValidationError({field: "Not an id."}) from None
 
 
-class PrtgSensorPinSerializer(serializers.ModelSerializer):
-    sensor = serializers.PrimaryKeyRelatedField(queryset=PrtgSensor.objects.none())
+class PrtgSensorPinSerializer(TenantScopedModelSerializer):
+    sensor = TenantScopedPrimaryKeyRelatedField(queryset=PrtgSensor.objects.none())
     #: Blank (or left out) pins the whole sensor.
     channel_id = serializers.CharField(
         max_length=16, required=False, allow_blank=True, default="",

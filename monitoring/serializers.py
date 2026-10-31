@@ -14,7 +14,7 @@ from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix, VRF
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
 from .worker import _split_resolver
@@ -304,7 +304,7 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
         ]
 
 
-class DeviceCredentialSerializer(serializers.ModelSerializer):
+class DeviceCredentialSerializer(TenantScopedModelSerializer):
     """A device login. The secret value is **never** serialised back - only
     whether one is set. Fetching it is the viewset's ``reveal`` action.
 
@@ -435,7 +435,7 @@ class ConnectProtocolSerializer(serializers.ModelSerializer):
         ]
 
 
-class CertificateAssignmentSerializer(serializers.ModelSerializer):
+class CertificateAssignmentSerializer(TenantScopedModelSerializer):
     """Declares that a certificate should be presented by some object.
 
     The generic ``(object_type, object_id)`` target is validated for existence
@@ -634,7 +634,7 @@ class AcmeOrderSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class SnmpSensorSerializer(serializers.ModelSerializer):
+class SnmpSensorSerializer(TenantScopedModelSerializer):
     """A user-defined SNMP health sensor (OID → inventory-item status)."""
 
     device_type_name = serializers.CharField(
@@ -730,10 +730,10 @@ class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerialize
         return attrs
 
 
-class CheckAssignmentSerializer(serializers.ModelSerializer):
+class CheckAssignmentSerializer(TenantScopedModelSerializer):
     template_detail = TemplateMiniSerializer(source="template", read_only=True)
     target_kind = serializers.CharField(read_only=True)
-    exclusions = serializers.PrimaryKeyRelatedField(
+    exclusions = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=IPAddress.objects.all(), required=False
     )
 
@@ -779,7 +779,7 @@ class CheckAssignmentSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringProfileSerializer(serializers.ModelSerializer):
+class MonitoringProfileSerializer(TenantScopedModelSerializer):
     template_detail = TemplateMiniSerializer(source="templates", many=True, read_only=True)
 
     class Meta:
@@ -798,7 +798,7 @@ class MonitoringProfileSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringPolicySerializer(serializers.ModelSerializer):
+class MonitoringPolicySerializer(TenantScopedModelSerializer):
     profile_detail = MonitoringProfileSerializer(source="profiles", many=True, read_only=True)
     template_detail = TemplateMiniSerializer(source="templates", many=True, read_only=True)
 
@@ -833,7 +833,7 @@ class MonitoringPolicySerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MonitoringDenySubnetSerializer(serializers.ModelSerializer):
+class MonitoringDenySubnetSerializer(TenantScopedModelSerializer):
     vrf_detail = serializers.SerializerMethodField()
 
     class Meta:
@@ -888,7 +888,7 @@ class _EngineSourceMixin(serializers.Serializer):
         return source_of(obj.engine if obj.engine_id else None)
 
 
-class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
+class CheckResultSerializer(_EngineSourceMixin, TenantScopedModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
 
     class Meta:
@@ -899,7 +899,7 @@ class CheckResultSerializer(_EngineSourceMixin, serializers.ModelSerializer):
         ]
 
 
-class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer):
+class StateTransitionSerializer(_EngineSourceMixin, TenantScopedModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     target_ip = serializers.SerializerMethodField()
 
@@ -916,12 +916,12 @@ class StateTransitionSerializer(_EngineSourceMixin, serializers.ModelSerializer)
         return {"id": str(obj.target_ip_id), "ip_address": obj.target_ip.ip_address}
 
 
-class MonitoringSettingsSerializer(serializers.ModelSerializer):
-    skip_ip_statuses = serializers.PrimaryKeyRelatedField(
+class MonitoringSettingsSerializer(TenantScopedModelSerializer):
+    skip_ip_statuses = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=Status.objects.all(), required=False
     )
     skip_ip_status_detail = serializers.SerializerMethodField()
-    flap_exclude_ip_statuses = serializers.PrimaryKeyRelatedField(
+    flap_exclude_ip_statuses = TenantScopedPrimaryKeyRelatedField(
         many=True, queryset=Status.objects.all(), required=False
     )
     flap_exclude_ip_status_detail = serializers.SerializerMethodField()
@@ -931,7 +931,7 @@ class MonitoringSettingsSerializer(serializers.ModelSerializer):
         queryset=Device.objects.all(), required=False, many=True
     )
     snmp_default_vrf = serializers.SerializerMethodField()
-    snmp_default_vrf_id = serializers.PrimaryKeyRelatedField(
+    snmp_default_vrf_id = TenantScopedPrimaryKeyRelatedField(
         source="snmp_default_vrf", write_only=True, required=False,
         allow_null=True, queryset=VRF.objects.all(),
     )
@@ -1088,7 +1088,7 @@ class AlertSerializer(serializers.ModelSerializer):
         return bool(getattr(obj, "_silenced", False))
 
 
-class SilenceSerializer(serializers.ModelSerializer):
+class SilenceSerializer(TenantScopedModelSerializer):
     match_prefix_cidr = serializers.CharField(
         source="match_prefix.cidr", read_only=True, default=None
     )
@@ -1194,7 +1194,7 @@ class PortUtilizationRuleSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class AlertRuleSerializer(serializers.ModelSerializer):
+class AlertRuleSerializer(TenantScopedModelSerializer):
     match_prefix_cidr = serializers.CharField(
         source="match_prefix.cidr", read_only=True, default=None
     )
@@ -1224,7 +1224,7 @@ class AlertRuleSerializer(serializers.ModelSerializer):
         return value
 
 
-class NotificationChannelSerializer(serializers.ModelSerializer):
+class NotificationChannelSerializer(TenantScopedModelSerializer):
     """A notification destination. ``config`` is the transport's plain target
     and is read back. Credentials are write-only and stored encrypted in
     ``secrets``: the webhook ``url`` (webhook/Slack/Teams/Discord) and the
@@ -1403,7 +1403,7 @@ class NotificationChannelSerializer(serializers.ModelSerializer):
             )
 
 
-class NotificationSubscriptionSerializer(serializers.ModelSerializer):
+class NotificationSubscriptionSerializer(TenantScopedModelSerializer):
     channel_name = serializers.CharField(source="channel.name", read_only=True)
     user_username = serializers.CharField(
         source="user.username", read_only=True, default=None

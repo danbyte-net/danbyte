@@ -11,6 +11,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
+from api.serializers import TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
 from core.hidden_fields import PermissionHiddenFieldsMixin
@@ -27,7 +28,7 @@ def may_see_credits(request, tenant) -> bool:
         request.user, tenant, "slaagreement", "view_credits")
 
 
-class SlaTemplateSerializer(PermissionHiddenFieldsMixin, serializers.ModelSerializer):
+class SlaTemplateSerializer(PermissionHiddenFieldsMixin, TenantScopedModelSerializer):
     agreement_count = serializers.IntegerField(read_only=True, default=0)
     holiday_calendar_detail = serializers.SerializerMethodField()
 

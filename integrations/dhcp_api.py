@@ -12,6 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
 
 from .dhcp_sync import (
@@ -58,7 +59,7 @@ class DhcpScopeSerializer(serializers.ModelSerializer):
         read_only_fields = [f for f in fields if f != "lease_sync"]
 
 
-class DhcpScopeWriteSerializer(serializers.ModelSerializer):
+class DhcpScopeWriteSerializer(TenantScopedModelSerializer):
     """Author a scope. Two flavours:
 
     * ``connection`` set - created on that Windows server first
@@ -71,7 +72,7 @@ class DhcpScopeWriteSerializer(serializers.ModelSerializer):
     and mask derive from it; the range is the lease pool inside it.
     """
 
-    connection = serializers.PrimaryKeyRelatedField(
+    connection = TenantScopedPrimaryKeyRelatedField(
         queryset=WindowsServerConnection.objects.all(),
         required=False, allow_null=True, default=None,
     )
@@ -294,7 +295,7 @@ class DhcpScopeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return qs
 
 
-class DhcpReservationSerializer(serializers.ModelSerializer):
+class DhcpReservationSerializer(TenantScopedModelSerializer):
     scope_display = serializers.CharField(source="scope.scope_id", read_only=True)
     # Server id + name so tables can link the Server cell to its detail page
     # (null for local scopes), and the scope's backing prefix so the Scope cell

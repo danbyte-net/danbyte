@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from api.models import VRF, Location, Site
 from api.serializers import (
     StatusMiniSerializer,
+    TenantScopedModelSerializer,
     TenantScopedPrimaryKeyRelatedField,
 )
 from api.viewsets import TenantScopedViewSet
@@ -268,7 +269,7 @@ class VirtChangeViewSet(IntegrationToggleMixin, TenantScopedViewSet):
         return Response({"ok": True})
 
 
-class VirtPlacementRuleSerializer(serializers.ModelSerializer):
+class VirtPlacementRuleSerializer(TenantScopedModelSerializer):
     """A rule mapping the hypervisor's own structure to a Site."""
 
     scope_display = serializers.CharField(

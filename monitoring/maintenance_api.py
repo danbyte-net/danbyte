@@ -14,7 +14,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from api.serializers import StatusSerializerMixin
+from api.serializers import StatusSerializerMixin, TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 
 from .models import (
@@ -24,7 +24,7 @@ from .models import (
 )
 
 
-class EventImpactSerializer(serializers.ModelSerializer):
+class EventImpactSerializer(TenantScopedModelSerializer):
     class Meta:
         model = EventImpact
         fields = [
@@ -53,7 +53,7 @@ class EventImpactSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class MaintenanceEventSerializer(StatusSerializerMixin, serializers.ModelSerializer):
+class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSerializer):
     """Status is a row from the tenant's /statuses catalog - nested on read,
     ``status_id`` on write, exactly like every other statusable model."""
 

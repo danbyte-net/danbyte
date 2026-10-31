@@ -14,6 +14,7 @@ from datetime import datetime
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from api.serializers import TenantScopedModelSerializer
 from api.viewsets import TenantScopedViewSet
 from auth_api import rbac
 
@@ -64,7 +65,7 @@ class SlaIncidentCauseViewSet(TenantScopedViewSet):
             incident_count=Count("follow_ups")).order_by("name")
 
 
-class SlaIncidentFollowUpSerializer(serializers.ModelSerializer):
+class SlaIncidentFollowUpSerializer(TenantScopedModelSerializer):
     class Meta:
         model = SlaIncidentFollowUp
         fields = ["id", "agreement", "unit", "started_at", "cause", "ticket_url", "note",

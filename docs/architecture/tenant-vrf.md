@@ -134,6 +134,31 @@ clicking an allocate row in the chooser:
 The form shows a small green confirmation chip: *"Inheriting site + VLAN from
 parent 10.0.10.0/24"*.
 
+## Relations in API writes
+
+An id in a request body is never proof that the object is the caller's. Every
+writable relation to a tenant-scoped model resolves through
+`TenantScopedPrimaryKeyRelatedField` (`api/serializers.py`); a model
+serializer gets it for all its generated relations by subclassing
+`TenantScopedModelSerializer`. The lookup only finds:
+
+- rows of the **active tenant** - directly, through a parent
+  (`_PARENT_TENANT_PATH`, e.g. an interface through its device), or through
+  a connection for synced DHCP scopes and DNS zones (`_TENANT_Q`);
+- under **enhanced site separation**, for a site-limited editor, rows of the
+  sites they edit or shared (no-site) rows.
+
+Anything else - another tenant's id, another site's object, an id that does
+not exist - is a `400` on that field, worded the same either way so the
+answer leaks nothing. The viewsets' own ownership and RBAC checks still run
+after it.
+
+`api/tests_isolation_relations.py` walks every serializer and fails when a
+writable relation to a tenant-scoped model is not scoped. Its
+`ALLOWED_UNSCOPED` list holds the few deployment-admin surfaces (SSO group
+mappings, backup schedules) that may reference any tenant's rows, each with
+the reason.
+
 ## What's enforced where
 
 | Constraint | Where |
@@ -143,6 +168,7 @@ parent 10.0.10.0/24"*.
 | IP must fall inside its parent prefix | `IPAddressForm.clean_ip_address()` |
 | CIDR must be valid (canonical form) | `PrefixForm.clean_cidr()` (uses `ipaddress.ip_network`) |
 | Cross-tenant queries | Every view's `Prefix.objects.filter(tenant=tenant)` - soft (caller responsibility); add a `TenantOwnedManager` later for safety |
+| Cross-tenant ids in a write | `TenantScopedPrimaryKeyRelatedField` on every writable relation, guarded by `api/tests_isolation_relations.py` |
 
 ## What's not yet wired
 

@@ -7,7 +7,7 @@ import re
 from rest_framework import serializers
 
 from api.models import DeviceRole, DeviceType, Location, Platform, Region, Site
-from api.serializers import TenantScopedPrimaryKeyRelatedField
+from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from . import sensor_kinds as sk
 from .models import (
@@ -383,7 +383,7 @@ def _scoped(model):
     )
 
 
-class PrtgPolicySerializer(serializers.ModelSerializer):
+class PrtgPolicySerializer(TenantScopedModelSerializer):
     """Which devices and VMs PRTG should have. Every target must be the
     active tenant's, and the profile one of this connection's."""
 
@@ -394,7 +394,7 @@ class PrtgPolicySerializer(serializers.ModelSerializer):
     platform = _scoped(Platform)
     device_type = _scoped(DeviceType)
     device_role = _scoped(DeviceRole)
-    profile = serializers.PrimaryKeyRelatedField(
+    profile = TenantScopedPrimaryKeyRelatedField(
         queryset=PrtgSensorProfile.objects.all(), required=False, allow_null=True
     )
     scope_display = serializers.CharField(source="get_scope_display", read_only=True)

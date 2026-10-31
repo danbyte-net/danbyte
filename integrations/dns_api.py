@@ -10,7 +10,11 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.models import IPAddress
-from api.serializers import NumIdModelSerializer, StatusMiniSerializer
+from api.serializers import (
+    NumIdModelSerializer,
+    StatusMiniSerializer,
+    TenantScopedModelSerializer,
+)
 from api.viewsets import TenantScopedViewSet
 
 from .models import DnsDrift, DnsRecord, DnsZone
@@ -35,7 +39,7 @@ class DnsZoneSerializer(serializers.ModelSerializer):
                             if f not in ("sync", "auto_create")]
 
 
-class DnsZoneWriteSerializer(serializers.ModelSerializer):
+class DnsZoneWriteSerializer(TenantScopedModelSerializer):
     """Author a zone in Danbyte. DNS is Danbyte-authoritative for managed
     content (pushing to a DNS backend is a later phase), so this stores the zone
     locally - it is not created on the server."""
@@ -179,6 +183,7 @@ class DnsRecordIPSerializer(NumIdModelSerializer):
         model = IPAddress
         fields = ["id", "ip_address", "status", "prefix", "prefix_cidr",
                   "assigned_to"]
+        read_only_fields = fields
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_assigned_to(self, obj):
@@ -208,7 +213,7 @@ class DnsRecordSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class DnsRecordWriteSerializer(serializers.ModelSerializer):
+class DnsRecordWriteSerializer(TenantScopedModelSerializer):
     """Create/edit an **authored** (managed) record. Per-type validation mirrors
     what netbox-dns enforces; the record lives in Danbyte as the source of truth
     (pushing to a DNS backend is a later phase)."""
