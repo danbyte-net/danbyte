@@ -92,3 +92,39 @@ class ListPaginationTests(APITestCase):
         self.assertIsNotNone(body["next"])
         body = self.get("/api/sites/?picker=1&page_size=1000")
         self.assertEqual(len(body["results"]), ROWS)
+
+
+class EveryRouterListPagesTests(APITestCase):
+    """#447: every list on the API router answers a page, never a bare list,
+    for an API token that names no page_size - the issue's case."""
+
+    def test_every_list_route_is_paginated(self):
+        from auth_api.models import ApiToken, UserProfile, generate_api_key, hash_api_key
+
+        from .api_urls import router
+
+        org = Organization.objects.create(name="Acme", slug="acme")
+        tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        user = User.objects.create_superuser("tok447", "t@example.com", "x")
+        prof = UserProfile.objects.create(user=user)
+        prof.tenants.add(tenant)
+        key = generate_api_key()
+        ApiToken.objects.create(user=user, tenant=tenant, name="t", kind="user",
+                                key_hash=hash_api_key(key), prefix=key[:11], scope="read")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {key}")
+        Site.objects.bulk_create(Site(tenant=tenant, name=f"s{i}") for i in range(3))
+
+        bare = []
+        for prefix, viewset, _basename in router.registry:
+            if not hasattr(viewset, "list"):
+                continue
+            r = self.client.get(f"/api/{prefix}/")
+            if r.status_code == 200 and isinstance(r.json(), list):
+                bare.append(prefix)
+        self.assertEqual(bare, [], "lists answering every row without a page")
+        with override_settings(API_PAGE_SIZE=2):
+            for path in ("/api/sites/", "/api/interfaces/", "/api/cables/", "/api/ips/"):
+                body = self.client.get(path).json()
+                self.assertIn("results", body, path)
+                self.assertLessEqual(len(body["results"]), 2, path)
+            self.assertIsNotNone(self.client.get("/api/sites/").json()["next"])
