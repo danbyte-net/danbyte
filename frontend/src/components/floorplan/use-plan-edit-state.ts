@@ -6,6 +6,7 @@ import { cableDraftDirty } from "./cable-draft"
 import { usePlanDraft } from "./edit-history"
 import type { PaletteEntry } from "./floor-canvas"
 import type { PlanShape } from "./shapes"
+import type { StructShape } from "./structure"
 
 /** Local editing shape - server tiles plus unsaved ones (temp ids). */
 export type EditTile = FloorPlanTile
@@ -22,6 +23,7 @@ export type EditorTool =
   | "label"
   | "tiles"
   | "structure"
+  | "door"
   | "trays"
   | "snapshot"
 
@@ -33,6 +35,7 @@ export const TOOL_MODE: Record<EditorTool, EditorMode> = {
   label: "layout",
   tiles: "layout",
   structure: "structure",
+  door: "structure",
   trays: "cable",
   snapshot: "layout",
 }
@@ -52,12 +55,14 @@ const sameRows = (
 export function usePlanEditState(
   id: string,
   serverTiles: FloorPlanTile[] | undefined,
-  serverShapes: PlanShape[] | undefined
+  serverShapes: PlanShape[] | undefined,
+  serverStructure?: StructShape[] | undefined
 ) {
   // ── Local editing state ────────────────────────────────────────────────
-  // The tiles, areas and labels as edited, which changed and which went:
-  // the draft Save writes, with its undo history (edit-history.ts).
-  const draft = usePlanDraft<EditTile, PlanShape>()
+  // The tiles, areas, labels, walls, raised floors and trays as edited,
+  // which changed and which went: the draft Save writes, with its undo
+  // history (edit-history.ts).
+  const draft = usePlanDraft<EditTile, PlanShape, StructShape>()
   const {
     tiles,
     shapes,
@@ -80,6 +85,15 @@ export function usePlanEditState(
   // Structure mode: wall selection + "Add door" arm-and-click.
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null)
   const [doorArmed, setDoorArmed] = useState(false)
+  // A door of a wall, selected on the plan: its wall and its index.
+  const [selectedDoor, setSelectedDoor] = useState<{
+    wallId: string
+    index: number
+  } | null>(null)
+  // Walls or trays picked with Shift or Ctrl/⌘ - two that touch join.
+  const [structSel, setStructSel] = useState<ReadonlySet<string>>(new Set())
+  // Areas picked with Ctrl/⌘ - walls go round all of them at once.
+  const [areaSel, setAreaSel] = useState<ReadonlySet<string>>(new Set())
   // Layout QoL: Ctrl/⌘-click and Shift-drag build a multi-selection the bulk
   // bar (orientation, delete) acts on. Draft-level edits - Save persists.
   const [multiSel, setMultiSel] = useState<Set<string>>(new Set())
@@ -143,6 +157,9 @@ export function usePlanEditState(
     setSelectedAreaId(null)
     setSelectedWallId(null)
     setDoorArmed(false)
+    setSelectedDoor(null)
+    setStructSel(new Set())
+    setAreaSel(new Set())
     setRackFocus3d(null)
     setDrawingOpen(false)
     setPendingImage(null)
@@ -155,11 +172,16 @@ export function usePlanEditState(
     if (serverTiles && !isDirtyRef.current) {
       const fresh = serverTiles
       const freshShapes = serverShapes ?? []
-      if (!sameRows(draft.tiles, fresh) || !sameRows(draft.shapes, freshShapes))
-        draft.load(fresh, freshShapes)
+      const freshStructure = serverStructure ?? []
+      if (
+        !sameRows(draft.tiles, fresh) ||
+        !sameRows(draft.shapes, freshShapes) ||
+        !sameRows(draft.structure, freshStructure)
+      )
+        draft.load(fresh, freshShapes, freshStructure)
     }
     // Only fresh data hydrates; the draft is read, not watched.
-  }, [serverTiles, serverShapes])
+  }, [serverTiles, serverShapes, serverStructure])
 
   // A step that removed a selected tile (undoing its placement) drops it
   // from the selection.
@@ -176,7 +198,32 @@ export function usePlanEditState(
     setSelectedShapeId((cur) =>
       cur && !shapes.some((s) => s.id === cur) ? null : cur
     )
+    setAreaSel((prev) =>
+      [...prev].every((sid) => shapes.some((s) => s.id === sid))
+        ? prev
+        : new Set([...prev].filter((sid) => shapes.some((s) => s.id === sid)))
+    )
   }, [shapes])
+  // A step that took a wall, tray or raised floor (or a door) away drops it
+  // from the selection.
+  const structure = draft.structure
+  useEffect(() => {
+    const ids = new Set(structure.map((s) => s.id))
+    const gone = (cur: string | null) => (cur && !ids.has(cur) ? null : cur)
+    setSelectedWallId(gone)
+    setSelectedTrayId(gone)
+    setSelectedAreaId(gone)
+    setStructSel((prev) =>
+      [...prev].every((sid) => ids.has(sid))
+        ? prev
+        : new Set([...prev].filter((sid) => ids.has(sid)))
+    )
+    setSelectedDoor((cur) => {
+      if (!cur) return cur
+      const w = structure.find((s) => s.id === cur.wallId)
+      return w?.part === "wall" && w.openings[cur.index] ? cur : null
+    })
+  }, [structure])
 
   return {
     draft,
@@ -186,6 +233,8 @@ export function usePlanEditState(
     deletedIds,
     setTiles,
     setShapes,
+    structure,
+    setStructure: draft.setStructure,
     setDirtyIds,
     setDeletedIds,
     isDirty,
@@ -206,6 +255,12 @@ export function usePlanEditState(
     setSelectedWallId,
     doorArmed,
     setDoorArmed,
+    selectedDoor,
+    setSelectedDoor,
+    structSel,
+    setStructSel,
+    areaSel,
+    setAreaSel,
     multiSel,
     setMultiSel,
     paletteTab,

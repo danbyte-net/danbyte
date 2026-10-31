@@ -403,6 +403,10 @@ export function LabelShapeView({
   )
 }
 
+/** Every handle on the plan is this many screen pixels across - areas,
+ * labels, free tiles, tile grips, walls, trays, raised floors and doors. */
+export const HANDLE_PX = 9
+
 /** The handles of a selected box: eight squares to resize, a circle above
  * the top edge to turn it. Their screen size holds at any zoom. */
 export function BoxHandles({
@@ -418,7 +422,7 @@ export function BoxHandles({
   gestures: ShapeGestures
   handles?: readonly Handle[]
 }) {
-  const s = 9 / zoom
+  const s = HANDLE_PX / zoom
   const gap = 22 / zoom / CELL
   const [rx, ry] = rotateHandlePoint(box, gap)
   const [tx, ty] = handlePoint(box, "n")
@@ -490,7 +494,7 @@ export function VertexHandles({
   gestures: ShapeGestures
   onVertexMenu?: (index: number, e: React.MouseEvent) => void
 }) {
-  const s = 9 / zoom
+  const s = HANDLE_PX / zoom
   return (
     <g data-handles="">
       {area.points.map(([x, y], i) => (

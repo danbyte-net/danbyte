@@ -9909,10 +9909,17 @@ class FloorPlanWall(TimestampedModel):
         validators=[MinValueValidator(200), MaxValueValidator(20000)],
         help_text="Blank = full height (the plan's ceiling).",
     )
+    thickness_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(20), MaxValueValidator(2000)],
+        help_text="Blank = the standard 100 mm.",
+    )
     color = models.CharField(max_length=7, blank=True, default="")
-    # [{"seg": int, "from": float, "to": float, "height_mm": int|null}, …] -
-    # spans along segment ``seg`` measured in cell units from its start
-    # vertex; null height renders a standard 2100 mm door.
+    # [{"seg": int, "from": float, "to": float, "height_mm": int|null,
+    #   "hinge"?: "start"|"end", "side"?: "left"|"right"}, …] - spans along
+    # segment ``seg`` measured in cell units from its start vertex; null
+    # height renders a standard 2100 mm door. ``hinge`` and ``side`` give a
+    # door its leaf and swing; without them it is a plain opening.
     openings = models.JSONField(default=list, blank=True)
 
     class Meta:

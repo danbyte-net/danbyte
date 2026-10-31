@@ -31,6 +31,8 @@ import {
 import { moveSelection, rotateSelection } from "./selection"
 import { shapesOf } from "./shapes"
 import type { PlanShape, Pt } from "./shapes"
+import { structureLists, structureOf } from "./structure"
+import type { RaisedRow, StructShape, TrayRow, WallRow } from "./structure"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
 import type { EditTile, PlanEditState } from "./use-plan-edit-state"
 
@@ -90,6 +92,59 @@ function labelBody(
     z: l.z,
     locked: l.locked,
     ...opensBody(l),
+  }
+}
+
+/** A wall as the bulk endpoint takes it. */
+function wallBody(w: WallRow) {
+  return {
+    label: w.label,
+    points: w.points,
+    height_mm: w.height_mm,
+    thickness_mm: w.thickness_mm ?? null,
+    color: w.color,
+    openings: w.openings,
+  }
+}
+
+/** A raised floor as the bulk endpoint takes it. */
+function raisedBody(r: RaisedRow) {
+  return {
+    x: r.x,
+    y: r.y,
+    width: r.width,
+    height: r.height,
+    plenum_mm: r.plenum_mm,
+    label: r.label,
+    color: r.color,
+  }
+}
+
+/** A tray as the bulk endpoint takes it - its cables only when the draft
+ * changed them (a join), else they are left as they are. */
+function trayBody(t: TrayRow, origin?: StructShape) {
+  const cables =
+    origin?.part === "tray" &&
+    origin.cables
+      .map((c) => c.id)
+      .sort()
+      .join() ===
+      t.cables
+        .map((c) => c.id)
+        .sort()
+        .join()
+      ? {}
+      : { cable_ids: t.cables.map((c) => c.id) }
+  return {
+    name: t.name,
+    kind: t.kind,
+    color: t.color,
+    points: t.points,
+    level: t.level,
+    elevation_mm: t.elevation_mm,
+    capacity: t.capacity ?? null,
+    description: t.description,
+    ...cables,
   }
 }
 
@@ -445,7 +500,11 @@ export function useTileEdits({
       // The version each edit is based on: the row as loaded, or as taken
       // over in a conflict ("Keep mine").
       const base = new Map<string, string>()
-      for (const r of [...draft.origin.tiles, ...draft.origin.shapes])
+      for (const r of [
+        ...draft.origin.tiles,
+        ...draft.origin.shapes,
+        ...draft.origin.structure,
+      ])
         base.set(r.id, r.updated_at)
       for (const [rid, v] of rebase.current) base.set(rid, v)
       const v = (rid: string) => {
@@ -467,13 +526,46 @@ export function useTileEdits({
           .map((g) => g.slice(kind.length + 1))
       // Cable routes applied from "After placing", and the runs they keep
       // as new trays - written after the tiles they end on.
+      const { walls, trays, raised } = structureLists(draft.structure)
+      const originOf = new Map(draft.origin.structure.map((r) => [r.id, r]))
+      const part = <R extends StructShape, B>(
+        rows: R[],
+        kind: string,
+        toBody: (r: R) => B
+      ) => ({
+        create: rows.filter((r) => isTemp(r.id)).map(toBody),
+        update: rows
+          .filter((r) => !isTemp(r.id) && dirtyIds.has(r.id))
+          .map((r) => ({ id: r.id, ...v(r.id), ...toBody(r) })),
+        delete: goneOf(kind).map(del),
+      })
       const cablePart = cableDraftPayload(draft.cables, tiles)
       if (cablePart.dropped.length)
         toast.info(
           `Not routed - an end was removed: ${cablePart.dropped.join(", ")}`
         )
+      const trayPart = part(trays, "tray", (t) => trayBody(t, originOf.get(t.id)))
       const payload: FloorPlanBulkPayload = {
-        ...(cablePart.trays ? { trays: cablePart.trays } : {}),
+        walls: part(walls, "wall", wallBody),
+        raised_floors: part(raised, "raised_floor", raisedBody),
+        trays: {
+          // New trays carry their draft id as the key a route may name.
+          create: [
+            ...trays
+              .filter((t) => isTemp(t.id))
+              .map((t) => {
+                const { cable_ids: cableIds, ...rest } = trayBody(t)
+                return {
+                  key: t.id,
+                  ...rest,
+                  ...(cableIds?.length ? { cable_ids: cableIds } : {}),
+                }
+              }),
+            ...(cablePart.trays?.create ?? []),
+          ],
+          update: trayPart.update,
+          delete: trayPart.delete,
+        },
         ...(cablePart.cable_paths
           ? { cable_paths: cablePart.cable_paths }
           : {}),
@@ -508,7 +600,11 @@ export function useTileEdits({
       // New rows have their real ids now: the history starts again.
       rebase.current.clear()
       setConflicts(null)
-      draft.load(fresh.tiles, shapesOf(fresh.areas, fresh.labels))
+      draft.load(
+        fresh.tiles,
+        shapesOf(fresh.areas, fresh.labels),
+        structureOf(fresh.walls, fresh.tray_rows, fresh.raised_floors)
+      )
       setMultiSel(new Set())
       setSelectedId(null)
       // The plan's contents - the dashboard widget reads them too.
@@ -594,10 +690,34 @@ export function useTileEdits({
               ? (c.current as unknown as T)
               : ({ ...(c.current as object), kind: c.kind } as unknown as T)
           )
+      const takeStruct = (r: StructShape) => {
+        const c = theirs.find((x) => x.id === r.id && x.kind === r.part)
+        if (c)
+          return c.current
+            ? [{ ...(c.current as object), part: r.part } as StructShape]
+            : []
+        const nid = remade.get(r.id)
+        return [nid ? ({ ...r, id: nid } as StructShape) : r]
+      }
+      const STRUCT = ["wall", "tray", "raised_floor"]
       setTiles((prev) => [...prev.flatMap(takeTile), ...back(prev, ["tile"])])
       ed.setShapes((prev) => [
         ...prev.flatMap(takeShape),
         ...back(prev, ["area", "label"]),
+      ])
+      ed.setStructure((prev) => [
+        ...prev.flatMap(takeStruct),
+        ...theirs
+          .filter(
+            (c) =>
+              c.current &&
+              STRUCT.includes(c.kind) &&
+              !prev.some((r) => r.id === c.id)
+          )
+          .map(
+            (c) =>
+              ({ ...(c.current as object), part: c.kind }) as StructShape
+          ),
       ])
       setDirtyIds((prev) => {
         const next = new Set(prev)
@@ -629,6 +749,11 @@ export function useTileEdits({
   }, [resave])
 
   return {
+    /** A row written outside the draft (a tray's cables): the version its
+     * edits are based on now. */
+    rebaseVersion: (rowId: string, version: string) => {
+      rebase.current.set(rowId, version)
+    },
     changeTile,
     changeTileGuarded,
     moveSelectionBy,

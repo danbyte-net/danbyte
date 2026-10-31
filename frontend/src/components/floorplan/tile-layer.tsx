@@ -66,6 +66,7 @@ export function TileShape({
   highlighted = false,
   dimmed = false,
   grip = true,
+  handlePx = 12,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -92,6 +93,9 @@ export function TileShape({
   /** The corner resize grip on a selected tile (a free plan has its own
    * handles). */
   grip?: boolean
+  /** The grip's side in plan px - the canvas keeps it the size of every
+   * other handle on screen. */
+  handlePx?: number
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
@@ -172,15 +176,10 @@ export function TileShape({
           </text>
         )}
         {selected && editable && grip && (
-          <rect
-            x={w - 7}
-            y={h - 7}
-            width={12}
-            height={12}
-            rx={2}
-            className="fill-background stroke-foreground/60"
-            strokeWidth={1.5}
-            style={{ cursor: "nwse-resize" }}
+          <ResizeGrip
+            x={w}
+            y={h}
+            size={handlePx}
             onPointerDown={onResizeDown}
           />
         )}
@@ -252,15 +251,10 @@ export function TileShape({
           </text>
         )}
         {selected && editable && grip && (
-          <rect
-            x={w - 7}
-            y={h - 7}
-            width={12}
-            height={12}
-            rx={2}
-            className="fill-background stroke-foreground/60"
-            strokeWidth={1.5}
-            style={{ cursor: "nwse-resize" }}
+          <ResizeGrip
+            x={w}
+            y={h}
+            size={handlePx}
             onPointerDown={onResizeDown}
           />
         )}
@@ -416,19 +410,43 @@ export function TileShape({
         />
       )}
       {selected && editable && grip && (
-        <rect
-          x={w - 7}
-          y={h - 7}
-          width={12}
-          height={12}
-          rx={2}
-          className="fill-background stroke-foreground/60"
-          strokeWidth={1.5}
-          style={{ cursor: "nwse-resize" }}
+        <ResizeGrip
+          x={w}
+          y={h}
+          size={handlePx}
           onPointerDown={onResizeDown}
         />
       )}
     </g>
+  )
+}
+
+/** A selected tile's corner resize grip: the editor's handle look (the one
+ * areas, walls and doors wear), centred on the corner. */
+function ResizeGrip({
+  x,
+  y,
+  size,
+  onPointerDown,
+}: {
+  x: number
+  y: number
+  size: number
+  onPointerDown: (e: React.PointerEvent) => void
+}) {
+  return (
+    <rect
+      data-handle="se"
+      x={x - size / 2}
+      y={y - size / 2}
+      width={size}
+      height={size}
+      rx={size / 6}
+      className="fill-background stroke-primary"
+      strokeWidth={size / 6}
+      style={{ cursor: "nwse-resize" }}
+      onPointerDown={onPointerDown}
+    />
   )
 }
 

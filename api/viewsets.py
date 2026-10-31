@@ -12652,6 +12652,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "label": w.label,
                 "points": w.points,
                 "height_mm": w.height_mm,
+                "thickness_mm": w.thickness_mm,
                 "color": w.color,
                 "openings": w.openings,
             }
@@ -12967,13 +12968,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="bulk")
     def bulk(self, request, pk=None):
-        """The editor's Save: tiles, areas and labels in one transaction.
-        ``{"tiles": {create, update, delete}, "areas": {...}, "labels": {...}}``
-        (each key optional; an update carries its ``id``) -> the plan's fresh
-        ``{"tiles", "areas", "labels"}`` in the contents shape. Deletes run
-        first. At most ``BULK_MAX`` operations. ``trays`` (``{"create":
-        [...]}``, :meth:`_bulk_trays_spec`) adds trays and ``cable_paths``
-        (:meth:`_cable_paths_spec`) stores routes, after the tiles.
+        """The editor's Save: tiles, areas, labels, walls, raised floors and
+        trays in one transaction. ``{"tiles": {create, update, delete},
+        "areas": {...}, "labels": {...}, "walls": {...}, "raised_floors":
+        {...}, "trays": {...}}`` (each key optional; an update carries its
+        ``id``) -> the plan's fresh ``{"tiles", "areas", "labels", "walls",
+        "raised_floors", "tray_rows"}`` in the contents shape. Deletes run
+        first. At most ``BULK_MAX`` operations. A wall, raised floor or tray
+        needs its own row permission, as on its endpoint. New trays go in
+        ``trays.create`` with their draft key (:meth:`_bulk_trays_spec`) and
+        are made after the tiles; a tray writes its cables only when it
+        carries ``cable_ids``.
+        ``cable_paths`` (:meth:`_cable_paths_spec`) stores routes last.
 
         An update - or a delete sent as ``{"id", "version"}`` - may carry the
         ``version`` (the row's ``updated_at``) it was based on. When a row
@@ -13000,6 +13006,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
             ("tiles", plan.tiles, FloorPlanTileSerializer, "tile"),
             ("areas", plan.areas, FloorPlanAreaSerializer, "area"),
             ("labels", plan.labels, FloorPlanLabelSerializer, "label"),
+            ("walls", plan.walls, FloorPlanWallSerializer, "wall"),
+            ("raised_floors", plan.raised_floor_areas,
+             FloorPlanRaisedFloorAreaSerializer, "raised_floor"),
+            ("trays", plan.trays, FloorPlanTraySerializer, "tray"),
         )
         specs = {}
         total = 0
@@ -13009,7 +13019,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 raise ValidationError({key: "An object of create/update/delete lists."})
             parts = {}
             for op in ("create", "update", "delete"):
-                rows = spec.get(op) or []
+                # New trays carry their draft key (``_bulk_trays_spec``).
+                rows = [] if key == "trays" and op == "create" else spec.get(op) or []
                 if not isinstance(rows, list):
                     raise ValidationError({key: f"{op} must be a list."})
                 parts[op] = rows
@@ -13036,6 +13047,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         ctx = {"request": request, "floor_plan": plan}
         written = []
+        may = self._bulk_row_permission(request, self._tenant_or_403())
         via = cause(f"Through the view {view.name}"[:255]) if crop is not None \
             else contextlib.nullcontext()
         paths_out: list = []
@@ -13044,7 +13056,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             conflicts += self._cable_path_conflicts(request, plan, crop, paths_spec)
             if conflicts:
                 if crop is not None:
-                    keys = {"tile": "tiles", "area": "areas", "label": "labels"}
+                    keys = {noun: key for key, _rel, _ser, noun in kinds}
                     for c in conflicts:
                         if c.get("current") and c["kind"] in keys:
                             c["current"] = snaps.shift(
@@ -13063,6 +13075,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         pk_ = pk_.get("id")
                     obj = row(rel, pk_)
                     if obj is not None:
+                        may(key, "delete", obj)
                         obj.delete()
             for key, rel, ser_cls, noun in kinds:
                 for item in specs[key]["update"]:
@@ -13072,15 +13085,20 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     if obj is None:
                         raise ValidationError({key: f"Unknown {noun} {item['id']}."})
                     body = {k: v for k, v in _on_plan(item).items() if k != "version"}
+                    may(key, "change", obj)
                     ser = ser_cls(obj, data=body, partial=True, context=ctx)
                     ser.is_valid(raise_exception=True)
-                    written.append((key, ser.save()))
+                    saved = ser.save()
+                    may(key, "change", saved)
+                    written.append((key, saved))
                 for item in specs[key]["create"]:
                     if not isinstance(item, dict):
                         raise ValidationError({key: "Each create is an object."})
                     ser = ser_cls(data=_on_plan(item), context=ctx)
                     ser.is_valid(raise_exception=True)
-                    written.append((key, ser.save(floor_plan=plan)))
+                    saved = ser.save(floor_plan=plan)
+                    may(key, "add", saved)
+                    written.append((key, saved))
             if crop is not None:
                 for key, obj in written:
                     if snaps.classify(key, obj, crop) != "in":
@@ -13091,33 +13109,67 @@ class FloorPlanViewSet(TenantScopedViewSet):
             # paths: a route computed here sees the tiles and trays saved.
             tray_keys = self._bulk_trays(request, plan, crop, trays_spec)
             paths_out = self._bulk_cable_paths(request, plan, crop, paths_spec, tray_keys)
+        from auth_api import rbac
+
+        tenant = self._tenant_or_403()
+
+        def seen(qs, slug):
+            # As the contents read lists them: the rows the user may view.
+            return rbac.restrict_queryset(qs, request.user, tenant, slug, "view")
+
         ctx = {"request": request}
-        if crop is not None:
-            out = {}
-            for key, rows, ser_cls in (
-                ("tiles", _plan_tiles(plan), FloorPlanTileSerializer),
-                ("areas", _plan_areas(plan), FloorPlanAreaSerializer),
-                ("labels", _plan_labels(plan), FloorPlanLabelSerializer),
-            ):
+        # The plan's rows afterwards; its trays as ``tray_rows`` (``trays``
+        # answers the new trays' keys).
+        out = {}
+        for key, out_key, rows, ser_cls in (
+            ("tiles", "tiles", _plan_tiles(plan), FloorPlanTileSerializer),
+            ("areas", "areas", _plan_areas(plan), FloorPlanAreaSerializer),
+            ("labels", "labels", _plan_labels(plan), FloorPlanLabelSerializer),
+            ("walls", "walls", seen(plan.walls.order_by("label", "id"), "floorplanwall"),
+             FloorPlanWallSerializer),
+            ("raised_floors", "raised_floors", seen(
+                plan.raised_floor_areas.order_by("y", "x", "id"), "floorplanraisedfloorarea",
+            ), FloorPlanRaisedFloorAreaSerializer),
+            ("trays", "tray_rows", seen(
+                plan.trays.prefetch_related("cables").order_by(NATURAL_NAME, "id"),
+                "floorplantray",
+            ), FloorPlanTraySerializer),
+        ):
+            if crop is not None:
                 pairs = snaps.in_crop(key, rows, crop)
-                out[key] = snaps.view_data(
+                out[out_key] = snaps.view_data(
                     key, pairs,
                     ser_cls([o for o, _e in pairs], many=True, context=ctx).data, crop,
                 )
-        else:
-            out = {
-                "tiles": FloorPlanTileSerializer(_plan_tiles(plan), many=True, context=ctx).data,
-                "areas": FloorPlanAreaSerializer(_plan_areas(plan), many=True, context=ctx).data,
-                "labels": FloorPlanLabelSerializer(
-                    _plan_labels(plan), many=True, context=ctx
-                ).data,
-            }
+            else:
+                out[out_key] = ser_cls(rows, many=True, context=ctx).data
         # The routes written, when the save carried any.
         if paths_spec["upsert"] or paths_spec["delete"]:
             out["cable_paths"] = paths_out
         if trays_spec:
             out["trays"] = [{"key": k, "id": v} for k, v in tray_keys.items()]
         return Response(out)
+
+    @staticmethod
+    def _bulk_row_permission(request, tenant):
+        """A ``bulk/`` save's check on a wall, raised floor or tray it
+        writes: the row permission that kind's own endpoint asks for."""
+        from auth_api import rbac
+
+        slugs = {
+            "walls": ("floorplanwall", "walls"),
+            "raised_floors": ("floorplanraisedfloorarea", "raised floors"),
+            "trays": ("floorplantray", "trays"),
+        }
+
+        def check(key, action, obj):
+            if key not in slugs:
+                return
+            slug, noun = slugs[key]
+            if not rbac.can_act_on(request.user, tenant, slug, action, obj):
+                raise PermissionDenied(f"You may not {action} {noun} on this plan.")
+
+        return check
 
     @staticmethod
     def _bulk_trays_spec(raw) -> list:
@@ -13177,7 +13229,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     for p in points
                 ]
             data = {"name": name, "points": points, "level": item.get("level") or "overhead"}
-            for key in ("elevation_mm", "kind", "color", "capacity"):
+            for key in ("elevation_mm", "kind", "color", "capacity", "description",
+                        "cable_ids"):
                 if item.get(key) is not None:
                     data[key] = item[key]
             ser = FloorPlanTraySerializer(data=data, context=ctx)
@@ -13423,6 +13476,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         tenant = _get_active_tenant(request)
         readers = {"tiles": _plan_tiles, "areas": _plan_areas, "labels": _plan_labels}
+        for key, rel, _ser, _noun in kinds:
+            readers.setdefault(key, lambda _plan, rel=rel: rel.all())
         out = []
         for key, rel, ser_cls, noun in kinds:
             based = {}

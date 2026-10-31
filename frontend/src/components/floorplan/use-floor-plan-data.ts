@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 
 import { shapesOf } from "./shapes"
+import { structureOf } from "./structure"
 import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
@@ -45,6 +46,14 @@ export function useFloorPlanData(id: string) {
   // fetch, so the draft hydrates only when they really change.
   const serverShapes = useMemo(
     () => (contents ? shapesOf(contents.areas, contents.labels) : undefined),
+    [contents]
+  )
+  // Walls, trays and raised floors, likewise.
+  const serverStructure = useMemo(
+    () =>
+      contents
+        ? structureOf(contents.walls, contents.trays, contents.raised_floors)
+        : undefined,
     [contents]
   )
   const tileTypes = useQuery({
@@ -98,6 +107,9 @@ export function useFloorPlanData(id: string) {
     serverTiles: contents?.tiles,
     /** The saved areas and labels - undefined until they land. */
     serverShapes,
+    /** The saved walls, trays and raised floors - undefined until they
+     * land. */
+    serverStructure,
     trays: contents?.trays ?? [],
     // Raised-floor areas (Structure mode) - rectangles with a plenum depth.
     areas: contents?.raised_floors ?? [],
