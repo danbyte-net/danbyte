@@ -69,7 +69,7 @@ def _ref(obj, *fields):
 
 def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
               near_location=None, unplaced=False, include_here=False, limit=50,
-              view=None, gps_only=False):
+              view=None, gps_only=False, ids=None):
     """Ranked placement candidates for ``plan``. ``rank`` is 0 for the near
     room (or near location and the locations inside it), 1 for the floor's
     location and the locations inside it - on a site-wide floor, which has
@@ -85,7 +85,7 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
     On a plan made from the Site map (or a view of one), a device whose GPS
     position falls on the grid reads ``gps_cell`` - that position in the
     plan's cells (the view's, for a view); ``gps_only`` keeps only those
-    devices (api/floor_plan_geo.py)."""
+    devices (api/floor_plan_geo.py). ``ids`` keeps only those objects."""
     from auth_api import rbac
 
     from .floor_plan_geo import gps_cell, has_anchor, plan_frame
@@ -127,6 +127,8 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
                     longitude__gte=fr.west, longitude__lte=fr.east,
                 )
         qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
+        if ids is not None:
+            qs = qs.filter(pk__in=ids)
         if q:
             qs = qs.filter(name__icontains=q)
         here_first = ()

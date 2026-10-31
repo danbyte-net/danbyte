@@ -1,5 +1,6 @@
 import type {
   FloorPlanCableEnd,
+  FloorPlanCableFar,
   FloorPlanCablePath,
   FloorPlanTile,
   FloorPlanTray,
@@ -881,6 +882,193 @@ export function endText(points: readonly FloorPlanCableEnd[]): string {
     ? "Hidden"
     : [p.device_name, p.port].filter(Boolean).join(" · ") || "-"
   return points.length > 1 ? `${one} +${points.length - 1}` : one
+}
+
+// ── Ends off the plan, and the plan from afar ───────────────────────────────
+
+/** A cable with one end on this plan: a short stub from that end's tile,
+ * pointing away from the plan's middle, towards where the run leaves. */
+export interface CableStub {
+  id: string
+  /** The end on this plan. */
+  end: "A" | "B"
+  tile: string
+  /** Where the stub starts: the tile's edge along `dir` (cells). */
+  from: Pt
+  /** The unit direction it points. */
+  dir: Pt
+  /** The other end - on no tile here. */
+  far: FloorPlanCableFar[]
+}
+
+/** A stub's length on screen (px) - the canvas - and on paper (mm). */
+export const STUB_PX = 28
+export const STUB_MM = 5
+/** Stubs off one tile fan out this far apart (radians). */
+const STUB_SPREAD = 0.4
+
+/** The far end of a cable drawn as a stub, or null for any other cable. */
+export function stubFar(
+  cp: FloorPlanCablePath,
+  stubs: readonly CableStub[]
+): FloorPlanCableFar[] | null {
+  return stubs.find((s) => s.id === cp.id)?.far ?? null
+}
+
+/**
+ * The stubs: every cable not drawn as a run with tiles here at exactly one
+ * end. `tiles` are the tiles shown - an end on a tile left out (Hidden) is
+ * not on this plan. Each points from the plan's centre `centre` out through
+ * its tile; those off one tile fan out round that direction.
+ */
+export function cableStubs(
+  cablePaths: readonly FloorPlanCablePath[],
+  routes: ReadonlyMap<string, unknown>,
+  tiles: readonly FloorPlanTile[],
+  centre: Pt
+): CableStub[] {
+  const byId = new Map(tiles.map((t) => [t.id, t]))
+  const raw: { cp: FloorPlanCablePath; end: "A" | "B"; tile: FloorPlanTile }[] =
+    []
+  for (const cp of cablePaths) {
+    if (routes.has(cp.id)) continue
+    const a = cp.a_tiles.map((id) => byId.get(id)).find(Boolean)
+    const b = cp.b_tiles.map((id) => byId.get(id)).find(Boolean)
+    if (!a === !b) continue
+    raw.push({ cp, end: a ? "A" : "B", tile: (a ?? b)! })
+  }
+  const perTile = new Map<string, number>()
+  for (const r of raw) perTile.set(r.tile.id, (perTile.get(r.tile.id) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  return raw.map(({ cp, end, tile }) => {
+    const c = tileCentre(tile)
+    let base = Math.atan2(c[1] - centre[1], c[0] - centre[0])
+    if (dist(c, centre) < EPS) base = -Math.PI / 2
+    const n = perTile.get(tile.id)!
+    const i = seen.get(tile.id) ?? 0
+    seen.set(tile.id, i + 1)
+    const ang = base + (i - (n - 1) / 2) * STUB_SPREAD
+    const dir: Pt = [Math.cos(ang), Math.sin(ang)]
+    // Out to the tile's edge along dir.
+    const hw = tile.width / 2
+    const hh = tile.height / 2
+    const t = Math.min(
+      Math.abs(dir[0]) > EPS ? hw / Math.abs(dir[0]) : Infinity,
+      Math.abs(dir[1]) > EPS ? hh / Math.abs(dir[1]) : Infinity
+    )
+    return {
+      id: cp.id,
+      end,
+      tile: tile.id,
+      from: [c[0] + dir[0] * t, c[1] + dir[1] * t],
+      dir,
+      far: (end === "A" ? cp.b_far : cp.a_far) ?? [],
+    }
+  })
+}
+
+/** The cables of the plan as the legend counts them: drawn as runs, with
+ * one end here (a stub), and the rest - no end placed here. */
+export interface CableCounts {
+  drawn: number
+  oneEnd: number
+  notPlaced: number
+}
+
+export function cableCounts(
+  cablePaths: readonly FloorPlanCablePath[],
+  routes: ReadonlyMap<string, unknown>,
+  stubs: readonly CableStub[]
+): CableCounts {
+  const drawn = cablePaths.filter((cp) => routes.has(cp.id)).length
+  const oneEnd = new Set(stubs.map((s) => s.id)).size
+  return { drawn, oneEnd, notPlaced: cablePaths.length - drawn - oneEnd }
+}
+
+/** The objects to place to bring the stubs' far ends here: those on this
+ * plan's site, once each. */
+export function stubPlaceIds(stubs: readonly CableStub[]): string[] {
+  const ids = new Set<string>()
+  for (const s of stubs)
+    for (const f of s.far) if (!f.hidden && f.place) ids.add(f.place.id)
+  return [...ids]
+}
+
+/** A stub's far end, for its popover: the device and port (Hidden when the
+ * reader may not view it), and the floor of the stack it stands on. */
+export function farEndLines(far: readonly FloorPlanCableFar[]): string[] {
+  if (!far.length) return ["Far end not on this plan"]
+  const lines = [`Far end not on this plan: ${endText(far)}`]
+  const f = far[0]
+  if (!f.hidden && f.floor_plan) lines.push(`On ${f.floor_plan.name}`)
+  return lines
+}
+
+/** Below this on screen (px) a tile draws as a marker this size. */
+export const MIN_TILE_PX = 8
+/** A run shorter than this on screen (px) draws as a marker. */
+export const SHORT_RUN_PX = 6
+
+/** The marker's side for a tile `w` x `h` cells at `pxPerCell` - in cells -
+ * or null when the tile is large enough on screen to read as itself. */
+export function tileMarkerCells(
+  w: number,
+  h: number,
+  pxPerCell: number
+): number | null {
+  if (Math.max(w, h) * pxPerCell >= MIN_TILE_PX) return null
+  return MIN_TILE_PX / pxPerCell
+}
+
+/** Runs too short to see at this zoom, gathered where they overlap on
+ * screen: each group's place, the direction of its first run, its cables. */
+export interface ShortRunGroup {
+  key: string
+  at: Pt
+  dir: Pt
+  ids: string[]
+}
+
+export function shortRuns(
+  routes: ReadonlyMap<string, CableRoute>,
+  pxPerCell: number,
+  minPx = SHORT_RUN_PX
+): ShortRunGroup[] {
+  const cellPx = MIN_TILE_PX * 1.5
+  const groups = new Map<string, ShortRunGroup>()
+  for (const [id, r] of routes) {
+    if (!r.points.length) continue
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (const [x, y] of r.points) {
+      x0 = Math.min(x0, x)
+      y0 = Math.min(y0, y)
+      x1 = Math.max(x1, x)
+      y1 = Math.max(y1, y)
+    }
+    if (Math.hypot(x1 - x0, y1 - y0) * pxPerCell >= minPx) continue
+    const at: Pt = [(x0 + x1) / 2, (y0 + y1) / 2]
+    const key = `${Math.round((at[0] * pxPerCell) / cellPx)},${Math.round(
+      (at[1] * pxPerCell) / cellPx
+    )}`
+    const g = groups.get(key)
+    if (g) {
+      g.ids.push(id)
+      continue
+    }
+    const a = r.points[0]
+    const b = r.points[r.points.length - 1]
+    const len = dist(a, b)
+    groups.set(key, {
+      key,
+      at,
+      dir: len > EPS ? [(b[0] - a[0]) / len, (b[1] - a[1]) / len] : [1, 0],
+      ids: [id],
+    })
+  }
+  return [...groups.values()]
 }
 
 // ── Legend ──────────────────────────────────────────────────────────────────

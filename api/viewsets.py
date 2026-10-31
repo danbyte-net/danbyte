@@ -12018,11 +12018,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
         200). A device in a rack or a cabinet is placed with it and is not
         offered. On a plan made from the Site map a device reads
         ``gps_cell`` when its GPS position is on the grid; ``?gps=1`` keeps
-        only those."""
+        only those. ``?ids=<uuid>,...`` keeps only those objects (the far
+        ends of the cables with one end here)."""
         from auth_api import rbac
 
         from .floor_plan_placement import PLACEABLE, PLACEABLE_MAX, placeable
-        from .topology_views import _uuid_param
+        from .topology_views import _uuid_list_param, _uuid_param
 
         plan = self.get_object()
         src, crop = self._resolved(plan)
@@ -12057,6 +12058,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             limit=limit,
             view=(src, crop) if crop is not None else None,
             gps_only=params.get("gps") in ("1", "true"),
+            ids=_uuid_list_param(params, "ids", limit=PLACEABLE_MAX) or None,
         )
         return Response({"results": rows})
 
@@ -13141,6 +13143,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         ``hidden_count`` counts the others. An end on a device the reader may
         not view keeps its tile but reads ``{"device": null, "port": null,
         "hidden": true}`` (#453). Only tiles the reader may view are named.
+        ``a_far`` / ``b_far`` list the ends on no tile here: the device and
+        port (or only ``hidden``), ``floor_plan`` - the floor of this plan's
+        stack it is placed on, if any - and ``place``, the device, rack or
+        cabinet to place to bring it here when it is on this plan's site.
         The query count does not grow with the cables."""
         from django.db.models import Prefetch
 
@@ -13234,11 +13240,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
             term_cache[cable.id] = terms
         device_home = {}
         device_name = {}
-        for d, rack_id, cabinet_id, name in Device.objects.filter(
+        device_site = {}
+        for d, rack_id, cabinet_id, name, site_id in Device.objects.filter(
             id__in=wanted_devices
-        ).values_list("id", "rack_id", "cabinet_id", "name"):
+        ).values_list("id", "rack_id", "cabinet_id", "name", "site_id"):
             device_home[d] = (rack_id, cabinet_id)
             device_name[d] = name or ""
+            device_site[d] = site_id
         # A rack tile's top (mm above the floor): the drop term of the
         # route length the canvas works out (pathfinding.rack_drop_mm).
         tile_top_mm = {
@@ -13269,6 +13277,63 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return {"device": str(dev_id), "port": port,
                     "device_name": device_name.get(dev_id, "")}
 
+        # An end off this plan (a_far / b_far): its device and port, the
+        # floor of this plan's stack it stands on, and what to place to
+        # bring it here when it is on this plan's site. A Hidden end (#453)
+        # reads nothing more.
+        far_devs = {
+            dev_id
+            for terms in term_cache.values()
+            for _end, dev_id, _port in terms
+            if dev_id is not None and tile_for(dev_id) is None
+            and (viewable is None or viewable.may_view("device", dev_id))
+        }
+        far_floor: dict = {}
+        if far_devs and plan.stack_id:
+            homes = [device_home.get(d, (None, None)) for d in far_devs]
+            floors = rbac.restrict_queryset(
+                FloorPlan.objects.filter(tenant=tenant, stack_id=plan.stack_id)
+                .exclude(pk=plan.pk),
+                user, tenant, "floorplan", "view",
+            )
+            by_link: dict = {}
+            for dev, rack, cab, fp_id, fp_name in (
+                FloorPlanTile.objects.filter(floor_plan__in=floors)
+                .filter(
+                    Q(device_id__in=far_devs)
+                    | Q(rack_id__in={r for r, _c in homes if r})
+                    | Q(cabinet_id__in={c for _r, c in homes if c})
+                )
+                .order_by("floor_plan__floor_order", "floor_plan__name", "id")
+                .values_list("device_id", "rack_id", "cabinet_id",
+                             "floor_plan_id", "floor_plan__name")
+            ):
+                ref = {"id": str(fp_id), "name": fp_name}
+                for key in (("d", dev), ("r", rack), ("c", cab)):
+                    if key[1]:
+                        by_link.setdefault(key, ref)
+            for d in far_devs:
+                rack_id, cabinet_id = device_home.get(d, (None, None))
+                far_floor[d] = (
+                    by_link.get(("d", d)) or by_link.get(("r", rack_id))
+                    or by_link.get(("c", cabinet_id))
+                )
+        plan_site = plan.site_id or (plan.location.site_id if plan.location_id else None)
+
+        def far_for(dev_id, port):
+            point = point_for(dev_id, port)
+            if point.get("hidden"):
+                return point
+            rack_id, cabinet_id = device_home.get(dev_id, (None, None))
+            place = None
+            if plan_site is not None and device_site.get(dev_id) == plan_site:
+                place = (
+                    {"kind": "rack", "id": str(rack_id)} if rack_id
+                    else {"kind": "cabinet", "id": str(cabinet_id)} if cabinet_id
+                    else {"kind": "device", "id": str(dev_id)}
+                )
+            return {**point, "floor_plan": far_floor.get(dev_id), "place": place}
+
         # Stored routes (the documented paths), the ones the reader may view,
         # with whether each is out of date against the plan as it is now.
         from .cable_routing import PlanRouter, path_data
@@ -13295,9 +13360,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
         for cable in cables:
             a_tiles, b_tiles = [], []
             a_points, b_points = [], []
+            a_far, b_far = [], []
             for end, dev_id, port in term_cache[cable.id]:
                 tile_id = tile_for(dev_id)
                 if tile_id is None:
+                    if dev_id is not None:
+                        (a_far if end == "A" else b_far).append(far_for(dev_id, port))
                     continue
                 (a_tiles if end == "A" else b_tiles).append(tile_id)
                 (a_points if end == "A" else b_points).append(point_for(dev_id, port))
@@ -13328,6 +13396,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     "b_tiles": b_tiles,
                     "a_points": a_points,
                     "b_points": b_points,
+                    "a_far": a_far,
+                    "b_far": b_far,
                     "tray_ids": [
                         str(tr.id)
                         for tr in cable.trays.all()

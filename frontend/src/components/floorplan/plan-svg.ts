@@ -56,9 +56,11 @@ import {
   paperLod,
   roundedPath,
   sharedColor,
+  STUB_MM,
+  endText,
   typePalette,
 } from "./cable-draw"
-import type { CableColorBy, CableRoute } from "./cable-draw"
+import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
 import { rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
@@ -177,6 +179,10 @@ export interface PlanSvgCables {
   highlight?: readonly string[]
   /** Paper mm per plan px (planPaperScale). */
   mmPerPx: number
+  /** Cables with one end on the plan (cableStubs): a short dashed stub
+   * with an arrow off the plan, and the far end's name when labels are
+   * on. The overview only. */
+  stubs?: readonly CableStub[]
 }
 
 /** api/floor_plan_pdf.py's footer under the plan (mm). */
@@ -348,6 +354,49 @@ function cablesMarkup(c: PlanSvgCables): string {
   }
   for (const id of c.highlight ?? [])
     if (layout.cables.has(id)) parts.push(lines(id, true))
+  /** A stub on paper: STUB_MM of dashed line out of its tile in the
+   * cable's colour, an arrow at its end, the far end's name beyond it. */
+  function stubMarkup(st: CableStub): string {
+    const color = colorOf(st.id)
+    const len = STUB_MM / c.mmPerPx
+    const ah = 1 / c.mmPerPx
+    const x0 = st.from[0] * CELL
+    const y0 = st.from[1] * CELL
+    const x1 = x0 + st.dir[0] * len
+    const y1 = y0 + st.dir[1] * len
+    const nx = -st.dir[1]
+    const ny = st.dir[0]
+    const r = (n: number) => +n.toFixed(2)
+    let out =
+      el("path", {
+        d: `M${r(x0)},${r(y0)}L${r(x1)},${r(y1)}`,
+        fill: "none",
+        stroke: color,
+        "stroke-width": w(2),
+        "stroke-dasharray": `${r(w(4))} ${r(w(3))}`,
+        "data-stub": st.id,
+      }) +
+      el("path", {
+        d:
+          `M${r(x1 + st.dir[0] * ah)},${r(y1 + st.dir[1] * ah)}` +
+          `L${r(x1 + nx * ah)},${r(y1 + ny * ah)}` +
+          `L${r(x1 - nx * ah)},${r(y1 - ny * ah)}Z`,
+        fill: color,
+      })
+    if (c.labels && st.far.length) {
+      const name = endText(st.far)
+      out += text(name.length > 28 ? `${name.slice(0, 27)}…` : name, {
+        x: r(x1 + st.dir[0] * ah * 2),
+        y: r(y1 + st.dir[1] * ah * 2 + fontPx * 0.35),
+        "text-anchor":
+          st.dir[0] < -0.3 ? "end" : st.dir[0] > 0.3 ? "start" : "middle",
+        "font-size": fontPx,
+        fill: PAPER_INK,
+      })
+    }
+    return out
+  }
+  for (const st of c.stubs ?? []) parts.push(stubMarkup(st))
   return `<g data-layer="cables">${parts.join("")}</g>`
 }
 

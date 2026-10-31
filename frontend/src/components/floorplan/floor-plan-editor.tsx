@@ -30,9 +30,12 @@ import { useCadCalibration } from "./cad-calibrate"
 import { useCadFloorImage, useCadSource } from "./cad-layer"
 import { ColorByLegend, colorByLegendEntries } from "./color-by-legend"
 import {
+  cableCounts,
   cableLegend,
   cableLegendEntries,
+  cableStubs,
   hasSharedRuns,
+  stubPlaceIds,
   typePalette,
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
@@ -227,6 +230,9 @@ export function FloorPlanEditor({
   // Placing: the picker with the room near the pointer when it opened, the
   // bulk room assignment, and the "Set room to X?" prompt after a drop.
   const [placeOpen, setPlaceOpen] = useState(false)
+  // The Place picker kept to these objects: the far ends of the cables
+  // with one end here (the cable legend's count).
+  const [placeOnly, setPlaceOnly] = useState<string[] | null>(null)
   const [near, setNear] = useState<NearScope | null>(null)
   const [assignOpen, setAssignOpen] = useState(false)
   // Document routes: the panel, and the routes it previews on the plan.
@@ -348,14 +354,32 @@ export function FloorPlanEditor({
     ceilingMm,
     areas
   )
-  // The cables drawn and their key, while the links are on.
-  const shownCables = useMemo(
-    () => drawnCablePaths.filter((cp) => cableRoutes.has(cp.id)),
-    [drawnCablePaths, cableRoutes]
+  // The cables with one end on this plan: stubs out of their tiles.
+  const stubs = useMemo(
+    () =>
+      plan
+        ? cableStubs(drawnCablePaths, cableRoutes, shownTiles, [
+            plan.grid_width / 2,
+            plan.grid_height / 2,
+          ])
+        : [],
+    [plan, drawnCablePaths, cableRoutes, shownTiles]
   )
+  const cableTally = useMemo(
+    () => cableCounts(drawnCablePaths, cableRoutes, stubs),
+    [drawnCablePaths, cableRoutes, stubs]
+  )
+  // The cables drawn - runs and stubs - and their key, while the links
+  // are on.
+  const shownCables = useMemo(() => {
+    const stubbed = new Set(stubs.map((st) => st.id))
+    return drawnCablePaths.filter(
+      (cp) => cableRoutes.has(cp.id) || stubbed.has(cp.id)
+    )
+  }, [drawnCablePaths, cableRoutes, stubs])
   const cableKey = useMemo(
     () =>
-      prefs.showCableLinks && shownCables.length
+      prefs.showCableLinks && drawnCablePaths.length
         ? cableLegend(
             shownCables,
             prefs.cableColorBy,
@@ -368,6 +392,7 @@ export function FloorPlanEditor({
       prefs.cableColorBy,
       prefs.bundleCables,
       shownCables,
+      drawnCablePaths.length,
       cablePaths,
       cableRoutes,
     ]
@@ -830,6 +855,8 @@ export function FloorPlanEditor({
                 labels: prefs.showCableLabels,
                 highlight: ed.highlightCableIds,
                 mmPerPx: planPaperScale(plan, paper),
+                // The overview only: a close-up frames its own runs.
+                stubs: closeup ? undefined : stubs,
               }
             : undefined,
           fitContent:
@@ -910,10 +937,24 @@ export function FloorPlanEditor({
       {rackLegend}
     </div>
   )
+  const farIds = stubPlaceIds(stubs)
   const planLegend = (rackLegend || cableKey || areaTypes.length > 0) && (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
       {rackLegend}
-      {cableKey && <CableLegend legend={cableKey} />}
+      {cableKey && (
+        <CableLegend
+          legend={cableKey}
+          counts={cableTally}
+          onPlaceFar={
+            editing && !view3d && farIds.length
+              ? () => {
+                  setPlaceOnly(farIds)
+                  openPlace()
+                }
+              : undefined
+          }
+        />
+      )}
       <AreaLegend types={areaTypes} />
     </div>
   )
@@ -991,7 +1032,10 @@ export function FloorPlanEditor({
                     capacity.legend.alarm
                   )
                 : null,
-              cable_legend: cableKey ? cableLegendEntries(cableKey) : null,
+              cable_legend:
+                cableKey && shownCables.length
+                  ? cableLegendEntries(cableKey)
+                  : null,
               area_legend: areaLegendEntries(shownShapes),
             })}
           />
@@ -1030,8 +1074,11 @@ export function FloorPlanEditor({
                 else {
                   placePoint.current = null
                   setPlaceOpen(false)
+                  setPlaceOnly(null)
                 }
               }}
+              only={placeOnly}
+              onClearOnly={() => setPlaceOnly(null)}
               near={near}
               onPlace={placePicked}
               onPlaceAt={(rows, at) => placeAt(rows, at)}
@@ -1166,6 +1213,7 @@ export function FloorPlanEditor({
               areas={areas}
               cablePaths={drawnCablePaths}
               cableRoutes={cableRoutes}
+              cableStubs={stubs}
               cablePreviews={
                 docRoutesOpen || placeCablesOpen || reroute || connect
                   ? cablePreviews

@@ -20,9 +20,16 @@ import {
   roundedPath,
   routeLengthM,
   sharedColor,
+  shortRuns,
+  STUB_PX,
   typePalette,
 } from "./cable-draw"
-import type { CableColorBy, CableRoute, LaneGroup } from "./cable-draw"
+import type {
+  CableColorBy,
+  CableRoute,
+  CableStub,
+  LaneGroup,
+} from "./cable-draw"
 import type { Pt } from "./cable-route"
 
 /** floor-canvas.tsx's CELL. */
@@ -31,6 +38,8 @@ const CELL = 40
 const HIT_PX = 14
 /** Rounded corners, plan px. */
 const FILLET = 6
+
+const NO_STUBS: readonly CableStub[] = []
 
 /** What the pointer or the keyboard is on: one cable, or a bundle's. */
 export interface CableHoverHit {
@@ -52,9 +61,14 @@ const px = (pts: readonly Pt[]): Pt[] =>
  * when their lanes would not read; coloured from data; styled by route
  * state; strokes the same width on screen at every zoom.
  *
- * Level of detail by cell size on screen: far draws only the traced runs
- * (the trays carry the counts); mid draws bundles and single runs; near
- * draws every lane that fits, with labels when they are on.
+ * Level of detail by cell size on screen: far draws the traced runs and
+ * the runs that ride no tray (the trays carry the others' counts); mid
+ * draws bundles and single runs; near draws every lane that fits, with
+ * labels when they are on.
+ *
+ * From afar a run too short to see draws as a marker between its ends (a
+ * count beside it where several meet), and a cable with one end here as
+ * a stub from that end's tile, pointing out, with an off-plan arrow.
  *
  * Memoised on its props: the canvas re-renders on every pan frame and this
  * layer does not - it lays the routes out once per change of the routes.
@@ -72,6 +86,7 @@ export const CableLayer = memo(function CableLayer({
   onSelect,
   onHover,
   previews,
+  stubs = NO_STUBS,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -87,6 +102,8 @@ export const CableLayer = memo(function CableLayer({
   onHover: (hit: CableHoverHit | null, at?: CableAnchor) => void
   /** Routes computed but not saved, drawn dotted over the plan. */
   previews?: ReadonlyMap<string, CableRoute>
+  /** Cables with one end on this plan (cable-draw.ts cableStubs). */
+  stubs?: readonly CableStub[]
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -466,6 +483,126 @@ export const CableLayer = memo(function CableLayer({
     )
   }
 
+  /** Runs too short to see: a short bar between their ends in their
+   * colour, with a count where several meet. */
+  const shortView = () =>
+    shortRuns(routes, pxPerCell).map((g) => {
+      const colors = g.ids.map((id) => {
+        const cp = byId.get(id)
+        return cp ? cableColor(cp, colorBy, palette) : null
+      })
+      const color = sharedColor(colors) ?? CABLE_NONE
+      const half = 6 / k
+      const [x, y] = [g.at[0] * CELL, g.at[1] * CELL]
+      const [dx, dy] = [g.dir[0] * half, g.dir[1] * half]
+      const lit = g.ids.some((id) => hi.has(id))
+      return (
+        <g
+          key={`short-${g.key}`}
+          data-short={g.ids.join(" ")}
+          aria-label={
+            g.ids.length > 1
+              ? `${g.ids.length} cables`
+              : ariaFor(byId.get(g.ids[0]))
+          }
+          opacity={dim && !lit ? 0.2 : 1}
+          {...handlers(
+            g.ids.length > 1 ? { ids: g.ids, bundle: g.key } : { ids: g.ids },
+            g.at,
+            () =>
+              g.ids.length > 1
+                ? onSelect(null)
+                : onSelect(hi.has(g.ids[0]) ? null : g.ids[0])
+          )}
+        >
+          {interactive && (
+            <circle cx={x} cy={y} r={10 / k} fill="transparent" />
+          )}
+          <path
+            d={`M${x - dx},${y - dy}L${x + dx},${y + dy}`}
+            stroke="var(--background)"
+            strokeWidth={6}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+          <path
+            d={`M${x - dx},${y - dy}L${x + dx},${y + dy}`}
+            stroke={color}
+            strokeWidth={3.5}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+          {g.ids.length > 1 &&
+            chip(
+              "n",
+              [g.at[0], g.at[1] - 14 / pxPerCell],
+              String(g.ids.length),
+              color
+            )}
+        </g>
+      )
+    })
+
+  /** A cable with one end here: a dashed stub out of its tile in its
+   * colour, ending in an arrow - the run leaves the plan. */
+  const stubView = (s: CableStub) => {
+    const cp = byId.get(s.id)
+    const color = colorOf(s.id)
+    const len = STUB_PX / k
+    const [x0, y0] = [s.from[0] * CELL, s.from[1] * CELL]
+    const [x1, y1] = [x0 + s.dir[0] * len, y0 + s.dir[1] * len]
+    const ah = 5 / k
+    const [nx, ny] = [-s.dir[1], s.dir[0]]
+    const tip = `M${x1 + s.dir[0] * ah},${y1 + s.dir[1] * ah}L${x1 + nx * ah},${y1 + ny * ah}L${x1 - nx * ah},${y1 - ny * ah}Z`
+    const mid: Pt = [
+      s.from[0] + (s.dir[0] * len) / 2 / CELL,
+      s.from[1] + (s.dir[1] * len) / 2 / CELL,
+    ]
+    const traced = hi.has(s.id)
+    const lit = traced || hov.has(s.id)
+    return (
+      <g
+        key={`stub-${s.id}`}
+        data-stub={s.id}
+        aria-label={`${ariaFor(cp)} - far end not on this plan`}
+        aria-pressed={interactive ? traced : undefined}
+        opacity={dim && !traced ? 0.2 : 1}
+        {...handlers({ ids: [s.id] }, mid, () =>
+          onSelect(traced ? null : s.id)
+        )}
+      >
+        {interactive && (
+          <path
+            d={`M${x0},${y0}L${x1},${y1}`}
+            stroke="transparent"
+            strokeWidth={HIT_PX}
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        <path
+          d={`M${x0},${y0}L${x1},${y1}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={lit ? 3 : 2}
+          strokeDasharray="4 3"
+          strokeLinecap="butt"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+        <path
+          d={tip}
+          fill={color}
+          stroke="var(--background)"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      </g>
+    )
+  }
+
   return (
     <g data-layer="cables" data-lod={lod}>
       {lod !== "far" &&
@@ -475,7 +612,8 @@ export const CableLayer = memo(function CableLayer({
           only while it is neither (the lifted copy above draws it then). */}
       {layout.order.map((id) => {
         const up = hi.has(id) || hovOne.has(id)
-        if (lod === "far" && !hi.has(id)) return null
+        if (lod === "far" && !hi.has(id) && routes.get(id)?.trayIds.length)
+          return null
         const lines = up ? full.get(id) : pieces.get(id)
         if (!lines?.length) return null
         const cp = byId.get(id)
@@ -497,6 +635,8 @@ export const CableLayer = memo(function CableLayer({
         )
       })}
       {labels}
+      {stubs.map(stubView)}
+      {shortView()}
       {lod !== "far" &&
         layout.order.map((id) => {
           const route = routes.get(id)
