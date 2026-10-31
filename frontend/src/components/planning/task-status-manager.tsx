@@ -447,6 +447,7 @@ function StatusDialog({
             <div className="flex-1 space-y-1.5">
               <label className="text-xs text-muted-foreground">Name</label>
               <Input
+                aria-label="Name"
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -473,6 +474,7 @@ function StatusDialog({
             <div className="w-24 space-y-1.5">
               <label className="text-xs text-muted-foreground">Weight</label>
               <Input
+                aria-label="Weight"
                 type="number"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}

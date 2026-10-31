@@ -1006,6 +1006,7 @@ export function BGPAddressFamilyForm({
           renderRow={(r, update) => [
             <CellSelect
               key="src"
+              aria-label="Source"
               value={r.source}
               onChange={(v) => update({ source: v })}
               options={SOURCES}
@@ -1013,6 +1014,7 @@ export function BGPAddressFamilyForm({
             />,
             <CellSelect
               key="pol"
+              aria-label="Policy"
               value={r.policyId ?? NO_POLICY}
               onChange={(v) => update({ policyId: v === NO_POLICY ? null : v })}
               options={policyOptions}

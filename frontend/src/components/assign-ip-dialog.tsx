@@ -256,6 +256,7 @@ export function AssignIpDialog({
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Combobox
+            aria-label="Site"
             value={site}
             onChange={(v) => {
               setSite(v)
@@ -270,6 +271,7 @@ export function AssignIpDialog({
             emptyText="No sites."
           />
           <Combobox
+            aria-label="VRF"
             value={vrf}
             onChange={(v) => {
               setVrf(v)
@@ -283,6 +285,7 @@ export function AssignIpDialog({
             emptyText="No VRFs."
           />
           <Combobox
+            aria-label="Subnet"
             value={prefix}
             onChange={setPrefix}
             options={prefixOpts}

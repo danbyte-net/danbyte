@@ -29,6 +29,14 @@ A private key, a PEM certificate, or anything that isn't a public SSH key is a
 clean **400** (a pasted certificate is pointed at the [certificate](certificates.md)
 page instead).
 
+The device must be in the active tenant - any other id is a **400** on
+`device` (`Not found in this tenant.`) - and, for a site-scoped user, in one of
+their sites (otherwise **403**).
+
+A key belongs to the device it was recorded on, so there is no edit: `PUT` and
+`PATCH` answer **405**. To move a key, delete it and upload it on the other
+device.
+
 ## Observation and drift
 
 The SSH check captures the host key the device presents and records it as an

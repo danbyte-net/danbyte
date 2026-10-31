@@ -226,5 +226,97 @@ class IsolationTests(_Base):
         self.assertEqual(r.json()["count"], 0)
 
 
+class DeviceIsFixedTests(_Base):
+    """A host key stays on its device: no edit moves it, least of all onto
+    another tenant's device (#458)."""
+
+    def setUp(self):
+        super().setUp()
+        other_org = Organization.objects.create(name="OX", slug="ox")
+        other = Tenant.objects.create(org=other_org, name="TX", slug="tx")
+        self.foreign = Device.objects.create(
+            tenant=other, name="their-secret-name",
+            site=Site.objects.create(tenant=other, name="SX"),
+            role=DeviceRole.objects.create(tenant=other, name="RX", slug="rx"),
+            status=status_for(other),
+        )
+        line, _ = _key_line()
+        r = self.client.post(
+            "/api/monitoring/ssh-host-keys/",
+            {"device": str(self.device.id), "public_key_line": line},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.key_id = r.json()["id"]
+
+    def test_patch_cannot_move_key_to_foreign_device(self):
+        r = self.client.patch(
+            f"/api/monitoring/ssh-host-keys/{self.key_id}/",
+            {"device": str(self.foreign.id)}, format="json",
+        )
+        self.assertEqual(r.status_code, 405)
+        self.assertNotIn("their-secret-name", r.content.decode())
+        self.assertEqual(SSHHostKey.objects.get(pk=self.key_id).device_id, self.device.id)
+        self.assertEqual(self.foreign.ssh_host_keys.count(), 0)
+
+    def test_put_cannot_move_key(self):
+        line, _ = _key_line()
+        r = self.client.put(
+            f"/api/monitoring/ssh-host-keys/{self.key_id}/",
+            {"device": str(self.foreign.id), "public_key_line": line}, format="json",
+        )
+        self.assertEqual(r.status_code, 405)
+        self.assertEqual(self.foreign.ssh_host_keys.count(), 0)
+
+    def test_upload_with_a_non_uuid_device_is_a_field_error(self):
+        line, _ = _key_line()
+        r = self.client.post(
+            "/api/monitoring/ssh-host-keys/",
+            {"device": "not-a-uuid", "public_key_line": line}, format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("device", r.json())
+
+
+class SiteScopedUploadTests(_Base):
+    """A site-scoped user uploads keys only onto devices in their sites."""
+
+    def setUp(self):
+        from auth_api.models import ObjectPermission
+
+        super().setUp()
+        self.other_site = Site.objects.create(tenant=self.tenant, name="LON")
+        self.far = Device.objects.create(
+            tenant=self.tenant, name="far", site=self.other_site,
+            role=self.device.role, status=status_for(self.tenant),
+        )
+        user = User.objects.create_user("site-op", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        grant = ObjectPermission.objects.create(
+            name="ams-keys", object_types=["sshhostkey", "device"],
+            actions=["view", "add", "change", "delete"],
+        )
+        grant.users.add(user)
+        grant.sites.set([self.device.site])
+        self.client.force_login(user)
+        self.client.post(f"/api/tenants/{self.tenant.id}/switch/")
+
+    def _upload(self, device):
+        line, _ = _key_line()
+        return self.client.post(
+            "/api/monitoring/ssh-host-keys/",
+            {"device": str(device.id), "public_key_line": line}, format="json",
+        )
+
+    def test_own_site_device(self):
+        r = self._upload(self.device)
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_other_site_device_is_refused(self):
+        r = self._upload(self.far)
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(self.far.ssh_host_keys.count(), 0)
+
+
 def _now():
     return timezone.now()

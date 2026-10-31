@@ -105,7 +105,7 @@ export function JournalPanel({
         />
         <div className="mt-2 flex items-center gap-2">
           <Select value={kind} onValueChange={(v) => setKind(v as JournalKind)}>
-            <SelectTrigger className="h-8 w-36 text-xs">
+            <SelectTrigger aria-label="Kind" className="h-8 w-36 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -213,6 +213,7 @@ function JournalRow({
       {editing ? (
         <div className="mt-2">
           <Textarea
+            aria-label="Comment"
             value={draft}
             onChange={(ev) => setDraft(ev.target.value)}
             className="min-h-20 text-[13px]"

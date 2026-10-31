@@ -8,6 +8,7 @@ import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -136,24 +137,28 @@ export function DeviceCredentialsCard({ deviceId }: { deviceId: string }) {
               <div className="ml-auto flex items-center gap-1">
                 {canReveal && c.secret_set && <RevealButton id={c.id} />}
                 {canChange && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => setEditing(c)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  <IconTip label="Edit">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => setEditing(c)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </IconTip>
                 )}
                 {canDelete && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => setDeleting(c)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <IconTip label="Delete">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => setDeleting(c)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </IconTip>
                 )}
               </div>
             </li>
@@ -209,7 +214,10 @@ function RevealButton({ id }: { id: string }) {
               This disclosure is recorded in the change log.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <pre className="max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs">
+          <pre
+            tabIndex={0}
+            className="max-h-64 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs"
+          >
             {value ? JSON.stringify(value, null, 2) : ""}
           </pre>
           <AlertDialogFooter>

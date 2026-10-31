@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import {
   Dialog,
   DialogContent,
@@ -203,8 +204,7 @@ function WatchedEndpointsPage() {
         },
         cell: ({ row }) => {
           const days = row.original.last_detail?.expires_in_days as
-            | number
-            | undefined
+            number | undefined
           if (days === undefined)
             return <span className="text-muted-foreground">-</span>
           const cls =
@@ -446,14 +446,16 @@ function DeleteButton({ ep }: { ep: WatchedEndpoint }) {
   })
   return (
     <>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        className="text-destructive hover:text-destructive"
-        onClick={() => setOpen(true)}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      <IconTip label="Delete">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive"
+          onClick={() => setOpen(true)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </IconTip>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="sm">
           <DialogHeader>

@@ -804,7 +804,8 @@ export function FloorPlanEditor({
    * routes always drawn). */
   const exportSvg = (
     paper?: PaperChoice,
-    withCables: boolean = prefs.showCableLinks
+    withCables: boolean = prefs.showCableLinks,
+    fitContent = false
   ) =>
     plan
       ? planSvg({
@@ -830,6 +831,7 @@ export function FloorPlanEditor({
                 mmPerPx: planPaperScale(plan, paper),
               }
             : undefined,
+          fitContent: fitContent && paper ? { paper } : undefined,
         })
       : ""
 
@@ -1573,7 +1575,9 @@ export function FloorPlanEditor({
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
         planSvg={
-          view3d ? undefined : async (paper) => exportSvg(paper, true) || null
+          view3d
+            ? undefined
+            : async (paper) => exportSvg(paper, true, true) || null
         }
       />
       <SnapAllDialog

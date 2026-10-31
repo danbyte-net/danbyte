@@ -323,431 +323,445 @@ export function LabelTemplateFormDialog({
           }}
           className="grid gap-4"
         >
-        <div className="max-h-[72vh] overflow-y-auto">
-        <FormColumns>
-          <FormColumn>
-            <FormSection title="Template" card>
-            <FormText
-              label="Name"
-              value={d.name}
-              onChange={(v) => set("name", v)}
-              required
-            />
-            <FormSelect
-              label="Object type"
-              value={d.object_type}
-              onChange={(v) => {
-                if (!v) return
-                // Targeting only applies to devices/VMs - clear it otherwise so
-                // a stray restriction can't hide the template later.
-                setD((prev) => ({
-                  ...prev,
-                  object_type: v,
-                  device_type_ids: v === "device" ? prev.device_type_ids : [],
-                  role_ids:
-                    v === "device" || v === "virtualmachine"
-                      ? prev.role_ids
-                      : [],
-                }))
-              }}
-              options={OBJECT_TYPES}
-            />
-            {canTarget && (
-              <Field
-                label="Applies to"
-                info="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label - a device can still match several templates."
-              >
-                <div className="space-y-2">
-                  {d.object_type === "device" && (
-                    <div className="space-y-1">
-                      <span className="text-xs text-muted-foreground">
-                        Device types
-                      </span>
-                      <IdMultiSelect
-                        options={dtOptions}
-                        value={d.device_type_ids}
-                        onChange={(v) => set("device_type_ids", v)}
-                        placeholder="Any device type"
-                        searchPlaceholder="Search device types…"
-                        emptyText="No device types."
+          <div className="max-h-[72vh] overflow-y-auto">
+            <FormColumns>
+              <FormColumn>
+                <FormSection title="Template" card>
+                  <FormText
+                    label="Name"
+                    value={d.name}
+                    onChange={(v) => set("name", v)}
+                    required
+                  />
+                  <FormSelect
+                    label="Object type"
+                    value={d.object_type}
+                    onChange={(v) => {
+                      if (!v) return
+                      // Targeting only applies to devices/VMs - clear it otherwise so
+                      // a stray restriction can't hide the template later.
+                      setD((prev) => ({
+                        ...prev,
+                        object_type: v,
+                        device_type_ids:
+                          v === "device" ? prev.device_type_ids : [],
+                        role_ids:
+                          v === "device" || v === "virtualmachine"
+                            ? prev.role_ids
+                            : [],
+                      }))
+                    }}
+                    options={OBJECT_TYPES}
+                  />
+                  {canTarget && (
+                    <Field
+                      label="Applies to"
+                      info="Leave empty to apply to every object of this type. Restricting by device type and/or role limits which objects offer this label - a device can still match several templates."
+                    >
+                      <div className="space-y-2">
+                        {d.object_type === "device" && (
+                          <div className="space-y-1">
+                            <span className="text-xs text-muted-foreground">
+                              Device types
+                            </span>
+                            <IdMultiSelect
+                              options={dtOptions}
+                              value={d.device_type_ids}
+                              onChange={(v) => set("device_type_ids", v)}
+                              placeholder="Any device type"
+                              searchPlaceholder="Search device types…"
+                              emptyText="No device types."
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <span className="text-xs text-muted-foreground">
+                            Roles
+                          </span>
+                          <IdMultiSelect
+                            options={roleOptions}
+                            value={d.role_ids}
+                            onChange={(v) => set("role_ids", v)}
+                            placeholder="Any role"
+                            searchPlaceholder="Search roles…"
+                            emptyText="No roles."
+                          />
+                        </div>
+                      </div>
+                    </Field>
+                  )}
+                </FormSection>
+
+                <FormSection title="Size &amp; code" card>
+                  <div className="grid grid-cols-3 gap-2">
+                    <FormText
+                      label="Width (mm)"
+                      type="number"
+                      value={String(d.width_mm)}
+                      onChange={(v) => set("width_mm", Number(v) || 0)}
+                    />
+                    <FormText
+                      label="Height (mm)"
+                      type="number"
+                      value={String(d.height_mm)}
+                      onChange={(v) => set("height_mm", Number(v) || 0)}
+                    />
+                    <FormText
+                      label="Margin (mm)"
+                      type="number"
+                      value={String(d.margin_mm)}
+                      onChange={(v) => set("margin_mm", Number(v) || 0)}
+                    />
+                  </div>
+                  <FormCheckbox
+                    label="Include a QR code"
+                    checked={d.qr_enabled}
+                    onChange={(v) => set("qr_enabled", v)}
+                    hint={
+                      'Drop a <div class="qr"></div> in the HTML where it should appear.'
+                    }
+                  />
+                  {d.qr_enabled && (
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <FormText
+                        label="QR content"
+                        value={d.qr_content}
+                        onChange={(v) => set("qr_content", v)}
+                        placeholder="blank = the object's URL"
+                        info="A Jinja expression, e.g. ASSET:{{ device.name }}. Blank encodes the object's page URL."
+                      />
+                      <FormText
+                        label="QR (mm)"
+                        type="number"
+                        value={String(d.qr_size_mm)}
+                        onChange={(v) => set("qr_size_mm", Number(v) || 0)}
+                        inputClassName="w-20"
                       />
                     </div>
                   )}
-                  <div className="space-y-1">
-                    <span className="text-xs text-muted-foreground">Roles</span>
-                    <IdMultiSelect
-                      options={roleOptions}
-                      value={d.role_ids}
-                      onChange={(v) => set("role_ids", v)}
-                      placeholder="Any role"
-                      searchPlaceholder="Search roles…"
-                      emptyText="No roles."
-                    />
-                  </div>
-                </div>
-              </Field>
-            )}
-            </FormSection>
+                </FormSection>
 
-            <FormSection title="Size &amp; code" card>
-            <div className="grid grid-cols-3 gap-2">
-              <FormText
-                label="Width (mm)"
-                type="number"
-                value={String(d.width_mm)}
-                onChange={(v) => set("width_mm", Number(v) || 0)}
-              />
-              <FormText
-                label="Height (mm)"
-                type="number"
-                value={String(d.height_mm)}
-                onChange={(v) => set("height_mm", Number(v) || 0)}
-              />
-              <FormText
-                label="Margin (mm)"
-                type="number"
-                value={String(d.margin_mm)}
-                onChange={(v) => set("margin_mm", Number(v) || 0)}
-              />
-            </div>
-            <FormCheckbox
-              label="Include a QR code"
-              checked={d.qr_enabled}
-              onChange={(v) => set("qr_enabled", v)}
-              hint={
-                'Drop a <div class="qr"></div> in the HTML where it should appear.'
-              }
-            />
-            {d.qr_enabled && (
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <FormText
-                  label="QR content"
-                  value={d.qr_content}
-                  onChange={(v) => set("qr_content", v)}
-                  placeholder="blank = the object's URL"
-                  info="A Jinja expression, e.g. ASSET:{{ device.name }}. Blank encodes the object's page URL."
-                />
-                <FormText
-                  label="QR (mm)"
-                  type="number"
-                  value={String(d.qr_size_mm)}
-                  onChange={(v) => set("qr_size_mm", Number(v) || 0)}
-                  inputClassName="w-20"
-                />
-              </div>
-            )}
-            </FormSection>
-
-            <FormSection title="Content" card>
-            <div>
-              <div className="mb-1 flex items-center justify-end gap-2">
-                <div className="flex rounded-md border border-border p-0.5 text-[11px]">
-                  {(["simple", "html"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMode(m)}
-                      className={
-                        "rounded px-2 py-0.5 " +
-                        (mode === m
-                          ? "bg-muted font-medium text-foreground"
-                          : "text-muted-foreground hover:text-foreground")
-                      }
-                    >
-                      {m === "simple" ? "Simple" : "HTML / Jinja"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {mode === "simple" ? (
-                <div className="space-y-2 rounded-md border border-border p-2">
-                  {blocks.length === 0 && (
-                    <p className="px-1 py-2 text-[12px] text-muted-foreground">
-                      Add a field or a line of text - or click a field on the
-                      right. The label builds itself.
-                    </p>
-                  )}
-                  {blocks.map((b, i) => (
-                    <div key={b.id} className="flex items-center gap-1.5">
-                      {b.kind === "field" ? (
-                        <Select
-                          value={b.value || undefined}
-                          onValueChange={(v) =>
-                            setBlocks((bs) =>
-                              bs.map((x) =>
-                                x.id === b.id ? { ...x, value: v } : x
-                              )
-                            )
-                          }
-                        >
-                          <SelectTrigger className="h-8 min-w-0 flex-1 font-mono text-[11px]">
-                            <SelectValue placeholder="- pick a field -" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {allTokens.map((t) => (
-                              <SelectItem
-                                key={t}
-                                value={t}
-                                className="font-mono text-[11px]"
-                              >
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <input
-                          value={b.value}
-                          placeholder="static text"
-                          onChange={(e) =>
-                            setBlocks((bs) =>
-                              bs.map((x) =>
-                                x.id === b.id
-                                  ? { ...x, value: e.target.value }
-                                  : x
-                              )
-                            )
-                          }
-                          className="min-w-0 flex-1 rounded border border-input bg-transparent px-1.5 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                      )}
-                      <Select
-                        value={b.size}
-                        onValueChange={(v) =>
-                          setBlocks((bs) =>
-                            bs.map((x) =>
-                              x.id === b.id
-                                ? { ...x, size: v as SimpleBlock["size"] }
-                                : x
-                            )
-                          )
-                        }
-                      >
-                        <SelectTrigger
-                          className="h-8 w-[3.25rem] text-[11px]"
-                          title="Text size"
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="sm">S</SelectItem>
-                          <SelectItem value="md">M</SelectItem>
-                          <SelectItem value="lg">L</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <button
-                        type="button"
-                        title="Bold"
-                        onClick={() =>
-                          setBlocks((bs) =>
-                            bs.map((x) =>
-                              x.id === b.id ? { ...x, bold: !x.bold } : x
-                            )
-                          )
-                        }
-                        className={
-                          "rounded border border-border px-1.5 py-1 text-[11px] font-bold " +
-                          (b.bold
-                            ? "bg-muted text-foreground"
-                            : "text-muted-foreground")
-                        }
-                      >
-                        B
-                      </button>
-                      <button
-                        type="button"
-                        title="Move up"
-                        disabled={i === 0}
-                        onClick={() =>
-                          setBlocks((bs) => {
-                            const n = [...bs]
-                            ;[n[i - 1], n[i]] = [n[i], n[i - 1]]
-                            return n
-                          })
-                        }
-                        className="rounded border border-border px-1 py-1 text-[11px] text-muted-foreground disabled:opacity-30"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        title="Remove"
-                        onClick={() =>
-                          setBlocks((bs) => bs.filter((x) => x.id !== b.id))
-                        }
-                        className="rounded border border-border px-1 py-1 text-[11px] text-destructive"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <div className="flex gap-1.5 pt-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setBlocks((bs) => [
-                          ...bs,
-                          {
-                            id: nextBid(),
-                            kind: "field",
-                            value: "",
-                            bold: false,
-                            size: "md",
-                          },
-                        ])
-                      }
-                    >
-                      + Field
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setBlocks((bs) => [
-                          ...bs,
-                          {
-                            id: nextBid(),
-                            kind: "text",
-                            value: "",
-                            bold: false,
-                            size: "md",
-                          },
-                        ])
-                      }
-                    >
-                      + Text
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <textarea
-                  ref={htmlRef}
-                  value={d.template_html}
-                  onChange={(e) => set("template_html", e.target.value)}
-                  rows={9}
-                  spellCheck={false}
-                  className="w-full rounded-md border border-input bg-transparent p-2 font-mono text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                />
-              )}
-            </div>
-            <Field label="Extra CSS" hint="optional">
-              <textarea
-                value={d.css}
-                onChange={(e) => set("css", e.target.value)}
-                rows={3}
-                spellCheck={false}
-                className="w-full rounded-md border border-input bg-transparent p-2 font-mono text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </Field>
-            <FormCheckbox
-              label="Default for this object type"
-              checked={d.is_default}
-              onChange={(v) => set("is_default", v)}
-              hint="Preselected when printing labels for this type."
-            />
-            </FormSection>
-          </FormColumn>
-
-          <FormColumn>
-            <FormSection title="Preview" card>
-            <div>
-              <span className="mb-1 block text-[11px] text-muted-foreground">
-                First{" "}
-                {OBJECT_TYPES.find((o) => o.value === d.object_type)?.label ??
-                  d.object_type}
-              </span>
-              <div className="flex justify-center overflow-auto rounded-md border border-border p-3">
-                {previewErr ? (
-                  <p className="py-6 text-center text-[12px] text-destructive">
-                    {previewErr}
-                  </p>
-                ) : (
-                  (() => {
-                    // Scale the true-mm label down to fit the panel so a large
-                    // label (e.g. 116×71mm) can't blow out of the modal.
-                    const w = Math.max(d.width_mm, 1) * MM_PX
-                    const h = Math.max(d.height_mm, 1) * MM_PX
-                    // Fill the (wider) preview column: a bigger label renders
-                    // bigger, only scaling down past the panel's budget. Never
-                    // upscale past 1× so a tiny label doesn't balloon.
-                    const scale = Math.min(1, 460 / w, 440 / h)
-                    return (
-                      <div
-                        style={{
-                          width: w * scale,
-                          height: h * scale,
-                          overflow: "hidden",
-                          border: "1px solid var(--border)",
-                          background: "#fff",
-                        }}
-                      >
-                        <iframe
-                          title="Label preview"
-                          sandbox=""
-                          srcDoc={srcDoc}
-                          style={{
-                            width: `${d.width_mm}mm`,
-                            height: `${d.height_mm}mm`,
-                            transform: `scale(${scale})`,
-                            transformOrigin: "top left",
-                            border: 0,
-                            background: "#fff",
-                          }}
-                        />
+                <FormSection title="Content" card>
+                  <div>
+                    <div className="mb-1 flex items-center justify-end gap-2">
+                      <div className="flex rounded-md border border-border p-0.5 text-[11px]">
+                        {(["simple", "html"] as const).map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setMode(m)}
+                            className={
+                              "rounded px-2 py-0.5 " +
+                              (mode === m
+                                ? "bg-muted font-medium text-foreground"
+                                : "text-muted-foreground hover:text-foreground")
+                            }
+                          >
+                            {m === "simple" ? "Simple" : "HTML / Jinja"}
+                          </button>
+                        ))}
                       </div>
-                    )
-                  })()
-                )}
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {d.width_mm} × {d.height_mm} mm
-              </p>
-            </div>
-            </FormSection>
+                    </div>
 
-            <FormSection title="Fields" card>
-            <div>
-              <span className="mb-1 block text-[11px] text-muted-foreground">
-                {mode === "simple" ? "Click to add a line" : "Click to insert"}
-              </span>
-              <input
-                value={fieldSearch}
-                onChange={(e) => setFieldSearch(e.target.value)}
-                placeholder="Search fields…"
-                className="mb-1 w-full rounded-md border border-input bg-transparent px-2 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto rounded-md border border-border p-2">
-                {shownTokens.map((tok) => (
-                  <button
-                    key={tok}
-                    type="button"
-                    onClick={() => useField(tok)}
-                    className="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    {tok}
-                  </button>
-                ))}
-                {shownTokens.length === 0 && (
-                  <span className="px-1 py-1 text-[11px] text-muted-foreground">
-                    No fields match “{fieldSearch}”.
-                  </span>
-                )}
-              </div>
-            </div>
-            </FormSection>
-          </FormColumn>
-        </FormColumns>
-        </div>
+                    {mode === "simple" ? (
+                      <div className="space-y-2 rounded-md border border-border p-2">
+                        {blocks.length === 0 && (
+                          <p className="px-1 py-2 text-[12px] text-muted-foreground">
+                            Add a field or a line of text - or click a field on
+                            the right. The label builds itself.
+                          </p>
+                        )}
+                        {blocks.map((b, i) => (
+                          <div key={b.id} className="flex items-center gap-1.5">
+                            {b.kind === "field" ? (
+                              <Select
+                                value={b.value || undefined}
+                                onValueChange={(v) =>
+                                  setBlocks((bs) =>
+                                    bs.map((x) =>
+                                      x.id === b.id ? { ...x, value: v } : x
+                                    )
+                                  )
+                                }
+                              >
+                                <SelectTrigger
+                                  aria-label="Field"
+                                  className="h-8 min-w-0 flex-1 font-mono text-[11px]"
+                                >
+                                  <SelectValue placeholder="- pick a field -" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {allTokens.map((t) => (
+                                    <SelectItem
+                                      key={t}
+                                      value={t}
+                                      className="font-mono text-[11px]"
+                                    >
+                                      {t}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <input
+                                value={b.value}
+                                aria-label="Static text"
+                                placeholder="static text"
+                                onChange={(e) =>
+                                  setBlocks((bs) =>
+                                    bs.map((x) =>
+                                      x.id === b.id
+                                        ? { ...x, value: e.target.value }
+                                        : x
+                                    )
+                                  )
+                                }
+                                className="min-w-0 flex-1 rounded border border-input bg-transparent px-1.5 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                              />
+                            )}
+                            <Select
+                              value={b.size}
+                              onValueChange={(v) =>
+                                setBlocks((bs) =>
+                                  bs.map((x) =>
+                                    x.id === b.id
+                                      ? { ...x, size: v as SimpleBlock["size"] }
+                                      : x
+                                  )
+                                )
+                              }
+                            >
+                              <SelectTrigger
+                                className="h-8 w-[3.25rem] text-[11px]"
+                                aria-label="Text size"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="sm">S</SelectItem>
+                                <SelectItem value="md">M</SelectItem>
+                                <SelectItem value="lg">L</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <button
+                              type="button"
+                              title="Bold"
+                              onClick={() =>
+                                setBlocks((bs) =>
+                                  bs.map((x) =>
+                                    x.id === b.id ? { ...x, bold: !x.bold } : x
+                                  )
+                                )
+                              }
+                              className={
+                                "rounded border border-border px-1.5 py-1 text-[11px] font-bold " +
+                                (b.bold
+                                  ? "bg-muted text-foreground"
+                                  : "text-muted-foreground")
+                              }
+                            >
+                              B
+                            </button>
+                            <button
+                              type="button"
+                              title="Move up"
+                              aria-label="Move up"
+                              disabled={i === 0}
+                              onClick={() =>
+                                setBlocks((bs) => {
+                                  const n = [...bs]
+                                  ;[n[i - 1], n[i]] = [n[i], n[i - 1]]
+                                  return n
+                                })
+                              }
+                              className="rounded border border-border px-1 py-1 text-[11px] text-muted-foreground disabled:opacity-30"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              title="Remove"
+                              aria-label="Remove"
+                              onClick={() =>
+                                setBlocks((bs) =>
+                                  bs.filter((x) => x.id !== b.id)
+                                )
+                              }
+                              className="rounded border border-border px-1 py-1 text-[11px] text-destructive"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                        <div className="flex gap-1.5 pt-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setBlocks((bs) => [
+                                ...bs,
+                                {
+                                  id: nextBid(),
+                                  kind: "field",
+                                  value: "",
+                                  bold: false,
+                                  size: "md",
+                                },
+                              ])
+                            }
+                          >
+                            + Field
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setBlocks((bs) => [
+                                ...bs,
+                                {
+                                  id: nextBid(),
+                                  kind: "text",
+                                  value: "",
+                                  bold: false,
+                                  size: "md",
+                                },
+                              ])
+                            }
+                          >
+                            + Text
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <textarea
+                        aria-label="Template HTML"
+                        ref={htmlRef}
+                        value={d.template_html}
+                        onChange={(e) => set("template_html", e.target.value)}
+                        rows={9}
+                        spellCheck={false}
+                        className="w-full rounded-md border border-input bg-transparent p-2 font-mono text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      />
+                    )}
+                  </div>
+                  <Field label="Extra CSS" hint="optional">
+                    <textarea
+                      value={d.css}
+                      onChange={(e) => set("css", e.target.value)}
+                      rows={3}
+                      spellCheck={false}
+                      className="w-full rounded-md border border-input bg-transparent p-2 font-mono text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                  </Field>
+                  <FormCheckbox
+                    label="Default for this object type"
+                    checked={d.is_default}
+                    onChange={(v) => set("is_default", v)}
+                    hint="Preselected when printing labels for this type."
+                  />
+                </FormSection>
+              </FormColumn>
 
-        <FormFooter
-          onCancel={() => onOpenChange(false)}
-          submitting={save.isPending}
-          submitLabel={template ? "Save changes" : "Create template"}
-        />
+              <FormColumn>
+                <FormSection title="Preview" card>
+                  <div>
+                    <span className="mb-1 block text-[11px] text-muted-foreground">
+                      First{" "}
+                      {OBJECT_TYPES.find((o) => o.value === d.object_type)
+                        ?.label ?? d.object_type}
+                    </span>
+                    <div className="flex justify-center overflow-auto rounded-md border border-border p-3">
+                      {previewErr ? (
+                        <p className="py-6 text-center text-[12px] text-destructive">
+                          {previewErr}
+                        </p>
+                      ) : (
+                        (() => {
+                          // Scale the true-mm label down to fit the panel so a large
+                          // label (e.g. 116×71mm) can't blow out of the modal.
+                          const w = Math.max(d.width_mm, 1) * MM_PX
+                          const h = Math.max(d.height_mm, 1) * MM_PX
+                          // Fill the (wider) preview column: a bigger label renders
+                          // bigger, only scaling down past the panel's budget. Never
+                          // upscale past 1× so a tiny label doesn't balloon.
+                          const scale = Math.min(1, 460 / w, 440 / h)
+                          return (
+                            <div
+                              style={{
+                                width: w * scale,
+                                height: h * scale,
+                                overflow: "hidden",
+                                border: "1px solid var(--border)",
+                                background: "#fff",
+                              }}
+                            >
+                              <iframe
+                                title="Label preview"
+                                sandbox=""
+                                srcDoc={srcDoc}
+                                style={{
+                                  width: `${d.width_mm}mm`,
+                                  height: `${d.height_mm}mm`,
+                                  transform: `scale(${scale})`,
+                                  transformOrigin: "top left",
+                                  border: 0,
+                                  background: "#fff",
+                                }}
+                              />
+                            </div>
+                          )
+                        })()
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {d.width_mm} × {d.height_mm} mm
+                    </p>
+                  </div>
+                </FormSection>
+
+                <FormSection title="Fields" card>
+                  <div>
+                    <span className="mb-1 block text-[11px] text-muted-foreground">
+                      {mode === "simple"
+                        ? "Click to add a line"
+                        : "Click to insert"}
+                    </span>
+                    <input
+                      value={fieldSearch}
+                      onChange={(e) => setFieldSearch(e.target.value)}
+                      placeholder="Search fields…"
+                      className="mb-1 w-full rounded-md border border-input bg-transparent px-2 py-1 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <div className="flex max-h-48 flex-wrap gap-1 overflow-y-auto rounded-md border border-border p-2">
+                      {shownTokens.map((tok) => (
+                        <button
+                          key={tok}
+                          type="button"
+                          onClick={() => useField(tok)}
+                          className="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          {tok}
+                        </button>
+                      ))}
+                      {shownTokens.length === 0 && (
+                        <span className="px-1 py-1 text-[11px] text-muted-foreground">
+                          No fields match “{fieldSearch}”.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </FormSection>
+              </FormColumn>
+            </FormColumns>
+          </div>
+
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={save.isPending}
+            submitLabel={template ? "Save changes" : "Create template"}
+          />
         </form>
       </DialogContent>
     </Dialog>

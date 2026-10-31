@@ -2615,7 +2615,9 @@ a device you may not view reads **Hidden**.
 **PDF** is laid out on the server on **A4**, **A3**, **Letter** or
 **Tabloid** (landscape), a table per group with its header repeated on
 every page, under the plan's title; **Plan on the first page** puts the
-plan with its routes on top, as the Display menu draws it. **CSV** and
+plan with its routes on top, as the Display menu draws it - framed to
+what is drawn on the plan (not the whole grid), with hatches and cables
+sized for the paper so they stay crisp. **CSV** and
 **XLSX** are the same rows as a table (one line per cable in each group,
 then the totals) - the table export's files. The PDF obeys the floor-plan
 PDF's limits. Anyone who can view the plan can make it:

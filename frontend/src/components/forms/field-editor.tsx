@@ -11,6 +11,7 @@ import type { ComboboxOption } from "@/components/ui/combobox"
 import { IconPicker } from "@/components/icon-picker"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Checkbox } from "@/components/ui/checkbox"
+import { NoFieldControl } from "@/components/ui/field-control"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -249,12 +250,17 @@ export function FieldEditor({
       <Field label={f.label} hint={f.hint}>
         <div className="flex items-center gap-2">
           {keep && (
-            <Checkbox
-              checked={active}
-              disabled={disabled}
-              onCheckedChange={(v) => (v ? onChange(null) : unset())}
-              title={active ? "Will be set" : "Keep current"}
-            />
+            // The field's label names the input; the arming box is named
+            // on its own and keeps off the input's id (#461).
+            <NoFieldControl>
+              <Checkbox
+                checked={active}
+                disabled={disabled}
+                onCheckedChange={(v) => (v ? onChange(null) : unset())}
+                title={active ? "Will be set" : "Keep current"}
+                aria-label={`Set ${f.label}`}
+              />
+            </NoFieldControl>
           )}
           <Input
             type="number"
@@ -273,32 +279,34 @@ export function FieldEditor({
             placeholder={active ? "" : "Keep current"}
             disabled={off}
           />
-          <Select
-            value={byteUnit}
-            disabled={off}
-            onValueChange={(v) => {
-              const next = v as StorageUnit
-              // Re-interpret the shown number in the new unit.
-              const shown = typeof raw === "number" ? raw / factor : null
-              setByteUnit(next)
-              if (shown != null) {
-                const nf =
-                  STORAGE_UNITS.find((u) => u.value === next)?.factor ?? 1e9
-                onChange(Math.round(shown * nf))
-              }
-            }}
-          >
-            <SelectTrigger className="w-[88px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STORAGE_UNITS.map((u) => (
-                <SelectItem key={u.value} value={u.value}>
-                  {u.value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <NoFieldControl>
+            <Select
+              value={byteUnit}
+              disabled={off}
+              onValueChange={(v) => {
+                const next = v as StorageUnit
+                // Re-interpret the shown number in the new unit.
+                const shown = typeof raw === "number" ? raw / factor : null
+                setByteUnit(next)
+                if (shown != null) {
+                  const nf =
+                    STORAGE_UNITS.find((u) => u.value === next)?.factor ?? 1e9
+                  onChange(Math.round(shown * nf))
+                }
+              }}
+            >
+              <SelectTrigger aria-label="Unit" className="w-[88px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STORAGE_UNITS.map((u) => (
+                  <SelectItem key={u.value} value={u.value}>
+                    {u.value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </NoFieldControl>
         </div>
       </Field>
     )
@@ -368,14 +376,17 @@ export function FieldEditor({
     <Field label={f.label} hint={f.hint}>
       <div className="flex items-center gap-2">
         {keep && (
-          <Checkbox
-            checked={active}
-            disabled={disabled}
-            onCheckedChange={(v) =>
-              v ? onChange(f.kind === "int" ? null : "") : unset()
-            }
-            title={active ? "Will be set" : "Keep current"}
-          />
+          <NoFieldControl>
+            <Checkbox
+              checked={active}
+              disabled={disabled}
+              onCheckedChange={(v) =>
+                v ? onChange(f.kind === "int" ? null : "") : unset()
+              }
+              title={active ? "Will be set" : "Keep current"}
+              aria-label={`Set ${f.label}`}
+            />
+          </NoFieldControl>
         )}
         {suggestions && suggestions.length > 0 ? (
           <SuggestInput

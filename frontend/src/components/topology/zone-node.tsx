@@ -123,12 +123,15 @@ export function ZoneNode({ data, selected }: NodeProps) {
       >
         <div
           className={`${ZONE_DRAG_HANDLE} pointer-events-auto inline-flex max-w-full cursor-grab items-center gap-1 rounded-tl-[6px] rounded-br-md px-2 py-1 active:cursor-grabbing`}
-          style={{ background: `color-mix(in srgb, ${color} 22%, transparent)` }}
+          style={{
+            background: `color-mix(in srgb, ${color} 22%, transparent)`,
+          }}
           data-tip="Move"
           data-tip-plain=""
         >
           {editing ? (
             <input
+              aria-label="Zone name"
               ref={input}
               value={draft}
               autoFocus
