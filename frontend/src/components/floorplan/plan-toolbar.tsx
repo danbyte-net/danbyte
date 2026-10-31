@@ -67,6 +67,7 @@ export function PlanToolbar({
   onOpenSettings,
   onOpenBackground,
   onDocumentRoutes,
+  onUpdateStale,
   canUndo,
   canRedo,
   onUndo,
@@ -102,6 +103,8 @@ export function PlanToolbar({
   onOpenBackground: () => void
   /** Document routes on this plan; absent when the plan cannot. */
   onDocumentRoutes?: () => void
+  /** Route every out-of-date route again; absent when none is. */
+  onUpdateStale?: () => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -181,7 +184,11 @@ export function PlanToolbar({
             when the header is too narrow for all of them. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <BarMenuTrigger className={NARROW_ONLY}>
+            <BarMenuTrigger
+              className={
+                onDocumentRoutes || onUpdateStale ? undefined : NARROW_ONLY
+              }
+            >
               <Ellipsis /> More
             </BarMenuTrigger>
           </DropdownMenuTrigger>
@@ -201,6 +208,11 @@ export function PlanToolbar({
             {canEdit && onDocumentRoutes && (
               <DropdownMenuItem onSelect={onDocumentRoutes} disabled={isDirty}>
                 <Route /> Document routes…
+              </DropdownMenuItem>
+            )}
+            {canEdit && onUpdateStale && (
+              <DropdownMenuItem onSelect={onUpdateStale}>
+                <Route /> Update out-of-date routes…
               </DropdownMenuItem>
             )}
             {canEdit && (

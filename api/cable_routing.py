@@ -134,11 +134,13 @@ class PlanRouter:
     ``{tile_id: {"x", "y", "width"?, "height"?}}`` (tiles of this plan
     only; anything else is ignored). A preview of an unsaved draft also
     passes ``new_tiles`` (unsaved tiles, :func:`virtual_tile`), ``removed``
-    (ids of tiles the draft deletes) and ``extra_trays`` (unsaved trays,
-    :func:`virtual_tray`)."""
+    (ids of tiles the draft deletes), ``extra_trays`` (unsaved trays,
+    :func:`virtual_tray`; one with a saved tray's id is that tray as the
+    draft reshaped it) and ``removed_trays`` (ids of trays the draft
+    deletes). A stored path riding a tray the draft changed is stale."""
 
     def __init__(self, plan, *, positions=None, rules=None, new_tiles=(), removed=(),
-                 extra_trays=()):
+                 extra_trays=(), removed_trays=()):
         from core.effective_settings import cable_length_rules
 
         self.plan = plan
@@ -164,7 +166,22 @@ class PlanRouter:
             (r.x, r.y, r.width, r.height, r.plenum_mm)
             for r in plan.raised_floor_areas.all()
         ]
-        self.add_trays([*plan.trays.order_by("name", "id"), *(extra_trays or ())])
+        over = {str(t.pk): t for t in extra_trays or ()}
+        gone_trays = {str(r) for r in removed_trays or ()}
+        saved = []
+        #: Saved trays the draft reshaped or deleted.
+        self.changed_trays: set = set(gone_trays)
+        for t in plan.trays.order_by("name", "id"):
+            key = str(t.pk)
+            if key in gone_trays:
+                continue
+            draft = over.pop(key, None)
+            if draft is not None:
+                # In memory only: the preview routes through it as drawn.
+                t.points, t.level, t.elevation_mm = draft.points, draft.level, draft.elevation_mm
+                self.changed_trays.add(key)
+            saved.append(t)
+        self.add_trays([*saved, *over.values()])
         self._walls = None
         self.rules = rules or cable_length_rules(plan.tenant_id)
         self.device_tile: dict = {}
@@ -574,6 +591,10 @@ class PlanRouter:
         ``stale`` (a tray it rides changed), or an end's tile moved, gone,
         or no longer the one its device is placed by."""
         if path.stale:
+            return True
+        if self.changed_trays and any(
+            str(t) in self.changed_trays for t in path.tray_order or []
+        ):
             return True
         for leg in path.legs or []:
             for side in ("from", "to"):

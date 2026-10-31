@@ -138,6 +138,24 @@ function along(p: Pt, s: Pt, e: Pt): number | null {
   return Math.hypot(p[0] - px, p[1] - py) < 1e-4 ? t : null
 }
 
+/** Is `p` on the polyline (within a hundredth of a cell)? */
+function onRun(p: readonly number[], pts: readonly Pt[]): boolean {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [sx, sy] = pts[i]
+    const [ex, ey] = pts[i + 1]
+    const dx = ex - sx
+    const dy = ey - sy
+    const len2 = dx * dx + dy * dy
+    const t =
+      len2 < 1e-9
+        ? 0
+        : Math.max(0, Math.min(1, ((p[0] - sx) * dx + (p[1] - sy) * dy) / len2))
+    if (Math.hypot(p[0] - (sx + t * dx), p[1] - (sy + t * dy)) < 0.01)
+      return true
+  }
+  return false
+}
+
 /** Route one cable: through its trays, else an orthogonal elbow. Null when
  * an end is not on the plan or both ends share a tile. */
 export function routeOne(
@@ -295,6 +313,13 @@ export function pathRoute(
     const now = tileCentre(t)
     if (dist(now, end.at) > 1e-3) moved.push({ at: [...end.at], now })
   }
+  // A tray it rides gone, or no longer where the route enters and leaves it.
+  const trayChanged = leg.trays.some((s) => {
+    const t = trayById.get(s.id)
+    if (!t) return true
+    const tp = t.points as Pt[]
+    return !onRun(s.entry, tp) || !onRun(s.exit, tp)
+  })
   const route = finish(
     id,
     pts,
@@ -306,7 +331,7 @@ export function pathRoute(
   return {
     ...route,
     stored: true,
-    stale: !!path.stale || moved.length > 0,
+    stale: !!path.stale || moved.length > 0 || trayChanged,
     lengthMm: path.length_mm,
     moved,
   }

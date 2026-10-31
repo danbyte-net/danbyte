@@ -285,24 +285,32 @@ export function withDraftRoutes(
   return out
 }
 
+/** What of the draft a preview request carries. */
+export type DraftPlanInput = Pick<
+  CablePlanRequest,
+  "positions" | "new_tiles" | "removed_tiles" | "draft_trays" | "removed_trays"
+>
+
 /** The preview request's view of the draft: tiles placed but not saved,
- * tiles moved, tiles deleted, trays not saved. */
+ * tiles moved, tiles deleted, trays not saved - the runs kept as trays,
+ * and the plan's trays (`trays`) drawn, reshaped or deleted in the
+ * draft. */
 export function draftPlanInput({
   tiles,
   dirtyIds,
   deletedIds,
   cd,
   isTemp,
+  trays = [],
 }: {
   tiles: readonly FloorPlanTile[]
   dirtyIds: ReadonlySet<string>
   deletedIds: ReadonlySet<string>
   cd: CableDraft | undefined
   isTemp: (id: string) => boolean
-}): Pick<
-  CablePlanRequest,
-  "positions" | "new_tiles" | "removed_tiles" | "draft_trays"
-> {
+  /** The draft's trays (its structure). */
+  trays?: readonly FloorPlanTray[]
+}): DraftPlanInput {
   const out: ReturnType<typeof draftPlanInput> = {}
   const positions: NonNullable<CablePlanRequest["positions"]> = {}
   const fresh: NonNullable<CablePlanRequest["new_tiles"]> = []
@@ -327,8 +335,17 @@ export function draftPlanInput({
   if (fresh.length) out.new_tiles = fresh
   const removed = [...deletedIds].filter((d) => !d.includes(":"))
   if (removed.length) out.removed_tiles = removed
-  if (cd?.trays.length)
-    out.draft_trays = cd.trays.map((t) => ({
+  const goneTrays = [...deletedIds]
+    .filter((d) => d.startsWith("tray:"))
+    .map((d) => d.slice(5))
+    .filter((d) => !isTemp(d))
+  if (goneTrays.length) out.removed_trays = goneTrays
+  const drafted = [
+    ...trays.filter((t) => isTemp(t.id) || dirtyIds.has(t.id)),
+    ...(cd?.trays ?? []),
+  ]
+  if (drafted.length)
+    out.draft_trays = drafted.map((t) => ({
       id: t.id,
       points: t.points,
       level: t.level,

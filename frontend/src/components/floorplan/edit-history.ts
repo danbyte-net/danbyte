@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from "react"
+import { useCallback, useReducer, useRef, useState } from "react"
 import type { SetStateAction } from "react"
 
 import { EMPTY_CABLE_DRAFT } from "./cable-draft"
@@ -16,6 +16,9 @@ import type { CableDraft } from "./cable-draft"
  *
  * Saving starts a fresh history: the save gives new tiles their real ids,
  * so a step from before it would bring back a tile that no longer exists.
+ *
+ * `amend` folds an edit into the step it names (by `rev`): re-routing the
+ * cables of a move is part of the move, so one undo takes back both.
  */
 export const HISTORY_LIMIT = 100
 
@@ -36,6 +39,10 @@ export interface DraftHistory<T, TShape = unknown, TStruct = unknown> {
   future: PlanDraft<T, TShape, TStruct>[]
   /** The coalescing key of the last step. */
   step: string | null
+  /** Bumped whenever `present` changes. */
+  rev: number
+  /** What changed `present` last. */
+  last: "do" | "amend" | "undo" | "redo" | "load"
 }
 
 export type DraftMsg<T, TShape = unknown, TStruct = unknown> =
@@ -46,6 +53,13 @@ export type DraftMsg<T, TShape = unknown, TStruct = unknown> =
     }
   | { kind: "undo" }
   | { kind: "redo" }
+  /** Fold an edit into the step that left the draft at `rev`; a draft
+   * changed since takes it as a step of its own. */
+  | {
+      kind: "amend"
+      apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>
+      rev: number
+    }
   /** Close the current step: the next edit is a step of its own. */
   | { kind: "seal" }
   /** Fresh data from the server, or after a save: history forgotten. */
@@ -69,7 +83,14 @@ export function emptyDraft<T, TShape = unknown, TStruct = unknown>(
 export function initDraftHistory<T, TShape = unknown, TStruct = unknown>(
   draft: PlanDraft<T, TShape, TStruct>
 ): DraftHistory<T, TShape, TStruct> {
-  return { past: [], present: draft, future: [], step: null }
+  return {
+    past: [],
+    present: draft,
+    future: [],
+    step: null,
+    rev: 0,
+    last: "load",
+  }
 }
 
 export function draftReducer<T, TShape = unknown, TStruct = unknown>(
@@ -79,23 +100,30 @@ export function draftReducer<T, TShape = unknown, TStruct = unknown>(
   switch (m.kind) {
     case "do": {
       const next = m.apply(h.present)
-      if (
-        next === h.present ||
-        (next.tiles === h.present.tiles &&
-          next.shapes === h.present.shapes &&
-          next.structure === h.present.structure &&
-          next.dirty === h.present.dirty &&
-          next.deleted === h.present.deleted &&
-          next.cables === h.present.cables)
-      )
-        return h
+      if (unchanged(next, h.present)) return h
       if (m.step && m.step === h.step && h.past.length)
-        return { ...h, present: next, future: [] }
+        return { ...h, present: next, future: [], rev: h.rev + 1, last: "do" }
       return {
         past: [...h.past, h.present].slice(-HISTORY_LIMIT),
         present: next,
         future: [],
         step: m.step ?? null,
+        rev: h.rev + 1,
+        last: "do",
+      }
+    }
+    case "amend": {
+      if (m.rev !== h.rev || !h.past.length)
+        return draftReducer(h, { kind: "do", apply: m.apply })
+      const next = m.apply(h.present)
+      if (unchanged(next, h.present)) return h
+      return {
+        ...h,
+        present: next,
+        future: [],
+        step: null,
+        rev: h.rev + 1,
+        last: "amend",
       }
     }
     case "undo": {
@@ -106,6 +134,8 @@ export function draftReducer<T, TShape = unknown, TStruct = unknown>(
         present: prev,
         future: [h.present, ...h.future],
         step: null,
+        rev: h.rev + 1,
+        last: "undo",
       }
     }
     case "redo": {
@@ -116,13 +146,30 @@ export function draftReducer<T, TShape = unknown, TStruct = unknown>(
         present: next,
         future: h.future.slice(1),
         step: null,
+        rev: h.rev + 1,
+        last: "redo",
       }
     }
     case "seal":
       return h.step === null ? h : { ...h, step: null }
     case "load":
-      return initDraftHistory(m.draft)
+      return { ...initDraftHistory(m.draft), rev: h.rev + 1 }
   }
+}
+
+function unchanged<T, TShape, TStruct>(
+  next: PlanDraft<T, TShape, TStruct>,
+  cur: PlanDraft<T, TShape, TStruct>
+): boolean {
+  return (
+    next === cur ||
+    (next.tiles === cur.tiles &&
+      next.shapes === cur.shapes &&
+      next.structure === cur.structure &&
+      next.dirty === cur.dirty &&
+      next.deleted === cur.deleted &&
+      next.cables === cur.cables)
+  )
 }
 
 const resolve = <TState>(v: SetStateAction<TState>, prev: TState): TState =>
@@ -144,6 +191,20 @@ export interface PlanDraftApi<T, TShape = unknown, TStruct = unknown> {
   /** Edits until `endGesture` are one step (a drag). */
   beginGesture: () => void
   endGesture: () => void
+  /** A drag is under way: its step is not finished. */
+  gesturing: boolean
+  /** Bumped whenever the draft changes. */
+  rev: number
+  /** What changed the draft last. */
+  last: DraftHistory<T, TShape, TStruct>["last"]
+  /** The draft before the last step (undefined with no history). */
+  before: PlanDraft<T, TShape, TStruct> | undefined
+  /** Fold an edit into the step that left the draft at `rev` (else it is
+   * a step of its own). */
+  amend: (
+    apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>,
+    rev: number
+  ) => void
   undo: () => boolean
   redo: () => boolean
   canUndo: boolean
@@ -250,15 +311,27 @@ export function usePlanDraft<
       }),
     [edit]
   )
+  const [gesturing, setGesturing] = useState(false)
   const beginGesture = useCallback(() => {
     const t = tick.current
     t.n += 1
     t.gesture = `gesture#${t.n}`
+    setGesturing(true)
   }, [])
   const endGesture = useCallback(() => {
     tick.current.gesture = null
     send({ kind: "seal" })
+    setGesturing(false)
   }, [])
+  const amend = useCallback(
+    (
+      apply: (
+        d: PlanDraft<T, TShape, TStruct>
+      ) => PlanDraft<T, TShape, TStruct>,
+      rev: number
+    ) => send({ kind: "amend", apply, rev }),
+    []
+  )
   const undo = useCallback(() => {
     if (!latest.current.past.length) return false
     send({ kind: "undo" })
@@ -291,6 +364,11 @@ export function usePlanDraft<
     setCables,
     beginGesture,
     endGesture,
+    gesturing,
+    rev: h.rev,
+    last: h.last,
+    before: h.past.at(-1),
+    amend,
     undo,
     redo,
     canUndo: h.past.length > 0,

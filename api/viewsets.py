@@ -12172,7 +12172,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
           height?}}``), ``new_tiles`` (``[{"id", x, y, width, height,
           "link_kind", "link_id"}]``, the draft's own ids), ``removed_tiles``
           (ids) and ``draft_trays`` (``[{"id", "points", "level",
-          "elevation_mm"?}]``).
+          "elevation_mm"?}]``; one with a saved tray's id is that tray as
+          the draft reshaped it) and ``removed_trays`` (ids of saved trays
+          the draft deletes). A stored path riding a tray the draft changed
+          reads ``stale``.
         - routing: ``tray_ids`` routes through only those trays;
           ``choices`` (``{cable_id: {"via": "auto"|"trays"|"suggest"|
           "direct", "tray_ids"?}}``) per cable; ``suggest_runs`` suggests a
@@ -12241,10 +12244,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not isinstance(removed, list):
             raise ValidationError({"removed_tiles": "A list of tile ids."})
         draft_trays = self._draft_trays(body.get("draft_trays"), ox, oy)
+        removed_trays = body.get("removed_trays") or []
+        if not isinstance(removed_trays, list) or not all(
+            isinstance(t, str) for t in removed_trays
+        ):
+            raise ValidationError({"removed_trays": "A list of tray ids."})
 
         router = PlanRouter(
             plan, positions=positions, new_tiles=new_tiles, removed=removed,
-            extra_trays=draft_trays,
+            extra_trays=draft_trays, removed_trays=removed_trays,
         )
         ids = body.get("cable_ids")
         objects = body.get("objects")
