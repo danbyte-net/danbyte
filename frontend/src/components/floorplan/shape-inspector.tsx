@@ -417,7 +417,10 @@ export function AreaInspector({
   onLinkColour,
   shapes = [],
   onBackLabel,
+  walls,
 }: {
+  /** Its linked walls: how many, Select and Unlink. */
+  walls?: React.ReactNode
   plan: FloorPlan
   area: AreaShape
   onChange: Patch
@@ -475,6 +478,7 @@ export function AreaInspector({
         onRestack={onRestack}
         onDelete={onDelete}
       />
+      {walls}
       <Field label="Stands for">
         <SegmentedTabs<LinkKind>
           value={link}

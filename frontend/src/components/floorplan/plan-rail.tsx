@@ -23,7 +23,10 @@ export function PlanRail({
   areas,
   tileTypes,
   roles,
+  onDeleteRow,
 }: {
+  /** A wall's, tray's or raised floor's row deleted. */
+  onDeleteRow?: (id: string) => void
   plan: FloorPlan
   ed: PlanEditState
   trays: FloorPlanTray[]
@@ -61,6 +64,7 @@ export function PlanRail({
         editMode={trayEditMode}
         onToggleEdit={() => setTrayEditMode((v) => !v)}
         onSelectTray={setSelectedTrayId}
+        onDeleteTray={onDeleteRow}
         onStartDraw={() => {
           setSelectedTrayId(null)
           setTrayEditMode(false)
@@ -102,6 +106,8 @@ export function PlanRail({
           setDrawPoints([])
         }}
         onCancelWallDraw={() => setDrawPoints(null)}
+        onDeleteArea={onDeleteRow}
+        onDeleteWall={onDeleteRow}
       />
     )
   // Layout: the tile palette is the Tiles tool's; the drawing tools and

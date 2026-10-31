@@ -95,8 +95,9 @@ function labelBody(
   }
 }
 
-/** A wall as the bulk endpoint takes it. */
-function wallBody(w: WallRow) {
+/** A wall as the bulk endpoint takes it; a link to an area no longer in the
+ * draft goes. */
+function wallBody(w: WallRow, areaIds?: ReadonlySet<string>) {
   return {
     label: w.label,
     points: w.points,
@@ -104,6 +105,10 @@ function wallBody(w: WallRow) {
     thickness_mm: w.thickness_mm ?? null,
     color: w.color,
     openings: w.openings,
+    source_area_id:
+      w.source_area && (!areaIds || areaIds.has(w.source_area))
+        ? w.source_area
+        : null,
   }
 }
 
@@ -548,7 +553,9 @@ export function useTileEdits({
         trayBody(t, originOf.get(t.id))
       )
       const payload: FloorPlanBulkPayload = {
-        walls: part(walls, "wall", wallBody),
+        walls: part(walls, "wall", (w) =>
+          wallBody(w, new Set(areas.map((a) => a.id)))
+        ),
         raised_floors: part(raised, "raised_floor", raisedBody),
         trays: {
           // New trays carry their draft id as the key a route may name.
@@ -579,7 +586,10 @@ export function useTileEdits({
           delete: gone.filter((g) => !g.includes(":")).map(del),
         },
         areas: {
-          create: areas.filter((a) => isTemp(a.id)).map(areaBody),
+          // A new area carries its draft id: a wall linked to it names it.
+          create: areas
+            .filter((a) => isTemp(a.id))
+            .map((a) => ({ key: a.id, ...areaBody(a) })),
           update: areas
             .filter((a) => !isTemp(a.id) && dirtyIds.has(a.id))
             .map((a) => ({ id: a.id, ...v(a.id), ...areaBody(a) })),

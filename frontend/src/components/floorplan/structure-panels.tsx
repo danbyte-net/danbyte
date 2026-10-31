@@ -1,4 +1,6 @@
 import { Trash2 } from "lucide-react"
+
+import { BarIconButton } from "@/components/map-toolbar"
 import { useState } from "react"
 
 import type {
@@ -20,6 +22,27 @@ import { cn } from "@/lib/utils"
 
 import { WALL_DEFAULT_MM } from "./structure"
 
+/** A row's delete in the walls, trays and raised-floor lists. */
+export function RowDelete({
+  label,
+  onClick,
+}: {
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <BarIconButton
+      label={label}
+      tipSide="right"
+      destructive
+      className="size-6 shrink-0 border-transparent bg-transparent shadow-none [&_svg]:size-3.5"
+      onClick={onClick}
+    >
+      <Trash2 />
+    </BarIconButton>
+  )
+}
+
 /** Structure-mode left rail - raised-floor areas + walls, each with its own
  * draw control. One rail, two catalogs: both are room construction. */
 export function StructureRail({
@@ -35,7 +58,12 @@ export function StructureRail({
   onSelectWall,
   onStartWallDraw,
   onCancelWallDraw,
+  onDeleteArea,
+  onDeleteWall,
 }: {
+  /** A row's delete. */
+  onDeleteArea?: (id: string) => void
+  onDeleteWall?: (id: string) => void
   areas: RaisedFloorArea[]
   selectedAreaId: string | null
   drawing: boolean
@@ -85,26 +113,38 @@ export function StructureRail({
           </p>
         )}
         {areas.map((a) => (
-          <button
+          <div
             key={a.id}
-            type="button"
-            onClick={() => onSelectArea(a.id === selectedAreaId ? null : a.id)}
             className={cn(
-              "flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-xs hover:bg-muted/60",
+              "flex items-center rounded hover:bg-muted/60",
               a.id === selectedAreaId && "bg-muted"
             )}
           >
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-[3px] border border-dashed"
-              style={{ borderColor: a.color || "#71717a" }}
-            />
-            <span className="min-w-0 flex-1 truncate">
-              {a.label || "Raised floor"}
-            </span>
-            <span className="num text-[10px] text-muted-foreground">
-              {a.width}×{a.height} · {a.plenum_mm} mm
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                onSelectArea(a.id === selectedAreaId ? null : a.id)
+              }
+              className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1.5 text-left text-xs"
+            >
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-[3px] border border-dashed"
+                style={{ borderColor: a.color || "#71717a" }}
+              />
+              <span className="min-w-0 flex-1 truncate">
+                {a.label || "Raised floor"}
+              </span>
+              <span className="num text-[10px] text-muted-foreground">
+                {a.width}×{a.height} · {a.plenum_mm} mm
+              </span>
+            </button>
+            {onDeleteArea && (
+              <RowDelete
+                label={`Delete ${a.label || "raised floor"}`}
+                onClick={() => onDeleteArea(a.id)}
+              />
+            )}
+          </div>
         ))}
 
         <div className="mt-2 flex items-center justify-between px-1.5 pt-2 pb-1">
@@ -145,27 +185,41 @@ export function StructureRail({
           </p>
         )}
         {walls.map((w) => (
-          <button
+          <div
             key={w.id}
-            type="button"
-            onClick={() => onSelectWall(w.id === selectedWallId ? null : w.id)}
             className={cn(
-              "flex w-full items-center gap-2 rounded px-1.5 py-1.5 text-left text-xs hover:bg-muted/60",
+              "flex items-center rounded hover:bg-muted/60",
               w.id === selectedWallId && "bg-muted"
             )}
           >
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-              style={{ background: w.color || "#52525b" }}
-            />
-            <span className="min-w-0 flex-1 truncate">{w.label || "Wall"}</span>
-            <span className="num text-[10px] text-muted-foreground">
-              {Math.max(0, w.points.length - 1)} seg
-              {w.openings.length > 0
-                ? ` · ${w.openings.length} door${w.openings.length === 1 ? "" : "s"}`
-                : ""}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                onSelectWall(w.id === selectedWallId ? null : w.id)
+              }
+              className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1.5 text-left text-xs"
+            >
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                style={{ background: w.color || "#52525b" }}
+              />
+              <span className="min-w-0 flex-1 truncate">
+                {w.label || "Wall"}
+              </span>
+              <span className="num text-[10px] text-muted-foreground">
+                {Math.max(0, w.points.length - 1)} seg
+                {w.openings.length > 0
+                  ? ` · ${w.openings.length} door${w.openings.length === 1 ? "" : "s"}`
+                  : ""}
+              </span>
+            </button>
+            {onDeleteWall && (
+              <RowDelete
+                label={`Delete ${w.label || "wall"}`}
+                onClick={() => onDeleteWall(w.id)}
+              />
+            )}
+          </div>
         ))}
       </div>
     </aside>
@@ -184,7 +238,10 @@ export function WallInspector({
   onSelectDoor,
   onPatch,
   onDelete,
+  link,
 }: {
+  /** The area it is linked to, with Unlink. */
+  link?: React.ReactNode
   wall: FloorPlanWall
   cellMM: number
   ceilingMM: number
@@ -223,6 +280,7 @@ export function WallInspector({
       <div className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
         Wall
       </div>
+      {link}
       <label className="grid gap-1 text-xs">
         <span className="text-muted-foreground">Label</span>
         <Input

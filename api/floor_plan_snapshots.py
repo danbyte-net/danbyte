@@ -747,14 +747,19 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
         if c == "edge":
             whole.append({"kind": "tile", "id": str(t.pk), "name": name})
 
+    # An area copied whole -> its copy: a wall copied whole stays linked to
+    # it (a clipped area or wall no longer follows the other).
+    area_ids: dict = {}
     for a in src.areas.order_by("z", "created_at", "id"):
         c = classify("areas", a, crop)
         if c is None:
             continue
         name = _name(a)
         if c == "in":
+            old_pk = a.pk
             _new(a, dst, x=a.x + dx, y=a.y + dy,
                  points=_shift_points(a.points, dx, dy) if a.points else a.points)
+            area_ids[old_pk] = a.pk
         elif a.shape == "polygon":
             pts = clip_polygon(a.points, crop)
             if len(pts) < 3:
@@ -792,7 +797,8 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
         if c is None:
             continue
         if c == "in":
-            _new(wall, dst, points=_shift_points(wall.points, dx, dy))
+            _new(wall, dst, points=_shift_points(wall.points, dx, dy),
+                 source_area_id=area_ids.get(wall.source_area_id))
             continue
         openings = [o for o in (wall.openings or []) if isinstance(o, dict)]
         for run in clip_polyline(wall.points, crop):
@@ -809,7 +815,8 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
                         kept.append({**o, "seg": j, "from": _r(max(a, 0)),
                                      "to": _r(min(b, length))})
             pts = [[_r(x + dx), _r(y + dy)] for x, y in run["points"]]
-            _new(wall, dst, points=pts, openings=kept)
+            # A cut wall no longer follows its area's outline.
+            _new(wall, dst, points=pts, openings=kept, source_area_id=None)
 
     for tray in src.trays.order_by("name", "id"):
         c = classify("trays", tray, crop)

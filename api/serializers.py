@@ -342,6 +342,7 @@ _PARENT_TENANT_PATH = {
     "CoolingIntakeTemplate": "device_type__tenant",
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
+    "FloorPlanArea": "floor_plan__tenant",
 }
 
 
@@ -11341,6 +11342,33 @@ def validate_lattice_points(v):
     return [[round(p[0] * 2) / 2, round(p[1] * 2) / 2] for p in v]
 
 
+def validate_plan_points(v):
+    """A wall's points: 2–256 [x, y] pairs inside the grid, at any place to
+    0.001 cell - so a wall made from an area's outline (a turned
+    rectangle, a polygon) follows it exactly. Drawn by hand they still land
+    on the half-cell lattice; that is the editor's snap, not a rule."""
+    if not isinstance(v, list) or not (2 <= len(v) <= 256):
+        raise serializers.ValidationError(
+            "points must be a list of 2–256 [x, y] pairs"
+        )
+    out = []
+    for p in v:
+        if (
+            not isinstance(p, (list, tuple))
+            or len(p) != 2
+            or not all(
+                isinstance(n, (int, float)) and not isinstance(n, bool)
+                and math.isfinite(n) for n in p
+            )
+            or not all(0 <= n <= 512 for n in p)
+        ):
+            raise serializers.ValidationError(
+                "each point must be an [x, y] pair within the grid"
+            )
+        out.append([_r3(p[0]), _r3(p[1])])
+    return out
+
+
 class _ViewableCableField(TenantScopedPrimaryKeyRelatedField):
     """A cable the writer may view - one ``/api/cables/`` would list them.
     Any other id answers as if it did not exist."""
@@ -11507,12 +11535,28 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     )
     points = serializers.JSONField(required=False)
     openings = serializers.JSONField(required=False)
+    # The area the wall was made from, while linked (``null`` unlinks). An
+    # area of the same plan, in the writer's tenant.
+    source_area = serializers.PrimaryKeyRelatedField(read_only=True)
+    source_area_id = TenantScopedPrimaryKeyRelatedField(
+        source="source_area", queryset=FloorPlanArea.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     def validate_points(self, v):
-        return validate_lattice_points(v)
+        return validate_plan_points(v)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        area = attrs.get("source_area")
+        if area is not None:
+            plan = attrs.get("floor_plan") or (
+                self.instance.floor_plan if self.instance else None
+            ) or self.context.get("floor_plan")
+            if plan is None or area.floor_plan_id != plan.pk:
+                raise serializers.ValidationError(
+                    {"source_area_id": "An area of the wall's own plan."}
+                )
         points = attrs.get(
             "points", self.instance.points if self.instance else None
         )
@@ -11585,8 +11629,9 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanWall
         fields = ["id", "floor_plan_id", "label", "points", "height_mm",
-                  "thickness_mm", "color", "openings", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+                  "thickness_mm", "color", "openings", "source_area",
+                  "source_area_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "source_area", "created_at", "updated_at"]
 
 
 class FloorPlanRaisedFloorAreaSerializer(NumIdModelSerializer):

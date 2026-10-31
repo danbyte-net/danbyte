@@ -1011,8 +1011,8 @@ colour; labels are 2D only.
 | `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `plate_color` (the same tokens, `""` the background), `z`, `locked`. Reads `pair_id`: on a back label, the area or label whose Back button made it. A back label made for a live view is shown only in that view's `contents/`. |
 | Opens (areas and labels) | Write `opens_id` (a floor plan of the tenant you may view, not the shape's own; `null` clears it; left out, it is kept). Reads `opens` (`id`, `name`, `stack_name`, `kind`, `can_change`) - `null` with `opens_hidden: true` when you may not view the target - and `back_label` (`id`, `floor_plan_id`, `floor_plan_name`, `text`) or `null`. |
 | `POST /api/floor-plans/<id>/back-link/` | A shape's Back button: `{"kind": "area" \| "label", "id", "on": true, "target_id", "text"}` makes the back label on `target_id` (or moves it there, or renames it); `"on": false` deletes it. Needs `floorplan · change` on this plan and on the target (a live view's source too). Answers `{"back_label"}`. |
-| `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}, "walls": {...}, "raised_floors": {...}, "trays": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. A new tray in `trays.create` carries a `key` (the draft's id for it) and may carry `cable_ids`; a tray update writes its cables only when it carries `cable_ids`. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels", "walls", "raised_floors", "tray_rows"}` - the plan's rows afterwards (`trays` lists the new trays' keys and ids). Needs `floorplan · change`, and for walls, raised floors and trays the add, change or delete permission their own endpoints ask for. `tiles/bulk/` stays for tiles alone. |
-| Walls | `/api/floor-plan-walls/` writes `points`, `label`, `color`, `height_mm`, `thickness_mm` (20-2000, `null` the standard 100 mm) and `openings`: `[{"seg", "from", "to", "height_mm", "hinge"?, "side"?}]` - spans along segment `seg` in cells, inside it and not overlapping; `hinge` is `start` or `end` and `side` `left` or `right` (both left out: a plain opening). |
+| `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}, "walls": {...}, "raised_floors": {...}, "trays": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. A new area in `areas.create` may carry a `key` (the draft's id for it), which a wall in the same save names as its `source_area_id`. A new tray in `trays.create` carries a `key` (the draft's id for it) and may carry `cable_ids`; a tray update writes its cables only when it carries `cable_ids`. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels", "walls", "raised_floors", "tray_rows"}` - the plan's rows afterwards (`trays` lists the new trays' keys and ids). Needs `floorplan · change`, and for walls, raised floors and trays the add, change or delete permission their own endpoints ask for. `tiles/bulk/` stays for tiles alone. |
+| Walls | `/api/floor-plan-walls/` writes `points` (2-256 `[x, y]` pairs in cells, anywhere within the grid, kept to 0.001 cell), `label`, `color`, `height_mm`, `thickness_mm` (20-2000, `null` the standard 100 mm), `source_area_id` (an area of the same plan the wall is [linked](#linked-walls) to, `null` unlinks; read back as `source_area`) and `openings`: `[{"seg", "from", "to", "height_mm", "hinge"?, "side"?}]` - spans along segment `seg` in cells, inside it and not overlapping; `hinge` is `start` or `end` and `side` `left` or `right` (both left out: a plain opening). |
 
 A room must be one of the plan's location's rooms, or of a location nested
 under it; a location must be the plan's or nested under it (on a site-wide
@@ -1183,7 +1183,9 @@ areas and labels), **Lock** (areas and labels), **Link room** (areas),
 **Add walls around this** (areas; **Add walls around these** with several
 picked) and **Delete**. A selected wall carries **Add door** and **Delete**, a
 door **Flip swing** and **Delete**, a tray or raised floor **Delete**, and two
-walls or trays picked that touch **Join**.
+walls or trays picked that touch **Join**. Each row of the walls and
+raised-floors list (the walls tool) and of the trays list (the trays tool)
+has its own **Delete** too.
 
 ### An empty floor
 
@@ -1427,9 +1429,11 @@ everything else.
 
 ## Walls & doors (Structure mode)
 
-The same tool also draws the **room shell**: walls as polylines on the
-same half-cell lattice trays snap to, so a wall can run along tile
-boundaries or straight down a tile's centerline. Click **Draw wall**, click
+The same tool also draws the **room shell**: walls as polylines. Drawn by
+hand their points snap to the same half-cell lattice trays use, so a wall
+can run along tile boundaries or straight down a tile's centerline; a wall
+made from a room's outline follows it exactly, and with ++alt++ held a
+point goes exactly where you put it. Click **Draw wall**, click
 corners (drawing magnetically snaps to existing walls, so rooms chain
 cleanly), and double-click or press ++enter++ to finish - the wall joins
 the plan's draft and its inspector opens. Or let a room draw its own:
@@ -1437,6 +1441,8 @@ the plan's draft and its inspector opens. Or let a room draw its own:
 
 A selected wall's inspector holds its numbers:
 
+- **Linked to** - the area the wall was made from, with **Unlink** (see
+  [linked walls](#linked-walls)).
 - **Label, color** - cosmetic; the default wall follows the theme.
 - **Height (mm)** - blank means full height, i.e. the plan's ceiling.
   A half wall is just a wall with a height.
@@ -1460,8 +1466,42 @@ a free-standing room gets one closed wall. Ctrl/⌘-click more areas to pick
 them together; the toolbar and the menu then offer **Add walls around these**,
 and an edge two rooms share is walled once. A stretch of outline a wall
 already runs along (in line with it, within a quarter of a cell) is left
-out, so running it twice adds nothing. The corners land on the half-cell
-lattice walls use. All of it is one undo step.
+out, so running it twice adds nothing. The walls sit exactly on the
+outline - a turned rectangle's or a polygon's corners included, to a
+thousandth of a cell - not on the lattice. All of it is one undo step.
+
+Each wall is named after its area - `<area> walls`, or `<area> walls 1`,
+`2`… when the outline gave several stretches - using the area's label, else
+its room's or location's name. A card over the plan then asks once:
+**Link to** *its name*, on by default. Turn it off to keep the walls as plain
+walls.
+
+### Linked walls
+
+A wall linked to an area (its room's shell, say) keeps up with it:
+
+- **Moving the area** moves its linked walls and their doors with it, in
+  the same undo step.
+- **Reshaping or turning the area** leaves the walls where they are and
+  offers **Update walls** on a card over the plan while the area is
+  selected. It rebuilds the walls along the new outline - the same walls,
+  with their labels, heights, thickness and colour - and keeps each door at
+  its place along its stretch (the same share of the run's length, slid
+  inside its segment at a corner). Doors that no longer fit are listed
+  first and go only on **Update and drop**. Dismiss the card to leave the
+  walls as they are.
+- **Editing a linked wall by hand** keeps the link. A move of the area
+  still carries the wall as edited; the next **Update walls** (offered
+  because the wall is off the outline) rebuilds it along the outline again.
+- **Deleting the area** asks whether to delete its linked walls too
+  (checked by default); kept walls are unlinked.
+
+The area's inspector shows **Walls: N linked** with **Select** (picks them
+with the walls tool) and **Unlink**; a wall's inspector shows **Linked to**
+*its area* with **Unlink**. A clone of the plan keeps the links on the copy,
+and so does an [independent copy](#independent-copy) for an area and wall
+copied whole; a wall or area cut at the rectangle's edge is copied
+unlinked.
 
 ### Doors
 
@@ -1503,8 +1543,9 @@ middle of each segment:
   **Join walls** and **Delete wall**; right-click a point for **Remove point**.
 
 Dragged points snap to the half-cell lattice and to other walls' points and
-edges, and line up with their points along a dashed guide; ++alt++ keeps
-them on the lattice alone. The arrows move a selected wall half a cell and
+edges (onto the edge itself, when the wall is off the lattice), and line up
+with their points along a dashed guide; ++alt++ places them exactly where
+the pointer is, with no snap. The arrows move a selected wall half a cell and
 ++delete++ removes it. Hovering a handle names what it does.
 
 The 2D canvas draws walls in **every mode** - solid spans with a dashed

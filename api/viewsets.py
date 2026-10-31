@@ -11436,8 +11436,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 )
             dst.save()
             dst.tags.set(tags_of(src))
-            for rel in ("tiles", "trays", "raised_floor_areas", "walls", "areas", "labels"):
+            # Areas before walls: a wall made from an area stays linked to
+            # the clone's copy of it.
+            area_ids: dict = {}
+            for rel in ("tiles", "trays", "raised_floor_areas", "areas", "walls", "labels"):
                 for obj in getattr(src, rel).all():
+                    old_pk = obj.pk
                     obj.pk = None
                     obj.id = None
                     obj.floor_plan = dst
@@ -11445,7 +11449,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         # The clone's labels open what the original's do,
                         # but none is another plan's back label.
                         obj.pair_id = None
+                    if rel == "walls":
+                        obj.source_area_id = area_ids.get(obj.source_area_id)
                     obj.save()
+                    if rel == "areas":
+                        area_ids[old_pk] = obj.pk
             _clone_drawing(src, dst)
         return Response(
             FloorPlanSerializer(dst, context=self.get_serializer_context()).data,
@@ -13082,6 +13090,16 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         ctx = {"request": request, "floor_plan": plan}
         written = []
+        # A new area's draft key -> its id: a wall saved with it may name
+        # the key as its ``source_area_id``.
+        area_keys: dict[str, str] = {}
+
+        def linked(body):
+            ref = body.get("source_area_id")
+            if isinstance(ref, str) and ref in area_keys:
+                body = {**body, "source_area_id": area_keys[ref]}
+            return body
+
         may = self._bulk_row_permission(request, self._tenant_or_403())
         via = cause(f"Through the view {view.name}"[:255]) if crop is not None \
             else contextlib.nullcontext()
@@ -13120,6 +13138,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     if obj is None:
                         raise ValidationError({key: f"Unknown {noun} {item['id']}."})
                     body = {k: v for k, v in _on_plan(item).items() if k != "version"}
+                    if key == "walls":
+                        body = linked(body)
                     may(key, "change", obj)
                     ser = ser_cls(obj, data=body, partial=True, context=ctx)
                     ser.is_valid(raise_exception=True)
@@ -13129,11 +13149,17 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 for item in specs[key]["create"]:
                     if not isinstance(item, dict):
                         raise ValidationError({key: "Each create is an object."})
-                    ser = ser_cls(data=_on_plan(item), context=ctx)
+                    body = _on_plan(item)
+                    draft_key = body.pop("key", None) if key == "areas" else None
+                    if key == "walls":
+                        body = linked(body)
+                    ser = ser_cls(data=body, context=ctx)
                     ser.is_valid(raise_exception=True)
                     saved = ser.save(floor_plan=plan)
                     may(key, "add", saved)
                     written.append((key, saved))
+                    if isinstance(draft_key, str) and draft_key:
+                        area_keys[draft_key] = str(saved.pk)
             if crop is not None:
                 for key, obj in written:
                     if snaps.classify(key, obj, crop) != "in":
