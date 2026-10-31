@@ -40,6 +40,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from core.redaction import redact_secrets
 from core.ssrf import SSRFError, safe_request
 
 from . import status as st
@@ -96,7 +97,6 @@ class PrtgUnreachable(PrtgError):
 #: escaped backslash followed by a letter intact.
 _ESCAPE = re.compile(r'\\(["\\/bfnrt]|u[0-9a-fA-F]{4})?')
 _TAG = re.compile(r"<[^>]+>")
-_APITOKEN = re.compile(r"(?i)(apitoken=)[^&\s'\"]+")
 _NUMBER = re.compile(r"^\s*([<>]?\s*-?[\d.,\s]*\d)\s*(.*?)\s*$")
 
 
@@ -348,11 +348,9 @@ class PrtgClient:
 
     def redact(self, text) -> str:
         """``text`` with the API key replaced. Transport errors quote the URL,
-        and the classic key is in its query string."""
-        text = str(text or "")
-        if self.api_key:
-            text = text.replace(self.api_key, "REDACTED")
-        return _APITOKEN.sub(r"\1REDACTED", text)
+        the classic key is in its query string, and a proxy or server error
+        page may repeat that URL (#459)."""
+        return redact_secrets(text, self.api_key)
 
     def _request(self, path: str, params: dict | None = None, *,
                  base: str | None = None, v2: bool = False):
@@ -374,21 +372,21 @@ class PrtgClient:
     def _check(self, resp, *, write: bool = False):
         code = resp.status_code
         if code in (401, 403):
-            raise PrtgUnauthorized(
+            raise PrtgUnauthorized(self.redact(
                 f"PRTG refused the API key ({_error_sentence(resp.text) or code})"
-            )
+            ))
         if code in (301, 302, 303, 307, 308):
             location = resp.headers.get("Location", "")
             # A refused key on an .htm call redirects to the login page.
             if "login" in location.lower() or "/index.htm" in location.lower():
                 raise PrtgUnauthorized("PRTG refused the API key (redirected to sign-in)")
             if "error" in location.lower():
-                raise PrtgError(f"PRTG refused the call ({self.redact(location[:200])})")
+                raise PrtgError(f"PRTG refused the call ({self.redact(location)[:200]})")
             if write:
                 return resp
-            raise PrtgError(f"PRTG answered with a redirect to {self.redact(location[:200])}")
+            raise PrtgError(f"PRTG answered with a redirect to {self.redact(location)[:200]}")
         if code != 200:
-            raise PrtgError(f"HTTP {code}: {_error_sentence(resp.text)}")
+            raise PrtgError(self.redact(f"HTTP {code}: {_error_sentence(resp.text)}"))
         return resp
 
     def get_json(self, path: str, params: dict | None = None, *, base: str | None = None):
@@ -555,7 +553,7 @@ class PrtgClient:
         except ET.ParseError as exc:
             raise PrtgError("PRTG returned history in an unexpected shape.") from exc
         if root.tag == "prtg" and root.find("error") is not None:
-            raise PrtgError(_error_sentence(resp.text))
+            raise PrtgError(self.redact(_error_sentence(resp.text)))
         out = []
         for item in root.iter("item"):
             end_at = ole_to_datetime((item.findtext("datetime_raw") or "").strip())
