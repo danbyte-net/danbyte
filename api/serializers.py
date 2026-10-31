@@ -609,6 +609,28 @@ class TaggableSerializerMixin:
         return instance
 
 
+def resolve_tag_ids(request, value, field: str = "tag_ids") -> list:
+    """Tag ids from a raw payload resolved to the Tag rows the request may use.
+
+    For the hand-written write paths (bulk create, bulk update) that skip a
+    serializer: the same ``TenantScopedPrimaryKeyRelatedField`` the
+    ``tag_ids`` field uses, so the same rules apply - ids only, the active
+    tenant's tags plus the global ones, site-local tags fenced for site-scoped
+    users - and the same 400 field errors. Never creates a tag: the tag
+    manager would take a string as a new tag's name."""
+    from rest_framework.exceptions import ValidationError
+
+    class _Tags(serializers.Serializer):
+        tag_ids = TenantScopedPrimaryKeyRelatedField(
+            queryset=Tag.objects.all(), many=True, allow_empty=True,
+        )
+
+    ser = _Tags(data={"tag_ids": value}, context={"request": request})
+    if not ser.is_valid():
+        raise ValidationError({field: ser.errors["tag_ids"]})
+    return ser.validated_data["tag_ids"]
+
+
 class CustomFieldsSerializerMixin:
     """Field-level validation of ``custom_fields`` against the active tenant's
     custom-field definitions. Subclasses set ``cf_model`` to the model slug
@@ -11939,6 +11961,15 @@ class _OpensMixin:
     def _check_opens(self, attrs, own_plan=None):
         target = attrs.get("opens")
         if target is None:
+            return
+        inst = getattr(self, "instance", None)
+        # A save that keeps the link (moving or restyling the shape) is never
+        # refused; a view's own back button lives on the view's source and
+        # opens that very plan.
+        if inst is not None and not isinstance(inst, (list, tuple)) and (
+            getattr(inst, "opens_id", None) == target.pk
+            or getattr(inst, "shown_in_id", None)
+        ):
             return
         if own_plan is not None and target.pk == own_plan.pk:
             raise serializers.ValidationError(

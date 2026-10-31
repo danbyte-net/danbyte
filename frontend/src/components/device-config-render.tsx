@@ -171,7 +171,10 @@ export function DeviceConfigRender({
               </p>
             )}
             {result?.kind === "error" && (
-              <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+              <pre
+                tabIndex={0}
+                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+              >
                 ⚠ {result.message}
               </pre>
             )}
@@ -239,7 +242,10 @@ function RenderedFile({ file }: { file: DeviceRenderFile }) {
           />
         )}
       </div>
-      <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+      <pre
+        tabIndex={0}
+        className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+      >
         {showDiff
           ? file.diff
               .split("\n")

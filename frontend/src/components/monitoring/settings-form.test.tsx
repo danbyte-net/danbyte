@@ -245,3 +245,40 @@ describe("MonitoringSettingsForm - Poll devices every", () => {
     })
   })
 })
+
+describe("MonitoringSettingsForm - accessible names (#461)", () => {
+  it("names every input and select by its visible label", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MonitoringSettingsForm />
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText("MAC tracking")).toBeTruthy()
+    // The fields axe flagged: NumberFields and a CadenceSelect.
+    expect(
+      screen.getByRole("spinbutton", { name: "Stale after N scans" })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("spinbutton", { name: "MACs shown per port" })
+    ).toBeTruthy()
+    expect(
+      screen.getByRole("combobox", { name: /^Default check interval/ })
+    ).toBeTruthy()
+    // And nothing on the form is left without a name.
+    for (const role of [
+      "button",
+      "combobox",
+      "spinbutton",
+      "textbox",
+      "checkbox",
+      "switch",
+    ]) {
+      expect(
+        screen.queryAllByRole(role, { name: "" }).map((el) => el.outerHTML)
+      ).toEqual([])
+    }
+  })
+})

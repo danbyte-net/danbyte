@@ -267,7 +267,10 @@ function TemplateOverview({ template: t }: { template: ExportTemplate }) {
           // Same treatment as a config context's data blob: scrolls in its own
           // box, because a Jinja template can be long *and* wide and neither
           // may push the page into a horizontal scroll.
-          <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+          <pre
+            tabIndex={0}
+            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+          >
             {t.template_code}
           </pre>
         ) : (

@@ -394,8 +394,17 @@ export const Route = createFileRoute("/topology/")({
     }
     const view = str(s.view)
     if (view) out.view = view
-    for (const k of ["site", "location", "role", "status", "tag", "q",
-      "vlangroup", "device", "levels"] as const) {
+    for (const k of [
+      "site",
+      "location",
+      "role",
+      "status",
+      "tag",
+      "q",
+      "vlangroup",
+      "device",
+      "levels",
+    ] as const) {
       const v = str(s[k])
       if (v) out[k] = v
     }
@@ -893,8 +902,7 @@ function TopologyPage() {
       oneOf(storedDiagram?.line, LINE_TYPES) ??
       retiredLine ??
       "straight",
-    labels:
-      labelsOf(vf.diagram?.labels) ??
+    labels: labelsOf(vf.diagram?.labels) ??
       labelsOf(storedDiagram?.labels) ?? [...DEFAULT_LABELS],
     // Virtual chassis stack on a map not arranged by hand yet; a map
     // arranged before stacks keeps its arrangement until they are turned
@@ -1616,8 +1624,7 @@ function TopologyPage() {
   const drill = useMemo(() => {
     if (!drilled) return null
     const kind = groupBy === "location" ? "location" : "site"
-    const from =
-      kind === "site" ? sites.data?.results : locations.data?.results
+    const from = kind === "site" ? sites.data?.results : locations.data?.results
     return {
       kind: kind as "site" | "location",
       id: drillId,
@@ -2047,9 +2054,7 @@ function TopologyPage() {
   /** The applied view is no longer what it saved - the URL carries at least
    * one override on top of `?view=` (the Find box aside), or the map itself
    * was edited. */
-  const edited =
-    viewId !== "none" &&
-    (doc.dirty || overridesView(urlSearch))
+  const edited = viewId !== "none" && (doc.dirty || overridesView(urlSearch))
   /** A view's own document is on screen (not the blank one shown while it
    * loads) - saving before that would write an empty map over it. */
   const docReady =
@@ -2228,8 +2233,7 @@ function TopologyPage() {
     if (customKey === null) return new Set(onMap.map((n) => n.id))
     // A hand-picked map's set, and the members of the chassis placed on it.
     const out = new Set(customKey.split(",").filter(Boolean))
-    for (const n of onMap)
-      if (n.vc && placedChassisSet.has(n.vc)) out.add(n.id)
+    for (const n of onMap) if (n.vc && placedChassisSet.has(n.vc)) out.add(n.id)
     return out
   }, [customKey, q.data, placedChassisSet])
   /** Which kind the device list shows on the Diagram. */
@@ -3144,7 +3148,7 @@ function TopologyPage() {
                   align="end"
                   className="max-h-(--radix-popover-content-available-height) w-64 space-y-3 overflow-y-auto p-3"
                 >
-                  <PopoverField label="Group by">
+                  <PopoverField label="Group by" group>
                     <SegmentedTabs<GroupBy>
                       value={groupBy}
                       onValueChange={(v) => {
@@ -3169,7 +3173,7 @@ function TopologyPage() {
                     />
                   </PopoverField>
                   {isDiagram && !grouped && (
-                    <PopoverField label="Draw as">
+                    <PopoverField label="Draw as" group>
                       <SegmentedTabs<FaceParam>
                         value={diagramFace}
                         onValueChange={setDiagramFace}
@@ -3181,7 +3185,7 @@ function TopologyPage() {
                     </PopoverField>
                   )}
                   {isDiagram && !grouped && photos && (
-                    <PopoverField label="Cables to">
+                    <PopoverField label="Cables to" group>
                       <SegmentedTabs<AnchorParam>
                         value={diagramAnchor}
                         onValueChange={setDiagramAnchor}
@@ -3193,7 +3197,7 @@ function TopologyPage() {
                     </PopoverField>
                   )}
                   {isDiagram && !grouped && (
-                    <PopoverField label="Virtual chassis">
+                    <PopoverField label="Virtual chassis" group>
                       <SegmentedTabs<ChassisMode>
                         value={stackMode}
                         onValueChange={setStackMode}
@@ -3206,7 +3210,7 @@ function TopologyPage() {
                     </PopoverField>
                   )}
                   {isDiagram && (
-                    <PopoverField label="Lines">
+                    <PopoverField label="Lines" group>
                       <LineTabs<LineParam>
                         value={diagramLine}
                         onChange={setDiagramLine}
@@ -3214,7 +3218,7 @@ function TopologyPage() {
                     </PopoverField>
                   )}
                   {isDiagram && !grouped && (
-                    <PopoverField label="Labels">
+                    <PopoverField label="Labels" group>
                       <div className="flex items-center gap-4">
                         {(
                           [
@@ -3265,7 +3269,7 @@ function TopologyPage() {
                   />
                   {isDiagram && !grouped && (
                     <div className="border-t border-border pt-3">
-                      <PopoverField label="Card lines">
+                      <PopoverField label="Card lines" group>
                         <ViewCardLinesEditor
                           value={savedDiagram?.fields ?? null}
                           onChange={setViewCardLines}
@@ -3440,9 +3444,7 @@ function TopologyPage() {
                       <PanelLeft /> Devices…
                     </DropdownMenuItem>
                     {canSeeChassis && (
-                      <DropdownMenuItem
-                        onSelect={() => openPalette("chassis")}
-                      >
+                      <DropdownMenuItem onSelect={() => openPalette("chassis")}>
                         <Layers /> Virtual chassis…
                       </DropdownMenuItem>
                     )}

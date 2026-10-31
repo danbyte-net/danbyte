@@ -304,8 +304,8 @@ export function DeviceTypeImportDialog({
             (or GitHub links, one per line), or upload the .yaml files. A link
             to a <span className="font-medium">folder</span> (a{" "}
             <span className="font-mono">/tree/</span> URL, e.g. one
-            manufacturer) imports every {spec.one} in it. Manufacturers are created
-            as needed.
+            manufacturer) imports every {spec.one} in it. Manufacturers are
+            created as needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -318,6 +318,7 @@ export function DeviceTypeImportDialog({
           />
           <div className="flex flex-wrap items-center gap-3">
             <input
+              aria-label="YAML files"
               ref={fileRef}
               type="file"
               accept=".yaml,.yml"

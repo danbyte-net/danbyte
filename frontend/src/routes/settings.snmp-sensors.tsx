@@ -8,6 +8,7 @@ import { Copy, Download, Pencil, Trash2, Upload } from "lucide-react"
 import { api, type Paginated, type SnmpSensor } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
@@ -250,22 +251,26 @@ function SnmpSensorCatalogPage() {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => setEditing(s)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() => setDeleting(s)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <IconTip label="Edit">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => setEditing(s)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                  </IconTip>
+                  <IconTip label="Delete">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => setDeleting(s)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </IconTip>
                 </span>
               </li>
             ))}

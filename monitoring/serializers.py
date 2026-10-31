@@ -273,8 +273,10 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     Authoring is by pasting an OpenSSH public-key line into ``public_key_line``
     (write-only). The type/blob/fingerprint are parsed from it - never trusted
     from the payload - in :func:`monitoring.ssh_host_keys.upload_host_key`, which
-    also refuses private keys. ``device`` is required (a host key belongs to a
-    device)."""
+    also refuses private keys. ``device`` is required on upload and read-only
+    after it: a host key belongs to one device (#458). The viewset reads it
+    from the request and checks it against the active tenant and the user's
+    sites."""
 
     origin = serializers.CharField(read_only=True)
     device_name = serializers.CharField(
@@ -296,9 +298,9 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
         # Every fact is derived from the pasted key or the collector; the client
         # only supplies device + public_key_line.
         read_only_fields = [
-            "id", "key_type", "public_key", "fingerprint_sha256", "comment",
-            "bits", "origin", "observed", "uploaded", "first_seen", "last_seen",
-            "created_at", "updated_at",
+            "id", "device", "key_type", "public_key", "fingerprint_sha256",
+            "comment", "bits", "origin", "observed", "uploaded", "first_seen",
+            "last_seen", "created_at", "updated_at",
         ]
 
 

@@ -142,6 +142,7 @@ function ScriptRunPage() {
           )}
           <pre
             ref={logRef}
+            tabIndex={0}
             className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap"
           >
             {run.log ||
@@ -159,9 +160,7 @@ function ScriptRunPage() {
 
       <DetailTab value="outputs">
         {run.outputs.length === 0 ? (
-          <EmptyState title="No files">
-            This run produced no files.
-          </EmptyState>
+          <EmptyState title="No files">This run produced no files.</EmptyState>
         ) : (
           <div className="space-y-3">
             {run.outputs.map((o) => (
@@ -179,6 +178,7 @@ function ScriptRunPage() {
 
       <DetailTab value="code">
         <CodeEditor
+          aria-label="Script source"
           value={run.source}
           language="python"
           readOnly

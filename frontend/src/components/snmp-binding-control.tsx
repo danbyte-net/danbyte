@@ -64,11 +64,13 @@ export function SnmpBindingControl({
   objectId,
   canEdit,
   inline = false,
+  "aria-label": ariaLabel = "SNMP credentials",
 }: {
   scope: SnmpBinding["scope"]
   objectId: string
   canEdit: boolean
   inline?: boolean
+  "aria-label"?: string
 }) {
   const qc = useQueryClient()
   const { binding, profiles } = useBinding(scope, objectId)
@@ -123,7 +125,7 @@ export function SnmpBindingControl({
       }}
       disabled={!canEdit || set.isPending}
     >
-      <SelectTrigger className="h-8 w-60 text-xs">
+      <SelectTrigger aria-label={ariaLabel} className="h-8 w-60 text-xs">
         <SelectValue placeholder="-" />
       </SelectTrigger>
       <SelectContent>

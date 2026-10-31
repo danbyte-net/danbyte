@@ -157,6 +157,7 @@ function BulkEditDialog({
           <div className="grid gap-1.5">
             <Label className="text-xs">Tenant group</Label>
             <Combobox
+              aria-label="Tenant group"
               value={group || KEEP}
               onChange={(v) => setGroup(!v || v === KEEP ? "" : v)}
               options={[
@@ -174,7 +175,7 @@ function BulkEditDialog({
               value={active || KEEP}
               onValueChange={(v) => setActive(v === KEEP ? "" : v)}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger aria-label="Status" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

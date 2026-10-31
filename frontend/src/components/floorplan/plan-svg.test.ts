@@ -396,3 +396,59 @@ describe("planSvg area types", () => {
     expect(svg).not.toContain("#2563eb")
   })
 })
+
+describe("a drawing framed to its content", () => {
+  const big = { grid_width: 512, grid_height: 266, cell_mm: 1187 }
+  const hatched = {
+    kind: "area",
+    id: "h1",
+    shape: "rect",
+    x: 100,
+    y: 50,
+    width: 40,
+    height: 30,
+    rotation: 0,
+    points: [],
+    room: null,
+    location: null,
+    area_type: {
+      id: "t",
+      name: "Hazard",
+      color: "#dc2626",
+      pattern: "hatched",
+      icon: "",
+    },
+    label: "",
+    color: "",
+    fill_opacity: 30,
+    border: "solid",
+    show_name: false,
+    z: 0,
+    locked: false,
+    created_at: "",
+    updated_at: "",
+  } as unknown as AreaShape
+  const draw = (fit: boolean) =>
+    planSvg({
+      plan: big as never,
+      tiles: [],
+      shapes: [hatched],
+      fitContent: fit
+        ? { paper: { size: "a4", orientation: "landscape" } }
+        : undefined,
+    })
+
+  it("frames the view box round what is drawn, with a margin", () => {
+    const vb = /viewBox="([^"]+)"/.exec(draw(true))![1].split(" ").map(Number)
+    // 40 x 30 cells plus 2 cells each side, at the export's cell size.
+    const cell = vb[2] / 44
+    expect(vb[3] / cell).toBeCloseTo(34)
+    expect(vb[0] / cell).toBeCloseTo(98)
+    expect(/viewBox="0 0 /.test(draw(false))).toBe(true)
+  })
+
+  it("spaces the hatch for the paper, so it does not turn to a moire", () => {
+    const lines = (svg: string) => (svg.match(/<line /g) ?? []).length
+    expect(lines(draw(true))).toBeLessThan(lines(draw(false)))
+  })
+})

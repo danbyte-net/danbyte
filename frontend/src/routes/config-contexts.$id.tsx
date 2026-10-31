@@ -256,7 +256,10 @@ function ContextOverview({ context: c }: { context: ConfigContext }) {
         ) : (
           // Scrolls in its own box: a context blob can be long *and* wide, and
           // neither may push the page into a horizontal scroll.
-          <pre className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+          <pre
+            tabIndex={0}
+            className="max-h-[32rem] overflow-auto rounded-lg border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+          >
             {JSON.stringify(c.data, null, 2)}
           </pre>
         )}

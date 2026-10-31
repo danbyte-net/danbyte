@@ -242,6 +242,7 @@ function SwitchUplinks({ sw }: { sw: VirtualSwitch }) {
           </div>
           {device && (
             <Combobox
+              aria-label="Interface"
               value={iface || null}
               onChange={(v) => setIface(v ?? "")}
               options={(ifaces.data?.results ?? [])
@@ -409,6 +410,7 @@ function SwitchNetworks({
           const current = net.vrf && !net.vrf.inherited ? net.vrf.id : INHERIT
           return (
             <Combobox
+              aria-label="VRF"
               value={current}
               onChange={(v) => {
                 if (!v || v === current) return

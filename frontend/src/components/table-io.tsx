@@ -231,6 +231,7 @@ function TableIODialog({
 
         <div className="grid gap-3">
           <input
+            aria-label="Import file"
             ref={inputRef}
             type="file"
             accept=".csv,.json,.xlsx"

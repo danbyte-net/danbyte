@@ -1714,6 +1714,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
 
@@ -1901,6 +1902,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
 
@@ -2170,6 +2172,7 @@ class SiteViewSet(ImageAttachmentMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
 
@@ -2279,6 +2282,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
             self._assert_bulk_write_in_site_scope(_rows)
         return Response({"updated": updated_count}, status=drf_status.HTTP_200_OK)
@@ -5033,7 +5037,11 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
         # the VLAN belongs to the active tenant (issue #59 FK smuggling).
         if vlan_id and not VLAN.objects.filter(pk=vlan_id, tenant=tenant).exists():
             raise ValidationError({"vlan_id": "Not found in this tenant."})
-        tag_ids = data.get("tag_ids") or []
+        # Ids only, of tags this tenant may use - the tag manager would take a
+        # string as the name of a new, tenant-less tag (#456).
+        from .serializers import resolve_tag_ids
+
+        tags = resolve_tag_ids(request, data.get("tag_ids") or [])
 
         existing = set(device.interfaces.values_list("name", flat=True))
         created, created_ids, skipped = [], [], []
@@ -5048,8 +5056,8 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
                     device=device, name=nm, speed=speed, mtu=mtu,
                     enabled=enabled, vlan_id=vlan_id,
                 )
-                if tag_ids:
-                    iface.tags.add(*tag_ids)
+                if tags:
+                    iface.tags.add(*tags)
                 created.append(nm)
                 created_ids.append(iface.pk)
             allowed = _rbac.restrict_queryset(
@@ -9606,6 +9614,7 @@ class VirtualChassisViewSet(SafeBulkDeleteMixin, TenantScopedViewSet):
                 fields.get("add_tag_ids") or [],
                 fields.get("remove_tag_ids") or [],
                 tenant=_get_active_tenant(self.request),
+                request=self.request,
             )
         return Response({"updated": updated}, status=drf_status.HTTP_200_OK)
 
