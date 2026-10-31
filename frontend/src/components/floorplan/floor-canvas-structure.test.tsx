@@ -93,10 +93,8 @@ function draw(structure: StructShape[], props: Partial<FloorCanvasProps> = {}) {
       armed={null}
       mode="structure"
       structure={structure}
-      walls={structure.filter((s) => s.part === "wall") as WallRow[]}
-      raisedFloors={
-        structure.filter((s) => s.part === "raised_floor") as RaisedRow[]
-      }
+      walls={structure.filter((s) => s.part === "wall")}
+      raisedFloors={structure.filter((s) => s.part === "raised_floor")}
       onCommitStructure={onCommitStructure}
       {...props}
     />
@@ -111,7 +109,10 @@ describe("a wall by mouse", () => {
     const { svg, q, onCommitStructure } = draw([wall()], {
       selectedWallId: "w1",
     })
-    fireEvent.pointerDown(q('[data-handles="run"] [data-vertex="1"]'), at(320, 80))
+    fireEvent.pointerDown(
+      q('[data-handles="run"] [data-vertex="1"]'),
+      at(320, 80)
+    )
     fireEvent.pointerMove(svg, at(362, 118))
     fireEvent.pointerUp(svg, at(362, 118))
     expect(onCommitStructure).toHaveBeenCalledTimes(1)
@@ -171,7 +172,10 @@ describe("a wall by mouse", () => {
     const { svg, q, onCommitStructure } = draw([wall(), other], {
       selectedWallId: "w1",
     })
-    fireEvent.pointerDown(q('[data-handles="run"] [data-vertex="1"]'), at(320, 80))
+    fireEvent.pointerDown(
+      q('[data-handles="run"] [data-vertex="1"]'),
+      at(320, 80)
+    )
     fireEvent.pointerMove(svg, at(398, 82))
     // A guide line shows nothing here: the point landed on the end itself.
     fireEvent.pointerUp(svg, at(398, 82))
@@ -195,7 +199,10 @@ describe("a wall by mouse", () => {
     const { svg, q, onCommitStructure } = draw([wall(), other], {
       selectedWallId: "w1",
     })
-    fireEvent.pointerDown(q('[data-handles="run"] [data-vertex="1"]'), at(320, 80))
+    fireEvent.pointerDown(
+      q('[data-handles="run"] [data-vertex="1"]'),
+      at(320, 80)
+    )
     fireEvent.pointerMove(svg, at(398, 82, { altKey: true }))
     fireEvent.pointerUp(svg, at(398, 82, { altKey: true }))
     const c = onCommitStructure.mock.calls[0][0]
@@ -213,7 +220,10 @@ describe("a wall by mouse", () => {
     const { container, svg, q } = draw([wall(), other], {
       selectedWallId: "w1",
     })
-    fireEvent.pointerDown(q('[data-handles="run"] [data-vertex="1"]'), at(320, 80))
+    fireEvent.pointerDown(
+      q('[data-handles="run"] [data-vertex="1"]'),
+      at(320, 80)
+    )
     fireEvent.pointerMove(svg, at(483, 204))
     const guides = container.querySelectorAll(
       '[data-part="structure-overlay"] line'
@@ -248,9 +258,9 @@ describe("doors by mouse", () => {
     fireEvent.pointerDown(q('[data-wall="w1"] [data-seg="0"]'), at(120, 80))
     fireEvent.pointerMove(svg, at(200, 84))
     // The width, live, from the plan's scale: 2 cells of 600 mm.
-    expect(
-      container.querySelector('[data-part="readout"]')?.textContent
-    ).toBe("1.2 m")
+    expect(container.querySelector('[data-part="readout"]')?.textContent).toBe(
+      "1.2 m"
+    )
     expect(container.querySelector("[data-door-draft]")).toBeTruthy()
     fireEvent.pointerUp(svg, at(200, 84))
     expect(onAddDoor).toHaveBeenCalledWith("w1", 0, 1, 3)
@@ -324,7 +334,10 @@ describe("raised floors by mouse", () => {
     const { svg, q, onCommitStructure } = draw([raised()], {
       selectedAreaId: "r1",
     })
-    fireEvent.pointerDown(q('[data-handles="raised"] [data-handle="se"]'), at(160, 400))
+    fireEvent.pointerDown(
+      q('[data-handles="raised"] [data-handle="se"]'),
+      at(160, 400)
+    )
     fireEvent.pointerMove(svg, at(240, 440))
     fireEvent.pointerUp(svg, at(240, 440))
     expect(onCommitStructure.mock.calls[0][0].update[0]).toMatchObject({

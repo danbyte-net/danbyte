@@ -701,6 +701,7 @@ Layout / Structure / Cables tabs of 0.18:
 | Label | ++t++ | Click to place a [label](#labels) |
 | Tiles | ++g++ | The tile palette (Tiles / Background tabs) |
 | Walls and raised floors | ++w++ | What the Structure tab did: [raised floors](#raised-floors-structure-mode) and [walls](#walls-doors-structure-mode) |
+| Door | ++d++ | Drag along a wall: a [door](#doors) of that width |
 | Cable trays | ++c++ | What the Cables tab did: [trays](#cable-trays-cables-mode) |
 | Snapshot | ++s++ | Drag a rectangle: a [snapshot](#snapshots) of that part of the floor |
 
@@ -742,11 +743,13 @@ editor [asks whose version stays](#when-someone-else-saved-first).
 **Undo** steps back through the edits since the plan was opened or last
 saved - placing, moving, resizing, turning, retyping, relabelling and
 deleting tiles, and drawing, moving, resizing, turning, linking and deleting
-rooms, areas and labels, up to 100 steps - and **Redo** steps forward again.
-A whole drag is one step, and so is a bulk action on a selection. Undoing
-every step leaves nothing to save. Saving starts a fresh history. Trays,
-walls, raised floors and the drawing save as you make them and are not part
-of it.
+rooms, areas and labels, and drawing, moving, reshaping, splitting, joining
+and deleting walls, doors, trays and raised floors, up to 100 steps - and
+**Redo** steps forward again. A whole drag is one step, and so is a bulk
+action on a selection or **Add walls around this**. Undoing every step
+leaves nothing to save. Saving starts a fresh history. Walls, doors, trays
+and raised floors save with the rest of the plan; a tray's cables and the
+drawing save as you change them and are not part of it.
 
 While there are unsaved edits an **Edited** badge sits in the header, and
 leaving the plan asks first - **Discard unsaved changes?**, with *Keep editing*
@@ -961,6 +964,12 @@ Room tool draws: a 3 × 3 area at the point, selected to resize and link),
 point, its text ready to type) and **Fit to view**. In View, those who may
 edit get **Edit here**, which switches to Edit.
 
+The menu offers what fits what is under the pointer: an area adds **Add
+walls around this**; with the walls tool, a wall offers **Add door here**,
+**Add bend here**, **Split here**, **Join walls** and **Delete wall**, a door
+**Flip swing** and **Delete door**, a raised floor **Delete raised floor**; with
+the trays tool, a tray the same as a wall, less the door.
+
 ### Keyboard
 
 | Key | In Edit |
@@ -969,7 +978,11 @@ edit get **Edit here**, which switches to Edit.
 | ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
 | ++v++ ++r++ ++shift+r++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
-| ++delete++ | Delete the selected area or label |
+| ++delete++ | Delete the selected area or label - or wall, door, tray or raised floor |
+| ++d++ | The Door tool |
+| ++f++ | Flip the selected door's swing |
+| ++j++ | Join the two walls (or trays) picked with Shift or Ctrl/⌘ |
+| Arrows (structure) | Move the selected wall or tray half a cell, a raised floor a cell; slide a selected door 100 mm |
 | ++ctrl+bracketleft++ / ++ctrl+bracketright++ | Send back / bring forward |
 | ++h++ / ++shift+h++ | Hide the selection / show everything |
 | ++enter++ / ++backspace++ | Close the polygon / take back its last point |
@@ -995,7 +1008,8 @@ colour; labels are 2D only.
 | `GET/POST/PATCH/DELETE /api/floor-plan-labels/` | `?floor_plan=<id>`. `text` (1-500 characters), `x`, `y` (inside the grid), `width`, `height` (`null`: sized to the text), `rotation`, `font_mm` (20-5000, default 300), `weight` (`normal`, `bold`), `align` (`left`, `center`, `right`), `color` (`""`, `muted`, `red`, `amber`, `green`, `blue`, `violet`), `plate`, `plate_color` (the same tokens, `""` the background), `z`, `locked`. Reads `pair_id`: on a back label, the area or label whose Back button made it. A back label made for a live view is shown only in that view's `contents/`. |
 | Opens (areas and labels) | Write `opens_id` (a floor plan of the tenant you may view, not the shape's own; `null` clears it; left out, it is kept). Reads `opens` (`id`, `name`, `stack_name`, `kind`, `can_change`) - `null` with `opens_hidden: true` when you may not view the target - and `back_label` (`id`, `floor_plan_id`, `floor_plan_name`, `text`) or `null`. |
 | `POST /api/floor-plans/<id>/back-link/` | A shape's Back button: `{"kind": "area" \| "label", "id", "on": true, "target_id", "text"}` makes the back label on `target_id` (or moves it there, or renames it); `"on": false` deletes it. Needs `floorplan · change` on this plan and on the target (a live view's source too). Answers `{"back_label"}`. |
-| `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels"}` - the plan's rows afterwards. Needs `floorplan · change`. `tiles/bulk/` stays for tiles alone. |
+| `POST /api/floor-plans/<id>/bulk/` | What the editor's **Save** sends: `{"tiles": {...}, "areas": {...}, "labels": {...}, "walls": {...}, "raised_floors": {...}, "trays": {...}}`, each `{"create": [...], "update": [{"id", ...}], "delete": [ids]}`, every key optional, in one transaction (deletes first), at most 5,000 operations. A new tray in `trays.create` carries a `key` (the draft's id for it) and may carry `cable_ids`; a tray update writes its cables only when it carries `cable_ids`. An id that is not this plan's is a 400 and nothing is written. Answers `{"tiles", "areas", "labels", "walls", "raised_floors", "tray_rows"}` - the plan's rows afterwards (`trays` lists the new trays' keys and ids). Needs `floorplan · change`, and for walls, raised floors and trays the add, change or delete permission their own endpoints ask for. `tiles/bulk/` stays for tiles alone. |
+| Walls | `/api/floor-plan-walls/` writes `points`, `label`, `color`, `height_mm`, `thickness_mm` (20-2000, `null` the standard 100 mm) and `openings`: `[{"seg", "from", "to", "height_mm", "hinge"?, "side"?}]` - spans along segment `seg` in cells, inside it and not overlapping; `hinge` is `start` or `end` and `side` `left` or `right` (both left out: a plain opening). |
 
 A room must be one of the plan's location's rooms, or of a location nested
 under it; a location must be the plan's or nested under it (on a site-wide
@@ -1162,8 +1176,11 @@ A selected tile, area or label in Edit carries a small toolbar just above
 it, next to the inspector: **Set room** (see above), **Show as photo** or
 **Show as tile**, **Bring forward** and **Send back** (a free plan's tiles;
 areas and labels), **Lock** (areas and labels), **Link room** (areas),
-**Opens…** (areas and labels, see [Opens links](#opens-links)) and
-**Delete**.
+**Opens…** (areas and labels, see [Opens links](#opens-links)),
+**Add walls around this** (areas; **Add walls around these** with several
+picked) and **Delete**. A selected wall carries **Add door** and **Delete**, a
+door **Flip swing** and **Delete**, a tray or raised floor **Delete**, and two
+walls or trays picked that touch **Join**.
 
 ### An empty floor
 
@@ -1396,8 +1413,14 @@ The plenum is data, not decoration:
   raised floor** toggle (View menu, 3D) turns the floor translucent so the
   underfloor runs read through it.
 
-Areas are drawn with the same drag-a-rectangle gesture as tiles; select one
-in the left rail to edit its label, plenum depth and color, or delete it.
+Areas are drawn with the same drag-a-rectangle gesture as tiles. A selected
+one drags to move and has a handle on each corner and side to resize it, in
+whole cells; its edges pull onto the other raised floors' edges, with a
+guide line (++alt++ turns the pull off). A drop onto another raised floor
+is refused - they may share edges, never overlap. The arrows move it a
+cell, ++delete++ removes it, and its label, plenum depth and colour are in
+the inspector. Raised floors save with the plan's **Save** and undo like
+everything else.
 
 ## Walls & doors (Structure mode)
 
@@ -1405,21 +1428,81 @@ The same tool also draws the **room shell**: walls as polylines on the
 same half-cell lattice trays snap to, so a wall can run along tile
 boundaries or straight down a tile's centerline. Click **Draw wall**, click
 corners (drawing magnetically snaps to existing walls, so rooms chain
-cleanly), and double-click or press ++enter++ to finish - the wall is saved
-immediately and its inspector opens.
+cleanly), and double-click or press ++enter++ to finish - the wall joins
+the plan's draft and its inspector opens. Or let a room draw its own:
+[walls from a room's outline](#walls-from-a-rooms-outline).
 
-A selected wall edits like the rest of the structure kit:
+A selected wall's inspector holds its numbers:
 
 - **Label, color** - cosmetic; the default wall follows the theme.
 - **Height (mm)** - blank means full height, i.e. the plan's ceiling.
   A half wall is just a wall with a height.
-- **Doors** - arm **Add door**, then click the wall where the opening goes.
-  Each door is a 900 mm gap by default (2100 mm tall); width and height are
-  editable per door in the inspector, and a blank door height renders the
-  standard 2100 mm. Doors live *on* the wall (spans of a segment), so a
-  wall and its openings always move - and save - together.
-- **Move** - drag a wall to translate the whole run (0.5-cell snap);
-  delete and redraw to reshape it.
+- **Thickness (mm)** - blank is the standard 100 mm. It draws true to
+  scale on the plan, the PDF and in 3D. A new wall takes the thickness you
+  last gave a wall in this browser.
+- **Doors** - each door's width, height (blank is the standard 2100 mm)
+  and **Swing**. Doors live *on* the wall (spans of a segment), so a wall
+  and its doors always move - and save - together.
+
+Walls are part of the plan's draft: every change below is an undo step and
+goes with **Save**, in the same transaction as the tiles, with the same
+[check for edits made elsewhere](#when-someone-else-saved-first).
+
+### Walls from a room's outline
+
+**Add walls around this** - on an area's floating toolbar and its
+right-click menu - draws walls along the outline of a rectangle (turned or
+not) or a polygon: one wall per unbroken stretch, joined at the corners, so
+a free-standing room gets one closed wall. Ctrl/⌘-click more areas to pick
+them together; the toolbar and the menu then offer **Add walls around these**,
+and an edge two rooms share is walled once. A stretch of outline a wall
+already runs along (in line with it, within a quarter of a cell) is left
+out, so running it twice adds nothing. The corners land on the half-cell
+lattice walls use. All of it is one undo step.
+
+### Doors
+
+With the **Door** tool (++d++), or **Add door** on a selected wall, drag
+along a wall: the door snaps to it and its width shows beside the pointer in
+centimetres or metres, from the plan's scale. A click without a drag makes a
+standard 900 mm door there. A door stays inside its wall and clear of the
+others. **Add door here** on a wall's right-click menu does the same at the
+point.
+
+Click a door to select it. Its handles:
+
+| Handle | Does |
+|---|---|
+| The square at each end | Drag to resize it along the wall |
+| The round one in the middle | Drag to slide it along the wall |
+| The filled circle at the leaf | Click to flip the swing - hinge at the start or the end, opening to either side - as ++f++ does |
+
+The plan draws a door's leaf and its swing arc; a door with **Swing** set to
+*Opening* is a plain gap. Arrows slide a selected door 100 mm, ++delete++
+removes it, and **Flip swing** and **Delete door** are on its toolbar and its
+right-click menu. A wall made shorter keeps its doors inside it.
+
+### Editing walls by mouse
+
+A selected wall shows a round handle on each point and a square one in the
+middle of each segment:
+
+- **Drag the wall** to move the whole run.
+- **Drag a point** to move it. Drop an end on another wall's end and the two
+  become one wall.
+- **Drag a segment's handle** to move that segment; the segments either side
+  follow.
+- **Double-click a segment** to split the wall there into two walls. A split
+  never cuts a door.
+- **Join** - Shift- or Ctrl/⌘-click two walls whose ends touch, then **Join
+  walls** on the toolbar or the menu, or ++j++.
+- Right-click a wall for **Add door here**, **Add bend here**, **Split here**,
+  **Join walls** and **Delete wall**; right-click a point for **Remove point**.
+
+Dragged points snap to the half-cell lattice and to other walls' points and
+edges, and line up with their points along a dashed guide; ++alt++ keeps
+them on the lattice alone. The arrows move a selected wall half a cell and
+++delete++ removes it. Hovering a handle names what it does.
 
 The 2D canvas draws walls in **every mode** - solid spans with a dashed
 threshold and jamb ticks across each door gap - because the shell is
@@ -1466,6 +1549,17 @@ through each one. Hand the PNG to whoever's pulling cable.
   without saving.
 - **Capacity**: a tray may record how many cables it holds (`capacity`,
   blank when no limit is known).
+- **Editing by mouse**: a selected tray takes the same handles as a
+  [wall](#editing-walls-by-mouse) - drag it, a point or a segment; drop an
+  end on another tray's end to join them (the joined tray keeps both trays'
+  cables); double-click to split it (the new half carries the same cables);
+  right-click for **Add bend here**, **Split here**, **Join trays** and
+  **Delete tray**. Snapping, guides, ++alt++, the arrows and ++delete++ work
+  as on walls. **Edit shape** still hides the cables and adds a ＋ on each
+  segment for a bend.
+- **Saving**: a tray's shape, name, kind, level, elevation and capacity go
+  with the plan's **Save** and its undo; its **cables** are written as you
+  add or remove them. A new tray takes cables once the plan is saved.
 
 #### Routing a cable
 

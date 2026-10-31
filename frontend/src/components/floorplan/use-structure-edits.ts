@@ -61,10 +61,7 @@ export function rememberWallThickness(mm: number | null) {
 const now = () => new Date().toISOString()
 
 /** A new wall in the draft, from its points. */
-export function newWall(
-  points: Pt[],
-  extra: Partial<WallRow> = {}
-): WallRow {
+export function newWall(points: Pt[], extra: Partial<WallRow> = {}): WallRow {
   return {
     part: "wall",
     id: tempId(),
@@ -208,7 +205,12 @@ export function useStructureEdits({
     setSelectedAreaId(null)
   }
   /** Structure mode: a completed drag-rect becomes a raised-floor area. */
-  const createAreaAt = (rect: { x: number; y: number; w: number; h: number }) => {
+  const createAreaAt = (rect: {
+    x: number
+    y: number
+    w: number
+    h: number
+  }) => {
     if (!areaArmed || !plan) return
     const row: RaisedRow = {
       part: "raised_floor",
@@ -325,7 +327,9 @@ export function useStructureEdits({
     const made = runs.map((points) => newWall(points))
     commit({ create: made })
     setSelectedWallId(made[0].id)
-    toast.success(made.length === 1 ? "Added a wall" : `Added ${made.length} walls`)
+    toast.success(
+      made.length === 1 ? "Added a wall" : `Added ${made.length} walls`
+    )
   }
 
   // ── Trays ─────────────────────────────────────────────────────────────
@@ -355,7 +359,7 @@ export function useStructureEdits({
       patchCables.mutate({ trayId, cableIds })
       return
     }
-    change(trayId, rest as Partial<StructShape>)
+    change(trayId, rest)
   }
   const deleteTray = (trayId: string) => {
     remove(trayId)
@@ -364,7 +368,13 @@ export function useStructureEdits({
   // A tray's cables are written at once: the cable side keeps its own
   // rules (who may change which cable), and a route reads them.
   const patchCables = useMutation({
-    mutationFn: ({ trayId, cableIds }: { trayId: string; cableIds: string[] }) =>
+    mutationFn: ({
+      trayId,
+      cableIds,
+    }: {
+      trayId: string
+      cableIds: string[]
+    }) =>
       api<FloorPlanTray>(`/api/floor-plan-trays/${trayId}/${via}`, {
         method: "PATCH",
         body: JSON.stringify({ cable_ids: cableIds }),
@@ -397,13 +407,13 @@ export function useStructureEdits({
       )
       return
     }
-    const first = { ...row, points: parts.a.points } as RunRow
+    const first = { ...row, points: parts.a.points }
     const second = {
       ...row,
       id: tempId(),
       updated_at: "",
       points: parts.b.points,
-    } as RunRow
+    }
     if (first.part === "wall" && second.part === "wall") {
       first.openings = parts.a.openings
       second.openings = parts.b.openings
@@ -416,7 +426,7 @@ export function useStructureEdits({
     const a = find(aId)
     const b = find(bId)
     if (!a || !b || a.part !== b.part || a.part === "raised_floor") return
-    const ra = a as RunRow
+    const ra = a
     const rb = b as RunRow
     const joined = joinRuns(
       { points: ra.points, openings: ra.part === "wall" ? ra.openings : [] },
@@ -426,7 +436,7 @@ export function useStructureEdits({
       toast.error("Only runs that meet end to end join.")
       return
     }
-    const merged = { ...ra, points: joined.points } as RunRow
+    const merged = { ...ra, points: joined.points }
     if (merged.part === "wall") merged.openings = joined.openings
     if (merged.part === "tray" && rb.part === "tray") {
       const ids = new Set(merged.cables.map((c) => c.id))
@@ -458,7 +468,7 @@ export function useStructureEdits({
     change(rowId, {
       points: joined.points,
       ...(row.part === "wall" ? { openings: joined.openings } : {}),
-    } as Partial<StructShape>)
+    })
   }
   /** Point `index` of a wall or tray taken out (a run keeps two); the
    * segments either side become one, their doors on it. */
@@ -479,11 +489,12 @@ export function useStructureEdits({
         : 0
     const openings = row.openings.flatMap((o) => {
       if (index === 0) return o.seg === 0 ? [] : [{ ...o, seg: o.seg - 1 }]
-      if (index === row.points.length - 1)
-        return o.seg === index - 1 ? [] : [o]
+      if (index === row.points.length - 1) return o.seg === index - 1 ? [] : [o]
       if (o.seg < index) return [o]
       if (o.seg === index)
-        return [{ ...o, seg: index - 1, from: o.from + before, to: o.to + before }]
+        return [
+          { ...o, seg: index - 1, from: o.from + before, to: o.to + before },
+        ]
       return [{ ...o, seg: o.seg - 1 }]
     })
     change(rowId, { points, openings: fitOpenings(points, openings) })

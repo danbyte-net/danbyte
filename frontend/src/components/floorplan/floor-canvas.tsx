@@ -35,6 +35,7 @@ import type { ColorBy, RackFigures } from "./tile-paint"
 import {
   AreaShapeView,
   BoxHandles,
+  HANDLE_PX,
   DrawPreview,
   LabelShapeView,
   VertexHandles,
@@ -379,7 +380,6 @@ type DragState =
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
   | { mode: "snapshot"; start: CellPoint; end: CellPoint }
 
-
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
  * grid, the background blueprint, and one `<g>` per tile. Orientation is
@@ -489,9 +489,11 @@ export function FloorCanvas({
   const paintPreview = useRef<SVGRectElement>(null)
   const drawPreview = useRef<SVGPolylineElement>(null)
   // A hint beside the handle under the pointer: what dragging it does.
-  const [hint, setHint] = useState<{ text: string; x: number; y: number } | null>(
-    null
-  )
+  const [hint, setHint] = useState<{
+    text: string
+    x: number
+    y: number
+  } | null>(null)
   // A right-click on a wall, door, tray or raised floor.
   const [structMenu, setStructMenu] = useState<StructMenu | null>(null)
   // Right-click menu: screen-relative position + what's under the cursor.
@@ -912,7 +914,6 @@ export function FloorCanvas({
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-
   // Grab a tray body → select it (Shift or Ctrl/⌘: pick it to join) and
   // drag it whole.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
@@ -1117,8 +1118,11 @@ export function FloorCanvas({
     // the rest), then a raised floor in Structure mode, get their own menu.
     if (editable && structureActions) {
       const slack = 6 / (CELL * t.k)
-      const { walls: wallRows, trays: trayRows, raised } =
-        structureLists(structure)
+      const {
+        walls: wallRows,
+        trays: trayRows,
+        raised,
+      } = structureLists(structure)
       const runHit = (rows: RunRow[], extra: (r: RunRow) => number) => {
         let best: { row: RunRow; seg: number; t: number; d: number } | null =
           null
@@ -1131,9 +1135,7 @@ export function FloorCanvas({
         return best
       }
       const trayHit =
-        showTrays && mode === "cable"
-          ? runHit(trayRows, () => 5 / CELL)
-          : null
+        showTrays && mode === "cable" ? runHit(trayRows, () => 5 / CELL) : null
       const wallHit = runHit(
         wallRows,
         (r) => wallStrokePx(r as FloorPlanWall, plan.cell_mm) / 2 / CELL
@@ -1293,6 +1295,7 @@ export function FloorCanvas({
         <TileShape
           tile={shown}
           grip={!free}
+          handlePx={HANDLE_PX / t.k}
           selected={tile.id === selectedId || !!multiSelectedIds?.has(tile.id)}
           editable={editable}
           labelFit={labelFit}
@@ -1506,7 +1509,8 @@ export function FloorCanvas({
                         e.stopPropagation()
                         onSelectArea?.(a.id)
                         const row = structRow(a.id)
-                        if (row?.part === "raised_floor") structG.rectDown(row, e)
+                        if (row?.part === "raised_floor")
+                          structG.rectDown(row, e)
                       }
                     : undefined
                 }
@@ -1621,7 +1625,11 @@ export function FloorCanvas({
                 onSegmentDoubleClick={(seg, e) => {
                   if (!editable) return
                   e.stopPropagation()
-                  structureActions?.splitAt?.(w.id, seg, tAlong(w.points, seg, e))
+                  structureActions?.splitAt?.(
+                    w.id,
+                    seg,
+                    tAlong(w.points, seg, e)
+                  )
                 }}
                 onDoorDown={(index, e) => {
                   if (e.button !== 0) return
@@ -1662,7 +1670,10 @@ export function FloorCanvas({
                     const row = structRow(tray.id)
                     if (!editable || !row || row.part !== "tray") return
                     const w = toWorld(svgRef.current!, e.clientX, e.clientY)
-                    const n = nearestSegment(row.points, [w.x / CELL, w.y / CELL])
+                    const n = nearestSegment(row.points, [
+                      w.x / CELL,
+                      w.y / CELL,
+                    ])
                     if (n) structureActions?.splitAt?.(row.id, n.seg, n.t)
                   }}
                   onVertexDown={() => {}}
@@ -1992,7 +2003,9 @@ export function FloorCanvas({
             const row = structure.find((r) => r.id === m.id)
             return (
               <DropdownMenuItem
-                disabled={!row || row.part === "raised_floor" || row.points.length <= 2}
+                disabled={
+                  !row || row.part === "raised_floor" || row.points.length <= 2
+                }
                 onSelect={() => a.removePoint?.(m.id, vertex)}
               >
                 Remove point
@@ -2041,7 +2054,10 @@ export function FloorCanvas({
                 "Add bend here",
                 a.addBendAt && (() => a.addBendAt!(m.id, seg, at))
               )}
-              {item("Split here", a.splitAt && (() => a.splitAt!(m.id, seg, at)))}
+              {item(
+                "Split here",
+                a.splitAt && (() => a.splitAt!(m.id, seg, at))
+              )}
               {mate &&
                 item(
                   m.part === "wall" ? "Join walls" : "Join trays",

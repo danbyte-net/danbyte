@@ -174,7 +174,10 @@ describe("doors along a wall", () => {
     expect(doorFromDrag(pts, [], 0, 2, 4.5, 600)).toEqual({ from: 2, to: 4.5 })
     expect(doorFromDrag(pts, [], 0, 4.5, 2, 600)).toEqual({ from: 2, to: 4.5 })
     // 900 mm on a 600 mm grid, centred on the click.
-    expect(doorFromDrag(pts, [], 0, 5, 5, 600)).toEqual({ from: 4.25, to: 5.75 })
+    expect(doorFromDrag(pts, [], 0, 5, 5, 600)).toEqual({
+      from: 4.25,
+      to: 5.75,
+    })
   })
 
   it("stays inside the wall and clear of the other doors", () => {
@@ -382,9 +385,9 @@ describe("snapping a dragged point", () => {
     const s = snapStructPoint([4.2, 3.8], runs, { ...opts, free: true })
     expect(s.p).toEqual([4, 4])
     expect(s.end).toBeUndefined()
-    expect(snapStructPoint([7.1, 4.3], runs, { ...opts, free: true }).p).toEqual(
-      [7, 4.5]
-    )
+    expect(
+      snapStructPoint([7.1, 4.3], runs, { ...opts, free: true }).p
+    ).toEqual([7, 4.5])
   })
 
   it("pulls a raised floor's edge onto another's, on whole cells", () => {

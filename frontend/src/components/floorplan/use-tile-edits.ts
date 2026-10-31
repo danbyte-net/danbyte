@@ -544,7 +544,9 @@ export function useTileEdits({
         toast.info(
           `Not routed - an end was removed: ${cablePart.dropped.join(", ")}`
         )
-      const trayPart = part(trays, "tray", (t) => trayBody(t, originOf.get(t.id)))
+      const trayPart = part(trays, "tray", (t) =>
+        trayBody(t, originOf.get(t.id))
+      )
       const payload: FloorPlanBulkPayload = {
         walls: part(walls, "wall", wallBody),
         raised_floors: part(raised, "raised_floor", raisedBody),
@@ -715,8 +717,7 @@ export function useTileEdits({
               !prev.some((r) => r.id === c.id)
           )
           .map(
-            (c) =>
-              ({ ...(c.current as object), part: c.kind }) as StructShape
+            (c) => ({ ...(c.current as object), part: c.kind }) as StructShape
           ),
       ])
       setDirtyIds((prev) => {

@@ -132,8 +132,7 @@ export function projectOnSegment(
   const dx = bx - ax
   const dy = by - ay
   const len = Math.hypot(dx, dy)
-  if (len < SAME_PT)
-    return { t: 0, dist: Math.hypot(p[0] - ax, p[1] - ay) }
+  if (len < SAME_PT) return { t: 0, dist: Math.hypot(p[0] - ax, p[1] - ay) }
   const t = clamp(((p[0] - ax) * dx + (p[1] - ay) * dy) / len, 0, len)
   const q = pointAlong(points, seg, t)
   return { t, dist: Math.hypot(p[0] - q[0], p[1] - q[1]) }
@@ -220,7 +219,10 @@ export function wallsAround(
     }
     while (ring.length > 1 && same(ring[0], ring[ring.length - 1])) ring.pop()
     if (ring.length < 2) continue
-    const covered = segmentsOf([...existing, ...made.map((points) => ({ points }))])
+    const covered = segmentsOf([
+      ...existing,
+      ...made.map((points) => ({ points })),
+    ])
     // The uncovered stretches of each edge, in order around the outline.
     const pieces: [Pt, Pt][] = []
     const n = ring.length
@@ -339,8 +341,7 @@ export function resizeDoor(
     o.to,
   ]
   const min = DOOR_MIN_MM / cellMm
-  if (end === "from")
-    return { ...o, from: r2(clamp(t, gap[0], o.to - min)) }
+  if (end === "from") return { ...o, from: r2(clamp(t, gap[0], o.to - min)) }
   return { ...o, to: r2(clamp(t, o.from + min, gap[1])) }
 }
 
@@ -366,7 +367,10 @@ export function slideDoor(
  * right; hinged at the end, opening right, then left; round again. A plain
  * opening gets its first leaf. */
 export function flipDoor(o: FloorPlanWallOpening): FloorPlanWallOpening {
-  const order: [NonNullable<FloorPlanWallOpening["hinge"]>, NonNullable<FloorPlanWallOpening["side"]>][] = [
+  const order: [
+    NonNullable<FloorPlanWallOpening["hinge"]>,
+    NonNullable<FloorPlanWallOpening["side"]>,
+  ][] = [
     ["start", "left"],
     ["start", "right"],
     ["end", "right"],
@@ -509,8 +513,7 @@ export function splitRun(
   if ((at0 && seg === 0) || (at1 && seg === points.length - 2)) return null
   if (
     openings.some(
-      (o) =>
-        o.seg === seg && along > o.from + SAME_PT && along < o.to - SAME_PT
+      (o) => o.seg === seg && along > o.from + SAME_PT && along < o.to - SAME_PT
     )
   )
     return null
@@ -626,7 +629,9 @@ export function snapStructPoint(
       const d = Math.hypot(p[0] - v[0], p[1] - v[1])
       if (d <= opts.reach && (!best || d < best.d)) {
         const end =
-          i === 0 || i === r.points.length - 1 ? { id: r.id, index: i } : undefined
+          i === 0 || i === r.points.length - 1
+            ? { id: r.id, index: i }
+            : undefined
         best = { p: [v[0], v[1]], d: d - 1e-3, end }
       }
     })
@@ -641,7 +646,7 @@ export function snapStructPoint(
             d: dist,
           }
       }
-  const found = best as { p: Pt; d: number; end?: StructSnap["end"] } | null
+  const found = best
   if (found) {
     const guides: StructSnap["guides"] = {}
     return { p: found.p, guides, end: found.end }
@@ -722,7 +727,12 @@ export function snapRect(
   x = clamp(x, 0, Math.max(0, grid.w - width))
   y = clamp(y, 0, Math.max(0, grid.h - height))
   return {
-    rect: { x, y, width: Math.min(width, grid.w), height: Math.min(height, grid.h) },
+    rect: {
+      x,
+      y,
+      width: Math.min(width, grid.w),
+      height: Math.min(height, grid.h),
+    },
     guides,
   }
 }

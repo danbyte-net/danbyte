@@ -410,12 +410,7 @@ export function TileShape({
         />
       )}
       {selected && editable && grip && (
-        <ResizeGrip
-          x={w}
-          y={h}
-          size={handlePx}
-          onPointerDown={onResizeDown}
-        />
+        <ResizeGrip x={w} y={h} size={handlePx} onPointerDown={onResizeDown} />
       )}
     </g>
   )

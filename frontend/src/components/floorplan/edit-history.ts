@@ -157,9 +157,15 @@ export interface PlanDraftApi<T, TShape = unknown, TStruct = unknown> {
 }
 
 /** The page's handle on the draft. */
-export function usePlanDraft<T, TShape = unknown, TStruct = unknown>(): PlanDraftApi<T, TShape, TStruct> {
-  const [h, send] = useReducer(draftReducer<T, TShape, TStruct>, undefined, () =>
-    initDraftHistory(emptyDraft<T, TShape, TStruct>())
+export function usePlanDraft<
+  T,
+  TShape = unknown,
+  TStruct = unknown,
+>(): PlanDraftApi<T, TShape, TStruct> {
+  const [h, send] = useReducer(
+    draftReducer<T, TShape, TStruct>,
+    undefined,
+    () => initDraftHistory(emptyDraft<T, TShape, TStruct>())
   )
   const latest = useRef(h)
   latest.current = h
@@ -191,8 +197,9 @@ export function usePlanDraft<T, TShape = unknown, TStruct = unknown>(): PlanDraf
   }, [])
 
   const edit = useCallback(
-    (apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>) =>
-      send({ kind: "do", apply, step: stepKey() }),
+    (
+      apply: (d: PlanDraft<T, TShape, TStruct>) => PlanDraft<T, TShape, TStruct>
+    ) => send({ kind: "do", apply, step: stepKey() }),
     [stepKey]
   )
   const setTiles = useCallback(

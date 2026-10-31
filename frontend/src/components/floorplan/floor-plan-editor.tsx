@@ -155,10 +155,11 @@ export function FloorPlanEditor({
     data.serverStructure
   )
   // Walls, trays and raised floors as the draft holds them.
-  const { walls, trays: draftTrays, raised: areas } = useMemo(
-    () => structureLists(ed.structure),
-    [ed.structure]
-  )
+  const {
+    walls,
+    trays: draftTrays,
+    raised: areas,
+  } = useMemo(() => structureLists(ed.structure), [ed.structure])
   // A tray's cables are written at once, outside the draft: shown as the
   // server has them, unless the draft changed them (a join).
   const trays = useMemo(() => {
@@ -599,10 +600,12 @@ export function FloorPlanEditor({
       linked?.name ||
       (row.text as string) ||
       ((row.room as { name?: string } | null)?.name ?? "") ||
-      ({ wall: "Wall", tray: "Tray", raised_floor: "Raised floor" } as Record<
-        string,
-        string
-      >)[c.kind] ||
+      (
+        { wall: "Wall", tray: "Tray", raised_floor: "Raised floor" } as Record<
+          string,
+          string
+        >
+      )[c.kind] ||
       c.kind
     )
   }
@@ -1010,7 +1013,9 @@ export function FloorPlanEditor({
                     onDeleteShape={shapeEdits.deleteShape}
                     onSnapshotShape={snapshotShape}
                     onShapeBackLabel={setBackLabel}
-                    onWallsAround={liveView ? undefined : structure.wallsAroundAreas}
+                    onWallsAround={
+                      liveView ? undefined : structure.wallsAroundAreas
+                    }
                     areaPicks={[...ed.areaSel]}
                   />
                 ) : undefined

@@ -37,29 +37,28 @@ const plan = {
   layout_mode: "grid",
 } as unknown as FloorPlan
 
-const room = (id: string, x: number): AreaShape =>
-  ({
-    kind: "area",
-    id,
-    shape: "rect",
-    x,
-    y: 2,
-    width: 4,
-    height: 3,
-    rotation: 0,
-    points: [],
-    room: null,
-    location: null,
-    label: "",
-    color: "",
-    fill_opacity: 15,
-    border: "solid",
-    show_name: true,
-    z: 0,
-    locked: false,
-    created_at: "",
-    updated_at: "2026-10-30T10:00:00Z",
-  }) as AreaShape
+const room = (id: string, x: number): AreaShape => ({
+  kind: "area",
+  id,
+  shape: "rect",
+  x,
+  y: 2,
+  width: 4,
+  height: 3,
+  rotation: 0,
+  points: [],
+  room: null,
+  location: null,
+  label: "",
+  color: "",
+  fill_opacity: 15,
+  border: "solid",
+  show_name: true,
+  z: 0,
+  locked: false,
+  created_at: "",
+  updated_at: "2026-10-30T10:00:00Z",
+})
 
 const SHAPES: PlanShape[] = [room("a1", 2), room("a2", 6)]
 const WALL = {
@@ -203,7 +202,11 @@ describe("doors, splits and joins in the draft", () => {
   })
 
   it("a wall changed elsewhere is a 409; Keep mine saves on their version", async () => {
-    const theirs = { ...WALL, label: "Theirs", updated_at: "2026-10-30T11:00:00Z" }
+    const theirs = {
+      ...WALL,
+      label: "Theirs",
+      updated_at: "2026-10-30T11:00:00Z",
+    }
     apiMock.mockRejectedValueOnce(
       new ApiError(409, {
         conflicts: [

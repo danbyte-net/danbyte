@@ -257,7 +257,7 @@ export function useStructureGestures({
           snap.p[1] - row.points[0][1],
           grid
         ),
-      } as StructShape)
+      })
       setGuides(snap.guides)
       return true
     }
@@ -274,9 +274,9 @@ export function useStructureGestures({
         i === d.index ? snap.p : [q[0], q[1]]
       )
       preview(
-        (row.part === "wall"
+        row.part === "wall"
           ? { ...row, points, openings: fitOpenings(points, row.openings) }
-          : { ...row, points }) as StructShape
+          : { ...row, points }
       )
       setGuides(snap.guides)
       return true
@@ -298,9 +298,9 @@ export function useStructureGestures({
         grid
       )
       preview(
-        (row.part === "wall"
+        row.part === "wall"
           ? { ...row, points, openings: fitOpenings(points, row.openings) }
-          : { ...row, points }) as StructShape
+          : { ...row, points }
       )
       setGuides(snap.guides)
       return true
@@ -445,7 +445,7 @@ export function useStructureGestures({
             }
           )
           if (joined) {
-            const merged = { ...dragged, points: joined.points } as RunRow
+            const merged = { ...dragged, points: joined.points }
             if (merged.part === "wall") merged.openings = joined.openings
             if (merged.part === "tray" && other.part === "tray") {
               const ids = new Set(merged.cables.map((c) => c.id))
@@ -493,7 +493,7 @@ export function useStructureGestures({
     move,
     up,
     cancel,
-    preview: { rows, door, guides, readout } as StructurePreview,
+    preview: { rows, door, guides, readout },
     /** A gesture of this hook holds the pointer. */
     active: () => !!g.current,
   }

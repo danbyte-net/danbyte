@@ -124,8 +124,7 @@ export function StructureRail({
                 Cancel drawing
               </Button>
               <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
-                Click the corners. Double-click or Enter finishes; Esc
-                cancels.
+                Click the corners. Double-click or Enter finishes; Esc cancels.
               </p>
             </>
           ) : (
@@ -302,9 +301,7 @@ export function WallInspector({
           </Button>
         </div>
         {openings.length === 0 && !doorArmed && (
-          <p className="text-[11px] text-muted-foreground">
-            No doors yet.
-          </p>
+          <p className="text-[11px] text-muted-foreground">No doors yet.</p>
         )}
         {openings.map((o, i) => {
           const widthMM = Math.round((o.to - o.from) * cellMM)

@@ -191,8 +191,7 @@ export function AreaShapeView({
   const name = area.show_name ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
   const on = selected || multiSelected
-  const strokeOpacity =
-    area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
+  const strokeOpacity = area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
   const clipId = `area-pattern-${area.id}`
   const common = {
     fill: color,

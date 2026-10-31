@@ -66,9 +66,7 @@ export function WallShape({
       data-wall={wall.id}
       pointerEvents={interactive ? "auto" : "none"}
       style={
-        interactive
-          ? { cursor: doorArmed ? "crosshair" : "move" }
-          : undefined
+        interactive ? { cursor: doorArmed ? "crosshair" : "move" } : undefined
       }
     >
       {selected && (

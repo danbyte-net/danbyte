@@ -38,7 +38,7 @@ export function StructureToolbar({
     picked.length === 2 &&
     picked[0].part === picked[1].part &&
     picked[0].part !== "raised_floor" &&
-    runsTouch(picked[0] as RunRow, picked[1] as RunRow)
+    runsTouch(picked[0], picked[1] as RunRow)
       ? picked
       : null
   const noun =
@@ -83,9 +83,7 @@ export function StructureToolbar({
         label={door !== null ? "Delete door" : `Delete ${noun.toLowerCase()}`}
         tipSide="top"
         destructive
-        onClick={() =>
-          door !== null ? onDeleteDoor(door) : onDelete(row.id)
-        }
+        onClick={() => (door !== null ? onDeleteDoor(door) : onDelete(row.id))}
       >
         <Trash2 />
       </BarIconButton>

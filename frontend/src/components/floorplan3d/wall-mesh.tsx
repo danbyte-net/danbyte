@@ -61,9 +61,7 @@ export function WallMesh({
             castShadow={!ghost}
             receiveShadow={!ghost}
           >
-            <boxGeometry
-              args={[len + thick, b.y1 - b.y0, thick]}
-            />
+            <boxGeometry args={[len + thick, b.y1 - b.y0, thick]} />
             {/* ONE material element, keyed by mode, every mode-dependent prop
                 explicit. A solid/ghost ternary of the same element type is
                 diffed IN PLACE, and r3f resets the removed props to 0 - not
