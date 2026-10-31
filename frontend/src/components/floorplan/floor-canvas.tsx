@@ -334,6 +334,7 @@ export interface StructureActions {
   flipDoor?: (wallId: string, index: number) => void
   deleteDoor?: (wallId: string, index: number) => void
   deleteRow?: (id: string) => void
+  removePoint?: (id: string, index: number) => void
   /** Walls round these areas. */
   wallsAround?: (areaIds: string[]) => void
 }
@@ -347,6 +348,8 @@ type StructMenu = {
   seg?: number
   t?: number
   door?: number
+  /** A point of the run, right-clicked on its handle. */
+  vertex?: number
 }
 
 /** What a right-click on empty plan space offers, at its cell point. */
@@ -1785,6 +1788,17 @@ export function FloorCanvas({
                     zoom={t.k}
                     gestures={structG}
                     hint={showHint}
+                    onVertexMenu={(index, ev) => {
+                      ev.preventDefault()
+                      ev.stopPropagation()
+                      setStructMenu({
+                        x: ev.clientX,
+                        y: ev.clientY,
+                        id: run.id,
+                        part: run.part,
+                        vertex: index,
+                      })
+                    }}
                   />
                 )
               const rf =
@@ -1973,6 +1987,18 @@ export function FloorCanvas({
               a.deleteRow && (() => a.deleteRow!(m.id)),
               true
             )
+          if (m.vertex !== undefined) {
+            const vertex = m.vertex
+            const row = structure.find((r) => r.id === m.id)
+            return (
+              <DropdownMenuItem
+                disabled={!row || row.part === "raised_floor" || row.points.length <= 2}
+                onSelect={() => a.removePoint?.(m.id, vertex)}
+              >
+                Remove point
+              </DropdownMenuItem>
+            )
+          }
           if (m.door !== undefined) {
             const door = m.door
             return (

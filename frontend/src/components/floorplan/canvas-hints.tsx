@@ -33,16 +33,15 @@ export function CanvasHints({
       )}
       {doorArmed && (
         <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
-          Click a wall to place a 900 mm door · Esc to cancel
+          Drag along a wall for a door, or click for 900 mm · Esc to cancel
         </div>
       )}
       {trayEditMode && (
         <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background px-4 py-1.5 text-xs shadow-sm">
           <span>
             <span className="font-medium">Editing trays</span> - cables hidden.
-            Click a tray, drag its points, click{" "}
-            <span className="font-medium">＋</span> to add a bend, right-click a
-            point to remove.
+            Drag a tray or its points, click{" "}
+            <span className="font-medium">＋</span> to add a bend.
           </span>
           <Button
             size="sm"

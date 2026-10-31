@@ -460,6 +460,34 @@ export function useStructureEdits({
       ...(row.part === "wall" ? { openings: joined.openings } : {}),
     } as Partial<StructShape>)
   }
+  /** Point `index` of a wall or tray taken out (a run keeps two); the
+   * segments either side become one, their doors on it. */
+  const removePoint = (rowId: string, index: number) => {
+    const row = find(rowId)
+    if (!row || row.part === "raised_floor" || row.points.length <= 2) return
+    const points = row.points.filter((_, i) => i !== index)
+    if (row.part === "tray") {
+      change(rowId, { points })
+      return
+    }
+    const before =
+      index > 0
+        ? Math.hypot(
+            row.points[index][0] - row.points[index - 1][0],
+            row.points[index][1] - row.points[index - 1][1]
+          )
+        : 0
+    const openings = row.openings.flatMap((o) => {
+      if (index === 0) return o.seg === 0 ? [] : [{ ...o, seg: o.seg - 1 }]
+      if (index === row.points.length - 1)
+        return o.seg === index - 1 ? [] : [o]
+      if (o.seg < index) return [o]
+      if (o.seg === index)
+        return [{ ...o, seg: index - 1, from: o.from + before, to: o.to + before }]
+      return [{ ...o, seg: o.seg - 1 }]
+    })
+    change(rowId, { points, openings: fitOpenings(points, openings) })
+  }
   /** A wall, tray or raised floor deleted. */
   const deleteRow = (rowId: string) => {
     const row = find(rowId)
@@ -512,6 +540,7 @@ export function useStructureEdits({
     splitAt,
     join,
     addBend,
+    removePoint,
     deleteRow,
     addDrawPoint,
     finishDraw,

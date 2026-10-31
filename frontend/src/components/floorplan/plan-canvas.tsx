@@ -339,6 +339,7 @@ export function PlanCanvas({
           flipDoor: structure.flipDoor,
           deleteDoor: structure.deleteDoor,
           deleteRow: structure.deleteRow,
+          removePoint: structure.removePoint,
           wallsAround: structure.wallsAroundAreas,
         }}
         structureToolbar={structureToolbar}
