@@ -227,7 +227,7 @@ function RackView({
                       ...at,
                       deviceId: sel.deviceId,
                       marker: sel.portName,
-                      side: sel.portSide,
+                      side: sel.portSide === "model" ? undefined : sel.portSide,
                     })
                 : undefined
             }

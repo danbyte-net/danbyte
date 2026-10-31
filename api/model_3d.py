@@ -227,6 +227,8 @@ def handle(request, obj, filename_stem: str):
         if obj.model_3d:
             obj.model_3d.delete(save=False)
             obj.model_3d = None
+            # Ports mapped onto the model go with it (api.model_ports).
+            obj.model_ports = None
             obj.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
     upload = request.FILES.get("file")
@@ -252,9 +254,31 @@ def handle(request, obj, filename_stem: str):
             setattr(obj, f"model_3d_{key}", val)
     if errors:
         raise DRFValidationError(errors)
+    obj.model_ports = _kept_ports(request, obj)
     old = obj.model_3d.name if obj.model_3d else None
     obj.model_3d.save("model.glb", ContentFile(data), save=False)
     obj.save()
     if old and old != obj.model_3d.name:
         obj.model_3d.storage.delete(old)
     return None
+
+
+def _kept_ports(request, obj):
+    """The port mapping a replaced model keeps: none, unless the upload asks
+    to keep it (``keep_ports=1``) and names the new model's upright size
+    (``ports_bounds``, JSON ``[w, h, d]``) with the old one's proportions -
+    then the mapping stays, rescaled to the new bounds."""
+    from rest_framework.exceptions import ValidationError as DRFValidationError
+
+    from .model_ports import similar_bounds
+
+    doc = obj.model_ports
+    if not doc or str(request.data.get("keep_ports", "")).lower() not in ("1", "true", "yes"):
+        return None
+    try:
+        bounds = json.loads(request.data.get("ports_bounds") or "null")
+    except ValueError as exc:
+        raise DRFValidationError({"ports_bounds": "Three numbers, as JSON."}) from exc
+    if not similar_bounds(doc.get("bounds"), bounds):
+        return None
+    return {**doc, "bounds": [round(float(b), 6) for b in bounds]}

@@ -3588,6 +3588,17 @@ class DeviceTypeViewSet(CatalogLocalityMixin, CloneableMixin, TenantScopedViewSe
             return resp
         return Response(DeviceTypeSerializer(dt, context={"request": request}).data)
 
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get", "put"], url_path="model-ports")
+    def model_ports(self, request, pk=None):
+        """The ports mapped onto the type's 3D model (api.model_ports). PUT
+        ``{version, model_ports}`` saves the editor's whole mapping at once;
+        a stale version answers 409. Reading needs view on the type, writing
+        change."""
+        from . import model_ports
+
+        return model_ports.handle(request, self.get_object())
+
 
 def _region_and_descendant_ids(region_id):
     """All region ids in the subtree rooted at ``region_id`` (inclusive).
@@ -3945,6 +3956,17 @@ class DeviceViewSet(
         if resp is not None:
             return resp
         return Response(DeviceSerializer(device, context={"request": request}).data)
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get", "put"], url_path="model-ports")
+    def model_ports(self, request, pk=None):
+        """The ports mapped onto the device's 3D model (api.model_ports): its
+        own override, and what it draws - its own, else its type's while it
+        draws the type's model. PUT ``{version, model_ports}`` saves the
+        override (null inherits again); a stale version answers 409."""
+        from . import model_ports
+
+        return model_ports.handle(request, self.get_object())
 
     @action(detail=True, methods=["get"], url_path="config-context")
     def config_context(self, request, pk=None):

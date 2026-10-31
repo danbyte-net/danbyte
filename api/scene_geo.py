@@ -214,6 +214,7 @@ def placed_device_geo(d, img, viewable_types) -> dict:
     """A device standing on the floor: the racked shape (``device_geo``),
     the type's body size, and the 3D model the room draws for it."""
     from .model_3d import effective
+    from .model_ports import effective_model_ports
 
     dt = d.device_type
     geo = device_geo(d, img, {})
@@ -223,5 +224,8 @@ def placed_device_geo(d, img, viewable_types) -> dict:
         "height_mm": _mm(dt.height_mm) if dt else None,
         "depth_mm": _mm(dt.depth_mm) if dt else None,
         "model": effective(d, type_viewable=bool(dt and dt.id in viewable_types)),
+        # The ports mapped onto that model: its bounds fit the model before
+        # the file loads, so a cable ends at its port from the first frame.
+        "model_ports": effective_model_ports(d),
     })
     return geo

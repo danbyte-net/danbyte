@@ -6,6 +6,7 @@
 // The faceplate doc types live beside their algorithms in faceplate-layout.ts.
 import type { FaceplateDoc } from "@/lib/faceplate-layout"
 import type { BuilderOp, Expr } from "@/lib/filter-expr"
+import type { ModelPortsDoc } from "@/lib/model-ports"
 
 const CSRF_COOKIE = "csrftoken"
 
@@ -1444,6 +1445,8 @@ export interface LifecycleInfo {
 
 /** A port marker anchored on a device-type photo. x/y/w/h are normalized
  * 0..1 (x,y = the marker's CENTER) so they scale to any render + to 3D. */
+export type { ModelPort, ModelPortsDoc } from "@/lib/model-ports"
+
 export interface ImagePortMarker {
   kind: string
   name: string
@@ -1509,6 +1512,8 @@ export interface DeviceType extends LifecycleInfo {
   model_3d_fit?: Model3DFit
   model_3d_up?: Model3DUp
   model_3d_front?: Model3DFront
+  /** Ports mapped onto the 3D model (lib/model-ports); null = none. */
+  model_ports?: ModelPortsDoc | null
   /** Saved front-panel layout (drag-and-drop builder); null = auto layout. */
   faceplate: FaceplateDoc | null
   /** Port markers anchored on the front/rear photo; null = none placed. */
@@ -1701,6 +1706,32 @@ export interface Model3DOptions {
   fit?: Model3DFit
   up?: Model3DUp
   front?: Model3DFront
+  /** Keep the port mapping on a replaced model ("1"), the new model's
+   * upright size as JSON `[w, h, d]` in `ports_bounds`. */
+  keep_ports?: "1"
+  ports_bounds?: string
+}
+
+/** `GET/PUT /api/{device-types|devices}/{id}/model-ports/`. */
+export interface ModelPortsState {
+  /** The object's own mapping (a device's override), or null. */
+  model_ports: ModelPortsDoc | null
+  /** What a save names; a stale one answers 409. */
+  version: string
+  /** A device: the mapping it draws and whose it is. */
+  effective?: ModelPortsDoc | null
+  source?: "own" | "type" | null
+}
+
+export function saveModelPorts(
+  kind: "device-types" | "devices",
+  id: string,
+  body: { version: string; model_ports: ModelPortsDoc | null }
+): Promise<ModelPortsState> {
+  return api<ModelPortsState>(`/api/${kind}/${id}/model-ports/`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  })
 }
 
 /** Set or replace a device type's or device's 3D model (a .glb). */
@@ -1735,6 +1766,8 @@ export interface Device {
   model_3d_front?: Model3DFront
   /** The model the 3D room draws for it, or null. */
   model_3d_effective?: Model3DEffective | null
+  /** Its own port mapping on the model; null inherits the type's. */
+  model_ports?: ModelPortsDoc | null
   /** PRTG registration: follow policies, always, or never. */
   prtg_sync?: PrtgSync
   /** What PRTG polls instead of the primary address ("" = the primary). */
@@ -3252,6 +3285,12 @@ export interface FacePort {
   /** One line naming what SNMP saw differently, or null when they agree. The
    * fields above stay the source of truth - this is drawn beside them. */
   drift: string | null
+  /** A port mapped onto the 3D model (`FacePorts.model`): its 0..1 spot and
+   * outward normal in the model's upright box. */
+  p?: [number, number, number]
+  n?: [number, number, number]
+  /** A mapped interface's untagged VLAN. */
+  vlan?: { vlan_id: number; name: string } | null
 }
 
 /** The module occupying a bay, as carried by a bay's resolution - enough to
@@ -3265,6 +3304,8 @@ export interface InstalledModuleMini {
 export interface FacePorts {
   front: FacePort[]
   rear: FacePort[]
+  /** The ports mapped onto its 3D model. Optional for older payloads. */
+  model?: FacePort[]
 }
 
 /** Counted ports under the shared rule - the Port utilization card's

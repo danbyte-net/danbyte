@@ -12,6 +12,9 @@ import {
 } from "@/components/model-3d-choice"
 import { apiErrorToast } from "@/lib/api-toast"
 import { uploadModel3D } from "@/lib/api"
+import { similarBounds } from "@/lib/model-ports"
+import type { V3 } from "@/lib/model-ports"
+import { FormCheckbox } from "@/components/forms"
 import {
   MODEL_ACCEPT,
   MODEL_TRIANGLE_CAP,
@@ -44,11 +47,15 @@ import {
 export default function ModelUpload({
   kind,
   id,
+  portsBounds = null,
   onSaved,
   onCancel,
 }: {
   kind: "device-types" | "devices"
   id: string
+  /** The upright size the current model's port mapping was made on: a new
+   * model of the same proportions may keep it. */
+  portsBounds?: V3 | null
   onSaved: (data: unknown) => void
   onCancel: () => void
 }) {
@@ -64,6 +71,7 @@ export default function ModelUpload({
   const [glb, setGlb] = useState<ArrayBuffer | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [keepPorts, setKeepPorts] = useState(true)
 
   const pick = async (f: File) => {
     setError(null)
@@ -127,6 +135,12 @@ export default function ModelUpload({
 
   const triangles = group ? triangleCount(group) : 0
   const tooMany = triangles > MODEL_TRIANGLE_CAP
+  // The new model's upright size - converted files stand Y up, front +Z,
+  // which the room turns about Y only, so the box's size is the upright one.
+  const newBounds: V3 | null = group
+    ? boundsOf(group).getSize(new Vector3()).toArray()
+    : null
+  const canKeep = similarBounds(portsBounds, newBounds)
 
   const doSimplify = async () => {
     if (!group) return
@@ -149,7 +163,14 @@ export default function ModelUpload({
         id,
         new Blob([glb], { type: "model/gltf-binary" }),
         // Converted files are metres, Y up, front +Z already.
-        { up: "y", front: "+z", fit: "auto" }
+        {
+          up: "y",
+          front: "+z",
+          fit: "auto",
+          ...(canKeep && keepPorts && newBounds
+            ? { keep_ports: "1", ports_bounds: JSON.stringify(newBounds) }
+            : {}),
+        }
       )
       onSaved(data)
     } catch (e) {
@@ -221,6 +242,19 @@ export default function ModelUpload({
             <ModelSize group={group} />
             {tooMany && <Badge variant="warning">Too detailed</Badge>}
           </div>
+          {portsBounds && (
+            <div className="text-muted-foreground">
+              {canKeep ? (
+                <FormCheckbox
+                  label="Keep port mappings"
+                  checked={keepPorts}
+                  onChange={setKeepPorts}
+                />
+              ) : (
+                "Its port mappings will be cleared."
+              )}
+            </div>
+          )}
           {tooMany && (
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">

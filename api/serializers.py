@@ -2714,7 +2714,8 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
     cf_model = "devicetype"
     # The 3D model's placement settings are render plumbing, not columns.
-    list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front")
+    list_columns_exclude = ("model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                            "model_ports")
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -2920,6 +2921,21 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
 
         return validate_image_ports_doc(value)
 
+    # Ports mapped onto the 3D model (api.model_ports); the editor saves
+    # through the model-ports/ action, which checks the version.
+    def validate_model_ports(self, value):
+        from .model_ports import validate_model_ports_doc
+
+        return validate_model_ports_doc(value)
+
+    def update(self, instance, validated_data):
+        from .model_ports import carry_type_frame, frame_of
+
+        old = frame_of(instance)
+        instance = super().update(instance, validated_data)
+        carry_type_frame(instance, old)
+        return instance
+
     lifecycle_state = serializers.ReadOnlyField()
     width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
                                         max_value=5000, coerce_to_string=False,
@@ -2944,6 +2960,9 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
         from . import din
 
         attrs = super().validate(attrs)
+        from .model_ports import follow_frame_change
+
+        follow_frame_change(self.instance, attrs)
 
         def get(f):
             return attrs.get(f, getattr(self.instance, f, None))
@@ -2988,6 +3007,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
+                  "model_ports",
                   "custom_fields",
                   *LIFECYCLE_FIELDS,
                   "tags", "tag_ids", "device_count", "component_count", "component_counts",
@@ -3214,6 +3234,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
         "topology_photo_size",
         "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
+        "model_ports",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
         # Its own column, Next end of life (device-columns.tsx).
@@ -3519,7 +3540,10 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     def validate(self, attrs):
         attrs = super().validate(attrs)
         self._reject_nested_relation_inputs()
+        from .model_ports import follow_frame_change
         from .software_target import mark_manual
+
+        follow_frame_change(self.instance, attrs)
 
         mark_manual(attrs, self.instance)
 
@@ -3730,6 +3754,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
 
         return validate_image_ports_doc(value)
 
+    def validate_model_ports(self, value):
+        from .model_ports import validate_model_ports_doc
+
+        return validate_model_ports_doc(value)
+
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at
         the cabinet's site, and on one of its rails at an offset where its
@@ -3922,7 +3951,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "cooling_method", "effective_cooling_method",
                   "port_labels", "topology_card", "topology_photo_size",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
-                  "model_3d_effective",
+                  "model_3d_effective", "model_ports",
                   "latitude", "longitude",
                   "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
                   "primary_ip", "primary_ip_id",

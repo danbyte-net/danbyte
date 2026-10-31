@@ -514,6 +514,14 @@ class Model3DMixin(models.Model):
         max_length=2, choices=MODEL_3D_FRONT_CHOICES, default="+z", db_default="+z",
         help_text="The axis the model's front faces.",
     )
+    # Ports mapped onto the model (api.model_ports): {bounds, ports: [{kind,
+    # name, p, n}]}, positions 0..1 in the upright bounding box. On a device
+    # null inherits its type's mapping while it draws the type's model.
+    model_ports = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="Port positions on the 3D model, normalised to its upright "
+        "bounding box. Null = none mapped (a device inherits its type's).",
+    )
 
     class Meta:
         abstract = True

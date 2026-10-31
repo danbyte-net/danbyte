@@ -11,6 +11,8 @@ import { api, type FloorPlanCableEnd, type FloorPlanCablePath } from "@/lib/api"
 import { findPortMarker, normalizePortName } from "@/lib/faceplate-geometry"
 import { routeCable, type Pt } from "@/components/floorplan/cable-route"
 
+import { findModelPort, floorModelPortLocal } from "./device-model-ports"
+
 import {
   cabinetBoxM,
   cableLane,
@@ -51,7 +53,13 @@ interface DeviceSite {
 function deviceSites(scene: ScenePayload): Map<string, DeviceSite> {
   const map = new Map<string, DeviceSite>()
   for (const tile of scene.tiles) {
-    if (tile.device && floorDeviceBoxM(tile.device))
+    // A floor device anchors on its box, or - 0U gear too - on the ports
+    // mapped onto its model.
+    if (
+      tile.device &&
+      (floorDeviceBoxM(tile.device) ||
+        (tile.device.model && tile.device.model_ports))
+    )
       map.set(tile.device.id, { tile, devIndex: -1, floor: true })
     if (!tile.rack) continue
     tile.rack.devices.forEach((d, i) => map.set(d.id, { tile, devIndex: i }))
@@ -72,8 +80,11 @@ function floorEndRun(
   point: { port: string }
 ): EndRun | null {
   const dev = tile.device
-  const size = dev ? floorDeviceBoxM(dev) : null
-  if (!dev || !size) return null
+  if (!dev) return null
+  const mapped = modelPortEndRun(scene, tile, point)
+  if (mapped) return mapped
+  const size = floorDeviceBoxM(dev)
+  if (!size) return null
   const box = floorBoxAsRackBox(size, floorTopM(scene, tile))
   const find = (panel: "front" | "rear") =>
     findPortMarker(
@@ -101,6 +112,41 @@ function floorEndRun(
     local: { tile, x: lx, y: ly, z: lz, stubZ: lz + outZ, chanX: lx },
   }
 }
+
+/**
+ * A port mapped onto a floor device's 3D model: the cable leaves the exact
+ * spot on the model, out a short stub along the surface's normal, then
+ * straight up (or down to the floor) from there to wherever the run rides.
+ */
+function modelPortEndRun(
+  scene: ScenePayload,
+  tile: SceneTile,
+  point: { port: string }
+): EndRun | null {
+  const dev = tile.device
+  const port = dev ? findModelPort(dev, point.port) : undefined
+  const local = dev && port ? floorModelPortLocal(scene, tile, dev, port) : null
+  if (!local) return null
+  const floorY = floorTopM(scene, tile)
+  const [lx, ly0, lz] = local.at
+  const ly = floorY + ly0
+  const [nx, ny, nz] = local.normal
+  const sx = lx + nx * MODEL_STUB_M
+  const sy = ly + ny * MODEL_STUB_M
+  const sz = lz + nz * MODEL_STUB_M
+  const world = (x: number, y: number, z: number): Vec3 =>
+    worldOf(scene, tile, x, y, z)
+  return {
+    entry: [world(lx, ly, lz), world(sx, sy, sz)],
+    railAt: (y) => world(sx, y, sz),
+    rear: nz > 0,
+    anchored: true,
+    local: { tile, x: lx, y: ly, z: lz, stubZ: sz, chanX: sx },
+  }
+}
+
+/** How far a lead leaves a model port along its normal before it turns. */
+const MODEL_STUB_M = 0.05
 
 type Vec3 = [number, number, number]
 

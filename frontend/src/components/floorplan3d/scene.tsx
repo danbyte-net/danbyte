@@ -319,7 +319,9 @@ export default function FloorScene3D({
       queryFn: () => api<FacePorts>(`/api/devices/${sel.deviceId}/face-ports/`),
       staleTime: 30_000,
     })
-    const list = sel.portSide ? fp[sel.portSide] : [...fp.front, ...fp.rear]
+    const list = sel.portSide
+      ? (fp[sel.portSide] ?? [])
+      : [...fp.front, ...fp.rear]
     return list.find((p) => p.marker === sel.portName) ?? null
   }
 
@@ -593,6 +595,11 @@ export default function FloorScene3D({
     (selection?.kind === "device" || selection?.kind === "port") && selTile
       ? (selTile.rack!.devices.find((x) => x.id === selection.deviceId) ?? null)
       : null
+  // A port mapped onto a floor device's 3D model, selected.
+  const selFloorPort =
+    selection?.kind === "port" && selection.portSide === "model"
+      ? (data.tiles.find((t) => t.id === selection.tileId && t.device) ?? null)
+      : null
   // A device standing on the floor, selected.
   const selFloor =
     selection?.kind === "device"
@@ -813,7 +820,7 @@ export default function FloorScene3D({
                       ...at,
                       deviceId: sel.deviceId,
                       marker: sel.portName,
-                      side: sel.portSide,
+                      side: sel.portSide === "model" ? undefined : sel.portSide,
                     })
                 : undefined
             }
@@ -1109,6 +1116,15 @@ export default function FloorScene3D({
           deviceId={selection.deviceId}
           pinned
           focus={{ on: focusOn, onToggle: () => setFocusOn((v) => !v) }}
+        />
+      )}
+      {selFloorPort?.device && selection?.kind === "port" && (
+        <PortHud
+          planId={planId}
+          device={selFloorPort.device}
+          position={selFloorPort.label || "Floor"}
+          selection={selection}
+          onConnect={(path) => void startConnect(selection, path)}
         />
       )}
       {selFloor?.device && (

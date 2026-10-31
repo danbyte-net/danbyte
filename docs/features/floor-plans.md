@@ -548,9 +548,10 @@ uploaded blueprint or CAD drawing textures it.
 
     Click selects one (its card says *On the floor*), double-click flies to
     its front, ++f++ focuses it, and its outline takes its monitoring state's
-    colour. Cable runs to it end on its box's port side - at the port's
-    photo marker where there is one, else the middle of the panel - and rise
-    straight up from there. Far off, every box in the room is one draw call
+    colour. Cable runs to it end at the port
+    [mapped onto its model](#port-markers-on-3d-models) where there is one,
+    else on its box's port side - at the port's photo marker where there is
+    one, else the middle of the panel - and rise straight up from there. Far off, every box in the room is one draw call
     without photos. A model over 500,000 triangles, or past the room's
     budget of 2,000,000 for all models together, draws as its bounding box,
     and a **Model too detailed** card names it.
@@ -698,6 +699,35 @@ canvas renders at the display's pixel ratio, so a cabinet read at an angle
 stays sharp. What that can't fix is a low-resolution source photo - a 600 px
 device image stretched across a 19″ face is soft at close range in any view.
 Upload the largest faceplate photo you have.
+
+### Port markers on 3D models
+
+A floor-placed device whose model has
+[ports mapped onto it](../dcim/device-catalog.md#model-ports) shows them as
+small squares on the model's surface, 8 mm across, facing out of it:
+
+- **Colour** is the port's state, as on every faceplate: live SNMP where the
+  device is polled (up by its speed, down red, shut grey), else its cable -
+  a cabled port by its speed, a free or disabled one grey. A mapped name the
+  device has no component for is dark.
+- **Hover** names the port, its state, the far end of its cable and an
+  interface's untagged VLAN. **Click** selects it and opens the room's port
+  card - connect, trace the run, open the cable - as a photo port's does.
+  **Double-click** flies the camera to it, out along its face.
+- **Cables** to a mapped port start at that exact spot, leave along the
+  surface's outward direction for 5 cm, then rise to the trays (or run at
+  floor level) from there. This holds for 0U gear too: an
+  access point with a model and mapped ports anchors its cables on the
+  model. A port with no mapping falls back to the box's port side, as
+  before.
+- **Up close only.** The markers draw within about 3.5 m of the device and
+  go again past 4.5 m, one draw call per device, so a hall of mapped
+  devices costs nothing until you walk up to one. A model drawn as its
+  bounding box (over the triangle budget) or ghosted by focus shows no
+  markers.
+
+Racked devices still draw as boxes in the rack, so their mapped ports are
+not shown there; their photo ports are.
 
 ### Drift in the room
 

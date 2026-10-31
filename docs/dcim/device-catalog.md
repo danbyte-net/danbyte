@@ -762,6 +762,78 @@ which stays port-only: there a bay is a **group placeholder** whose installed
 module's own faceplate gets composed in, while the photo builder marks the
 slot's real position on the artwork.
 
+### Mapping ports on a 3D model {#model-ports}
+
+A type with a [3D model](#3d-models) can carry its ports on the model the
+way [photo ports](#photo-ports) carry them on a photo. The
+[3D room](../features/floor-plans.md#port-markers-on-3d-models) then draws
+each mapped port on the model, coloured by its state, and cables end at the
+port instead of the middle of the box.
+
+**Map ports** on the type's **3D model** card opens the editor: the model
+large on the left, the type's interface, front/rear port, console and power
+templates on the right, grouped by kind, with a search box and a mapped
+count per kind.
+
+- **Place a port.** Pick it in the list and click the model. The marker
+  lands where you clicked, facing out of the surface there, and the next
+  unmapped port is picked, so a run of ports is one click each. **Next
+  unmapped** (or **Enter**) skips ahead.
+- **Move or clear.** Drag a marker over the surface to move it. Pick a port
+  and press **Backspace** (or **Clear**) to take its marker off.
+- **Row.** Switch to **Row**, place the row's first port, then its last
+  (Gi1/0/1, then Gi1/0/24): the ports between fill in evenly, each dropped
+  onto the surface. **2 rows** lays the common switch layout - odd ports on
+  the first port's row, even ports on the last's, one column per pair; **1
+  row** spaces them on the line between the two.
+- **Copy from photo ports.** Starts from the type's photo ports: the front
+  photo's markers project onto the model's front, the rear photo's onto its
+  back, each dropped onto the surface, ready to adjust. Ports already mapped
+  stay where they are.
+- **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z) work inside the dialog. Nothing is
+  written until **Save**, which sends the whole mapping in one request. If
+  someone saved a mapping since you opened the editor, Save is refused and
+  says so rather than overwrite it.
+
+A port is stored at its spot in the model's upright bounding box - after the
+**Up axis** and **Front** that stand it in the room - as fractions 0..1 of
+each side, with the outward direction of the surface there. That survives
+the room fitting the model to any size. Changing the model's **Up axis** or
+**Front** turns its mapping with it, so each port stays on the same spot.
+
+**Replacing the model** clears its mapping, since the ports were placed on
+the old shape. When the new model has the old one's proportions (within 5%
+on each side), the upload dialog offers **Keep port mappings**, ticked.
+Removing the model clears the mapping too.
+
+Markers name templates by kind and name, as photo ports do, so a device's
+ports match by name, case and spacing tolerant, with `{position}` rendered
+for a stack member. A device that draws its type's model uses its type's
+mapping; **Map ports** on the device's own card saves a mapping for that
+device only (starting from a copy of the type's, listing the device's real
+components), and **Use type's ports** goes back to the type's. A device with
+its own model has its own mapping or none.
+
+Mapping needs **change** on the type (or the device); anyone who can view it
+sees the mapped count. Each save lands in the change log. The mapping is the
+`model_ports` field - `{bounds, ports: [{kind, name, p, n}]}`, `p` the 0..1
+spot, `n` the unit normal, `bounds` the upright size it was made on - and the
+spreadsheet export carries it as a JSON column, checked on import like any
+other field.
+
+| Call | Does |
+|---|---|
+| `GET /api/device-types/{id}/model-ports/` | The mapping and its `version` (view on the type). |
+| `PUT /api/device-types/{id}/model-ports/` | `{version, model_ports}` replaces the whole mapping; `null` clears it. A stale `version` answers 409. Change on the type. |
+| `GET /api/devices/{id}/model-ports/` | The device's own mapping, its `version`, and the `effective` one it draws with its `source` (`own` / `type`). |
+| `PUT /api/devices/{id}/model-ports/` | Saves the device's own mapping; `null` inherits the type's again. |
+
+A model upload takes `keep_ports=1` with `ports_bounds` (the new model's
+upright size, JSON `[w, h, d]`) to keep the mapping; the server keeps it only
+when the proportions match. Each device's `face-ports/` answer lists the
+mapped ports under `model`, resolved to the device's real components like
+photo markers, with their `p` and `n` and an interface's untagged VLAN.
+
 ## Device bays (chassis nesting)
 
 A **parent** chassis (blade enclosure, FEX parent) declares **device bays**
