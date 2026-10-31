@@ -52,6 +52,7 @@ AUDITED_MODELS = [
     "api.Region",
     "api.Location",
     "api.LocationType",
+    "api.AreaType",
     "api.Room",
     "api.ConfigContext",
     "api.ExportTemplate",

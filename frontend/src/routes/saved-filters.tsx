@@ -113,6 +113,11 @@ const LISTS: Record<
     to: "/location-types",
     api: "/api/location-types/",
   },
+  areatype: {
+    label: "Area types",
+    to: "/area-types",
+    api: "/api/area-types/",
+  },
   room: { label: "Rooms", to: "/rooms", api: "/api/rooms/" },
   macaddress: { label: "MAC addresses", to: "/macs", api: "/api/macs/" },
   maintenanceevent: {

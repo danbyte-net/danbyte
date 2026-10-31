@@ -167,6 +167,11 @@ tenant. Danbyte ships none - make the ones you use.
   types; only a tenant-wide grant changes them. Import and export work like
   any other list (**Import / Export** on the list's toolbar).
 
+What is not a location - a car park, a fence, a road drawn on a floor plan -
+has a catalog of its own beside this one, **Organization → Area types**
+([area types](floor-plans.md#area-types)): a colour, a fill pattern and an
+icon for the plain areas of a plan.
+
 API: `/api/location-types/` (`?picker=1` for the short form);
 `/api/locations/?location_type=<id>` (or `none`) filters locations by type,
 and a location carries `location_type`, `location_type_id` and `code`.

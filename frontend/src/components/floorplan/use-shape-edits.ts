@@ -70,6 +70,7 @@ export function useShapeEdits({
         points: [],
         room: null,
         location: null,
+        area_type: null,
         label: "",
         color: "",
         fill_opacity: 15,
