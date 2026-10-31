@@ -13114,6 +13114,10 @@ export interface CablePlanRequest {
     link_id: string
   }[]
   removed_tiles?: string[]
+  /** Saved trays the draft deletes. */
+  removed_trays?: string[]
+  /** Trays as the draft has them: new ones, and saved ones (by their id)
+   * reshaped. */
   draft_trays?: {
     id: string
     points: [number, number][]

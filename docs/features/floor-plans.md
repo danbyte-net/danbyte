@@ -749,7 +749,9 @@ deleting tiles, and drawing, moving, resizing, turning, linking and deleting
 rooms, areas and labels, and drawing, moving, reshaping, splitting, joining
 and deleting walls, doors, trays and raised floors, up to 100 steps - and
 **Redo** steps forward again. A whole drag is one step, and so is a bulk
-action on a selection or **Add walls around this**. Undoing every step
+action on a selection or **Add walls around this**. Routes applied from
+[Update N routes?](#re-routing-after-a-move) join the move they follow, so
+one undo takes back both. Undoing every step
 leaves nothing to save. Saving starts a fresh history. Walls, doors, trays
 and raised floors save with the rest of the plan; a tray's cables and the
 drawing save as you change them and are not part of it.
@@ -1857,7 +1859,48 @@ A stored route goes **out of date** when:
 
 It keeps drawing where it was, marked out of date, until it is routed again
 (Document routes ticks it by default). Moving a tile never rewrites a route
-on its own.
+on its own. In the editor a route reads out of date as soon as the draft
+moves its tile or reshapes, re-levels or deletes a tray it rides - before
+Save.
+
+#### Re-routing after a move
+
+When a finished edit moves a tile that stored routes end on - a drag (once
+the pointer lifts), an arrow-key nudge, an align, a room moved with its
+tiles - or reshapes, re-levels or deletes a tray they ride, the editor asks
+**Update N routes?** over the plan, in the After placing card's place. It
+asks only when that edit put a stored route out of date; a tile with no
+stored routes asks nothing. Nothing changes until you choose:
+
+- **Review** opens the **Update routes** panel - the
+  [Route cables](#after-placing-route-the-cables) panel for those cables,
+  worked out against the draft as it stands (the moved tiles, the trays as
+  edited). Each row shows the new route and its length against the cable's
+  stored length, or, without one, against the old route (`was 8.5 m
+  (+2.4 m)`). Routes are ticked by default; a length is set where it is
+  blank or computed, while a length a person entered needs its own
+  **Replace measured length** tick. Pick trays, Suggest a run and Direct
+  work as there.
+- **Apply N routes** puts the ticked routes (and lengths) in the draft as
+  part of the move: one **Undo** takes back the move and its new routes
+  together, and **Redo** brings both back. Save writes them with the move.
+- **×** declines: the routes stay as they were, drawn out of date, and can
+  be routed later.
+
+Undoing the move closes the prompt. A second move before answering adds its
+routes to the same prompt.
+
+The same panel opens from:
+
+- an out-of-date route's popover - pin it (click) and press **Re-route**;
+- **More → Update out-of-date routes…**, listing every route on the plan
+  that is out of date - moved here, in DCIM, or by someone else - with the
+  same preview and ticks. It is there only while a route is out of date,
+  and works on the unsaved draft. Applying from either is an undo step of
+  its own;
+- **Back to the grid…** (Snap all to the grid), which moves tiles on the
+  server: once the plan reloads, the prompt offers the routes it left out
+  of date.
 
 #### Document routes
 
@@ -1936,7 +1979,7 @@ not change cannot be ticked; cables you may not view are not listed.
 |---|---|
 | `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
-| `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids) and `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64). Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
+| `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
 | `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
 | `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`. |

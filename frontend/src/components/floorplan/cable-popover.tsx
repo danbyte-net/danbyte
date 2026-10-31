@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { ExternalLink } from "lucide-react"
+import { ExternalLink, Route } from "lucide-react"
 
 import type { FloorPlanCablePath, FloorPlanTray } from "@/lib/api"
 import { PanelRow } from "@/components/map-panel"
@@ -97,6 +97,7 @@ export function CablePopover({
   trays,
   cellMm,
   onOpenChange,
+  onReroute,
 }: {
   target: CableHoverTarget | null
   cablePaths: readonly FloorPlanCablePath[]
@@ -104,6 +105,8 @@ export function CablePopover({
   trays: readonly FloorPlanTray[]
   cellMm: number
   onOpenChange: (open: boolean) => void
+  /** Edit: route an out-of-date route again (Update routes). */
+  onReroute?: (cableId: string) => void
 }) {
   const cables = (target?.ids ?? [])
     .map((id) => cablePaths.find((cp) => cp.id === id))
@@ -139,6 +142,7 @@ export function CablePopover({
             trays={trays}
             cellMm={cellMm}
             pinned={!!target?.pinned}
+            onReroute={onReroute}
           />
         ) : (
           open && (
@@ -182,12 +186,14 @@ function CableFacts({
   trays,
   cellMm,
   pinned,
+  onReroute,
 }: {
   cp: FloorPlanCablePath
   route: CableRoute | undefined
   trays: readonly FloorPlanTray[]
   cellMm: number
   pinned: boolean
+  onReroute?: (cableId: string) => void
 }) {
   const computed = route ? routeLengthM(route, cellMm) : null
   const stored = storedLengthM(cp)
@@ -244,11 +250,22 @@ function CableFacts({
         </PanelRow>
       </div>
       {pinned ? (
-        <Button variant="outline" size="sm" className="mt-3 w-full" asChild>
-          <Link to="/cables/$id" params={{ id: cp.id }}>
-            <ExternalLink className="h-3.5 w-3.5" /> Open cable
-          </Link>
-        </Button>
+        <div className="mt-3 flex gap-2">
+          {route?.stored && route.stale && onReroute && (
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => onReroute(cp.id)}
+            >
+              <Route className="h-3.5 w-3.5" /> Re-route
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="flex-1" asChild>
+            <Link to="/cables/$id" params={{ id: cp.id }}>
+              <ExternalLink className="h-3.5 w-3.5" /> Open cable
+            </Link>
+          </Button>
+        </div>
       ) : (
         <p className="mt-2 text-[10px] text-muted-foreground">Click to trace</p>
       )}

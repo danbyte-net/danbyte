@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 
 import { defaultTicks } from "./cable-draft"
-import type { RouteTicks } from "./cable-draft"
+import type { DraftPlanInput, RouteTicks } from "./cable-draft"
 import { formatMetres, pathRoute } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import type { RoomPromptState } from "./placement-panels"
@@ -31,10 +31,7 @@ import type { RoomPromptState } from "./placement-panels"
  * against it), with the room it may be set to. */
 export interface AfterPlace {
   objects: { kind: "device" | "rack" | "cabinet"; id: string; name: string }[]
-  input: Pick<
-    CablePlanRequest,
-    "positions" | "new_tiles" | "removed_tiles" | "draft_trays"
-  >
+  input: DraftPlanInput
   room: RoomPromptState | null
 }
 
@@ -51,6 +48,22 @@ export function placeCablesRequest(
   modes: Readonly<Partial<Record<string, RowMode>>> = {},
   keepRuns = true
 ): CablePlanRequest {
+  return withChoices(
+    {
+      objects: after.objects.map(({ kind, id }) => ({ kind, id })),
+      ...after.input,
+    },
+    modes,
+    keepRuns
+  )
+}
+
+/** A preview request with each row's choice of route. */
+export function withChoices(
+  base: CablePlanRequest,
+  modes: Readonly<Partial<Record<string, RowMode>>> = {},
+  keepRuns = true
+): CablePlanRequest {
   const choices: NonNullable<CablePlanRequest["choices"]> = {}
   for (const [id, m] of Object.entries(modes)) {
     if (!m || m.via === "auto") continue
@@ -60,11 +73,18 @@ export function placeCablesRequest(
         : { via: m.via }
   }
   return {
-    objects: after.objects.map(({ kind, id }) => ({ kind, id })),
-    ...after.input,
+    ...base,
     ...(Object.keys(choices).length ? { choices } : {}),
     ...(keepRuns ? {} : { keep_runs: false }),
   }
+}
+
+/** The preview request that re-routes `cableIds` against the draft. */
+export function rerouteRequest(
+  cableIds: readonly string[],
+  input: DraftPlanInput
+): CablePlanRequest {
+  return { cable_ids: [...cableIds], ...input }
 }
 
 /** The preview of the placed objects' cables (cable-plan/). */
@@ -79,7 +99,10 @@ export function usePlacedCables(
         method: "POST",
         body: JSON.stringify(request),
       }),
-    enabled: !!request && request.objects!.length > 0,
+    enabled:
+      !!request &&
+      ((request.objects?.length ?? 0) > 0 ||
+        (request.cable_ids?.length ?? 0) > 0),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
@@ -159,6 +182,45 @@ export function AfterPlacingCard({
   )
 }
 
+/**
+ * **Update N routes?**: over the plan after a move touched tiles or trays
+ * stored routes use. Review opens the preview; dismissing leaves the
+ * routes drawn out of date. Nothing changes until Apply.
+ */
+export function RerouteCard({
+  count,
+  onReview,
+  onDismiss,
+}: {
+  count: number
+  onReview: () => void
+  onDismiss: () => void
+}) {
+  if (!count) return null
+  return (
+    <div
+      role="status"
+      data-part="reroute-prompt"
+      className="pointer-events-auto absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border bg-popover px-3 py-1.5 text-sm shadow-md"
+    >
+      <span className="whitespace-nowrap">
+        {count === 1 ? "Update 1 route?" : `Update ${count} routes?`}
+      </span>
+      <Button size="sm" className="h-7" onClick={onReview}>
+        Review
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Dismiss"
+        onClick={onDismiss}
+      >
+        <X />
+      </Button>
+    </div>
+  )
+}
+
 function deltaText(mm: number | null): string | null {
   if (mm == null || Math.abs(mm) < 50) return null
   return `${mm > 0 ? "+" : "−"}${formatMetres(Math.abs(mm) / 1000)}`
@@ -216,6 +278,8 @@ export interface PlaceCablesApply {
 export function PlaceCablesPanel({
   planId,
   after,
+  base,
+  title = "Route cables",
   tiles,
   trays,
   onPreviews,
@@ -224,7 +288,11 @@ export function PlaceCablesPanel({
   onClose,
 }: {
   planId: string
-  after: AfterPlace
+  /** What was just placed: its cables. */
+  after?: AfterPlace
+  /** Else the request to preview: cables to route again (re-route). */
+  base?: CablePlanRequest
+  title?: string
   /** The tiles as the draft holds them. */
   tiles: readonly FloorPlanTile[]
   /** The plan's trays with the draft's. */
@@ -242,8 +310,13 @@ export function PlaceCablesPanel({
   const [keepRuns, setKeepRuns] = useState(true)
   const [pickFor, setPickFor] = useState<string | null>(null)
   const request = useMemo(
-    () => placeCablesRequest(after, modes, keepRuns),
-    [after, modes, keepRuns]
+    () =>
+      base
+        ? withChoices(base, modes, keepRuns)
+        : after
+          ? placeCablesRequest(after, modes, keepRuns)
+          : null,
+    [after, base, modes, keepRuns]
   )
   const preview = usePlacedCables(planId, request)
   const data = preview.data
@@ -361,8 +434,8 @@ export function PlaceCablesPanel({
 
   return (
     <PanelShell
-      label="Route cables"
-      title="Route cables"
+      label={title}
+      title={title}
       onClose={onClose}
       footer={
         <Button
@@ -456,6 +529,18 @@ export function PlaceCablesPanel({
                       <span className="num whitespace-nowrap">
                         {+row.length.toFixed(2)} {row.length_unit}
                         {delta && ` (${delta})`}
+                      </span>
+                    )}
+                    {row.length == null && row.path && r && (
+                      <span
+                        data-part="route-was"
+                        className="num whitespace-nowrap"
+                      >
+                        was {formatMetres(row.path.length_mm / 1000)}
+                        {(() => {
+                          const d = deltaText(r.length_mm - row.path.length_mm)
+                          return d ? ` (${d})` : ""
+                        })()}
                       </span>
                     )}
                   </div>

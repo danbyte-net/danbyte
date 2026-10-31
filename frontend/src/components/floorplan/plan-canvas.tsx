@@ -105,7 +105,10 @@ export function PlanCanvas({
   trayPick,
   emptyActions,
   structureToolbar,
+  onRerouteCable,
 }: {
+  /** Edit: "Re-route" on an out-of-date route's popover. */
+  onRerouteCable?: (cableId: string) => void
   /** Edit: floats above the selected wall, door, tray or raised floor. */
   structureToolbar?: ReactNode
   /** The right-click menu on empty plan space. */
@@ -555,6 +558,14 @@ export function PlanCanvas({
         trays={trays}
         cellMm={plan.cell_mm}
         onOpenChange={(open) => !open && cablePopover.close()}
+        onReroute={
+          onRerouteCable
+            ? (cid) => {
+                cablePopover.close()
+                onRerouteCable(cid)
+              }
+            : undefined
+        }
       />
       {cabinetPanelTile && (
         <CabinetPanel
