@@ -46,6 +46,11 @@ export function AreaFloorMesh({
         opacity={Math.max(0.12, area.fill_opacity / 100)}
         side={THREE.DoubleSide}
         depthWrite={false}
+        // Pulled towards the camera so it never flickers into the floor or
+        // the background a few millimetres below on a large site.
+        polygonOffset
+        polygonOffsetFactor={-2}
+        polygonOffsetUnits={-4}
       />
     </mesh>
   )

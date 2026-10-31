@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { gridStep } from "./room"
 import {
   NAV_KEYS,
   PAGE_SCROLL_KEYS,
@@ -191,10 +192,12 @@ describe("dollyThroughStep - the zoom wall becomes a walk", () => {
 })
 
 describe("nearForDistance", () => {
-  it("clamps 1 cm – 0.5 m, scaling at 2% of the orbit distance", () => {
+  it("clamps 1 cm – 25 m, scaling at 2% of the orbit distance", () => {
     expect(nearForDistance(0.05)).toBeCloseTo(0.01)
     expect(nearForDistance(10)).toBeCloseTo(0.2)
-    expect(nearForDistance(1000)).toBeCloseTo(0.5)
+    // A site-sized plan seen from far keeps its floor layers apart.
+    expect(nearForDistance(500)).toBeCloseTo(10)
+    expect(nearForDistance(5000)).toBe(25)
   })
 })
 
@@ -203,5 +206,13 @@ describe("zoomSpeedForRoom", () => {
     expect(zoomSpeedForRoom(6)).toBeCloseTo(1.05)
     expect(zoomSpeedForRoom(60)).toBeCloseTo(1.5)
     expect(zoomSpeedForRoom(500)).toBe(2)
+  })
+})
+
+describe("gridStep", () => {
+  it("draws every line up to 120 cells, then thins to about 120", () => {
+    expect(gridStep(24, 16)).toBe(1)
+    expect(gridStep(120, 80)).toBe(1)
+    expect(gridStep(512, 266)).toBe(5)
   })
 })

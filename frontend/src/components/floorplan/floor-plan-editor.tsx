@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import type {
+  CablePlanRequest,
   FloorPlanConflict,
   FloorPlanCrop,
   FloorPlanPlaceable,
@@ -73,9 +74,13 @@ import {
   AfterPlacingCard,
   PlaceCablesPanel,
   placeCablesRequest,
+  RerouteCard,
+  rerouteRequest,
   routableRows,
   usePlacedCables,
 } from "./place-cables"
+import { staleRouteIds } from "./cable-reroute"
+import { useMoveReroute } from "./use-move-reroute"
 import type { AfterPlace, PlaceCablesApply } from "./place-cables"
 import type { AreaShape, PlanShape, Pt } from "./shapes"
 import { RackTablePanel } from "./rack-table-panel"
@@ -221,6 +226,14 @@ export function FloorPlanEditor({
   const [afterPlace, setAfterPlace] = useState<AfterPlace | null>(null)
   const [placeCablesOpen, setPlaceCablesOpen] = useState(false)
   const [trayPick, setTrayPick] = useState<FloorCanvasProps["trayPick"]>()
+  // Update routes: the panel re-routing cables against the draft - after a
+  // move (`rev`: the move's step, which Apply joins), from a route's
+  // popover or for every out-of-date route (`rev` null: a step of its own).
+  const [reroute, setReroute] = useState<{
+    base: CablePlanRequest
+    title: string
+    rev: number | null
+  } | null>(null)
   const setRooms = useSetRooms(id)
   // Tile popover: hover-preview (delayed) + click-to-pin.
   const popover = useTilePopover()
@@ -298,6 +311,16 @@ export function FloorPlanEditor({
     () => withDraftRoutes(cablePaths, cableDraft),
     [cablePaths, cableDraft]
   )
+  // A finished move of tiles or trays stored routes use: "Update N routes?"
+  const {
+    prompt: reroutePrompt,
+    setPrompt: setReroutePrompt,
+    skipNext: skipReroutePrompt,
+  } = useMoveReroute({
+    draft: ed.draft,
+    cablePaths: drawnCablePaths,
+    enabled: editing && !view3d,
+  })
   // Every cable's route on the tiles shown, once per change of the plan's
   // contents: the canvas, the trace and the PDF all draw these.
   const cableRoutes = useCableRoutes(
@@ -486,6 +509,8 @@ export function FloorPlanEditor({
   const placeAt = useCallback(
     (rows: FloorPlanPlaceable[], at: Pt, move = false) => {
       if (ed.mode !== "layout") selectTool("select")
+      // After placing asks about the cables of what was dropped.
+      skipReroutePrompt()
       const placed = edits.placeRows(rows, at, { move })
       setPlaceOpen(false)
       setPlaceCablesOpen(false)
@@ -511,11 +536,12 @@ export function FloorPlanEditor({
           deletedIds: ed.deletedIds,
           cd: ed.draft.cables,
           isTemp,
+          trays: draftTrays,
         }),
         room: roomPrompts(placed, ed.shapes)[0] ?? null,
       })
     },
-    [ed, edits, selectTool]
+    [ed, edits, selectTool, draftTrays, skipReroutePrompt]
   )
   const placeAtCentre = useCallback(
     (rows: FloorPlanPlaceable[]) => {
@@ -603,6 +629,58 @@ export function FloorPlanEditor({
     setPlaceCablesOpen(false)
     setAfterPlace(null)
   }
+  /** Open Update routes for `cableIds`, against the draft as it is now. */
+  const openReroute = (
+    cableIds: readonly string[],
+    rev: number | null,
+    title = "Update routes"
+  ) => {
+    if (!cableIds.length) return
+    setPlaceCablesOpen(false)
+    setDocRoutesOpen(false)
+    setReroute({
+      base: rerouteRequest(
+        cableIds.slice(0, 256),
+        draftPlanInput({
+          tiles: ed.tiles,
+          dirtyIds: ed.dirtyIds,
+          deletedIds: ed.deletedIds,
+          cd: ed.draft.cables,
+          isTemp,
+          trays: draftTrays,
+        })
+      ),
+      title,
+      rev,
+    })
+  }
+  // Every route drawn out of date: More → Update out-of-date routes…
+  const staleIds = useMemo(() => staleRouteIds(cableRoutes), [cableRoutes])
+  /** Apply Update routes: the ticked routes into the draft - folded into
+   * the move's step when it came from one, so one undo takes back both. */
+  const applyReroute = ({ rows, ticks, suggestions }: PlaceCablesApply) => {
+    const apply = (cd: typeof ed.draft.cables) =>
+      applyRoutes(cd, { rows, ticks, suggestions, trays, newId: tempId })
+    if (reroute?.rev != null)
+      ed.draft.amend((d) => ({ ...d, cables: apply(d.cables) }), reroute.rev)
+    else ed.draft.setCables(apply)
+    setReroute(null)
+    setReroutePrompt(null)
+  }
+  // Undoing (or redoing past) the move closes its panel.
+  useEffect(() => {
+    if (reroute?.rev != null && reroutePrompt?.rev !== reroute.rev)
+      setReroute(null)
+  }, [reroutePrompt, reroute])
+  // A snap to the grid moves tiles on the server: once the plan is back,
+  // offer to route what it left out of date.
+  const askStale = useRef(false)
+  useEffect(() => {
+    if (!askStale.current || !editing) return
+    if (!staleIds.length) return
+    askStale.current = false
+    setReroutePrompt({ cableIds: staleIds, rev: null })
+  }, [staleIds, editing])
   const conflictName = (c: FloorPlanConflict) => {
     if (c.kind === "cable_path" || c.kind === "cable")
       return ed.draft.cables.routes[c.id]?.label ?? "Cable"
@@ -835,8 +913,14 @@ export function FloorPlanEditor({
           editing && !view3d && cablePaths.length
             ? () => {
                 setPlaceCablesOpen(false)
+                setReroute(null)
                 setDocRoutesOpen(true)
               }
+            : undefined
+        }
+        onUpdateStale={
+          editing && !view3d && staleIds.length
+            ? () => openReroute(staleIds, null, "Update out-of-date routes")
             : undefined
         }
         canUndo={ed.draft.canUndo}
@@ -986,9 +1070,14 @@ export function FloorPlanEditor({
               cablePaths={drawnCablePaths}
               cableRoutes={cableRoutes}
               cablePreviews={
-                docRoutesOpen || placeCablesOpen ? cablePreviews : undefined
+                docRoutesOpen || placeCablesOpen || reroute
+                  ? cablePreviews
+                  : undefined
               }
-              trayPick={placeCablesOpen ? trayPick : undefined}
+              trayPick={placeCablesOpen || reroute ? trayPick : undefined}
+              onRerouteCable={
+                editing ? (cid) => openReroute([cid], null) : undefined
+              }
               tileTypes={tileTypes.data?.results ?? []}
               roles={roles.data?.results ?? []}
               popover={popover}
@@ -1125,9 +1214,19 @@ export function FloorPlanEditor({
                         cables={routableCount}
                         onRouteCables={() => {
                           setDocRoutesOpen(false)
+                          setReroute(null)
                           setPlaceCablesOpen(true)
                         }}
                         onDismiss={() => setAfterPlace(null)}
+                      />
+                    )}
+                    {!afterPlace && !reroute && reroutePrompt && (
+                      <RerouteCard
+                        count={reroutePrompt.cableIds.length}
+                        onReview={() =>
+                          openReroute(reroutePrompt.cableIds, reroutePrompt.rev)
+                        }
+                        onDismiss={() => setReroutePrompt(null)}
                       />
                     )}
                     {data.contentsQuery.isSuccess &&
@@ -1154,6 +1253,20 @@ export function FloorPlanEditor({
               onTrayPick={setTrayPick}
               onApply={applyPlacedCables}
               onClose={() => setPlaceCablesOpen(false)}
+            />
+          )}
+          {editing && !view3d && reroute && (
+            <PlaceCablesPanel
+              key={JSON.stringify(reroute.base.cable_ids)}
+              planId={id}
+              base={reroute.base}
+              title={reroute.title}
+              tiles={tiles}
+              trays={planTrays}
+              onPreviews={setCablePreviews}
+              onTrayPick={setTrayPick}
+              onApply={applyReroute}
+              onClose={() => setReroute(null)}
             />
           )}
           {editing && !view3d && docRoutesOpen && (
@@ -1336,6 +1449,9 @@ export function FloorPlanEditor({
         open={snapOpen}
         onOpenChange={setSnapOpen}
         isDirty={isDirty}
+        onMoved={() => {
+          askStale.current = true
+        }}
       />
       <ConfirmDialog
         open={leaveEditOpen}

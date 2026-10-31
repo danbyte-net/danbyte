@@ -21,11 +21,14 @@ export function SnapAllDialog({
   open,
   onOpenChange,
   isDirty,
+  onMoved,
 }: {
   planId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   isDirty: boolean
+  /** Tiles moved: the routes on them may be out of date now. */
+  onMoved?: () => void
 }) {
   const qc = useQueryClient()
   const url = `/api/floor-plans/${planId}/snap-all/`
@@ -46,6 +49,9 @@ export function SnapAllDialog({
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["floor-plan", planId] })
       qc.invalidateQueries({ queryKey: floorPlanContentsKey(planId) })
+      // Moved tiles leave the routes on them out of date.
+      qc.invalidateQueries({ queryKey: ["floor-plan-cable-paths", planId] })
+      if (res.moved) onMoved?.()
       toast.success(
         res.moved
           ? `Back on the grid - ${res.moved} tile${res.moved === 1 ? "" : "s"} moved`
