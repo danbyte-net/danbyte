@@ -69,7 +69,7 @@ import {
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
-import { planPaperScale, planSvg } from "./plan-svg"
+import { CLOSEUP_MM_PER_PX, planPaperScale, planSvg } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
 import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
@@ -802,7 +802,8 @@ export function FloorPlanEditor({
   const exportSvg = (
     paper?: PaperChoice,
     withCables: boolean = prefs.showCableLinks,
-    fitContent = false
+    fitContent = false,
+    closeup = false
   ) =>
     plan
       ? planSvg({
@@ -828,7 +829,10 @@ export function FloorPlanEditor({
                 mmPerPx: planPaperScale(plan, paper),
               }
             : undefined,
-          fitContent: fitContent && paper ? { paper } : undefined,
+          fitContent:
+            fitContent && paper
+              ? { paper, ...(closeup ? { mmPerPx: CLOSEUP_MM_PER_PX } : {}) }
+              : undefined,
         })
       : ""
 
@@ -1567,7 +1571,8 @@ export function FloorPlanEditor({
         planSvg={
           view3d
             ? undefined
-            : async (paper) => exportSvg(paper, true, true) || null
+            : async (paper, closeup) =>
+                exportSvg(paper, true, true, closeup) || null
         }
       />
       <SnapAllDialog
