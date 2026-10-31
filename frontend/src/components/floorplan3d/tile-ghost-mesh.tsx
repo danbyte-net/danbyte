@@ -19,9 +19,12 @@ const GHOST_H = 2.0
 export function TileGhostMesh({
   plan,
   tile,
+  showName = true,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
+  /** Off when Readable draws the room's names (readable-names.tsx). */
+  showName?: boolean
 }) {
   const [x0, z0] = cellToWorld(plan, tile.x, tile.y)
   const [x1, z1] = cellToWorld(plan, tile.x + tile.w, tile.y + tile.h)
@@ -52,8 +55,12 @@ export function TileGhostMesh({
       {/* Billboarded so the name reads from ANY camera angle - a flat plate
           on a 2 m box is legible from one side of the room only. Floats just
           above the massing, like the rack HUD labels. */}
-      {name && (
-        <TextSprite text={name} heightM={0.16} position={[0, GHOST_H + 0.2, 0]} />
+      {name && showName && (
+        <TextSprite
+          text={name}
+          heightM={0.16}
+          position={[0, GHOST_H + 0.2, 0]}
+        />
       )}
     </group>
   )

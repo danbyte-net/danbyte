@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type {
   FloorPlan,
@@ -29,7 +29,23 @@ import { cn } from "@/lib/utils"
 import type { Pt } from "./cable-route"
 import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
-import { FovCone, TileMarkers, TileShape } from "./tile-layer"
+import {
+  FovCone,
+  ReadableNames,
+  TileMarkers,
+  TileShape,
+  createHoverStore,
+} from "./tile-layer"
+import {
+  READABLE_FONT_PX,
+  fontGrow,
+  growFactor,
+  growStubs,
+  growsReadable,
+  readableHit,
+  readableOrder,
+} from "./readable"
+import type { ObjectSize } from "./readable"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
@@ -185,6 +201,9 @@ export interface FloorCanvasProps {
   showZoneLabels?: boolean
   /** Outline photo tiles that are not selected. */
   photoOutlines?: boolean
+  /** Readable: placed objects keep a least size on screen from afar, with
+   * their names at a constant size (readable.ts). */
+  objectSize?: ObjectSize
   // ── Raised floors and walls (Structure mode) ───────────────────────────
   /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
   raisedFloors?: RaisedFloorArea[]
@@ -397,6 +416,25 @@ type DragState =
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
   | { mode: "snapshot"; start: CellPoint; end: CellPoint }
 
+/** An element's size on screen (px), kept up to date by a ResizeObserver;
+ * 0 by 0 until measured. */
+function useElementSize(ref: React.RefObject<Element | null>) {
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect()
+      setSize((s) =>
+        s.w === r.width && s.h === r.height ? s : { w: r.width, h: r.height }
+      )
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return size
+}
+
 /**
  * The rendering core: one `<svg>` with a pan/zoom `<g>`, a cell `<pattern>`
  * grid, the background blueprint, and one `<g>` per tile. Orientation is
@@ -452,6 +490,7 @@ export function FloorCanvas({
   showFov = true,
   showZoneLabels = true,
   photoOutlines = false,
+  objectSize = "real",
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -544,6 +583,26 @@ export function FloorCanvas({
     pinchMove,
     pinchUp,
   } = usePanZoom()
+
+  // Readable (Display > Object size): what grows from afar, and the names
+  // under it - the hovered tile's in a store of its own, so a hover
+  // re-renders the names and not the canvas.
+  const readable = objectSize === "readable"
+  const pxPerCell = CELL * t.k
+  const [hoverStore] = useState(createHoverStore)
+  const viewSize = useElementSize(svgRef)
+  const shownStubs = useMemo(
+    () =>
+      readable && cableStubs
+        ? growStubs(cableStubs, tiles, pxPerCell)
+        : cableStubs,
+    [readable, cableStubs, tiles, pxPerCell]
+  )
+  const pinnedNames = useMemo(() => {
+    const s = new Set(multiSelectedIds ?? [])
+    if (selectedId) s.add(selectedId)
+    return s
+  }, [multiSelectedIds, selectedId])
 
   // The cable layer is memoised; its callbacks must hold still while the
   // canvas re-renders on every pan frame.
@@ -1205,6 +1264,28 @@ export function FloorCanvas({
         return
       }
     }
+    // Readable: a grown symbol draws over the areas and labels - it is
+    // what the pointer is on.
+    const grownHit = readable
+      ? readableHit(
+          readableOrder(tiles, pxPerCell, pinnedNames),
+          wx,
+          wy,
+          pxPerCell
+        )
+      : null
+    if (
+      grownHit &&
+      growFactor(grownHit.width, grownHit.height, pxPerCell) > 1
+    ) {
+      setCtxMenu({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        tile: grownHit,
+        at: [wx, wy],
+      })
+      return
+    }
     // Editing: a label or an area under the pointer gets its own menu
     // (forward, back, delete) - labels first, they draw on top.
     if (editable && mode === "layout") {
@@ -1282,7 +1363,12 @@ export function FloorCanvas({
     // Suppress while dragging/panning/drawing - a popover chasing the cursor
     // mid-drag is noise.
     if (drag.current || drawing) return
+    hoverStore.set(tile.id)
     onHoverTile?.(tile, { x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }
+  const leaveHover = () => {
+    hoverStore.set(null)
+    onHoverTile?.(null, null)
   }
 
   // Cables whose A↔B run touches a tile - for "trace cables here".
@@ -1301,6 +1387,24 @@ export function FloorCanvas({
     const shown = residual
       ? { ...tile, orientation: tileQuarter(tile.orientation) }
       : tile
+    // Readable from afar: drawn grown about its centre (its saved geometry
+    // untouched), its name left to the names layer, no resize grip - a
+    // resize is done zoomed in, at the real size.
+    const grow =
+      readable && growsReadable(tile)
+        ? growFactor(tile.width, tile.height, pxPerCell)
+        : 1
+    const ccx = (tile.x + tile.width / 2) * CELL
+    const ccy = (tile.y + tile.height / 2) * CELL
+    const transform =
+      [
+        residual ? `rotate(${residual},${ccx},${ccy})` : "",
+        grow > 1
+          ? `translate(${ccx},${ccy}) scale(${grow}) translate(${-ccx},${-ccy})`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ") || undefined
     return (
       // In Structure mode tiles are context, not targets - they pass
       // pointer events through so an area underneath stays reachable
@@ -1311,15 +1415,16 @@ export function FloorCanvas({
           mode === "structure" || isLocked(tile.id) ? "none" : undefined
         }
         opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
-        transform={
-          residual
-            ? `rotate(${residual},${(tile.x + tile.width / 2) * CELL},${(tile.y + tile.height / 2) * CELL})`
-            : undefined
-        }
+        transform={transform}
+        data-grown={grow > 1 ? "" : undefined}
       >
         <TileShape
           tile={shown}
-          grip={!free}
+          grip={!free && grow <= 1}
+          hideName={grow > 1}
+          zoneNameGrow={
+            readable && tileIsZone(tile) ? fontGrow(10, t.k) : undefined
+          }
           handlePx={HANDLE_PX / t.k}
           selected={tile.id === selectedId || !!multiSelectedIds?.has(tile.id)}
           editable={editable}
@@ -1341,7 +1446,7 @@ export function FloorCanvas({
             if (mode !== "cable") onOpenTile?.(tile)
           }}
           onPointerEnter={(e) => reportHover(tile, e)}
-          onPointerLeave={() => onHoverTile?.(null, null)}
+          onPointerLeave={leaveHover}
         />
       </g>
     )
@@ -1526,9 +1631,13 @@ export function FloorCanvas({
             const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
             // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
+            // Readable: never under READABLE_FONT_PX on screen, and shown
+            // whatever it spills over.
+            const rfGrow = readable ? fontGrow(10, t.k) : 1
             const labelFits =
-              a.width * CELL - 12 >= labelText.length * 5.6 &&
-              a.height * CELL >= 20
+              readable ||
+              (a.width * CELL - 12 >= labelText.length * 5.6 &&
+                a.height * CELL >= 20)
             const live = mode === "structure" && !isLocked(a.id) && !drawing
             return (
               <g
@@ -1570,10 +1679,10 @@ export function FloorCanvas({
                   // raised floor usually covers the room exactly.
                   <text
                     data-raised-label={a.id}
-                    x={a.x * CELL + 6}
-                    y={(a.y + a.height) * CELL - 6}
+                    x={a.x * CELL + 6 * rfGrow}
+                    y={(a.y + a.height) * CELL - 6 * rfGrow}
                     className="fill-muted-foreground"
-                    fontSize={10}
+                    fontSize={10 * rfGrow}
                     pointerEvents="none"
                   >
                     {labelText}
@@ -1593,6 +1702,7 @@ export function FloorCanvas({
                 area={a}
                 selected={a.id === selectedShapeId}
                 zoom={t.k}
+                minNamePx={readable ? READABLE_FONT_PX : undefined}
                 interactive={shapesLive && !isLocked(a.id)}
                 multiSelected={!!areaSel?.has(a.id)}
                 onPointerDown={(e) => {
@@ -1617,24 +1727,31 @@ export function FloorCanvas({
             ))}
           </g>
           {/* On a free plan tiles may overlap: their z says which is on
-              top. */}
-          {(free
-            ? tiles
-                .filter((tl) => !tileIsZone(tl))
-                .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-            : tiles.filter((tl) => !tileIsZone(tl))
+              top. Readable draws the grown symbols over the rest, the
+              selection last. */}
+          {readableOrder(
+            free
+              ? tiles
+                  .filter((tl) => !tileIsZone(tl))
+                  .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+              : tiles.filter((tl) => !tileIsZone(tl)),
+            readable ? pxPerCell : null,
+            pinnedNames
           ).map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
-              its colour where it would shrink to a dot. */}
-          <TileMarkers
-            tiles={tiles}
-            k={t.k}
-            interactive={mode !== "structure"}
-            isLocked={isLocked}
-            onPointerDown={handleTileDown}
-            onPointerEnter={reportHover}
-            onPointerLeave={() => onHoverTile?.(null, null)}
-          />
+              its colour where it would shrink to a dot - Readable grows
+              the whole symbol instead. */}
+          {!readable && (
+            <TileMarkers
+              tiles={tiles}
+              k={t.k}
+              interactive={mode !== "structure"}
+              isLocked={isLocked}
+              onPointerDown={handleTileDown}
+              onPointerEnter={reportHover}
+              onPointerLeave={leaveHover}
+            />
+          )}
 
           {showFov &&
             tiles
@@ -1699,6 +1816,8 @@ export function FloorCanvas({
                 <TrayShape
                   key={tray.id}
                   tray={shownRow(tray)}
+                  zoom={t.k}
+                  readable={readable}
                   selected={
                     trayPick
                       ? trayPick.picked.includes(tray.id)
@@ -1749,7 +1868,22 @@ export function FloorCanvas({
               onSelect={selectCable}
               onHover={hoverCable}
               previews={cablePreviews}
-              stubs={cableStubs}
+              stubs={shownStubs}
+            />
+          )}
+
+          {/* Readable: the grown objects' names, thinned to those that
+              fit side by side. */}
+          {readable && (
+            <ReadableNames
+              tiles={tiles}
+              k={t.k}
+              tx={t.x}
+              ty={t.y}
+              viewW={viewSize.w}
+              viewH={viewSize.h}
+              pinned={pinnedNames}
+              hover={hoverStore}
             />
           )}
 
@@ -1760,6 +1894,8 @@ export function FloorCanvas({
                 key={l.id}
                 label={l}
                 cellMm={plan.cell_mm}
+                minFontPx={readable ? READABLE_FONT_PX : undefined}
+                zoom={t.k}
                 // View: a label takes the pointer only to open its link.
                 interactive={
                   shapesLive &&

@@ -3,6 +3,7 @@ import { Link2 } from "lucide-react"
 import { getLucideIcon } from "@/components/dynamic-icon"
 
 import { CELL } from "./canvas-geometry"
+import { fontGrow } from "./readable"
 import {
   HANDLES,
   PATTERN_GAP,
@@ -96,6 +97,7 @@ function AreaName({
   y,
   anchor,
   ink,
+  grow = 1,
 }: {
   area: AreaShape
   name: string
@@ -103,25 +105,30 @@ function AreaName({
   y: number
   anchor: "start" | "middle"
   ink: string
+  /** Readable from afar: the name and its icon grown by this much. */
+  grow?: number
 }) {
   const icon = areaIcon(area)
   const Icon = icon ? getLucideIcon(icon) : null
-  const shift = Icon ? ICON_PX + ICON_GAP : 0
-  const textW = name.length * NAME_PX * NAME_EM
+  const namePx = NAME_PX * grow
+  const iconPx = ICON_PX * grow
+  const shift = Icon ? iconPx + ICON_GAP * grow : 0
+  const textW = name.length * namePx * NAME_EM
   // The text's anchor point, and the icon's top left before the text.
   const tx = anchor === "middle" ? x + shift / 2 : x + shift
   const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
-  const mid = anchor === "middle" ? y : y - NAME_PX * 0.35
-  const halo = areaNameHalo(area)
+  const mid = anchor === "middle" ? y : y - namePx * 0.35
+  // Grown, it spills over tiles and lines: always on its halo.
+  const halo = areaNameHalo(area) || grow > 1
   return (
     <g pointerEvents="none" data-part="area-name">
       {Icon && (
         <Icon
           data-part="area-icon"
           x={ix}
-          y={mid - ICON_PX / 2}
-          width={ICON_PX}
-          height={ICON_PX}
+          y={mid - iconPx / 2}
+          width={iconPx}
+          height={iconPx}
           color={ink}
           strokeWidth={2.25}
         />
@@ -131,11 +138,11 @@ function AreaName({
         y={y}
         textAnchor={anchor === "middle" ? "middle" : undefined}
         dominantBaseline={anchor === "middle" ? "middle" : undefined}
-        fontSize={NAME_PX}
+        fontSize={namePx}
         fontWeight={600}
         fill={ink}
         className={halo ? "stroke-background" : undefined}
-        strokeWidth={halo ? 3 : undefined}
+        strokeWidth={halo ? 3 * grow : undefined}
         strokeLinejoin={halo ? "round" : undefined}
         paintOrder={halo ? "stroke" : undefined}
       >
@@ -174,8 +181,11 @@ export function AreaShapeView({
   onEdgeDoubleClick,
   zoom = 1,
   multiSelected = false,
+  minNamePx,
 }: {
   area: AreaShape
+  /** Readable: the name never under this on screen (px). */
+  minNamePx?: number
   selected: boolean
   /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
   multiSelected?: boolean
@@ -193,6 +203,7 @@ export function AreaShapeView({
   const on = selected || multiSelected
   const strokeOpacity = area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
   const clipId = `area-pattern-${area.id}`
+  const grow = minNamePx ? fontGrow(NAME_PX, zoom, minNamePx) : 1
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
@@ -260,6 +271,7 @@ export function AreaShapeView({
             y={px(cy)}
             anchor="middle"
             ink={ink}
+            grow={grow}
           />
         )}
         {(area.opens || area.opens_hidden) && (
@@ -306,14 +318,15 @@ export function AreaShapeView({
         }
         box={{ x: px(area.x), y: px(area.y), w, h }}
       />
-      {name && w > 30 && h > 18 && (
+      {name && ((w > 30 && h > 18) || grow > 1) && (
         <AreaName
           area={area}
           name={name}
-          x={px(area.x) + 6}
-          y={px(area.y) + 15}
+          x={px(area.x) + 6 * grow}
+          y={px(area.y) + 15 * grow}
           anchor="start"
           ink={ink}
+          grow={grow}
         />
       )}
       {(area.opens || area.opens_hidden) && w > LINK_PX + 8 && (
@@ -334,9 +347,16 @@ export function LabelShapeView({
   interactive,
   viewing = false,
   onPointerDown,
+  minFontPx,
+  zoom = 1,
 }: {
   label: LabelShape
   cellMm: number
+  /** Readable: the text never under this on screen (px) - the label,
+   * plate and all, grown about its centre. */
+  minFontPx?: number
+  /** The canvas zoom. */
+  zoom?: number
   interactive: boolean
   /** View: a click opens its link (a pointer, not a move cursor). */
   viewing?: boolean
@@ -360,14 +380,21 @@ export function LabelShapeView({
         : px(box.x) + size * 0.3
   const color = labelColor(label.color)
   const plate = labelPlate(label)
+  const grow = minFontPx ? fontGrow(size, zoom, minFontPx) : 1
+  const transform =
+    [
+      label.rotation ? `rotate(${label.rotation},${px(cx)},${px(cy)})` : "",
+      grow > 1
+        ? `translate(${px(cx)},${px(cy)}) scale(${grow}) translate(${-px(cx)},${-px(cy)})`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined
   return (
     <g
       data-label={label.id}
-      transform={
-        label.rotation
-          ? `rotate(${label.rotation},${px(cx)},${px(cy)})`
-          : undefined
-      }
+      data-grown={grow > 1 ? "" : undefined}
+      transform={transform}
       onPointerDown={onPointerDown}
       style={{
         cursor: interactive ? (viewing ? "pointer" : "move") : undefined,

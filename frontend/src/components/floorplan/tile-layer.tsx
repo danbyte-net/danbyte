@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react"
 import { ArrowUpDown, Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
@@ -5,6 +6,16 @@ import { getLucideIcon } from "@/components/dynamic-icon"
 
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
+import {
+  READABLE_FONT_PX,
+  clipName,
+  growFactor,
+  growsReadable,
+  nameBox,
+  namePriority,
+  thinNames,
+} from "./readable"
+import type { NameCandidate } from "./readable"
 import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -68,6 +79,8 @@ export function TileShape({
   dimmed = false,
   grip = true,
   handlePx = 12,
+  hideName = false,
+  zoneNameGrow = 1,
   onPointerDown,
   onResizeDown,
   onDoubleClick,
@@ -97,6 +110,10 @@ export function TileShape({
   /** The grip's side in plan px - the canvas keeps it the size of every
    * other handle on screen. */
   handlePx?: number
+  /** Readable from afar: the name is drawn by the names layer instead. */
+  hideName?: boolean
+  /** A zone's name, grown to stay readable from afar (Readable). */
+  zoneNameGrow?: number
   onPointerDown: (e: React.PointerEvent) => void
   onResizeDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
@@ -110,7 +127,7 @@ export function TileShape({
   const name = tileName(tile)
   const zone = tileIsZone(tile)
   const dashed = tile.status === "planned" || tile.status === "reserved"
-  const showLabel = !!name
+  const showLabel = !!name && !hideName
 
   // Live monitoring: down/degraded overrides the stroke so a rack going red
   // is visible at any zoom - whatever the fill says about its capacity.
@@ -166,12 +183,16 @@ export function TileShape({
         />
         {showLabel && showZoneLabels && (
           <text
-            x={6}
-            y={14}
-            fontSize={10}
+            x={6 * zoneNameGrow}
+            y={14 * zoneNameGrow}
+            fontSize={10 * zoneNameGrow}
             fill={zoneFill}
             pointerEvents="none"
             fontWeight={500}
+            className={zoneNameGrow > 1 ? "stroke-background" : undefined}
+            strokeWidth={zoneNameGrow > 1 ? 3 * zoneNameGrow : undefined}
+            strokeLinejoin="round"
+            paintOrder="stroke"
           >
             {name}
           </text>
@@ -238,7 +259,7 @@ export function TileShape({
             pointerEvents="none"
           />
         )}
-        {name && (
+        {showLabel && (
           <text
             x={w / 2}
             y={h + 10}
@@ -671,4 +692,133 @@ export function TileMarkers({
     )
   }
   return marks.length ? <g data-layer="tile-markers">{marks}</g> : null
+}
+
+/** The tile under the pointer, for the names layer - kept out of React
+ * state so a hover re-renders the names alone, not the canvas. */
+export interface HoverStore {
+  get: () => string | null
+  set: (id: string | null) => void
+  subscribe: (fn: () => void) => () => void
+}
+
+export function createHoverStore(): HoverStore {
+  let id: string | null = null
+  const subs = new Set<() => void>()
+  return {
+    get: () => id,
+    set: (next) => {
+      if (next === id) return
+      id = next
+      for (const fn of subs) fn()
+    },
+    subscribe: (fn) => {
+      subs.add(fn)
+      return () => {
+        subs.delete(fn)
+      }
+    },
+  }
+}
+
+const NO_HOVER: HoverStore = {
+  get: () => null,
+  set: () => {},
+  subscribe: () => () => {},
+}
+
+/**
+ * Readable from afar: the names of the tiles grown to READABLE_SYMBOL_PX,
+ * under each symbol at READABLE_FONT_PX on screen whatever the zoom, on a
+ * halo. Only names in view are laid out, and where two would overlap the
+ * lower ranked one hides (`thinNames`); the selected and the hovered tile
+ * always show theirs.
+ */
+export function ReadableNames({
+  tiles,
+  k,
+  tx,
+  ty,
+  viewW,
+  viewH,
+  pinned,
+  hover = NO_HOVER,
+}: {
+  /** The tiles drawn, zones left out. */
+  tiles: readonly FloorPlanTile[]
+  /** The canvas transform: zoom and pan (screen px). */
+  k: number
+  tx: number
+  ty: number
+  /** The canvas's size on screen (px); 0 lays out every name. */
+  viewW: number
+  viewH: number
+  /** Tiles whose name always shows - the selection. */
+  pinned?: ReadonlySet<string>
+  hover?: HoverStore
+}) {
+  const hovered = useSyncExternalStore(hover.subscribe, hover.get, hover.get)
+  const pxPerCell = CELL * k
+  const font = READABLE_FONT_PX
+  const cands: NameCandidate[] = []
+  const placed = new Map<string, { x: number; y: number; text: string }>()
+  const margin = 80
+  for (const tile of tiles) {
+    const name = tileName(tile)
+    if (!name || !growsReadable(tile)) continue
+    const grow = growFactor(tile.width, tile.height, pxPerCell)
+    if (grow <= 1) continue
+    const cx = (tile.x + tile.width / 2) * pxPerCell + tx
+    const cy = (tile.y + tile.height / 2) * pxPerCell + ty
+    if (
+      viewW > 0 &&
+      (cx < -margin ||
+        cy < -margin ||
+        cx > viewW + margin ||
+        cy > viewH + margin)
+    )
+      continue
+    const top = cy + (tile.height * pxPerCell * grow) / 2 + 2
+    const box = nameBox(name, cx, top, font)
+    const always = tile.id === hovered || !!pinned?.has(tile.id)
+    cands.push({
+      id: tile.id,
+      ...box,
+      priority: always ? Infinity : namePriority(tile),
+    })
+    placed.set(tile.id, {
+      // Back to plan px, inside the pan/zoom group.
+      x: (cx - tx) / k,
+      y: (top - ty + font) / k,
+      text: clipName(name),
+    })
+  }
+  if (!cands.length) return null
+  const shown = thinNames(cands)
+  const out: React.ReactNode[] = []
+  for (const [id, p] of placed) {
+    if (!shown.has(id)) continue
+    out.push(
+      <text
+        key={id}
+        data-readable-name={id}
+        x={p.x}
+        y={p.y}
+        textAnchor="middle"
+        fontSize={font / k}
+        fontWeight={500}
+        className="fill-foreground stroke-background"
+        strokeWidth={3 / k}
+        strokeLinejoin="round"
+        paintOrder="stroke"
+      >
+        {p.text}
+      </text>
+    )
+  }
+  return (
+    <g data-layer="readable-names" pointerEvents="none">
+      {out}
+    </g>
+  )
 }
