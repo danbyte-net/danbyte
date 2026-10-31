@@ -244,7 +244,10 @@ describe("Expand", () => {
     expect(screen.getByTestId("expand-frame").textContent).toMatch(
       /524 × 111 cells; a plan has at most 512/
     )
-    expect(screen.getByRole("button", { name: "Expand" }).disabled).toBe(true)
+    expect(
+      (screen.getByRole("button", { name: "Expand" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true)
   })
 
   it("still grows when the tiles can't be read, keeping the old picture", async () => {
