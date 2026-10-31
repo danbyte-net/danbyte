@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
 
 import type {
   FloorPlan,
@@ -31,7 +38,7 @@ import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
   FovCone,
-  ReadableNames,
+  ReadableSymbol,
   TileMarkers,
   TileShape,
   createHoverStore,
@@ -39,12 +46,21 @@ import {
 import {
   READABLE_FONT_PX,
   fontGrow,
-  growFactor,
   growStubs,
-  growsReadable,
   readableHit,
   readableOrder,
+  readableShape,
 } from "./readable"
+import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
+import { layoutPlanLabels } from "./plan-label-pass"
+import { LABEL_FONT_PX, LABEL_REPEAT_PX, CHIP_FONT_PX } from "./plan-labels"
+import {
+  LANE_MIN_PX,
+  bundledGroups,
+  cableLod,
+  laneOrder,
+  layoutCables,
+} from "./cable-draw"
 import type { ObjectSize } from "./readable"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
@@ -416,6 +432,11 @@ type DragState =
   | { mode: "marquee"; start: CellPoint; end: CellPoint }
   | { mode: "snapshot"; start: CellPoint; end: CellPoint }
 
+const sameView = (
+  a: { k: number; x: number; y: number; w: number; h: number },
+  b: { k: number; x: number; y: number; w: number; h: number }
+) => a.k === b.k && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
+
 /** An element's size on screen (px), kept up to date by a ResizeObserver;
  * 0 by 0 until measured. */
 function useElementSize(ref: React.RefObject<Element | null>) {
@@ -590,6 +611,11 @@ export function FloorCanvas({
   const readable = objectSize === "readable"
   const pxPerCell = CELL * t.k
   const [hoverStore] = useState(createHoverStore)
+  const hoveredTile = useSyncExternalStore(
+    hoverStore.subscribe,
+    hoverStore.get,
+    hoverStore.get
+  )
   const viewSize = useElementSize(svgRef)
   const shownStubs = useMemo(
     () =>
@@ -614,8 +640,11 @@ export function FloorCanvas({
     (id: string | null) => cableProps.current.onSelectCable?.(id),
     []
   )
+  // The hovered run's ids, for the label pass: its name and its ends.
+  const [hoveredCables, setHoveredCables] = useState<readonly string[]>(NO_IDS)
   const hoverCable = useCallback(
     (hit: CableHoverHit | null, at?: CableAnchor) => {
+      setHoveredCables(hit && !hit.bundle ? hit.ids : NO_IDS)
       const report = cableProps.current.onHoverCable
       if (!report) return
       const rect = svgRef.current?.getBoundingClientRect()
@@ -712,6 +741,100 @@ export function FloorCanvas({
   } | null>(null)
   const areas = shapes.filter((s) => s.kind === "area").sort(byZ)
   const labels = shapes.filter((s) => s.kind === "label").sort(byZ)
+  // The label pass, run when a pan or zoom settles: everything the plan
+  // writes, in view, the cables first (plan-label-pass.ts).
+  const settledView = useSettled(
+    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
+    120,
+    sameView
+  )
+  const labelLayout = useMemo(
+    () => layoutCables(cableRoutes, laneOrder(cablePaths, cableRoutes)),
+    [cableRoutes, cablePaths]
+  )
+  const cableFocus = useMemo(
+    () => new Set([...highlightCableIds, ...hoveredCables]),
+    [highlightCableIds, hoveredCables]
+  )
+  const cablesShown = showCableLinks && !trayEditMode
+  const planLabels = useMemo(() => {
+    const k = settledView.k
+    const scale = CELL * k
+    const lod = cableLod(scale)
+    return layoutPlanLabels({
+      scale,
+      unitsPerPx: k,
+      font: LABEL_FONT_PX,
+      chipFont: CHIP_FONT_PX,
+      repeat: LABEL_REPEAT_PX,
+      gap: 4,
+      view:
+        settledView.w > 0
+          ? {
+              x: -settledView.x,
+              y: -settledView.y,
+              w: settledView.w,
+              h: settledView.h,
+            }
+          : null,
+      tiles,
+      shapeOf: readable ? (tl) => readableShape(tl, scale) : null,
+      labelFit,
+      zoneGrow: readable ? fontGrow(10, k) : 1,
+      pinnedTiles: hoveredTile
+        ? new Set([...pinnedNames, hoveredTile])
+        : pinnedNames,
+      trays: showTrays ? trays : [],
+      trayWidth: Math.max(10 * k, readable ? 6 : 4),
+      areas,
+      areaFontPx: 12 * (readable ? fontGrow(12, k) : 1),
+      raised: (raisedFloors ?? []).map((a) => ({
+        id: a.id,
+        box: { x: a.x, y: a.y, w: a.width, h: a.height },
+        text: `${a.label || "Raised floor"} · ${a.plenum_mm} mm`,
+        fontPx: 10 * (readable ? fontGrow(10, k) : 1),
+      })),
+      planLabels: labels,
+      cellMm: plan.cell_mm,
+      cables: cablesShown
+        ? {
+            paths: cablePaths,
+            routes: cableRoutes,
+            layout: labelLayout,
+            bundled: bundledGroups(labelLayout, {
+              lod,
+              bundle: bundleCables,
+              minGapCells: LANE_MIN_PX / scale,
+            }),
+            // While some are traced the rest dim: only the traced named.
+            names: showCableLabels && highlightCableIds.length === 0,
+            focus: cableFocus,
+            focusOnly: lod === "far",
+            lengths: lod === "near",
+            ends: lod !== "far",
+          }
+        : undefined,
+    })
+  }, [
+    settledView,
+    tiles,
+    readable,
+    labelFit,
+    pinnedNames,
+    hoveredTile,
+    showTrays,
+    trays,
+    shapes,
+    raisedFloors,
+    plan.cell_mm,
+    cablesShown,
+    cablePaths,
+    cableRoutes,
+    labelLayout,
+    bundleCables,
+    showCableLabels,
+    cableFocus,
+  ])
   const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
   const selectedTile =
     free && editable && mode === "layout" && selectedId
@@ -1274,10 +1397,7 @@ export function FloorCanvas({
           pxPerCell
         )
       : null
-    if (
-      grownHit &&
-      growFactor(grownHit.width, grownHit.height, pxPerCell) > 1
-    ) {
+    if (grownHit && readableShape(grownHit, pxPerCell).changed) {
       setCtxMenu({
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
@@ -1390,10 +1510,38 @@ export function FloorCanvas({
     // Readable from afar: drawn grown about its centre (its saved geometry
     // untouched), its name left to the names layer, no resize grip - a
     // resize is done zoomed in, at the real size.
-    const grow =
-      readable && growsReadable(tile)
-        ? growFactor(tile.width, tile.height, pxPerCell)
-        : 1
+    const rs = readable ? readableShape(tile, pxPerCell) : null
+    // Too thin, or a photo too small to read: its symbol instead.
+    if (rs?.symbol)
+      return (
+        <g
+          key={tile.id}
+          pointerEvents={
+            mode === "structure" || isLocked(tile.id) ? "none" : undefined
+          }
+          opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
+          data-grown=""
+        >
+          <ReadableSymbol
+            tile={tile}
+            box={rs.box}
+            k={t.k}
+            selected={
+              tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
+            }
+            live={liveState?.tiles[tile.id]}
+            colorBy={colorBy}
+            figures={figures?.get(tile.id)}
+            onPointerDown={(e) => handleTileDown(tile, e)}
+            onDoubleClick={() => {
+              if (mode !== "cable") onOpenTile?.(tile)
+            }}
+            onPointerEnter={(e) => reportHover(tile, e)}
+            onPointerLeave={leaveHover}
+          />
+        </g>
+      )
+    const grow = rs?.changed ? rs.grow : 1
     const ccx = (tile.x + tile.width / 2) * CELL
     const ccy = (tile.y + tile.height / 2) * CELL
     const transform =
@@ -1421,7 +1569,7 @@ export function FloorCanvas({
         <TileShape
           tile={shown}
           grip={!free && grow <= 1}
-          hideName={grow > 1}
+          hideName={planLabels.tileNamesHere.has(tile.id)}
           zoneNameGrow={
             readable && tileIsZone(tile) ? fontGrow(10, t.k) : undefined
           }
@@ -1674,20 +1822,22 @@ export function FloorCanvas({
                   strokeDasharray="7 4"
                   rx={3}
                 />
-                {(a.label || a.id === selectedAreaId) && labelFits && (
-                  // Bottom-left: a room's name sits at its top-left, and a
-                  // raised floor usually covers the room exactly.
-                  <text
-                    data-raised-label={a.id}
-                    x={a.x * CELL + 6 * rfGrow}
-                    y={(a.y + a.height) * CELL - 6 * rfGrow}
-                    className="fill-muted-foreground"
-                    fontSize={10 * rfGrow}
-                    pointerEvents="none"
-                  >
-                    {labelText}
-                  </text>
-                )}
+                {(a.label || a.id === selectedAreaId) &&
+                  labelFits &&
+                  !planLabels.hiddenRaised.has(a.id) && (
+                    // Bottom-left: a room's name sits at its top-left, and a
+                    // raised floor usually covers the room exactly.
+                    <text
+                      data-raised-label={a.id}
+                      x={a.x * CELL + 6 * rfGrow}
+                      y={(a.y + a.height) * CELL - 6 * rfGrow}
+                      className="fill-muted-foreground"
+                      fontSize={10 * rfGrow}
+                      pointerEvents="none"
+                    >
+                      {labelText}
+                    </text>
+                  )}
               </g>
             )
           })}
@@ -1703,6 +1853,7 @@ export function FloorCanvas({
                 selected={a.id === selectedShapeId}
                 zoom={t.k}
                 minNamePx={readable ? READABLE_FONT_PX : undefined}
+                nameAt={planLabels.areas.get(a.id)}
                 interactive={shapesLive && !isLocked(a.id)}
                 multiSelected={!!areaSel?.has(a.id)}
                 onPointerDown={(e) => {
@@ -1818,6 +1969,7 @@ export function FloorCanvas({
                   tray={shownRow(tray)}
                   zoom={t.k}
                   readable={readable}
+                  hideName
                   selected={
                     trayPick
                       ? trayPick.picked.includes(tray.id)
@@ -1869,23 +2021,15 @@ export function FloorCanvas({
               onHover={hoverCable}
               previews={cablePreviews}
               stubs={shownStubs}
+              tiles={tiles}
+              readable={readable}
             />
           )}
 
-          {/* Readable: the grown objects' names, thinned to those that
-              fit side by side. */}
-          {readable && (
-            <ReadableNames
-              tiles={tiles}
-              k={t.k}
-              tx={t.x}
-              ty={t.y}
-              viewW={viewSize.w}
-              viewH={viewSize.h}
-              pinned={pinnedNames}
-              hover={hoverStore}
-            />
-          )}
+          {/* Every text the label pass places: cable names along their
+              runs, trays' names, a focused cable's ends, Readable's tile
+              names - one pass, the cables first (plan-label-pass.ts). */}
+          <PlanLabelsLayer labels={planLabels} k={t.k} trays={trays} />
 
           {/* Labels - over the tiles, so "North side" reads over a row. */}
           <g data-layer="labels">

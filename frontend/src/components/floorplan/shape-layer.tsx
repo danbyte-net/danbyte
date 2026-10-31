@@ -182,10 +182,15 @@ export function AreaShapeView({
   zoom = 1,
   multiSelected = false,
   minNamePx,
+  nameAt,
 }: {
   area: AreaShape
   /** Readable: the name never under this on screen (px). */
   minNamePx?: number
+  /** Where the plan's label pass put the name - its box's top left
+   * (cells) - or null where it would cover another text; left out, the
+   * name sits where it always does. */
+  nameAt?: Pt | null
   selected: boolean
   /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
   multiSelected?: boolean
@@ -198,7 +203,7 @@ export function AreaShapeView({
 }) {
   const color = areaColor(area)
   const ink = areaLabelColor(area)
-  const name = area.show_name ? areaName(area) : ""
+  const name = area.show_name && nameAt !== null ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
   const on = selected || multiSelected
   const strokeOpacity = area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
@@ -318,12 +323,16 @@ export function AreaShapeView({
         }
         box={{ x: px(area.x), y: px(area.y), w, h }}
       />
-      {name && ((w > 30 && h > 18) || grow > 1) && (
+      {name && (nameAt || (w > 30 && h > 18) || grow > 1) && (
         <AreaName
           area={area}
           name={name}
-          x={px(area.x) + 6 * grow}
-          y={px(area.y) + 15 * grow}
+          x={nameAt ? px(nameAt[0]) : px(area.x) + 6 * grow}
+          y={
+            nameAt
+              ? px(nameAt[1]) + NAME_PX * grow * 0.8
+              : px(area.y) + 15 * grow
+          }
           anchor="start"
           ink={ink}
           grow={grow}

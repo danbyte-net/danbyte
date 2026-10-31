@@ -114,22 +114,24 @@ describe("CableLayer level of detail", () => {
     expect(container.querySelector("[data-lifted='2']")).not.toBeNull()
   })
 
-  it("mid: the shared tray is one bundle with its count, no labels", () => {
+  it("mid: the shared tray is one bundle, its count left to the labels", () => {
     const { container } = render(layer(0.6))
     expect(
       container.querySelector("[data-layer=cables]")!.getAttribute("data-lod")
     ).toBe("mid")
     const bundle = container.querySelector("[data-bundle]")!
     expect(bundle.getAttribute("aria-label")).toBe("3 cables")
-    expect(bundle.textContent).toBe("3")
-    expect(screen.queryByText("C-1")).toBeNull()
+    // Names and counts are the label pass's (plan-labels-layer.tsx).
+    expect(container.querySelector("[data-layer=cables] text")).toBeNull()
   })
 
-  it("near: every lane, with labels, and a click fans a bundle out", () => {
+  it("near: every lane on its casing, and a click fans a bundle out", () => {
     const { container } = render(layer(2))
     expect(container.querySelectorAll("[data-bundle]")).toHaveLength(0)
     expect(container.querySelectorAll("[data-cable]")).toHaveLength(3)
-    expect(screen.getByText("C-1")).toBeTruthy()
+    const casing = container.querySelectorAll("[data-part=casing] path")
+    expect(casing).toHaveLength(3)
+    expect(casing[0].getAttribute("stroke")).toBe("var(--background)")
 
     const off = render(layer(0.6, { showLabels: false }))
     const bundle = off.container.querySelector("[data-bundle]")!

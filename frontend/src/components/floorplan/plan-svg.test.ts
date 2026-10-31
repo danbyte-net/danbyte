@@ -255,18 +255,24 @@ describe("planSvg cables", () => {
     ).toBeCloseTo(190 / 960, 6)
   })
 
+  const labelTexts = (g: Element) =>
+    [...g.ownerDocument.querySelectorAll("[data-layer=plan-labels] text")].map(
+      (t) => t.textContent
+    )
+
   it("bundles the shared tray with its count at a small paper scale", () => {
     const g = draw(0.05) // 2 mm a cell: about 1:300
-    const texts = [...g.querySelectorAll("text")].map((t) => t.textContent)
-    expect(texts).toContain("3")
+    const texts = labelTexts(g)
+    expect(texts).toContain("3 cables")
     expect(texts).not.toContain("C-1")
   })
 
   it("draws lanes, labels and the planned dash up close", () => {
     const g = draw(0.5) // 20 mm a cell
-    const texts = [...g.querySelectorAll("text")].map((t) => t.textContent)
-    expect(texts).not.toContain("3")
-    expect(texts).toContain("C-1")
+    const texts = labelTexts(g)
+    expect(texts).not.toContain("3 cables")
+    // Along the run like a road name, the length muted after it.
+    expect(texts.some((t) => t?.startsWith("C-1 · "))).toBe(true)
     const dashed = [...g.querySelectorAll("path")].filter((p) =>
       p.getAttribute("stroke-dasharray")
     )
@@ -316,7 +322,7 @@ describe("planSvg cables", () => {
             box: { x: 0, y: 0, w: 480, h: 240 },
           },
         })
-      ).querySelector("[data-layer=cables] path")!
+      ).querySelector("[data-layer=cables] path[stroke-dasharray]")!
     const path = at(3 / 40)
     expect(path.getAttribute("stroke-dasharray")).toBeTruthy()
     // The same paper width at another scale: twice the plan px at half.

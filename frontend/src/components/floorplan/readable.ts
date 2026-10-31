@@ -27,6 +27,14 @@ export const READABLE_FONT_MM = 2
  * (mm). */
 export const READABLE_TRAY_PX = 6
 export const READABLE_TRAY_MM = 1
+/** Readable: the symbol's short side never under this on screen (px) or
+ * paper (mm) - a 1U switch, long and flat, still reads as a symbol. */
+export const READABLE_SHORT_PX = 14
+export const READABLE_SHORT_MM = 2.5
+/** A photo whose short side is under this on screen (px) draws as its
+ * role symbol instead - a stretched sliver of picture reads as nothing. */
+export const READABLE_PHOTO_PX = 24
+export const READABLE_PHOTO_MM = 4
 /** A name longer than this is cut with an ellipsis. */
 export const READABLE_MAX_CHARS = 24
 /** ~Average glyph width of the sans, per em. */
@@ -74,6 +82,63 @@ export function grownBox(tile: FloorPlanTile, grow: number): CellBox {
   }
 }
 
+/** What Readable draws for a tile: its box (cells) - the long side grown
+ * to `minLong`, then the short side to `minShort`, centred - whether that
+ * differs from the real footprint, and whether it draws as the role symbol
+ * (a box whose short side had to grow on its own, or a photo too small
+ * to read) instead of itself. */
+export interface ReadableShape {
+  box: CellBox
+  /** The uniform growth of the long side (1: none). */
+  grow: number
+  changed: boolean
+  symbol: boolean
+}
+
+export function readableShape(
+  tile: FloorPlanTile,
+  perCell: number,
+  {
+    minLong = READABLE_SYMBOL_PX,
+    minShort = READABLE_SHORT_PX,
+    minPhoto = READABLE_PHOTO_PX,
+  }: { minLong?: number; minShort?: number; minPhoto?: number } = {}
+): ReadableShape {
+  const real: CellBox = {
+    x: tile.x,
+    y: tile.y,
+    w: tile.width,
+    h: tile.height,
+  }
+  if (!growsReadable(tile) || !(perCell > 0))
+    return { box: real, grow: 1, changed: false, symbol: false }
+  const grow = growFactor(tile.width, tile.height, perCell, minLong)
+  let w = tile.width * grow
+  let h = tile.height * grow
+  const short = minShort / perCell
+  const thin = Math.min(w, h) < short
+  if (w < short) w = short
+  if (h < short) h = short
+  const photo =
+    tile.display === "photo" &&
+    !!tile.photo &&
+    Math.min(w, h) * perCell < minPhoto
+  const changed = grow > 1 || thin
+  return {
+    box: changed
+      ? {
+          x: tile.x + tile.width / 2 - w / 2,
+          y: tile.y + tile.height / 2 - h / 2,
+          w,
+          h,
+        }
+      : real,
+    grow,
+    changed,
+    symbol: thin || photo,
+  }
+}
+
 /**
  * The tile under (wx, wy) cells as Readable draws it: a grown symbol first
  * (they draw on top, the last drawn wins), then a tile's true footprint.
@@ -91,8 +156,8 @@ export function readableHit(
   for (let i = tiles.length - 1; i >= 0; i--) {
     const t = tiles[i]
     if (!growsReadable(t)) continue
-    const g = growFactor(t.width, t.height, pxPerCell, minPx)
-    if (g > 1 && inside(grownBox(t, g))) return t
+    const shape = readableShape(t, pxPerCell, { minLong: minPx })
+    if (shape.changed && inside(shape.box)) return t
   }
   for (let i = tiles.length - 1; i >= 0; i--) {
     const t = tiles[i]
@@ -116,11 +181,7 @@ export function readableOrder(
   const grown: FloorPlanTile[] = []
   const top: FloorPlanTile[] = []
   for (const t of tiles) {
-    if (
-      !growsReadable(t) ||
-      growFactor(t.width, t.height, pxPerCell, minPx) <= 1
-    )
-      real.push(t)
+    if (!readableShape(t, pxPerCell, { minLong: minPx }).changed) real.push(t)
     else if (pinned?.has(t.id)) top.push(t)
     else grown.push(t)
   }
@@ -151,15 +212,26 @@ export function growStubs(
   stubs: readonly CableStub[],
   tiles: readonly FloorPlanTile[],
   perCell: number,
-  min: number = READABLE_SYMBOL_PX
+  min: number = READABLE_SYMBOL_PX,
+  minShort: number = READABLE_SHORT_PX
 ): readonly CableStub[] {
   if (!stubs.length) return stubs
   const byId = new Map(tiles.map((t) => [t.id, t]))
   const out = stubs.map((s) => {
     const t = byId.get(s.tile)
     if (!t) return s
-    const g = growFactor(t.width, t.height, perCell, min)
-    return g <= 1 ? s : growStub(s, t, g)
+    const shape = readableShape(t, perCell, { minLong: min, minShort })
+    if (!shape.changed) return s
+    const c: Pt = [t.x + t.width / 2, t.y + t.height / 2]
+    const sx = shape.box.w / t.width
+    const sy = shape.box.h / t.height
+    return {
+      ...s,
+      from: [
+        c[0] + (s.from[0] - c[0]) * sx,
+        c[1] + (s.from[1] - c[1]) * sy,
+      ] as Pt,
+    }
   })
   return out.some((s, i) => s !== stubs[i]) ? out : stubs
 }
