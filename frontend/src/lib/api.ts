@@ -12047,8 +12047,79 @@ export interface FloorPlanTile {
   z?: number
   /** The photo a device or rack tile can show; null without one. */
   photo?: FloorTilePhoto | null
+  /** A riser: cables leave this floor through it for another. */
+  riser?: boolean
+  /** The riser on another floor this one pairs with. Hidden (no id) on a
+   * floor the reader may not view. */
+  riser_pair?: {
+    id: string | null
+    label: string
+    floor_plan: { id: string; name: string } | null
+    hidden?: true
+  } | null
+  /** The vertical run to the paired floor; blank works it out. */
+  riser_height_mm?: number | null
   created_at: string
   updated_at: string
+}
+
+/** A riser tile on another floor of the site -
+ * GET /api/floor-plans/<id>/risers/ */
+export interface FloorPlanRiserOption {
+  id: string
+  label: string
+  floor_plan: { id: string; name: string; stack: string }
+  /** The riser it pairs with now, or null. */
+  pair: string | null
+}
+
+/** One end of a cable in the schedule. */
+export interface CableScheduleEnd {
+  device: string | null
+  port: string | null
+  room: string | null
+  on_floor: boolean
+  hidden: boolean
+}
+
+export interface CableScheduleRow {
+  id: string
+  label: string
+  type: string
+  type_display: string
+  color: string
+  status: { name: string; color: string; text_color: string } | null
+  a: CableScheduleEnd[]
+  b: CableScheduleEnd[]
+  trays: string[]
+  /** The trays in order, and the riser it leaves the floor by. */
+  route: string
+  /** "stored": a documented route; "trays": tray membership only. */
+  route_source: "stored" | "trays" | ""
+  riser: { label: string; floor: string; vertical_m: number | null } | null
+  computed_m: number | null
+  length: number | null
+  length_unit: string
+  length_m: number | null
+  length_source: "computed" | "entered" | ""
+  notes: string
+  rooms: string[]
+}
+
+/** GET /api/floor-plans/<id>/cable-schedule/ */
+export interface CableSchedule {
+  group: "room" | "tray"
+  rows: CableScheduleRow[]
+  groups: { name: string; rows: string[] }[]
+  totals: {
+    type: string
+    label: string
+    count: number
+    metres: number
+    unmeasured: number
+  }[]
+  total: { count: number; metres: number; unmeasured: number }
+  hidden_count: number
 }
 
 export type FloorTileDisplay = "icon" | "photo"
@@ -12159,6 +12230,10 @@ export interface FloorPlanTileWritePayload {
   fov_ptz?: boolean
   display?: FloorTileDisplay
   z?: number
+  riser?: boolean
+  /** Omit to keep the pair as it is; null unpairs. */
+  riser_to_id?: string | null
+  riser_height_mm?: number | null
 }
 
 /** POST /api/floor-plans/<id>/tiles/bulk/ - one transaction, fresh list back. */
@@ -12782,6 +12857,9 @@ export interface CablePathUpsert {
   replace_length?: boolean
   /** The cable's updated_at the length write is based on. */
   cable_version?: string
+  /** A riser tile of this plan: the cable is routed between floors through
+   * it (and the riser it pairs with), on the server; `legs` are not sent. */
+  riser?: string
 }
 
 export interface FloorPlanBulkResult {
@@ -13007,10 +13085,23 @@ export interface FloorPlanCablePath {
 /** Where one leg of a stored route starts or ends: the tile it was routed
  * from and that tile's centre then (cells). */
 export interface CablePathAnchor {
-  end: "A" | "B"
+  /** "R": a riser the route leaves the floor by. */
+  end: "A" | "B" | "R"
   tile: string
   device: string | null
   at: [number, number]
+  riser?: true
+}
+
+/** The riser a route between floors leaves this floor by. A stored path
+ * names only its tile and the vertical run; a preview names the pair. */
+export interface CablePathRiser {
+  tile: string
+  riser_mm: number
+  label?: string
+  pair?: string
+  pair_label?: string
+  floor_plan?: { id: string; name: string }
 }
 
 /** One leg of a stored route - one per far tile (a breakout has several). */
@@ -13038,6 +13129,9 @@ export interface CablePathLeg {
 export interface StoredCablePath {
   id?: string
   kind: "trays" | "manual" | "direct"
+  /** A route between floors: this floor's part, to its riser; the
+   * lengths are the whole cable's. */
+  riser?: CablePathRiser | null
   legs: CablePathLeg[]
   tray_order: string[]
   run_mm: number
@@ -13082,9 +13176,12 @@ export interface CablePlanRow {
   far?: { hidden: boolean; device_name: string | null; port: string | null }[]
   /** With `objects`: the other end is not on this floor (not routed). */
   off_floor?: boolean
+  /** It leaves the floor and is not routed: the nearest riser it would
+   * leave by. */
+  via_riser?: string
 }
 
-export type CablePlanVia = "trays" | "suggest" | "direct"
+export type CablePlanVia = "trays" | "suggest" | "direct" | "riser"
 
 /** A run suggested where no tray joins a cable's ends. */
 export interface CablePlanSuggestion {

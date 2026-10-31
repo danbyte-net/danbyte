@@ -196,6 +196,7 @@ class PlanRouter:
                 self.cabinet_tile.setdefault(t.cabinet_id, t)
         self._devices: dict = {}
         self._terms: dict = {}
+        self._risers: dict | None = None
 
     def add_trays(self, trays) -> None:
         """Route through ``trays`` too (saved, or unsaved previews)."""
@@ -319,12 +320,15 @@ class PlanRouter:
     # ── routing ──
 
     def _anchor(self, end: dict) -> dict:
-        return {
+        out = {
             "end": end["end"],
             "tile": str(end["tile"].pk),
             "device": str(end["device"]) if end["device"] else None,
             "at": _pt(tile_centre(end["tile"])),
         }
+        if end.get("riser"):
+            out["riser"] = True
+        return out
 
     def _tray_spans(self, points, trays) -> list[dict]:
         """The trays a polyline rides, in travel order, each with the point
@@ -381,11 +385,13 @@ class PlanRouter:
             "points": [_pt(p) for p in pts], "trays": [], "waypoints": [],
         }
 
-    def measure_leg(self, leg: dict, a_end, b_end) -> dict:
-        """The length breakdown of one leg (mm): its horizontal run, the drop
-        at each end between the port and the first and last tray, and the
-        climbs between trays at different heights. A run with no tray stays
-        at the ports' height and climbs only between them."""
+    def leg_parts(self, leg: dict, a_end, b_end) -> tuple[float, float, float, float]:
+        """``(run, drop_a, drop_b, level)`` of one leg in mm: its horizontal
+        run, the drop at each end between the port and the first and last
+        tray, and the climbs between trays at different heights. A run with
+        no tray stays at the ports' height and climbs only between them. A
+        riser end has no drop: the cable climbs in the riser
+        (:func:`riser_vertical_mm`)."""
         run = polyline_cells(leg["points"]) * self.cell_mm
         ha, hb = a_end["height_mm"], b_end["height_mm"]
         elev = [float(s.get("elevation_mm") or 0) for s in leg.get("trays") or []]
@@ -393,6 +399,10 @@ class PlanRouter:
             # A run with no tray kept at one height (a suggested run left
             # as a path): up from the port, along, and down again.
             elev = [float(leg["elevation_mm"])]
+        if a_end.get("riser"):
+            ha = elev[0] if elev else hb
+        if b_end.get("riser"):
+            hb = elev[-1] if elev else ha
         if elev:
             drop_a = abs(elev[0] - ha)
             drop_b = abs(elev[-1] - hb)
@@ -400,6 +410,12 @@ class PlanRouter:
         else:
             drop_a = drop_b = 0.0
             level = abs(ha - hb)
+        return run, drop_a, drop_b, level
+
+    def measure_leg(self, leg: dict, a_end, b_end) -> dict:
+        """The length breakdown of one leg (mm, :meth:`leg_parts`), with the
+        service loops, slack and round-up of the tenant's rules."""
+        run, drop_a, drop_b, level = self.leg_parts(leg, a_end, b_end)
         base = run + drop_a + drop_b + level
         loops, slack, total = length_total(base, self.rules)
         return {
@@ -603,6 +619,122 @@ class PlanRouter:
             }
         return None
 
+    # ── risers: cables between floors ──
+
+    def risers(self) -> dict:
+        """This plan's saved riser tiles that pair with a riser on another
+        floor of the site: ``{tile pk: the other floor's riser tile}``."""
+        if self._risers is None:
+            self._risers = riser_pairs(self.plan, [t for t in self.tiles if t.riser])
+        return self._risers
+
+    def off_floor_side(self, cable) -> str | None:
+        """The end ("A" or "B") of ``cable`` placed on this plan when the
+        other is not; None when both or neither are."""
+        e = self.ends(cable)
+        if e["A"] and not e["B"]:
+            return "A"
+        if e["B"] and not e["A"]:
+            return "B"
+        return None
+
+    def nearest_riser(self, cable):
+        """The riser tile of this plan nearest ``cable``'s end here - what
+        "Leaves this floor via …" names - or None."""
+        side = self.off_floor_side(cable)
+        tiles = [t for t in self.tiles if t.riser]
+        if side is None or not tiles:
+            return None
+        at = tile_centre(self.ends(cable)[side][0]["tile"])
+        paired = self.risers()
+        return min(tiles, key=lambda t: (t.pk not in paired, _dist(tile_centre(t), at)))
+
+    def via_riser(self, cable, *, routers: dict | None = None, allow=None,
+                  only=None) -> dict | None:
+        """``cable`` routed between floors: from its end on this plan to a
+        riser, up or down the riser, and from the paired riser to its end on
+        the other floor. Each floor is routed through its own trays (else
+        direct); the riser pair with the shortest total wins. None when the
+        cable has no end here, both ends here, or no riser of this plan
+        pairs with a floor its other end is placed on.
+
+        Answers ``{"near": route, "far": route, "far_plan", "riser_mm",
+        "length_mm"}``: a route per floor in the stored shape, each from the
+        cable's end on that floor to its riser, carrying ``riser`` and
+        ``riser_mm`` and the whole cable's length (the run, drops and level
+        changes of both floors plus the vertical run, then the length
+        rules once). ``routers`` caches the other floors' routers;
+        ``allow(plan)`` says which other floors may be used (the ones the
+        reader may view); ``only`` keeps to one riser tile of this plan."""
+        here = self.off_floor_side(cable)
+        if here is None:
+            return None
+        far_side = "B" if here == "A" else "A"
+        pairs = self.risers()
+        if not pairs:
+            return None
+        routers = {} if routers is None else routers
+        near_end = self.ends(cable)[here][0]
+        trays = [t for t in self.trays if len(t.points or []) >= 2]
+        best = None
+        for rid, partner in pairs.items():
+            if only is not None and str(rid) != str(only):
+                continue
+            if allow is not None and not allow(partner.floor_plan):
+                continue
+            r1 = self.tile_by_id.get(str(rid))
+            other = routers.get(partner.floor_plan_id)
+            if other is None:
+                other = PlanRouter(partner.floor_plan, rules=self.rules)
+                routers[partner.floor_plan_id] = other
+            r2 = other.tile_by_id.get(str(partner.pk))
+            far_ends = other.ends(cable)[far_side]
+            if r1 is None or r2 is None or not far_ends:
+                continue
+            far_end = far_ends[0]
+            e1, e2 = riser_end(r1), riser_end(r2)
+            leg1 = self._route_leg(near_end, e1, trays)
+            leg2 = other._route_leg(
+                far_end, e2, [t for t in other.trays if len(t.points or []) >= 2]
+            )
+            p1 = self.leg_parts(leg1, near_end, e1)
+            p2 = other.leg_parts(leg2, far_end, e2)
+            vertical = riser_vertical_mm(r1, r2)
+            base = sum(p1) + sum(p2) + vertical
+            if best is None or base < best[0]:
+                best = (base, other, (leg1, p1, r1, r2), (leg2, p2, r2, r1), vertical)
+        if best is None:
+            return None
+        base, other, near, far, vertical = best
+        loops, slack, total = length_total(base, self.rules)
+
+        def part(leg, parts, tile, pair) -> dict:
+            run, drop_a, drop_b, level = parts
+            order = []
+            for s in leg["trays"]:
+                if s["id"] not in order:
+                    order.append(s["id"])
+            return {
+                "cable": str(cable.pk),
+                "kind": "trays" if leg["trays"] else "direct",
+                "legs": [leg],
+                "tray_order": order,
+                "tile_ids": [leg["from"]["tile"], leg["to"]["tile"]],
+                "run_mm": round(run), "drop_a_mm": round(drop_a), "drop_b_mm": round(drop_b),
+                "extra_mm": round(level) + loops // 2, "slack_mm": slack, "length_mm": total,
+                "riser": riser_ref(tile, pair),
+                "riser_mm": int(vertical),
+                "reachable": bool(leg["trays"]),
+            }
+
+        return {
+            "near": part(*near),
+            "far": part(*far),
+            "far_plan": other.plan,
+            "riser_mm": int(vertical),
+            "length_mm": total,
+        }
+
     # ── staleness ──
 
     def stale(self, path) -> bool:
@@ -710,6 +842,92 @@ def virtual_tray(key: str, *, points, level="overhead", elevation_mm=None, name=
     t = FloorPlanTray(name=name or key, points=points, level=level, elevation_mm=elevation_mm)
     t.pk = key
     return t
+
+
+# ─── risers ─────────────────────────────────────────────────────────────────
+
+
+def riser_end(tile) -> dict:
+    """A riser tile as a leg's end: no device, no port, no drop."""
+    return {"end": "R", "tile": tile, "device": None, "port": "", "height_mm": 0.0,
+            "riser": True}
+
+
+def riser_ref(tile, pair) -> dict:
+    """How a route names its riser: this floor's riser tile, the one it
+    pairs with and that one's floor."""
+    return {
+        "tile": str(tile.pk),
+        "label": tile.label or "Riser",
+        "pair": str(pair.pk),
+        "pair_label": pair.label or "Riser",
+        "floor_plan": {"id": str(pair.floor_plan_id), "name": pair.floor_plan.name},
+    }
+
+
+def riser_pairs(plan, tiles) -> dict:
+    """``{tile pk: partner}`` for the riser ``tiles`` of ``plan``: the riser
+    tile each pairs with (``riser_to`` on either side) on another floor of
+    the same tenant and site. Unsaved tiles pair with nothing."""
+    import uuid as _uuid
+
+    from .models import FloorPlanTile
+
+    mine = {t.pk: t for t in tiles if getattr(t, "riser", False) and isinstance(t.pk, _uuid.UUID)}
+    if not mine:
+        return {}
+    forward = {t.riser_to_id for t in mine.values() if t.riser_to_id}
+    rows = list(
+        FloorPlanTile.objects.filter(Q(pk__in=forward) | Q(riser_to_id__in=mine), riser=True)
+        .select_related("floor_plan")
+    )
+    by_pk = {r.pk: r for r in rows}
+    out = {}
+    for pk, t in mine.items():
+        p = by_pk.get(t.riser_to_id) if t.riser_to_id else None
+        if p is None:
+            p = next((r for r in rows if r.riser_to_id == pk), None)
+        if p is None or p.floor_plan_id == plan.pk:
+            continue
+        fp = p.floor_plan
+        if fp.tenant_id != plan.tenant_id or fp.site_id != plan.site_id or fp.kind != "plan":
+            continue
+        out[pk] = p
+    return out
+
+
+def riser_partner(tile):
+    """The riser tile ``tile`` pairs with (either side's ``riser_to``)."""
+    if tile is None or not tile.riser:
+        return None
+    return riser_pairs(tile.floor_plan, [tile]).get(tile.pk)
+
+
+def riser_vertical_mm(a, b) -> int:
+    """The vertical run between paired risers ``a`` and ``b``: a riser
+    height set on either (``a``'s first); else the difference of their
+    floors' elevations when both are set; else, on floors of one floor plan,
+    the ceiling heights of the floors from the lower up to the upper; else
+    the lower floor's ceiling height."""
+    from .models import FloorPlan
+
+    for t in (a, b):
+        if t.riser_height_mm:
+            return int(t.riser_height_mm)
+    pa, pb = a.floor_plan, b.floor_plan
+    if pa.elevation_mm is not None and pb.elevation_mm is not None:
+        return abs(int(pa.elevation_mm) - int(pb.elevation_mm))
+    if pa.stack_id and pa.stack_id == pb.stack_id:
+        floors = list(
+            FloorPlan.objects.filter(stack_id=pa.stack_id)
+            .order_by("floor_order", "name", "pk").only("id", "ceiling_mm")
+        )
+        at = {f.pk: i for i, f in enumerate(floors)}
+        if pa.pk in at and pb.pk in at:
+            i, j = sorted((at[pa.pk], at[pb.pk]))
+            return int(sum(f.ceiling_mm for f in floors[i:j]))
+    lower = min((pa, pb), key=lambda p: (p.floor_order, p.name))
+    return int(lower.ceiling_mm)
 
 
 #: How a cable may be routed in a preview: ``auto`` through the trays (with
@@ -852,6 +1070,8 @@ def save_path(plan, cable, route: dict, *, sync_trays: bool = True):
         "length_mm": route["length_mm"],
         "computed_at": timezone.now(),
         "stale": False,
+        "riser_id": (route.get("riser") or {}).get("tile"),
+        "riser_mm": int(route.get("riser_mm") or 0),
     }
     row = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
     if row is None:
@@ -873,6 +1093,13 @@ def set_plan_trays(plan, cable, tray_ids) -> None:
     new = [k for k in want if k not in have]
     if new:
         cable.trays.add(*plan.trays.filter(pk__in=new))
+
+
+def save_riser_route(plan, cable, res: dict) -> tuple:
+    """Store a route between floors (:meth:`PlanRouter.via_riser`): one row
+    on ``plan`` and one on the far floor, each riding its own trays. Call
+    inside a transaction. Returns the two rows."""
+    return save_path(plan, cable, res["near"]), save_path(res["far_plan"], cable, res["far"])
 
 
 def delete_path(plan, cable) -> bool:
@@ -918,6 +1145,12 @@ def path_data(path, *, stale: bool | None = None, dx: float = 0.0, dy: float = 0
         "computed_at": path.computed_at.isoformat() if path.computed_at else None,
         "stale": path.stale if stale is None else stale,
         "version": path.updated_at.isoformat() if path.updated_at else None,
+        # A part of a route between floors: this floor's riser tile and the
+        # vertical run (the whole route's in ``length_mm``).
+        "riser": (
+            {"tile": str(path.riser_id), "riser_mm": path.riser_mm}
+            if getattr(path, "riser_id", None) else None
+        ),
     }
 
 
@@ -941,6 +1174,8 @@ def route_data(route: dict, *, dx: float = 0.0, dy: float = 0.0) -> dict:
 
     out = path_data(_P, dx=dx, dy=dy)
     del out["id"], out["version"], out["computed_at"]
+    if route.get("riser"):
+        out["riser"] = {**route["riser"], "riser_mm": route.get("riser_mm", 0)}
     return out
 
 

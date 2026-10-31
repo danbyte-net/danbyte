@@ -741,9 +741,10 @@ def copy_contents(src, dst, crop: Crop) -> list[dict]:
         if c == "edge" and tile_residual(t.orientation) == 0 \
                 and not any(getattr(t, f"{f}_id") for f in link_fields):
             x, y, w, h = _clip_rect(t.x, t.y, t.width, t.height, crop)
-            _new(t, dst, x=x + dx, y=y + dy, width=w, height=h)
+            _new(t, dst, x=x + dx, y=y + dy, width=w, height=h, riser_to_id=None)
             continue
-        t = _new(t, dst, x=t.x + dx, y=t.y + dy)
+        # A copied riser is unpaired: its pair stays the original's.
+        t = _new(t, dst, x=t.x + dx, y=t.y + dy, riser_to_id=None)
         if c == "edge":
             whole.append({"kind": "tile", "id": str(t.pk), "name": name})
 

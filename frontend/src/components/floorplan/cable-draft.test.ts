@@ -319,6 +319,34 @@ describe("cableDraftPayload", () => {
     expect(out.dropped).toEqual(["C-1"])
   })
 
+  it("a route between floors goes as its riser, without legs", () => {
+    const r = route("new-1", "t2", [
+      [0.5, 2.5],
+      [10.5, 2.5],
+    ])
+    r.riser = {
+      tile: "t2",
+      riser_mm: 3000,
+      label: "R1",
+      pair: "r9",
+      floor_plan: { id: "p2", name: "Floor 2" },
+    }
+    const cd = applyRoutes(EMPTY_CABLE_DRAFT, {
+      rows: [row({ route: r, via: "riser" })],
+      ticks: { c1: { route: true, length: true } },
+      trays: [],
+      newId,
+    })
+    expect(cableDraftPayload(cd, tiles).cable_paths!.upsert).toEqual([
+      {
+        cable: "c1",
+        riser: "t2",
+        write_length: true,
+        cable_version: "2026-10-30T10:00:00Z",
+      },
+    ])
+  })
+
   it("an empty draft sends nothing", () => {
     expect(cableDraftPayload(EMPTY_CABLE_DRAFT, tiles)).toEqual({
       dropped: [],
