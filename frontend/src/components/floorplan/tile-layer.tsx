@@ -3,6 +3,7 @@ import { ArrowUpDown, Server } from "lucide-react"
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
 
+import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
 import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
@@ -607,4 +608,67 @@ export function FovCone({ tile }: { tile: FloorPlanTile }) {
       pointerEvents="none"
     />
   )
+}
+
+/** A tile linked to a device, a rack or a cabinet. */
+export function tileLinksObject(tile: FloorPlanTile): boolean {
+  const kind = tile.linked?.kind
+  return kind === "device" || kind === "rack" || kind === "cabinet"
+}
+
+/**
+ * From afar: each placed device, rack or cabinet whose tile would shrink
+ * below MIN_TILE_PX on screen draws as a marker that size in its colour,
+ * centred on the tile - the tile's own geometry untouched. A marker takes
+ * the tile's pointer (select, hover, drag).
+ */
+export function TileMarkers({
+  tiles,
+  k,
+  interactive,
+  isLocked,
+  onPointerDown,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  tiles: readonly FloorPlanTile[]
+  /** The canvas zoom: screen px per plan px. */
+  k: number
+  interactive: boolean
+  isLocked: (id: string) => boolean
+  onPointerDown: (tile: FloorPlanTile, e: React.PointerEvent) => void
+  onPointerEnter?: (tile: FloorPlanTile, e: React.PointerEvent) => void
+  onPointerLeave?: () => void
+}) {
+  const pxPerCell = CELL * k
+  const marks: React.ReactNode[] = []
+  for (const tile of tiles) {
+    if (!tileLinksObject(tile) || tileIsZone(tile)) continue
+    const side = tileMarkerCells(tile.width, tile.height, pxPerCell)
+    if (side == null) continue
+    const s = side * CELL
+    const cx = (tile.x + tile.width / 2) * CELL
+    const cy = (tile.y + tile.height / 2) * CELL
+    const live = interactive && !isLocked(tile.id)
+    marks.push(
+      <rect
+        key={tile.id}
+        data-tile-marker={tile.id}
+        x={cx - s / 2}
+        y={cy - s / 2}
+        width={s}
+        height={s}
+        rx={s * 0.2}
+        fill={tileFill(tile)}
+        stroke="var(--background)"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+        pointerEvents={live ? undefined : "none"}
+        onPointerDown={live ? (e) => onPointerDown(tile, e) : undefined}
+        onPointerEnter={live ? (e) => onPointerEnter?.(tile, e) : undefined}
+        onPointerLeave={live ? onPointerLeave : undefined}
+      />
+    )
+  }
+  return marks.length ? <g data-layer="tile-markers">{marks}</g> : null
 }

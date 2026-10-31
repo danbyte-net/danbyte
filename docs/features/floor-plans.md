@@ -1405,7 +1405,7 @@ another would give a place nobody chose.
 
 | Call | |
 |---|---|
-| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan; with `&include_here=1` on no other plan, those on this one last), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. On a site-wide floor rank 1 is the near room's location and `?unplaced=1` covers the whole site. |
+| `GET /api/floor-plans/<id>/placeable/` | The picker's rows: `?q=` (name), `?kind=device,rack,cabinet`, `?near_room=<id>` or `?near_location=<id>` (rank 0), `?unplaced=1` (the floor's objects on no plan; with `&include_here=1` on no other plan, those on this one last), `?ids=<id>,...` (only those objects - the far ends the cable legend offers), `?limit=` (50, at most 200). Each row: `kind`, `id`, `name`, `rank` (0 near, 1 the floor's location, 2 the rest of the site), `room`, `location`, `status`, `role`, `photo`, `placed_count`, `placed_on` (`floor_plan`, `tile_id`, `this_floor` - floor plans you may view). Each kind by its own view grant and site scope. On a site-wide floor rank 1 is the near room's location and `?unplaced=1` covers the whole site. |
 | `POST /api/floor-plans/<id>/assign-rooms/` | `{"dry_run": true}` answers `{"objects": [{kind, id, name, tile_id, room, area_room, can_change}]}`; `{"apply": [{"kind", "id"}]}` sets the room of the listed ones you may change (each validated and audited like a `PATCH` of the object) and answers `{applied, skipped, objects}`. |
 | Tiles | `display`: `icon` (default) or `photo`; `z`: stacking order. Read-only `photo` (`url`, `aspect` - height over width -, `source`: `device`, `rack` or `type`, `width_mm`), null without one or without view on the object; `linked` adds the object's `room` and `role` (`id`, `name`, `color`, `icon`) for a device, rack or cabinet. |
 | `POST /api/floor-plans/<id>/bulk/` | A create (or a relink) of a tile linked to a device, rack or cabinet that already has a tile on this plan is refused with a `link_id` field error (400), as on `/api/floor-plan-tiles/`. An update may carry `version` (the row's `updated_at`), and a delete may be `{"id", "version"}`. A row changed since answers **409** `{"detail", "conflicts": [{kind, id, current, changed_by}]}` (`current` null when it was deleted) and nothing is written. Without a version the last save wins, as before. |
@@ -1957,15 +1957,24 @@ in a planned status. Previews draw only while
 The cables' **legend** sits in the plan's corner, under the
 [Color by](#color-by) legend and inside the export area: the colours in use
 (statuses as their pills, types and jacket colours as short lines), the
-line styles in use, and the bundle.
+line styles in use, and the bundle. Under them it counts the plan's cables:
+**N drawn · M with one end here · K not placed**. *Drawn* have both ends
+placed on this plan; *with one end here* draw as a
+[stub](#cables-with-one-end-here); *not placed* have no end here (they ride
+a tray here only). Hover the counts for a reminder that a run needs both
+ends placed. While editing, click **M with one end here** to open
+[**Place…**](#the-place-picker) offering just their far ends that are on
+this plan's site (the device, or the rack or cabinet it is in) - place one
+and its cables draw as runs. The legend shows while the links are on and the
+plan has any cable, even when none is drawn yet.
 
 #### Level of detail
 
 Strokes keep **the same width on screen at every zoom**; what is drawn
 follows how large a cell is on screen:
 
-- **Far** (zoomed out): the trays with their cable counts only - plus a
-  traced run.
+- **Far** (zoomed out): the trays with their cable counts, the runs that
+  ride no tray (the trays do not count those), and a traced run.
 - **Mid**: shared stretches as bundles with counts, single runs as lines,
   no labels.
 - **Near** (zoomed in): every lane that fits apart, bundles only where the
@@ -1977,6 +1986,34 @@ follows how large a cell is on screen:
 The routes are worked out once per change of the plan's contents - a tile
 moved, a tray reshaped, a tray's level changed - and then only for the
 cables that change touches. Panning and zooming route nothing.
+
+**From afar on a large plan** (a whole site, say) nothing connected shrinks
+away:
+
+- A placed device, rack or cabinet whose tile would be under **8 px** on
+  screen draws as an 8 px marker in its colour, centred on the tile. It
+  selects, hovers and drags like the tile; the tile's saved size and place
+  do not change, and the marker goes when the tile is large enough to read.
+- A run shorter than a few pixels on screen - two devices side by side -
+  draws as a short bar in the cable's colour between its ends, with a count
+  where several meet. Hover it for the popover, click it to trace.
+
+Both follow the layers: hidden tiles draw no marker, and the bar shows only
+while **Cable links** is on.
+
+#### Cables with one end here
+
+A cable with one end on this plan and the other elsewhere - another floor,
+another site, or a device not placed yet - draws as a **stub**: a short
+dashed line in the cable's colour out of the placed end's tile, ending in an
+arrow, pointing away from the plan's middle (several off one tile fan out).
+Its popover says **Far end not on this plan: `device · port`** - **Hidden**
+when you may not view that device, and nothing more - plus **On *floor***
+when the far end is placed on another floor of this plan's stack. A cable
+routed between floors through a [riser](#cables-between-floors-risers)
+draws its route to the riser instead, and its popover names the riser and
+the floor it leads to. An end on a tile hidden on this plan does not count
+as here.
 
 #### Hover, trace and the popover
 
@@ -2302,7 +2339,7 @@ copied or cloned riser is not paired.
 
 | Endpoint | |
 |---|---|
-| `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. |
+| `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. `a_far` / `b_far` list each end on no tile here: `device`, `port`, `device_name`, `floor_plan` (`{id, name}`: the floor of this plan's stack it is placed on, one you may view, or null) and `place` (`{kind, id}`: the device - or the rack or cabinet it is in - to place to bring it here, when it is on this plan's site; else null). An end on a device you may not view reads `{"device": null, "port": null, "hidden": true}` and nothing more. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
 | `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. A cable between floors (`cable_ids` or `objects`) whose far end is placed on a floor a riser of this plan pairs with - one you may view - reads `via` `riser`; its `route` is this floor's part, to the riser, with `riser` (`tile`, `label`, `pair`, `pair_label`, `floor_plan` `{id, name}`, `riser_mm`) and the whole cable's lengths. One leaving the floor otherwise names the nearest riser of this plan in `via_riser`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
 | `POST /api/floor-plans/{id}/cable-plan/` with `mode: "new"` | Connect to…: a preview of new cables; nothing is stored. Body: `source` and `targets` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, each at most 64; devices you may view and that are placed on this plan), `family` (`data`, `console`, `power`; default `data`), `per_target` (1-8, default 1), `include_mgmt`, `exclude_ports` (`[{kind, id}]` the draft's new cables take), the unsaved draft as above, and `choices` (by pair key), `suggest_runs`, `keep_runs`, `run_level`. Without `pairs` the server proposes; with `pairs` (`[{"key", "a": {kind, id}, "b": {kind, id}}]`, at most 256) it checks and routes those, each pair failing a check carrying `error`. Answers `pairs` (`[{key, a, b, type, route, via, suggestions, reason, error}]`, each port `{kind, id, name, device, device_name, type, media, connector, speed_mbps, uplink, mgmt_only, poe_mode}`), `short` (`[{a_device, b_device, made, reason}]`), `statuses` (the tenant's planned cable statuses), `can_add` (cable · add), `suggestions`, `cell_mm` and `scale_source`. Needs view on the plan. |
@@ -2573,7 +2610,10 @@ on the server:
   comes from the paper - under 10 mm a cell (a 1:200 A3, say) shared
   stretches print as bundles with counts; above it every lane that is
   0.6 mm apart prints, with labels. A traced run prints as a static heavier
-  stroke; preview and out-of-date marks are left out;
+  stroke; preview and out-of-date marks are left out. A cable with one end
+  on the plan prints as its stub - 5 mm, dashed, with the arrow - and, with
+  cable labels on, the far end's `device · port` (Hidden when you may not
+  view it) beyond the arrow. The cable schedule's close-ups draw no stubs;
 - the [CAD drawing](#cad-drawings) under it **in vector**, at its placement
   and opacity, with the layers and text the plan hides left out. A drawing
   over 60,000 shapes on paper is refused - hide some of its layers first. If

@@ -10,12 +10,14 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 
 import {
   endText,
+  farEndLines,
   formatMetres,
   formatStoredLength,
   routeLengthM,
   storedLengthM,
+  stubFar,
 } from "./cable-draw"
-import type { CableRoute } from "./cable-draw"
+import type { CableRoute, CableStub } from "./cable-draw"
 import type { CableHoverHit } from "./cable-layer"
 
 /** A hovered or pinned cable (or bundle), anchored in the canvas
@@ -88,12 +90,15 @@ export function useCablePopover(delayMs = 250) {
  * The cable popover: what a run is - its status, type, both ends (an end on
  * a device you may not view reads Hidden), the stored length against the
  * length its route works out, and the trays it rides. Over a bundle it
- * lists the cables in it. Replaces the browser's `<title>` tooltip.
+ * lists the cables in it. A cable with one end here names its far end -
+ * Hidden when the reader may not view it - and the floor it is on.
+ * Replaces the browser's `<title>` tooltip.
  */
 export function CablePopover({
   target,
   cablePaths,
   routes,
+  stubs = [],
   trays,
   cellMm,
   onOpenChange,
@@ -102,6 +107,8 @@ export function CablePopover({
   target: CableHoverTarget | null
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
+  /** Cables with one end on this plan. */
+  stubs?: readonly CableStub[]
   trays: readonly FloorPlanTray[]
   cellMm: number
   onOpenChange: (open: boolean) => void
@@ -139,6 +146,7 @@ export function CablePopover({
           <CableFacts
             cp={one}
             route={routes.get(one.id)}
+            far={stubFar(one, stubs)}
             trays={trays}
             cellMm={cellMm}
             pinned={!!target?.pinned}
@@ -183,6 +191,7 @@ export function CablePopover({
 function CableFacts({
   cp,
   route,
+  far,
   trays,
   cellMm,
   pinned,
@@ -190,6 +199,8 @@ function CableFacts({
 }: {
   cp: FloorPlanCablePath
   route: CableRoute | undefined
+  /** The far end of a cable with one end here. */
+  far?: CableStub["far"] | null
   trays: readonly FloorPlanTray[]
   cellMm: number
   pinned: boolean
@@ -209,8 +220,19 @@ function CableFacts({
           <StatusBadge status={cp.status ?? null} />
         </PanelRow>
         <PanelRow label="Type">{cp.type_display || cp.type || "-"}</PanelRow>
-        <PanelRow label="A">{endText(cp.a_points)}</PanelRow>
-        <PanelRow label="B">{endText(cp.b_points)}</PanelRow>
+        <PanelRow label="A">
+          {endText(cp.a_points.length ? cp.a_points : (cp.a_far ?? []))}
+        </PanelRow>
+        <PanelRow label="B">
+          {endText(cp.b_points.length ? cp.b_points : (cp.b_far ?? []))}
+        </PanelRow>
+        {cp.path?.riser && (
+          <PanelRow label="Riser">
+            {[cp.path.riser.label ?? "Riser", cp.path.riser.floor_plan?.name]
+              .filter(Boolean)
+              .join(" → ")}
+          </PanelRow>
+        )}
         <PanelRow label="Length">
           {formatStoredLength(cp) ?? "-"}
           {cp.length != null && cp.length_source === "computed" && (
@@ -249,6 +271,13 @@ function CableFacts({
           {trayNames.length ? trayNames.join(" → ") : "Direct"}
         </PanelRow>
       </div>
+      {far && (
+        <div data-far-end className="mt-2 text-[12px] text-muted-foreground">
+          {farEndLines(far).map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      )}
       {pinned ? (
         <div className="mt-3 flex gap-2">
           {route?.stored && route.stale && onReroute && (

@@ -20,7 +20,7 @@ import { CadPanel } from "./cad-panel"
 import { CalibrateBar, CalibrateMarks } from "./cad-calibrate"
 import type { CadCalibration } from "./cad-calibrate"
 import { CabinetPanel } from "./cabinet-panel"
-import type { CableRoute } from "./cable-draw"
+import type { CableRoute, CableStub } from "./cable-draw"
 import { CablePopover, useCablePopover } from "./cable-popover"
 import { CanvasHints } from "./canvas-hints"
 import { FloorCanvas, tileIsZone } from "./floor-canvas"
@@ -83,6 +83,7 @@ export function PlanCanvas({
   cablePaths,
   cableRoutes,
   cablePreviews,
+  cableStubs,
   tileTypes,
   roles,
   popover,
@@ -159,6 +160,8 @@ export function PlanCanvas({
   cableRoutes: ReadonlyMap<string, CableRoute>
   /** Routes computed but not saved, drawn dotted. */
   cablePreviews?: ReadonlyMap<string, CableRoute>
+  /** Cables with one end on this plan, drawn as stubs. */
+  cableStubs?: readonly CableStub[]
   tileTypes: Parameters<typeof SelectionBar>[0]["tileTypes"]
   roles: Parameters<typeof SelectionBar>[0]["roles"]
   popover: ReturnType<typeof useTilePopover>
@@ -415,6 +418,7 @@ export function PlanCanvas({
         }}
         cableRoutes={cableRoutes}
         cablePreviews={cablePreviews}
+        cableStubs={cableStubs}
         cableColorBy={cableColorBy}
         showCableLabels={showCableLabels}
         bundleCables={bundleCables}
@@ -578,6 +582,7 @@ export function PlanCanvas({
         target={showCableLinks ? cablePopover.target : null}
         cablePaths={cablePaths}
         routes={cableRoutes}
+        stubs={cableStubs}
         trays={trays}
         cellMm={plan.cell_mm}
         onOpenChange={(open) => !open && cablePopover.close()}

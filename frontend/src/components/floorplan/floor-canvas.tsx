@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils"
 import type { Pt } from "./cable-route"
 import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
-import { FovCone, TileShape } from "./tile-layer"
+import { FovCone, TileMarkers, TileShape } from "./tile-layer"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
@@ -58,7 +58,7 @@ import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
 import type { CableAnchor, CableHoverHit } from "./cable-layer"
-import type { CableColorBy, CableRoute } from "./cable-draw"
+import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import { usePanZoom } from "./use-pan-zoom"
 import { useShapeGestures } from "./use-shape-gestures"
 import type { ShapeTool } from "./use-shape-gestures"
@@ -258,6 +258,8 @@ export interface FloorCanvasProps {
   cableRoutes?: ReadonlyMap<string, CableRoute>
   /** Routes computed but not saved (Document routes), drawn dotted. */
   cablePreviews?: ReadonlyMap<string, CableRoute>
+  /** Cables with one end on this plan, drawn as stubs. */
+  cableStubs?: readonly CableStub[]
   /** What the cables are coloured by. */
   cableColorBy?: CableColorBy
   /** Cable names along the runs, up close. */
@@ -469,6 +471,7 @@ export function FloorCanvas({
   onHighlightCables,
   cableRoutes = NO_ROUTES,
   cablePreviews,
+  cableStubs,
   cableColorBy = "status",
   showCableLabels = true,
   bundleCables = true,
@@ -1616,6 +1619,17 @@ export function FloorCanvas({
                 .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
             : tiles.filter((tl) => !tileIsZone(tl))
           ).map(renderTile)}
+          {/* From afar a placed device, rack or cabinet keeps a marker in
+              its colour where it would shrink to a dot. */}
+          <TileMarkers
+            tiles={tiles}
+            k={t.k}
+            interactive={mode !== "structure"}
+            isLocked={isLocked}
+            onPointerDown={handleTileDown}
+            onPointerEnter={reportHover}
+            onPointerLeave={() => onHoverTile?.(null, null)}
+          />
 
           {showFov &&
             tiles
@@ -1730,6 +1744,7 @@ export function FloorCanvas({
               onSelect={selectCable}
               onHover={hoverCable}
               previews={cablePreviews}
+              stubs={cableStubs}
             />
           )}
 

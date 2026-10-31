@@ -6,17 +6,33 @@ import {
   LegendTones,
 } from "@/components/map-legend"
 import type { StatusMini } from "@/lib/api"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 import { CABLE_LINE, CABLE_NONE, bundleWidth } from "./cable-draw"
-import type { CableLegend as CableLegendData } from "./cable-draw"
+import type { CableCounts, CableLegend as CableLegendData } from "./cable-draw"
 
 /**
  * The key to the plan's cables, beside the Color by legend and inside the
  * export area: their colours under **Color cables by** - statuses as their
  * pills, types and jacket colours as short lines - then the line styles in
- * use and, when any run is bundled, the bundle.
+ * use and, when any run is bundled, the bundle. Under them, how many of the
+ * plan's cables are drawn, have one end here (stubs) and have no end here;
+ * a click on the middle figure (`onPlaceFar`) offers their far ends to
+ * place.
  */
-export function CableLegend({ legend }: { legend: CableLegendData }) {
+export function CableLegend({
+  legend,
+  counts,
+  onPlaceFar,
+}: {
+  legend: CableLegendData
+  counts?: CableCounts
+  onPlaceFar?: () => void
+}) {
   const statuses = legend.colors.map((c) =>
     c.status
       ? c.status
@@ -29,9 +45,9 @@ export function CableLegend({ legend }: { legend: CableLegendData }) {
   )
   const byStatus = legend.mode === "status"
   return (
-    <LegendFrame hideable={false} className="w-fit max-w-64">
+    <LegendFrame hideable={false} className="w-fit max-w-80">
       <p className="pb-1 font-medium whitespace-nowrap">{legend.title}</p>
-      {byStatus ? (
+      {legend.colors.length === 0 ? null : byStatus ? (
         <LegendStatuses className="pb-0" statuses={statuses} />
       ) : (
         <LegendTones
@@ -69,6 +85,49 @@ export function CableLegend({ legend }: { legend: CableLegendData }) {
           )}
         </div>
       )}
+      {counts && <CableCountsRow counts={counts} onPlaceFar={onPlaceFar} />}
     </LegendFrame>
+  )
+}
+
+/** "N drawn · M with one end here · K not placed", with a hint on what
+ * draws a cable. */
+function CableCountsRow({
+  counts,
+  onPlaceFar,
+}: {
+  counts: CableCounts
+  onPlaceFar?: () => void
+}) {
+  const oneEnd = `${counts.oneEnd} with one end here`
+  return (
+    <div
+      data-cable-counts
+      className="pointer-events-auto mt-1.5 flex items-center gap-1 border-t border-border pt-1.5 whitespace-nowrap text-muted-foreground"
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0}>{counts.drawn} drawn</span>
+        </TooltipTrigger>
+        <TooltipContent variant="panel" className="max-w-64">
+          A cable draws as a run when both its ends are placed on this plan.
+          With one end here it draws as a stub pointing off the plan.
+        </TooltipContent>
+      </Tooltip>
+      <span>·</span>
+      {onPlaceFar && counts.oneEnd > 0 ? (
+        <button
+          type="button"
+          className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+          onClick={onPlaceFar}
+        >
+          {oneEnd}
+        </button>
+      ) : (
+        <span>{oneEnd}</span>
+      )}
+      <span>·</span>
+      <span>{counts.notPlaced} not placed</span>
+    </div>
   )
 }

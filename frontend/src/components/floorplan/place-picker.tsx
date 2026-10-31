@@ -206,7 +206,8 @@ export function GpsRow({
  * the view, drag it (or the ticked ones) onto the plan. No tile type needed:
  * a placed object draws in its own role's colour and icon. On a plan made
  * from the Site map, the devices whose GPS position is on the plan come
- * first, each placed there in one click.
+ * first, each placed there in one click. With `only` it offers just those
+ * objects - the far ends of the cables with one end here.
  */
 export function PlacePicker({
   plan,
@@ -218,6 +219,8 @@ export function PlacePicker({
   onPlaceAt,
   onShow,
   onAssignRooms,
+  only = null,
+  onClearOnly,
 }: {
   plan: FloorPlan
   /** What the editor's tiles link, saved or not: `kind:id` -> tile id. */
@@ -233,6 +236,9 @@ export function PlacePicker({
   /** Select an object already on this floor. */
   onShow: (tileId: string) => void
   onAssignRooms: () => void
+  /** Offer only these objects (ids). */
+  only?: readonly string[] | null
+  onClearOnly?: () => void
 }) {
   const [q, setQ] = useState("")
   const [scope, setScope] = useState<NearScope | null>(near)
@@ -248,14 +254,15 @@ export function PlacePicker({
   }, [open])
   const params: Record<string, string> = {}
   if (q.trim()) params.q = q.trim()
-  if (scope?.room) params.near_room = scope.room.id
+  if (only) params.ids = only.join(",")
+  else if (scope?.room) params.near_room = scope.room.id
   else if (scope?.location) params.near_location = scope.location.id
   const query = usePlaceable(plan.id, params, open)
   // Devices with a GPS position on a plan made from the Site map.
   const gpsQuery = usePlaceable(
     plan.id,
     { gps: "1", kind: "device", limit: "200" },
-    open && !!plan.geo && !!onPlaceAt
+    open && !!plan.geo && !!onPlaceAt && !only
   )
   // "On this floor" as the editor holds it: a tile placed or deleted
   // since the last save counts at once.
@@ -341,7 +348,26 @@ export function PlacePicker({
             aria-label="Find"
           />
         </div>
-        {scope && nearName && (
+        {only && (
+          <div
+            data-only
+            className="flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground"
+          >
+            Far ends of cables here
+            <Badge variant="secondary">{only.length}</Badge>
+            {onClearOnly && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Show all"
+                onClick={onClearOnly}
+              >
+                <X />
+              </Button>
+            )}
+          </div>
+        )}
+        {!only && scope && nearName && (
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             Near
             <ColorBadge

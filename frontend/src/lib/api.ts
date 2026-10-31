@@ -13134,8 +13134,25 @@ export interface FloorPlanCablePath {
    * the run to the exact photo-port quad. */
   a_points: FloorPlanCableEnd[]
   b_points: FloorPlanCableEnd[]
+  /** The ends on no tile of this plan (older servers leave them out). */
+  a_far?: FloorPlanCableFar[]
+  b_far?: FloorPlanCableFar[]
   tray_ids: string[]
 }
+
+/** An end of a plan's cable on no tile of the plan: the device and port,
+ * the floor of the plan's stack it stands on, and what to place to bring
+ * it here when it is on the plan's site - or, Hidden (#453), nothing. */
+export type FloorPlanCableFar =
+  | {
+      device: string
+      port: string
+      device_name?: string
+      hidden?: undefined
+      floor_plan?: { id: string; name: string } | null
+      place?: { kind: "device" | "rack" | "cabinet"; id: string } | null
+    }
+  | { device: null; port: null; hidden: true }
 
 /** Where one leg of a stored route starts or ends: the tile it was routed
  * from and that tile's centre then (cells). */
