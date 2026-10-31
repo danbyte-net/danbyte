@@ -94,6 +94,13 @@ and watch the live preview:
 
 Names that already exist on the device are skipped, so re-running is safe.
 
+Bulk add can also set speed, MTU, the VLAN and tags on every new interface.
+The tags must be ones the tenant may use (see
+[Tags in the API](../features/tags-and-custom-fields.md#tags-in-the-api)); an
+unknown or foreign tag stops the whole request with a 400 on `tag_ids` and
+creates nothing. API: `POST /api/interfaces/bulk-create/` with
+`{device_id, names, speed?, mtu?, enabled?, vlan_id?, tag_ids?}`.
+
 The single **Add interface** form takes a `[a-b]` range too (`eth[0-3]`, or
 `Eth[01-04]` for padded names), which
 is handier for a few ports since you get the full field set - type, MTU, PoE,

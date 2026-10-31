@@ -44,6 +44,17 @@ by side.
 Imports and hypervisor syncs reuse a tag of the same name the tenant already
 sees instead of creating a second one.
 
+### Tags in the API
+
+API writes pick tags by **id**: `tag_ids` on a create or edit,
+`add_tag_ids` / `remove_tag_ids` on a bulk update, and `tag_ids` on the
+interface bulk add. An id must name a tag the tenant may use - one of its own,
+a global one, or, for a site-scoped user under enhanced site separation, a tag
+local to one of their sites. Anything else (another tenant's tag, another
+site's local tag, a tag name instead of an id) is a **400** on that field and
+nothing is written. These writes never create a tag; create it first under
+**Customize → Tags** (`POST /api/tags/`).
+
 ### Merging tags
 
 Use a row's **Merge into…** action to fold one tag into another. Pick the

@@ -182,7 +182,9 @@ def log_rail_change(instance, old, new) -> None:
     _entry(instance, ChangeAction.UPDATE, changes, current_user(), current_request_id()).save()
 
 
-def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> None:
+def apply_and_log_bulk_tags(
+    qs, add_tag_ids, remove_tag_ids, tenant=None, request=None
+) -> None:
     """Resolve tag ids → Tag rows, apply add/remove across ``qs``, and record
     one changelog entry per object whose tag set actually changed.
 
@@ -193,7 +195,12 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
 
     Pass ``tenant`` so foreign-tenant tag ids are silently dropped - tags are
     tenant-scoped now, and this raw path bypasses the serializer's scoped
-    field (legacy NULL-tenant tags stay attachable)."""
+    field (legacy NULL-tenant tags stay attachable).
+
+    Pass ``request`` as well and ``add_tag_ids`` is checked as the
+    ``tag_ids`` field checks it: an id that is not a tag the request may use
+    (another tenant's, another site's local tag, not an id at all) is a 400
+    on ``add_tag_ids`` instead of being dropped (#456)."""
     if not add_tag_ids and not remove_tag_ids:
         return
     from django.db.models import Q
@@ -201,11 +208,32 @@ def apply_and_log_bulk_tags(qs, add_tag_ids, remove_tag_ids, tenant=None) -> Non
     from core.models import Tag
     from core.tags import TAGS, tags_of
 
+    if request is not None and add_tag_ids:
+        from api.serializers import resolve_tag_ids
+
+        add = list(dict.fromkeys(resolve_tag_ids(request, add_tag_ids, "add_tag_ids")))
+        add_tag_ids = []
+    else:
+        add = None
+
+    def _ids(raw):
+        # Tag ids are integers; anything else names no tag here (and would
+        # make the id lookup raise).
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [
+            int(i) for i in raw
+            if not isinstance(i, bool)
+            and (isinstance(i, int) or (isinstance(i, str) and i.strip().isdigit()))
+        ]
+
+    add_tag_ids, remove_tag_ids = _ids(add_tag_ids), _ids(remove_tag_ids)
     tag_qs = Tag.objects.filter(id__in={*add_tag_ids, *remove_tag_ids})
     if tenant is not None:
         tag_qs = tag_qs.filter(Q(tenant=tenant) | Q(tenant__isnull=True))
     tags = {t.id: t for t in tag_qs}
-    add = [tags[i] for i in add_tag_ids if i in tags]
+    if add is None:
+        add = [tags[i] for i in add_tag_ids if i in tags]
     remove = [tags[i] for i in remove_tag_ids if i in tags]
     for obj in qs.prefetch_related(TAGS):
         current = {t.id for t in tags_of(obj)}
