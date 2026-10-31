@@ -102,8 +102,9 @@ export function PlanScene3D({
       {colorLegend}
       {showHint && (
         <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
-          Drag to orbit · scroll to zoom · right-drag to pan · arrows / WASD
-          move · Space/C up-down · Shift sprint · F focus · click a rack
+          Drag to orbit · scroll to zoom at the cursor · right-drag to pan ·
+          double-click to frame · F focus · 0 fit all · WASD move · Space/C
+          up-down
           <button
             onClick={onDismissHint}
             aria-label="Dismiss"

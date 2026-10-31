@@ -37,3 +37,12 @@ export function isCameraMoving(): boolean {
 export function isCameraSettling(tailMs = 200): boolean {
   return performance.now() < movingUntil + tailMs
 }
+
+/** The operator asked the OS for less motion: fly-tos jump instead. */
+export function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  } catch {
+    return false
+  }
+}

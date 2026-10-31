@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Scan } from "lucide-react"
 import * as THREE from "three"
 
 import { detectRenderQuality } from "@/lib/render-quality"
@@ -26,7 +27,7 @@ import { InventoryItemDialog } from "@/components/device-inventory-pane"
 import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Button } from "@/components/ui/button"
 import { Loading } from "@/components/loading"
-import { BarButton } from "@/components/map-toolbar"
+import { BarButton, BarIconButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -62,7 +63,9 @@ import { CabinetMesh } from "./cabinet-mesh"
 import { DeviceHud, PortHud, rackPortPosition } from "./hud-cards"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
 import type { PartMarkerAt } from "@/components/part-status"
-import type { FlyToRequest } from "./camera-rig"
+import type { FlyToRequest, NavApi } from "./camera-rig"
+import { areaBox, planBounds, smallestArea, wallBox } from "./focus-boxes"
+import type { FocusBox } from "./focus-boxes"
 import { Room } from "./room"
 import type { DrawingFloor } from "./room"
 import { RackMesh } from "./rack-mesh"
@@ -186,6 +189,14 @@ export default function FloorScene3D({
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
   const [traySel, setTraySel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
+  // The camera's framing calls (frame a box, fit the whole plan).
+  const navRef = useRef<NavApi | null>(null)
+  // An area (a building on a site plan) or a wall clicked: a navigation
+  // target only - F or a double-click frames it.
+  const [structSel, setStructSel] = useState<{
+    kind: "area" | "wall"
+    id: string
+  } | null>(null)
   // Focus (F): the selected rack/device stays lit, the rest of the room
   // ghosts. Session state, deliberately not persisted - it is a look, not a
   // preference.
@@ -384,6 +395,7 @@ export default function FloorScene3D({
       return
     }
     setCableSel(null)
+    setStructSel(null)
     // A different cabinet resets the flip - you arrive at its front. (Plain
     // sequential setState: the first version nested this inside the
     // setSelection updater, and a state update from inside an updater is a
@@ -402,28 +414,82 @@ export default function FloorScene3D({
     return () => window.removeEventListener("keydown", onKey)
   }, [connecting])
 
-  // F toggles focus on the current selection; Escape unwinds focus first,
-  // then isolation (the connect flow's own Esc wins while it is arming).
+  // F on a rack, cabinet or device toggles focus, flying to its front on
+  // the way in; on an area or wall it frames it. Escape unwinds focus
+  // first, then isolation, then the selection - flying back to the whole
+  // plan (the connect flow's own Esc wins while it is arming, and an open
+  // dialog keeps its Esc to itself).
+  const dialogOpen = !!modal || !!installBay || !!partEdit || !!partMenu
   useEffect(() => {
     const editable = (t: EventTarget | null) =>
       t instanceof Element &&
       t.closest('input, textarea, select, [contenteditable="true"]') !== null
+    const flyTo = (vp: {
+      target: [number, number, number]
+      position: [number, number, number]
+    }) => {
+      flyToRef.current = {
+        target: new THREE.Vector3(...vp.target),
+        position: new THREE.Vector3(...vp.position),
+      }
+      invalidateRef.current?.()
+    }
+    const frame = (box: FocusBox | null) => {
+      if (box) navRef.current?.frame(box.min, box.max)
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (editable(e.target)) return
+      const d = scene.data
       if (e.key === "f" || e.key === "F") {
-        if (selection) setFocusOn((v) => !v)
+        if (selection) {
+          const t = d?.tiles.find((x) => x.id === selection.tileId)
+          const height = t?.rack
+            ? rackFootprintM(t.rack).height
+            : t?.cabinet
+              ? cabinetBoxM(t.cabinet).height
+              : null
+          if (!focusOn && d && t && height != null) {
+            setViewSide("front")
+            flyTo(rackViewpoint(d.plan, t, height, "front"))
+          }
+          setFocusOn((v) => !v)
+        } else if (structSel && d) {
+          if (structSel.kind === "area") {
+            const a = areas.find((x) => x.id === structSel.id)
+            frame(a ? areaBox(d.plan, a) : null)
+          } else {
+            const w = d.walls?.find((x) => x.id === structSel.id)
+            frame(w ? wallBox(d.plan, w) : null)
+          }
+        }
         return
       }
       if (e.key === "Escape") {
-        if (connecting) return
+        if (connecting || dialogOpen) return
         if (focusOn) setFocusOn(false)
         else if (isolation) setIsolation(null)
+        else {
+          setSelection(null)
+          setStructSel(null)
+          setCableSel(null)
+          setTraySel(null)
+          navRef.current?.fitAll()
+        }
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [selection, focusOn, isolation, connecting])
+  }, [
+    selection,
+    structSel,
+    focusOn,
+    isolation,
+    connecting,
+    dialogOpen,
+    scene.data,
+    areas,
+  ])
 
   // A rack table row clicked under the room: select that rack and fly to
   // its front - the double-click's framing - once the room has loaded.
@@ -631,8 +697,9 @@ export default function FloorScene3D({
         controls={{
           target: [w / 2, 0.8, d / 2],
           maxDistance: diag * 8 + 20,
-          roomDiag: diag,
           requestRef: flyToRef,
+          navRef,
+          bounds: planBounds(plan),
         }}
         // Every view setting, the racks' tints among them: a change the
         // demand frameloop doesn't see would leave the old picture.
@@ -654,6 +721,7 @@ export default function FloorScene3D({
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
           setSelection(null)
+          setStructSel(null)
           setConnecting(null)
           setCableSel(null)
           // Focus follows the selection - a click into nothing ends both.
@@ -667,7 +735,25 @@ export default function FloorScene3D({
           drawingFloor={drawingFloor}
         />
         {areas.map((a) => (
-          <AreaFloorMesh key={a.id} plan={plan} area={a} />
+          <AreaFloorMesh
+            key={a.id}
+            plan={plan}
+            area={a}
+            selected={structSel?.kind === "area" && structSel.id === a.id}
+            onPick={(ids, frame) => {
+              // Floor inside an area: what a click into nothing does, and
+              // the area (the innermost under the pointer) as the target.
+              const hit = smallestArea(areas, ids, plan)
+              setSelection(null)
+              setConnecting(null)
+              setCableSel(null)
+              setTraySel(null)
+              setFocusOn(false)
+              setStructSel(hit ? { kind: "area", id: hit.id } : null)
+              const box = hit && frame ? areaBox(plan, hit) : null
+              if (box) navRef.current?.frame(box.min, box.max)
+            }}
+          />
         ))}
         {shownRacks.map((t) => (
           <RackMesh
@@ -790,6 +876,7 @@ export default function FloorScene3D({
             selected={traySel === tr.id}
             onSelect={(id) => {
               setSelection(null)
+              setStructSel(null)
               setCableSel(null)
               setTraySel((cur) => (cur === id ? null : id))
             }}
@@ -833,6 +920,16 @@ export default function FloorScene3D({
               plan={plan}
               wall={wl}
               mode={shellMode === "xray" ? "ghost" : "solid"}
+              selected={structSel?.kind === "wall" && structSel.id === wl.id}
+              onPick={(frame) => {
+                setSelection(null)
+                setCableSel(null)
+                setTraySel(null)
+                setFocusOn(false)
+                setStructSel({ kind: "wall", id: wl.id })
+                const box = frame ? wallBox(plan, wl) : null
+                if (box) navRef.current?.frame(box.min, box.max)
+              }}
             />
           ))}
         {/* Unlinked / non-rack tiles as ghost massing - a typed tile holds
@@ -859,6 +956,7 @@ export default function FloorScene3D({
             selectedId={cableSel}
             onSelect={(id) => {
               setSelection(null)
+              setStructSel(null)
               setTraySel(null)
               setCableSel(id)
             }}
@@ -1158,13 +1256,24 @@ export default function FloorScene3D({
           devices actually draw - so it's absent until a photo panel with real
           ports is in view, and then explains only those colours - in the maps'
           legend frame. The overlay toggles live in the route's View popover. */}
-      {!legendIsEmpty(legend) && (
-        <div className="absolute top-3 right-3">
+      <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+        <BarIconButton
+          label="Fit all"
+          shortcut="0"
+          tipSide="left"
+          className="bg-popover/95"
+          onClick={() => {
+            navRef.current?.fitAll()
+          }}
+        >
+          <Scan />
+        </BarIconButton>
+        {!legendIsEmpty(legend) && (
           <LegendFrame storageKey="floorplan:3d-legend" className="w-fit">
             <FaceplateLegend observed content={legend} />
           </LegendFrame>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
