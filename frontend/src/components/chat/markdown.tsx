@@ -39,6 +39,7 @@ function blocks(text: string, catalog: Catalog): ReactNode[] {
       out.push(
         <pre
           key={key++}
+          tabIndex={0}
           className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[12px] leading-relaxed"
         >
           {body.join("\n")}

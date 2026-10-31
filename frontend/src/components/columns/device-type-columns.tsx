@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import type { DeviceType } from "@/lib/api"
+import { deviceTypeLabel } from "@/lib/device-type-label"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { LocalityBadge } from "@/components/locality-badge"
@@ -134,7 +135,7 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
             params={{ id: row.original.id }}
             className="link font-medium"
           >
-            {row.original.name}
+            {deviceTypeLabel(row.original)}
           </Link>
           <PlannedChangeMarker
             objectType="api.devicetype"

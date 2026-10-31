@@ -7,7 +7,11 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import type { EngineKindInfo, MonitoringEngine, MonitoringSettings } from "@/lib/api"
+import type {
+  EngineKindInfo,
+  MonitoringEngine,
+  MonitoringSettings,
+} from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
@@ -52,7 +56,8 @@ function seenLabel(e: MonitoringEngine): { text: string; ok: boolean } {
 function useEngineKinds() {
   const q = useQuery({
     queryKey: ["engine-kinds"],
-    queryFn: () => api<{ kinds: EngineKindInfo[] }>("/api/monitoring/engine-kinds/"),
+    queryFn: () =>
+      api<{ kinds: EngineKindInfo[] }>("/api/monitoring/engine-kinds/"),
     staleTime: 60 * 60_000,
   })
   return Object.fromEntries((q.data?.kinds ?? []).map((k) => [k.kind, k]))
@@ -190,7 +195,8 @@ function MonitoringEnginesPage() {
             )}
             {!e.is_local && (
               <span className="text-[10px] text-muted-foreground">
-                {driverOf(e)?.label ?? (e.transport === "ssh" ? "SSH" : "HTTPS")}
+                {driverOf(e)?.label ??
+                  (e.transport === "ssh" ? "SSH" : "HTTPS")}
               </span>
             )}
             {!e.enabled && (
@@ -266,7 +272,9 @@ function MonitoringEnginesPage() {
           <>
             {driverOf(e) && (
               <Button size="sm" variant="ghost" className="h-7 text-xs" asChild>
-                <Link to={driverOf(e)!.configure_path as "/zabbix"}>Configure</Link>
+                <Link to={driverOf(e)!.configure_path as "/zabbix"}>
+                  Configure
+                </Link>
               </Button>
             )}
             {!driverOf(e) && e.transport === "pull" && (
@@ -340,6 +348,7 @@ function MonitoringEnginesPage() {
               </p>
             </div>
             <Combobox
+              aria-label="Default engine"
               value={settings.data?.default_engine || LOCAL_ENGINE}
               onChange={(v) =>
                 v && setDefault.mutate(v === LOCAL_ENGINE ? null : v)
@@ -373,6 +382,7 @@ function MonitoringEnginesPage() {
               </p>
             </div>
             <Input
+              aria-label="Outpost repo URL"
               className="h-9 font-mono text-xs"
               placeholder="https://github.com/danbyte-net/danbyte-outpost"
               value={repoUrl}
@@ -380,6 +390,7 @@ function MonitoringEnginesPage() {
             />
             <div className="flex gap-2">
               <Input
+                aria-label="Outpost repo token"
                 className="h-9 font-mono text-xs"
                 type="password"
                 placeholder={

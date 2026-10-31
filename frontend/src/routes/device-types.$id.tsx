@@ -395,6 +395,7 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
       label: "SNMP profile",
       value: (
         <SnmpBindingControl
+          aria-label="SNMP profile"
           scope="device_type"
           objectId={d.id}
           canEdit={canDo("devicetype", "change")}

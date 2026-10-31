@@ -319,7 +319,9 @@ function SidebarPreview({ sections }: { sections: SidebarSection[] }) {
         Preview
       </div>
       <div
+        role="region"
         aria-label="Sidebar preview"
+        tabIndex={0}
         className="grid max-h-[32rem] content-start gap-1 overflow-y-auto rounded-lg border border-border bg-sidebar p-2 text-sidebar-foreground"
       >
         <PreviewBand icon={LayoutDashboard} label="Dashboard" />

@@ -369,6 +369,7 @@ function Blocks({
             return (
               <pre
                 key={idx}
+                tabIndex={0}
                 className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2.5 font-mono text-xs text-foreground"
               >
                 {b.text}

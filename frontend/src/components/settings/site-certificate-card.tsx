@@ -115,9 +115,9 @@ export function SiteCertificateCard() {
         ? 3000
         : false,
   })
-  const [dialog, setDialog] = useState<"upload" | "self-signed" | "acme" | null>(
-    null
-  )
+  const [dialog, setDialog] = useState<
+    "upload" | "self-signed" | "acme" | null
+  >(null)
   const refresh = () => qc.invalidateQueries({ queryKey: KEY })
 
   const autoRenew = useMutation({
@@ -248,10 +248,7 @@ export function SiteCertificateCard() {
           {d.acme?.issuer && (
             <span className="text-muted-foreground">
               via{" "}
-              <Link
-                to="/certificate-issuers"
-                className="link"
-              >
+              <Link to="/certificate-issuers" className="link">
                 {d.acme.issuer.name}
               </Link>
             </span>
@@ -324,13 +321,19 @@ export function SiteCertificateCard() {
           pendingLabel="Regenerating…"
           title="Regenerate the self-signed certificate?"
           body={`A fresh pair for ${(s?.names.map((n) => n.split(":", 2)[1]) ?? [d.host]).join(", ")}${
-            s?.names.some((n) => n.endsWith(`:${d.host}`)) ? "" : ` and ${d.host}`
+            s?.names.some((n) => n.endsWith(`:${d.host}`))
+              ? ""
+              : ` and ${d.host}`
           }. Browsers that trusted the old one will ask again.`}
           onConfirm={() => selfSigned.mutate()}
           disabled={selfSigned.isPending}
           small
         />
-        <Button size="sm" variant="ghost" onClick={() => setDialog("self-signed")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setDialog("self-signed")}
+        >
           Self-signed with other names
         </Button>
         <Button size="sm" variant="outline" onClick={() => setDialog("upload")}>
@@ -364,9 +367,7 @@ export function SiteCertificateCard() {
       )}
       {dialog === "self-signed" && (
         <SelfSignedDialog
-          names={
-            s?.names.map((n) => n.split(":", 2)[1]) ?? [d.host]
-          }
+          names={s?.names.map((n) => n.split(":", 2)[1]) ?? [d.host]}
           host={d.host}
           onClose={() => setDialog(null)}
           onDone={refresh}
@@ -414,8 +415,8 @@ function UploadDialog({
         <DialogHeader>
           <DialogTitle>Upload a certificate pair</DialogTitle>
           <DialogDescription>
-            PEM text. The key is written to one root-readable file and
-            nowhere else; the chain is appended for nginx.
+            PEM text. The key is written to one root-readable file and nowhere
+            else; the chain is appended for nginx.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -462,6 +463,7 @@ function PemField({
         <Label htmlFor={id}>{label}</Label>
         {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
         <input
+          aria-label={`${label} file`}
           type="file"
           className="ml-auto text-xs"
           onChange={(e) => {
@@ -520,16 +522,23 @@ function SelfSignedDialog({
         <DialogHeader>
           <DialogTitle>Regenerate the self-signed certificate</DialogTitle>
           <DialogDescription>
-            Every name the site is reached as, comma separated. The first is
-            the common name; localhost is always included.
+            Every name the site is reached as, comma separated. The first is the
+            common name; localhost is always included.
           </DialogDescription>
         </DialogHeader>
-        <Input value={text} onChange={(e) => setText(e.target.value)} />
+        <Input
+          aria-label="Names"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => m.mutate()} disabled={m.isPending || !text.trim()}>
+          <Button
+            onClick={() => m.mutate()}
+            disabled={m.isPending || !text.trim()}
+          >
             {m.isPending ? "Generating…" : "Regenerate"}
           </Button>
         </DialogFooter>
@@ -553,7 +562,8 @@ function AcmeDialog({
 }) {
   const issuers = useQuery({
     queryKey: ["issuers", "site-certificate"],
-    queryFn: () => api<Paginated<Issuer>>("/api/monitoring/issuers/?page_size=100"),
+    queryFn: () =>
+      api<Paginated<Issuer>>("/api/monitoring/issuers/?page_size=100"),
   })
   const rows = (issuers.data?.results ?? []).filter((i) => i.enabled)
   const LE = "letsencrypt"
@@ -578,7 +588,9 @@ function AcmeDialog({
         }),
       }),
     onSuccess: () => {
-      toast.success("Order opened - the pair is dropped when the issuer signs it")
+      toast.success(
+        "Order opened - the pair is dropped when the issuer signs it"
+      )
       onDone()
       onClose()
     },
@@ -604,6 +616,7 @@ function AcmeDialog({
           <div className="grid gap-1">
             <Label>Issuer</Label>
             <Combobox
+              aria-label="Issuer"
               value={issuer}
               onChange={(v) => v && setIssuer(v)}
               options={[
@@ -621,11 +634,12 @@ function AcmeDialog({
               <Label className="flex items-center gap-2">
                 Account email
                 <InfoTip>
-                  Let's Encrypt sends expiry warnings there. Used once, when
-                  the account is created.
+                  Let's Encrypt sends expiry warnings there. Used once, when the
+                  account is created.
                 </InfoTip>
               </Label>
               <Input
+                aria-label="Account email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -646,12 +660,17 @@ function AcmeDialog({
               value={challenge}
               onValueChange={(v) => setChallenge(v as "http-01" | "dns-01")}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Challenge">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="http-01">HTTP-01, answered by Danbyte</SelectItem>
-                <SelectItem value="dns-01" disabled={isLE || !chosen?.dns_provider}>
+                <SelectItem value="http-01">
+                  HTTP-01, answered by Danbyte
+                </SelectItem>
+                <SelectItem
+                  value="dns-01"
+                  disabled={isLE || !chosen?.dns_provider}
+                >
                   DNS-01
                   {isLE
                     ? " - add Let's Encrypt as an issuer with a DNS publisher for this"
@@ -664,11 +683,15 @@ function AcmeDialog({
           </div>
           <div className="grid gap-1">
             <Label>Names</Label>
-            <Input value={text} onChange={(e) => setText(e.target.value)} />
+            <Input
+              aria-label="Names"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
             {hostIsIp && (
               <p className="text-xs text-muted-foreground">
-                A public CA signs DNS names, not addresses - put the site's
-                DNS name here.
+                A public CA signs DNS names, not addresses - put the site's DNS
+                name here.
               </p>
             )}
           </div>
@@ -680,7 +703,10 @@ function AcmeDialog({
           <Button
             onClick={() => m.mutate()}
             disabled={
-              m.isPending || !secretStore || !text.trim() || (isLE && !email.includes("@"))
+              m.isPending ||
+              !secretStore ||
+              !text.trim() ||
+              (isLE && !email.includes("@"))
             }
           >
             {m.isPending ? "Opening…" : "Order"}

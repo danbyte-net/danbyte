@@ -57,7 +57,10 @@ export function ConfigContextPanel({
             </p>
           )}
           {data && (
-            <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+            <pre
+              tabIndex={0}
+              className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+            >
               {JSON.stringify(data.rendered, null, 2)}
             </pre>
           )}

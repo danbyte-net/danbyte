@@ -124,6 +124,15 @@ filter rail) takes an `aria-label`. A field whose body is a run of controls
 that each name themselves (the device form's **Card lines**) is a
 `<Field group>`: the same caption, but it names the `role="group"` instead of
 pointing a `<label>` at one control, and nothing inside takes the field's id.
+A caption that is not a `<label>` (a popover's `PopoverField`, a filter rail
+heading) names the control under it through `CaptionControl`;
+`<PopoverField group>` is the group form. `CodeEditor` takes its name from
+the surrounding `Field` too, or from `aria-label`. An icon-only button sits in
+`IconTip` (`components/icon-tip.tsx`): its `label` is both the aria-label and
+the tooltip. Scrollable `<pre>` blocks and regions with nothing focusable
+inside take `tabIndex={0}` so the keyboard can scroll them.
+`components/a11y-control-names.test.tsx` sweeps the source for select
+triggers, comboboxes and icon buttons without a name.
 
 Radix controls report changes differently from DOM ones - `Checkbox` uses
 `onCheckedChange(bool)` and `Select` uses `onValueChange(string)`, not

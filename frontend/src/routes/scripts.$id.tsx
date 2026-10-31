@@ -142,6 +142,7 @@ function ScriptDetailPage() {
             )}
           </div>
           <CodeEditor
+            aria-label="Script source"
             value={source}
             onChange={canEditCode ? setSource : undefined}
             language="python"

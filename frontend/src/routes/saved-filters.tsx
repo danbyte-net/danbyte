@@ -489,6 +489,7 @@ function EditDialog({
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Name</label>
               <Input
+                aria-label="Name"
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}

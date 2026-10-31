@@ -15,6 +15,7 @@ import type {
   RackTypeAccessory,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import {
   Dialog,
   DialogContent,
@@ -304,24 +305,28 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       {canWrite && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={() => setEditing(a)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        <IconTip label="Edit">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => setEditing(a)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
                       )}
                       {canRemove && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => del.mutate(a.id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <IconTip label="Delete">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => del.mutate(a.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
                       )}
                     </div>
                   </TableCell>

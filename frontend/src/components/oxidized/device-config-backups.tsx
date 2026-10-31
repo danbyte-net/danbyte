@@ -338,6 +338,7 @@ export function ConfigText({
       </div>
       <pre
         data-testid="config-text"
+        tabIndex={0}
         className="max-h-[32rem] overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
       >
         {shown
@@ -524,7 +525,10 @@ function DiffPane({
             <Badge variant="success">+{q.data.added}</Badge>
             <Badge variant="destructive">-{q.data.removed}</Badge>
           </div>
-          <pre className="max-h-[32rem] overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+          <pre
+            tabIndex={0}
+            className="max-h-[32rem] overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+          >
             {q.data.diff.split("\n").map((line, i) => (
               <DiffLine key={i} line={line} />
             ))}

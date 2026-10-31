@@ -117,7 +117,11 @@ export function SelectionBar({
             }
           }}
         >
-          <SelectTrigger size="sm" className="w-32 text-xs data-[size=sm]:h-7">
+          <SelectTrigger
+            aria-label="Tile type"
+            size="sm"
+            className="w-32 text-xs data-[size=sm]:h-7"
+          >
             <SelectValue placeholder="Set type…" />
           </SelectTrigger>
           <SelectContent>

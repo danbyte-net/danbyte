@@ -353,6 +353,7 @@ function AreaRoomButton({
       </PopoverTrigger>
       <PopoverContent align="center" className="w-64 p-2">
         <Combobox
+          aria-label="Room"
           value={area.room?.id ?? null}
           onChange={(id) => {
             const r = rooms.data?.results.find((x) => x.id === id)
