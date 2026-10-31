@@ -321,6 +321,7 @@ function Members({
         <div className="mt-3 flex items-end gap-2">
           <div className="min-w-0 flex-1">
             <Combobox
+              aria-label="Interface"
               value={ifaceId}
               onChange={setIfaceId}
               options={options}

@@ -197,6 +197,7 @@ export function ContactsPanel({
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-50 flex-1">
             <Combobox
+              aria-label="Contact"
               value={contactId}
               onChange={setContactId}
               options={contactOptions}
@@ -206,6 +207,7 @@ export function ContactsPanel({
           </div>
           <div className="w-36">
             <Combobox
+              aria-label="Role"
               value={roleId}
               onChange={setRoleId}
               options={(roles.data?.results ?? []).map((r) => ({
@@ -222,7 +224,7 @@ export function ContactsPanel({
             value={priority}
             onValueChange={(v) => setPriority(v as ContactPriority)}
           >
-            <SelectTrigger className="h-9 w-32">
+            <SelectTrigger aria-label="Priority" className="h-9 w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -11,6 +11,8 @@ from datetime import timedelta
 from secrets import token_urlsafe
 
 from django.core.exceptions import FieldError
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -452,6 +454,9 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
       OpenSSH public-key line; the type/blob/fingerprint are parsed from it, a
       private key or PEM cert is a clean 400, and an existing fingerprint dedups
       (marked uploaded, 200) rather than duplicating.
+    * There is no edit: a key belongs to the device it was uploaded or
+      observed on, so PUT/PATCH answer 405 (#458). Delete it and upload it on
+      the other device instead.
     * **delete** removes the row (an observed key re-appears on the next poll).
     * **accept-observed** declares an observed key as the expected one, clearing
       any ``ssh_host_key_mismatch`` for that device+type.
@@ -462,6 +467,7 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
     queryset = SSHHostKey.objects.select_related("device").all()
     serializer_class = SSHHostKeySerializer
     parser_classes = [ObjectJSONParser, FormParser, MultiPartParser]
+    http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self):
         qs = super().get_queryset().order_by("device_id", "key_type")
@@ -491,15 +497,25 @@ class SSHHostKeyViewSet(TenantScopedViewSet):
             raise ValidationError({"device": "This field is required."})
         if not line:
             raise ValidationError({"public_key_line": "This field is required."})
-        device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+        try:
+            device = Device.objects.filter(pk=device_id, tenant=tenant).first()
+        except (ValueError, DjangoValidationError):
+            device = None  # not a UUID
         if device is None:
             raise ValidationError({"device": "Not found in this tenant."})
-        try:
-            row, created = upload_host_key(tenant, device, line)
-        except HostKeyUploadError as exc:
-            raise ValidationError({"public_key_line": str(exc)}) from exc
-        data = self.get_serializer(row).data
-        return Response(data, status=201 if created else 200)
+        # This create skips the base create(), so it runs the same post-save
+        # site-scope guard itself: a site-scoped user may only put a key on a
+        # device in their sites (#458).
+        with transaction.atomic():
+            try:
+                row, created = upload_host_key(tenant, device, line)
+            except HostKeyUploadError as exc:
+                raise ValidationError({"public_key_line": str(exc)}) from exc
+            response = Response(
+                self.get_serializer(row).data, status=201 if created else 200
+            )
+            self._assert_write_in_site_scope(response, "add")
+        return response
 
     @action(detail=True, methods=["post"], url_path="accept-observed")
     def accept_observed(self, request, pk=None):

@@ -113,7 +113,10 @@ function ToolLine({ call }: { call: ChatToolCall }) {
         )}
       </button>
       {open && (
-        <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">
+        <pre
+          tabIndex={0}
+          className="mt-1 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+        >
           {JSON.stringify(call.args, null, 2)}
         </pre>
       )}

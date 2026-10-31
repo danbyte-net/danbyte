@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react"
+import { createContext, useContext, useMemo } from "react"
 import type { ReactNode } from "react"
 
 // The link between a form Field's visible label and the control it labels
@@ -30,6 +30,27 @@ export function useFieldControl(): FieldControl | null {
 export function NoFieldControl({ children }: { children: ReactNode }) {
   return (
     <FieldControlContext.Provider value={null}>
+      {children}
+    </FieldControlContext.Provider>
+  )
+}
+
+/** Names the one control inside by a caption that is not a <label> - a
+ * filter rail heading, a popover field's small caps (#461). `labelId` is the
+ * caption element's id; the control takes `${labelId}-control`. */
+export function CaptionControl({
+  labelId,
+  children,
+}: {
+  labelId: string
+  children: ReactNode
+}) {
+  const value = useMemo<FieldControl>(
+    () => ({ id: `${labelId}-control`, labelId, invalid: false }),
+    [labelId]
+  )
+  return (
+    <FieldControlContext.Provider value={value}>
       {children}
     </FieldControlContext.Provider>
   )

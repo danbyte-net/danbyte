@@ -73,7 +73,10 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 A play can target any of these, e.g.{" "}
-                <span className="font-mono">hosts: {(data.groups ?? [])[0]}</span>.
+                <span className="font-mono">
+                  hosts: {(data.groups ?? [])[0]}
+                </span>
+                .
               </p>
             </div>
 
@@ -81,7 +84,10 @@ export function DeviceInventoryPanel({ deviceId }: { deviceId: string }) {
               <div className="mb-1 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                 Host vars
               </div>
-              <pre className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed">
+              <pre
+                tabIndex={0}
+                className="max-h-96 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[12px] leading-relaxed"
+              >
                 {hostvarsJson}
               </pre>
             </div>

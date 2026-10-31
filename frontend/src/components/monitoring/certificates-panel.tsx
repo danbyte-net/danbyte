@@ -271,6 +271,7 @@ export function CertificatesPanel({
           <>
             <div className="w-56">
               <Combobox
+                aria-label="Certificate"
                 value={pick}
                 onChange={setPick}
                 options={options}

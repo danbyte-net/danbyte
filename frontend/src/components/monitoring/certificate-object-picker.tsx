@@ -110,7 +110,7 @@ export function CertificateObjectPicker({
           setObjectId(null)
         }}
       >
-        <SelectTrigger className="h-9 w-44">
+        <SelectTrigger aria-label="Object type" className="h-9 w-44">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -123,6 +123,7 @@ export function CertificateObjectPicker({
       </Select>
       <div className="min-w-56 flex-1">
         <Combobox
+          aria-label="Object"
           value={objectId}
           onChange={setObjectId}
           options={options}

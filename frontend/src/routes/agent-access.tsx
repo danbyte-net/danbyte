@@ -135,7 +135,10 @@ function ConnectCard({ connect }: { connect: AgentConnect | undefined }) {
                   Add this to <span className="font-mono">{chosen.path}</span>.
                 </p>
               )}
-              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs">
+              <pre
+                tabIndex={0}
+                className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs"
+              >
                 {chosen.snippet}
               </pre>
               <div className="flex items-center gap-2">

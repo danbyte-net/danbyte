@@ -344,7 +344,7 @@ function AssignmentRow({
               patch.mutate({ schedule_mode: v as ScheduleMode })
             }
           >
-            <SelectTrigger className="h-7 w-32 text-xs">
+            <SelectTrigger aria-label="Schedule" className="h-7 w-32 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

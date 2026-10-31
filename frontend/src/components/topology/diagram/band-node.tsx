@@ -233,6 +233,7 @@ export function BandNode({
 
   const field = (
     <input
+      aria-label="Band name"
       ref={input}
       value={draft}
       autoFocus

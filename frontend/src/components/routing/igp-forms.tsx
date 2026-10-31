@@ -168,6 +168,7 @@ function RedistributeSection({
         renderRow={(r, update) => [
           <CellSelect
             key="src"
+            aria-label="Source"
             value={r.source}
             onChange={(v) => update({ source: v })}
             options={SOURCES}
@@ -177,6 +178,7 @@ function RedistributeSection({
             ? [
                 <CellSelect
                   key="fam"
+                  aria-label="Family"
                   value={r.family || "ipv4"}
                   onChange={(v) => update({ family: v })}
                   options={REDIST_FAMILIES}
@@ -184,6 +186,7 @@ function RedistributeSection({
                 />,
                 <CellSelect
                   key="lvl"
+                  aria-label="Level"
                   value={r.level || NONE}
                   onChange={(v) => update({ level: v === NONE ? "" : v })}
                   options={REDIST_LEVELS}
@@ -193,6 +196,7 @@ function RedistributeSection({
             : []),
           <CellSelect
             key="pol"
+            aria-label="Policy"
             value={r.policyId ?? NONE}
             onChange={(v) => update({ policyId: v === NONE ? null : v })}
             options={policyOptions}

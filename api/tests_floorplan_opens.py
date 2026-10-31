@@ -291,6 +291,24 @@ class BackLinkTests(_Fixture):
         self.assertIn(str(self.label.id), on_source)
         self.assertNotIn(str(made.id), on_source)
 
+    def test_a_view_back_label_can_be_moved_and_saved(self):
+        r = self.client.post(f"/api/floor-plans/{self.campus.id}/snapshot/", {
+            "name": "Move me", "mode": "view", "crop": {"x": 6, "y": 0, "w": 6, "h": 4},
+        }, format="json")
+        view = FloorPlan.objects.get(pk=r.json()["id"])
+        self.label.opens = view
+        self.label.save()
+        self.back({"kind": "label", "id": str(self.label.id), "on": True,
+                   "target_id": str(view.id)})
+        made = FloorPlanLabel.objects.get(pair_id=self.label.pk)
+        # The editor sends the whole row back, link included.
+        r = self.client.patch(f"/api/floor-plan-labels/{made.id}/", {
+            "x": made.x + 1, "opens_id": str(self.campus.id),
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        made.refresh_from_db()
+        self.assertEqual(made.opens_id, self.campus.id)
+
     def test_a_room_view_gets_its_back_label_inside_the_room(self):
         # An L-shaped room: its bounding box's top left lies outside it.
         room = FloorPlanArea.objects.create(

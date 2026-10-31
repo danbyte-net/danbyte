@@ -227,7 +227,10 @@ function Body({ req }: { req: CertificateRequest }) {
               {
                 label: "PEM",
                 value: (
-                  <pre className="max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">
+                  <pre
+                    tabIndex={0}
+                    className="max-h-48 overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
+                  >
                     {req.csr_pem}
                   </pre>
                 ),
@@ -549,6 +552,7 @@ function OrderCard({
           {order.challenges.map((c, i) => (
             <pre
               key={i}
+              tabIndex={0}
               className="overflow-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]"
             >
               {c.type === "dns-01"

@@ -635,7 +635,11 @@ export function DeviceTypeFaceplatePane({
                     }
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-24 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Rows"
+                      size="sm"
+                      className="h-7 w-24 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -663,7 +667,11 @@ export function DeviceTypeFaceplatePane({
                     }}
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-28 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Banks"
+                      size="sm"
+                      className="h-7 w-28 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -702,7 +710,11 @@ export function DeviceTypeFaceplatePane({
                     }
                     disabled={!canWrite}
                   >
-                    <SelectTrigger size="sm" className="h-7 w-28 text-[12px]">
+                    <SelectTrigger
+                      aria-label="Gap"
+                      size="sm"
+                      className="h-7 w-28 text-[12px]"
+                    >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -721,7 +733,11 @@ export function DeviceTypeFaceplatePane({
                       }
                       disabled={!canWrite}
                     >
-                      <SelectTrigger size="sm" className="h-7 w-20 text-[12px]">
+                      <SelectTrigger
+                        aria-label="Starting U"
+                        size="sm"
+                        className="h-7 w-20 text-[12px]"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -746,7 +762,11 @@ export function DeviceTypeFaceplatePane({
                       }
                       disabled={!canWrite}
                     >
-                      <SelectTrigger size="sm" className="h-7 w-24 text-[12px]">
+                      <SelectTrigger
+                        aria-label="Height"
+                        size="sm"
+                        className="h-7 w-24 text-[12px]"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1408,7 +1428,11 @@ function AutoArrangePopover({
               value={String(rows)}
               onValueChange={(v) => setRows(Number(v) as 0 | 1 | 2 | 3 | 4)}
             >
-              <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectTrigger
+                aria-label="Rows"
+                size="sm"
+                className="h-7 text-[12px]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1426,7 +1450,11 @@ function AutoArrangePopover({
               value={String(bank)}
               onValueChange={(v) => setBank(Number(v))}
             >
-              <SelectTrigger size="sm" className="h-7 text-[12px]">
+              <SelectTrigger
+                aria-label="Banks"
+                size="sm"
+                className="h-7 text-[12px]"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
