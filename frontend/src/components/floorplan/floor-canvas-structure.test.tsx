@@ -346,6 +346,14 @@ describe("raised floors by mouse", () => {
     })
   })
 
+  it("captions it at its bottom-left, clear of a room name at the top", () => {
+    const { q } = draw([raised({ label: "Raised floor A", width: 8 })])
+    const text = q('[data-raised-label="r1"]')
+    expect(text.textContent).toBe("Raised floor A · 300 mm")
+    expect(text.getAttribute("x")).toBe(String(0 * 40 + 6))
+    expect(text.getAttribute("y")).toBe(String((6 + 4) * 40 - 6))
+  })
+
   it("a drop onto another raised floor is refused", () => {
     const { svg, q, onCommitStructure } = draw(
       [raised(), raised({ id: "r2", x: 6, width: 2, height: 2 })],

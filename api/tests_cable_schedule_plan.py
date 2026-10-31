@@ -255,12 +255,18 @@ class BackgroundTests(_Plan):
         size = Image.open(io.BytesIO(base64.b64decode(raw))).size
         return el, size
 
+    @staticmethod
+    def placed(el) -> list[str]:
+        """The image's box: its translate, then its size (x and y stay 0)."""
+        m = re.fullmatch(r"translate\((\S+) (\S+)\)", el.get("transform", ""))
+        assert m and el.get("x") == "0" and el.get("y") == "0", el.attrib
+        return [m.group(1), m.group(2), el.get("width"), el.get("height")]
+
     def test_the_background_is_cut_to_the_framed_box(self):
         # Framed to cells 2..12 × 3..9 (px 80..480 × 120..360).
         svg, _kw = self.capture({"svg": _plan_svg(80, 120, 400, 240)})
         el, size = self.image(svg)
-        self.assertEqual([el.get(k) for k in ("x", "y", "width", "height")],
-                         ["80", "120", "400", "240"])
+        self.assertEqual(self.placed(el), ["80", "120", "400", "240"])
         self.assertEqual(el.get("opacity"), "0.4")
         # 10 × 6 cells at 20 image px per cell, no larger.
         self.assertLessEqual(size[0], 200)
@@ -269,8 +275,7 @@ class BackgroundTests(_Plan):
     def test_a_box_past_the_grid_is_clipped_to_the_image(self):
         svg, _kw = self.capture({"svg": _plan_svg(-80, -40, 400, 200)})
         el, _size = self.image(svg)
-        self.assertEqual([el.get(k) for k in ("x", "y", "width", "height")],
-                         ["0", "0", "320", "160"])
+        self.assertEqual(self.placed(el), ["0", "0", "320", "160"])
 
     def test_a_live_view_cuts_its_part_of_the_source_image(self):
         view = FloorPlan.objects.create(
@@ -279,8 +284,11 @@ class BackgroundTests(_Plan):
         )
         bg = cp.Background(self.plan, Crop(12, 8, 12, 8), 40)
         el = bg.element(cp.Box(0, 0, 12 * 40, 8 * 40), 0.5)
-        self.assertEqual([el.get(k) for k in ("x", "y", "width", "height")],
-                         ["0", "0", "480", "320"])
+        self.assertEqual(self.placed(el), ["0", "0", "480", "320"])
+        # A close-up's part, away from the origin: placed by the transform,
+        # never by x/y (WeasyPrint left such an image out).
+        el = bg.element(cp.Box(4 * 40, 2 * 40, 6 * 40, 4 * 40), 0.5)
+        self.assertEqual(self.placed(el), ["160", "80", "240", "160"])
         # Through the endpoint too.
         svg, _kw = self.capture({"svg": _plan_svg(0, 0, 480, 320)}, plan=view)
         el, size = self.image(svg)
