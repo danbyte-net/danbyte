@@ -965,10 +965,10 @@ point, its text ready to type) and **Fit to view**. In View, those who may
 edit get **Edit here**, which switches to Edit.
 
 The menu offers what fits what is under the pointer: an area adds **Add
-walls around this**; with the walls tool, a wall offers **Add door here**,
-**Add bend here**, **Split here**, **Join walls** and **Delete wall**, a door
-**Flip swing** and **Delete door**, a raised floor **Delete raised floor**; with
-the trays tool, a tray the same as a wall, less the door.
+walls around this**; a wall offers **Add door here**, **Add bend here**,
+**Split here**, **Join walls** and **Delete wall**, a door **Flip swing** and
+**Delete door**; with the walls tool a raised floor offers **Delete raised
+floor**, and with the trays tool a tray the same as a wall, less the door.
 
 ### Keyboard
 
