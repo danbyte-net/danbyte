@@ -8,6 +8,7 @@ import type {
   Device,
   PrtgDeviceState,
 } from "@/lib/api"
+import { deviceTypeLabel } from "@/lib/device-type-label"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import {
   monitoringBucket,
@@ -354,7 +355,7 @@ export function buildDeviceColumns<T extends Device = Device>(
               params={{ id: row.original.device_type.id }}
               className="link"
             >
-              {row.original.device_type.name}
+              {deviceTypeLabel(row.original.device_type)}
             </Link>
             <LifecycleFlag state={row.original.device_type.lifecycle_state} />
           </span>

@@ -610,6 +610,7 @@ function FileField({
     <div className="grid gap-1.5">
       <label className="text-xs font-medium">File</label>
       <input
+        aria-label="File"
         type="file"
         onChange={(e) => onPick(e.target.files?.[0] ?? null)}
         className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-muted/70"

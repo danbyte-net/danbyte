@@ -201,7 +201,11 @@ function FaceCard({
               }}
               disabled={busy}
             >
-              <SelectTrigger size="sm" className="w-32 text-[11px]">
+              <SelectTrigger
+                aria-label="Resize to"
+                size="sm"
+                className="w-32 text-[11px]"
+              >
                 <SelectValue placeholder="Resize to…" />
               </SelectTrigger>
               <SelectContent>

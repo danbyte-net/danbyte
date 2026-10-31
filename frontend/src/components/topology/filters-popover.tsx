@@ -1,9 +1,11 @@
+import { useId } from "react"
 import { Filter } from "lucide-react"
 
 import { BarMenuTrigger } from "@/components/map-toolbar"
 import { Badge } from "@/components/ui/badge"
 import { Combobox } from "@/components/ui/combobox"
 import type { ComboboxOption } from "@/components/ui/combobox"
+import { CaptionControl } from "@/components/ui/field-control"
 import {
   Popover,
   PopoverContent,
@@ -28,17 +30,34 @@ export interface FilterCatalogRow {
 /** A labelled row inside the header's Filters / Display popovers. */
 export function PopoverField({
   label,
+  group = false,
   children,
 }: {
   label: string
+  /** Several controls that name themselves (tabs, a checkbox row): the
+   * caption names the group instead of handing its id to one control. */
+  group?: boolean
   children: React.ReactNode
 }) {
+  // The caption names the control under it (#461).
+  const labelId = useId()
   return (
-    <div className="space-y-1">
-      <span className="text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase">
+    <div
+      className="space-y-1"
+      role={group ? "group" : undefined}
+      aria-labelledby={group ? labelId : undefined}
+    >
+      <span
+        id={labelId}
+        className="text-[11px] font-medium tracking-[0.04em] text-muted-foreground uppercase"
+      >
         {label}
       </span>
-      {children}
+      {group ? (
+        children
+      ) : (
+        <CaptionControl labelId={labelId}>{children}</CaptionControl>
+      )}
     </div>
   )
 }

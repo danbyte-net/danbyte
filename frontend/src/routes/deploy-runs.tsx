@@ -45,7 +45,7 @@ function DeployRunsPage() {
       count={query.data ? rows.length : undefined}
       actions={
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="h-8 w-36 text-xs">
+          <SelectTrigger aria-label="Status" className="h-8 w-36 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

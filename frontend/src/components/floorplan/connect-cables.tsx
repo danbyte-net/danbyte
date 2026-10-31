@@ -201,6 +201,7 @@ function PortPicker({
   ]
   return (
     <Combobox
+      aria-label="Port"
       value={refKey(port)}
       onChange={(v) => {
         const p = ports.find((x) => refKey(x) === v)

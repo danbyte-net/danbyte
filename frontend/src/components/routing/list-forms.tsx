@@ -224,6 +224,7 @@ export function PrefixListForm({
             />,
             <CellSelect
               key="action"
+              aria-label="Action"
               value={r.action}
               onChange={(v) => update({ action: v })}
               options={ACTIONS}
@@ -384,6 +385,7 @@ export function CommunityListForm({
             />,
             <CellSelect
               key="action"
+              aria-label="Action"
               value={r.action}
               onChange={(v) => update({ action: v })}
               options={ACTIONS}
@@ -509,6 +511,7 @@ export function ASPathListForm({
             />,
             <CellSelect
               key="action"
+              aria-label="Action"
               value={r.action}
               onChange={(v) => update({ action: v })}
               options={ACTIONS}

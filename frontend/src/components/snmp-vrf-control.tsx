@@ -39,10 +39,12 @@ export function SnmpVrfControl({
   scope,
   objectId,
   canEdit,
+  "aria-label": ariaLabel = "Discovered-IP VRF",
 }: {
   scope: "device" | "device_role" | "device_type" | "site"
   objectId: string
   canEdit: boolean
+  "aria-label"?: string
 }) {
   const qc = useQueryClient()
   const key = ["snmp-vrf-binding", scope, objectId]
@@ -103,7 +105,7 @@ export function SnmpVrfControl({
       }}
       disabled={!canEdit || set.isPending}
     >
-      <SelectTrigger className="h-8 w-60 text-xs">
+      <SelectTrigger aria-label={ariaLabel} className="h-8 w-60 text-xs">
         <SelectValue placeholder="-" />
       </SelectTrigger>
       <SelectContent>

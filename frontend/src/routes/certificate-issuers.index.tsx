@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import {
   Dialog,
   DialogContent,
@@ -117,16 +118,18 @@ function IssuersPage() {
           canManage ? (
             <div className="flex justify-end gap-1">
               <RegisterButton issuer={row.original} />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  setEditing(row.original)
-                  setFormOpen(true)
-                }}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+              <IconTip label="Edit">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setEditing(row.original)
+                    setFormOpen(true)
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </IconTip>
               <DeleteButton issuer={row.original} />
             </div>
           ) : null,

@@ -107,7 +107,10 @@ export function ScriptOutputCard({
           ) : kind === "csv" ? (
             <CsvTable text={content.data} />
           ) : (
-            <pre className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs">
+            <pre
+              tabIndex={0}
+              className="max-h-96 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs"
+            >
               {kind === "json" ? pretty(content.data) : content.data}
             </pre>
           )}

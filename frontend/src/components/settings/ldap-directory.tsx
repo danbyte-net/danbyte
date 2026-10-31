@@ -16,6 +16,7 @@ import {
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Spinner } from "@/components/ui/spinner"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -423,7 +424,10 @@ function TestLogin({ endpoints }: { endpoints: LdapEndpoints }) {
             <p className="text-sm text-destructive">{result.error}</p>
           )}
           {result.trace && result.trace.length > 0 && (
-            <pre className="max-h-64 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+            <pre
+              tabIndex={0}
+              className="max-h-64 overflow-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap"
+            >
               {result.trace.join("\n")}
             </pre>
           )}
@@ -550,15 +554,17 @@ function GroupMappings({
         header: () => null,
         cell: ({ row }) => (
           <div className="text-right">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={() => del.mutate(row.original.id)}
-              disabled={del.isPending}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            <IconTip label="Delete">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={() => del.mutate(row.original.id)}
+                disabled={del.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </IconTip>
           </div>
         ),
       },

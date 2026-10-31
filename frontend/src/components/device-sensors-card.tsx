@@ -12,6 +12,7 @@ import {
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
+import { IconTip } from "@/components/icon-tip"
 import { Input } from "@/components/ui/input"
 import { Section } from "@/components/ui/section"
 import { EmptyState } from "@/components/empty-state"
@@ -189,14 +190,16 @@ export function DeviceSensorsCard({
                   </span>
                 )}
                 {canWrite && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="ml-auto h-6 w-6"
-                    onClick={() => setEditing(s)}
-                  >
-                    <Pencil className="h-3 w-3" />
-                  </Button>
+                  <IconTip label="Edit">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="ml-auto h-6 w-6"
+                      onClick={() => setEditing(s)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  </IconTip>
                 )}
               </div>
             ))}
@@ -479,21 +482,23 @@ export function SensorDialog({
                       emptyText="No statuses."
                     />
                   </div>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    onClick={() =>
-                      setRows((cur) =>
-                        cur.length === 1
-                          ? [{ raw: "", slug: "" }]
-                          : cur.filter((_, k) => k !== i)
-                      )
-                    }
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <IconTip label="Remove row">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() =>
+                        setRows((cur) =>
+                          cur.length === 1
+                            ? [{ raw: "", slug: "" }]
+                            : cur.filter((_, k) => k !== i)
+                        )
+                      }
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </IconTip>
                 </div>
               ))}
               <Button

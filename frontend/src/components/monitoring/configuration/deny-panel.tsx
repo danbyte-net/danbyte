@@ -106,12 +106,14 @@ export function DenySubnetsPanel() {
         }}
       >
         <Input
+          aria-label="CIDR"
           className="h-8 max-w-xs font-mono"
           value={cidr}
           onChange={(e) => setCidr(e.target.value)}
           placeholder="10.0.9.0/24"
         />
         <Combobox
+          aria-label="VRF"
           value={vrf}
           onChange={(v) => setVrf(v ?? INHERIT)}
           options={[

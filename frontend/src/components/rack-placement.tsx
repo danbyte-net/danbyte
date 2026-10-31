@@ -241,7 +241,13 @@ export function RackPlacement({
 
   return (
     <div className="grid min-w-0 gap-1">
-      <div ref={setBox} className="isolate max-h-96 overflow-auto">
+      <div
+        ref={setBox}
+        role="region"
+        aria-label="Rack elevation"
+        tabIndex={0}
+        className="isolate max-h-96 overflow-auto"
+      >
         {rack.isError ? (
           <QueryError error={rack.error} />
         ) : !r ? (
