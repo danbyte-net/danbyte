@@ -2009,8 +2009,13 @@ cables through it - the next drop reuses it, and it is what gets built.
 Untick it to keep the run as each cable's own path (**Suggested path**,
 `manual`) with no tray.
 
-**Leaves this floor** lists the cables whose far end is not on this floor;
-they are not routed (risers between floors come later).
+A cable whose far end is placed on another floor that a
+[riser](#cables-between-floors-risers) of this floor pairs with is routed
+too, through the riser: its row reads `T-03 → R1 to Floor 2` and its length
+is the whole cable's, over both floors. **Leaves this floor** lists the
+cables whose far end is not on this floor and no riser can reach; they are
+not routed. When the floor has a riser, each names the nearest one
+(`via R1`).
 
 **Apply N routes** puts the ticked routes, their lengths and the kept runs
 into the draft as one undo step; they draw on the plan until **Save** writes
@@ -2070,18 +2075,60 @@ nothing: a port cabled by someone else since, or a status that no longer
 means planned, writes nothing and names the cable. Each route's length is
 written to its cable as computed.
 
+### Cables between floors (risers)
+
+A **riser** is where cables leave a floor for another: a shaft, a sleeve
+through the slab, a riser cupboard. Any tile can be one - tick **Riser** in
+its inspector (it then wears a small up-down arrow) and pick the riser it
+**Pairs with** on another floor of the same site: another floor of the same
+floor plan, or a floor of another floor plan at the site. A riser pairs
+with one riser; picking a new one unpairs the old, and a riser already
+paired with another is not offered. Floors you may not view are not
+offered, and a pair on one reads **Hidden**.
+
+**Height (mm)** is the vertical run between the two floors. Left blank it
+is worked out: the difference of the two floors' elevations when both are
+set; else, on floors of one floor plan, the ceiling heights of the floors
+from the lower up to the upper; else the lower floor's ceiling height.
+
+A cable with an end on each of two floors joined by a riser pair is routed
+on each floor from its end to the riser - through that floor's trays, else
+direct - and up or down the riser. With several pairs the shortest total
+wins. The route is stored as one route per floor, each naming its riser,
+and each floor draws its part, to the riser. Its length is one figure for
+the cable: both floors' runs, drops and level changes plus the vertical
+run, then the [length rules](#lengths) once (a service loop at each end,
+the slack, the round-up). There is no drop at a riser: the cable climbs in
+it. Both floors' routes carry the whole length.
+
+**After placing** and **Route cables** route such a cable when both floors
+have its ends placed; saving writes both floors' routes (you need change on
+both floors) and the length when ticked. Removing the route on one floor
+removes the other floor's too, when you may edit it. Moving a riser tile
+makes its routes [out of date](#out-of-date-routes), like any end. A
+copied or cloned riser is not paired.
+
 #### API
 
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
-| `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
+| `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. A cable between floors (`cable_ids` or `objects`) whose far end is placed on a floor a riser of this plan pairs with - one you may view - reads `via` `riser`; its `route` is this floor's part, to the riser, with `riser` (`tile`, `label`, `pair`, `pair_label`, `floor_plan` `{id, name}`, `riser_mm`) and the whole cable's lengths. One leaving the floor otherwise names the nearest riser of this plan in `via_riser`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
 | `POST /api/floor-plans/{id}/cable-plan/` with `mode: "new"` | Connect to…: a preview of new cables; nothing is stored. Body: `source` and `targets` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, each at most 64; devices you may view and that are placed on this plan), `family` (`data`, `console`, `power`; default `data`), `per_target` (1-8, default 1), `include_mgmt`, `exclude_ports` (`[{kind, id}]` the draft's new cables take), the unsaved draft as above, and `choices` (by pair key), `suggest_runs`, `keep_runs`, `run_level`. Without `pairs` the server proposes; with `pairs` (`[{"key", "a": {kind, id}, "b": {kind, id}}]`, at most 256) it checks and routes those, each pair failing a check carrying `error`. Answers `pairs` (`[{key, a, b, type, route, via, suggestions, reason, error}]`, each port `{kind, id, name, device, device_name, type, media, connector, speed_mbps, uplink, mgmt_only, poe_mode}`), `short` (`[{a_device, b_device, made, reason}]`), `statuses` (the tenant's planned cable statuses), `can_add` (cable · add), `suggestions`, `cell_mm` and `scale_source`. Needs view on the plan. |
 | `GET /api/floor-plans/{id}/cable-plan/ports/` | Connect to…'s port picker: `?device=<id>&family=&for=<kind>:<id>&include_mgmt=1&exclude=<kind>:<id>,...` - the device's free ports in the family, only those a direct cable may join to the `for` port when given. The device (and the `for` port's) must be the tenant's and one you may view. Answers `{"ports": [...]}`. |
-| `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
+| `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. An upsert with `riser` (a riser tile of this plan) routes the cable between floors on the server, through that riser and the one it pairs with, against the tiles as saved: it writes a route here and one on the other floor (which needs floor plan · change and the route's own add or change there), each with `riser` and `riser_mm`; `legs` are ignored. Deleting such a route deletes the other floor's part too when you may edit it. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
 | `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`. |
+| `GET /api/floor-plans/{id}/risers/` | The riser tiles on the other floors of the plan's site that you may view (`[{id, label, floor_plan: {id, name, stack}, pair}]`; `pair` is the riser it pairs with now, or null): what a riser of this plan may pair with. |
+
+Tiles carry `riser`, `riser_pair` (`{id, label, floor_plan: {id, name}}`;
+`{id: null, label: "Hidden", hidden: true}` on a floor you may not view;
+null when unpaired) and `riser_height_mm`, and take `riser_to_id` (a riser
+tile on another floor of the same site you may view, not paired with
+another; blank or null unpairs; left out keeps the pair). Each path in
+`cable-paths` also carries `riser` (`{tile, riser_mm}`) on a route between
+floors.
 
 ## Finding things
 
@@ -2314,7 +2361,8 @@ the same. Needs the floor-plan add permission.
 
 ## Export
 
-**Export** in the bar under the header has **PNG**, **PDF…** and **Print**.
+**Export** in the bar under the header has **PNG**, **PDF…**, **Print** and
+[**Cable schedule…**](#cable-schedule).
 
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
@@ -2358,6 +2406,41 @@ paper, the legend, `cable_legend` and `area_legend` (rows of `label` and
 `color`, a line row adding `line`: `solid`, `dashed`, `thin` or `bundle`, an
 area row `pattern`: `solid`, `hatched`, `crosshatched` or `dotted`;
 `?print=1` for a five-minute print link).
+
+### Cable schedule
+
+**Export → Cable schedule…** makes the floor's pull sheet: every cable with
+a stored route on this floor or an end on a device placed on it, with
+
+- its label, type, colour and status;
+- the **A** and **B** ends (device · port, and the room it stands in -
+  its own, else its rack's or cabinet's, else its location);
+- its **route**: the trays it rides in order, and the riser it leaves the
+  floor by with that floor (`OH-1 → R1 to Floor 2`); a cable with no stored
+  route lists the trays it is in;
+- its **lengths**: the route's computed length, the stored one and where
+  that came from (*Computed* or *Entered*);
+- its notes (the cable's description).
+
+**Group by** **Room** (the room of its end on this floor) or **Tray** (a
+cable under every tray it rides; cables in no tray last). The schedule ends
+with the **totals per type**: the cables and their metres (the stored
+length, else the computed one; a cable with neither is counted as
+unmeasured). Cables you may not view are counted, not listed, and an end on
+a device you may not view reads **Hidden**.
+
+**PDF** is laid out on the server on **A4**, **A3**, **Letter** or
+**Tabloid** (landscape), a table per group with its header repeated on
+every page, under the plan's title; **Plan on the first page** puts the
+plan with its routes on top, as the Display menu draws it. **CSV** and
+**XLSX** are the same rows as a table (one line per cable in each group,
+then the totals) - the table export's files. The PDF obeys the floor-plan
+PDF's limits. Anyone who can view the plan can make it:
+
+| Endpoint | |
+|---|---|
+| `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default) and `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's). `?print=1` answers `{url}`, a five-minute link. |
 
 ## Tenancy, permissions, audit
 

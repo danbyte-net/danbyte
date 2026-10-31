@@ -1,4 +1,4 @@
-import { Server } from "lucide-react"
+import { ArrowUpDown, Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
@@ -338,6 +338,20 @@ export function TileShape({
         <RoleIcon
           data-part="role-icon"
           x={GUTTER + 3}
+          y={GUTTER + 3}
+          width={iconSize}
+          height={iconSize}
+          color={fill}
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
+      {/* A riser: cables leave the floor through it. */}
+      {tile.riser && iconSize >= 6 && (
+        <ArrowUpDown
+          data-part="riser-icon"
+          x={w - GUTTER - 3 - iconSize}
           y={GUTTER + 3}
           width={iconSize}
           height={iconSize}

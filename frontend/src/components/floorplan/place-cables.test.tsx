@@ -318,6 +318,38 @@ describe("PlaceCablesPanel", () => {
     )
   })
 
+  it("routes a cable between floors through its riser", async () => {
+    const up = path(["tr1"])
+    up.riser = {
+      tile: "t2",
+      riser_mm: 3000,
+      label: "R1",
+      pair: "r9",
+      floor_plan: { id: "p2", name: "Floor 2" },
+    }
+    answer(() => ({
+      cables: [
+        row({ route: up, via: "riser" }),
+        row({
+          id: "c2",
+          label: "C-2",
+          route: null,
+          off_floor: true,
+          reason: "Leaves this floor via R1.",
+          via_riser: "R1",
+        }),
+      ],
+    }))
+    const props = panel()
+    await screen.findByText("C-1")
+    expect(screen.getByText(/T-03 → R1 to Floor 2/)).toBeTruthy()
+    expect(screen.getByText("C-2 · sw-b · e1 · via R1")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Apply 1 route" }))
+    const applied = props.onApply.mock.calls[0][0]
+    expect(applied.rows.map((r) => r.id)).toEqual(["c1"])
+    expect(applied.rows[0].route?.riser?.tile).toBe("t2")
+  })
+
   it("replaces a measured length only on its own tick", async () => {
     answer(() => ({ cables: [row({ length: 8, write_length: false })] }))
     const props = panel()

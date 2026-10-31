@@ -10,10 +10,12 @@ import {
   Waypoints,
 } from "lucide-react"
 
+import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type {
   DeviceRole,
   FloorPlanLinkKind,
+  FloorPlanRiserOption,
   FloorPlanTile,
   FloorTileStatus,
   FloorTileTypeOption,
@@ -394,6 +396,8 @@ export function TileInspector({
         )}
       </div>
 
+      <RiserFields tile={tile} planId={planId} onChange={onChange} />
+
       <div className="mt-auto grid gap-2 border-t border-border pt-3">
         {onOpenContents && (
           <Button
@@ -420,6 +424,100 @@ export function TileInspector({
         </Button>
       </div>
     </aside>
+  )
+}
+
+/** A riser: cables leave this floor through it, to the riser it pairs
+ * with on another floor of the site. */
+function RiserFields({
+  tile,
+  planId,
+  onChange,
+}: {
+  tile: FloorPlanTile
+  planId: string
+  onChange: (patch: Partial<FloorPlanTile>) => void
+}) {
+  const options = useQuery({
+    queryKey: ["floor-plan-risers", planId],
+    queryFn: () =>
+      api<{ risers: FloorPlanRiserOption[] }>(
+        `/api/floor-plans/${planId}/risers/`
+      ),
+    enabled: !!tile.riser,
+    staleTime: 30_000,
+  })
+  const pair = tile.riser_pair ?? null
+  const free = (options.data?.risers ?? []).filter(
+    (r) => !r.pair || r.pair === tile.id || r.id === pair?.id
+  )
+  return (
+    <div className="grid gap-2" data-part="riser">
+      <FormCheckbox
+        label="Riser"
+        checked={!!tile.riser}
+        onChange={(v) =>
+          onChange(
+            v
+              ? { riser: true }
+              : { riser: false, riser_pair: null, riser_height_mm: null }
+          )
+        }
+        className="items-center text-[13px]"
+      />
+      {tile.riser &&
+        (pair?.hidden ? (
+          <Field label="Pairs with">
+            <p className="text-sm text-muted-foreground">Hidden</p>
+          </Field>
+        ) : (
+          <FormCombobox
+            label="Pairs with"
+            value={pair?.id ?? null}
+            onChange={(id) => {
+              const r = free.find((x) => x.id === id)
+              onChange({
+                riser_pair: r
+                  ? {
+                      id: r.id,
+                      label: r.label,
+                      floor_plan: {
+                        id: r.floor_plan.id,
+                        name: r.floor_plan.name,
+                      },
+                    }
+                  : null,
+              })
+            }}
+            options={free.map((r) => ({
+              value: r.id,
+              label: `${r.label} · ${r.floor_plan.name}`,
+              group: r.floor_plan.stack || undefined,
+            }))}
+            noneLabel="Not paired"
+            placeholder="Not paired"
+            searchPlaceholder="Search risers…"
+            emptyText="No risers on other floors."
+          />
+        ))}
+      {tile.riser && (
+        <Field label="Height (mm)" hint="Blank: from the floors">
+          <Input
+            type="number"
+            min={0}
+            value={tile.riser_height_mm ?? ""}
+            onChange={(e) => {
+              const v = e.target.value
+              onChange({
+                riser_height_mm:
+                  v === "" ? null : Math.max(0, Math.round(Number(v))),
+              })
+            }}
+            className="h-8 text-sm"
+          />
+        </Field>
+      )}
+    </div>
   )
 }
 

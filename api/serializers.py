@@ -11136,6 +11136,41 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
     )
     linked = serializers.SerializerMethodField()
     photo = serializers.SerializerMethodField()
+    riser_to_id = serializers.CharField(
+        write_only=True, required=False, allow_null=True, allow_blank=True,
+        help_text="The riser tile on another floor of the site this riser pairs with.",
+    )
+    riser_pair = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_riser_pair(self, obj):
+        """The riser this one pairs with: ``{id, label, floor_plan: {id,
+        name}}``, or ``{id: null, hidden: true}`` on a floor the reader may
+        not view; null when unpaired."""
+        if not obj.riser:
+            return None
+        from .cable_routing import riser_partner
+
+        pair = riser_partner(obj)
+        if pair is None:
+            return None
+        request = self.context.get("request")
+        if request is not None and not request.user.is_superuser:
+            from api.views import _get_active_tenant
+            from auth_api import rbac
+
+            seen = self.context.setdefault("riser_plans_seen", {})
+            plan = pair.floor_plan
+            if plan.pk not in seen:
+                tenant = _get_active_tenant(request)
+                seen[plan.pk] = rbac.can_act_on(request.user, tenant, "floorplan", "view", plan)
+            if not seen[plan.pk]:
+                return {"id": None, "label": "Hidden", "floor_plan": None, "hidden": True}
+        return {
+            "id": str(pair.pk),
+            "label": pair.label or "Riser",
+            "floor_plan": {"id": str(pair.floor_plan_id), "name": pair.floor_plan.name},
+        }
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_linked(self, obj):
@@ -11195,6 +11230,7 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                 {"tile_type_id": "Set exactly one of tile_type_id / role_type_id."}
             )
         self._check_geometry(attrs)
+        self._check_riser(attrs)
 
         # A tile's own kind sent with no id keeps its link: the editor saves
         # a tile whose object the writer may not view that way (#453).
@@ -11268,6 +11304,74 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                 )
         return attrs
 
+    def _check_riser(self, attrs):
+        """A riser pairs with one riser tile on another floor of the same
+        site (``riser_to_id``; blank unpairs). Not a riser: no pair. The
+        other riser must be one the writer may view and not paired with a
+        third. With no ``riser_to_id`` the pair stays as it is."""
+        import uuid as _uuid
+
+        riser = attrs.get("riser", getattr(self.instance, "riser", False))
+        me = self.instance.pk if self.instance is not None else None
+        if "riser_to_id" not in attrs:
+            if not riser and self.instance is not None and self.instance.riser:
+                attrs["riser_to"] = None
+                self._riser_touched = True
+            return
+        raw = attrs.pop("riser_to_id") or ""
+        self._riser_touched = True
+        if not riser or not raw:
+            attrs["riser_to"] = None
+            return
+        unknown = serializers.ValidationError({"riser_to_id": f"Unknown riser {raw}."})
+        try:
+            key = _uuid.UUID(str(raw))
+        except ValueError:
+            raise unknown from None
+        target = FloorPlanTile.objects.select_related("floor_plan").filter(pk=key).first()
+        plan = _plan_of(self, attrs)
+        request = self.context.get("request")
+        from api.views import _get_active_tenant
+
+        tenant = _get_active_tenant(request) if request is not None else None
+        if target is None or plan is None or (
+            tenant is not None and target.floor_plan.tenant_id != tenant.id
+        ) or target.floor_plan.tenant_id != plan.tenant_id:
+            raise unknown
+        if request is not None:
+            from auth_api import rbac
+
+            if not rbac.can_act_on(request.user, tenant, "floorplan", "view", target.floor_plan):
+                raise unknown
+        if target.floor_plan_id == plan.pk:
+            raise serializers.ValidationError(
+                {"riser_to_id": "Pick a riser on another floor."}
+            )
+        if target.floor_plan.site_id != plan.site_id or target.floor_plan.kind != "plan":
+            raise serializers.ValidationError(
+                {"riser_to_id": "Pick a riser on a floor of the same site."}
+            )
+        if not target.riser:
+            raise serializers.ValidationError({"riser_to_id": "That tile is not a riser."})
+        taken = (target.riser_to_id is not None and target.riser_to_id != me) or (
+            FloorPlanTile.objects.filter(riser_to=target).exclude(pk=me).exists()
+        )
+        if taken:
+            raise serializers.ValidationError(
+                {"riser_to_id": f"{target.label or 'That riser'} already pairs with another."}
+            )
+        attrs["riser_to"] = target
+
+    def save(self, **kwargs):
+        obj = super().save(**kwargs)
+        if getattr(self, "_riser_touched", False):
+            # A pair is one link: a riser unpaired, or paired anew, is no
+            # longer the pair of a riser that named it.
+            FloorPlanTile.objects.filter(riser_to=obj).exclude(
+                pk=obj.riser_to_id
+            ).update(riser_to=None)
+        return obj
+
     def _check_once_per_floor(self, kind, obj, attrs):
         """A device, rack or cabinet stands once on a floor: a second tile
         linked to it on the same plan is refused. A tile that already links
@@ -11316,8 +11420,9 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                   "link_kind", "link_id", "linked",
                   "fov_deg", "fov_distance", "fov_direction", "fov_anchor",
                   "fov_ptz", "display", "z", "photo",
+                  "riser", "riser_to_id", "riser_pair", "riser_height_mm",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "linked", "photo", "created_at", "updated_at"]
+        read_only_fields = ["id", "linked", "photo", "riser_pair", "created_at", "updated_at"]
         list_serializer_class = _FloorPlanTileListSerializer
 
 

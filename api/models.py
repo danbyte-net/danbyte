@@ -9636,6 +9636,20 @@ class FloorPlanTile(TimestampedModel):
     )
     # Stacking order on a free plan, where tiles may overlap.
     z = models.SmallIntegerField(default=0, db_default=0)
+    # A riser: where cables leave this floor for another (a shaft, a sleeve
+    # through the slab). It pairs with one riser tile on another floor of
+    # the site - ``riser_to`` on either side names the other - and a cable
+    # with an end on each floor is routed to it on both (api/cable_routing).
+    riser = models.BooleanField(default=False, db_default=False)
+    riser_to = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="riser_from",
+    )
+    # The vertical run between the two floors. Blank: from the floors'
+    # elevations, else their ceiling heights (cable_routing.riser_vertical_mm).
+    riser_height_mm = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MaxValueValidator(200000)],
+    )
 
     class Meta:
         ordering = ["y", "x"]
@@ -10173,6 +10187,15 @@ class FloorPlanCablePath(TimestampedModel):
     length_mm = models.PositiveIntegerField(default=0)
     computed_at = models.DateTimeField(null=True, blank=True)
     stale = models.BooleanField(default=False, db_default=False)
+    # A cable between floors: this floor's part runs from its end here to
+    # ``riser`` (a riser tile of this plan), and the far floor's row to the
+    # riser paired with it. ``riser_mm`` is the vertical run between them;
+    # both rows carry the cable's whole length, slack and service loops.
+    riser = models.ForeignKey(
+        FloorPlanTile, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="riser_paths",
+    )
+    riser_mm = models.PositiveIntegerField(default=0, db_default=0)
 
     class Meta:
         ordering = ["floor_plan", "created_at"]

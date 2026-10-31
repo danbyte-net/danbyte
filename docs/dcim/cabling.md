@@ -190,6 +190,14 @@ status marked **Planned** - all or nothing, through the same checks as
 **Many at once**. Mark a cable status *Planned* (Settings → Statuses) to
 use it; none is created for you.
 
+A cable between two floors is routed through a
+[riser](../features/floor-plans.md#cables-between-floors-risers): on each
+floor to the riser and up or down it, its computed length the whole run.
+A floor's [cable schedule](../features/floor-plans.md#cable-schedule) (Export
+→ Cable schedule…) lists its cables with their ends, routes and lengths -
+computed, stored and where the stored one came from - as a PDF, CSV or
+XLSX pull sheet.
+
 ## Connection shapes
 
 You're not limited to one-to-one patches:

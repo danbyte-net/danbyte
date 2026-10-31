@@ -501,6 +501,12 @@ export function useTileEdits({
         fov_ptz: t.fov_ptz,
         display: t.display ?? "icon",
         z: t.z ?? 0,
+        riser: t.riser ?? false,
+        riser_height_mm: t.riser ? (t.riser_height_mm ?? null) : null,
+        // A pair on a floor the writer may not view is kept as it is.
+        ...(t.riser && !t.riser_pair?.hidden
+          ? { riser_to_id: t.riser_pair?.id ?? null }
+          : {}),
       })
       // The version each edit is based on: the row as loaded, or as taken
       // over in a conflict ("Keep mine").

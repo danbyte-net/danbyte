@@ -38,7 +38,7 @@ export interface AfterPlace {
 /** How a row is routed: through the trays (auto), the trays picked, a
  * suggested run or a direct elbow. */
 export interface RowMode {
-  via: "auto" | CablePlanVia
+  via: "auto" | Exclude<CablePlanVia, "riser">
   trayIds?: string[]
 }
 
@@ -444,6 +444,15 @@ export function PlaceCablesPanel({
     if (!r) return row.reason
     if (row.via === "suggest")
       return r.kind === "trays" && keepRuns ? "Suggested run" : "Suggested path"
+    if (r.riser) {
+      const hop = [r.riser.label ?? "Riser", r.riser.floor_plan?.name]
+        .filter(Boolean)
+        .join(" to ")
+      return [
+        ...r.tray_order.map((id) => trayName.get(id) ?? "Tray"),
+        hop,
+      ].join(" → ")
+    }
     if (!r.tray_order.length) return "Direct"
     return r.tray_order.map((id) => trayName.get(id) ?? "Tray").join(" → ")
   }
@@ -633,6 +642,7 @@ export function PlaceCablesPanel({
                   >
                     {row.label}
                     {farText(row) ? ` · ${farText(row)}` : ""}
+                    {row.via_riser ? ` · via ${row.via_riser}` : ""}
                   </li>
                 ))}
               </ul>

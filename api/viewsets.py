@@ -11460,6 +11460,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                         obj.pair_id = None
                     if rel == "walls":
                         obj.source_area_id = area_ids.get(obj.source_area_id)
+                    if rel == "tiles":
+                        # A cloned riser is unpaired: its pair stays the
+                        # original's.
+                        obj.riser_to_id = None
                     obj.save()
                     if rel == "areas":
                         area_ids[old_pk] = obj.pk
@@ -12078,6 +12082,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "drawing_render": "view",
         "export_pdf": "view",
         "export_pdf_file": "view",
+        "cable_schedule_pdf": "view",
         "bulk": "change",
         "snap_all": "change",
         # Reads of the site's objects (each by its own view grant), and room
@@ -12214,6 +12219,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
         tray's points, null when nothing new is needed), the plan's
         ``cell_mm`` and ``scale_source`` (``assumed`` when a CAD drawing's
         scale was never set).
+
+        A cable whose other end is placed on another floor a riser of this
+        plan pairs with (``cable_ids`` or ``objects``) is routed to the
+        riser: ``via`` ``riser``, its ``route`` this floor's part carrying
+        ``riser`` (the riser, its pair and that floor) and the whole length
+        over both floors. One that leaves the floor otherwise names the
+        nearest riser in ``via_riser``.
 
         ``mode: "new"`` plans new cables instead (Connect to…):
         :meth:`_connect_preview`."""
@@ -12360,9 +12372,28 @@ class FloorPlanViewSet(TenantScopedViewSet):
             keep_runs=body.get("keep_runs", True) is not False, level=run_level,
         )
         far = self._far_ends(request, tenant, router, cables, dropped) if dropped else {}
+        # Cables between floors: routed to a riser on each floor when the
+        # other end is placed on a floor a riser of this plan pairs with.
+        via_riser: dict = {}
+        if ids is not None or dropped:
+            other_floors: dict = {}
+            seen_plans: dict = {}
+
+            def may_view(p):
+                if p.pk not in seen_plans:
+                    seen_plans[p.pk] = rbac.can_act_on(request.user, tenant, "floorplan", "view", p)
+                return seen_plans[p.pk]
+
+            for cable in cables:
+                if routes.get(cable.pk) is None and router.off_floor_side(cable):
+                    res = router.via_riser(cable, routers=other_floors, allow=may_view)
+                    if res is not None:
+                        via_riser[cable.pk] = res
         out = []
         for cable in cables:
             route = routes.get(cable.pk)
+            if route is None and cable.pk in via_riser:
+                route = {**via_riser[cable.pk]["near"], "via": "riser"}
             have = stored_length_mm(cable)
             row = {
                 "id": str(cable.pk),
@@ -12394,6 +12425,13 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     else "Leaves this floor." if dropped
                     else "An end is not placed on this plan."
                 )
+                riser = router.nearest_riser(cable)
+                if riser is not None:
+                    # Not routable yet (the far end is not placed on a floor
+                    # a riser pairs with), but it would leave by this riser.
+                    row["via_riser"] = riser.label or "Riser"
+                    if dropped:
+                        row["reason"] = f"Leaves this floor via {row['via_riser']}."
             else:
                 row["route"] = route_data(route, dx=-ox, dy=-oy)
                 row["reachable"] = route["reachable"]
@@ -13238,6 +13276,84 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         return Response({"cables": result, "hidden_count": len(candidates - visible)})
 
+    @action(detail=True, methods=["get"], url_path="cable-schedule")
+    def cable_schedule(self, request, pk=None):
+        """The plan's cable schedule (``api/cable_schedule.py``): every cable
+        with a stored route here or an end on a device placed here, with its
+        ends, route, lengths and notes, grouped by room or by tray
+        (``?group=room|tray``), with totals per cable type. Cables the
+        reader may not view are counted in ``hidden_count``."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        return Response(cable_schedule.build(
+            plan, crop, request.user, tenant, group=request.query_params.get("group", "room"),
+        ))
+
+    @action(detail=True, methods=["post"], url_path="cable-schedule/pdf")
+    def cable_schedule_pdf(self, request, pk=None):
+        """The cable schedule on paper (WeasyPrint; A4 landscape unless
+        ``paper`` says), grouped as ``group`` says, optionally with the
+        posted plan drawing (``svg``) on the first page. ``?print=1``
+        answers with a short-lived link, as the floor-plan PDF does."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        return cable_schedule.export_pdf(request, view, plan, crop, self._tenant_or_403())
+
+    @action(detail=True, methods=["get"],
+            url_path=r"cable-schedule/pdf/(?P<token>[A-Za-z0-9_-]+)")
+    def cable_schedule_pdf_file(self, request, pk=None, token=None):
+        """The schedule PDF a ``cable-schedule/pdf/?print=1`` kept."""
+        from . import cable_schedule
+
+        return cable_schedule.export_pdf_file(request, self.get_object(), token)
+
+    @action(detail=True, methods=["get"], url_path="risers")
+    def risers(self, request, pk=None):
+        """The riser tiles a riser of this plan may pair with: those on the
+        other floors of its site the reader may view, each with its floor and
+        the riser it pairs with now (``pair``, null when free)."""
+        from auth_api import rbac
+
+        view = self.get_object()
+        plan, _crop = self._resolved(view)
+        tenant = self._tenant_or_403()
+        plans = rbac.restrict_queryset(
+            FloorPlan.objects.filter(tenant=tenant, site_id=plan.site_id, kind="plan")
+            .exclude(pk=plan.pk),
+            request.user, tenant, "floorplan", "view",
+        )
+        tiles = rbac.restrict_queryset(
+            FloorPlanTile.objects.filter(floor_plan__in=plans, riser=True)
+            .select_related("floor_plan__stack"),
+            request.user, tenant, "floorplantile", "view",
+        ).order_by("floor_plan__stack__name", "floor_plan__floor_order",
+                   "floor_plan__name", "label", "y", "x")
+        tiles = list(tiles)
+        back = dict(
+            FloorPlanTile.objects.filter(riser_to__in=tiles, riser=True)
+            .values_list("riser_to_id", "pk")
+        )
+        return Response({"risers": [
+            {
+                "id": str(t.pk),
+                "label": t.label or "Riser",
+                "floor_plan": {
+                    "id": str(t.floor_plan_id), "name": t.floor_plan.name,
+                    "stack": t.floor_plan.stack.name if t.floor_plan.stack_id else "",
+                },
+                "pair": (
+                    str(t.riser_to_id) if t.riser_to_id
+                    else str(back[t.pk]) if t.pk in back else None
+                ),
+            }
+            for t in tiles
+        ]})
+
     @action(detail=True, methods=["post"], url_path="background",
             parser_classes=[MultiPartParser, FormParser])
     def background(self, request, pk=None):
@@ -13690,8 +13806,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
     def _cable_paths_spec(raw) -> dict:
         """``bulk/``'s ``cable_paths``: ``{"upsert": [...], "delete": [...]}``.
         An upsert is ``{"cable", "legs"?, "kind"?, "tray_order"?, "version"?,
-        "write_length"?, "replace_length"?, "cable_version"?}``; a delete a
-        cable id or ``{"cable", "version"?}``."""
+        "write_length"?, "replace_length"?, "cable_version"?, "riser"?}``
+        (``riser``: a riser tile of this plan - the cable is routed between
+        floors through it, :meth:`_bulk_riser_path`); a delete a cable id or
+        ``{"cable", "version"?}`` (a route between floors loses both parts)."""
         if raw in (None, ""):
             raw = {}
         if not isinstance(raw, dict):
@@ -13849,14 +13967,27 @@ class FloorPlanViewSet(TenantScopedViewSet):
             row = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
             if row is not None:
                 allowed("delete", row)
+                far = self._riser_far_row(row)
                 delete_path(plan, cable)
+                # The other floor's part of a route between floors goes too,
+                # when the user may edit that floor.
+                if far is not None and rbac.can_act_on(
+                    user, tenant, "floorplan", "change", far.floor_plan
+                ) and rbac.can_act_on(user, tenant, "floorplancablepath", "delete", far):
+                    far.delete()
         router = PlanRouter(plan) if spec["upsert"] else None
+        other_floors: dict = {}
         out = []
         for item in spec["upsert"]:
             cable = cables[str(item["cable"])]
             before = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
             if before is not None:
                 allowed("change", before)
+            if item.get("riser"):
+                out.append(self._bulk_riser_path(
+                    request, plan, cable, item, router, other_floors, allowed, before, ox, oy,
+                ))
+                continue
             if tray_keys and isinstance(item.get("tray_order"), list):
                 item = {**item, "tray_order": [
                     tray_keys.get(t, t) if isinstance(t, str) else t
@@ -13894,6 +14025,61 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 write_length(cable, route["length_mm"], replace=bool(item.get("replace_length")))
             out.append(path_data(row, dx=-ox, dy=-oy))
         return out
+
+    @staticmethod
+    def _riser_far_row(row):
+        """The other floor's part of a stored route between floors, or None."""
+        from .cable_routing import riser_partner
+        from .models import FloorPlanCablePath
+
+        if row.riser_id is None:
+            return None
+        pair = riser_partner(row.riser)
+        if pair is None:
+            return None
+        return FloorPlanCablePath.objects.select_related("floor_plan").filter(
+            floor_plan_id=pair.floor_plan_id, cable_id=row.cable_id, riser=pair
+        ).first()
+
+    def _bulk_riser_path(self, request, plan, cable, item, router, other_floors, allowed,
+                         before, ox, oy) -> dict:
+        """A ``bulk/`` upsert with ``riser``: the cable routed between floors
+        through that riser of this plan, against the tiles as saved - a row
+        here and one on the floor the riser pairs with, which the user must
+        be allowed to change too. Lengths are worked out here."""
+        import uuid as _uuid
+
+        from auth_api import rbac
+
+        from .cable_routing import path_data, save_riser_route, write_length
+        from .models import FloorPlanCablePath
+
+        user = request.user
+        tenant = self._tenant_or_403()
+        try:
+            only = _uuid.UUID(str(item["riser"]))
+        except ValueError:
+            raise ValidationError({"cable_paths": [f"{cable}: unknown riser."]}) from None
+        res = router.via_riser(
+            cable, routers=other_floors, only=only,
+            allow=lambda p: rbac.can_act_on(user, tenant, "floorplan", "view", p),
+        )
+        if res is None:
+            raise ValidationError({"cable_paths": [
+                f"{cable}: no riser of this floor joins it to its other end."
+            ]})
+        far_plan = res["far_plan"]
+        if not rbac.can_act_on(user, tenant, "floorplan", "change", far_plan):
+            raise PermissionDenied(f"You may not change {far_plan.name}.")
+        far_before = FloorPlanCablePath.objects.filter(floor_plan=far_plan, cable=cable).first()
+        if far_before is not None:
+            allowed("change", far_before)
+        near_row, far_row = save_riser_route(plan, cable, res)
+        allowed("change" if before is not None else "add", near_row)
+        allowed("change" if far_before is not None else "add", far_row)
+        if item.get("write_length") or item.get("replace_length"):
+            write_length(cable, res["length_mm"], replace=bool(item.get("replace_length")))
+        return path_data(near_row, dx=-ox, dy=-oy)
 
     @staticmethod
     def _view_rows_editable(view, plan, crop, kinds, specs, row) -> None:

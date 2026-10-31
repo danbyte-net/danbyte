@@ -136,6 +136,7 @@ export function DrawingExportMenu({
   note,
   svg = true,
   pdfExtra,
+  extraItems,
   disabled,
   className,
 }: {
@@ -159,6 +160,8 @@ export function DrawingExportMenu({
   svg?: boolean
   /** More of the PDF request beside the SVG and the paper. */
   pdfExtra?: () => Record<string, unknown>
+  /** More files this drawing offers, under the drawing's own. */
+  extraItems?: React.ReactNode
   disabled?: boolean
   className?: string
 }) {
@@ -297,6 +300,12 @@ export function DrawingExportMenu({
               {paperLabel(paper)}
             </span>
           </DropdownMenuItem>
+          {extraItems && (
+            <>
+              <DropdownMenuSeparator />
+              {extraItems}
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={asking} onOpenChange={setAsking}>

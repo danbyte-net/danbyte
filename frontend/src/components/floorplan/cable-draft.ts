@@ -285,6 +285,7 @@ const near = (a: readonly number[], b: readonly number[]) =>
  * route. A route whose end tile moved since it was applied goes without
  * its legs - the server routes it again through its trays, against the
  * tiles as saved; one whose end tile is gone is left out (`dropped`).
+ * A route between floors goes as its riser: the server routes both floors.
  */
 export function cableDraftPayload(
   cd: CableDraft | undefined,
@@ -317,6 +318,21 @@ export function cableDraftPayload(
     }
     if (gone) {
       dropped.push(r.label)
+      continue
+    }
+    if (r.route.riser) {
+      // Between floors: the server routes both floors through the riser,
+      // against the tiles as saved.
+      upsert.push({
+        cable: r.cable,
+        riser: r.route.riser.tile,
+        ...(r.version ? { version: r.version } : {}),
+        ...(r.length === "write" ? { write_length: true } : {}),
+        ...(r.length === "replace" ? { replace_length: true } : {}),
+        ...(r.length && r.cableVersion
+          ? { cable_version: r.cableVersion }
+          : {}),
+      })
       continue
     }
     upsert.push({

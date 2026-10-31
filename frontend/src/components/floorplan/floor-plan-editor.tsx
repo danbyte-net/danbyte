@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router"
 import { toPng } from "html-to-image"
+import { Sheet } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 
@@ -13,6 +14,8 @@ import type {
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { DrawingExportMenu } from "@/components/drawing-export-menu"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import type { PaperChoice } from "@/lib/diagram/sheet"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { HiddenChip } from "@/components/hidden-chip"
 import { hiddenCount } from "@/components/hidden-objects"
@@ -34,6 +37,7 @@ import {
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
+import { CableScheduleDialog } from "./cable-schedule"
 import {
   applyNewCables,
   applyRoutes,
@@ -226,6 +230,7 @@ export function FloorPlanEditor({
   const [assignOpen, setAssignOpen] = useState(false)
   // Document routes: the panel, and the routes it previews on the plan.
   const [docRoutesOpen, setDocRoutesOpen] = useState(false)
+  const [scheduleOpen, setScheduleOpen] = useState(false)
   const [cablePreviews, setCablePreviews] = useState<
     ReadonlyMap<string, CableRoute> | undefined
   >(undefined)
@@ -791,6 +796,40 @@ export function FloorPlanEditor({
     closePopover: popover.close,
   })
 
+  /** The plan as an SVG for paper: the Export PDF (cables as the Display
+   * menu says), and the cable schedule's first page (`withCables`: the
+   * routes always drawn). */
+  const exportSvg = (
+    paper?: PaperChoice,
+    withCables: boolean = prefs.showCableLinks
+  ) =>
+    plan
+      ? planSvg({
+          plan,
+          tiles: shownTiles,
+          walls,
+          trays,
+          areas,
+          shapes: shownShapes,
+          colorBy,
+          figures: capacity.figures,
+          liveState: liveState.data ?? null,
+          showZoneLabels: prefs.showZoneLabels,
+          showTrays: prefs.showTrays,
+          cables: withCables
+            ? {
+                paths: shownCables,
+                routes: cableRoutes,
+                colorBy: prefs.cableColorBy,
+                bundle: prefs.bundleCables,
+                labels: prefs.showCableLabels,
+                highlight: ed.highlightCableIds,
+                mmPerPx: planPaperScale(plan, paper),
+              }
+            : undefined,
+        })
+      : ""
+
   const exportPng = async () => {
     if (!exportRef.current || !plan) return
     const url = await toPng(exportRef.current, {
@@ -921,31 +960,13 @@ export function FloorPlanEditor({
         exportMenu={
           <DrawingExportMenu
             name={plan.name}
+            extraItems={
+              <DropdownMenuItem onSelect={() => setScheduleOpen(true)}>
+                <Sheet /> Cable schedule…
+              </DropdownMenuItem>
+            }
             build={async ({ paper }) => ({
-              svg: planSvg({
-                plan,
-                tiles: shownTiles,
-                walls,
-                trays,
-                areas,
-                shapes: shownShapes,
-                colorBy,
-                figures: capacity.figures,
-                liveState: liveState.data ?? null,
-                showZoneLabels: prefs.showZoneLabels,
-                showTrays: prefs.showTrays,
-                cables: prefs.showCableLinks
-                  ? {
-                      paths: shownCables,
-                      routes: cableRoutes,
-                      colorBy: prefs.cableColorBy,
-                      bundle: prefs.bundleCables,
-                      labels: prefs.showCableLabels,
-                      highlight: ed.highlightCableIds,
-                      mmPerPx: planPaperScale(plan, paper),
-                    }
-                  : undefined,
-              }),
+              svg: exportSvg(paper),
               missing: 0,
             })}
             pdfUrl={`/api/floor-plans/${plan.id}/export/pdf/`}
@@ -1534,6 +1555,15 @@ export function FloorPlanEditor({
         shape={backDelete}
         onClose={() => setBackDelete(null)}
         onDelete={rawShapeEdits.deleteShape}
+      />
+      <CableScheduleDialog
+        planId={plan.id}
+        planName={plan.name}
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        planSvg={
+          view3d ? undefined : async (paper) => exportSvg(paper, true) || null
+        }
       />
       <SnapAllDialog
         planId={plan.id}
