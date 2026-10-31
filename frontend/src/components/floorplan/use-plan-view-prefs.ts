@@ -50,6 +50,7 @@ export type ViewPrefKey =
   | "show_cable_labels"
   | "bundle_cables"
   | "object_size"
+  | "mute_background"
 
 /** The plan's view preferences: seeded from plan.state, a session override
  * on top, persisted back to the plan for editors. The 3D effects budget and
@@ -108,6 +109,11 @@ export function usePlanViewPrefs({
   const [bundleCablesLocal, setBundleCablesLocal] = useState<boolean | null>(
     null
   )
+  // The background image muted (greyed, darkened in dark mode) so the
+  // plan's own content reads first.
+  const [muteBackgroundLocal, setMuteBackgroundLocal] = useState<
+    boolean | null
+  >(null)
   // Object size: true size, or a readable least size from afar.
   const [objectSizeLocal, setObjectSizeLocal] = useState<ObjectSize | null>(
     null
@@ -154,6 +160,7 @@ export function usePlanViewPrefs({
     setCableLabelsLocal(null)
     setBundleCablesLocal(null)
     setObjectSizeLocal(null)
+    setMuteBackgroundLocal(null)
   }, [id])
 
   // View prefs: seeded from the plan's saved state; editors persist toggles.
@@ -265,6 +272,12 @@ export function usePlanViewPrefs({
 
   // Readable unless the plan chose Real (zoomed in the two look the same).
   const objectSize = objectSizeLocal ?? readObjectSize(plan?.state.object_size)
+  // Muted unless the plan turned it off: a map or a photo at full colour
+  // drowns the racks, trays and cables drawn over it.
+  const muteBackground =
+    muteBackgroundLocal ??
+    (plan?.state.mute_background as boolean | undefined) ??
+    true
 
   const setViewPref = (
     key: ViewPrefKey,
@@ -272,6 +285,7 @@ export function usePlanViewPrefs({
   ) => {
     if (key === "object_size") setObjectSizeLocal(value as ObjectSize)
     else if (key === "label_fit") setLabelFitLocal(value as boolean)
+    else if (key === "mute_background") setMuteBackgroundLocal(value as boolean)
     else if (key === "cable_color_by")
       setCableColorByLocal(value as CableColorBy)
     else if (key === "show_cable_labels") setCableLabelsLocal(value as boolean)
@@ -331,6 +345,7 @@ export function usePlanViewPrefs({
     showCableLabels,
     bundleCables,
     objectSize,
+    muteBackground,
     quality3d,
     setQuality3d,
     cableScale,

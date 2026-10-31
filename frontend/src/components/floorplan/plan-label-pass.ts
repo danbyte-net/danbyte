@@ -323,6 +323,9 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
           priority: base - k * 10,
           force: focus && k === 0,
           spots,
+          // A name in the open, never over a rack or a device: a road
+          // name does not run across the buildings beside it.
+          avoid: tileBodies,
         })
       )
       // The focus's ends: the ports, outside the tile where the run
@@ -402,6 +405,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         id: `tray:${tray.id}#${k}`,
         priority: RANK.tray - k * 10,
         spots,
+        avoid: tileBodies,
       })
     )
   }

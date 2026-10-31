@@ -107,13 +107,23 @@ export function areaLabelColor(
     : color
 }
 
-/** Whether an area's name needs a halo of the background to read: a
- * pattern's lines run under a name drawn in their own colour. */
+/** Whether an area's name needs a halo of the background to read: over
+ * a light fill the name meets whatever lies under the area - a pattern's
+ * lines, a map, a tray - so it reads through a halo of the page. A strong
+ * fill is its own backdrop. */
 export function areaNameHalo(
   a: AreaLook & Pick<FloorPlanArea, "fill_opacity">
 ): boolean {
-  return areaPattern(a) !== "solid" && a.fill_opacity < 50
+  return a.fill_opacity < 50
 }
+
+/** How much of the area's own colour its name keeps when drawn in it; the
+ * rest is the page's ink, so a yellow yard's name is still dark enough to
+ * read (screen: `color-mix` with `--foreground`; paper: PAPER_INK). */
+export const AREA_INK_SHARE = 0.6
+
+/** An area outline's opacity: crisp, a step under the selection's. */
+export const AREA_STROKE_OPACITY = 0.85
 
 /** What an area is called on the plan: its own label, else its room's or
  * location's name, else its type's. */
@@ -399,6 +409,26 @@ export function polygonCentroid(pts: readonly Pt[]): Pt {
     return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]
   }
   return [cx / (3 * a), cy / (3 * a)]
+}
+
+/** How big an area is on the floor, m²: its polygon's or its box's. */
+export function areaSquareMetres(a: AreaShape, cellMm: number): number {
+  const m = cellMm / 1000
+  if (a.shape !== "polygon") return a.width * a.height * m * m
+  let twice = 0
+  for (let i = 0, j = a.points.length - 1; i < a.points.length; j = i++)
+    twice += a.points[j][0] * a.points[i][1] - a.points[i][0] * a.points[j][1]
+  return (Math.abs(twice) / 2) * m * m
+}
+
+/** What a list calls an area with no name of its own, nor a room, a
+ * location or a type to borrow one from: *Area* and its size, so a list
+ * of outlines still tells them apart. */
+export function areaFallbackName(a: AreaShape, cellMm?: number): string {
+  if (!cellMm) return "Area"
+  const m2 = areaSquareMetres(a, cellMm)
+  if (m2 < 0.5) return "Area"
+  return `Area · ${Math.round(m2).toLocaleString("en-US")} m²`
 }
 
 /** A handle's place on the box: -1, 0 or 1 along each of its axes. */

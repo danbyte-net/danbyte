@@ -7,6 +7,8 @@ import {
   areaLabelColor,
   areaName,
   areaNameHalo,
+  areaFallbackName,
+  areaSquareMetres,
   areaPattern,
   areaTypeOf,
   labelPresetMm,
@@ -21,7 +23,7 @@ import {
   tileQuarter,
   tileResidual,
 } from "./shapes"
-import type { Box } from "./shapes"
+import type { AreaShape, Box } from "./shapes"
 
 // The geometry of rooms, areas, labels and free tiles: turned boxes and
 // their handles, snapping, label sizes in millimetres, and a free tile's
@@ -268,16 +270,46 @@ describe("area types", () => {
     expect(areaName({ ...linked, label: "" })).toBe("Room 210")
   })
 
-  it("halo the name over a pattern, not over a strong fill", () => {
+  it("halo the name over a light fill, not over a strong one", () => {
     expect(areaNameHalo({ ...plain, fill_opacity: 15 })).toBe(true)
     expect(areaNameHalo({ ...plain, fill_opacity: 60 })).toBe(false)
+    // Solid or patterned: over a light fill the name meets the map or
+    // whatever lies under the area.
     expect(
       areaNameHalo({
         ...plain,
         area_type: { ...parking, pattern: "solid" },
         fill_opacity: 15,
       })
-    ).toBe(false)
+    ).toBe(true)
+  })
+
+  it("lists a nameless area by its size", () => {
+    const box = {
+      ...plain,
+      kind: "area",
+      area_type: null,
+      shape: "rect",
+      width: 10,
+      height: 5,
+      points: [],
+    } as unknown as AreaShape
+    // 10 x 5 cells of 600 mm: 6 m x 3 m.
+    expect(areaSquareMetres(box, 600)).toBeCloseTo(18)
+    expect(areaFallbackName(box, 600)).toBe("Area · 18 m²")
+    const poly = {
+      ...box,
+      shape: "polygon",
+      points: [
+        [0, 0],
+        [100, 0],
+        [100, 50],
+      ],
+    } as AreaShape
+    // Half of 60 m x 30 m.
+    expect(areaSquareMetres(poly, 600)).toBeCloseTo(900)
+    expect(areaFallbackName(poly, 600)).toBe("Area · 900 m²")
+    expect(areaFallbackName(poly)).toBe("Area")
   })
 })
 

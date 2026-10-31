@@ -3,6 +3,7 @@ import { LegendFrame, LegendRow } from "@/components/map-legend"
 import type { AreaTypeRef } from "@/lib/api"
 import { naturalCompare } from "@/lib/natural-sort"
 
+import { BareFrame } from "./plan-legend"
 import { AREA_NEUTRAL, PATTERN_STROKE, areaTypeOf, patternRuns } from "./shapes"
 import type { PlanShape } from "./shapes"
 
@@ -83,10 +84,18 @@ export function AreaSwatch({ type }: { type: AreaTypeRef }) {
  * area on the plan wears, as its swatch, icon and name. Beside the Color by
  * and cables' legends, inside the export area.
  */
-export function AreaLegend({ types }: { types: readonly AreaTypeRef[] }) {
+export function AreaLegend({
+  types,
+  bare = false,
+}: {
+  types: readonly AreaTypeRef[]
+  /** Its rows only, for the plan's one legend card (plan-legend.tsx). */
+  bare?: boolean
+}) {
   if (!types.length) return null
+  const Frame = bare ? BareFrame : LegendFrame
   return (
-    <LegendFrame hideable={false} className="w-fit max-w-64">
+    <Frame hideable={false} className="w-fit max-w-64">
       <p className="pb-1 font-medium whitespace-nowrap">Areas</p>
       <div className="space-y-0.5">
         {types.map((t) => (
@@ -110,6 +119,6 @@ export function AreaLegend({ types }: { types: readonly AreaTypeRef[] }) {
           />
         ))}
       </div>
-    </LegendFrame>
+    </Frame>
   )
 }

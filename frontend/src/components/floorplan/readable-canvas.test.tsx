@@ -322,7 +322,7 @@ describe("Readable trays", () => {
       mmPerPx,
     })
     const d = new DOMParser().parseFromString(svg, "image/svg+xml")
-    const line = d.querySelector("polyline:not([data-part=casing])")!
+    const line = d.querySelector("polyline[data-part=channel]")!
     expect(+line.getAttribute("stroke-width")! * mmPerPx).toBeCloseTo(
       READABLE_TRAY_MM,
       2

@@ -32,6 +32,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/components/theme-provider"
 
 import type { Pt } from "./cable-route"
 import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
@@ -51,6 +52,7 @@ import {
   readableOrder,
   readableShape,
 } from "./readable"
+import { MuteFilter, muteFilterId } from "./background-look"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
 import { layoutPlanLabels } from "./plan-label-pass"
 import { LABEL_FONT_PX, LABEL_REPEAT_PX, CHIP_FONT_PX } from "./plan-labels"
@@ -220,6 +222,9 @@ export interface FloorCanvasProps {
   /** Readable: placed objects keep a least size on screen from afar, with
    * their names at a constant size (readable.ts). */
   objectSize?: ObjectSize
+  /** Display > Muted background: the background image greyed and pushed
+   * toward the page (background-look.tsx), so the plan reads over it. */
+  muteBackground?: boolean
   // ── Raised floors and walls (Structure mode) ───────────────────────────
   /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
   raisedFloors?: RaisedFloorArea[]
@@ -512,6 +517,7 @@ export function FloorCanvas({
   showZoneLabels = true,
   photoOutlines = false,
   objectSize = "real",
+  muteBackground = false,
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -609,6 +615,8 @@ export function FloorCanvas({
   // under it - the hovered tile's in a store of its own, so a hover
   // re-renders the names and not the canvas.
   const readable = objectSize === "readable"
+  const { theme } = useTheme()
+  const muteId = muteFilterId(plan.id)
   const pxPerCell = CELL * t.k
   const [hoverStore] = useState(createHoverStore)
   const hoveredTile = useSyncExternalStore(
@@ -1727,6 +1735,9 @@ export function FloorCanvas({
               strokeWidth={1}
             />
           </pattern>
+          {muteBackground && plan.background_image && (
+            <MuteFilter id={muteId} dark={theme === "dark"} />
+          )}
         </defs>
         {clipToGrid && (
           <defs>
@@ -1750,6 +1761,8 @@ export function FloorCanvas({
               height={backgroundFrame ? backgroundFrame.height * CELL : gh}
               opacity={plan.background_opacity / 100}
               preserveAspectRatio="none"
+              filter={muteBackground ? `url(#${muteId})` : undefined}
+              data-muted={muteBackground || undefined}
             />
           )}
           {underlay}
