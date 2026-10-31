@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from "react"
 import { ArrowUpDown, Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
@@ -6,16 +5,6 @@ import { getLucideIcon } from "@/components/dynamic-icon"
 
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
-import {
-  READABLE_FONT_PX,
-  clipName,
-  growFactor,
-  growsReadable,
-  nameBox,
-  namePriority,
-  thinNames,
-} from "./readable"
-import type { NameCandidate } from "./readable"
 import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -262,7 +251,7 @@ export function TileShape({
         {showLabel && (
           <text
             x={w / 2}
-            y={h + 10}
+            y={h + 8.5}
             textAnchor="middle"
             fontSize={9}
             fill="currentColor"
@@ -721,104 +710,90 @@ export function createHoverStore(): HoverStore {
   }
 }
 
-const NO_HOVER: HoverStore = {
-  get: () => null,
-  set: () => {},
-  subscribe: () => () => {},
-}
-
 /**
- * Readable from afar: the names of the tiles grown to READABLE_SYMBOL_PX,
- * under each symbol at READABLE_FONT_PX on screen whatever the zoom, on a
- * halo. Only names in view are laid out, and where two would overlap the
- * lower ranked one hides (`thinNames`); the selected and the hovered tile
- * always show theirs.
+ * Readable, a tile too thin or a photo too small to read as itself: its
+ * symbol instead - a rounded box in its colour at the drawn size (`box`,
+ * cells), with its type's or role's icon, and its outline for selection
+ * and monitoring. Back to the tile itself once it is big enough on screen.
  */
-export function ReadableNames({
-  tiles,
+export function ReadableSymbol({
+  tile,
+  box,
   k,
-  tx,
-  ty,
-  viewW,
-  viewH,
-  pinned,
-  hover = NO_HOVER,
+  selected,
+  live,
+  colorBy = "type",
+  figures,
+  onPointerDown,
+  onDoubleClick,
+  onPointerEnter,
+  onPointerLeave,
 }: {
-  /** The tiles drawn, zones left out. */
-  tiles: readonly FloorPlanTile[]
-  /** The canvas transform: zoom and pan (screen px). */
+  tile: FloorPlanTile
+  box: { x: number; y: number; w: number; h: number }
+  /** The canvas zoom: screen px per plan px. */
   k: number
-  tx: number
-  ty: number
-  /** The canvas's size on screen (px); 0 lays out every name. */
-  viewW: number
-  viewH: number
-  /** Tiles whose name always shows - the selection. */
-  pinned?: ReadonlySet<string>
-  hover?: HoverStore
+  selected: boolean
+  live?: FloorPlanLiveState["tiles"][string]
+  colorBy?: ColorBy
+  figures?: RackFigures
+  onPointerDown: (e: React.PointerEvent) => void
+  onDoubleClick: () => void
+  onPointerEnter?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
 }) {
-  const hovered = useSyncExternalStore(hover.subscribe, hover.get, hover.get)
-  const pxPerCell = CELL * k
-  const font = READABLE_FONT_PX
-  const cands: NameCandidate[] = []
-  const placed = new Map<string, { x: number; y: number; text: string }>()
-  const margin = 80
-  for (const tile of tiles) {
-    const name = tileName(tile)
-    if (!name || !growsReadable(tile)) continue
-    const grow = growFactor(tile.width, tile.height, pxPerCell)
-    if (grow <= 1) continue
-    const cx = (tile.x + tile.width / 2) * pxPerCell + tx
-    const cy = (tile.y + tile.height / 2) * pxPerCell + ty
-    if (
-      viewW > 0 &&
-      (cx < -margin ||
-        cy < -margin ||
-        cx > viewW + margin ||
-        cy > viewH + margin)
-    )
-      continue
-    const top = cy + (tile.height * pxPerCell * grow) / 2 + 2
-    const box = nameBox(name, cx, top, font)
-    const always = tile.id === hovered || !!pinned?.has(tile.id)
-    cands.push({
-      id: tile.id,
-      ...box,
-      priority: always ? Infinity : namePriority(tile),
-    })
-    placed.set(tile.id, {
-      // Back to plan px, inside the pan/zoom group.
-      x: (cx - tx) / k,
-      y: (top - ty + font) / k,
-      text: clipName(name),
-    })
-  }
-  if (!cands.length) return null
-  const shown = thinNames(cands)
-  const out: React.ReactNode[] = []
-  for (const [id, p] of placed) {
-    if (!shown.has(id)) continue
-    out.push(
-      <text
-        key={id}
-        data-readable-name={id}
-        x={p.x}
-        y={p.y}
-        textAnchor="middle"
-        fontSize={font / k}
-        fontWeight={500}
-        className="fill-foreground stroke-background"
-        strokeWidth={3 / k}
-        strokeLinejoin="round"
-        paintOrder="stroke"
-      >
-        {p.text}
-      </text>
-    )
-  }
+  const rackLive = live?.kind === "rack" ? live : null
+  const paint = tilePaint({
+    tile,
+    colorBy,
+    rack: figures ?? rackFigures(null, rackLive),
+    check: live?.check ?? null,
+    selected,
+  })
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const iconName = tile.tile_type?.icon || tileRoleIcon(tile)
+  const Icon = iconName ? getLucideIcon(iconName) : null
+  const icon = Math.min(w, h) * 0.7
   return (
-    <g data-layer="readable-names" pointerEvents="none">
-      {out}
+    <g
+      data-tile={tile.id}
+      data-part="symbol"
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      style={{ cursor: "pointer" }}
+      role="img"
+      aria-label={tileTooltip(tile, live)}
+      opacity={paint.opacity}
+    >
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={Math.min(w, h) * 0.2}
+        fill={tileFill(tile)}
+        fillOpacity={0.9}
+        stroke={paint.stroke}
+        strokeWidth={(selected || paint.alarm ? 2 : 1) / k}
+      />
+      {Icon && (
+        <Icon
+          data-part="symbol-icon"
+          x={x + w / 2 - icon / 2}
+          y={y + h / 2 - icon / 2}
+          width={icon}
+          height={icon}
+          color="#ffffff"
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
     </g>
   )
 }

@@ -5,6 +5,8 @@ import { READABLE_FONT_PX, READABLE_TRAY_PX, fontGrow } from "./readable"
 
 /** Default tray color when the user hasn't picked one - neutral gray. */
 const TRAY_DEFAULT = "#71717a"
+/** A tray channel never thinner than this on screen (px), Real or not. */
+const TRAY_MIN_PX = 4
 
 /** A tray run: a subtle hollow channel (no bright core - cables show *inside*
  * it when traced). Selected shows vertex dots; editing shows drag handles plus
@@ -23,6 +25,7 @@ export function TrayShape({
   onVertexContext,
   zoom = 1,
   readable = false,
+  hideName = false,
 }: {
   tray: FloorPlanTray
   selected: boolean
@@ -41,6 +44,8 @@ export function TrayShape({
    * READABLE_TRAY_PX on screen, its name and count never under
    * READABLE_FONT_PX. */
   readable?: boolean
+  /** The name is drawn by the plan's label pass (plan-labels-layer.tsx). */
+  hideName?: boolean
 }) {
   if (tray.points.length < 2) return null
   const color = tray.color || TRAY_DEFAULT
@@ -53,7 +58,11 @@ export function TrayShape({
   // the plain selection.
   const showHandles = editable && (editing || selected)
   const body = editing || selected ? 11 : 10
-  const stroke = readable ? Math.max(body, READABLE_TRAY_PX / zoom) : body
+  // Never a hairline: a least width on screen, more under Readable.
+  const stroke = Math.max(
+    body,
+    (readable ? READABLE_TRAY_PX : TRAY_MIN_PX) / zoom
+  )
   const textGrow = readable ? fontGrow(10, zoom, READABLE_FONT_PX) : 1
 
   return (
@@ -66,13 +75,27 @@ export function TrayShape({
         cursor: interactive ? (editable ? "move" : "pointer") : "default",
       }}
     >
-      {/* Channel body - wide + faint. No centerline: the middle stays empty
-          so a traced cable reads as running inside the tray. */}
+      {/* Casing: a background edge round the channel, as a road is drawn
+          on a map, so the tray reads over a photo or a busy floor. */}
       <polyline
+        data-part="casing"
+        points={pts}
+        fill="none"
+        stroke="var(--background)"
+        strokeOpacity={0.9}
+        strokeWidth={stroke + 3 / zoom}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        pointerEvents="none"
+      />
+      {/* Channel body - wide + tinted. No centerline: the middle stays
+          empty so a traced cable reads as running inside the tray. */}
+      <polyline
+        data-part="channel"
         points={pts}
         fill="none"
         stroke={color}
-        strokeOpacity={editing ? 0.6 : selected ? 0.5 : 0.3}
+        strokeOpacity={editing ? 0.6 : selected ? 0.55 : 0.4}
         strokeWidth={stroke}
         strokeLinejoin="round"
         strokeLinecap="round"
@@ -127,23 +150,25 @@ export function TrayShape({
             onContextMenu={editing ? (e) => onVertexContext(i, e) : undefined}
           />
         ))}
-      <text
-        x={mid[0] * CELL}
-        y={mid[1] * CELL - Math.max(9 * textGrow, stroke / 2 + 4 * textGrow)}
-        textAnchor="middle"
-        fontSize={10 * textGrow}
-        fill={color}
-        fontWeight={600}
-        pointerEvents="none"
-        className={textGrow > 1 ? "stroke-background" : undefined}
-        strokeWidth={textGrow > 1 ? 3 * textGrow : undefined}
-        strokeLinejoin="round"
-        paintOrder="stroke"
-      >
-        {tray.name}
-        {count > 0 ? ` · ${count}` : ""}
-        {hidden > 0 ? ` · ${hidden} hidden` : ""}
-      </text>
+      {!hideName && (
+        <text
+          x={mid[0] * CELL}
+          y={mid[1] * CELL - Math.max(9 * textGrow, stroke / 2 + 4 * textGrow)}
+          textAnchor="middle"
+          fontSize={10 * textGrow}
+          fill={color}
+          fontWeight={600}
+          pointerEvents="none"
+          className={textGrow > 1 ? "stroke-background" : undefined}
+          strokeWidth={textGrow > 1 ? 3 * textGrow : undefined}
+          strokeLinejoin="round"
+          paintOrder="stroke"
+        >
+          {tray.name}
+          {count > 0 ? ` · ${count}` : ""}
+          {hidden > 0 ? ` · ${hidden} hidden` : ""}
+        </text>
+      )}
     </g>
   )
 }

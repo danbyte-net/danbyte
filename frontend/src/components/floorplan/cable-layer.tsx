@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react"
 
-import type { FloorPlanCablePath } from "@/lib/api"
+import type { FloorPlanCablePath, FloorPlanTile } from "@/lib/api"
 
 import {
   CABLE_LINE,
@@ -31,6 +31,9 @@ import type {
   LaneGroup,
 } from "./cable-draw"
 import type { Pt } from "./cable-route"
+import { routeEnds } from "./plan-label-pass"
+import type { Box } from "./plan-labels"
+import { readableShape } from "./readable"
 
 /** floor-canvas.tsx's CELL. */
 const CELL = 40
@@ -38,8 +41,11 @@ const CELL = 40
 const HIT_PX = 14
 /** Rounded corners, plan px. */
 const FILLET = 6
+/** A run's casing: this much wider than its line, screen px. */
+const CASING_PX = 2
 
 const NO_STUBS: readonly CableStub[] = []
+const NO_TILES: readonly FloorPlanTile[] = []
 
 /** What the pointer or the keyboard is on: one cable, or a bundle's. */
 export interface CableHoverHit {
@@ -80,13 +86,14 @@ export const CableLayer = memo(function CableLayer({
   cellMm,
   colorBy,
   bundle,
-  showLabels,
   highlightIds,
   interactive,
   onSelect,
   onHover,
   previews,
   stubs = NO_STUBS,
+  tiles = NO_TILES,
+  readable = false,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -104,6 +111,10 @@ export const CableLayer = memo(function CableLayer({
   previews?: ReadonlyMap<string, CableRoute>
   /** Cables with one end on this plan (cable-draw.ts cableStubs). */
   stubs?: readonly CableStub[]
+  /** The tiles, for where a run leaves its end's tile - the end's dot. */
+  tiles?: readonly FloorPlanTile[]
+  /** Readable: an end's tile as its grown symbol. */
+  readable?: boolean
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -145,6 +156,16 @@ export const CableLayer = memo(function CableLayer({
       ),
     [layout, bundled]
   )
+
+  const tileById = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles])
+  /** An end's tile as drawn (cells): grown under Readable. */
+  const rectOf = (id: string): Box | null => {
+    const t = tileById.get(id)
+    if (!t) return null
+    return readable
+      ? readableShape(t, pxPerCell).box
+      : { x: t.x, y: t.y, w: t.width, h: t.height }
+  }
 
   const colorOf = (id: string) => {
     const cp = byId.get(id)
@@ -299,7 +320,6 @@ export const CableLayer = memo(function CableLayer({
     )
     const line: Pt[] = [g.a, g.b]
     const mid: Pt = [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2]
-    const len = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) * pxPerCell
     const n = g.members.length
     const lit = g.members.some((id) => hi.has(id))
     return (
@@ -314,6 +334,16 @@ export const CableLayer = memo(function CableLayer({
         <path
           d={roundedPath(px(line), 0)}
           fill="none"
+          stroke="var(--background)"
+          strokeOpacity={0.85}
+          strokeWidth={bundleWidth(n) + CASING_PX}
+          strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+        <path
+          d={roundedPath(px(line), 0)}
+          fill="none"
           stroke={color}
           strokeOpacity={hover?.bundle === g.key ? 1 : 0.85}
           strokeWidth={bundleWidth(n) + (hover?.bundle === g.key ? 1.5 : 0)}
@@ -322,42 +352,8 @@ export const CableLayer = memo(function CableLayer({
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
-        {/* The count, as the squarish badge - only where it fits. */}
-        {len >= 28 && chip("n", mid, String(n), color)}
       </g>
     )
-  }
-
-  // Labels at near detail: each single run's name at its longest leg,
-  // skipped where it would sit on one already placed.
-  const labels: React.ReactNode[] = []
-  if (showLabels && lod === "near") {
-    const boxes: { x: number; y: number; w: number; h: number }[] = []
-    for (const id of layout.order) {
-      if (labels.length >= 200) break
-      const cp = byId.get(id)
-      const lines = pieces.get(id)
-      if (!cp || !lines?.length || (dim && !hi.has(id))) continue
-      const best = lines
-        .map((l) => longestLegMid(l))
-        .sort((x, y) => y.len - x.len)[0]
-      if (best.len * pxPerCell < 60) continue
-      const w = (cp.label.length * 5.6 + 8) / pxPerCell
-      const h = 16 / pxPerCell
-      const box = { x: best.at[0] - w / 2, y: best.at[1] - h / 2, w, h }
-      if (
-        boxes.some(
-          (b) =>
-            b.x < box.x + box.w &&
-            box.x < b.x + b.w &&
-            b.y < box.y + box.h &&
-            box.y < b.y + b.h
-        )
-      )
-        continue
-      boxes.push(box)
-      labels.push(chip(`l-${id}`, best.at, cp.label, colorOf(id)))
-    }
   }
 
   /** A run lifted above the rest - traced or under the pointer - with its
@@ -370,8 +366,8 @@ export const CableLayer = memo(function CableLayer({
     const lines = full.get(id)
     if (!cp || !route || !lines) return null
     const color = colorOf(id)
-    const a = route.points[0]
-    const b = route.points[route.points.length - 1]
+    // The ends' dots where the run leaves each tile, not mid-tile.
+    const ends = routeEnds(cp, route, rectOf).map((e) => e.at)
     const mid = longestLegMid(route.points)
     return (
       <g
@@ -384,7 +380,7 @@ export const CableLayer = memo(function CableLayer({
       >
         {traced && hitPaths(lines)}
         {strokes(id, lines, { extra: traced ? 1.5 : 1, halo: traced })}
-        {[a, b].map((p, i) => (
+        {ends.map((p, i) => (
           <circle
             key={i}
             cx={p[0] * CELL}
@@ -397,19 +393,6 @@ export const CableLayer = memo(function CableLayer({
             pointerEvents="none"
           />
         ))}
-        {lod !== "far" &&
-          chip("len", mid.at, formatMetres(routeLengthM(route, cellMm)), color)}
-        {lod === "near" &&
-          [
-            [a, endText(cp.a_points)],
-            [b, endText(cp.b_points)],
-          ].map(([p, text], i) =>
-            chip(
-              `end-${i}`,
-              [(p as Pt)[0], (p as Pt)[1] - 14 / pxPerCell],
-              text as string
-            )
-          )}
       </g>
     )
   }
@@ -607,6 +590,33 @@ export const CableLayer = memo(function CableLayer({
     <g data-layer="cables" data-lod={lod}>
       {lod !== "far" &&
         [...bundled].map((key) => bundleView(layout.groups.get(key)!))}
+      {/* The runs' casing: a background edge under every line, all
+          before any line, so a run reads over a map or a photo while the
+          lanes of a tray stay side by side. */}
+      <g data-part="casing" pointerEvents="none">
+        {layout.order.map((id) => {
+          if (hi.has(id) || hovOne.has(id) || hov.has(id)) return null
+          if (lod === "far" && routes.get(id)?.trayIds.length) return null
+          const lines = pieces.get(id)
+          if (!lines?.length) return null
+          const cp = byId.get(id)
+          const style =
+            CABLE_LINE[cp ? drawnRouteState(cp, routes.get(id)) : "inferred"]
+          return lines.map((line, i) => (
+            <path
+              key={`${id}-${i}`}
+              d={roundedPath(px(line), FILLET)}
+              fill="none"
+              stroke="var(--background)"
+              strokeOpacity={dim ? 0.3 : 0.85}
+              strokeWidth={style.width + CASING_PX}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))
+        })}
+      </g>
       {/* One element per run, in lane order, that stays put while it is
           hovered or traced - so the keyboard keeps its place - and draws
           only while it is neither (the lifted copy above draws it then). */}
@@ -634,7 +644,6 @@ export const CableLayer = memo(function CableLayer({
           </g>
         )
       })}
-      {labels}
       {stubs.map(stubView)}
       {shortView()}
       {lod !== "far" &&

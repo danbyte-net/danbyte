@@ -784,15 +784,15 @@ export interface CableLineStyle {
 }
 
 export const CABLE_LINE: Record<CableRouteState, CableLineStyle> = {
-  documented: { label: "Documented", width: 2, opacity: 0.95, cap: "round" },
+  documented: { label: "Documented", width: 2.5, opacity: 0.95, cap: "round" },
   planned: {
     label: "Planned",
-    width: 2,
+    width: 2.5,
     opacity: 0.95,
     dash: "8 4",
     cap: "butt",
   },
-  inferred: { label: "Inferred", width: 1.25, opacity: 0.6, cap: "round" },
+  inferred: { label: "Inferred", width: 2, opacity: 0.6, cap: "round" },
   preview: {
     label: "Preview",
     width: 2,
@@ -800,7 +800,7 @@ export const CABLE_LINE: Record<CableRouteState, CableLineStyle> = {
     dash: "0.5 3.5",
     cap: "round",
   },
-  stale: { label: "Out of date", width: 2, opacity: 0.95, cap: "round" },
+  stale: { label: "Out of date", width: 2.5, opacity: 0.95, cap: "round" },
 }
 
 /** The order the legend lists the styles in. */

@@ -897,14 +897,19 @@ zoom out:
   panel, any typed tile with its picture or icon - at least **28 px** on
   screen. A tile smaller than that draws grown to 28 px along its longer
   side, its aspect kept, centred on its true place and over its neighbours.
-  Its name moves under the symbol at a constant **11 px** on a halo, cut at
-  24 characters. Where names would overlap, the lower ranked ones hide:
-  racks, cabinets and devices win over planning tiles, then the larger
-  footprint. The selected and the hovered tile always show their name. Room
-  and area names, zone names and plan labels never drop below 11 px either.
-  A cable tray's channel stays at least **6 px** wide on screen, and its
-  name and cable count at least 11 px. Once a tile is 28 px or more on
-  screen nothing changes, so zoomed in Readable and Real look the same.
+  Its short side never goes under **14 px** either: a long, flat tile (a 1U
+  switch drawn from above) grows on that side too and draws as its
+  **symbol** - a rounded box in its colour with its type's or role's icon -
+  rather than a stretched sliver. A tile shown as its photo draws as the
+  symbol while the photo would be under 24 px across, and as the photo
+  again once it reads. The name moves to hug the symbol, under it at a
+  constant **11 px** on a halo, cut at 24 characters (above or beside it
+  when that spot is taken). The selected and the hovered tile always show
+  their name. Room and area names, zone names and plan labels never drop
+  below 11 px either. A cable tray's channel stays at least **6 px** wide
+  on screen, and its name and cable count at least 11 px. Once a tile is
+  28 px or more (and 14 px across) on screen nothing changes, so zoomed in
+  Readable and Real look the same.
 - **Real** draws every tile and tray at its true size, as plans looked
   before. Far out, a connected tile keeps only the 8 px marker described
   under [Seeing cables A↔B](#seeing-cables-ab-routed-through-the-trays).
@@ -912,8 +917,33 @@ zoom out:
 The grown symbol is only drawn. It selects, hovers, drags and opens its
 right-click menu like the tile, but the tile's saved size and place never
 change, and a drag snaps the real tile. A grown tile has no resize grip:
-zoom in to resize. Cables still run from the tile's centre, and a stub
-(a cable with one end here) leaves from the grown symbol's edge.
+zoom in to resize. Cables still run from the tile's centre; a traced or
+hovered cable's end dot sits where it leaves the grown symbol's edge, and
+a stub (a cable with one end here) leaves from that edge too.
+
+#### One label pass
+
+Everything the 2D plan writes goes through **one label pass**, so texts of
+different kinds never sit on each other. Each text has a rank and a few
+places it may go; the higher ranked take their place first, the rest move
+to their next free place, and a text with nowhere left to go hides until
+you zoom or pan. In order:
+
+1. **Plan labels** you placed - never hidden.
+2. The **traced, selected or hovered cable**: its name, and its ends'
+   ports beside their tiles - always shown.
+3. **Cable names** - documented routes before inferred ones - and a
+   bundle's **N cables**.
+4. **Tray names** with their counts.
+5. **Tile names** (a name drawn inside its tile stays there, and others
+   keep clear of it).
+6. **Room and area names**. A rectangle's name starts in its top-left
+   corner and moves to another free spot inside it - a corner, the middle -
+   off the racks, rather than sit on a tray's name or a rack.
+7. **Raised-floor captions**.
+
+The pass runs once the view settles after a pan or zoom, and lays out only
+what is in view. The **PDF** runs the same pass at the paper's scale.
 
 In the **3D** view, Readable draws every object's name as a label that
 faces the camera at one size on screen, whatever the distance. Names past
@@ -1976,10 +2006,42 @@ Cables that share a tray no longer draw on top of each other:
   instead of braiding. Cables between the same two tiles share one elbow,
   in lanes the same way.
 - **Bundles.** Where the lanes would sit closer than a few pixels on
-  screen, the stretch draws as **one thicker stroke with a count** (the
-  squarish badge). Hover it to list its cables; **click it to fan them
+  screen, the stretch draws as **one thicker stroke**, named **N cables**
+  along it. Hover it to list its cables; **click it to fan them
   out** into lanes. **Display → Bundle parallel runs** (on by default)
   turns bundling off.
+- **Casing.** Every run, bundle and tray draws on a thin edge in the
+  background's colour, as a road is drawn on a map, so it reads over a
+  photo, a map or a CAD drawing. A run is at least 2 px wide on screen
+  (2.5 px documented), and a tray's channel at least 4 px (6 px under
+  Readable).
+
+#### Cable names
+
+Cables are named the way a map names its roads. With **Display → Cable
+labels** on (the default):
+
+- A cable's **name runs along its line**, on the line itself, on a halo,
+  turned with the run and always upright - never upside down, a vertical
+  run read bottom to top - at a constant **11 px** on screen. It prefers
+  the stretch along a tray to a short drop into a rack.
+- A long run **repeats its name** about every 280 px on screen, so
+  whichever part of the cable is in view carries it. Cables sharing a tray
+  stagger their names along it; a name with no free spot hides.
+- Up close the **length** follows the name, muted (`FPT-C04 · 5.5 m`);
+  further out it is in the popover only.
+- A **bundle** is named **N cables** along it; once the zoom separates its
+  lanes, each cable's own name shows instead.
+- While a cable is traced, the other cables dim and only the traced one is
+  named. The traced, selected or hovered cable is always named, with each
+  end's **device · port** in a small chip outside its tile, by the edge the
+  run leaves from (above the top edge, below the bottom one, beside a
+  side), never on the tile or its name. Its end dots sit where the run
+  meets the tile's edge.
+- From afar (far detail) only the traced cable is named.
+
+The PDF names cables the same way at the paper's scale: 2 mm text,
+repeated about every 70 mm of run, a traced cable's end chips included.
 
 #### Colour, styles and the legend
 
@@ -2033,13 +2095,12 @@ follows how large a cell is on screen:
 
 - **Far** (zoomed out): the trays with their cable counts, the runs that
   ride no tray (the trays do not count those), and a traced run.
-- **Mid**: shared stretches as bundles with counts, single runs as lines,
-  no labels.
+- **Mid**: shared stretches as bundles named with their counts, single
+  runs as lines with their names.
 - **Near** (zoomed in): every lane that fits apart, bundles only where the
-  lanes still would not read, and - with **Display → Cable labels** on (the
-  default) - each cable's label along its run where it does not collide
-  with another. A hovered or traced run shows its route length and, up
-  close, its device and port at each end.
+  lanes still would not read, and each cable's name along its run with its
+  length (see [Cable names](#cable-names)). A hovered or traced run shows
+  its device and port at each end.
 
 The routes are worked out once per change of the plan's contents - a tile
 moved, a tray reshaped, a tray's level changed - and then only for the

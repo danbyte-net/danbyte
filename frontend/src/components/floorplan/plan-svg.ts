@@ -10,7 +10,7 @@ import type {
   FloorPlanWall,
 } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
-import { el, text } from "@/lib/diagram/markup"
+import { attrs as markupAttrs, el, esc, text } from "@/lib/diagram/markup"
 import { PAPERS, SHEET } from "@/lib/diagram/sheet"
 import type { PaperChoice } from "@/lib/diagram/sheet"
 import {
@@ -52,7 +52,6 @@ import {
   laneOrder,
   lanePolylines,
   layoutCables,
-  longestLegMid,
   paperLod,
   roundedPath,
   sharedColor,
@@ -62,19 +61,24 @@ import {
 } from "./cable-draw"
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
+import { layoutPlanLabels } from "./plan-label-pass"
+import type { AlongLabel, PlanLabels } from "./plan-label-pass"
+import {
+  CHIP_FONT_MM,
+  LABEL_FONT_MM,
+  LABEL_REPEAT_MM,
+  textSize,
+} from "./plan-labels"
 import {
   READABLE_FONT_MM,
+  READABLE_SHORT_MM,
   READABLE_SYMBOL_MM,
   READABLE_TRAY_MM,
-  clipName,
   fontGrow,
-  growFactor,
   growStubs,
-  nameBox,
-  namePriority,
-  thinNames,
+  readableShape,
 } from "./readable"
-import type { NameCandidate, ObjectSize } from "./readable"
+import type { CellBox, ObjectSize } from "./readable"
 import { rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -92,6 +96,8 @@ const GUTTER = 2
 /** The light theme's foreground: labels, figures and default-colour walls. */
 export const PAPER_INK = "#18181b"
 const TRAY_DEFAULT = "#71717a"
+/** The light theme's muted text: a cable's length after its name. */
+const MUTED_INK = "#71717a"
 const AREA_DEFAULT = "#71717a"
 
 export interface PlanSvgInput {
@@ -242,12 +248,10 @@ const PAPER_LANE_MIN_MM = 0.6
 
 /** The cables at the paper's scale: lanes, bundles with their counts, the
  * colours and line styles of the canvas. Inferred runs stay thin and
- * light; traced runs are a heavier stroke. No preview or stale marks. */
-function cablesMarkup(c: PlanSvgCables): string {
-  const routes = c.routes
-  const byId = new Map(c.paths.map((cp) => [cp.id, cp]))
-  const palette = typePalette(c.paths)
-  const layout = layoutCables(routes, laneOrder(c.paths, routes))
+ * light; traced runs are a heavier stroke. No preview or stale marks.
+ * Their names are the label pass's (labelsMarkup). */
+function paperCables(c: PlanSvgCables) {
+  const layout = layoutCables(c.routes, laneOrder(c.paths, c.routes))
   const mmPerCell = CELL * c.mmPerPx
   const lod = paperLod(mmPerCell)
   const bundled = bundledGroups(layout, {
@@ -255,38 +259,24 @@ function cablesMarkup(c: PlanSvgCables): string {
     bundle: c.bundle,
     minGapCells: PAPER_LANE_MIN_MM / mmPerCell,
   })
+  return { layout, lod, bundled }
+}
+
+/** The cables' runs on paper: lanes, bundles, stubs. */
+function cablesMarkup(c: PlanSvgCables): string {
+  const routes = c.routes
+  const byId = new Map(c.paths.map((cp) => [cp.id, cp]))
+  const palette = typePalette(c.paths)
+  const { layout, bundled } = paperCables(c)
   const hi = new Set(c.highlight ?? [])
   const w = (screenPx: number) => (screenPx * MM_PER_SCREEN_PX) / c.mmPerPx
-  const fontPx = 2.2 / c.mmPerPx
+  const fontPx = LABEL_FONT_MM / c.mmPerPx
   const colorOf = (id: string) => {
     const cp = byId.get(id)
     return (cp && cableColor(cp, c.colorBy, palette)) || CABLE_NONE_PAPER
   }
   const toPx = (pts: readonly Pt[]): Pt[] =>
     pts.map(([x, y]) => [x * CELL, y * CELL])
-  const chip = (at: Pt, label: string, color: string) => {
-    const cw = label.length * fontPx * 0.6 + fontPx * 0.8
-    const ch = fontPx * 1.5
-    return (
-      el("rect", {
-        x: at[0] * CELL - cw / 2,
-        y: at[1] * CELL - ch / 2,
-        width: cw,
-        height: ch,
-        rx: ch * 0.2,
-        fill: "#ffffff",
-        stroke: color,
-        "stroke-width": w(1),
-      }) +
-      text(label, {
-        x: at[0] * CELL,
-        y: at[1] * CELL + fontPx * 0.35,
-        "text-anchor": "middle",
-        "font-size": fontPx,
-        fill: PAPER_INK,
-      })
-    )
-  }
   const parts: string[] = []
   for (const key of bundled) {
     const g = layout.groups.get(key)!
@@ -307,15 +297,6 @@ function cablesMarkup(c: PlanSvgCables): string {
         "stroke-linecap": "round",
       })
     )
-    const len = Math.hypot(g.b[0] - g.a[0], g.b[1] - g.a[1]) * mmPerCell
-    if (len >= 6)
-      parts.push(
-        chip(
-          [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2],
-          String(g.members.length),
-          color
-        )
-      )
   }
   const lines = (id: string, traced: boolean) => {
     const cp = byId.get(id)
@@ -336,7 +317,7 @@ function cablesMarkup(c: PlanSvgCables): string {
           fill: "none",
           stroke: color,
           "stroke-opacity": traced ? 1 : style.opacity,
-          "stroke-width": w(style.width + (traced ? 1.5 : 0)),
+          "stroke-width": w(style.width + (traced ? 2 : 0)),
           "stroke-dasharray": style.dash
             ? style.dash
                 .split(" ")
@@ -349,43 +330,30 @@ function cablesMarkup(c: PlanSvgCables): string {
       )
       .join("")
   }
-  for (const id of layout.order) if (!hi.has(id)) parts.push(lines(id, false))
-  // Names along the runs, at near detail, where they do not collide.
-  if (c.labels && lod === "near") {
-    const boxes: { x: number; y: number; w: number; h: number }[] = []
-    for (const id of layout.order) {
-      const cp = byId.get(id)
-      const polys = lanePolylines(
-        layout.cables.get(id)!,
-        (s) => !!s.group && bundled.has(s.group)
+  // A white casing under every run first, so a run reads over a CAD
+  // drawing or a busy floor while a tray's lanes stay side by side.
+  for (const id of layout.order) {
+    if (hi.has(id)) continue
+    const cp = byId.get(id)
+    const style =
+      CABLE_LINE[cp ? drawnRouteState(cp, routes.get(id)) : "inferred"]
+    for (const poly of lanePolylines(
+      layout.cables.get(id)!,
+      (s) => !!s.group && bundled.has(s.group)
+    ))
+      parts.push(
+        el("path", {
+          d: roundedPath(toPx(poly), 6),
+          fill: "none",
+          stroke: "#ffffff",
+          "stroke-opacity": 0.85,
+          "stroke-width": w(style.width + 1.2),
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+        })
       )
-      if (!cp || !polys.length) continue
-      const best = polys
-        .map((p) => longestLegMid(p))
-        .sort((x, y) => y.len - x.len)[0]
-      if (best.len * mmPerCell < 15) continue
-      const bw = (cp.label.length * fontPx * 0.6 + fontPx) / CELL
-      const bh = (fontPx * 1.5) / CELL
-      const box = {
-        x: best.at[0] - bw / 2,
-        y: best.at[1] - bh / 2,
-        w: bw,
-        h: bh,
-      }
-      if (
-        boxes.some(
-          (b) =>
-            b.x < box.x + box.w &&
-            box.x < b.x + b.w &&
-            b.y < box.y + box.h &&
-            box.y < b.y + b.h
-        )
-      )
-        continue
-      boxes.push(box)
-      parts.push(chip(best.at, cp.label, colorOf(id)))
-    }
   }
+  for (const id of layout.order) if (!hi.has(id)) parts.push(lines(id, false))
   for (const id of c.highlight ?? [])
     if (layout.cables.has(id)) parts.push(lines(id, true))
   /** A stub on paper: STUB_MM of dashed line out of its tile in the
@@ -544,11 +512,12 @@ const DEFAULT_PATTERN: PatternScale = {
 function areaMarkup(
   a: AreaShape,
   pat: PatternScale = DEFAULT_PATTERN,
-  grow = 1
+  grow = 1,
+  nameAt?: Pt | null
 ): string {
   const color = areaColor(a)
   const ink = areaLabelColor(a)
-  const name = a.show_name ? areaName(a) : ""
+  const name = a.show_name && nameAt !== null ? areaName(a) : ""
   const style = {
     fill: color,
     "fill-opacity": a.fill_opacity / 100,
@@ -620,8 +589,8 @@ function areaMarkup(
       ? areaNameMarkup(
           a,
           name,
-          box.x + 6 * grow,
-          box.y + 15 * grow,
+          nameAt ? nameAt[0] * CELL : box.x + 6 * grow,
+          nameAt ? nameAt[1] * CELL + 12 * grow * 0.8 : box.y + 15 * grow,
           "start",
           ink,
           grow
@@ -934,7 +903,8 @@ function wallMarkup(wall: FloorPlanWall, cellMm: number): string {
 
 function trayMarkup(
   tray: FloorPlanTray,
-  mmPerPx: number | null = null
+  mmPerPx: number | null = null,
+  hideName = false
 ): string {
   if (tray.points.length < 2) return ""
   const color = tray.color || TRAY_DEFAULT
@@ -956,16 +926,28 @@ function trayMarkup(
     "font-size": +(9 * grow).toFixed(2),
   }
   return (
+    // A casing round the channel, as a road is drawn on a map.
+    el("polyline", {
+      points: pts,
+      fill: "none",
+      stroke: "#ffffff",
+      "stroke-width": +(width + (mmPerPx == null ? 3 : 0.4 / mmPerPx)).toFixed(
+        2
+      ),
+      "stroke-linejoin": "round",
+      "stroke-linecap": "round",
+      "data-part": "casing",
+    }) +
     el("polyline", {
       points: pts,
       fill: "none",
       stroke: color,
-      "stroke-opacity": 0.3,
+      "stroke-opacity": 0.4,
       "stroke-width": +width.toFixed(2),
       "stroke-linejoin": "round",
       "stroke-linecap": "round",
     }) +
-    (tray.name
+    (tray.name && !hideName
       ? (grow > 1
           ? text(label, {
               ...at,
@@ -979,56 +961,112 @@ function trayMarkup(
   )
 }
 
-/** Readable on paper: the grown tiles' names under their symbols at
- * READABLE_FONT_MM, on a white halo, thinned where they would overlap. */
-function readableNamesMarkup(
-  tiles: readonly FloorPlanTile[],
-  growOf: (t: FloorPlanTile) => number,
-  mmPerPx: number
+/** The label pass's texts on paper (plan-label-pass.ts), at `mmPerPx`:
+ * trays' names along the trays, bundle counts and cable names along the
+ * runs, the traced cables' ends in chips, the grown tiles' names - each on
+ * a white halo (a second text under it: the sanitiser keeps no
+ * paint-order). */
+function labelsMarkup(
+  labels: PlanLabels,
+  mmPerPx: number,
+  trays: readonly FloorPlanTray[]
 ): string {
-  const font = READABLE_FONT_MM
-  const cands: NameCandidate[] = []
-  const at = new Map<string, { x: number; y: number; name: string }>()
-  for (const t of tiles) {
-    const name = tileName(t)
-    const g = growOf(t)
-    if (!name || g <= 1) continue
-    // In paper mm.
-    const cx = (t.x + t.width / 2) * CELL * mmPerPx
-    const cy = (t.y + t.height / 2) * CELL * mmPerPx
-    const top = cy + (t.height * CELL * mmPerPx * g) / 2 + 0.3
-    cands.push({
-      id: t.id,
-      ...nameBox(name, cx, top, font),
-      priority: namePriority(t),
-    })
-    at.set(t.id, { x: cx / mmPerPx, y: (top + font) / mmPerPx, name })
-  }
-  const shown = thinNames(cands, 10)
-  const size = +(font / mmPerPx).toFixed(2)
-  const parts: string[] = []
-  for (const [id, p] of at) {
-    if (!shown.has(id)) continue
+  const r = (n: number) => +n.toFixed(2)
+  const font = r(LABEL_FONT_MM / mmPerPx)
+  const halo = r(font * 0.27)
+  const color = new Map(trays.map((t) => [t.id, t.color || TRAY_DEFAULT]))
+  const along = (l: AlongLabel, fill: string, weight: number) => {
     const attrs = {
-      x: +p.x.toFixed(2),
-      y: +p.y.toFixed(2),
+      transform: `translate(${r(l.at[0] * CELL)},${r(l.at[1] * CELL)})${l.angle ? ` rotate(${r(l.angle)})` : ""}`,
+      y: r(font * 0.35),
       "text-anchor": "middle",
-      "font-size": size,
-      "font-weight": 500,
+      "font-size": font,
+      "font-weight": weight,
     }
-    parts.push(
-      text(clipName(p.name), {
+    const body = l.suffix
+      ? `${esc(l.text)}<tspan fill="${MUTED_INK}">${esc(l.suffix)}</tspan>`
+      : esc(l.text)
+    return (
+      text(l.text + (l.suffix ?? ""), {
         ...attrs,
         fill: "#ffffff",
         stroke: "#ffffff",
-        "stroke-width": +(size * 0.27).toFixed(2),
+        "stroke-width": halo,
         "stroke-linejoin": "round",
-      }) + text(clipName(p.name), { ...attrs, fill: PAPER_INK })
+      }) + `<text${markupAttrs({ ...attrs, fill })}>${body}</text>`
     )
   }
-  return parts.length
-    ? `<g data-layer="readable-names">${parts.join("")}</g>`
-    : ""
+  const parts: string[] = []
+  for (const l of labels.trays)
+    parts.push(along(l, color.get(l.id) ?? TRAY_DEFAULT, 600))
+  for (const l of labels.bundles) parts.push(along(l, PAPER_INK, 600))
+  for (const l of labels.cables) parts.push(along(l, PAPER_INK, 500))
+  const chipFont = r(CHIP_FONT_MM / mmPerPx)
+  for (const l of labels.ends) {
+    const { w, h } = textSize(l.text, chipFont)
+    const x = l.at[0] * CELL
+    const y = l.at[1] * CELL
+    parts.push(
+      el("rect", {
+        x: r(x - w / 2),
+        y: r(y - h / 2),
+        width: r(w),
+        height: r(h),
+        rx: r(h * 0.2),
+        fill: "#ffffff",
+        stroke: "#d4d4d8",
+        "stroke-width": r(0.15 / mmPerPx),
+      }) +
+        text(l.text, {
+          x: r(x),
+          y: r(y + chipFont * 0.35),
+          "text-anchor": "middle",
+          "font-size": chipFont,
+          fill: PAPER_INK,
+        })
+    )
+  }
+  const names = labels.tiles.map((l) => {
+    const attrs = {
+      x: r(l.at[0] * CELL),
+      y: r(l.at[1] * CELL + font * 0.35),
+      "text-anchor": "middle",
+      "font-size": font,
+      "font-weight": 500,
+    }
+    return (
+      text(l.text, {
+        ...attrs,
+        fill: "#ffffff",
+        stroke: "#ffffff",
+        "stroke-width": halo,
+        "stroke-linejoin": "round",
+      }) + text(l.text, { ...attrs, fill: PAPER_INK })
+    )
+  })
+  return (
+    (parts.length ? `<g data-layer="plan-labels">${parts.join("")}</g>` : "") +
+    (names.length ? `<g data-layer="readable-names">${names.join("")}</g>` : "")
+  )
+}
+
+/** A tile too thin, or a photo too small, to read on paper: its symbol -
+ * a rounded box in its colour at the drawn size (`box`, cells). */
+function symbolMarkup(t: FloorPlanTile, box: CellBox): string {
+  const r = (n: number) => +n.toFixed(2)
+  const w = box.w * CELL
+  const h = box.h * CELL
+  return el("rect", {
+    x: r(box.x * CELL),
+    y: r(box.y * CELL),
+    width: r(w),
+    height: r(h),
+    rx: r(Math.min(w, h) * 0.2),
+    fill: tileFill(t),
+    "fill-opacity": 0.9,
+    stroke: tileFill(t),
+    "data-symbol": t.id,
+  })
 }
 
 /** The plan as SVG markup, `viewBox="0 0 W H"` in plan pixels. */
@@ -1106,15 +1144,61 @@ export function planSvg({
   // Readable on paper: mm per cell, and how much each tile grows.
   const readable = objectSize === "readable"
   const mmPerCell = CELL * paperMmPerPx
-  const growOf = (t: FloorPlanTile) =>
-    readable && !(t.tile_type?.is_zone ?? false)
-      ? growFactor(t.width, t.height, mmPerCell, READABLE_SYMBOL_MM)
-      : 1
+  const shapeOf = (t: FloorPlanTile) =>
+    readableShape(t, mmPerCell, {
+      minLong: READABLE_SYMBOL_MM,
+      minShort: READABLE_SHORT_MM,
+      // No photos on paper: only a tile too thin turns symbol.
+      minPhoto: 0,
+    })
+  const growOf = (t: FloorPlanTile) => (readable ? shapeOf(t).grow : 1)
   if (readable && cables?.stubs)
     cables = {
       ...cables,
-      stubs: growStubs(cables.stubs, tiles, mmPerCell, READABLE_SYMBOL_MM),
+      stubs: growStubs(
+        cables.stubs,
+        tiles,
+        mmPerCell,
+        READABLE_SYMBOL_MM,
+        READABLE_SHORT_MM
+      ),
     }
+  // The one label pass, at the paper's scale: plan labels, the cables'
+  // names along their runs, the trays', the tiles', the areas'.
+  const areaGrow = readable ? fontGrow(12, paperMmPerPx, READABLE_FONT_MM) : 1
+  const paper = cables ? paperCables(cables) : null
+  const labels = layoutPlanLabels({
+    scale: mmPerCell,
+    unitsPerPx: paperMmPerPx,
+    font: LABEL_FONT_MM,
+    chipFont: CHIP_FONT_MM,
+    repeat: LABEL_REPEAT_MM,
+    gap: 0.6,
+    tiles,
+    shapeOf: readable ? shapeOf : null,
+    zoneGrow: readable ? fontGrow(10, paperMmPerPx, READABLE_FONT_MM) : 1,
+    trays: showTrays ? trays : [],
+    trayWidth: readable
+      ? Math.max(10 * paperMmPerPx, READABLE_TRAY_MM)
+      : 10 * paperMmPerPx,
+    areas: shapes.filter((x): x is AreaShape => x.kind === "area"),
+    areaFontPx: 12 * areaGrow,
+    planLabels: shapes.filter((x): x is LabelShape => x.kind === "label"),
+    cellMm: plan.cell_mm,
+    cables:
+      cables && paper
+        ? {
+            paths: cables.paths,
+            routes: cables.routes,
+            layout: paper.layout,
+            bundled: paper.bundled,
+            names: cables.labels,
+            focus: new Set(cables.highlight ?? []),
+            lengths: paper.lod === "near",
+            ends: true,
+          }
+        : undefined,
+  })
   const isZone = (t: FloorPlanTile) => t.tile_type?.is_zone ?? false
   const body: string[] = []
   for (const a of areas) {
@@ -1139,28 +1223,33 @@ export function planSvg({
   for (const t of tiles)
     if (isZone(t)) body.push(zoneMarkup(t, showZoneLabels, zoneGrow))
   // Rooms and areas: over the zones, under the tiles.
-  const areaGrow = readable ? fontGrow(12, paperMmPerPx, READABLE_FONT_MM) : 1
   for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
-    body.push(areaMarkup(s, pat, areaGrow))
+    body.push(areaMarkup(s, pat, areaGrow, labels.areas.get(s.id)))
   const free = plan.layout_mode === "free"
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
   const ordered = readable
     ? [
-        ...solid.filter((t) => growOf(t) <= 1),
-        ...solid.filter((t) => growOf(t) > 1),
+        ...solid.filter((t) => !shapeOf(t).changed),
+        ...solid.filter((t) => shapeOf(t).changed),
       ]
     : solid
   for (const t of ordered) {
     // A free plan's tile turned past its quarter turn (shapes.ts).
     const r = free ? tileBox(t).rotation : 0
+    // Too thin to read: its symbol at the drawn size.
+    const shape = readable ? shapeOf(t) : null
+    if (shape?.symbol) {
+      body.push(symbolMarkup(t, shape.box))
+      continue
+    }
     const g = growOf(t)
     const markup = tileMarkup(
       r ? { ...t, orientation: tileQuarter(t.orientation) } : t,
       colorBy,
       figures?.get(t.id),
       liveState?.tiles[t.id],
-      g > 1
+      labels.tileNamesHere.has(t.id)
     )
     const ccx = (t.x + t.width / 2) * CELL
     const ccy = (t.y + t.height / 2) * CELL
@@ -1177,9 +1266,9 @@ export function planSvg({
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays)
     for (const tray of trays)
-      body.push(trayMarkup(tray, readable ? paperMmPerPx : null))
+      body.push(trayMarkup(tray, readable ? paperMmPerPx : null, true))
   if (cables) body.push(cablesMarkup(cables))
-  if (readable) body.push(readableNamesMarkup(ordered, growOf, paperMmPerPx))
+  body.push(labelsMarkup(labels, paperMmPerPx, showTrays ? trays : []))
   // Labels over everything, as on the canvas.
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm, readable ? paperMmPerPx : null))

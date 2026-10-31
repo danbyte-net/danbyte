@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import type { UseMutationResult } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -95,7 +102,7 @@ const group = (c: HTMLElement, id: string) =>
   c.querySelector<SVGGElement>(`g[data-tile="${id}"]`)!.parentElement!
 
 describe("Readable on the canvas", () => {
-  it("grows a small tile about its centre and names it", () => {
+  it("grows a small tile about its centre and names it", async () => {
     const { container } = draw("readable")
     const g = group(container, "a")
     expect(g.hasAttribute("data-grown")).toBe(true)
@@ -105,7 +112,11 @@ describe("Readable on the canvas", () => {
     )!
     expect(+m[1]).toBe(100.5 * 40)
     expect(+m[3]).toBeCloseTo(28 / 6)
-    // Its own name gives way to the names layer's, 11 px on screen.
+    // Its own name gives way to the label pass's, 11 px on screen, once
+    // the zoom settles.
+    await waitFor(() =>
+      expect(container.querySelectorAll("[data-readable-name]")).toHaveLength(2)
+    )
     const names = container.querySelectorAll("[data-readable-name]")
     expect([...names].map((n) => n.textContent)).toEqual(["Rack A1", "Rack B1"])
     expect(+names[0].getAttribute("font-size")! * 0.15).toBeCloseTo(11)
@@ -250,7 +261,7 @@ describe("Readable trays", () => {
     cables: ["c1", "c2"],
     hidden_cable_count: 0,
   } as unknown as FloorPlanTray
-  const shape = (readable: boolean) =>
+  const shape = (readable: boolean, zoom = 0.05) =>
     render(
       <svg>
         <TrayShape
@@ -265,7 +276,7 @@ describe("Readable trays", () => {
           onVertexDown={() => {}}
           onInsertBend={() => {}}
           onVertexContext={() => {}}
-          zoom={0.05}
+          zoom={zoom}
           readable={readable}
         />
       </svg>
@@ -273,16 +284,32 @@ describe("Readable trays", () => {
 
   it("keeps a least width and a readable count from afar", () => {
     const c = shape(true)
-    const w = +c.querySelector("polyline")!.getAttribute("stroke-width")!
+    const w = +c
+      .querySelector("polyline[data-part=channel]")!
+      .getAttribute("stroke-width")!
     expect(w * 0.05).toBeCloseTo(READABLE_TRAY_PX)
+    // On a casing a little wider, in the background's colour.
+    const casing = c.querySelector("polyline[data-part=casing]")!
+    expect(casing.getAttribute("stroke")).toBe("var(--background)")
+    expect(+casing.getAttribute("stroke-width")!).toBeGreaterThan(w)
     const t = c.querySelector("text")!
     expect(t.textContent).toBe("Duct A · 2")
     expect(+t.getAttribute("font-size")! * 0.05).toBeCloseTo(11)
   })
 
-  it("Real keeps the 10 px channel", () => {
-    const c = shape(false)
-    expect(c.querySelector("polyline")!.getAttribute("stroke-width")).toBe("10")
+  it("Real keeps the 10 px channel up close, never a hairline from afar", () => {
+    const near = shape(false, 1)
+    expect(
+      near
+        .querySelector("polyline[data-part=channel]")!
+        .getAttribute("stroke-width")
+    ).toBe("10")
+    cleanup()
+    const far = shape(false)
+    const w = +far
+      .querySelector("polyline[data-part=channel]")!
+      .getAttribute("stroke-width")!
+    expect(w * 0.05).toBeCloseTo(4)
   })
 
   it("on paper: at least READABLE_TRAY_MM, its count at READABLE_FONT_MM", () => {
@@ -295,7 +322,7 @@ describe("Readable trays", () => {
       mmPerPx,
     })
     const d = new DOMParser().parseFromString(svg, "image/svg+xml")
-    const line = d.querySelector("polyline")!
+    const line = d.querySelector("polyline:not([data-part=casing])")!
     expect(+line.getAttribute("stroke-width")! * mmPerPx).toBeCloseTo(
       READABLE_TRAY_MM,
       2
