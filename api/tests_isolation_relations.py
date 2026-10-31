@@ -398,10 +398,12 @@ class PlanningBoardTests(_TwoTenants):
         self.label_b = TaskLabel.objects.create(tenant=self.b, name="Secret label")
 
     def test_status_and_milestone_cannot_move_boards(self):
-        from planning.models import Milestone
+        from planning.models import Milestone, TaskStatus
 
-        ms = Milestone.objects.create(tenant=self.a, board=self.board, name="m")
-        for url in (f"/api/planning/statuses/{self.todo.id}/",
+        # Names B's board doesn't use, so only the tenant check can refuse.
+        ms = Milestone.objects.create(tenant=self.a, board=self.board, name="only-a")
+        st = TaskStatus.objects.create(tenant=self.a, board=self.board, name="Only A")
+        for url in (f"/api/planning/statuses/{st.id}/",
                     f"/api/planning/milestones/{ms.id}/"):
             r = self.client.patch(url, {"board": str(self.board_b.id)}, format="json")
             self.assertRejected(r, "board")
