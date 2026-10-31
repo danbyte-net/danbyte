@@ -85,6 +85,20 @@ def _segment_intersect(a: Pt, b: Pt, c: Pt, d: Pt):
     return (a[0] + t * rx, a[1] + t * ry), t, u
 
 
+def _along_tray(
+    poly: list[Pt], arc: list[float], pos_a: float, pos_b: float, pa: Pt, pb: Pt
+) -> list[Pt]:
+    """The run along one tray from arc position ``pos_a`` (point ``pa``) to
+    ``pos_b`` (``pb``), through the vertices between: both drop points even
+    when they coincide, so the run reads as a (zero-length) stretch of the
+    tray."""
+    lo, hi = sorted((pos_a, pos_b))
+    mid = [p for p, at in zip(poly, arc, strict=True) if lo + 1e-9 < at < hi - 1e-9]
+    if pos_b < pos_a:
+        mid.reverse()
+    return [pa, *mid, pb]
+
+
 @dataclass
 class RouteResult:
     """A computed route. ``points`` in cell units; ``tray_indexes`` index into
@@ -207,7 +221,7 @@ def route_through_trays(
 
     # Entry/exit: project A and B onto their nearest tray - but only within
     # max_entry, otherwise the endpoint simply isn't served by the network.
-    def entry_point(p: Pt) -> tuple[Pt, int] | None:
+    def entry_point(p: Pt) -> tuple[Pt, int, float] | None:
         best_d, best_pt, best_ti, best_seg, best_t = math.inf, p, 0, 0, 0.0
         for ti, poly in enumerate(trays):
             pt, d, seg, t = _project_polyline(p, poly)
@@ -215,10 +229,9 @@ def route_through_trays(
                 best_d, best_pt, best_ti, best_seg, best_t = d, pt, ti, seg, t
         if best_d > max_entry:
             return None
-        breakpoints[best_ti].append(
-            (pos_on_tray(best_ti, best_seg, best_t), best_pt)
-        )
-        return best_pt, best_ti
+        pos = pos_on_tray(best_ti, best_seg, best_t)
+        breakpoints[best_ti].append((pos, best_pt))
+        return best_pt, best_ti, pos
 
     entry_a = entry_point(a)
     entry_b = entry_point(b)
@@ -237,7 +250,7 @@ def route_through_trays(
             )
 
     # Endpoint hops (straight-line ends outside the network).
-    (pa, ta), (pb, tb) = entry_a, entry_b
+    (pa, ta, pos_a), (pb, tb, pos_b) = entry_a, entry_b
     na, nb = node_at(a), node_at(b)
     edge(na, node_at(pa, level[ta]), _dist(a, pa), None)
     edge(nb, node_at(pb, level[tb]), _dist(b, pb), None)
@@ -259,8 +272,20 @@ def route_through_trays(
                 best[v] = nd
                 prev[v] = (u, tray)
                 heapq.heappush(heap, (nd, v))
-    if best[nb] is math.inf or best[nb] == math.inf:
-        return straight
+    # Both ends drop onto one tray (racks either side of it, one segment
+    # or the same point): drop, along the tray between the two drop points,
+    # drop. Dijkstra alone misses it when the drops merge into one node -
+    # the path then rides no tray edge at all.
+    same = None
+    if ta == tb:
+        same = RouteResult(
+            reachable=True,
+            points=[a, *_along_tray(trays[ta], arcs[ta], pos_a, pos_b, pa, pb), b],
+            tray_indexes=[keep[ta]],
+            run_cells=_dist(a, pa) + abs(pos_b - pos_a) + _dist(pb, b),
+        )
+    if best[nb] == math.inf:
+        return same or straight
 
     points: list[Pt] = []
     tray_order: list[int] = []
@@ -276,6 +301,8 @@ def route_through_trays(
     # Deduplicate while keeping first-use order.
     seen: set[int] = set()
     trays_used = [keep[t] for t in tray_order if not (t in seen or seen.add(t))]
+    if same is not None and (not trays_used or same.run_cells <= best[nb] + 1e-9):
+        return same
     return RouteResult(
         reachable=True,
         points=points,

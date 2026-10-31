@@ -5435,7 +5435,11 @@ class CableViewSet(TenantScopedViewSet):
         list is point-to-point - a legitimate answer, not a no-op. When both
         ends are placed on the plan, the route through those trays (or the
         direct run) is stored as the cable's path there, in travel order;
-        ``path`` answers it (null when there is none).
+        ``path`` answers it (null when there is none). The PUT also answers
+        ``reachable``, like auto-route: false (with ``detail``) when the
+        trays named do not connect the two ends - the assignment is kept,
+        but no path is stored and any earlier one is removed; null when no
+        route applies (an end not placed on the plan, or both on one tile).
 
         The auto-route action picks the trays for you; this is the manual
         twin, so an operator can see what a run follows and name the exact
@@ -5457,6 +5461,7 @@ class CableViewSet(TenantScopedViewSet):
         if plan is None:
             return Response({"detail": "Unknown floor plan."}, status=400)
         path = None
+        extra = {}
 
         def shape(trays):
             return [
@@ -5495,8 +5500,23 @@ class CableViewSet(TenantScopedViewSet):
                 if route is not None and (route["reachable"] or not chosen):
                     route["tray_order"] = [str(t.id) for t in chosen]
                     path = save_path(plan, cable, route, sync_trays=False)
+                    extra["reachable"] = True
                 else:
                     delete_path(plan, cable)
+                    if route is None:
+                        extra["reachable"] = None
+                        if chosen:
+                            extra["detail"] = (
+                                "Trays assigned. No route is stored: both ends must be "
+                                "placed on this plan, on different tiles."
+                            )
+                    else:
+                        extra["reachable"] = False
+                        extra["detail"] = (
+                            "Trays assigned, but they do not connect the two ends, so no "
+                            "route is stored. Add the missing tray or pick trays that "
+                            "join both ends."
+                        )
         else:
             path = FloorPlanCablePath.objects.filter(floor_plan=plan, cable=cable).first()
             chosen = [t for t in cable.trays.all() if t.floor_plan_id == plan.id]
@@ -5510,6 +5530,7 @@ class CableViewSet(TenantScopedViewSet):
             "trays": shape(chosen),
             "available": shape(plan.trays.all()),
             "path": path_data(path) if path is not None else None,
+            **extra,
         })
 
     @action(detail=True, methods=["get"], url_path="floor-plan")
@@ -11356,14 +11377,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 if spot is not None:
                     bx, by = spot
                 # The back button looks like the button that leads there; an
-                # area's gets a size that reads on the target at fit zoom.
+                # area's gets a size that reads on the target at fit zoom. A
+                # copied size is held to the target too: a plate made for a
+                # 300 m campus would swamp an 80-cell room.
+                span = min(crop.w, crop.h) if crop is not None \
+                    else min(dst.grid_width, dst.grid_height)
+                fit = int(min(5000, max(300, span * (dst.cell_mm or 600) * 0.03)))
                 if isinstance(shape, FloorPlanLabel):
                     style = {f: getattr(shape, f) for f in (
                         "font_mm", "weight", "color", "plate", "plate_color")}
+                    style["font_mm"] = max(300, min(style["font_mm"] or 300, fit))
                 else:
-                    span = min(crop.w, crop.h) if crop is not None \
-                        else min(dst.grid_width, dst.grid_height)
-                    style = {"font_mm": int(min(5000, max(300, span * (dst.cell_mm or 600) * 0.03)))}
+                    style = {"font_mm": fit}
                 style.setdefault("plate", True)
                 FloorPlanLabel.objects.create(
                     floor_plan=dst, text=text or f"Back to {here_name}"[:500],
