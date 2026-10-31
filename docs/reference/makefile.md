@@ -52,6 +52,7 @@ These use the project venv automatically.
 | `make check` | `python manage.py check` |
 | `make seed-demo` | Opt-in demo IPAM data (`seed_demo`, `seed_demo_172`); idempotent |
 | `make seed-fabric` | Opt-in leaf/spine EVPN fabric for the routing pages (`seed_fabric`); idempotent |
+| `make seed-floorplan-demo TENANT=<slug>` | Opt-in demo floor plan in that tenant (`seed_floorplan_demo`, see [Floor plans](../features/floor-plans.md#try-it-the-demo-floor-plan)); idempotent |
 
 ## Root steps
 
