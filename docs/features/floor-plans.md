@@ -876,8 +876,9 @@ a room that opens its snapshot.
   label on the target that opens this plan back - "Back to Site" unless you
   write your own text below the switch. Each side's text is its own:
   renaming one never renames the other. The label lands in the target's
-  top left - on a live view, on the view's source in the view's top left,
-  shown only in that view (never on the source or its other views) - and
+  top left - on a live view, on the view's source in the view's top left
+  (just inside the room's outline when the view follows a room, so the
+  dimming never covers it), shown only in that view (never on the source or its other views) - and
   is an ordinary label there, to move and restyle. A live view also hides
   the shapes of its source that open the view itself, so "Go to B1" shows
   on the main plan and "Go back" in the B1 view. Picking another target offers to move the back label with it;
