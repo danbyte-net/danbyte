@@ -848,6 +848,9 @@ export function FloorPlanEditor({
           liveState: liveState.data ?? null,
           showZoneLabels: prefs.showZoneLabels,
           showTrays: prefs.showTrays,
+          // Readable on paper as on screen, at the sheet's scale.
+          objectSize: prefs.objectSize,
+          mmPerPx: planPaperScale(plan, paper),
           cables: withCables
             ? {
                 paths: shownCables,

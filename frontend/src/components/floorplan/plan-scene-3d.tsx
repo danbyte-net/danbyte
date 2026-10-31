@@ -73,6 +73,7 @@ export function PlanScene3D({
           pointTileIds={capacity.highlightTileIds}
           focusRack={rackFocus}
           areas={areas?.filter((s) => s.kind === "area")}
+          readableNames={prefs.objectSize === "readable"}
           drawingFloor={
             cadFloorUrl && cad.drawing
               ? {

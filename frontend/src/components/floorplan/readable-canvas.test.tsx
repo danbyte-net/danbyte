@@ -1,0 +1,209 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import type { UseMutationResult } from "@tanstack/react-query"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+import type { FloorPlan, FloorPlanTile } from "@/lib/api"
+import { TooltipProvider } from "@/components/ui/tooltip"
+
+import { DisplayMenu } from "./display-menu"
+import { FloorCanvas } from "./floor-canvas"
+import { planSvg } from "./plan-svg"
+import { READABLE_FONT_MM, READABLE_SYMBOL_MM } from "./readable"
+import type { ObjectSize } from "./readable"
+import { usePlanViewPrefs } from "./use-plan-view-prefs"
+
+// Display > Object size, Readable: zoomed out, a placed object draws at a
+// least size on screen centred on its place, still takes the pointer, and
+// its name reads at a constant size; the paper export does the same in mm.
+// The pref saves with the plan for an editor, and stays local for a viewer.
+
+vi.mock("@/lib/use-me", () => ({ useMe: () => ({}) }))
+Element.prototype.scrollIntoView = () => {}
+Element.prototype.hasPointerCapture = () => false
+Element.prototype.setPointerCapture = () => {}
+if (!("ResizeObserver" in globalThis)) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
+afterEach(cleanup)
+
+const plan = {
+  id: "p1",
+  name: "Site",
+  grid_width: 512,
+  grid_height: 266,
+  cell_mm: 1200,
+  ceiling_mm: 3000,
+  background_image: null,
+  background_opacity: 60,
+  state: {},
+} as unknown as FloorPlan
+
+const tile = (id: string, x: number, y: number, name: string): FloorPlanTile =>
+  ({
+    id,
+    x,
+    y,
+    width: 1,
+    height: 1,
+    orientation: 0,
+    tile_type: null,
+    role_type: null,
+    label: "",
+    color: "#2563eb",
+    status: "",
+    linked: { kind: "rack", id: `r-${id}`, name, route: "/racks/x" },
+    fov_anchor: "",
+    fov_ptz: false,
+  }) as unknown as FloorPlanTile
+
+const tiles = [tile("a", 100, 100, "Rack A1"), tile("b", 300, 100, "Rack B1")]
+
+function draw(objectSize: ObjectSize, onClickTile = vi.fn()) {
+  const r = render(
+    <FloorCanvas
+      plan={plan}
+      tiles={tiles}
+      selectedId={null}
+      editable={false}
+      showGrid={false}
+      armed={null}
+      objectSize={objectSize}
+      onClickTile={onClickTile}
+    />
+  )
+  // Zoom right out: the wheel's floor, 0.15 - 6 px a cell.
+  const svg = r.container.querySelector("svg")!
+  act(() => {
+    fireEvent.wheel(svg, { deltaY: 3000 })
+  })
+  return { ...r, onClickTile }
+}
+
+const group = (c: HTMLElement, id: string) =>
+  c.querySelector<SVGGElement>(`g[data-tile="${id}"]`)!.parentElement!
+
+describe("Readable on the canvas", () => {
+  it("grows a small tile about its centre and names it", () => {
+    const { container } = draw("readable")
+    const g = group(container, "a")
+    expect(g.hasAttribute("data-grown")).toBe(true)
+    // 28 px over 6 px a cell, about the tile's centre (100.5 cells).
+    const m = /translate\(([\d.]+),([\d.]+)\) scale\(([\d.]+)\)/.exec(
+      g.getAttribute("transform") ?? ""
+    )!
+    expect(+m[1]).toBe(100.5 * 40)
+    expect(+m[3]).toBeCloseTo(28 / 6)
+    // Its own name gives way to the names layer's, 11 px on screen.
+    const names = container.querySelectorAll("[data-readable-name]")
+    expect([...names].map((n) => n.textContent)).toEqual(["Rack A1", "Rack B1"])
+    expect(+names[0].getAttribute("font-size")! * 0.15).toBeCloseTo(11)
+    // The 8 px markers are Real's.
+    expect(container.querySelector("[data-tile-marker]")).toBeNull()
+  })
+
+  it("the grown symbol takes the pointer", () => {
+    const { container, onClickTile } = draw("readable")
+    fireEvent.pointerDown(container.querySelector('g[data-tile="b"]')!, {
+      button: 0,
+    })
+    expect(onClickTile).toHaveBeenCalledWith(tiles[1])
+  })
+
+  it("Real draws the tile at its size, with its marker", () => {
+    const { container } = draw("real")
+    expect(group(container, "a").hasAttribute("data-grown")).toBe(false)
+    expect(container.querySelector("[data-readable-name]")).toBeNull()
+    expect(container.querySelector("[data-tile-marker]")).toBeTruthy()
+  })
+})
+
+describe("Readable on paper", () => {
+  const mmPerPx = 0.02
+  const doc = (objectSize: ObjectSize) =>
+    new DOMParser().parseFromString(
+      planSvg({ plan, tiles, objectSize, mmPerPx }),
+      "image/svg+xml"
+    )
+
+  it("draws objects at least READABLE_SYMBOL_MM, names at READABLE_FONT_MM", () => {
+    const d = doc("readable")
+    const grown = [...d.querySelectorAll("g[transform]")].find((g) =>
+      g.getAttribute("transform")!.includes("scale(")
+    )!
+    const scale = +/scale\(([\d.]+)\)/.exec(
+      grown.getAttribute("transform")!
+    )![1]
+    // 40 px a cell at 0.02 mm a px: 0.8 mm, grown to 5 mm.
+    expect(scale * 40 * mmPerPx).toBeCloseTo(READABLE_SYMBOL_MM, 2)
+    const names = d.querySelectorAll('[data-layer="readable-names"] text')
+    expect([...names].map((n) => n.textContent)).toContain("Rack A1")
+    expect(+names[0].getAttribute("font-size")! * mmPerPx).toBeCloseTo(
+      READABLE_FONT_MM,
+      2
+    )
+  })
+
+  it("Real stays as it was", () => {
+    const d = doc("real")
+    expect(d.querySelector('[data-layer="readable-names"]')).toBeNull()
+    expect(
+      [...d.querySelectorAll("g[transform]")].some((g) =>
+        g.getAttribute("transform")!.includes("scale(")
+      )
+    ).toBe(false)
+  })
+})
+
+function Harness({
+  canEdit,
+  mutate,
+}: {
+  canEdit: boolean
+  mutate: (v: unknown) => void
+}) {
+  const prefs = usePlanViewPrefs({
+    id: "p1",
+    plan,
+    canEdit,
+    patchPlan: { mutate } as unknown as UseMutationResult<
+      FloorPlan,
+      Error,
+      Record<string, unknown>
+    >,
+  })
+  return (
+    <TooltipProvider>
+      <span data-testid="size">{prefs.objectSize}</span>
+      <DisplayMenu view3d={false} prefs={prefs} />
+    </TooltipProvider>
+  )
+}
+
+describe("Display > Object size", () => {
+  it("is Real by default and saves Readable on the plan for an editor", async () => {
+    const mutate = vi.fn()
+    render(<Harness canEdit mutate={mutate} />)
+    expect(screen.getByTestId("size").textContent).toBe("real")
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Readable" }))
+    expect(screen.getByTestId("size").textContent).toBe("readable")
+    expect(mutate).toHaveBeenCalledWith({
+      state: { object_size: "readable" },
+    })
+  })
+
+  it("is the viewer's own without change rights", async () => {
+    const mutate = vi.fn()
+    render(<Harness canEdit={false} mutate={mutate} />)
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Readable" }))
+    expect(screen.getByTestId("size").textContent).toBe("readable")
+    expect(mutate).not.toHaveBeenCalled()
+  })
+})

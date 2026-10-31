@@ -6,7 +6,7 @@ import { useMaxAnisotropy } from "./texture-quality"
 /** Render text to a canvas texture (system font - no network fetch, so it's
  * airgap/CSP-safe, unlike drei's troika `<Text>`). Returns the texture plus
  * its pixel width/height so callers can size a plane to the text aspect. */
-function textTexture(
+export function textTexture(
   text: string,
   {
     color = "#e4e4e7",

@@ -15,6 +15,8 @@ import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { readCableColorBy } from "./cable-draw"
 import type { CableColorBy } from "./cable-draw"
 import { readFloorHidden } from "./hidden"
+import { readObjectSize } from "./readable"
+import type { ObjectSize } from "./readable"
 import type { FloorHidden } from "./hidden"
 import { readColorBy } from "./tile-paint"
 import type { ColorBy } from "./tile-paint"
@@ -47,6 +49,7 @@ export type ViewPrefKey =
   | "cable_color_by"
   | "show_cable_labels"
   | "bundle_cables"
+  | "object_size"
 
 /** The plan's view preferences: seeded from plan.state, a session override
  * on top, persisted back to the plan for editors. The 3D effects budget and
@@ -105,6 +108,10 @@ export function usePlanViewPrefs({
   const [bundleCablesLocal, setBundleCablesLocal] = useState<boolean | null>(
     null
   )
+  // Object size: true size, or a readable least size from afar.
+  const [objectSizeLocal, setObjectSizeLocal] = useState<ObjectSize | null>(
+    null
+  )
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -146,6 +153,7 @@ export function usePlanViewPrefs({
     setCableColorByLocal(null)
     setCableLabelsLocal(null)
     setBundleCablesLocal(null)
+    setObjectSizeLocal(null)
   }, [id])
 
   // View prefs: seeded from the plan's saved state; editors persist toggles.
@@ -255,11 +263,15 @@ export function usePlanViewPrefs({
     (plan?.state.bundle_cables as boolean | undefined) ??
     true
 
+  // Real (the plan as it always looked) unless the plan asks for Readable.
+  const objectSize = objectSizeLocal ?? readObjectSize(plan?.state.object_size)
+
   const setViewPref = (
     key: ViewPrefKey,
-    value: boolean | "all" | "selected" | ColorBy | CableColorBy
+    value: boolean | "all" | "selected" | ColorBy | CableColorBy | ObjectSize
   ) => {
-    if (key === "label_fit") setLabelFitLocal(value as boolean)
+    if (key === "object_size") setObjectSizeLocal(value as ObjectSize)
+    else if (key === "label_fit") setLabelFitLocal(value as boolean)
     else if (key === "cable_color_by")
       setCableColorByLocal(value as CableColorBy)
     else if (key === "show_cable_labels") setCableLabelsLocal(value as boolean)
@@ -318,6 +330,7 @@ export function usePlanViewPrefs({
     cableColorBy,
     showCableLabels,
     bundleCables,
+    objectSize,
     quality3d,
     setQuality3d,
     cableScale,

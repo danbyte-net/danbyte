@@ -77,6 +77,7 @@ import type { AreaShape } from "@/components/floorplan/shapes"
 import { AreaFloorMesh } from "./area-floor-mesh"
 import { RaisedFloorMesh } from "./raised-floor-mesh"
 import { NoWebGL, Stage, roomLights } from "./stage"
+import { ReadableNames3D } from "./readable-names"
 import { TileGhostMesh } from "./tile-ghost-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
@@ -128,6 +129,7 @@ export default function FloorScene3D({
   focusRack = null,
   drawingFloor = null,
   areas = [],
+  readableNames = false,
 }: {
   planId: string
   liveState: FloorPlanLiveState | null
@@ -174,6 +176,9 @@ export default function FloorScene3D({
   drawingFloor?: DrawingFloor | null
   /** Rooms and areas drawn on the plan: flat tints on the floor. */
   areas?: AreaShape[]
+  /** Display > Object size: Readable - every object's name at one size on
+   * screen, thinned (readable-names.tsx). */
+  readableNames?: boolean
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
@@ -665,6 +670,10 @@ export default function FloorScene3D({
   const shownCabinets = isolation
     ? cabinetTiles.filter((t) => isolation.ids.has(t.id))
     : cabinetTiles
+  // Readable: the names of what the room shows.
+  const namedTiles = nonZoneTiles.filter(
+    (t) => !hiddenTileIds?.has(t.id) && (!isolation || isolation.ids.has(t.id))
+  )
 
   // HUD front↔rear flip - same viewpoint math as the double-click fly-to.
   const flipView = () => {
@@ -717,6 +726,7 @@ export default function FloorScene3D({
           quality: rq,
           tints,
           pointed: pointTileIds,
+          readableNames,
         })}
         invalidateRef={invalidateRef}
         onPointerMissed={() => {
@@ -944,8 +954,20 @@ export default function FloorScene3D({
               (!isolation || isolation.ids.has(t.id))
           )
           .map((t) => (
-            <TileGhostMesh key={`ghost-${t.id}`} plan={plan} tile={t} />
+            <TileGhostMesh
+              key={`ghost-${t.id}`}
+              plan={plan}
+              tile={t}
+              showName={!readableNames}
+            />
           ))}
+        {readableNames && (
+          <ReadableNames3D
+            plan={plan}
+            tiles={namedTiles}
+            pinned={() => [selection?.tileId, hoverStore.get()]}
+          />
+        )}
         {showCables && (
           <CablesLayer
             planId={planId}
