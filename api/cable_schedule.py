@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import math
 from html import escape
 
 from django.db.models import Prefetch, Q
@@ -197,6 +198,12 @@ def build(plan, crop, user, tenant, *, group: str = "room",
             "room": room_of(d) if d else "", "on_floor": on_floor(dev_id), "hidden": False,
         }
 
+    def end_name(dev_id) -> str:
+        if dev_id is None or (viewable is not None and not viewable.may_view("device", dev_id)):
+            return ""
+        d = devices.get(dev_id)
+        return d.name if d is not None and d.name else ""
+
     paths = {
         p.cable_id: p for p in rbac.restrict_queryset(
             FloorPlanCablePath.objects.filter(floor_plan=plan, cable_id__in=visible)
@@ -236,7 +243,7 @@ def build(plan, crop, user, tenant, *, group: str = "room",
                 if p is not None else [
                     t for t in c.trays.all() if t.pk in tray_by_id
                 ],
-                [tile_of(dev) for _end, dev, _port in terms.get(c.pk, [])],
+                [(tile_of(dev), end_name(dev)) for _end, dev, _port in terms.get(c.pk, [])],
                 crop,
             )
         route = " → ".join(trays_in)
@@ -330,7 +337,10 @@ def _point(v) -> tuple[float, float] | None:
 
 
 def _geometry(path, trays, end_tiles, crop) -> dict:
-    """A cable's lines and boxes in plan cells (see :func:`build`)."""
+    """A cable's lines and boxes in plan cells (see :func:`build`):
+    ``end_tiles`` are (tile, device name) per end, the name "" when the
+    reader may not view the device; ``ends`` keeps the names with the
+    boxes."""
     from . import floor_plan_snapshots as snaps
 
     dx, dy = (crop.x, crop.y) if crop is not None else (0, 0)
@@ -349,10 +359,11 @@ def _geometry(path, trays, end_tiles, crop) -> dict:
             pts = [p for p in (_point(v) for v in t.points or []) if p is not None]
             if pts:
                 lines.append(pts)
-    boxes = [snaps.tile_box(t) for t in end_tiles if t is not None]
+    ends = [(*snaps.tile_box(t), name) for t, name in end_tiles if t is not None]
     return {
         "lines": [[(x - dx, y - dy) for x, y in line] for line in lines],
-        "boxes": [(x0 - dx, y0 - dy, x1 - dx, y1 - dy) for x0, y0, x1, y1 in boxes],
+        "boxes": [(x0 - dx, y0 - dy, x1 - dx, y1 - dy) for x0, y0, x1, y1, _n in ends],
+        "ends": [(x0 - dx, y0 - dy, x1 - dx, y1 - dy, n) for x0, y0, x1, y1, n in ends],
     }
 
 
@@ -502,11 +513,19 @@ def sheet_html(data: dict, *, title: str, subtitle: str, generated: dt.datetime,
             for r in listed
         )
         n = len(listed)
+        # At its own scale: the picture's paper size, centred in the frame.
+        size = ""
+        if cu.get("width_mm") and cu.get("height_mm"):
+            iw = min(cu["width_mm"], _cu_w)
+            ih = min(cu["height_mm"], _cu_h)
+            size = (f" style='width:{iw:.3f}mm;height:{ih:.3f}mm;"
+                    f"margin:{(_cu_h - ih) / 2:.3f}mm auto 0'")
+        ratio = f" · 1:{cu['ratio']}" if cu.get("ratio") else ""
         pages.append(
             "<section class='cu'>"
             f"<h2>Detail {escape(cu['label'])} "
-            f"<span>{n} {'cable' if n == 1 else 'cables'}</span></h2>"
-            f"<div class='cuimg'><img src='{escape(cu['url'])}' alt=''></div>"
+            f"<span>{n} {'cable' if n == 1 else 'cables'}{escape(ratio)}</span></h2>"
+            f"<div class='cuimg'><img src='{escape(cu['url'])}' alt=''{size}></div>"
             "<table><thead><tr><th>Cable</th><th>A end</th><th>B end</th><th>Route</th>"
             f"<th class='n'>Length</th></tr></thead><tbody>{trs}</tbody></table>"
             "</section>"
@@ -608,6 +627,11 @@ def _render(svg: bytes, **kwargs) -> bytes:
 
 
 CLOSEUP_MODES = ("auto", "on", "off")
+CLOSEUPS_HELP = (
+    "Close-up pages of the clusters of connected equipment: `auto` when a cell "
+    "would print under 2 mm on the overview or there are several clusters, `on` "
+    "whenever they print larger than the overview, `off`."
+)
 
 
 class CableSchedulePdfRequestSerializer(serializers.Serializer):
@@ -617,15 +641,46 @@ class CableSchedulePdfRequestSerializer(serializers.Serializer):
         trim_whitespace=False, max_length=MAX_SVG_BYTES, required=False, allow_blank=True,
         help_text="The plan with its routes, as the page draws it, for the first page.",
     )
-    detail_svg = serializers.CharField(
-        trim_whitespace=False, max_length=MAX_SVG_BYTES, required=False, allow_blank=True,
-        help_text="The same plan drawn for the close-ups (a cell 5 mm on paper).",
+    closeup_svgs = serializers.DictField(
+        child=serializers.CharField(trim_whitespace=False, max_length=MAX_SVG_BYTES),
+        required=False,
+        help_text="The plan drawn for each close-up, keyed by its label: its box as the "
+                  "viewBox, at its scale (`cable-schedule/closeups/`).",
     )
     closeups = serializers.ChoiceField(
-        choices=CLOSEUP_MODES, required=False, default="auto",
-        help_text="Close-up pages of the cabled parts: `auto` when a cell would print "
-                  "under 2 mm on the overview, `on` whenever they are larger, `off`.",
+        choices=CLOSEUP_MODES, required=False, default="auto", help_text=CLOSEUPS_HELP,
     )
+
+    def validate_closeup_svgs(self, value):
+        from .cable_schedule_plan import MAX_CLOSEUPS
+
+        if len(value) > MAX_CLOSEUPS:
+            raise serializers.ValidationError(f"At most {MAX_CLOSEUPS} close-ups.")
+        return value
+
+
+class CloseupLayoutSerializer(serializers.Serializer):
+    size = serializers.ChoiceField(choices=tuple(PAPERS_MM), required=False, default="a4")
+    orientation = serializers.ChoiceField(
+        choices=("landscape", "portrait"), required=False, default="landscape",
+    )
+    closeups = serializers.ChoiceField(
+        choices=CLOSEUP_MODES, required=False, default="auto", help_text=CLOSEUPS_HELP,
+    )
+    box = serializers.CharField(
+        help_text="The overview's viewBox (plan px): x,y,w,h.",
+    )
+
+    def validate_box(self, value):
+        from .cable_schedule_plan import Box
+
+        try:
+            x, y, w, h = (float(v) for v in value.replace(",", " ").split())
+        except ValueError:
+            raise serializers.ValidationError("Four numbers: x,y,w,h.") from None
+        if not all(math.isfinite(v) for v in (x, y, w, h)) or w <= 0 or h <= 0:
+            raise serializers.ValidationError("A finite box with a size.")
+        return Box(x, y, w, h)
 
 
 def _print_key(user_id, tenant_id) -> str:
@@ -635,7 +690,7 @@ def _print_key(user_id, tenant_id) -> str:
 class PlanPages:
     """The overview and close-ups of a schedule PDF, composed from the
     posted drawings (``cable_schedule_plan``): background and CAD drawing
-    under them, the close-ups cut where the cables are."""
+    under them, the close-ups framed round the clusters of cable ends."""
 
     def __init__(self, *, view, plan, crop, paper: str, orientation: str, mode: str,
                  geometry: dict):
@@ -653,6 +708,27 @@ class PlanPages:
         self.dropped = 0
         self.cad_note = ""
         self.pages: dict[str, bytes] = {}
+        self._cads: dict = {}
+
+    @property
+    def grid(self):
+        cp = self.cp
+        return cp.Box(0, 0, self.view.grid_width * cp.CELL, self.view.grid_height * cp.CELL)
+
+    def layout(self, box) -> tuple[list, float]:
+        """The close-up pages for an overview of ``box`` (plan px), and the
+        overview's scale."""
+        cp = self.cp
+        scale = cp.fit_scale(box, *cp.thumb_mm(self.paper, self.orientation))
+        _outer, cw, ch = cp.closeup_mm(self.paper, self.orientation)
+        if self.mode == "off":
+            return [], scale
+        pages, self.dropped = cp.closeup_layout(
+            self.geometry, content=box, grid=self.grid, page_mm=(cw, ch),
+            overview_mm_per_px=scale, mode=self.mode,
+            px_per_cell=self.background.px_per_cell(),
+        )
+        return pages, scale
 
     def _cad(self, mm_per_px: float):
         from .floor_plan_pdf import cad_group
@@ -660,19 +736,22 @@ class PlanPages:
 
         if self.drawing is None:
             return None
+        key = round(mm_per_px, 6)
+        if key in self._cads:
+            return self._cads[key]
+        g = None
         try:
             g, dropped = cad_group(self.drawing, paper_mm_per_px=mm_per_px,
                                    px_per_mm=self.cp.CELL / self.view.cell_mm)
+            if dropped:
+                self.cad_note = "Drawing text left out"
         except SvgTooLarge:
             self.cad_note = "Drawing left out: too large"
-            return None
         except (SvgRejected, OSError, etree.XMLSyntaxError) as exc:
             log.warning("Cable schedule PDF: CAD drawing of %s unreadable: %s",
                         self.view.pk, exc)
             self.cad_note = "Drawing left out: unreadable"
-            return None
-        if dropped:
-            self.cad_note = "Drawing text left out"
+        self._cads[key] = g
         return g
 
     def caption(self) -> str:
@@ -683,35 +762,37 @@ class PlanPages:
             parts.append(self.cad_note)
         return " · ".join(parts)
 
-    def compose(self, overview: bytes, detail: bytes | None) -> bytes:
-        """The overview SVG; the close-ups go into ``self.pages``."""
+    def compose(self, overview: bytes, details: dict[str, bytes]) -> bytes:
+        """The overview SVG; the close-ups go into ``self.pages``. A posted
+        close-up drawing (``details``, sanitised, by label) is used when its
+        viewBox is the page's box - else the page has the background, the
+        CAD drawing and the end tiles but not the plan drawing."""
         cp = self.cp
         posted = etree.fromstring(overview)
         grid = (self.view.grid_width * cp.CELL, self.view.grid_height * cp.CELL)
         box = cp.view_box(posted) or cp.Box(0, 0, *grid)
-        w_mm, h_mm = cp.thumb_mm(self.paper, self.orientation)
-        scale = cp.fit_scale(box, w_mm, h_mm)
-        if detail is not None and cp.wants_closeups(self.mode, scale):
-            dposted = etree.fromstring(detail)
-            content = cp.view_box(dposted) or box
-            _outer, cw, ch = cp.closeup_mm(self.paper, self.orientation)
-            pages, self.dropped = cp.closeup_pages(
-                content, self.geometry, cw / cp.CLOSEUP_MM_PER_PX, ch / cp.CLOSEUP_MM_PER_PX,
+        pages, scale = self.layout(box)
+        for page in pages:
+            drawing = None
+            if page.label in details:
+                drawing = etree.fromstring(details[page.label])
+                vb = cp.view_box(drawing)
+                if vb is None or not _same_box(vb, page.box):
+                    drawing = None
+            url = f"{BASE_URL}_/closeup-{page.label}.svg"
+            self.pages[url] = cp.compose(
+                drawing, page.box, grid=grid,
+                background=self.background.element(page.box, page.mm_per_px),
+                cad=self._cad(page.mm_per_px), ends=page.ends, mm_per_px=page.mm_per_px,
             )
-            dcad = self._cad(cp.CLOSEUP_MM_PER_PX) if pages else None
-            for page in pages:
-                url = f"{BASE_URL}_/closeup-{page.label}.svg"
-                self.pages[url] = cp.compose(
-                    dposted, page.box, grid=grid,
-                    background=self.background.element(page.box, cp.CLOSEUP_MM_PER_PX),
-                    cad=dcad,
-                )
-                self.closeups.append({"label": page.label, "url": url, "rows": page.cables})
-            self.frames = pages
-        cad = self._cad(scale)
+            w_mm, h_mm = page.size_mm
+            self.closeups.append({"label": page.label, "url": url, "rows": page.cables,
+                                  "width_mm": w_mm, "height_mm": h_mm,
+                                  "ratio": _ratio(self.view.cell_mm, page.mm_per_px * cp.CELL)})
+        self.frames = pages
         return cp.compose(
             posted, box, grid=grid, background=self.background.element(box, scale),
-            cad=cad, frames=self.frames, mm_per_px=scale,
+            cad=self._cad(scale), frames=self.frames, mm_per_px=scale,
         )
 
     def note(self) -> str:
@@ -720,6 +801,47 @@ class PlanPages:
         n = len(self.closeups)
         return (f"{n} close-ups of the busiest parts; {self.dropped} more "
                 f"{'part' if self.dropped == 1 else 'parts'} with cables not shown close up")
+
+
+def _ratio(cell_mm: float, paper_cell_mm: float) -> int | None:
+    """The 1:N a cell of ``cell_mm`` printed ``paper_cell_mm`` wide is, N to
+    two significant figures."""
+    if not cell_mm or paper_cell_mm <= 0:
+        return None
+    n = cell_mm / paper_cell_mm
+    if n < 1:
+        return None
+    step = 10 ** max(0, math.floor(math.log10(n)) - 1)
+    return int(round(n / step) * step)
+
+
+def _same_box(a, b, tol: float = 0.5) -> bool:
+    return all(abs(u - v) <= tol for u, v in ((a.x, b.x), (a.y, b.y), (a.w, b.w), (a.h, b.h)))
+
+
+def closeup_layout(request, view, plan, crop, tenant) -> Response:
+    """``GET .../cable-schedule/closeups/``: the close-up pages the PDF of
+    this schedule will have for an overview framed to ``box`` - each page's
+    label, plan box (px) and scale (paper mm per plan px), for the page to
+    draw the plan at before it posts the PDF."""
+    ser = CloseupLayoutSerializer(data=request.query_params)
+    ser.is_valid(raise_exception=True)
+    data = ser.validated_data
+    geometry: dict = {}
+    build(plan, crop, request.user, tenant, geometry=geometry)
+    planned = PlanPages(view=view, plan=plan, crop=crop, paper=data["size"],
+                        orientation=data["orientation"], mode=data["closeups"],
+                        geometry=geometry)
+    pages, scale = planned.layout(data["box"])
+    return Response({
+        "overview_mm_per_px": scale,
+        "dropped": planned.dropped,
+        "pages": [
+            {"label": p.label, "box": [p.box.x, p.box.y, p.box.w, p.box.h],
+             "mm_per_px": p.mm_per_px, "cables": len(p.cables)}
+            for p in pages
+        ],
+    })
 
 
 def export_pdf(request, view, plan, crop, tenant) -> HttpResponse | Response:
@@ -742,7 +864,7 @@ def export_pdf(request, view, plan, crop, tenant) -> HttpResponse | Response:
     title, subtitle = plan_title(view, view.tenant.name)
     generated = timezone.now()
     svg_text = data.get("svg") or ""
-    detail_text = data.get("detail_svg") or ""
+    detail_texts = data.get("closeup_svgs") or {}
     thumbnail = bool(svg_text.strip())
     planned = PlanPages(
         view=view, plan=plan, crop=crop, paper=size, orientation=orientation,
@@ -753,11 +875,11 @@ def export_pdf(request, view, plan, crop, tenant) -> HttpResponse | Response:
         if not thumbnail:
             return b""
         overview = sanitize_svg(text)
-        detail_svg = (
-            sanitize_svg(detail_text)
-            if detail_text.strip() and data["closeups"] != "off" else None
-        )
-        return planned.compose(overview, detail_svg)
+        details = {
+            label: sanitize_svg(t) for label, t in detail_texts.items()
+            if t.strip() and data["closeups"] != "off"
+        }
+        return planned.compose(overview, details)
 
     def render(svg: bytes) -> bytes:
         return run_with_deadline(

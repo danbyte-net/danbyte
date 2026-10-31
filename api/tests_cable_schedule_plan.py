@@ -1,7 +1,7 @@
 """The cable schedule PDF's plan pages (``api/cable_schedule_plan.py``): the
 background image and CAD drawing laid under the posted plan, cut to the
-framed box (and a live view's crop), and the close-up pages tiling the
-cabled parts of a big plan."""
+framed box (and a live view's crop), and the close-up pages: clusters of
+connected equipment on a big plan, each framed and scaled to the page."""
 
 from __future__ import annotations
 
@@ -49,49 +49,170 @@ def _plan_svg(x, y, w, h) -> str:
     )
 
 
-class TilingTests(SimpleTestCase):
+C = cp.CELL
+#: The owner's site plan: 512 × 266 cells of 1187 mm, A4 landscape.
+SITE = cp.Box(0, 0, 512 * C, 266 * C)
+
+
+def _end(x, y, name="", w=1.0, h=1.0):
+    """An end tile at cell (x, y), in plan px with its name."""
+    return (x * C, y * C, (x + w) * C, (y + h) * C, name)
+
+
+def _site_geometry():
+    """Three rooms of equipment far apart on the site plan, cables within
+    each, and one long cable from room 1 to room 3 along a tray."""
+    r1 = [_end(40, 40, "core1"), _end(43, 40, "asw1"), _end(46, 41, "fw1")]
+    r2 = [_end(300, 200, "srv1"), _end(304, 202, "srv2")]
+    r3 = [_end(470, 30, "edge1")]
+    tray = [(41 * C, 39 * C), (250 * C, 39 * C), (250 * C, 31 * C), (470 * C, 31 * C)]
+    return {
+        "a": {"lines": [], "boxes": [e[:4] for e in r1[:2]], "ends": r1[:2]},
+        "b": {"lines": [], "boxes": [e[:4] for e in r1[1:]], "ends": r1[1:]},
+        "c": {"lines": [], "boxes": [e[:4] for e in r2], "ends": r2},
+        "long": {"lines": [tray], "boxes": [r1[0][:4], r3[0][:4]],
+                 "ends": [r1[0], r3[0]]},
+    }
+
+
+def _layout(geometry, *, mode="auto", px_per_cell=None, content=SITE, paper="a4", cap=20):
+    _o, w, h = cp.closeup_mm(paper, "landscape")
+    overview = cp.fit_scale(content, *cp.thumb_mm(paper, "landscape"))
+    return cp.closeup_layout(geometry, content=content, grid=SITE, page_mm=(w, h),
+                             overview_mm_per_px=overview, mode=mode,
+                             px_per_cell=px_per_cell, cap=cap)
+
+
+class LayoutTests(SimpleTestCase):
     def test_row_letters(self):
         self.assertEqual([cp.row_letters(i) for i in (0, 1, 25, 26, 27)],
                          ["A", "B", "Z", "AA", "AB"])
 
-    def test_tiles_cover_the_content_centred(self):
-        pages = cp.tiles(cp.Box(100, 50, 250, 90), 100, 60)
-        self.assertEqual([p.label for p in pages], ["A1", "A2", "A3", "B1", "B2", "B3"])
-        # 3 × 100 over 250 wide: 25 over each side; 2 × 60 over 90: 15.
-        self.assertEqual((pages[0].box.x, pages[0].box.y), (75, 35))
-        self.assertEqual((pages[-1].box.x2, pages[-1].box.y2), (375, 155))
+    def assert_sound(self, pages, geometry, lo, hi):
+        ends = {e[:4] for g in geometry.values() for e in g["ends"]}
+        for p in pages:
+            # Every close-up holds a cable end, and prints within the clamps.
+            self.assertTrue(p.ends, p.label)
+            self.assertTrue(any(e.box in ends for e in p.ends))
+            self.assertLessEqual(p.mm_per_px, hi + 1e-9)
+            # Inside the plan.
+            self.assertGreaterEqual(p.box.x, SITE.x - 1e-6)
+            self.assertGreaterEqual(p.box.y, SITE.y - 1e-6)
+            self.assertLessEqual(p.box.x2, SITE.x2 + 1e-6)
+            self.assertLessEqual(p.box.y2, SITE.y2 + 1e-6)
+            for e in p.ends:
+                self.assertTrue(p.box.x <= e.box[0] and e.box[2] <= p.box.x2)
+                self.assertTrue(p.box.y <= e.box[1] and e.box[3] <= p.box.y2)
+        # Frames never overlap.
+        for i, a in enumerate(pages):
+            for b in pages[i + 1:]:
+                self.assertFalse(cp.overlaps(a.box, b.box), (a.label, b.label))
 
-    def test_a_tile_is_a_page_when_a_cable_crosses_it(self):
-        geo = {
-            # A route crossing A1 and A2 with no vertex in A2.
-            "c1": {"lines": [[(10, 10), (190, 10)]], "boxes": []},
-            # An end tile in B2 only.
-            "c2": {"lines": [], "boxes": [(120, 70, 140, 90)]},
-        }
-        pages, dropped = cp.closeup_pages(cp.Box(0, 0, 200, 120), geo, 100, 60)
+    def test_one_close_up_per_cluster_of_connected_equipment(self):
+        geo = _site_geometry()
+        pages, dropped = _layout(geo)
         self.assertEqual(dropped, 0)
-        self.assertEqual({p.label: p.cables for p in pages},
-                         {"A1": ["c1"], "A2": ["c1"], "B2": ["c2"]})
+        # Three rooms, three close-ups - none for the tray run between them.
+        self.assertEqual(len(pages), 3)
+        self.assertEqual([p.label for p in pages], ["A", "B", "C"])
+        by = {tuple(sorted(n for e in p.ends for n in e.names)): p for p in pages}
+        self.assertEqual(sorted(by), [("asw1", "core1", "fw1"), ("edge1",), ("srv1", "srv2")])
+        lo, hi = cp.scale_limits(None)
+        self.assert_sound(pages, geo, lo, hi)
+        # Small clusters print at the readable floor or larger.
+        for p in pages:
+            self.assertGreaterEqual(p.mm_per_px, lo - 1e-9)
+        # The long cable is listed where its ends are; room 2 has only its own.
+        self.assertEqual(by[("asw1", "core1", "fw1")].cables, ["a", "b", "long"])
+        self.assertEqual(by[("edge1",)].cables, ["long"])
+        self.assertEqual(by[("srv1", "srv2")].cables, ["c"])
 
-    def test_over_the_cap_the_busiest_are_kept_in_reading_order(self):
+    def test_a_coarse_raster_holds_the_scale_at_the_readable_floor(self):
+        # 3.5 image px a cell: past 1.5 × its native size by 1.4 mm a cell,
+        # under the 3 mm floor - the floor wins.
+        lo, hi = cp.scale_limits(3.5)
+        self.assertAlmostEqual(hi * C, cp.CLOSEUP_MIN_CELL_MM)
+        pages, _ = _layout(_site_geometry(), px_per_cell=3.5)
+        for p in pages:
+            self.assertAlmostEqual(p.mm_per_px, lo)
+
+    def test_a_fine_raster_caps_the_magnification(self):
+        # 20 image px a cell: at most 20 × 0.265 × 1.5 = 7.9 mm a cell.
+        lo, hi = cp.scale_limits(20)
+        self.assertAlmostEqual(hi * C, 20 * 25.4 / 96 * 1.5)
+        geo = {"x": {"lines": [], "boxes": [], "ends": [_end(100, 100, "solo")]}}
+        (page,), _ = _layout(geo, px_per_cell=20)
+        self.assertAlmostEqual(page.mm_per_px, hi)
+        # No raster: the overall ceiling.
+        (page,), _ = _layout(geo)
+        self.assertAlmostEqual(page.mm_per_px * C, cp.CLOSEUP_MAX_CELL_MM)
+
+    def test_a_wide_cluster_prints_smaller_to_fit(self):
+        # A row of racks 150 cells long, linked end to end.
+        ends = [_end(20 + i * 10, 100, f"r{i}") for i in range(16)]
+        geo = {f"c{i}": {"lines": [], "boxes": [], "ends": [ends[i], ends[i + 1]]}
+               for i in range(15)}
+        (page,), _ = _layout(geo, px_per_cell=3.5)
+        lo, _hi = cp.scale_limits(3.5)
+        self.assertLess(page.mm_per_px, lo)
+        self.assertEqual(len(page.ends), 16)
+
+    def test_clusters_whose_frames_would_overlap_merge(self):
+        # Two groups 40 cells apart: apart for the clustering, but a page
+        # at the floor spans 91 cells, so their frames would overlap.
         geo = {
-            "a": {"lines": [], "boxes": [(10, 10, 20, 20)]},
-            "b": {"lines": [], "boxes": [(110, 10, 120, 20)]},
-            "c": {"lines": [], "boxes": [(115, 15, 118, 18)]},
-            "d": {"lines": [], "boxes": [(210, 10, 220, 20)]},
-            "e": {"lines": [], "boxes": [(215, 15, 218, 18)]},
+            "a": {"lines": [], "boxes": [], "ends": [_end(100, 100, "a1"), _end(101, 100)]},
+            "b": {"lines": [], "boxes": [], "ends": [_end(141, 100, "b1"), _end(142, 100)]},
         }
-        pages, dropped = cp.closeup_pages(cp.Box(0, 0, 300, 60), geo, 100, 60, cap=2)
-        self.assertEqual([p.label for p in pages], ["A2", "A3"])
-        self.assertEqual(dropped, 1)
+        pages, _ = _layout(geo, px_per_cell=3.5)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(pages[0].ends), 4)
+
+    def test_frames_stay_inside_the_plan(self):
+        geo = {"x": {"lines": [], "boxes": [], "ends": [_end(0, 0, "corner")]},
+               "y": {"lines": [], "boxes": [], "ends": [_end(511, 265, "far")]}}
+        pages, _ = _layout(geo, px_per_cell=3.5)
+        self.assertEqual(len(pages), 2)
+        self.assert_sound(pages, geo, *cp.scale_limits(3.5))
+        self.assertEqual((pages[0].box.x, pages[0].box.y), (0, 0))
 
     def test_when_close_ups_are_wanted(self):
-        # mm per px × 40 px is the cell on paper.
-        self.assertTrue(cp.wants_closeups("auto", 1.9 / 40))
-        self.assertFalse(cp.wants_closeups("auto", 2.1 / 40))
-        self.assertTrue(cp.wants_closeups("on", 4 / 40))
-        self.assertFalse(cp.wants_closeups("on", 6 / 40))
-        self.assertFalse(cp.wants_closeups("off", 0.1 / 40))
+        geo = _site_geometry()
+        self.assertEqual(_layout(geo, mode="off"), ([], 0))
+        # A small plan whose overview reads, one cluster: none in auto.
+        small = cp.Box(0, 0, 60 * C, 30 * C)
+        one = {"a": geo["a"]}
+        self.assertEqual(_layout(one, content=small)[0], [])
+        # `on`: whenever the close-up prints larger than the overview.
+        self.assertEqual(len(_layout(one, content=small, mode="on")[0]), 1)
+        # No cable ends: none.
+        self.assertEqual(_layout({"x": {"lines": [[(0, 0), (900, 900)]], "boxes": [],
+                                        "ends": []}}), ([], 0))
+
+    def test_over_the_cap_the_busiest_are_kept(self):
+        geo = {}
+        for i in range(5):
+            ends = [_end(20 + i * 100, 100, f"d{i}-{j}") for j in range(1)]
+            for k in range(i + 1):
+                geo[f"c{i}-{k}"] = {"lines": [], "boxes": [], "ends": ends}
+        pages, dropped = _layout(geo, cap=2)
+        self.assertEqual(dropped, 3)
+        self.assertEqual(sorted(e.names[0] for p in pages for e in p.ends),
+                         ["d3-0", "d4-0"])
+
+    def test_end_names_are_drawn_in_paper_mm(self):
+        geo = _site_geometry()
+        pages, _ = _layout(geo, px_per_cell=3.5)
+        room1 = next(p for p in pages if any("core1" in e.names for e in p.ends))
+        svg = etree.fromstring(cp.compose(None, room1.box, grid=(SITE.w, SITE.h),
+                                          ends=room1.ends, mm_per_px=room1.mm_per_px))
+        texts = [t for t in svg.iter(f"{SVG}text") if t.get("stroke") is None]
+        self.assertEqual(sorted(t.text for t in texts), ["asw1", "core1", "fw1"])
+        size_mm = float(texts[0].get("font-size")) * room1.mm_per_px
+        self.assertAlmostEqual(size_mm, cp.END_FONT_MM, places=4)
+        outlines = list(svg.iter(f"{SVG}rect"))[1:]
+        self.assertEqual(len(outlines), 3)
+
 
     def test_an_oversized_image_is_brought_under_the_cap(self):
         noisy = Image.effect_noise((2400, 2400), 120).convert("RGB")
@@ -183,81 +304,158 @@ class BackgroundTests(_Plan):
 
 
 class _Big(_Plan):
-    """A wide plan (a cell prints under 2 mm on the overview) with racks at
-    both ends and a cable between them through a tray."""
+    """The owner's site plan: 512 × 266 cells of 1187 mm under a coarse map
+    image (3.5 px a cell), three rooms of racks far apart, cables within
+    each and one long run from room 1 to room 3 along a tray."""
 
     def setUp(self):
         super().setUp()
-        FloorPlan.objects.filter(pk=self.plan.pk).update(grid_width=300, grid_height=60)
-        self.plan.refresh_from_db()
+        self.plan.background_image.save("map.png", ContentFile(_png(1792, 931)), save=False)
+        self.plan.grid_width, self.plan.grid_height, self.plan.cell_mm = 512, 266, 1187
+        self.plan.save()
         site = self.plan.location.site
         tt = FloorTileType.objects.create(tenant=self.tenant, name="Rack", slug="rack")
         dtype = DeviceType.objects.create(tenant=self.tenant, name="1U", u_height=1)
-        ends = []
-        for i, x in enumerate((2, 290)):
-            rack = Rack.objects.create(tenant=self.tenant, site=site, name=f"R{i}", u_height=42)
-            FloorPlanTile.objects.create(floor_plan=self.plan, tile_type=tt, x=x, y=10,
+        self.iface = {}
+        for name, x, y in (("core1", 40, 40), ("asw1", 43, 40), ("srv1", 300, 200),
+                           ("srv2", 304, 202), ("edge1", 470, 30)):
+            rack = Rack.objects.create(tenant=self.tenant, site=site, name=f"R-{name}",
+                                       u_height=42)
+            FloorPlanTile.objects.create(floor_plan=self.plan, tile_type=tt, x=x, y=y,
                                          rack=rack, link_kind="rack")
-            dev = Device.objects.create(tenant=self.tenant, name=f"d{i}", site=site, rack=rack,
+            dev = Device.objects.create(tenant=self.tenant, name=name, site=site, rack=rack,
                                         device_type=dtype, position=40)
-            ends.append(Interface.objects.create(device=dev, name="e1"))
-        FloorPlanTray.objects.create(floor_plan=self.plan, name="T", points=[[2, 9], [291, 9]])
-        self.cable = Cable.objects.create(tenant=self.tenant, label="LONG")
-        for end, iface in zip("AB", ends, strict=True):
-            CableTermination.objects.create(cable=self.cable, end=end, interface=iface)
-        self.content = (0, 0, 300 * 40, 30 * 40)
+            self.iface[name] = [Interface.objects.create(device=dev, name=f"e{i}")
+                                for i in range(2)]
+        FloorPlanTray.objects.create(floor_plan=self.plan, name="T",
+                                     points=[[41, 39], [250, 39], [250, 31], [470, 31]])
+        self.cables = {}
+        for label, a, b in (("UP", ("core1", 0), ("asw1", 0)),
+                            ("SRV", ("srv1", 0), ("srv2", 0)),
+                            ("LONG", ("core1", 1), ("edge1", 0))):
+            c = Cable.objects.create(tenant=self.tenant, label=label)
+            for end, (dev, i) in zip("AB", (a, b), strict=True):
+                CableTermination.objects.create(cable=c, end=end, interface=self.iface[dev][i])
+            self.cables[label] = str(c.pk)
+        self.content = (0, 0, 512 * 40, 266 * 40)
 
-    def body(self, **extra):
-        return {"svg": _plan_svg(*self.content), "detail_svg": _plan_svg(*self.content),
-                **extra}
+    def layout(self, **params):
+        q = {"box": ",".join(str(v) for v in self.content), **params}
+        r = self.client.get(f"/api/floor-plans/{self.plan.pk}/cable-schedule/closeups/", q)
+        self.assertEqual(r.status_code, 200, r.content[:300])
+        return r.json()
+
+    def body(self, layout=None, **extra):
+        pages = (layout or self.layout())["pages"]
+        return {"svg": _plan_svg(*self.content),
+                "closeup_svgs": {p["label"]: _plan_svg(*p["box"]) for p in pages}, **extra}
 
 
 class CloseupTests(_Big):
-    def test_close_ups_tile_the_cabled_parts(self):
-        svg, kw = self.capture(self.body())
-        labels = [c["label"] for c in kw["closeups"]]
-        self.assertTrue(labels)
-        self.assertTrue(all(re.fullmatch(r"[A-Z]+\d+", lb) for lb in labels))
-        for c in kw["closeups"]:
-            self.assertEqual(c["rows"], [str(self.cable.pk)])
+    def test_a_close_up_per_cluster_of_connected_equipment(self):
+        layout = self.layout()
+        pages = layout["pages"]
+        # Three rooms, three close-ups; the long run between them is not one.
+        self.assertEqual([p["label"] for p in pages], ["A", "B", "C"])
+        lo = cp.CLOSEUP_MIN_CELL_MM / 40
+        boxes = [cp.Box(*p["box"]) for p in pages]
+        for p, b in zip(pages, boxes, strict=True):
+            # The map is coarse: held at the readable floor, not magnified more.
+            self.assertAlmostEqual(p["mm_per_px"], lo)
+            self.assertGreaterEqual(p["cables"], 1)
+            self.assertTrue(b.x >= 0 and b.y >= 0 and b.x2 <= 512 * 40 and b.y2 <= 266 * 40)
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                self.assertFalse(cp.overlaps(a, b))
+
+    def test_the_pdf_draws_each_close_up_at_its_scale(self):
+        layout = self.layout()
+        svg, kw = self.capture(self.body(layout))
+        by_label = {c["label"]: c for c in kw["closeups"]}
+        self.assertEqual(sorted(by_label), ["A", "B", "C"])
+        rows = sorted(sorted(c["rows"]) for c in kw["closeups"])
+        self.assertIn(sorted([self.cables["UP"], self.cables["LONG"]]), rows)
+        self.assertIn([self.cables["SRV"]], rows)
+        self.assertIn([self.cables["LONG"]], rows)
+        for p in layout["pages"]:
+            c = by_label[p["label"]]
             page = etree.fromstring(kw["pages"][c["url"]])
-            vb = [float(v) for v in page.get("viewBox").split()]
-            # A cell 5 mm: the page's box is the close-up frame at 0.125 mm/px.
-            _outer, w_mm, h_mm = cp.closeup_mm("a4", "landscape")
-            self.assertAlmostEqual(vb[2], w_mm / cp.CLOSEUP_MM_PER_PX, places=3)
-            self.assertAlmostEqual(vb[3], h_mm / cp.CLOSEUP_MM_PER_PX, places=3)
-            # The background is cut for every close-up.
-            self.assertIn(b"data:image/", kw["pages"][c["url"]])
+            for got, want in zip(page.get("viewBox").split(), p["box"], strict=True):
+                self.assertAlmostEqual(float(got), want, delta=0.5)
+            # Printed at its own scale, a cell 3 mm: 1:400 for 1187 mm cells.
+            self.assertAlmostEqual(c["width_mm"], p["box"][2] * p["mm_per_px"])
+            self.assertEqual(c["ratio"], 400)
+            # The background cut, the posted drawing used, the ends named.
+            raw = kw["pages"][c["url"]]
+            self.assertIn(b"data:image/", raw)
+            self.assertIn(b"#2563eb", raw)
+            texts = {t.text for t in page.iter(f"{SVG}text")}
+            self.assertTrue(texts & {"core1", "asw1", "srv1", "srv2", "edge1"})
         # The overview carries a labelled frame for each.
         texts = [t.text for t in etree.fromstring(svg).iter(f"{SVG}text")]
-        for lb in labels:
+        for lb in by_label:
             self.assertIn(lb, texts)
         self.assertEqual(kw["closeup_note"], "")
 
+    def test_a_drawing_for_another_box_is_left_out(self):
+        layout = self.layout()
+        body = self.body(layout)
+        body["closeup_svgs"]["A"] = _plan_svg(0, 0, 400, 200)
+        _svg, kw = self.capture(body)
+        a = next(c for c in kw["closeups"] if c["label"] == "A")
+        raw = kw["pages"][a["url"]]
+        self.assertNotIn(b"#2563eb", raw)
+        self.assertIn(b"data:image/", raw)
+
+    def test_hidden_devices_are_not_named(self):
+        member = self._member("viewer", "floorplan", "floorplantile", "floorplancablepath",
+                              "cable")
+        self._login(member)
+        layout = self.layout()
+        _svg, kw = self.capture(self.body(layout))
+        self.assertTrue(kw["closeups"])
+        for c in kw["closeups"]:
+            texts = {t.text for t in etree.fromstring(kw["pages"][c["url"]])
+                     .iter(f"{SVG}text")}
+            self.assertFalse(texts & {"core1", "asw1", "srv1", "srv2", "edge1"})
+
+    def test_too_many_close_up_drawings_are_refused(self):
+        body = {"svg": _plan_svg(*self.content),
+                "closeup_svgs": {f"X{i}": _plan_svg(0, 0, 40, 40) for i in range(21)}}
+        r = self.client.post(f"/api/floor-plans/{self.plan.pk}/cable-schedule/pdf/", body,
+                             format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_a_bad_box_is_refused(self):
+        r = self.client.get(f"/api/floor-plans/{self.plan.pk}/cable-schedule/closeups/",
+                            {"box": "0,0,nan,5"})
+        self.assertEqual(r.status_code, 400)
+
     def test_off_and_a_small_plan_have_none(self):
+        self.assertEqual(self.layout(closeups="off")["pages"], [])
         _svg, kw = self.capture(self.body(closeups="off"))
-        self.assertEqual(kw["closeups"], [])
-        _svg, kw = self.capture({"svg": _plan_svg(0, 0, 400, 200),
-                                 "detail_svg": _plan_svg(0, 0, 400, 200)})
         self.assertEqual(kw["closeups"], [])
 
     def test_the_table_names_the_detail_pages(self):
         data = cable_schedule.build(self.plan, None, self.admin, self.tenant)
         import datetime as dt
 
+        long_id = self.cables["LONG"]
         html = cable_schedule.sheet_html(
             data, title="Big", subtitle="", generated=dt.datetime(2026, 10, 31, tzinfo=dt.UTC),
             paper="a4", orientation="landscape", thumbnail=True,
-            closeups=[{"label": "A1", "url": "https://danbyte.invalid/_/closeup-A1.svg",
-                       "rows": [str(self.cable.pk)]},
-                      {"label": "A3", "url": "https://danbyte.invalid/_/closeup-A3.svg",
-                       "rows": [str(self.cable.pk)]}],
+            closeups=[{"label": "A", "url": "https://danbyte.invalid/_/closeup-A.svg",
+                       "rows": [long_id], "width_mm": 200, "height_mm": 80, "ratio": 400},
+                      {"label": "C", "url": "https://danbyte.invalid/_/closeup-C.svg",
+                       "rows": [long_id]}],
             closeup_note="2 close-ups of the busiest parts; 1 more part with cables not shown",
         )
         self.assertIn("<th>Detail</th>", html)
-        self.assertIn("<td class='ref'>A1, A3</td>", html)
-        self.assertIn("Detail A1", html)
-        self.assertIn("closeup-A3.svg", html)
+        self.assertIn("<td class='ref'>A, C</td>", html)
+        self.assertIn("Detail A", html)
+        self.assertIn("· 1:400", html)
+        self.assertIn("width:200.000mm;height:80.000mm", html)
+        self.assertIn("closeup-C.svg", html)
         self.assertIn("1 more part", html)
 
     def test_renders_a_pdf_with_close_ups(self):
@@ -267,4 +465,5 @@ class CloseupTests(_Big):
         self.assertTrue(r.content.startswith(b"%PDF"))
         # The overview page, a page per close-up, then the tables.
         pages = len(re.findall(rb"/MediaBox", _pdf_objects(r.content)))
-        self.assertGreaterEqual(pages, 3)
+        self.assertGreaterEqual(pages, 5)
+

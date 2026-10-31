@@ -2627,14 +2627,35 @@ is left out and the caption under the plan says so.
 
 **Close-ups of the cabled parts** (on by default) adds detail pages after
 the plan when it prints too small to read - a grid cell under 2 mm on
-paper, as a big site plan does. The framed plan is cut into page-sized
-pieces at a cell of 5 mm, and every piece a cable's route, tray or end
-crosses becomes a page (A1, A2, … by row and column): the plan cut to it,
-background and drawing included and its hatches and cables sized for that
-page, and the list of the cables drawn there. The overview carries a
-labelled frame for each, and the schedule's table gains a **Detail** column
-naming the pages a cable is on. At most 20 close-ups, the busiest pieces
-kept; the caption says how many were left out. The schedule's tables follow
+paper, as a big site plan does - or when the cabled equipment sits in
+several places apart. A close-up is a group of connected equipment (a
+room, a rack row), not a piece of the plan:
+
+- **Clusters.** The tiles the listed cables end on (their devices, racks
+  and cabinets) are grouped: two ends closer than half the page's shorter
+  side at 3 mm a cell are in one group. A cable's route between groups is
+  shown on the overview, never as a close-up of its own, and a page always
+  holds at least one cable end.
+- **Scale per page.** Each group is fitted to the page with a margin, at
+  most 12 mm a cell and, over a background image, at most what keeps the
+  image within 1.5× its own pixels (a pixel 0.26 mm). The image never
+  limits a page under 3 mm a cell, so names and tiles stay readable; a
+  group too large for 3 mm a cell prints smaller, to fit. The CAD drawing
+  is vector and sets no limit. The page header gives the scale (1:400).
+- **No overlap.** Each page's frame is the page's shape round its group,
+  moved inside the plan; groups whose frames would overlap are merged into
+  one page. In **auto**, a page is kept only where it prints at least 1.5×
+  the overview's scale.
+
+Each page is the plan drawn for that page's box and scale - background and
+drawing cut to it, hatches and cables sized for the paper (documented
+routes solid, inferred ones dashed) - with every cable end's tile outlined
+and its device names beside it, and the list of the cables drawn there.
+Names of devices you may not view are left out. The overview carries a
+labelled frame for each page (A, B, … in reading order), and the
+schedule's table gains a **Detail** column naming the pages a cable is on.
+At most 20 close-ups, those with the most cable ends kept; the caption says
+how many were left out. The schedule's tables follow
 the close-ups. **CSV** and
 **XLSX** are the same rows as a table (one line per cable in each group,
 then the totals) - the table export's files. The PDF obeys the floor-plan
@@ -2643,7 +2664,8 @@ PDF's limits. Anyone who can view the plan can make it:
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
-| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `detail_svg` (optional: the same plan drawn at the close-ups' scale, 0.125 mm per plan pixel) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm; `on`: whenever the close-ups are larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `closeup_svgs` (optional: the plan drawn for each close-up, by label, framed to its box at its scale; a drawing whose viewBox is not the page's box is left out; at most 20) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm or the cable ends form several groups; `on`: whenever a close-up prints larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
+| `GET /api/floor-plans/{id}/cable-schedule/closeups/?box=x,y,w,h` | The close-up pages the PDF will have for an overview framed to `box` (plan px, the overview's viewBox), with `size`, `orientation` and `closeups` as for the PDF: `pages` (`[{label, box, mm_per_px, cables}]`, `box` in plan px, `mm_per_px` paper mm per plan px), `overview_mm_per_px` and `dropped` (groups over the cap of 20). The page asks for it, draws each close-up, then posts the PDF. |
 
 ### Try it: the demo floor plan
 

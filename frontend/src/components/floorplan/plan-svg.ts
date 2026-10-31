@@ -106,14 +106,20 @@ export interface PlanSvgInput {
   cables?: PlanSvgCables
   /** Frame the drawing to what is on the plan (plus a margin) instead of
    * the whole grid, scaled for `paper`: a thumbnail of a big site plan.
-   * `mmPerPx` draws it for that paper scale instead (the schedule's
-   * close-ups, CLOSEUP_MM_PER_PX). */
-  fitContent?: { paper: PaperChoice; mmPerPx?: number }
+   * `box` (plan px) frames it there instead and `mmPerPx` draws it for
+   * that paper scale - a cable schedule close-up, as
+   * `cable-schedule/closeups/` lays it out; only what reaches the box is
+   * drawn. Inferred cable runs are dashed. */
+  fitContent?: { paper: PaperChoice; mmPerPx?: number; box?: PlanBox }
 }
 
-/** Paper mm per plan px on the cable schedule's close-up pages: a cell
- * 5 mm (api/cable_schedule_plan.py CLOSEUP_MM_PER_PX). */
-export const CLOSEUP_MM_PER_PX = 5 / 40
+/** A rectangle in plan px. */
+export interface PlanBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
 
 /** Margin round the content when the drawing is framed to it (cells). */
 const FIT_MARGIN_CELLS = 2
@@ -177,7 +183,12 @@ export interface PlanSvgCables {
   highlight?: readonly string[]
   /** Paper mm per plan px (planPaperScale). */
   mmPerPx: number
+  /** Inferred runs dashed, to tell them from documented ones on paper. */
+  inferredDash?: boolean
 }
+
+/** An inferred run's dash on paper, in canvas px (as CABLE_LINE's). */
+const INFERRED_PAPER_DASH = "5 3"
 
 /** api/floor_plan_pdf.py's footer under the plan (mm). */
 const PDF_FOOTER_MM = 22
@@ -282,8 +293,11 @@ function cablesMarkup(c: PlanSvgCables): string {
   }
   const lines = (id: string, traced: boolean) => {
     const cp = byId.get(id)
+    const state = cp ? drawnRouteState(cp, routes.get(id)) : "inferred"
     const style =
-      CABLE_LINE[cp ? drawnRouteState(cp, routes.get(id)) : "inferred"]
+      state === "inferred" && c.inferredDash
+        ? { ...CABLE_LINE.inferred, dash: INFERRED_PAPER_DASH }
+        : CABLE_LINE[state]
     const segs = layout.cables.get(id)!
     const polys = traced
       ? lanePolylines(segs)
@@ -858,8 +872,38 @@ export function planSvg({
   // Framed to the content: the view box, and the paper scale it gives, so
   // hatches and cables are drawn for the paper and not for the full grid.
   const frame = fitContent
-    ? contentBox(plan, tiles, shapes, walls, trays)
+    ? (fitContent.box ?? contentBox(plan, tiles, shapes, walls, trays))
     : null
+  // A close-up draws only what reaches its box: twenty of them post less.
+  const closeBox = fitContent?.box
+  if (closeBox) {
+    const near = (x0: number, y0: number, x1: number, y1: number) =>
+      x0 * CELL <= closeBox.x + closeBox.w &&
+      x1 * CELL >= closeBox.x &&
+      y0 * CELL <= closeBox.y + closeBox.h &&
+      y1 * CELL >= closeBox.y
+    const runNear = (pts: readonly (readonly number[])[]) =>
+      pts.length > 0 &&
+      near(
+        Math.min(...pts.map((p) => p[0])),
+        Math.min(...pts.map((p) => p[1])),
+        Math.max(...pts.map((p) => p[0])),
+        Math.max(...pts.map((p) => p[1]))
+      )
+    tiles = tiles.filter((t) => {
+      // Generous: a turned tile reaches past its own box.
+      const r = Math.max(t.width, t.height)
+      return near(t.x - r, t.y - r, t.x + t.width + r, t.y + t.height + r)
+    })
+    shapes = shapes.filter((sh) => {
+      const b = shapeBounds(sh, plan.cell_mm)
+      // A label's note sits under it.
+      return near(b.minX, b.minY, b.maxX, b.maxY + 1)
+    })
+    walls = walls.filter((wall) => runNear(wall.points))
+    trays = trays.filter((tray) => runNear(tray.points))
+    areas = areas.filter((a) => near(a.x, a.y, a.x + a.width, a.y + a.height))
+  }
   let pat = DEFAULT_PATTERN
   if (frame && fitContent) {
     const mmPerPx =
@@ -872,7 +916,7 @@ export function planSvg({
       gap: Math.max(PATTERN_GAP, PAPER_PATTERN_GAP_MM / mmPerPx),
       width: Math.max(PATTERN_STROKE.width, PAPER_PATTERN_STROKE_MM / mmPerPx),
     }
-    if (cables) cables = { ...cables, mmPerPx }
+    if (cables) cables = { ...cables, mmPerPx, inferredDash: true }
   }
   const isZone = (t: FloorPlanTile) => t.tile_type?.is_zone ?? false
   const body: string[] = []

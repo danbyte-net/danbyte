@@ -13354,6 +13354,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
             plan, crop, request.user, tenant, group=request.query_params.get("group", "room"),
         ))
 
+    @action(detail=True, methods=["get"], url_path="cable-schedule/closeups")
+    def cable_schedule_closeups(self, request, pk=None):
+        """The close-up pages the schedule PDF will have for an overview
+        framed to ``?box=x,y,w,h`` (plan px) on ``?size=`` / ``?orientation=``
+        paper (``?closeups=auto|on|off``): each page's label, plan box and
+        scale, for the page to draw the plan at before it posts the PDF."""
+        from . import cable_schedule
+
+        view = self.get_object()
+        plan, crop = self._resolved(view)
+        return cable_schedule.closeup_layout(request, view, plan, crop, self._tenant_or_403())
+
     @action(detail=True, methods=["post"], url_path="cable-schedule/pdf")
     def cable_schedule_pdf(self, request, pk=None):
         """The cable schedule on paper (WeasyPrint; A4 landscape unless

@@ -69,7 +69,8 @@ import {
 import { PlanInspector } from "./plan-inspector"
 import { PlanRail } from "./plan-rail"
 import { PlanScene3D } from "./plan-scene-3d"
-import { CLOSEUP_MM_PER_PX, planPaperScale, planSvg } from "./plan-svg"
+import { planPaperScale, planSvg } from "./plan-svg"
+import type { PlanBox } from "./plan-svg"
 import { PlanToolbar } from "./plan-toolbar"
 import { PlacePicker, UnplacedList } from "./place-picker"
 import { asPhotos, nearScope, placedOnFloor, roomPrompts } from "./placement"
@@ -801,12 +802,13 @@ export function FloorPlanEditor({
 
   /** The plan as an SVG for paper: the Export PDF (cables as the Display
    * menu says), and the cable schedule's first page (`withCables`: the
-   * routes always drawn). */
+   * routes always drawn; `closeup`: one of its close-ups, framed to the
+   * box at the scale the server laid out). */
   const exportSvg = (
     paper?: PaperChoice,
     withCables: boolean = prefs.showCableLinks,
     fitContent = false,
-    closeup = false
+    closeup?: { box: PlanBox; mmPerPx: number }
   ) =>
     plan
       ? planSvg({
@@ -832,10 +834,7 @@ export function FloorPlanEditor({
                 mmPerPx: planPaperScale(plan, paper),
               }
             : undefined,
-          fitContent:
-            fitContent && paper
-              ? { paper, ...(closeup ? { mmPerPx: CLOSEUP_MM_PER_PX } : {}) }
-              : undefined,
+          fitContent: fitContent && paper ? { paper, ...closeup } : undefined,
         })
       : ""
 
