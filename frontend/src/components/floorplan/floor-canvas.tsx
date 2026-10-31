@@ -1526,7 +1526,9 @@ export function FloorCanvas({
             const labelText = `${a.label || "Raised floor"} · ${a.plenum_mm} mm`
             // ~5.6 px/char at 10px - hide the label when it would spill past
             // the area's edge (the rail always shows the full name).
-            const labelFits = a.width * CELL - 12 >= labelText.length * 5.6
+            const labelFits =
+              a.width * CELL - 12 >= labelText.length * 5.6 &&
+              a.height * CELL >= 20
             const live = mode === "structure" && !isLocked(a.id) && !drawing
             return (
               <g
@@ -1564,9 +1566,12 @@ export function FloorCanvas({
                   rx={3}
                 />
                 {(a.label || a.id === selectedAreaId) && labelFits && (
+                  // Bottom-left: a room's name sits at its top-left, and a
+                  // raised floor usually covers the room exactly.
                   <text
+                    data-raised-label={a.id}
                     x={a.x * CELL + 6}
-                    y={a.y * CELL + 14}
+                    y={(a.y + a.height) * CELL - 6}
                     className="fill-muted-foreground"
                     fontSize={10}
                     pointerEvents="none"

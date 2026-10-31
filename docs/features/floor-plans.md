@@ -1621,8 +1621,9 @@ whole cells; its edges pull onto the other raised floors' edges, with a
 guide line (++alt++ turns the pull off). A drop onto another raised floor
 is refused - they may share edges, never overlap. The arrows move it a
 cell, ++delete++ removes it, and its label, plenum depth and colour are in
-the inspector. Raised floors save with the plan's **Save** and undo like
-everything else.
+the inspector. A labelled raised floor shows its label and plenum depth in
+its bottom-left corner, clear of the name of a room it covers. Raised
+floors save with the plan's **Save** and undo like everything else.
 
 ## Walls & doors (Structure mode)
 
@@ -1817,8 +1818,10 @@ follow?", which nothing used to show:
 
 Changes take effect immediately in the 2D canvas and the 3D room. Routing is
 recorded **per floor plan**, so a cable that crosses plans keeps each plan's
-assignment separately. `GET`/`PUT /api/cables/{id}/routing/?floor_plan=<id>`
-is the same operation over the API; editing requires **change** on the cable.
+assignment separately. `GET /api/cables/{id}/routing/?floor_plan=<id>` and
+`PUT /api/cables/{id}/routing/` with `{"floor_plan": <id>, "tray_ids": [...]}`
+in the body are the same operation over the API; editing requires **change**
+on the cable.
 When both ends are placed on the plan, a `PUT` also stores the route through
 the trays named - in that order - or the direct run for an empty list, as
 the cable's [stored route](#stored-routes-and-lengths); `GET` lists the

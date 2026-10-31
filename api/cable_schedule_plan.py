@@ -500,9 +500,14 @@ class Background:
         if href is None:
             return None
         el = etree.Element(_q("image"))
+        # Placed by a transform, not x/y: WeasyPrint draws an image with
+        # opacity in a group sized to the image at the origin and offsets it
+        # inside that group, so an image away from the origin - every
+        # close-up's - came out blank.
         for k, v in (
             ("href", href),
-            ("x", _fmt((sx0 - ox) * CELL)), ("y", _fmt((sy0 - oy) * CELL)),
+            ("transform", f"translate({_fmt((sx0 - ox) * CELL)} {_fmt((sy0 - oy) * CELL)})"),
+            ("x", "0"), ("y", "0"),
             ("width", _fmt((sx1 - sx0) * CELL)), ("height", _fmt((sy1 - sy0) * CELL)),
             ("preserveAspectRatio", "none"), ("opacity", _fmt(self.opacity)),
         ):
