@@ -3,11 +3,28 @@ returned exactly once, at creation. Only a signed-in session may manage tokens:
 a token can't mint, list or revoke tokens."""
 from __future__ import annotations
 
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers, viewsets
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import ApiToken, generate_api_key, hash_api_key
+
+User = get_user_model()
+
+
+def active_token_count(user) -> int:
+    """The user's own tokens that still work: run tokens and expired ones
+    don't count against ``API_MAX_TOKENS_PER_USER`` (#457)."""
+    return (
+        ApiToken.objects.filter(user=user, kind="user")
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+        .count()
+    )
 
 
 class SessionOnly(BasePermission):
@@ -67,15 +84,25 @@ class ApiTokenViewSet(viewsets.ModelViewSet):
                 status=400,
             )
         key = generate_api_key()
-        token = ApiToken.objects.create(
-            user=request.user,
-            tenant=tenant,
-            name=ser.validated_data["name"],
-            key_hash=hash_api_key(key),
-            prefix=key[:11],
-            expires_at=ser.validated_data.get("expires_at"),
-            scope=ser.validated_data.get("scope", "full"),
-        )
+        with transaction.atomic():
+            # Lock the user row so parallel creates can't each see room left.
+            User.objects.select_for_update().filter(pk=request.user.pk).first()
+            limit = settings.API_MAX_TOKENS_PER_USER
+            if active_token_count(request.user) >= limit:
+                return Response(
+                    {"detail": f"You already have {limit} active API tokens, the most "
+                               "allowed. Revoke one you no longer use first."},
+                    status=400,
+                )
+            token = ApiToken.objects.create(
+                user=request.user,
+                tenant=tenant,
+                name=ser.validated_data["name"],
+                key_hash=hash_api_key(key),
+                prefix=key[:11],
+                expires_at=ser.validated_data.get("expires_at"),
+                scope=ser.validated_data.get("scope", "full"),
+            )
         data = ApiTokenSerializer(token).data
         data["key"] = key  # shown once, never again
         return Response(data, status=201)
