@@ -4,13 +4,17 @@ import type { FloorPlanTile, FloorPlanTray } from "@/lib/api"
 
 import type { Pt } from "./cable-route"
 import {
+  CALLOUT_MAX_LEADER,
+  CALLOUT_TAB_PX,
   boxGap,
+  calloutClusters,
   calloutGroups,
   calloutSize,
   layoutCallouts,
   packRow,
   segmentHitsBox,
   segmentsCross,
+  tileEnd,
 } from "./plan-callouts"
 import type { CalloutItem, PlacedCallout } from "./plan-callouts"
 import { layoutPlanLabels } from "./plan-label-pass"
@@ -119,11 +123,21 @@ describe("layoutCallouts", () => {
     for (let i = 1; i < placed.length; i++)
       expect(placed[i].box.x).toBeGreaterThan(placed[i - 1].box.x)
     expect(anyCross(placed.map((p) => p.leader))).toBe(false)
-    // Each leader ends on its tile's edge.
+    // Each leader leaves from the tip of the tab in the middle of the
+    // box's bottom edge and ends on its tile's edge, aimed at its centre.
     row().forEach((item, i) => {
-      const end = placed[i].leader[1]
-      expect(end[1]).toBe(item.anchor.y)
-      expect(end[0]).toBe(item.anchor.x + item.anchor.w / 2)
+      const { box, leader } = placed[i]
+      expect(leader[0]).toEqual([
+        box.x + box.w / 2,
+        box.y + box.h + CALLOUT_TAB_PX,
+      ])
+      expect(leader[1]).toEqual(tileEnd(leader[0], item.anchor))
+      const [x, y] = leader[1]
+      const a = item.anchor
+      const near = (p: number, q: number) => Math.abs(p - q) < 1e-6
+      expect(
+        near(y, a.y) || near(x, a.x) || near(x, a.x + a.w) || near(y, a.y + a.h)
+      ).toBe(true)
     })
   })
 
@@ -164,9 +178,87 @@ describe("layoutCallouts", () => {
     }
   })
 
+  it("caps the leaders: a box by its tile rather than far off", () => {
+    // A site-wide area: its edge far from the tiles in the middle.
+    const big: Box = { x: -1000, y: -1000, w: 2100, h: 2100 }
+    const items = row(4, 20).map((it) => ({ ...it, container: big }))
+    const far = layoutCallouts(items, { free: nothing })
+    expect([...far.values()].every((p) => p.box.y + p.box.h <= big.y)).toBe(
+      true
+    )
+    const near = layoutCallouts(items, {
+      free: (b) => !items.some((it) => boxesHit(it.anchor, b)),
+      maxLeader: CALLOUT_MAX_LEADER,
+    })
+    expect(near.size).toBe(4)
+    const placed = [...near.values()]
+    for (const p of placed)
+      expect(
+        Math.hypot(
+          p.leader[1][0] - p.leader[0][0],
+          p.leader[1][1] - p.leader[0][1]
+        )
+      ).toBeLessThanOrEqual(CALLOUT_MAX_LEADER)
+    expect(anyOverlap(placed.map((p) => p.box))).toBe(false)
+    expect(anyCross(placed.map((p) => p.leader))).toBe(false)
+    for (const p of placed)
+      for (const it of items) expect(boxesHit(p.box, it.anchor)).toBe(false)
+  })
+
+  it("never crosses leaders, each box by its own tile", () => {
+    // Tiles in a ring.
+    const items: CalloutItem[] = Array.from({ length: 8 }, (_, i) => {
+      const a = (i / 8) * Math.PI * 2
+      return {
+        id: `T${i}`,
+        anchor: {
+          x: 200 + Math.cos(a) * 40,
+          y: 200 + Math.sin(a) * 40,
+          w: 28,
+          h: 28,
+        },
+        size: calloutSize(`T${i}`, []),
+        group: "near:T0",
+        container: { x: 150, y: 150, w: 130, h: 130 },
+      }
+    })
+    const got = layoutCallouts(items, {
+      free: (b) => !items.some((it) => boxesHit(it.anchor, b)),
+      maxLeader: CALLOUT_MAX_LEADER,
+    })
+    const placed = [...got.values()]
+    expect(placed.length).toBe(8)
+    expect(anyCross(placed.map((p) => p.leader))).toBe(false)
+    expect(anyOverlap(placed.map((p) => p.box))).toBe(false)
+  })
+
   it("leaves out a tile with no free place anywhere", () => {
     const got = layoutCallouts(row(1), { free: () => false })
     expect(got.size).toBe(0)
+  })
+})
+
+describe("tileEnd", () => {
+  it("meets the tile's edge on the way to its centre", () => {
+    const a = { x: 0, y: 0, w: 20, h: 10 }
+    expect(tileEnd([10, -20], a)).toEqual([10, 0])
+    expect(tileEnd([40, 5], a)).toEqual([20, 5])
+    expect(tileEnd([5, 5], a)).toEqual([5, 5])
+  })
+})
+
+describe("calloutClusters", () => {
+  it("chains tiles near each other, the same in any order", () => {
+    const tiles = [
+      { id: "a", box: { x: 0, y: 0, w: 28, h: 28 } },
+      { id: "b", box: { x: 40, y: 0, w: 28, h: 28 } },
+      { id: "c", box: { x: 80, y: 0, w: 28, h: 28 } },
+      { id: "d", box: { x: 400, y: 0, w: 28, h: 28 } },
+    ]
+    const g = calloutClusters(tiles, 20)
+    expect(g.get("a")).toBe(g.get("c"))
+    expect(g.get("d")).not.toBe(g.get("a"))
+    expect(calloutClusters([...tiles].reverse(), 20)).toEqual(g)
   })
 })
 
@@ -261,23 +353,34 @@ function serverRoom(
 }
 
 describe("layoutPlanLabels with callouts", () => {
-  it("names a dense row in callouts outside the room, not plain", () => {
-    // Far out: a rack ~1 cell is 10 px, its icon 28 px - they touch.
+  it("names a whole cluster in callouts, never mixed with plain names", () => {
+    // Far out: a rack ~1 cell is 10 px, its icon 28 px - they touch. The
+    // middle two have a neighbour either side; the ends' names would fit,
+    // but the row is one cluster: all four in callouts.
     const got = layoutPlanLabels(serverRoom(0.75))
-    // The middle two have a neighbour either side; the ends' names fit
-    // clear on the outside and stay plain.
-    expect(got.callouts.map((c) => c.id).sort()).toEqual(["R-A02", "R-A03"])
-    expect(got.tiles.map((t) => t.id).sort()).toEqual(["R-A01", "R-A04"])
+    expect(got.callouts.map((c) => c.id).sort()).toEqual([
+      "R-A01",
+      "R-A02",
+      "R-A03",
+      "R-A04",
+    ])
+    expect(got.tiles).toEqual([])
     expect(got.tileNamesHere.has("R-A02")).toBe(true)
-    // Above Server room A (y 203 cells), in order, never overlapping.
+    // Leaders capped, boxes never overlapping, no leader crossing another.
     const scale = 40 * 0.75
+    for (const c of got.callouts)
+      expect(
+        Math.hypot(
+          (c.leader[1][0] - c.leader[0][0]) * scale,
+          (c.leader[1][1] - c.leader[0][1]) * scale
+        )
+      ).toBeLessThanOrEqual(CALLOUT_MAX_LEADER + 1e-6)
     const boxes = got.callouts.map((c) => ({
       x: c.at[0] * scale - c.size.w / 2,
       y: c.at[1] * scale - c.size.h / 2,
       w: c.size.w,
       h: c.size.h,
     }))
-    expect(boxes.every((b) => b.y + b.h <= 203 * scale)).toBe(true)
     expect(anyOverlap(boxes)).toBe(false)
     expect(
       anyCross(
@@ -287,6 +390,15 @@ describe("layoutPlanLabels with callouts", () => {
         ])
       )
     ).toBe(false)
+  })
+
+  it("keeps a tile apart from the cluster plain", () => {
+    // R-A09 far along the row: a cluster of its own, its name clear.
+    const tiles = [...serverRoom(0.75).tiles, rack("R-A09", 88, 206)]
+    const got = layoutPlanLabels(serverRoom(0.75, { tiles }))
+    expect(got.callouts.map((c) => c.id)).not.toContain("R-A09")
+    expect(got.callouts.length).toBe(4)
+    expect(got.tiles.map((t) => t.id)).toEqual(["R-A09"])
   })
 
   it("keeps plain names where they sit clearly", () => {
@@ -315,7 +427,7 @@ describe("layoutPlanLabels with callouts", () => {
       })
     )
     expect(b.callouts).toEqual(a.callouts)
-    expect(a.callouts.length).toBe(2)
+    expect(a.callouts.length).toBe(4)
   })
 
   it("carries the chosen lines and sizes the box for them", () => {

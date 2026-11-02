@@ -1231,28 +1231,43 @@ for, so a row of R-A01 to R-A04 still reads left to right.
 From afar a row of racks is a row of icons a few pixels apart, and a name
 beside one icon is as near the next. **Display → Callouts** (**Auto** unless
 the plan turns it **Off**) names such a tile in a small **callout** instead:
-a box with the name, set off in free space - outside the tile's room
-(an area linked to a room), else outside its group of tiles - with a thin
-**leader** to the tile's edge.
+a box with the name, set off in free space near the tile, with a
+**leader** back to it.
 
 - **Which tiles.** A device, rack or cabinet drawn as an icon or grown
   symbol whose name has no free place by it, or whose name would sit as
-  near another tile as its own. A name that fits clearly stays a plain
-  name; the ends of a row often do, the middle ones become callouts.
-- **Where.** Each tile's callout goes to the nearest side of its room,
-  above or below first; the boxes along a side sit in one row in the order
-  of their tiles, so the leaders never cross. A row that would cover a tile,
-  an icon, a label or another callout moves out, a box at a time if it
-  must; as a last resort a leader may cross another tile rather than leave
-  a name out. A tile with no place anywhere keeps its plain name, or hides
-  as any name does.
+  near another tile as its own. Tiles close together form a **cluster**:
+  when any name in a cluster needs a callout, every name in it gets one,
+  so a cluster never mixes boxes and plain names. A tile apart from the
+  rest keeps its plain name when it fits.
+- **The leader.** A solid line in the foreground colour on a casing of the
+  background, so it reads on a light map, a satellite photo or a dark
+  plan. It leaves from a small tab in the middle of the box's edge that
+  faces the tile and runs straight to the tile's edge, aimed at its
+  centre, ending in a dot. Leaders never cross each other or a box and
+  keep off other tiles where they can; they are drawn over the map, trays
+  and cables, never under them.
+- **The box.** A thin bar down its left edge in the tile's own colour,
+  the colour its icon is drawn in.
+- **Where.** Close to the tile: no leader is longer than about four icons.
+  The racks of a room first try a tidy row along the nearest side of the
+  room, in the order of their tiles; when that row would be too far, would
+  cover something or would cross a leader, each box takes the free spot
+  nearest its own tile - always so for tiles on a site-wide map outside
+  any room. A box never covers a tile, an icon, a label or another
+  callout. When nothing is free nearby a leader may run twice as long,
+  then cross another tile, rather than leave a name out. A tile with no
+  place anywhere hides its name (in a cluster of callouts) or keeps its
+  plain name.
 - **Steady.** Callouts are laid out for the whole plan at the settled
   zoom, never for the view, so panning does not move them.
 - **What they show.** The name, then up to three lines chosen per
   [panel layout](#panel-layouts) under **Callout**: a status or role as its
   badge, anything else as muted text. With none chosen it is the name alone.
-- **Hover and click.** Hovering a callout lights its tile and its leader;
-  hovering or selecting the tile lights its callout. A click opens the
+- **Hover and click.** Hovering a callout or its tile lights the pair - the
+  box's border, a thicker leader and the dot in the accent colour, the
+  tile ringed - and dims the other callouts; selecting the tile lights its
+  callout. A click opens the
   object's detail panel, as a click on the tile does (in Edit it selects
   the tile).
 - Lower-ranked texts - tray, room and area names, raised-floor captions -
