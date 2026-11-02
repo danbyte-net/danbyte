@@ -11,10 +11,17 @@ import { useUrlTab } from "@/lib/use-url-tab"
 import { listRowFromCache } from "@/lib/list-row-cache"
 import { Loading } from "@/components/loading"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { GitCompareArrows, Pencil, RefreshCw, Trash2 } from "lucide-react"
+import {
+  GitCompareArrows,
+  Pencil,
+  RefreshCw,
+  Target,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react"
 import { useCallback, useState } from "react"
 
-import { api, type VirtualDisk, type VirtualMachine } from "@/lib/api"
+import { api, type VirtualMachine } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -46,8 +53,13 @@ import {
   MonitoringHeaderBadge,
 } from "@/components/monitoring/monitoring-bar"
 import { KvCard, type KvRow, mono, dash } from "@/components/kv-card"
-import { OverviewTable } from "@/components/overview-table"
-import type { SimpleColumn } from "@/components/ui/simple-table"
+import {
+  VmBuildCard,
+  VmDisks,
+  VmDriftCard,
+  VmProvisionButton,
+  hasBuild,
+} from "@/components/vm-build"
 import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
@@ -173,6 +185,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       actions={
         <>
           <SpecSheetButton kind="vm" id={vm.id} />
+          {vm.intended && canDo("virtualmachine", "provision") && (
+            <VmProvisionButton vm={vm} />
+          )}
           {canEdit && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>
@@ -199,6 +214,18 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
             <>
               <StatusBadge status={vm.status} />
               <PowerBadge state={vm.power_state} />
+              {vm.intended && (
+                <Badge variant="outline" className="gap-1 text-[10px]">
+                  <Target className="h-3 w-3" />
+                  Intended
+                </Badge>
+              )}
+              {vm.intended && vm.missing_since && (
+                <Badge variant="warning" className="gap-1 text-[10px]">
+                  <TriangleAlert className="h-3 w-3" />
+                  Not present
+                </Badge>
+              )}
               <MonitoringHeaderBadge target={{ virtual_machine: vm.id }} />
               {vm.synced_from && (
                 <Link
@@ -593,6 +620,15 @@ function VmOverview({
   const notify = vm.primary_ip ? { ip: vm.primary_ip.id } : undefined
   return (
     <div className="space-y-6">
+      {vm.intended && vm.missing_since && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[13px]">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+          <span>
+            Intended, not present on any hypervisor since{" "}
+            <TimeCell iso={vm.missing_since} />.
+          </span>
+        </div>
+      )}
       <MonitoringBar
         target={{ virtual_machine: vm.id }}
         notify={notify}
@@ -624,12 +660,14 @@ function VmOverview({
             slot="compact"
           />
           <KvCard title="Resources" rows={resourceRows} />
+          {hasBuild(vm) && <VmBuildCard vm={vm} />}
           <SoftwareSummaryCard parent={{ kind: "vm", id: vm.id }} />
           <DeviceProfilesCard host={{ kind: "vm", id: vm.id }} />
           <KvCard title="Management" rows={managementRows} />
         </div>
       </div>
-      {vm.disks.length > 0 && <VmDisks disks={vm.disks} />}
+      {vm.intended && <VmDriftCard vmId={vm.id} />}
+      <VmDisks vm={vm} />
       <VmTopologyCard
         vmId={vm.id}
         vmName={vm.name}
@@ -637,44 +675,5 @@ function VmOverview({
       />
       <CustomFieldValues model="virtualmachine" values={vm.custom_fields} />
     </div>
-  )
-}
-
-/** The VM's virtual disks (synced or operator-added), in the Overview's
- * table chrome. */
-const DISK_COLUMNS: SimpleColumn<VirtualDisk>[] = [
-  {
-    id: "name",
-    header: "Disk",
-    cell: (d) => <span className="font-mono text-xs">{d.name || d.key}</span>,
-  },
-  {
-    id: "size",
-    header: "Size",
-    cell: (d) =>
-      d.size_gb != null ? <span className="num">{d.size_gb} GB</span> : dash,
-  },
-  {
-    id: "storage",
-    header: "Storage",
-    cell: (d) => d.storage || dash,
-  },
-  {
-    id: "controller",
-    header: "Controller",
-    cell: (d) =>
-      d.controller ? <span className="uppercase">{d.controller}</span> : dash,
-  },
-]
-
-function VmDisks({ disks }: { disks: VirtualDisk[] }) {
-  return (
-    <OverviewTable
-      title="Disks"
-      count={disks.length}
-      columns={DISK_COLUMNS}
-      data={disks}
-      getRowKey={(d) => d.id}
-    />
   )
 }

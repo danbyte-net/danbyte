@@ -67,9 +67,57 @@ with a richer context:
 | `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, custom_fields}`, or `None` on an uncabled port. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
 | `routing` | What the device routes with - VRFs, static routes, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `backing_vm` | When the device runs as an [intended VM](virtual-machines.md#intended-vms) you may view (**Is router**), that VM's build: `name`, `vmid`, `cluster`, `node`, `cpu_type`, `sockets`, `vcpus`, `memory_mb`, `disk_gb`, `image`, `storage`, `hypervisor_options`, `interfaces` (each with `index`, `model`, `bridge`, `mac_address`, `mtu`, `vlan`, …) and `disks`. A plain dict, the same shape a [provision](iac-runner.md#provisioning-an-intended-vm) sends. `None` otherwise. |
 
-Virtual machines render the same way (`vm` and `device` both name the VM;
-`routing` is empty).
+### Rendering one VM
+
+Virtual machines render the same way (`GET /api/virtual-machines/<id>/render/?template=`;
+`vm` and `device` both name the VM, `routing` holds what the VM routes
+with), plus:
+
+| Variable | What it holds |
+|---|---|
+| `interfaces` | The VM's interfaces, in slot (`index`) order, then by name. |
+| `disks` | Its [virtual disks](virtual-machines.md#disks). |
+| `represents_device` | `{id, name}` of the device the VM is, or `None`. |
+| `build` | The VM's build, as `backing_vm` above. |
+
+### Rendering one object of any type
+
+A template's list render (`objects`) puts every row of its type in one file.
+For one object, add `?object=<id>` to its preview or render:
+
+```
+GET /api/export-templates/<id>/preview/?object=<object id>   → {output}
+GET /api/export-templates/<id>/render/?object=<object id>    → the file
+GET /api/clusters/<id>/render/?template=<template id>        → {output, template}
+```
+
+The object must be of the template's type, in your tenant, and one you may
+view; anything else is a 404. Devices and VMs get the contexts above. Any
+other type gets the object under its type name (`cluster`) and as
+`object`, with `objects` holding just it and `count` 1. Clusters also get:
+
+| Variable | What it holds |
+|---|---|
+| `cluster` | The cluster - `cluster.name`, `cluster.type`, `cluster.group`, `cluster.site`, `cluster.custom_fields`, … |
+| `hosts` | Devices in the cluster, and the hosts its VMs run on, by name. |
+| `virtual_machines` | The cluster's VMs, by name. |
+| `vm_groups` | Its [VM groups](vm-groups.md). |
+
+Each list holds only the rows you may view, as in an export. The cluster
+alias needs the **view** permission on export templates and on clusters,
+and takes only a template whose object type is cluster. A Kolla
+`globals.yml` per cluster:
+
+```jinja
+kolla_internal_vip_address: "{{ cluster.custom_fields.kolla_vip }}"
+{% for h in hosts %}
+# {{ h.name }} {{ h.primary_ip.ip_address if h.primary_ip else "" }}
+{% endfor %}
+```
+
+[Bundles](#bundles-every-file-a-device-needs) stay device-only.
 
 A port description the way a running config carries it, from the far end:
 

@@ -512,6 +512,7 @@ export type RBACAction =
   | "set_default"
   | "view_config"
   | "view_cost"
+  | "provision"
 
 export interface RBACUser {
   id: number
@@ -1883,6 +1884,9 @@ export interface Device {
   install_count?: number
   /** Device profiles in order, with their assignment state. */
   device_profiles?: HostDeviceProfile[]
+  /** The VM this device runs as (a virtual router); detail only, null
+   * when there is none or the caller may not view it. */
+  backing_vm?: { id: string; name: string; intended: boolean } | null
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
   image_count?: number
@@ -6039,6 +6043,22 @@ export interface VirtualMachine {
   memory_mb: number | null
   disk_gb: number | null
   disks: VirtualDisk[]
+  /** Danbyte holds the intent: sync raises drift, never overwrites it,
+   * never deletes the VM or prunes its NICs and disks. */
+  intended?: boolean
+  /** The Device this VM is (a virtual router), not its host. */
+  represents_device?: { id: string; name: string } | null
+  /** The hypervisor id to build it with; unique per cluster. */
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  /** Template or cloud image; the runner interprets it. */
+  image?: string
+  /** Default storage for disks that name none. */
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
+  /** When the hypervisor stopped reporting this VM's guest; null if present. */
+  missing_since?: string | null
   interface_count?: number
   disk_count?: number
   service_count?: number
@@ -6060,6 +6080,7 @@ export interface VirtualMachine {
 
 export interface VirtualDisk {
   id: string
+  vm?: { id: string; name: string; status: StatusMini | null }
   key: string
   name: string
   size_gb: number | null
@@ -6068,6 +6089,17 @@ export interface VirtualDisk {
   disk_format: string
   created_disk: boolean
   description: string
+}
+
+export interface VirtualDiskWritePayload {
+  vm_id: string
+  key: string
+  name?: string
+  size_gb?: number | null
+  storage?: string
+  controller?: string
+  disk_format?: string
+  description?: string
 }
 
 export interface VirtNetwork {
@@ -6139,6 +6171,14 @@ export interface VirtualMachineWritePayload {
   vcpus?: number | null
   memory_mb?: number | null
   disk_gb?: number | null
+  intended?: boolean
+  represents_device_id?: string | null
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  image?: string
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
   /** The software version running (#395). */
   software_version?: string
   description?: string
@@ -6157,6 +6197,12 @@ export interface VMInterface {
   kind: "" | "bridge" | "loopback" | "tunnel"
   /** The interface this one rides on (wg0 over eth0); same-VM, no loops. */
   parent: { id: string; name: string } | null
+  /** Hypervisor slot (Proxmox netN); unique per VM. */
+  index?: number | null
+  model?: VMInterfaceModel
+  /** SDN VNet or Linux bridge name. */
+  bridge?: string
+  firewall?: boolean | null
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
@@ -6185,10 +6231,17 @@ export interface VMInterface {
   updated_at: string
 }
 
+export type VMInterfaceModel =
+  "" | "virtio" | "e1000" | "e1000e" | "vmxnet3" | "rtl8139"
+
 export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
   kind?: string
+  index?: number | null
+  model?: VMInterfaceModel
+  bridge?: string
+  firewall?: boolean | null
   parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
@@ -11594,7 +11647,10 @@ export interface DeployRun {
   id: string
   target_name: string
   event: string
+  /** The dispatched ids; the key keeps its name for compatibility. */
   device_ids: string[]
+  /** What the ids are: "device", or "virtualmachine" for a provision. */
+  object_type?: string
   status: "queued" | "launched" | "failed"
   detail: string
   created_at: string

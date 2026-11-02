@@ -29,6 +29,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Description**, **tags**, **custom fields** | Free-form notes, labels and your own attributes. Custom fields are checked on save as on devices: a required one must have a value, a choice must be one of its choices, and an object field must point at an object of this tenant. |
 | **Application groups**, **Profiles** | The [application groups](applications.md#application-groups) and [device profiles](device-profiles.md#on-devices-and-vms) it gets, in order, written with the save. |
 | **PRTG** | Only while [PRTG monitoring](prtg.md) is on: **Follow policies** (the default), **Monitor in PRTG** or **Exclude from PRTG** - see [Registering devices and VMs](prtg.md#registering-devices-and-vms). API field `prtg_sync` (`inherit`, `always`, `never`). |
+| **Intended**, **Is router**, build fields | Danbyte holds this VM's intent, and the device it *is*. See [Intended VMs](#intended-vms). |
 
 ## The detail page
 
@@ -185,9 +186,68 @@ VM. Unticking the box clears it again.
 
 **Virtual disks** are listed on the VM's Overview in a card like the
 attribute cards: name, size, the storage pool or datastore they live on, and
-their controller. They're descriptive - the VM's
-own *Disk* figure is its own field, not a total of these. A sync imports them
-when **Sync disks** is enabled on the source.
+their controller. The VM's own *Disk* figure is its own field, not a total
+of these. A sync imports them when **Sync disks** is enabled on the source.
+
+Disks are editable: add, edit and delete them on the Overview, or through
+`/api/virtual-disks/` (`vm_id`, `key` such as `scsi0`, `name`, `size_gb`,
+`storage`, `controller`, `disk_format`, `description`; `?vm=<id>` lists one
+VM's). The key is unique per VM. Tenant and site come through the VM, and
+the permissions are the **Virtual disks** object type's. A sync prunes only
+the disks it created itself, and never an [intended](#intended-vms) VM's.
+
+## Intended VMs
+
+Tick **Intended** on a VM when Danbyte holds its intent - a virtual router
+you rebuild from Danbyte alone. A [sync](external-sync.md) then compares the
+hypervisor against it, but never rewrites it:
+
+- it is adopted by its **VMID** (Proxmox), then by name;
+- spec, VMID and NIC differences are always raised as drift for review, in
+  *Automatic* mode too, and even when the sync created the VM;
+- blank fields are still filled in, as on any adopted VM;
+- it is never deleted or proposed for removal, and its NICs and disks are
+  never pruned. When its guest is gone the page says **Not on any
+  hypervisor** (`missing_since` in the API);
+- rebuilt with a new VMID, the new guest is linked to it once the old one
+  has gone.
+
+The rules in full are in [Proxmox VE sync](virt-proxmox.md#intended-vms).
+
+| Field | API | Notes |
+| --- | --- | --- |
+| **Intended** | `intended` | Off by default. Ticking it on a synced VM changes nothing else. |
+| **Is router** | `represents_device` (read), `represents_device_id` (write) | The [device](../dcim/devices.md) this VM *is*, as opposed to **Host device**, the host it runs on. Same tenant, never its own host, one VM per device. A site-scoped user can only pick a device of their own sites. The device's page links back to it as **Backing VM** (`backing_vm` on the device's own read). |
+| **VMID** | `vmid` | The hypervisor id to build it with. Unique per cluster. |
+| **CPU type**, **Sockets** | `cpu_type`, `sockets` | `host`, `x86-64-v2-AES`, … *vCPUs* stays the total. |
+| **Image** | `image` | A template VMID or name, or a cloud image (`local:import/debian-13.qcow2`). Free text: the runner reads it. |
+| **Storage** | `storage` | The default for disks that name none. |
+| Hypervisor options | `hypervisor_options` | API only: an object of the long tail (`machine`, `bios`, `agent`, `onboot`), passed through and never compared. |
+
+Each interface also carries its **Index** (`index`, Proxmox `netN`, unique
+per VM), **Model** (`model`: `virtio`, `e1000`, `e1000e`, `vmxnet3`,
+`rtl8139`), **Bridge** (`bridge`, the Linux bridge or SDN VNet, free text)
+and `firewall`. The Components tab shows them as columns.
+
+The VM list filters on `?intended=true|false`, `?represents_device=<id>`
+and `?vmid=<n>`.
+
+On an intended VM's page the Overview has a **Build** card with these
+fields, and a **Drift** card with what the hypervisor reports where it
+differs from the intent.
+
+### Building it: render and provision
+
+A rebuild script reads everything from the API: the VM with its
+`interfaces` and `disks`, or a [render](export-templates.md#rendering-one-vm)
+of it. A device render also carries `backing_vm`, the build of the VM the
+device runs as.
+
+**Provision** on an intended VM's header sends it to an
+[automation target](iac-runner.md#provisioning-an-intended-vm) that takes
+virtual machines: the runner builds it on the hypervisor. Danbyte never
+calls a hypervisor's write API. It needs the **provision** permission on
+virtual machines, and each request is written to the change log.
 
 ## What a sync owns, and what you own
 
@@ -198,6 +258,8 @@ For a VM that came from a hypervisor:
 - **You own** everything else: role, platform, **site**, tags, custom fields,
   description and the primary-IP choice. A sync never overwrites those, in any
   mode.
+- On an [intended](#intended-vms) VM you also own its specs, NICs and disks,
+  and its existence.
 
 VMs, interfaces and IPs **you** created are linked and blank-filled, never
 overwritten, and never deleted by a sync.
