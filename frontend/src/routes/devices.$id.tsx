@@ -1220,6 +1220,23 @@ function DeviceOverview({
           } satisfies KvRow,
         ]
       : []),
+    // The VM this device runs as - a virtual router modelled as a device.
+    ...(d.backing_vm
+      ? [
+          {
+            label: "Backing VM",
+            value: (
+              <Link
+                to="/virtual-machines/$id"
+                params={{ id: d.backing_vm.id }}
+                className="link"
+              >
+                {d.backing_vm.name}
+              </Link>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     {
       label: "Config template",
       value: d.config_template?.resolved ? (
