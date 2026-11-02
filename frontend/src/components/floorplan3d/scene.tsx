@@ -133,6 +133,7 @@ export default function FloorScene3D({
   drawingFloor = null,
   areas = [],
   readableNames = false,
+  readableIcons = true,
   muteBackground = true,
 }: {
   planId: string
@@ -183,6 +184,9 @@ export default function FloorScene3D({
   /** Display > Object size: Readable - every object's name at one size on
    * screen, thinned (readable-names.tsx). */
   readableNames?: boolean
+  /** Display > Icons when zoomed out: the names' plates carry the
+   * object's icon. */
+  readableIcons?: boolean
   /** Display > Muted background: the floor's picture muted as on the 2D
    * plan. */
   muteBackground?: boolean
@@ -1011,6 +1015,7 @@ export default function FloorScene3D({
           <ReadableNames3D
             plan={plan}
             tiles={namedTiles}
+            icons={readableIcons}
             pinned={() => [selection?.tileId, hoverStore.get()]}
           />
         )}

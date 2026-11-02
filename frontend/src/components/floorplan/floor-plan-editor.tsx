@@ -851,6 +851,7 @@ export function FloorPlanEditor({
           showTrays: prefs.showTrays,
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
+          iconTiles: prefs.iconTiles,
           mmPerPx: planPaperScale(plan, paper),
           cables: withCables
             ? {

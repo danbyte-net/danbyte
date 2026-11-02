@@ -572,6 +572,11 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text="How wide the topology Diagram draws photos of this type. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name (e.g. router, server, cctv) for devices of "
+                  "this type on maps and floor plans. Blank uses the role's.",
+    )
     front_image = models.ImageField(
         upload_to="device-type-images/", blank=True, null=True,
         help_text="Front rack-face image, rendered in rack elevations.",
@@ -2462,6 +2467,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         help_text="How wide the topology Diagram draws this device's photo. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name for this device on maps and floor plans. "
+                  "Blank uses its type's, then its role's.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,
@@ -2537,6 +2547,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
             or (self.device_type.cooling_method if self.device_type else "")
             or COOLING_DEFAULT
         )
+
+    @property
+    def own_icon(self) -> str:
+        """Its own icon, else its type's: what wins over a floor tile's type
+        and the role."""
+        return self.icon or (self.device_type.icon if self.device_type_id else "")
+
+    @property
+    def display_icon(self) -> str:
+        """The icon this device draws with: its own, else its type's, else
+        its role's; "" leaves the default (by kind) to the client."""
+        return self.own_icon or (self.role.icon if self.role_id else "")
 
     def __str__(self) -> str:
         return self.name

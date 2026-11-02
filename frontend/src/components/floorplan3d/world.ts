@@ -97,6 +97,10 @@ export interface SceneTile {
   label: string
   kind: "rack" | "cabinet" | "device" | "other"
   color: string
+  /** The resolved icon: the device's own or its type's, the tile's type,
+   * then the role; "" takes the default by kind. Optional for older
+   * cached payloads. */
+  icon?: string
   is_zone: boolean
   rack: SceneRack | null
   /** The linked cabinet. Optional so older cached payloads stay valid. */

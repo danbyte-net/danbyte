@@ -10,6 +10,8 @@ export interface ColorBadgeProps {
   color?: string
   /** Optional muted suffix (e.g. RD on a VRF, slug on a tenant). */
   suffix?: React.ReactNode
+  /** Optional leading icon (a device role's: NamedIcon). */
+  icon?: React.ReactNode
   className?: string
 }
 
@@ -20,11 +22,13 @@ export function ColorBadge({
   name,
   color,
   suffix,
+  icon,
   className,
 }: ColorBadgeProps) {
   if (!color) {
     return (
       <Badge variant="secondary" className={cn("gap-1.5", className)}>
+        {icon}
         {name}
         {suffix && (
           <span className="font-mono text-muted-foreground opacity-80">
@@ -40,6 +44,7 @@ export function ColorBadge({
       className={cn("gap-1.5", className)}
       style={{ backgroundColor: cssColor(color), color: fg }}
     >
+      {icon}
       {name}
       {suffix && <span className="font-mono opacity-80">{suffix}</span>}
     </Badge>

@@ -33,6 +33,7 @@ import {
 import { dash } from "@/components/cells/dash"
 import { numidColumn } from "@/components/cells/numid"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { NamedIcon } from "@/components/dynamic-icon"
 import {
   LifecycleFlag,
   lifecycleNextColumn,
@@ -299,6 +300,7 @@ export function buildDeviceColumns<T extends Device = Device>(
             <ColorBadge
               name={row.original.role.name}
               color={row.original.role.color || undefined}
+              icon={<NamedIcon name={row.original.role.icon} />}
             />
           </Link>
         ) : (

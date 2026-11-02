@@ -75,15 +75,19 @@ import {
   textSize,
 } from "./plan-labels"
 import {
+  ICON_TILE_MM,
   READABLE_FONT_MM,
   READABLE_SHORT_MM,
   READABLE_SYMBOL_MM,
   READABLE_TRAY_MM,
   fontGrow,
   growStubs,
+  iconTileShape,
+  isIconTile,
   readableShape,
 } from "./readable"
-import type { CellBox, ObjectSize } from "./readable"
+import type { CellBox, ObjectSize, ReadableShape } from "./readable"
+import { tileIcon } from "@/components/object-icon"
 import { rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
@@ -141,6 +145,9 @@ export interface PlanSvgInput {
    * READABLE_SYMBOL_MM on paper, names at READABLE_FONT_MM, thinned where
    * they would overlap - at the paper's scale. */
   objectSize?: ObjectSize
+  /** Icons when zoomed out: a device, rack or cabinet under ICON_TILE_MM
+   * on its long side prints as its icon tile, READABLE_SYMBOL_MM square. */
+  iconTiles?: boolean
   /** Paper mm per plan px of the sheet (planPaperScale) when the drawing
    * is not framed to its content; A3 landscape otherwise. */
   mmPerPx?: number
@@ -1081,23 +1088,39 @@ function labelsMarkup(
   )
 }
 
-/** A tile too thin, or a photo too small, to read on paper: its symbol -
- * a rounded box in its colour at the drawn size (`box`, cells). */
-function symbolMarkup(t: FloorPlanTile, box: CellBox): string {
+/** A tile too thin, or too small, to read on paper: its symbol - a
+ * rounded box in its colour at the drawn size (`box`, cells) with its icon
+ * in white (object-icon.ts), as the canvas draws it (ReadableSymbol). */
+function symbolMarkup(
+  t: FloorPlanTile,
+  box: CellBox,
+  iconTile = false
+): string {
   const r = (n: number) => +n.toFixed(2)
   const w = box.w * CELL
   const h = box.h * CELL
-  return el("rect", {
-    x: r(box.x * CELL),
-    y: r(box.y * CELL),
-    width: r(w),
-    height: r(h),
-    rx: r(Math.min(w, h) * 0.2),
-    fill: tileFill(t),
-    "fill-opacity": 0.9,
-    stroke: tileFill(t),
-    "data-symbol": t.id,
-  })
+  const side = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
+  return (
+    el("rect", {
+      x: r(box.x * CELL),
+      y: r(box.y * CELL),
+      width: r(w),
+      height: r(h),
+      rx: r(Math.min(w, h) * 0.2),
+      fill: tileFill(t),
+      "fill-opacity": 0.9,
+      stroke: tileFill(t),
+      "data-symbol": t.id,
+      ...(iconTile ? { "data-icon-tile": t.id } : {}),
+    }) +
+    iconMarkup(
+      tileIcon(t),
+      r(box.x * CELL + w / 2 - side / 2),
+      r(box.y * CELL + h / 2 - side / 2),
+      r(side),
+      "#ffffff"
+    )
+  )
 }
 
 /** The plan as SVG markup, `viewBox="0 0 W H"` in plan pixels. */
@@ -1116,6 +1139,7 @@ export function planSvg({
   cables,
   fitContent,
   objectSize = "real",
+  iconTiles = false,
   mmPerPx: sheetMmPerPx,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
@@ -1175,15 +1199,31 @@ export function planSvg({
   // Readable on paper: mm per cell, and how much each tile grows.
   const readable = objectSize === "readable"
   const mmPerCell = CELL * paperMmPerPx
-  const shapeOf = (t: FloorPlanTile) =>
+  // Icons on paper: one threshold, no zoom to hover about it.
+  const iconIds = new Set(
+    iconTiles
+      ? tiles
+          .filter((t) => isIconTile(t, mmPerCell, false, ICON_TILE_MM))
+          .map((t) => t.id)
+      : []
+  )
+  const readableOf = (t: FloorPlanTile) =>
     readableShape(t, mmPerCell, {
       minLong: READABLE_SYMBOL_MM,
       minShort: READABLE_SHORT_MM,
       // No photos on paper: only a tile too thin turns symbol.
       minPhoto: 0,
     })
-  const growOf = (t: FloorPlanTile) => (readable ? shapeOf(t).grow : 1)
-  if (readable && cables?.stubs)
+  /** How a tile prints when not as itself, or null. */
+  const shapeOf = (t: FloorPlanTile): ReadableShape | null =>
+    iconIds.has(t.id)
+      ? iconTileShape(t, mmPerCell, READABLE_SYMBOL_MM)
+      : readable
+        ? readableOf(t)
+        : null
+  const anyShape = readable || iconIds.size > 0
+  const growOf = (t: FloorPlanTile) => shapeOf(t)?.grow ?? 1
+  if (anyShape && cables?.stubs)
     cables = {
       ...cables,
       stubs: growStubs(
@@ -1191,7 +1231,8 @@ export function planSvg({
         tiles,
         mmPerCell,
         READABLE_SYMBOL_MM,
-        READABLE_SHORT_MM
+        READABLE_SHORT_MM,
+        shapeOf
       ),
     }
   // The one label pass, at the paper's scale: plan labels, the cables'
@@ -1206,7 +1247,7 @@ export function planSvg({
     repeat: LABEL_REPEAT_MM,
     gap: 0.6,
     tiles,
-    shapeOf: readable ? shapeOf : null,
+    shapeOf: anyShape ? shapeOf : null,
     zoneGrow: readable ? fontGrow(10, paperMmPerPx, READABLE_FONT_MM) : 1,
     trays: showTrays ? trays : [],
     trayWidth: readable
@@ -1259,19 +1300,19 @@ export function planSvg({
   const free = plan.layout_mode === "free"
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
-  const ordered = readable
+  const ordered = anyShape
     ? [
-        ...solid.filter((t) => !shapeOf(t).changed),
-        ...solid.filter((t) => shapeOf(t).changed),
+        ...solid.filter((t) => !shapeOf(t)?.changed),
+        ...solid.filter((t) => shapeOf(t)?.changed),
       ]
     : solid
   for (const t of ordered) {
     // A free plan's tile turned past its quarter turn (shapes.ts).
     const r = free ? tileBox(t).rotation : 0
     // Too thin to read: its symbol at the drawn size.
-    const shape = readable ? shapeOf(t) : null
+    const shape = shapeOf(t)
     if (shape?.symbol) {
-      body.push(symbolMarkup(t, shape.box))
+      body.push(symbolMarkup(t, shape.box, iconIds.has(t.id)))
       continue
     }
     const g = growOf(t)
