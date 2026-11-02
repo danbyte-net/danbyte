@@ -255,7 +255,15 @@ def parse_json_cell(field, value):
     try:
         return json.loads(value)
     except (TypeError, ValueError):
+        # A list of plain words may be written as a comma-separated cell
+        # ("0.0.0.0/0, ::/0"); the model's clean() checks each entry.
+        if (field.model._meta.label_lower, field.name) in _CSV_LIST_FIELDS:
+            return [v.strip() for v in str(value).split(",") if v.strip()]
         raise ValidationError(f"{field.name}: not valid JSON.") from None
+
+
+#: JSON list columns whose cell may also be written as ``a, b, c``.
+_CSV_LIST_FIELDS = {("api.tunneltermination", "allowed_ips")}
 
 
 def _coerce(field, value, tenant, user=None, scope=None):

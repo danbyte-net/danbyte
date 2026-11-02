@@ -2,8 +2,22 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { Waypoints } from "lucide-react"
 
-import { api, type Paginated, type Tunnel } from "@/lib/api"
+import {
+  api,
+  type Paginated,
+  type Tunnel,
+  type TunnelTermination,
+} from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
+
+/** `host:port` a far end is dialled on: its outside IP and its endpoint port
+ * (or listen port). Null when either is unknown. */
+function endpointOf(tt: TunnelTermination): string | null {
+  const host = tt.outside_ip?.ip_address
+  const port = tt.endpoint_port ?? tt.listen_port
+  if (!host || !port) return null
+  return host.includes(":") ? `[${host}]:${port}` : `${host}:${port}`
+}
 
 // The tunnels (VPN overlays) terminating on this device - the "show them in
 // general" surface beyond the map. Each row: the tunnel, its encapsulation,
@@ -60,12 +74,14 @@ export function DeviceTunnelsCard({ deviceId }: { deviceId: string }) {
                   <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
                     ↔{" "}
                     {others
-                      .map(
-                        (tt) =>
+                      .map((tt) => {
+                        const name =
                           tt.interface?.device.name ??
                           tt.vm_interface?.vm.name ??
                           "?"
-                      )
+                        const ep = endpointOf(tt)
+                        return ep ? `${name} (${ep})` : name
+                      })
                       .join(", ")}
                   </div>
                 )}

@@ -67,9 +67,48 @@ with a richer context:
 | `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, custom_fields}`, or `None` on an uncabled port. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
 | `routing` | What the device routes with - VRFs, static routes, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `tunnels` | Every tunnel end on the device, with its far end(s) resolved. See [Tunnels](#tunnels). |
+| `tunnels_by_interface` | The same rows keyed by the local port name (`tunnels_by_interface["wg0"]`). |
 
 Virtual machines render the same way (`vm` and `device` both name the VM;
-`routing` is empty).
+`routing` carries the parts a VM runs - static routes, BGP and
+the IGPs).
+
+#### Tunnels
+
+```
+tunnels: [{id, name, encapsulation, tunnel_id, role, interface: "wg0",
+           outside_ip: "198.51.100.4",
+           wireguard: {listen_port, public_key, private_key_ref, allowed_ips,
+                       endpoint_port, persistent_keepalive} | null,
+           peers: [{id, device, interface, role, outside_ip, endpoint_port,
+                    endpoint: "203.0.113.9:51820", public_key, allowed_ips,
+                    persistent_keepalive}]}]
+tunnels_by_interface: {"wg0": <the same row>}
+```
+
+`tunnel_id` is the tunnel's number, not a row id. `wireguard` is `null` on a
+tunnel of another encapsulation. `peers` follows the end's role (a peer
+talks to every other end, a hub to the spokes and other hubs, a spoke to the
+hubs), and each peer's `endpoint_port` is already resolved: the far end's
+endpoint port, else its listen port. `allowed_ips` on a peer is the
+addresses behind that peer - see [WireGuard](vpn.md#wireguard). A peer's
+device name is shown even when it sits at another site, as a BGP session's
+`peer_device` is.
+
+An `/etc/network/interfaces` block for a WireGuard end - the same template
+renders both ends, each printing the other's key:
+
+```jinja
+{% set t = tunnels_by_interface["wg0"] %}
+auto wg0
+iface wg0 inet static
+    pre-up ip link add wg0 type wireguard
+    pre-up wg set wg0 private-key {{ t.wireguard.private_key_ref }} listen-port {{ t.wireguard.listen_port }}
+{% for p in t.peers %}
+    pre-up wg set wg0 peer {{ p.public_key }} allowed-ips {{ p.allowed_ips|join(",") }}{% if p.endpoint %} endpoint {{ p.endpoint }}{% endif %}{% if p.persistent_keepalive %} persistent-keepalive {{ p.persistent_keepalive }}{% endif %}
+{% endfor %}
+```
 
 A port description the way a running config carries it, from the far end:
 
@@ -265,6 +304,12 @@ every match of `<keychain:([^<>\s]+)>` with the key from
 An FHRP group's authentication key follows the same contract by group id:
 `<fhrp-key:ID>` (a `by_interface` row's `fhrp[].key_placeholder`), resolved
 from `POST /api/fhrp-groups/<ID>/reveal-psk/`.
+
+A WireGuard private key is never stored. A termination's
+`private_key_ref` (`tunnels[].wireguard.private_key_ref`) is printed as
+written: a path on the box, which the router fills itself, or a
+`<keychain:NAME>` placeholder, which the push tool resolves like any other
+keychain. Danbyte refuses a value that decodes as a key.
 
 ## Permissions and audit
 

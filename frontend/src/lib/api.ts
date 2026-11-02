@@ -11179,8 +11179,32 @@ export interface TunnelTermination {
     vm: { id: string; name: string }
   } | null
   outside_ip: { id: string; ip_address: string } | null
+  /** WireGuard (a `wireguard` tunnel only). `private_key_ref` is a reference
+   * - `<keychain:NAME>` or a path on the box - never the key. */
+  listen_port: number | null
+  public_key: string
+  private_key_ref: string
+  /** The addresses behind this end; the other ends route them to it. */
+  allowed_ips: string[]
+  endpoint_port: number | null
+  persistent_keepalive: number | null
+  /** The far end(s) this end talks to (detail reads only). */
+  peers?: TunnelPeer[]
   created_at: string
   updated_at: string
+}
+
+export interface TunnelPeer {
+  id: string
+  device: string | null
+  interface: string | null
+  role: TunnelTerminationRole
+  outside_ip: string | null
+  endpoint_port: number | null
+  endpoint: string | null
+  public_key: string | null
+  allowed_ips: string[]
+  persistent_keepalive: number | null
 }
 
 export interface TunnelTerminationWritePayload {
@@ -11189,6 +11213,12 @@ export interface TunnelTerminationWritePayload {
   interface_id?: string | null
   vm_interface_id?: string | null
   outside_ip_id?: string | null
+  listen_port?: number | null
+  public_key?: string
+  private_key_ref?: string
+  allowed_ips?: string[]
+  endpoint_port?: number | null
+  persistent_keepalive?: number | null
 }
 
 export interface Tunnel {

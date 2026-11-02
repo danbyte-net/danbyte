@@ -8567,6 +8567,36 @@ class TunnelTermination(TimestampedModel):
         related_name="tunnel_terminations",
         help_text="The underlay / public IP this tunnel end rides on.",
     )
+    # ── WireGuard: meaningful on a ``wireguard`` tunnel only. The private key
+    # never enters Danbyte; ``private_key_ref`` names where it lives (a
+    # ``<keychain:NAME>`` placeholder or a path on the box).
+    listen_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    public_key = models.CharField(max_length=44, blank=True, default="", db_default="")
+    private_key_ref = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+    )
+    #: The addresses behind this end, as CIDRs. Every other end prints them
+    #: in its peer block for this end (WireGuard's own meaning).
+    allowed_ips = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    #: The port the far end dials to reach this end, when NAT makes it differ
+    #: from ``listen_port``. Null = ``listen_port``.
+    endpoint_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    persistent_keepalive = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+    )
+
+    WIREGUARD_FIELDS = (
+        "listen_port", "public_key", "private_key_ref", "allowed_ips",
+        "endpoint_port", "persistent_keepalive",
+    )
 
     class Meta:
         ordering = ["created_at"]
@@ -8586,6 +8616,40 @@ class TunnelTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.tunnel.name}: {self.point}"
+
+    def has_wireguard(self) -> bool:
+        return bool(
+            self.listen_port or self.public_key or self.private_key_ref
+            or self.allowed_ips or self.endpoint_port or self.persistent_keepalive
+        )
+
+    def clean(self):
+        """WireGuard values: only on a WireGuard tunnel, keys in their shape,
+        and never a private key in ``private_key_ref``."""
+        from django.core.exceptions import ValidationError
+
+        from .wireguard import (
+            normalize_allowed_ips,
+            validate_private_key_ref,
+            validate_public_key,
+        )
+
+        self.public_key = (self.public_key or "").strip()
+        self.private_key_ref = (self.private_key_ref or "").strip()
+        self.allowed_ips = normalize_allowed_ips(self.allowed_ips)
+        if self.has_wireguard() and self.tunnel_id and (
+            self.tunnel.encapsulation != "wireguard"
+        ):
+            raise ValidationError(
+                {"public_key": "WireGuard settings need a WireGuard tunnel."}
+            )
+        if self.public_key:
+            validate_public_key(self.public_key)
+        if self.private_key_ref:
+            validate_private_key_ref(
+                self.private_key_ref,
+                tenant_id=self.tunnel.tenant_id if self.tunnel_id else None,
+            )
 
 
 class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):

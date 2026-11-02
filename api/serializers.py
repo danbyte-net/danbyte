@@ -11,6 +11,7 @@ import math
 import os
 import re
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils.text import slugify
@@ -9627,6 +9628,20 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         ip = outside_ip(obj, self.context, obj.tunnel.tenant_id)
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
+    allowed_ips = serializers.JSONField(required=False)
+    peers = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_peers(self, obj):
+        """The far end(s) this end talks to, as a render sees them. Only on
+        a WireGuard tunnel's detail - a list does not pay for it."""
+        from .wireguard import peer_dict, peer_terminations
+
+        if obj.tunnel.encapsulation != "wireguard":
+            return []
+        return [peer_dict(o) for o in peer_terminations(obj, list(obj.tunnel.terminations.all()))]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
@@ -9637,6 +9652,36 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "A termination binds exactly one of an interface or a VM interface."
             )
+        probe = TunnelTermination(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in TunnelTermination._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in TunnelTermination._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        try:
+            probe.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            ) from exc
+        for f in ("public_key", "private_key_ref", "allowed_ips"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        # One key, one end: unique among the tenant's terminations. A lookup in
+        # the tenant, not a global constraint, so it never says whether a key
+        # exists in another tenant.
+        if probe.public_key and probe.tunnel_id:
+            clash = TunnelTermination.objects.filter(
+                tunnel__tenant_id=probe.tunnel.tenant_id, public_key=probe.public_key,
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"public_key": "Another tunnel end already has this key."}
+                )
         return attrs
 
     class Meta:
@@ -9644,6 +9689,8 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         fields = ["id", "tunnel_id", "role", "role_display",
                   "interface", "interface_id", "vm_interface",
                   "vm_interface_id", "outside_ip", "outside_ip_id",
+                  "listen_port", "public_key", "private_key_ref", "allowed_ips",
+                  "endpoint_port", "persistent_keepalive", "peers",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 

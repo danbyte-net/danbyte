@@ -111,6 +111,50 @@ one), with:
 A point-to-point tunnel has two *peer* terminations; a hub-and-spoke design has
 one *hub* and many *spokes*.
 
+### WireGuard
+
+On a tunnel whose encapsulation is **WireGuard**, each termination also
+carries what a `wg set` line needs. The fields are refused on any other
+encapsulation.
+
+| Field | Meaning |
+|---|---|
+| **Listen port** | The UDP port this end listens on (1-65535). |
+| **Endpoint port** | The port the far end dials to reach *this* end, when NAT or a port forward makes it differ from the listen port. Empty means the listen port. |
+| **Public key** | This end's public key: 44 characters of base64 (32 bytes). Unique among the tenant's tunnel ends. |
+| **Private key reference** | Where the private key lives, printed verbatim by a template: a `<keychain:NAME>` placeholder naming a [routing keychain](routing.md#keychains) in the tenant, or an absolute path on the box (`/etc/wireguard/private.key`). |
+| **Allowed IPs** | The addresses **behind this end**, as CIDRs. |
+| **Keepalive** | Persistent keepalive in seconds; empty or 0 is off. |
+
+**Allowed IPs means "behind this end".** That is WireGuard's own meaning:
+every *other* end prints this end's list in its `peer` block for this end,
+so the list says what the others route to it. A spoke lists its LAN; a hub
+lists what sits behind the hub. Hub-and-spoke works without per-pair data.
+
+**The private key never passes through Danbyte.** The router generates its
+own key (`wg genkey`), the push tool writes the public key back
+(`PATCH /api/tunnel-terminations/<id>/` with `public_key`), and the far ends
+re-render. A value pasted into **Private key reference** that decodes as a
+32-byte key is refused. A deployment that wants Danbyte to hold the key puts
+it in a routing keychain (the secret store, read through the audited
+`reveal-psk`) and references it as `<keychain:NAME>`; the push tool replaces
+the placeholder as it does for BGP passwords. See
+[Secrets in a render](export-templates.md#secrets-in-a-render).
+
+Which ends an end talks to follows its role: a *peer* talks to every other
+end, a *hub* to every spoke and other hub, and a *spoke* to the hubs (or to
+every other end when the tunnel has no hub). The tunnel's **Terminations**
+tab shows the listen port and the public key; a device's **Tunnels** card
+shows each far end's outside address and port.
+
+In the API the six fields are `listen_port`, `endpoint_port`, `public_key`,
+`private_key_ref`, `allowed_ips` and `persistent_keepalive` on
+`/api/tunnel-terminations/`. A termination read on its own (or nested in a
+tunnel's detail) also carries a read-only `peers` list - the far ends with
+`endpoint` (`host:port`), `public_key` and `allowed_ips` resolved. A CSV
+import takes `allowed_ips` as a JSON list or as `0.0.0.0/0, ::/0`.
+Templates read the same values from the [`tunnels` block](export-templates.md#tunnels).
+
 ## Tunnel map
 
 The tunnel's detail page has a **Map** tab: the tunnel drawn from its

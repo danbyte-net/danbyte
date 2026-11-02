@@ -31,3 +31,10 @@ class ApiConfig(AppConfig):
         from . import cable_routing
 
         cable_routing.connect_signals()
+        # The `tunnels` block of a device or VM render: each tunnel end with
+        # its far end(s) resolved, WireGuard keys and ports included.
+        from .export_templates import register_context_provider
+        from .wireguard import tunnels_by_interface_context, tunnels_context
+
+        register_context_provider("tunnels", tunnels_context)
+        register_context_provider("tunnels_by_interface", tunnels_by_interface_context)
