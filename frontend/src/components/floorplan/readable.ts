@@ -320,6 +320,23 @@ export function growStubs(
       : readableShape(t, perCell, { minLong: min, minShort })
     if (!shape?.changed) return s
     const c: Pt = [t.x + t.width / 2, t.y + t.height / 2]
+    const b = shape.box
+    const bc: Pt = [b.x + b.w / 2, b.y + b.h / 2]
+    // Drawn away from its true place (a spread icon, a cluster): the stub
+    // leaves the drawn box's edge along its direction.
+    if (Math.abs(bc[0] - c[0]) > 1e-9 || Math.abs(bc[1] - c[1]) > 1e-9) {
+      const [dx, dy] = s.dir
+      const tx = Math.abs(dx) > 1e-9 ? b.w / 2 / Math.abs(dx) : Infinity
+      const ty = Math.abs(dy) > 1e-9 ? b.h / 2 / Math.abs(dy) : Infinity
+      const k = Math.min(tx, ty)
+      return {
+        ...s,
+        from: [
+          bc[0] + dx * (Number.isFinite(k) ? k : 0),
+          bc[1] + dy * (Number.isFinite(k) ? k : 0),
+        ] as Pt,
+      }
+    }
     const sx = shape.box.w / t.width
     const sy = shape.box.h / t.height
     return {

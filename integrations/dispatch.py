@@ -84,7 +84,38 @@ def _register_builtin_providers():
 _register_builtin_providers()
 
 
-def dispatch_deploy(target_id, device_ids, event="manual", run_id=None):
+def _vm_payload(tenant, vm_ids):
+    """The provision payload: the intended VMs' build specs, re-read now.
+
+    Ids are re-filtered to the target's tenant and to VMs still intended -
+    the job runs later than the request, and a VM can be moved, deleted or
+    un-ticked in between. ``device_ids``/``limit`` carry the VM ids too, for
+    runners that only read those keys; ``object_type`` says what they are.
+    """
+    from api.models import VirtualMachine
+    from api.vm_build import vm_build_spec
+
+    vms = list(
+        VirtualMachine.objects.filter(tenant=tenant, intended=True, id__in=vm_ids)
+        .select_related("cluster", "device", "represents_device")
+        .order_by("name")
+    )
+    ids = [str(v.id) for v in vms]
+    return {
+        "tenant": tenant.slug,
+        "device_ids": ids,
+        "limit": ",".join(ids),
+        "object_type": "virtualmachine",
+        "object_ids": ids,
+        "represents_device_ids": [
+            str(v.represents_device_id) for v in vms if v.represents_device_id
+        ],
+        "virtual_machines": [vm_build_spec(v) for v in vms],
+    }
+
+
+def dispatch_deploy(target_id, device_ids, event="manual", run_id=None,
+                    object_type="device"):
     """Fire the target. Returns a small result dict and updates the DeployRun."""
     import requests
 
@@ -108,7 +139,15 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None):
     if target is None or not target.enabled:
         return finish("failed", "Target missing or disabled.")
 
-    payload = {**_device_payload(target.tenant, device_ids), "event": event}
+    if object_type == "virtualmachine":
+        base = _vm_payload(target.tenant, device_ids)
+        if not base["object_ids"]:
+            return finish(
+                "failed", "No intended virtual machine of this tenant is left to provision."
+            )
+    else:
+        base = _device_payload(target.tenant, device_ids)
+    payload = {**base, "event": event}
     payload.update(target.extra_vars or {})
 
     # Select the provider by kind; an unknown kind degrades to the generic
@@ -126,29 +165,31 @@ def dispatch_deploy(target_id, device_ids, event="manual", run_id=None):
         return finish("failed", str(exc))
 
 
-def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=None):
+def enqueue_deploy(target, device_ids, *, event="manual", attempt=1, retry_of=None,
+                   object_type="device"):
     """Create a DeployRun and enqueue the dispatch on the low queue. Returns the
     run (so the API can report it). ``attempt``/``retry_of`` link a re-dispatch
-    back to the run it retries. Never raises."""
+    back to the run it retries. ``object_type`` names what the ids are
+    (``virtualmachine`` for a provision). Never raises."""
     from .models import DeployRun
 
     run = DeployRun.objects.create(
         tenant=target.tenant, target=target, target_name=target.name,
         event=event, device_ids=[str(d) for d in device_ids], status="queued",
-        attempt=attempt, retry_of=retry_of,
+        attempt=attempt, retry_of=retry_of, object_type=object_type,
     )
     try:
         import django_rq
 
         django_rq.get_queue("low").enqueue(
             dispatch_deploy, str(target.id), [str(d) for d in device_ids],
-            event=event, run_id=str(run.id),
+            event=event, run_id=str(run.id), object_type=object_type,
         )
     except Exception:  # noqa: BLE001
         # Redis down etc. - run dispatch inline so the deploy still happens.
         try:
             dispatch_deploy(str(target.id), [str(d) for d in device_ids],
-                            event=event, run_id=str(run.id))
+                            event=event, run_id=str(run.id), object_type=object_type)
         except Exception:  # noqa: BLE001
             logger.exception("inline deploy dispatch failed")
     return run
@@ -169,7 +210,7 @@ def _slug_for(instance):
         return None
 
 
-def _target_covers(target, slug: str) -> bool:
+def target_covers(target, slug: str) -> bool:
     """object_types defaults to [device] when unset."""
     types = target.object_types or ["device"]
     return "*" in types or slug in types
@@ -192,7 +233,7 @@ def auto_fire(instance, slug: str | None = None) -> None:
             for t in AutomationTarget.objects.filter(
                 tenant_id=tenant_id, enabled=True, auto_on_change=True
             )
-            if _target_covers(t, slug)
+            if target_covers(t, slug)
         ]
         if not targets:
             return

@@ -14,6 +14,7 @@ import {
   api,
   type VLANOption,
   type VMInterface,
+  type VMInterfaceModel,
   type VMInterfaceWritePayload,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
@@ -68,7 +69,22 @@ const IFACE_DRIFT_LABELS: Record<string, string> = {
   mac_address: "MAC",
   mtu: "MTU",
   vlan_vid: "VLAN",
+  index: "Index",
+  model: "Model",
+  bridge: "Bridge",
 }
+
+/** VMInterface.model choices, as the API spells them. */
+export const VM_NIC_MODELS: { value: VMInterfaceModel; label: string }[] = [
+  { value: "virtio", label: "VirtIO" },
+  { value: "e1000", label: "E1000" },
+  { value: "e1000e", label: "E1000E" },
+  { value: "vmxnet3", label: "VMXNET3" },
+  { value: "rtl8139", label: "RTL8139" },
+]
+const MODEL_LABEL = Object.fromEntries(
+  VM_NIC_MODELS.map((m) => [m.value, m.label])
+) as Record<string, string>
 
 export function VMInterfacesPane({
   vmId,
@@ -120,6 +136,8 @@ export function VMInterfacesPane({
   }, [q.data])
   // The Circuit column shows only on a VM that terminates one (#432).
   const hasCircuit = rows.some((r) => r.circuit_termination)
+  // Index, Model and Bridge show once any NIC states one.
+  const hasBuild = rows.some((r) => r.index != null || !!r.model || !!r.bridge)
 
   // Interfaces the hypervisor doesn't report. Raised as drift rather than
   // deleted - a NIC you added is yours, and might be one you're about to
@@ -240,6 +258,44 @@ export function VMInterfacesPane({
             <span className="text-xs text-muted-foreground">Virtual</span>
           ),
       },
+      ...(hasBuild
+        ? ([
+            {
+              id: "index",
+              header: "Index",
+              cell: ({ row }) =>
+                row.original.index != null ? (
+                  <span className="num text-xs">{row.original.index}</span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                ),
+            },
+            {
+              id: "model",
+              header: "Model",
+              cell: ({ row }) =>
+                row.original.model ? (
+                  <span className="text-xs">
+                    {MODEL_LABEL[row.original.model] ?? row.original.model}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                ),
+            },
+            {
+              id: "bridge",
+              header: "Bridge",
+              cell: ({ row }) =>
+                row.original.bridge ? (
+                  <span className="font-mono text-xs">
+                    {row.original.bridge}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">-</span>
+                ),
+            },
+          ] satisfies ColumnDef<VMInterface>[])
+        : []),
       {
         id: "enabled",
         header: "Enabled",
@@ -401,6 +457,7 @@ export function VMInterfacesPane({
       notOnHypervisor,
       fieldDrift,
       hasCircuit,
+      hasBuild,
     ]
   )
 
@@ -560,6 +617,11 @@ function VMInterfaceForm({
     iface?.tagged_vlans.map((v) => v.id) ?? []
   )
   const [vrfId, setVrfId] = useState<string | null>(iface?.vrf?.id ?? null)
+  const [index, setIndex] = useState(
+    iface?.index != null ? String(iface.index) : ""
+  )
+  const [model, setModel] = useState<VMInterfaceModel>(iface?.model ?? "")
+  const [bridge, setBridge] = useState(iface?.bridge ?? "")
 
   const siblings = useQuery({
     queryKey: ["vm-interfaces", vmId],
@@ -595,6 +657,9 @@ function VMInterfaceForm({
         vlan_id: vlanId,
         tagged_vlan_ids: mode === "tagged" ? taggedVlanIds : [],
         vrf_id: vrfId,
+        index: index.trim() === "" ? null : Number(index),
+        model,
+        bridge: bridge.trim(),
         description: description.trim(),
       }
       return saveObject<VMInterface>({
@@ -695,6 +760,34 @@ function VMInterfaceForm({
             />
           </>
         )}
+      </div>
+      {/* ── Build: how the hypervisor attaches it ── */}
+      <div className="grid grid-cols-3 gap-3">
+        <FormText
+          label="Index"
+          type="number"
+          min={0}
+          value={index}
+          onChange={setIndex}
+          placeholder="0"
+          error={fieldErrors.index}
+        />
+        <FormSelect
+          label="Model"
+          value={model || null}
+          onChange={(v) => setModel((v ?? "") as VMInterfaceModel)}
+          noneLabel="-"
+          options={VM_NIC_MODELS}
+          error={fieldErrors.model}
+        />
+        <FormText
+          label="Bridge"
+          value={bridge}
+          onChange={setBridge}
+          mono
+          placeholder="vmbr0"
+          error={fieldErrors.bridge}
+        />
       </div>
       {/* ── L2 switching ── */}
       <div className="grid grid-cols-2 gap-3">

@@ -335,6 +335,66 @@ the device's Config tab). Each run carries its `event`, `attempt`, dispatch
   `drift_check.yml`); trigger it with a `remediate` event from the Deploy button
   or run `ansible-playbook -i inventory.py remediate.yml` by hand.
 
+### Provisioning an intended VM
+
+**Provision** on an [intended VM](virtual-machines.md#intended-vms)'s page
+(`POST /api/virtual-machines/<id>/provision/` with `{"target_id": "<id>"}`)
+sends the VM to an automation target to be built. Danbyte never calls a
+hypervisor's write API: the runner - a rebuild script, AWX or a webhook
+consumer - holds the hypervisor credentials and does the build.
+
+- The target must take virtual machines: **Object types** includes
+  `virtualmachine` (or `*`). A target with none set takes devices only.
+- The VM must be **Intended**. The action needs the **provision**
+  permission on virtual machines (not **change**), within the caller's row
+  and site limits, and writes a **Provision requested** entry to the VM's
+  [change log](change-log.md) naming the target and the run.
+- The run is a deploy run with `event` `provision` and `object_type`
+  `virtualmachine`. When the job runs it re-reads the VMs and keeps only
+  those still intended in the target's tenant; with none left the run fails
+  and nothing is sent.
+- The post goes through the same outbound guard as every deploy: no private
+  or loopback address unless allowed, the target's TLS setting, the
+  webhook's HMAC signature (`X-Danbyte-Signature`, header
+  `X-Danbyte-Event: deploy.provision`) or AWX's bearer token. The token is
+  stored encrypted and never written to the payload.
+- **Retry** on a failed provision run needs the **provision** permission on
+  each VM as well, and is logged the same way.
+
+The payload adds to the deploy payload; nothing in it changes for a device
+deploy:
+
+```jsonc
+{
+  "tenant": "acme",
+  "event": "provision",
+  "object_type": "virtualmachine",
+  "object_ids": ["<vm id>"],
+  // Kept for runners that only read these keys: they hold the VM ids here.
+  "device_ids": ["<vm id>"],
+  "limit": "<vm id>",
+  // The devices the VMs are (Is router), to fetch their bundle next.
+  "represents_device_ids": ["<device id>"],
+  "virtual_machines": [{
+    "id": "<vm id>", "name": "edge-r1", "intended": true, "vmid": 120,
+    "cluster": "pve-a", "node": "pve1",
+    "cpu_type": "host", "sockets": null, "vcpus": 2, "memory_mb": 2048,
+    "disk_gb": 16, "image": "local:import/debian-13.qcow2", "storage": "ceph-vm",
+    "hypervisor_options": {"onboot": 1},
+    "represents_device": {"id": "<device id>", "name": "edge-r1"},
+    "interfaces": [{"name": "eth0", "index": 0, "model": "virtio",
+                    "bridge": "vmbr0", "firewall": null, "mac_address": "",
+                    "mtu": 9000, "vlan": null, "enabled": true, "kind": ""}],
+    "disks": [{"key": "scsi0", "name": "", "size_gb": 16, "storage": "ceph-vm",
+               "controller": "scsi", "disk_format": ""}]
+  }]
+}
+```
+
+The target's extra vars are merged on top, as for any deploy. The same build
+description is `build` in a [VM render](export-templates.md#rendering-one-vm)
+and `backing_vm` in the render of the device it represents.
+
 ## Groups and interfaces (network automation)
 
 The inventory is pre-grouped the way you'd group hosts by hand - so a play can

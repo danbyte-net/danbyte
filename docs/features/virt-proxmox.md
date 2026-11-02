@@ -113,6 +113,8 @@ your inventory before you've seen what it would do.
 - **You own** everything else: role, platform, tags, custom fields,
   description, site, and the primary-IP choice. The sync never overwrites
   those in any mode.
+- On an [intended VM](#intended-vms) you own its specs, NICs, disks and
+  existence too.
 
 Rules:
 
@@ -129,6 +131,37 @@ Rules:
   The first private IPv4 becomes the VM's primary IP (if it had none).
 - VM templates are skipped; the sync is read-only - Danbyte never changes the
   hypervisor.
+
+## Intended VMs
+
+An [intended VM](virtual-machines.md#intended-vms) is one Danbyte holds the
+intent for. Every rule here applies only with **Intended** ticked; any other
+VM syncs exactly as above.
+
+| Rule | What the sync does |
+| --- | --- |
+| **Adopt** | A new guest links to the intended VM whose **VMID** is its own (one per cluster; a cluster of the same name breaks a tie), then to a VM of the same name. A VM without the flag is never matched by VMID. |
+| **Re-link on rebuild** | When the guest an intended VM was linked to has gone - absent from this pass, or flagged missing on another source - and a new guest matches it by VMID or name, the stale tracking row is dropped and the new guest linked. The VM itself is untouched. While the old guest is still reported, the new one is skipped with a warning, as for any duplicate name. Rebuilt with the same VMID, the link simply carries on. |
+| **Diff, never apply** | vCPU, memory, disk, name and VMID differences are raised as **Specs changed** for review - in Automatic mode too, and even for a VM the sync created. NIC **MAC**, **MTU**, **VLAN**, **model**, **bridge** and **index** differences are raised as **Interface fields differ**. Accepting one takes the hypervisor's value. |
+| **Blank-fill** | Empty fields are still filled: specs, host, VMID, and each NIC's model, bridge and index (from `netN`). Filling a blank is not a disagreement. |
+| **Never delete** | The VM is never deleted or offered for removal, whatever the mode, **Prune** setting or delay. Its tracking row stays with the time it went missing, and the VM page says **Not on any hypervisor**. A removal queued before the VM was ticked keeps the VM when accepted. |
+| **Never prune** | No NIC or disk of an intended VM is pruned, even one the sync created; a NIC the hypervisor no longer has is raised as **Interface not on hypervisor**. |
+
+Ticking **Intended** on a VM the sync created sets nothing else: it keeps
+its history, and the flag wins in every rule above.
+
+A sync pass reports `vms_missing_intended` and `vms_relinked` in its counts.
+
+### The rebuild flow
+
+1. Mark the router's VM **Intended**, set **Is router**, the VMID, image,
+   CPU type and storage, and each NIC's index, model and bridge.
+2. Your runner - a script, AWX or a webhook consumer - reads the VM from
+   `GET /api/virtual-machines/<id>/` (or a render of it), or receives it
+   through [Provision](iac-runner.md#provisioning-an-intended-vm), and
+   builds it on Proxmox with its own credentials.
+3. The next sync adopts the new guest by VMID or name and re-links it; any
+   difference between what was built and the intent shows as drift.
 
 !!! tip "Virtual routers become monitorable"
     Once a virtual router's IP is synced, the monitoring engine can check and

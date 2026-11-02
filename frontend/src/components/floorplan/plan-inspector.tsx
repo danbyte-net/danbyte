@@ -42,7 +42,10 @@ export function PlanInspector({
   roles,
   openTile,
   onSelectWalls,
+  onShowTrayCables,
 }: {
+  /** A tray's Show cables: its cables in the chooser at a client point. */
+  onShowTrayCables?: (trayId: string, at: { x: number; y: number }) => void
   /** The area's linked walls selected, in the walls tool. */
   onSelectWalls?: (ids: string[]) => void
   shapeEdits: ShapeEdits
@@ -178,6 +181,11 @@ export function PlanInspector({
           }}
           saved={!isTemp(selectedTray.id)}
           onPatch={(patch) => patchTray(selectedTray.id, patch)}
+          onShowCables={
+            onShowTrayCables
+              ? (at) => onShowTrayCables(selectedTray.id, at)
+              : undefined
+          }
           onDelete={() => deleteTray(selectedTray.id)}
         />
       )

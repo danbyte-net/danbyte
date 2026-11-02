@@ -13,6 +13,7 @@ import {
   Occupancy,
   RANK,
   alongSlots,
+  aroundSpots,
   besideSpots,
   cableLegs,
   endChipSpots,
@@ -110,6 +111,12 @@ export interface PlanLabelInput {
   tiles: readonly FloorPlanTile[]
   /** How Readable draws a tile, or null under Real. */
   shapeOf?: ShapeOf | null
+  /** Icons when zoomed out: the tiles drawn as icons. Their names go
+   * round their own icon, never over another. */
+  iconIds?: ReadonlySet<string>
+  /** Icons folded into one cluster tile: its drawn box (cells), its name
+   * and its members - who name no more on their own. */
+  iconClusters?: readonly IconClusterLabel[]
   /** A zone's name grown by this much (Readable from afar). */
   zoneGrow?: number
   /** Tile names scaled to fill their tile (Display > Fit labels). */
@@ -142,6 +149,14 @@ export interface PlanLabelInput {
     /** Their ends' ports in chips beside the tiles. */
     ends: boolean
   }
+}
+
+/** A cluster tile, for the label pass. */
+export interface IconClusterLabel {
+  id: string
+  box: Box
+  name: string
+  members: readonly string[]
 }
 
 export interface PlanLabels {
@@ -248,12 +263,28 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   const tileBodies: Box[] = []
   const tileReqs: LabelRequest<{ at: Pt }>[] = []
   const tileText = new Map<string, string>()
+  // The icons and cluster tiles: a name never goes over one.
+  const clustered = new Set(
+    (input.iconClusters ?? []).flatMap((c) => c.members)
+  )
+  const icons = new Occupancy(Math.max(16, font * 6))
+  for (const c of input.iconClusters ?? []) icons.add(boxOfCells(c.box, scale))
+  for (const t of input.tiles) {
+    if (!input.iconIds?.has(t.id) || clustered.has(t.id)) continue
+    const box = input.shapeOf?.(t)?.box
+    if (box) icons.add(boxOfCells(box, scale))
+  }
   for (const t of input.tiles) {
     const name = tileName(t)
     const shape = input.shapeOf?.(t)
     const zone = tileIsZone(t)
     const drawn = shape?.box ?? { x: t.x, y: t.y, w: t.width, h: t.height }
     if (!zone) tileBodies.push(boxOfCells(drawn, scale))
+    // In a cluster: the cluster names it.
+    if (clustered.has(t.id)) {
+      tileNamesHere.add(t.id)
+      continue
+    }
     if (!name) continue
     const ours =
       !!shape &&
@@ -274,7 +305,13 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     tileNamesHere.add(t.id)
     const text = clipName(name)
     tileText.set(t.id, text)
-    const spots = besideSpots(drawn, textSize(text, font), gap / 2, scale)
+    const icon = !!input.iconIds?.has(t.id)
+    const spots = (icon ? aroundSpots : besideSpots)(
+      drawn,
+      textSize(text, font),
+      gap / 2,
+      scale
+    )
     if (!spots.some((s) => inView(s.box))) continue
     const pinned = !!input.pinnedTiles?.has(t.id)
     tileReqs.push({
@@ -282,6 +319,20 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       priority: pinned ? RANK.tilePinned : RANK.tile + namePriority(t),
       force: pinned,
       spots,
+      block: icon ? icons : undefined,
+    })
+  }
+  for (const c of input.iconClusters ?? []) {
+    const text = clipName(c.name)
+    tileText.set(c.id, text)
+    const spots = aroundSpots(c.box, textSize(text, font), gap / 2, scale)
+    if (!spots.some((s) => inView(s.box))) continue
+    tileReqs.push({
+      id: `tile:${c.id}`,
+      // Over a single rack's name: it stands for several.
+      priority: RANK.tile + 1000 + Math.min(999, c.members.length),
+      spots,
+      block: icons,
     })
   }
 
