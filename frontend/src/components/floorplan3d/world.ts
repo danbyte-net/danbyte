@@ -1362,15 +1362,24 @@ export const RAISED_FLOOR_TOP_M = 0.013
  * A floor-placed rack-unit device's box (m): as wide as a 19" panel (half
  * that for half-width gear) unless the type records its width, its units
  * tall, and the type's depth - else the depth a rack gives it (90% of the
- * default rack depth full-depth, 45% otherwise). Null for 0U gear, which
- * keeps its flat tile.
+ * default rack depth full-depth, 45% otherwise). A device whose width,
+ * height and depth are all measured (its own, else its type's) is a box of
+ * exactly that size, rack units or not. Null for other 0U gear, which keeps
+ * its flat tile.
  */
 export function floorDeviceBoxM(
   dev: Pick<
     SceneFloorDevice,
-    "u_height" | "rack_width" | "is_full_depth" | "width_mm" | "depth_mm"
+    | "u_height"
+    | "rack_width"
+    | "is_full_depth"
+    | "width_mm"
+    | "depth_mm"
+    | "height_mm"
   >
 ): { w: number; h: number; d: number } | null {
+  if (dev.width_mm && dev.height_mm && dev.depth_mm)
+    return { w: mm(dev.width_mm), h: mm(dev.height_mm), d: mm(dev.depth_mm) }
   if (!(dev.u_height > 0)) return null
   const w = dev.width_mm
     ? mm(dev.width_mm)

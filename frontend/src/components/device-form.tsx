@@ -50,6 +50,7 @@ import {
 } from "@/lib/binding-drafts"
 import { useSaveObject } from "@/lib/save-object"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { MM_INPUT, mmOrNull, mmText } from "@/lib/mm-field"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { DeviceTypePicker } from "@/components/device-type-picker"
@@ -254,6 +255,10 @@ export function DeviceForm({
   const [airflow, setAirflow] = useState(seed?.airflow ?? "")
   // Blank inherits the type's method (#434).
   const [coolingMethod, setCoolingMethod] = useState(seed?.cooling_method ?? "")
+  // Its own body size; blank inherits the type's.
+  const [widthMm, setWidthMm] = useState(mmText(seed?.width_mm))
+  const [heightMm, setHeightMm] = useState(mmText(seed?.height_mm))
+  const [depthMm, setDepthMm] = useState(mmText(seed?.depth_mm))
   const [portLabels, setPortLabels] = useState<DevicePortLabels>(
     seed?.port_labels ?? ""
   )
@@ -318,6 +323,9 @@ export function DeviceForm({
     setClusterId(device.cluster?.id ?? null)
     setAirflow(device.airflow ?? "")
     setCoolingMethod(device.cooling_method ?? "")
+    setWidthMm(mmText(device.width_mm))
+    setHeightMm(mmText(device.height_mm))
+    setDepthMm(mmText(device.depth_mm))
     setPortLabels(device.port_labels ?? "")
     setLatitude(device.latitude ?? "")
     setLongitude(device.longitude ?? "")
@@ -604,6 +612,9 @@ export function DeviceForm({
         comments: comments.trim(),
         airflow,
         cooling_method: coolingMethod,
+        width_mm: mmOrNull(widthMm),
+        height_mm: mmOrNull(heightMm),
+        depth_mm: mmOrNull(depthMm),
         port_labels: portLabels,
         latitude: latitude.trim() !== "" ? latitude.trim() : null,
         longitude: longitude.trim() !== "" ? longitude.trim() : null,
@@ -903,6 +914,31 @@ export function DeviceForm({
                 )}
               </div>
             )}
+            <div className="grid gap-3 @md:grid-cols-3">
+              {(
+                [
+                  ["Width (mm)", "width_mm", widthMm, setWidthMm],
+                  ["Height (mm)", "height_mm", heightMm, setHeightMm],
+                  ["Depth (mm)", "depth_mm", depthMm, setDepthMm],
+                ] as const
+              ).map(([label, key, value, set], i) => (
+                <FormText
+                  key={key}
+                  label={label}
+                  info={
+                    i === 0
+                      ? "Blank takes the device type's. Sizes the device on floor plans and in 3D."
+                      : undefined
+                  }
+                  {...MM_INPUT}
+                  min={1}
+                  placeholder={mmText(selectedType?.[key])}
+                  value={value}
+                  onChange={set}
+                  error={fieldErrors[key]}
+                />
+              ))}
+            </div>
             <FormSelect
               label="Port labels"
               value={portLabels === "" ? null : portLabels}

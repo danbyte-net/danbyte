@@ -80,6 +80,31 @@ describe("floor-placed rack-unit devices", () => {
     expect(isPlacedDevice(tile())).toBe(false)
   })
 
+  it("stands a measured device as its own w × h × d box, 0U or not", () => {
+    const sized = { width_mm: 600, height_mm: 1800, depth_mm: 400 }
+    for (const u_height of [0, 2]) {
+      const b = floorDeviceBoxM(dev({ u_height, ...sized }))!
+      expect([b.w, b.h, b.d]).toEqual([0.6, 1.8, 0.4])
+    }
+    expect(
+      isPlacedDevice(tile({ device: dev({ u_height: 0, ...sized }) }))
+    ).toBe(true)
+    // A 0U device missing one axis stays flat.
+    expect(
+      floorDeviceBoxM(dev({ u_height: 0, width_mm: 600, depth_mm: 400 }))
+    ).toBeNull()
+  })
+
+  it("fits a model to the measured size it is sent", () => {
+    // The scene sends the device's own size, else its type's.
+    expect(
+      modelTargetM(dev({ width_mm: 600, height_mm: 1800, depth_mm: 400 }), {
+        w: 1.2,
+        d: 1.2,
+      })
+    ).toEqual({ w: 0.6, h: 1.8, d: 0.4 })
+  })
+
   it("stands on a raised floor's top", () => {
     const scene = {
       plan: { cell_mm: 600 },

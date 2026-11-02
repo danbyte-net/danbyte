@@ -1,4 +1,5 @@
 import type {
+  FloorObjectSize,
   FloorPlan,
   FloorPlanPlaceable,
   FloorPlanRoomRef,
@@ -130,22 +131,73 @@ export function nearScope(
   return null
 }
 
-/** The footprint a row is placed with. Grid: one cell. Free: one cell, or
- * - with a photo - the device's true width with the photo's aspect. */
+const r3 = (v: number) => Math.round(v * 1000) / 1000
+
+/** The smallest and largest side a true-size footprint takes, in cells. */
+const TRUE_MIN = 0.05
+const TRUE_MAX = 512
+
+/** A device's top view on a free plan: its measured width × depth in the
+ * plan's cells. Null unless both are known. */
+export function trueFootprint(
+  size: FloorObjectSize | null | undefined,
+  plan: Pick<FloorPlan, "cell_mm">
+): { width: number; height: number } | null {
+  if (!size?.width_mm || !size.depth_mm) return null
+  const cell = plan.cell_mm || 600
+  const side = (mm: number) =>
+    r3(Math.min(TRUE_MAX, Math.max(TRUE_MIN, mm / cell)))
+  return { width: side(size.width_mm), height: side(size.depth_mm) }
+}
+
+/** The footprint a row is placed with. Grid: one cell. Free: a device's
+ * measured width × depth when both are known; else - with a photo - its
+ * true width with the photo's aspect; else one cell. */
 export function placedSize(
   row: FloorPlanPlaceable,
   plan: Pick<FloorPlan, "layout_mode" | "cell_mm">
 ): { width: number; height: number; display: "icon" | "photo" } {
-  if (plan.layout_mode !== "free" || !row.photo)
+  if (plan.layout_mode !== "free")
     return { width: 1, height: 1, display: "icon" }
+  const display = row.photo ? "photo" : "icon"
+  const fp = trueFootprint(row.size_mm, plan)
+  if (fp) return { ...fp, display }
+  if (!row.photo) return { width: 1, height: 1, display: "icon" }
   const cell = plan.cell_mm || 600
   const width = Math.min(
     8,
     Math.max(0.25, row.photo.width_mm ? row.photo.width_mm / cell : 1)
   )
   const height = Math.max(0.1, width * (row.photo.aspect ?? 1))
-  const r3 = (v: number) => Math.round(v * 1000) / 1000
   return { width: r3(width), height: r3(height), display: "photo" }
+}
+
+/** "Fit to size": the rect a free-plan tile linked to a measured device
+ * takes - its true footprint about the same centre, inside the plan. Null
+ * when the device has no width and depth, on a grid plan, or when the tile
+ * already has that size. Never applied by itself. */
+export function fitToSizeRect(
+  tile: Pick<FloorPlanTile, "x" | "y" | "width" | "height" | "linked">,
+  plan: Pick<
+    FloorPlan,
+    "layout_mode" | "cell_mm" | "grid_width" | "grid_height"
+  >
+): { x: number; y: number; width: number; height: number } | null {
+  if (plan.layout_mode !== "free") return null
+  const l = tile.linked
+  if (!l || l.hidden || l.kind !== "device") return null
+  const fp = trueFootprint(l.size_mm, plan)
+  if (!fp) return null
+  if (fp.width === tile.width && fp.height === tile.height) return null
+  const cx = tile.x + tile.width / 2
+  const cy = tile.y + tile.height / 2
+  const place = (c: number, size: number, max: number) =>
+    r3(Math.max(0, Math.min(Math.max(0, max - size), c - size / 2)))
+  return {
+    x: place(cx, fp.width, plan.grid_width),
+    y: place(cy, fp.height, plan.grid_height),
+    ...fp,
+  }
 }
 
 /** A new tile linked to the row's object - no tile type: it draws in the
@@ -175,6 +227,7 @@ export function linkedTile(
       route: `${ROUTES[row.kind]}${row.id}`,
       room: row.room,
       role: row.role ? { icon: "", ...row.role } : null,
+      ...(row.kind === "device" ? { size_mm: row.size_mm ?? null } : {}),
     },
     fov_deg: null,
     fov_distance: null,
@@ -214,7 +267,6 @@ export function placementRects(
 }[] {
   const out: ReturnType<typeof placementRects> = []
   if (plan.layout_mode === "free") {
-    const r3 = (v: number) => Math.round(v * 1000) / 1000
     let x: number | null = null
     for (const row of rows) {
       const size = placedSize(row, plan)
@@ -267,7 +319,6 @@ export function droppedRect(
   const clamp = (v: number, size: number, max: number) =>
     Math.max(0, Math.min(max - size, v))
   if (plan.layout_mode === "free") {
-    const r3 = (v: number) => Math.round(v * 1000) / 1000
     return {
       x: r3(clamp(at[0] - tile.width / 2, tile.width, plan.grid_width)),
       y: r3(clamp(at[1] - tile.height / 2, tile.height, plan.grid_height)),

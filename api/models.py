@@ -2444,6 +2444,20 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         default="", db_default="",
         help_text="How this device is cooled. Blank inherits its type's.",
     )
+    # This unit's own body size, over its type's (DeviceType.width_mm…):
+    # what a floor-plan tile and the 3D room size it by. Blank inherits.
+    width_mm = models.DecimalField(
+        "width (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    height_mm = models.DecimalField(
+        "height (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
+    depth_mm = models.DecimalField(
+        "depth (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5000)],
+    )
     # Port labels on this device's faceplate renders: inherit the deployment
     # setting, or force them shown / hidden here (a patch panel wants them,
     # a 48-port access switch may not).
@@ -2547,6 +2561,39 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
             or (self.device_type.cooling_method if self.device_type else "")
             or COOLING_DEFAULT
         )
+
+    def _effective_mm(self, field: str):
+        own = getattr(self, field)
+        if own is not None:
+            return own
+        return getattr(self.device_type, field) if self.device_type_id else None
+
+    @property
+    def effective_width_mm(self):
+        """Its own width, else its type's, else None."""
+        return self._effective_mm("width_mm")
+
+    @property
+    def effective_height_mm(self):
+        """Its own height, else its type's, else None."""
+        return self._effective_mm("height_mm")
+
+    @property
+    def effective_depth_mm(self):
+        """Its own depth, else its type's, else None."""
+        return self._effective_mm("depth_mm")
+
+    @property
+    def size_mm(self) -> dict | None:
+        """The effective body size as floats - ``{width_mm, height_mm,
+        depth_mm}``, each None where unknown - or None when nothing is
+        known. What floor-plan tiles and the 3D room size the device by."""
+        out = {
+            f: (float(v) if v is not None else None)
+            for f in ("width_mm", "height_mm", "depth_mm")
+            for v in (self._effective_mm(f),)
+        }
+        return out if any(v is not None for v in out.values()) else None
 
     @property
     def own_icon(self) -> str:

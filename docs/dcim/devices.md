@@ -133,7 +133,7 @@ The default tab lays the device's facts out in cards:
 | -------------- | ------------------------------------------------------------ |
 | **Device**     | name, status, role, platform (with the software version, [where it came from](../features/lifecycle.md#where-the-running-version-comes-from) and the platform's target) and its **OS support** bar, description, comments |
 | **Cooling path** | shown once the device has a cooling intake or outflow: each intake's path from source through any CDU, each hop a link - see [Cooling](../features/cooling.md#cooling-path) |
-| **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
+| **Hardware**   | device type and its **Hardware support** bar, **Support coverage**, serial number, asset tag, warranty end, height (U), **Size** (W × H × D, see [Size](#size)), airflow and cooling - each the device's own, else its type's marked *(from type)* - and for a device with antennas one **Antennas** line - count, type, gain, bands, connector - linking to the Hardware pane |
 | **Location**   | site, location, [room](rooms.md), rack, position, face - or [cabinet](cabinets.md#mounting-devices), rail and offset - and coordinates |
 | **Management** | cluster, primary IP, its DNS name, and IP / interface counts |
 | **Support contracts** | shown once a contract covers the device: each contract with its manufacturer, service level, end and state |
@@ -337,6 +337,32 @@ them.
 The rows shown in _italics_ above - comments, airflow, cooling, location,
 coordinates, and cluster - are **built-in fields** whose visibility is
 admin-controlled; a device only shows the ones your administrator has enabled.
+
+## Size {#size}
+
+A device can carry its own body size: **Width**, **Height** and **Depth
+(mm)** in the form's **Hardware** card, in tenths of a millimetre from 1 to
+5000. Each one left blank takes its [device type's
+size](device-catalog.md#device-types) (the placeholder shows it), so set
+only what differs on this unit - a cabinet built to order, a desk, a shelf
+of gear modelled as one device.
+
+The size in use - its own, else its type's - is what places the device:
+
+- on a free [floor plan](../features/floor-plans.md#true-size) its tile
+  is its width × depth seen from above (grid plans keep one cell);
+- in the [3D room](../features/floor-plans.md#the-3d-room-view) a device
+  with a width, height and depth and no 3D model stands as a box of that
+  size in its role colour, and a [3D model](#3d-model) fitted to size is
+  fitted to it.
+
+The Overview's **Hardware** card shows it as **Size**, W × H × D, marked
+*(from type)* when the device has none of its own. The API takes and
+returns `width_mm`, `height_mm` and `depth_mm` (null inherits) and serves
+the size in use as `effective_width_mm`, `effective_height_mm` and
+`effective_depth_mm`. Changes are in the device's change log, and a clone
+keeps the size. DIN-rail placement in a [cabinet](cabinets.md) still goes
+by the type's size.
 
 ## Built-in fields
 

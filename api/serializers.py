@@ -2706,11 +2706,11 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
         model = DeviceType
         fields = ["id", "name", "manufacturer", "manufacturer_id", "icon",
                   "u_height", "rack_width", "is_full_depth",
-                  "width_mm", "height_mm", "din_profiles", "din_rail_mm",
+                  "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
                   "front_image", "rear_image", "front_cal",
                   "release_date", "end_of_support", "lifecycle_state"]
         extra_kwargs = {f: {"coerce_to_string": False}
-                        for f in ("width_mm", "height_mm", "din_rail_mm")}
+                        for f in ("width_mm", "height_mm", "depth_mm", "din_rail_mm")}
 
 
 class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin, CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
@@ -3303,6 +3303,19 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     # Model property: the device's own cooling method, else its type's, else
     # air (#434).
     effective_cooling_method = serializers.CharField(read_only=True)
+    # The body size: its own (blank inherits), and its own else its type's.
+    width_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    height_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                         max_value=5000, coerce_to_string=False,
+                                         required=False, allow_null=True)
+    depth_mm = serializers.DecimalField(max_digits=6, decimal_places=1, min_value=1,
+                                        max_value=5000, coerce_to_string=False,
+                                        required=False, allow_null=True)
+    effective_width_mm = serializers.FloatField(read_only=True)
+    effective_height_mm = serializers.FloatField(read_only=True)
+    effective_depth_mm = serializers.FloatField(read_only=True)
     location = serializers.SerializerMethodField()
     cluster = serializers.SerializerMethodField()
 
@@ -3970,6 +3983,8 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
+                  "width_mm", "height_mm", "depth_mm",
+                  "effective_width_mm", "effective_height_mm", "effective_depth_mm",
                   "port_labels", "topology_card", "topology_photo_size", "icon",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
                   "model_3d_effective", "model_ports",
@@ -11585,6 +11600,10 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
             # A device's own icon, else its type's: it wins over the tile's
             # type and the role (linked.role.icon); "" when neither has one.
             out["icon"] = target.own_icon if obj.link_kind == "device" else ""
+            # A device's measured size (its own, else its type's): what the
+            # editor's "Fit to size" resizes the tile to.
+            if obj.link_kind == "device":
+                out["size_mm"] = target.size_mm
         return out
 
     @extend_schema_field(OpenApiTypes.OBJECT)

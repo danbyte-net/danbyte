@@ -544,17 +544,22 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   and a row of the [rack table](#the-rack-table) lights its cabinet up.
 - **Devices on the floor**: a device placed straight on the plan - not in a
   rack or cabinet - stands where its tile is:
+    - **measured** - a width, height and depth, the device's own else its
+      type's - as a box of exactly that size in its role colour, rack units
+      or not;
     - **with rack units**, as the box a rack gives it, lying on the floor (or
       a raised floor's top): 19 inch wide (half that for half-width gear, or
-      the type's recorded width), its U high, and the type's depth - else
+      the recorded width), its U high, and the recorded depth - else
       the depth a rack would give it. It wears its type's front photo on the
       front and its rear photo on the rear, and its front faces the tile's
       front edge, turned with the tile;
     - **with a [3D model](../dcim/device-catalog.md#3d-models)** (the
       device's own, else its type's), as that model, fitted and turned as
-      the model's settings say. The box - or the flat tile for 0U gear -
-      stands in while the model loads, and stays if it fails to;
-    - **0U with no model**, as the flat tile it always was.
+      the model's settings say - **Fit to size** fits it to the device's
+      own size, else its type's. The model wins over the box. The box - or
+      the flat tile for 0U gear - stands in while the model loads, and stays
+      if it fails to;
+    - **0U, unmeasured, with no model**, as the flat tile it always was.
 
     Click selects one (its card says *On the floor*), double-click flies to
     its front, ++f++ focuses it, and its outline takes its monitoring state's
@@ -1584,8 +1589,9 @@ inside the tile, with the name under it. Selected, it is outlined; the
 coloured outline that carries monitoring and planned status shows on the
 other photo tiles only with **Display → Photo outlines** (off by default).
 On a grid plan the photo fits the tile's cells; the tile keeps its size. On a free plan, placing an object
-that has a photo places it as its photo at the device type's real width (one
-cell when the type has none); the corner handles resize it with its
+that has a photo places it as its photo at the device's real width - its
+own, else its type's; one cell when neither has one - or at its true
+footprint when it is measured (see [True size](#true-size)); the corner handles resize it with its
 proportions kept (++shift++ frees them), the turn handle turns it, and
 **Bring forward** / **Send back** stack overlapping tiles. Without a photo
 the tile draws as its box, whatever it is set to. The PDF export draws a
@@ -1595,6 +1601,27 @@ To see the whole floor as photos, turn on **Display → Photos**: every tile
 that has a photo draws as it, in View and in Edit, while each tile's own
 **Show as photo** / **Show as tile** setting stays as saved. Like the other
 display choices it is saved on the plan for those who may edit it.
+
+### True size {#true-size}
+
+A device with a measured **width** and **depth** - its own
+([Size](../dcim/devices.md#size) on the device), else its device type's -
+takes its real footprint on a free plan: placed from the picker, **Not
+placed** or a drag, its tile is the width × depth seen from above, in the
+plan's cells (**Cell size**). That beats the photo's proportions: a device
+with a photo still shows as it, in that footprint. A device missing either
+is placed as before - at its photo's width, or one cell. Grid plans keep
+one cell per tile.
+
+Tiles placed before the size was known keep their size; nothing is resized
+by itself. Right-click such a tile in Edit on a free plan and pick **Fit to
+size**: it takes the true footprint about the same centre, as one undoable
+edit. The item shows only when the device is measured and the tile is not
+that size already.
+
+`GET …/placeable/` gives a device row `size_mm` (`{width_mm, height_mm,
+depth_mm}`, each null where unknown, or null when nothing is), and a
+device tile's `linked` carries the same.
 
 ### The floating toolbar
 

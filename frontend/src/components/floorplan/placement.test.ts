@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest"
 
-import type { FloorPlan, FloorPlanPlaceable, FloorPlanTile } from "@/lib/api"
+import type {
+  FloorObjectSize,
+  FloorPlan,
+  FloorPlanPlaceable,
+  FloorPlanTile,
+} from "@/lib/api"
 
 import {
   asPhotos,
   droppedRect,
+  fitToSizeRect,
   linkedTile,
   nearScope,
   placedOnFloor,
@@ -12,6 +18,7 @@ import {
   placementRects,
   roomAreaAt,
   roomPrompts,
+  trueFootprint,
   withDraftPlacement,
 } from "./placement"
 import type { AreaShape } from "./shapes"
@@ -171,6 +178,91 @@ describe("where placed objects go", () => {
       display: "photo",
     })
     expect(placedSize(withPhoto, grid).display).toBe("icon")
+  })
+
+  it("places a measured device at its width × depth, over the photo's aspect", () => {
+    const size_mm = { width_mm: 900, height_mm: 1200, depth_mm: 300 }
+    expect(placedSize(row({ size_mm }), free)).toEqual({
+      width: 1.5,
+      height: 0.5,
+      display: "icon",
+    })
+    const withPhoto = row({
+      size_mm,
+      photo: { url: "/m/a.png", aspect: 0.25, source: "type", width_mm: 900 },
+    })
+    expect(placedSize(withPhoto, free)).toEqual({
+      width: 1.5,
+      height: 0.5,
+      display: "photo",
+    })
+    // Grid plans stay one cell; a width without a depth is no footprint.
+    expect(placedSize(row({ size_mm }), grid)).toEqual({
+      width: 1,
+      height: 1,
+      display: "icon",
+    })
+    expect(
+      placedSize(
+        row({ size_mm: { width_mm: 900, height_mm: null, depth_mm: null } }),
+        free
+      )
+    ).toEqual({ width: 1, height: 1, display: "icon" })
+  })
+
+  it("keeps a tiny device visible", () => {
+    const size_mm = { width_mm: 10, height_mm: 10, depth_mm: 10 }
+    expect(trueFootprint(size_mm, { cell_mm: 600 })).toEqual({
+      width: 0.05,
+      height: 0.05,
+    })
+  })
+})
+
+describe("fit to size", () => {
+  const sized = (size_mm: FloorObjectSize | null, patch = {}) =>
+    tile({
+      x: 2,
+      y: 1,
+      width: 1,
+      height: 1,
+      linked: { ...tile({}).linked!, size_mm },
+      ...patch,
+    })
+  const size_mm = { width_mm: 1200, height_mm: 2000, depth_mm: 600 }
+
+  it("resizes a measured device's tile about its centre", () => {
+    expect(fitToSizeRect(sized(size_mm), free)).toEqual({
+      x: 1.5,
+      y: 1,
+      width: 2,
+      height: 1,
+    })
+  })
+
+  it("stays inside the plan", () => {
+    expect(fitToSizeRect(sized(size_mm, { x: 0, y: 0 }), free)).toMatchObject({
+      x: 0,
+      y: 0,
+    })
+  })
+
+  it("offers nothing on a grid, without a size, or when it already fits", () => {
+    expect(fitToSizeRect(sized(size_mm), grid)).toBeNull()
+    expect(fitToSizeRect(sized(null), free)).toBeNull()
+    expect(
+      fitToSizeRect(sized(size_mm, { width: 2, height: 1 }), free)
+    ).toBeNull()
+  })
+
+  it("carries the row's size onto a new tile", () => {
+    const t = linkedTile(
+      row({ size_mm }),
+      { x: 0, y: 0, width: 2, height: 1 },
+      "t9",
+      "icon"
+    )
+    expect(t.linked?.size_mm).toEqual(size_mm)
   })
 })
 
