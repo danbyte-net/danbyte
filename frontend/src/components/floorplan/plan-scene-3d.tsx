@@ -5,6 +5,8 @@ import { X } from "lucide-react"
 import type { FloorPlan, FloorPlanLiveState } from "@/lib/api"
 import { Loading } from "@/components/loading"
 
+import type { Building3D } from "@/components/floorplan3d/scene"
+
 import type { PlanShape } from "./shapes"
 import type { PlanCapacity } from "./use-plan-capacity"
 import type { CadDrawingState } from "./use-cad-drawing"
@@ -33,7 +35,10 @@ export function PlanScene3D({
   areas,
   showHint,
   onDismissHint,
+  building = null,
 }: {
+  /** An aligned floor plan: the building around this level. */
+  building?: Building3D | null
   /** The plan's areas (and labels, left out here) on show: flat tints on
    * the floor. */
   areas?: PlanShape[]
@@ -61,6 +66,7 @@ export function PlanScene3D({
       <Suspense fallback={<Loading />}>
         <FloorScene3D
           planId={plan.id}
+          building={building}
           liveState={liveState}
           hiddenTileIds={hiddenTileIds}
           traceCableId={traceCableId}

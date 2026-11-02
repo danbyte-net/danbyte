@@ -13214,7 +13214,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
         from . import floor_plan_snapshots as snaps
         from .cable_scope import viewable_cable_ids
+        from .cable_routing import riser_links
         from .floor_plan_placement import HIDDEN, TileLinks
+        from .floor_stacks import floor_elevation
 
         plan = self.get_object()
         src, crop = self._resolved(plan)
@@ -13260,6 +13262,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
 
         shown = [t for t in tiles_qs if t.pk not in hidden_tiles]
+        riser_reach = riser_links(src, [t for t in tiles_qs if t.riser]) \
+            if crop is None else {}
+        seen_plans = set(visible(
+            FloorPlan.objects.filter(
+                tenant=tenant,
+                pk__in={p.floor_plan_id for ps in riser_reach.values() for p in ps},
+            ), "floorplan",
+        ).values_list("pk", flat=True)) if riser_reach else set()
         rack_ids = {t.rack_id for t in shown if t.rack_id}
         viewable_devices = visible(Device.objects.filter(tenant=tenant), "device")
         cabinet_counts = dict(
@@ -13340,6 +13350,15 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "cabinet": cabinet_geo(t.cabinet)
                 if t.cabinet_id and t.pk not in hidden_tiles else None,
                 "device": placed_geo(t),
+                "riser": t.riser,
+                # The risers it reaches on other floors the reader may view
+                # (by hand, or at the same place on an aligned floor plan):
+                # the 3D building draws a cable's climb between them.
+                "riser_to": [
+                    {"id": str(p.pk), "floor_plan": str(p.floor_plan_id)}
+                    for p in riser_reach.get(t.pk, [])
+                    if p.floor_plan_id in seen_plans
+                ] if t.riser else [],
             }
             for t in tiles_qs
         ]
@@ -13384,6 +13403,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "thickness_mm": w.thickness_mm,
                 "color": w.color,
                 "openings": w.openings,
+                "exterior": w.exterior,
             }
             for w in visible(src.walls.all(), "floorplanwall")
             if crop is None or snaps.classify("walls", w, crop)
@@ -13409,6 +13429,14 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "ceiling_mm": plan.ceiling_mm,
                 "background_image": background,
                 "background_opacity": plan.background_opacity,
+                # Building levels: where this floor sits in its aligned
+                # floor plan (floor_stacks.floor_elevation), its slab and
+                # its offset in the stack's frame.
+                "elevation_mm": floor_elevation(plan),
+                "slab_mm": plan.slab_mm,
+                "align_dx": plan.align_dx,
+                "align_dy": plan.align_dy,
+                "align_rot": plan.align_rot,
             },
             "tiles": tiles,
             "trays": trays,
@@ -14878,10 +14906,15 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="floors")
     def floors(self, request, pk=None):
-        """Add a floor: ``{"name", "position"?, "copy_from"?}``. ``position``
-        is its place in the floor order (0 = lowest; default on top);
-        ``copy_from`` (a floor of this floor plan) lends its grid size and
-        scale. Answers the new floor."""
+        """Add a floor: ``{"name", "position"?, "copy_from"?, "below"?,
+        "same_footprint"?, "copy_walls"?, "copy_background"?}``.
+        ``position`` is its place in the floor order (0 = lowest; default on
+        top, or with ``below`` at the bottom: a basement); ``copy_from`` (a
+        floor of this floor plan) lends its grid size and scale.
+        ``same_footprint`` makes the floor plan aligned and the floor a level
+        sharing ``copy_from``'s footprint, with its outer walls and
+        background copied on request (``floor_stacks.add_floor``). Answers
+        the new floor."""
         from auth_api import rbac
 
         from .floor_stacks import add_floor
@@ -14910,9 +14943,23 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
             if copy_from is None:
                 raise ValidationError({"copy_from": ["Pick a floor of this floor plan."]})
         name = body.get("name")
+
+        def flag(key) -> bool:
+            v = body.get(key)
+            return v is True or (isinstance(v, str) and v.lower() in ("1", "true"))
+
+        same = flag("same_footprint")
         with transaction.atomic():
             plan = add_floor(stack, name if isinstance(name, str) else "",
-                             position=position, copy_from=copy_from)
+                             position=position, copy_from=copy_from,
+                             below=flag("below"), same_footprint=same,
+                             copy_walls=same and flag("copy_walls"),
+                             copy_background=same and flag("copy_background"))
+            walls = FloorPlanWall.objects.filter(floor_plan=plan)
+            if walls.exists() and rbac.restrict_queryset(
+                walls, request.user, tenant, "floorplanwall", "add",
+            ).count() != walls.count():
+                raise PermissionDenied("You may not add walls to this floor.")
             if not rbac.restrict_queryset(
                 FloorPlan.objects.filter(pk=plan.pk), request.user, tenant,
                 "floorplan", "add",
@@ -15235,6 +15282,65 @@ class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSe
         if serializer.validated_data.get("floor_plan") is None:
             raise ValidationError({"floor_plan_id": "This field is required."})
         serializer.save()
+
+    @action(detail=True, methods=["get", "post"], url_path="through")
+    def through(self, request, pk=None):
+        """A riser on a floor plan with aligned floors: the levels it runs
+        through. ``GET`` lists the other levels (``[{id, name, tile}]``,
+        ``tile`` the riser standing at its place there, or null); ``POST
+        {"floors": [ids]}`` places a riser at its place on each level named
+        that has none and takes it off the others (floor_stacks.riser_through).
+        Risers at one place pair on their own. Needs floor plan tile change
+        here, add on the levels it reaches and delete on those it leaves."""
+        from auth_api import rbac
+
+        from .floor_stacks import riser_through, shaft_levels
+
+        tenant = self._tenant_or_403()
+        tile = self.get_object()
+        if tile.floor_plan.kind == "view":
+            raise ValidationError("Set a riser's levels on its own plan.")
+
+        def visible_floors():
+            return set(rbac.restrict_queryset(
+                FloorPlan.objects.filter(tenant=tenant), request.user, tenant,
+                "floorplan", "view",
+            ).values_list("pk", flat=True))
+
+        if request.method == "POST":
+            floors = request.data.get("floors")
+            if not isinstance(floors, list):
+                raise ValidationError({"floors": ["A list of level ids."]})
+            seen = visible_floors()
+
+            def may_add(plan):
+                return plan.pk in seen and rbac.has_action(
+                    request.user, tenant, "floorplantile", "add")
+
+            def may_delete(t):
+                return t.floor_plan_id in seen and rbac.restrict_queryset(
+                    FloorPlanTile.objects.filter(pk=t.pk), request.user, tenant,
+                    "floorplantile", "delete",
+                ).exists()
+
+            with transaction.atomic():
+                levels = riser_through(tile, floors, may_add=may_add, may_delete=may_delete)
+                made = FloorPlanTile.objects.filter(
+                    pk__in=[lv["tile"].pk for lv in levels if lv["tile"] is not None])
+                if rbac.restrict_queryset(
+                    made, request.user, tenant, "floorplantile", "add",
+                ).count() != made.count():
+                    raise PermissionDenied(
+                        "The created or updated object is outside your permission scope."
+                    )
+        else:
+            levels = shaft_levels(tile)
+        seen = visible_floors()
+        return Response({"levels": [
+            {"id": str(lv["floor"].pk), "name": lv["floor"].name,
+             "tile": str(lv["tile"].pk) if lv["tile"] is not None else None}
+            for lv in levels if lv["floor"].pk in seen
+        ]})
 
 
 class FloorPlanTrayViewSet(_ViaViewMixin, TenantScopedViewSet):

@@ -774,21 +774,46 @@ A floor plan with one floor looks the same as a single plan.
 
 The editor header names the floor plan and shows the **floor switcher**:
 the floors as segmented tabs in order, or a compact **Floor: 2** dropdown
-past six floors. The address is the floor's own (`/floorplans/<floor id>`),
+past six floors (an aligned floor plan has the
+[level picker](#building-levels) instead). The address is the floor's own (`/floorplans/<floor id>`),
 so a link, a bookmark or a reload lands on the same floor; switching floors
 keeps the 2D or 3D view. Switching with unsaved edits asks first - the same
 guard that covers every other way out of the editor, described under
 [the editor](#the-editor). For click-through navigation *between* floors
 (e.g. a stairwell tile), link a tile to another floor.
 
-With the floor-plan add permission, **+** beside the switcher adds a floor:
-a name, its position (on top, or below a chosen floor), and **Same grid and
-scale as** the floor on screen. Nothing else is asked; the floor's settings
-are the usual plan settings once it exists.
+With the floor-plan add permission, **+** beside the switcher adds a floor.
+**Above** adds a floor (on top, or below a chosen floor above ground);
+**Below** adds a **basement** (at the bottom, or above a chosen basement),
+named B1, B2… by default, with a negative order. Then:
+
+- **Same footprint as** the floor on screen (on by default when the floor
+  plan's floors are already aligned, or for its first added floor) makes
+  the new floor a **level** of one building - see
+  [Building levels](#building-levels). It takes the floor's grid size,
+  scale, ceiling, slab, layout, geo anchor and align offset, its elevation
+  is worked out from the floors below it, and the floor plan becomes
+  *aligned*. Two sub-options, both on by default (Copy background off for a
+  basement):
+    - **Copy outer walls** - the walls ticked **Exterior wall**, with their
+      doors and openings cleared. With none ticked, the walls that run
+      along the building's outline: every point and every segment's middle
+      within half a cell of the convex hull of all the walls. A partition
+      that only meets the outline at its ends is left out, and so is a wall
+      set back from the hull (the inside corner of an L-shaped building) -
+      tick such walls **Exterior wall** to have them copied. Copied walls
+      are marked exterior.
+    - **Copy background** - the same picture and CAD drawing.
+- Unticked, **Same grid and scale as** the floor on screen is offered as
+  before, and the floor is an independent canvas.
+
+The copy is one transaction, logged like any other change; copying walls
+needs the floor-plan wall add permission as well.
 
 The floor plan's name is a menu (floor-plan change permission):
 
-- **Manage floors…** - drag floors into order, rename them in place, and
+- **Manage floors…** - drag floors into order, rename them in place (each
+  level of an aligned floor plan shows its elevation), and
   per floor **Move to floor plan…** (another floor plan at the same site),
   **Make its own floor plan**, or **Delete…**. Deleting a floor removes
   everything drawn on it; deleting the last floor removes the floor plan.
@@ -797,6 +822,7 @@ The floor plan's name is a menu (floor-plan change permission):
   Two floors with the same name are refused, listed, until one is renamed.
 - **Edit…** - the floor plan's name, location (one of its site's, or
   **Whole site**) and description.
+- **Align floors…** - see [Building levels](#building-levels).
 - **Clone this floor** - see [Cloning a plan](#cloning-a-plan).
 
 Nothing groups, merges or renames floors on its own; each of these is an
@@ -812,6 +838,78 @@ location of the site gives it that floor plan's location when its own lies
 outside it. Moving a floor changes
 only which floor plan it is in, its order and that location; its tiles,
 drawing and links stay as they are.
+
+### Building levels
+
+A floor plan's floors can be **aligned**: they share one footprint and
+coordinate frame, sit at real heights, and render together as one building
+in 3D. Each level is still its own floor - its own address, canvas,
+permissions, snapshots and exports - so a floor plan that is not aligned
+works exactly as before. A floor plan becomes aligned when a floor is added
+with **Same footprint**, or with **Aligned floors** in **Align floors…**.
+
+**Elevations.** A level's elevation is its **Elevation** when set. Left
+blank on an aligned floor plan it is worked out: the lowest floor with an
+order of 0 or more is the ground at 0 m, each storey up is the floor
+below's ceiling plus this floor's **slab** (300 mm unless set), and a
+basement sits its own ceiling plus the slab above it below the floor over
+it. A set elevation anchors the floors around it. Risers between levels
+climb these heights.
+
+**Level picker.** On an aligned floor plan the floor tabs give way to a
+vertical level picker at the left of the canvas, roof at the top and
+basements at the bottom, each level with its elevation ("2 · +7.2 m"). The
+address stays per floor.
+
+**Onion skin.** In 2D the picker's **Onion skin** draws the level below
+(or above) faintly under this one - its walls and the outlines of what
+stands on it, through the levels' alignment - for drawing the next floor
+over the last.
+
+**Align floors…** (the floor plan's menu, when it has two levels or more)
+lines up floors drawn before they were aligned: pick the **Level** to move
+and the level it lies **Over**, then nudge it with the arrows (or the arrow
+keys; the **Step** sets how far) and turn it ( **[** and **]** turn by a
+degree) until the walls match, or type **X**, **Y** (cells) and **Turn °**.
+Grid sizes may differ: alignment is an offset, not a resize. **Save**
+stores the level's offset; **Aligned floors** turns the floor plan's
+alignment on or off.
+
+**Risers through levels.** On an aligned floor plan, risers standing at
+the same place on two levels pair on their own - no hunting for the
+matching tile. A saved riser's inspector shows **Through to**: tick a
+level to place a riser of the same type, size and label at the same place
+there; untick it to take that riser off (one linked to an object only
+stops being a riser). A cable between any two of the levels routes through
+the shaft, and its vertical run is the difference of the two levels'
+elevations. A riser paired by hand keeps its pair, first.
+
+**3D building.** In 3D an aligned floor plan draws as one building around
+the level on screen, each level at its elevation and offset, with a slab
+under each - drawn from the **Exterior wall** outline (one closed wall as
+drawn, else the hull of the exterior walls), else the grid's box. The level
+picker carries the level mode:
+
+| Mode | Draws |
+|---|---|
+| **All** | Every level. Levels below draw simplified - slab, walls, and racks, cabinets and devices as plain boxes; levels above are ghosted: slab and wall outlines only, contents hidden. |
+| **Up to** | The levels up to the one on screen, cut at its ceiling; nothing above but a faint roofline. |
+| **Only** | The level on screen alone, as a single floor's 3D view. |
+
+The level on screen is the full, interactive room. Each other level loads
+its own scene when first shown, and stays cached. Clicking anything on
+another level makes it the level on screen; clicking a rack, cabinet or
+device there flies to it. **Explode** pulls the levels apart vertically,
+for seeing the runs between them. With cables on, a cable routed between
+two shown levels through a riser draws as one continuous run - this
+level's part, the climb in the shaft, the other level's part - and each
+riser's shaft shows as a faint column.
+
+The 3D room's payload, `GET /api/floor-plans/{id}/scene/`, carries the
+level's `elevation_mm` (as above, or null), `slab_mm` and `align_dx` /
+`align_dy` / `align_rot` under `plan`, each wall's `exterior`, and on each
+riser tile `riser_to`: the risers it reaches on floors you may view
+(`[{id, floor_plan}]`).
 
 !!! note "Upgrading to 0.19"
     Before 0.19 the floors of a building were the plans that shared a
@@ -830,9 +928,9 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 
 | Call | Purpose |
 |---|---|
-| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `floors` (id, name, `floor_order`, location id or null; the floors you may view, in order), `floor_count` and `last_edited`. |
-| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
-| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. Answers the new floor (201). |
+| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `aligned`, `floors` (id, name, `floor_order`, location id or null, `elevation_mm`, `elevation` - set, else computed on an aligned floor plan, else null - `ceiling_mm`, `slab_mm`, grid size, `cell_mm` and `align_dx`/`align_dy`/`align_rot`; the floors you may view, in order), `floor_count` and `last_edited`. |
+| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `aligned`, `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
+| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?, "below"?, "same_footprint"?, "copy_walls"?, "copy_background"?}`. `position` is its place in the order (0 = lowest; default on top, or with `below` at the bottom, a basement with a negative order; floors put in by position keep the ground at 0); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. `same_footprint` (needs `copy_from`) makes the floor plan aligned and the floor a level sharing the footprint, with `copy_walls` (the outer walls, openings cleared; needs wall add) and `copy_background`. Answers the new floor (201). |
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
 | `GET /api/floor-plans/?stack=<id>` | One floor plan's floors, in order. |
@@ -840,9 +938,12 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 | `POST /api/floor-plans/<id>/move/` | `{"stack_id"}` - to another floor plan at the same site, on top of its floors. |
 | `POST /api/floor-plans/<id>/split/` | `{"name"?}` - make the floor a floor plan of its own (default: the floor's name). Answers the new floor plan (201). |
 
-A floor (`/api/floor-plans/`) gains `stack` (`{id, name}`), `stack_id`
-(write), `floor_order` (lowest first; negative is fine) and `elevation_mm`
-(optional, reserved for a stacked 3D building). A `POST` without
+A floor (`/api/floor-plans/`) gains `stack` (`{id, name, aligned}`), `stack_id`
+(write), `floor_order` (lowest first; negative is fine), `elevation_mm`
+(optional; blank on an aligned floor plan is computed), `elevation` (read:
+the elevation in use, or null), `slab_mm` (default 300) and `align_dx`,
+`align_dy` (cells) and `align_rot` (degrees, about the grid's centre): the
+level's offset in an aligned floor plan. A `POST` without
 `stack_id` creates a floor plan of its own named after the plan, as the
 **Add** form does, and needs no other change from a script written before
 0.19; with `stack_id`, `location_id` may be left out (the floor plan's
@@ -2047,6 +2148,9 @@ A selected wall's inspector holds its numbers:
 - **Thickness (mm)** - blank is the standard 100 mm. It draws true to
   scale on the plan, the PDF and in 3D. A new wall takes the thickness you
   last gave a wall in this browser.
+- **Exterior wall** - an outer wall of the building: what **Copy outer
+  walls** takes to a new level and what outlines the slab of the
+  [3D building](#building-levels). Walls read and write `exterior`.
 - **Doors** - each door's width, height (blank is the standard 2100 mm)
   and **Swing**. Doors live *on* the wall (spans of a segment), so a wall
   and its doors always move - and save - together.
@@ -2843,6 +2947,7 @@ copied or cloned riser is not paired.
 | `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. An upsert with `riser` (a riser tile of this plan) routes the cable between floors on the server, through that riser and the one it pairs with, against the tiles as saved: it writes a route here and one on the other floor (which needs floor plan · change and the route's own add or change there), each with `riser` and `riser_mm`; `legs` are ignored. Deleting such a route deletes the other floor's part too when you may edit it. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
 | `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`, and on `PUT` `reachable` (`false` with `detail` when the trays do not connect the ends: assigned, no route stored). |
+| `GET`/`POST /api/floor-plan-tiles/{id}/through/` | A riser on an aligned floor plan: the other levels (`levels`: `[{id, name, tile}]`, `tile` the riser standing at its place there, or null; empty off an aligned floor plan). `POST {"floors": [ids]}` places a riser at its place on each level named that has none and takes it off the others ([Building levels](#building-levels)); needs tile change here, tile add on the levels reached and delete on those left. |
 | `GET /api/floor-plans/{id}/risers/` | The riser tiles on the other floors of the plan's site that you may view (`[{id, label, floor_plan: {id, name, stack}, pair}]`; `pair` is the riser it pairs with now, or null): what a riser of this plan may pair with. |
 
 Tiles carry `riser`, `riser_pair` (`{id, label, floor_plan: {id, name}}`;

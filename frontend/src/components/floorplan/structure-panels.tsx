@@ -9,6 +9,7 @@ import type {
   RaisedFloorArea,
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { ColorPicker } from "@/components/ui/color-picker"
 import { Input } from "@/components/ui/input"
 import {
@@ -345,6 +346,13 @@ export function WallInspector({
           onChange={(color) => onPatch({ color })}
         />
       </div>
+      <label className="flex items-center gap-2 text-xs">
+        <Checkbox
+          checked={!!wall.exterior}
+          onCheckedChange={(v) => onPatch({ exterior: v === true })}
+        />
+        <span className="whitespace-nowrap">Exterior wall</span>
+      </label>
 
       <div className="grid gap-1.5 text-xs">
         <div className="flex items-center justify-between">

@@ -10871,9 +10871,18 @@ class FloorPlanMiniSerializer(NumIdModelSerializer):
 
 class FloorPlanFloorSerializer(serializers.ModelSerializer):
     """A floor as its floor plan lists it - the switcher's row. ``view_of``
-    names the plan a live view shows."""
+    names the plan a live view shows. ``elevation`` is the floor's height in
+    mm: its ``elevation_mm``, else on an aligned floor plan worked out from
+    the floors below (``floor_stacks.stack_elevations``); null otherwise."""
 
     view_of = serializers.SerializerMethodField()
+    elevation = serializers.SerializerMethodField()
+
+    def get_elevation(self, obj) -> int | None:
+        computed = self.context.get("elevations")
+        if computed is not None and obj.pk in computed:
+            return computed[obj.pk]
+        return int(obj.elevation_mm) if obj.elevation_mm is not None else None
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_view_of(self, obj):
@@ -10884,7 +10893,9 @@ class FloorPlanFloorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FloorPlan
-        fields = ["id", "numid", "name", "floor_order", "location_id", "kind", "view_of"]
+        fields = ["id", "numid", "name", "floor_order", "location_id", "kind", "view_of",
+                  "elevation_mm", "elevation", "ceiling_mm", "slab_mm", "grid_width",
+                  "grid_height", "cell_mm", "align_dx", "align_dy", "align_rot"]
 
 
 def _floor_plan_site(obj):
@@ -10934,7 +10945,17 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
 
     @extend_schema_field(FloorPlanFloorSerializer(many=True))
     def get_floors(self, obj):
-        return FloorPlanFloorSerializer(self._floors(obj), many=True).data
+        from .floor_stacks import ordered_floors, stack_elevations
+
+        rows = self._floors(obj)
+        elevations = None
+        if obj.aligned:
+            # From every floor, not only the ones the reader may view: a
+            # level's height does not change with who looks at it.
+            elevations = stack_elevations(ordered_floors(obj))
+        return FloorPlanFloorSerializer(
+            rows, many=True, context={"elevations": elevations}
+        ).data
 
     def get_floor_count(self, obj) -> int:
         return len(self._floors(obj))
@@ -10991,8 +11012,8 @@ class FloorPlanStackSerializer(TaggableSerializerMixin, serializers.ModelSeriali
     class Meta:
         model = FloorPlanStack
         fields = ["id", "name", "description", "location", "location_id", "site",
-                  "site_id", "floors", "floor_count", "last_edited", "tags", "tag_ids",
-                  "created_at", "updated_at"]
+                  "site_id", "aligned", "floors", "floor_count", "last_edited", "tags",
+                  "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "site", "floors", "floor_count", "last_edited",
                             "created_at", "updated_at"]
         # Name uniqueness (per location, or per site when site-wide) is
@@ -11027,6 +11048,10 @@ class FloorPlanSerializer(
         required=False, min_value=-32768, max_value=32767
     )
     site = serializers.SerializerMethodField()
+    elevation = serializers.SerializerMethodField()
+    align_dx = serializers.FloatField(required=False, min_value=-10000, max_value=10000)
+    align_dy = serializers.FloatField(required=False, min_value=-10000, max_value=10000)
+    align_rot = serializers.FloatField(required=False, min_value=-360, max_value=360)
     background_image = serializers.SerializerMethodField()
     tile_count = serializers.SerializerMethodField()
     drawing = serializers.SerializerMethodField()
@@ -11086,7 +11111,13 @@ class FloorPlanSerializer(
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_stack(self, obj):
         st = obj.stack
-        return {"id": str(st.pk), "name": st.name} if st is not None else None
+        return {"id": str(st.pk), "name": st.name, "aligned": st.aligned} \
+            if st is not None else None
+
+    def get_elevation(self, obj) -> int | None:
+        from .floor_stacks import floor_elevation
+
+        return floor_elevation(obj)
 
     def _source_visible(self, src) -> bool:
         from api.views import _get_active_tenant
@@ -11290,14 +11321,15 @@ class FloorPlanSerializer(
     class Meta:
         model = FloorPlan
         fields = ["id", "numid", "name", "location", "location_id", "site", "site_id",
-                  "stack", "stack_id", "floor_order", "elevation_mm",
+                  "stack", "stack_id", "floor_order", "elevation_mm", "elevation",
+                  "slab_mm", "align_dx", "align_dy", "align_rot",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
                   "background_opacity", "state", "description", "tile_count",
                   "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "site", "background_image",
+        read_only_fields = ["id", "numid", "site", "elevation", "background_image",
                             "tile_count", "drawing", "kind", "snapshot", "geo",
                             "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own
@@ -12136,7 +12168,7 @@ class FloorPlanWallSerializer(NumIdModelSerializer):
     class Meta:
         model = FloorPlanWall
         fields = ["id", "floor_plan_id", "label", "points", "height_mm",
-                  "thickness_mm", "color", "openings", "source_area",
+                  "thickness_mm", "color", "openings", "exterior", "source_area",
                   "source_area_id", "created_at", "updated_at"]
         read_only_fields = ["id", "source_area", "created_at", "updated_at"]
 

@@ -12599,11 +12599,21 @@ export interface FloorPlan {
   /** Null on a site-wide floor. */
   location: LocationOption | null
   site: SiteOption
-  /** The floor plan (stack) this is a floor of. */
-  stack: { id: string; name: string } | null
+  /** The floor plan (stack) this is a floor of; `aligned` when its floors
+   * are levels of one building. */
+  stack: { id: string; name: string; aligned?: boolean } | null
   /** Sort key inside the stack, lowest first. */
   floor_order: number
+  /** Set elevation (mm); null on an aligned floor = computed. */
   elevation_mm: number | null
+  /** The elevation in use: set, else computed on an aligned floor plan. */
+  elevation?: number | null
+  /** The slab under this floor (mm). */
+  slab_mm?: number
+  /** Offset against the aligned stack's frame: cells and degrees. */
+  align_dx?: number
+  align_dy?: number
+  align_rot?: number
   grid_width: number
   grid_height: number
   /** Physical size of one grid cell (mm) - default 600, a raised-floor tile. */
@@ -12771,6 +12781,17 @@ export interface FloorPlanFloor {
   kind?: FloorPlanKind
   /** The plan a live view shows. */
   view_of?: { id: string; name: string } | null
+  elevation_mm?: number | null
+  /** Set, else computed on an aligned floor plan; null otherwise. */
+  elevation?: number | null
+  ceiling_mm?: number
+  slab_mm?: number
+  grid_width?: number
+  grid_height?: number
+  cell_mm?: number
+  align_dx?: number
+  align_dy?: number
+  align_rot?: number
 }
 
 /** GET /api/floor-plan-stacks/ - a floor plan as users see it: a building or
@@ -12782,6 +12803,8 @@ export interface FloorPlanStack {
   /** Null for a site-wide floor plan (it spans the whole site). */
   location: LocationOption | null
   site: SiteOption
+  /** Its floors are levels of one building: one footprint, real heights. */
+  aligned?: boolean
   floors: FloorPlanFloor[]
   floor_count: number
   /** The newest change to the floor plan or one of its floors. */
@@ -12996,6 +13019,8 @@ export interface FloorPlanWall {
   thickness_mm?: number | null
   color: string
   openings: FloorPlanWallOpening[]
+  /** An outer wall: copied to new levels, outlines the 3D slab. */
+  exterior?: boolean
   /** The area the wall was made from, while linked to it: the wall moves
    * with the area, and a reshape offers to rebuild it. */
   source_area?: string | null

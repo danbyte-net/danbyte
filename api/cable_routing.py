@@ -677,7 +677,8 @@ class PlanRouter:
         near_end = self.ends(cable)[here][0]
         trays = [t for t in self.trays if len(t.points or []) >= 2]
         best = None
-        for rid, partner in pairs.items():
+        links = riser_links(self.plan, [t for t in self.tiles if t.riser])
+        for rid, partner in ((r, p) for r, ps in links.items() for p in ps):
             if only is not None and str(rid) != str(only):
                 continue
             if allow is not None and not allow(partner.floor_plan):
@@ -868,14 +869,90 @@ def riser_ref(tile, pair) -> dict:
 def riser_pairs(plan, tiles) -> dict:
     """``{tile pk: partner}`` for the riser ``tiles`` of ``plan``: the riser
     tile each pairs with (``riser_to`` on either side) on another floor of
-    the same tenant and site. Unsaved tiles pair with nothing."""
-    import uuid as _uuid
+    the same tenant and site; with no such pair, on an aligned floor plan,
+    the nearest level's riser standing at the same place (:func:`riser_links`).
+    Unsaved tiles pair with nothing."""
+    return {pk: links[0] for pk, links in riser_links(plan, tiles).items() if links}
 
-    from .models import FloorPlanTile
+
+def riser_links(plan, tiles) -> dict:
+    """``{tile pk: [partner, ...]}`` for the riser ``tiles`` of ``plan``:
+    the riser each pairs with by hand first, then - on a floor of an
+    aligned floor plan - every riser on its other levels standing at the
+    same place (:func:`shaft_risers`), nearest level first. A riser
+    "through" several levels so reaches each of them."""
+    import uuid as _uuid
 
     mine = {t.pk: t for t in tiles if getattr(t, "riser", False) and isinstance(t.pk, _uuid.UUID)}
     if not mine:
         return {}
+    out = {pk: [p] for pk, p in _hand_pairs(plan, mine).items()}
+    for pk, others in shaft_risers(plan, list(mine.values())).items():
+        have = {p.pk for p in out.get(pk, [])}
+        out.setdefault(pk, []).extend(o for o in others if o.pk not in have)
+    return {pk: v for pk, v in out.items() if v}
+
+
+def tile_frame_mm(tile, plan) -> tuple[float, float]:
+    """A tile's centre in its aligned floor plan's frame, in mm: the level's
+    offset and turn applied (the twin of the editor's levelToFrameMm)."""
+    import math
+
+    cx, cy = plan.grid_width / 2, plan.grid_height / 2
+    x = tile.x + tile.width / 2 - cx
+    y = tile.y + tile.height / 2 - cy
+    r = math.radians(plan.align_rot or 0)
+    fx = x * math.cos(r) - y * math.sin(r) + cx + (plan.align_dx or 0)
+    fy = x * math.sin(r) + y * math.cos(r) + cy + (plan.align_dy or 0)
+    return fx * plan.cell_mm, fy * plan.cell_mm
+
+
+def _same_place(a, pa, b, pb) -> bool:
+    """Whether riser tiles ``a`` (on ``pa``) and ``b`` (on ``pb``) stand at
+    the same place of their aligned floor plan: centres closer than half
+    the smaller tile's narrower side."""
+    import math
+
+    ax, ay = tile_frame_mm(a, pa)
+    bx, by = tile_frame_mm(b, pb)
+    reach = 0.5 * min(min(a.width, a.height) * pa.cell_mm,
+                      min(b.width, b.height) * pb.cell_mm)
+    return math.hypot(ax - bx, ay - by) <= max(reach, 1.0)
+
+
+def shaft_risers(plan, tiles) -> dict:
+    """``{tile pk: [riser, ...]}``: for riser ``tiles`` of ``plan`` on an
+    aligned floor plan, the riser tiles of its other levels at the same
+    place, nearest level first. Empty off an aligned floor plan."""
+    from .floor_stacks import ordered_floors
+    from .models import FloorPlanTile
+
+    stack = plan.stack if plan.stack_id else None
+    if stack is None or not stack.aligned or plan.kind != "plan":
+        return {}
+    floors = [f for f in ordered_floors(stack) if f.kind == "plan"]
+    index = {f.pk: i for i, f in enumerate(floors)}
+    if plan.pk not in index:
+        return {}
+    others = list(
+        FloorPlanTile.objects.filter(
+            floor_plan__in=[f for f in floors if f.pk != plan.pk], riser=True,
+        ).select_related("floor_plan")
+    )
+    out = {}
+    for t in tiles:
+        hits = [o for o in others if _same_place(t, plan, o, o.floor_plan)]
+        hits.sort(key=lambda o: abs(index[o.floor_plan_id] - index[plan.pk]))
+        if hits:
+            out[t.pk] = hits
+    return out
+
+
+def _hand_pairs(plan, mine: dict) -> dict:
+    """The riser each of ``mine`` pairs with by hand (``riser_to`` on
+    either side), on another floor of the same tenant and site."""
+    from .models import FloorPlanTile
+
     forward = {t.riser_to_id for t in mine.values() if t.riser_to_id}
     rows = list(
         FloorPlanTile.objects.filter(Q(pk__in=forward) | Q(riser_to_id__in=mine), riser=True)
@@ -908,7 +985,8 @@ def riser_vertical_mm(a, b) -> int:
     height set on either (``a``'s first); else the difference of their
     floors' elevations when both are set; else, on floors of one floor plan,
     the ceiling heights of the floors from the lower up to the upper; else
-    the lower floor's ceiling height."""
+    the lower floor's ceiling height. On an aligned floor plan the floors'
+    elevations are worked out when not set (floor_stacks.stack_elevations)."""
     from .models import FloorPlan
 
     for t in (a, b):
@@ -917,6 +995,12 @@ def riser_vertical_mm(a, b) -> int:
     pa, pb = a.floor_plan, b.floor_plan
     if pa.elevation_mm is not None and pb.elevation_mm is not None:
         return abs(int(pa.elevation_mm) - int(pb.elevation_mm))
+    if pa.stack_id and pa.stack_id == pb.stack_id and pa.stack.aligned:
+        from .floor_stacks import ordered_floors, stack_elevations
+
+        elev = stack_elevations(ordered_floors(pa.stack))
+        if pa.pk in elev and pb.pk in elev:
+            return abs(elev[pa.pk] - elev[pb.pk])
     if pa.stack_id and pa.stack_id == pb.stack_id:
         floors = list(
             FloorPlan.objects.filter(stack_id=pa.stack_id)

@@ -9471,6 +9471,12 @@ class FloorPlanStack(TimestampedModel, TaggableMixin):
     )
     name = models.CharField(max_length=128)
     description = models.TextField(blank=True, default="", db_default="")
+    # Aligned floors (building levels): the floors share one footprint and
+    # coordinate frame (each nudged by its ``align_*`` offset), sit at real
+    # heights (``elevation_mm``, else computed from the floors below) and
+    # render together as one building in 3D. Off: floors are independent
+    # canvases, as they always were.
+    aligned = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = [natural("name")]
@@ -9559,9 +9565,20 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     # Sort key inside the stack, lowest first (negative for basements is fine).
     floor_order = models.SmallIntegerField(default=0, db_default=0)
-    # Height of the floor above the site's reference level; reserved for a
-    # stacked 3D building.
+    # Height of the floor (its finished floor level) above the site's
+    # reference level. Null on a floor of an aligned stack: computed from the
+    # floors below (api/floor_stacks.stack_elevations).
     elevation_mm = models.IntegerField(null=True, blank=True)
+    # The slab under this floor: a storey is the floor below's ceiling plus
+    # this floor's slab.
+    slab_mm = models.PositiveSmallIntegerField(
+        default=300, db_default=300, validators=[MaxValueValidator(5000)],
+    )
+    # On an aligned stack: this floor's offset against the stack's frame, in
+    # its own cells (dx, dy) and degrees (rotation about the grid's centre).
+    align_dx = models.FloatField(default=0, db_default=0)
+    align_dy = models.FloatField(default=0, db_default=0)
+    align_rot = models.FloatField(default=0, db_default=0)
     # "grid": tiles on whole cells at quarter turns, never stacked (the plan
     # as it always was). "free": any position, size and angle, objects may
     # overlap. Back to grid only through snap-all.
@@ -10236,6 +10253,9 @@ class FloorPlanWall(TimestampedModel):
     # height renders a standard 2100 mm door. ``hinge`` and ``side`` give a
     # door its leaf and swing; without them it is a plain opening.
     openings = models.JSONField(default=list, blank=True)
+    # An outer wall of the building: what "Copy outer walls" takes to a new
+    # level and what outlines the slab in the 3D building.
+    exterior = models.BooleanField(default=False, db_default=False)
 
     class Meta:
         ordering = ["label"]

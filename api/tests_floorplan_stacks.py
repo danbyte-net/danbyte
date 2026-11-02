@@ -164,7 +164,8 @@ class StackApiTests(StackTestCase):
         # ?stack= lists one stack's floors in floor order.
         floors = self.client.get(f"/api/floor-plans/?stack={stack.id}").json()["results"]
         self.assertEqual([f["name"] for f in floors], ["B1", "2", "Ground"])
-        self.assertEqual(floors[0]["stack"], {"id": str(stack.id), "name": "HQ hall"})
+        self.assertEqual(floors[0]["stack"], {"id": str(stack.id), "name": "HQ hall",
+                                              "aligned": False})
         # The picker names each floor's floor plan.
         picks = self.client.get("/api/floor-plans/?picker=1").json()["results"]
         self.assertEqual([p["stack_name"] for p in picks if p["name"] == "B1"], ["HQ hall"])

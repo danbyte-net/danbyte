@@ -55,8 +55,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 import { cn } from "@/lib/utils"
 import { WHOLE_SITE } from "@/lib/floor-plan-scope"
+
+import { elevationLabel, nextBasementName, nextFloorName } from "./levels"
 
 /** Refresh everything that shows floors: the stack, the plan, the lists. */
 function useInvalidateFloors() {
@@ -70,8 +73,11 @@ function useInvalidateFloors() {
 }
 
 const TOP = "top"
+const BOTTOM = "bottom"
 
-/** "+ Add floor": a name and where it goes, nothing else. */
+/** "+ Add floor": a floor above or a basement below, where it goes, and
+ * whether it shares the footprint of the floor on screen - a level of one
+ * building, with its outer walls and background copied. */
 export function AddFloorDialog({
   open,
   onOpenChange,
@@ -86,25 +92,63 @@ export function AddFloorDialog({
   current?: FloorPlan
   onAdded: (plan: FloorPlan) => void
 }) {
+  const [side, setSide] = useState<"above" | "below">("above")
   const [name, setName] = useState("")
+  const [named, setNamed] = useState(false)
   const [position, setPosition] = useState(TOP)
   const [copy, setCopy] = useState(true)
+  const [same, setSame] = useState(true)
+  const [walls, setWalls] = useState(true)
+  const [background, setBackground] = useState(true)
+  const levels = stack.floors.filter((f) => f.kind !== "view")
+  const canAlign = !!current && current.kind !== "view"
+  const reset = (to: "above" | "below") => {
+    setSide(to)
+    setPosition(to === "above" ? TOP : BOTTOM)
+    setBackground(to === "above")
+    if (!named)
+      setName(
+        to === "below"
+          ? nextBasementName(stack.floors)
+          : stack.aligned
+            ? nextFloorName(stack.floors)
+            : ""
+      )
+  }
   useEffect(() => {
     if (open) {
-      setName("")
+      setNamed(false)
+      setSide("above")
       setPosition(TOP)
       setCopy(true)
+      // On by default on an aligned floor plan, or for its first added floor.
+      setSame(!!stack.aligned || levels.length <= 1)
+      setWalls(true)
+      setBackground(true)
+      setName(stack.aligned ? nextFloorName(stack.floors) : "")
     }
+    // Only on open: the floors may refresh while the dialog is up.
   }, [open])
   const invalidate = useInvalidateFloors()
+  const sameOn = canAlign && same
   const add = useMutation({
     mutationFn: () =>
       api<FloorPlan>(`/api/floor-plan-stacks/${stack.id}/floors/`, {
         method: "POST",
         body: JSON.stringify({
           name: name.trim(),
-          ...(position === TOP ? {} : { position: Number(position) }),
-          ...(copy && current ? { copy_from: current.id } : {}),
+          ...(position === TOP || position === BOTTOM
+            ? {}
+            : { position: Number(position) }),
+          ...(side === "below" ? { below: true } : {}),
+          ...((copy || sameOn) && current ? { copy_from: current.id } : {}),
+          ...(sameOn
+            ? {
+                same_footprint: true,
+                copy_walls: walls,
+                copy_background: background,
+              }
+            : {}),
         }),
       }),
     onSuccess: (plan) => {
@@ -114,11 +158,16 @@ export function AddFloorDialog({
     },
     onError: (e) => apiErrorToast(e),
   })
+  const floors = stack.floors
+  const firstAbove = floors.findIndex((f) => f.floor_order >= 0)
+  const ground = firstAbove < 0 ? floors.length : firstAbove
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add floor</DialogTitle>
+          <DialogTitle>
+            {side === "below" ? "Add basement" : "Add floor"}
+          </DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -127,32 +176,91 @@ export function AddFloorDialog({
             if (name.trim()) add.mutate()
           }}
         >
+          <SegmentedTabs<"above" | "below">
+            value={side}
+            onValueChange={reset}
+            items={[
+              { value: "above", label: "Above" },
+              { value: "below", label: "Below" },
+            ]}
+          />
           <Field label="Name">
             <Input
               autoFocus
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="2, Ground, B1…"
+              onChange={(e) => {
+                setNamed(true)
+                setName(e.target.value)
+              }}
+              placeholder={side === "below" ? "B1" : "2, Ground, Roof…"}
               className="h-9"
               maxLength={128}
             />
           </Field>
           <Field label="Position">
-            <Select value={position} onValueChange={setPosition}>
+            <Select value={position} onValueChange={(v) => v && setPosition(v)}>
               <SelectTrigger className="h-9 w-full" aria-label="Position">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={TOP}>On top</SelectItem>
-                {stack.floors.map((f, i) => (
-                  <SelectItem key={f.id} value={String(i)}>
-                    Below {f.name}
-                  </SelectItem>
-                ))}
+                {side === "above" ? (
+                  <>
+                    <SelectItem value={TOP}>On top</SelectItem>
+                    {floors.map((f, i) =>
+                      i >= ground ? (
+                        <SelectItem key={f.id} value={String(i)}>
+                          Below {f.name}
+                        </SelectItem>
+                      ) : null
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <SelectItem value={BOTTOM}>At the bottom</SelectItem>
+                    {floors.map((f, i) =>
+                      i < ground ? (
+                        <SelectItem key={f.id} value={String(i + 1)}>
+                          Above {f.name}
+                        </SelectItem>
+                      ) : null
+                    )}
+                  </>
+                )}
               </SelectContent>
             </Select>
           </Field>
-          {current && (
+          {current && canAlign && (
+            <div className="grid gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={same}
+                  onCheckedChange={(v) => setSame(v === true)}
+                />
+                <span className="whitespace-nowrap">
+                  Same footprint as {current.name}
+                </span>
+              </label>
+              {same && (
+                <div className="grid gap-2 pl-6">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={walls}
+                      onCheckedChange={(v) => setWalls(v === true)}
+                    />
+                    <span className="whitespace-nowrap">Copy outer walls</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={background}
+                      onCheckedChange={(v) => setBackground(v === true)}
+                    />
+                    <span className="whitespace-nowrap">Copy background</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+          {current && !sameOn && (
             <label className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={copy}
@@ -172,7 +280,11 @@ export function AddFloorDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={!name.trim() || add.isPending}>
-              {add.isPending ? "Adding…" : "Add floor"}
+              {add.isPending
+                ? "Adding…"
+                : side === "below"
+                  ? "Add basement"
+                  : "Add floor"}
             </Button>
           </div>
         </form>
@@ -517,6 +629,14 @@ function FloorRow({
         className={cn("h-8 flex-1", current && "font-medium")}
         maxLength={128}
       />
+      {floor.elevation != null && (
+        <span
+          className="num w-16 shrink-0 text-right text-xs text-muted-foreground"
+          aria-label={`Elevation of ${floor.name}`}
+        >
+          {elevationLabel(floor.elevation)}
+        </span>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

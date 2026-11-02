@@ -105,6 +105,7 @@ function wallBody(w: WallRow, areaIds?: ReadonlySet<string>) {
     thickness_mm: w.thickness_mm ?? null,
     color: w.color,
     openings: w.openings,
+    exterior: w.exterior ?? false,
     source_area_id:
       w.source_area && (!areaIds || areaIds.has(w.source_area))
         ? w.source_area
