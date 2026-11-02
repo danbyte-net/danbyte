@@ -3872,6 +3872,36 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True,
         help_text="Members that must be up for the bundle to count as up.",
     )
+    # Linux bond settings (``bond-mode``, ``bond-xmit-hash-policy``,
+    # ``bond-miimon``), on the aggregate only. 802.3ad is LACP; every other
+    # mode is a static bundle.
+    LAG_MODE_CHOICES = [
+        ("balance-rr", "balance-rr"),
+        ("active-backup", "active-backup"),
+        ("balance-xor", "balance-xor"),
+        ("broadcast", "broadcast"),
+        ("802.3ad", "802.3ad (LACP)"),
+        ("balance-tlb", "balance-tlb"),
+        ("balance-alb", "balance-alb"),
+    ]
+    LAG_HASH_POLICY_CHOICES = [
+        ("layer2", "layer2"),
+        ("layer2+3", "layer2+3"),
+        ("layer3+4", "layer3+4"),
+        ("encap2+3", "encap2+3"),
+        ("encap3+4", "encap3+4"),
+        ("vlan+srcmac", "vlan+srcmac"),
+    ]
+    lag_mode = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=LAG_MODE_CHOICES,
+    )
+    lag_hash_policy = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=LAG_HASH_POLICY_CHOICES,
+    )
+    lag_miimon = models.PositiveIntegerField(
+        null=True, blank=True, help_text="MII link-monitor interval, in ms.",
+    )
 
     class Meta:
         unique_together = ("device", "name")
@@ -3884,6 +3914,13 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # same shape - and port utilization agrees with the faceplate.
         if self.type in VIRTUAL_INTERFACE_TYPES:
             self.virtual = True
+        if self.type != "lag":
+            self.lag_mode = ""
+            self.lag_hash_policy = ""
+            self.lag_miimon = None
+        elif self.lag_mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            self.lag_protocol = "lacp"
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
             self.lacp_rate = ""

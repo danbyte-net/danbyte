@@ -740,6 +740,12 @@ def dcim_choices_view(request):
         "lacp_modes": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_mode").flatchoices
         ),
+        "lag_modes": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_mode").flatchoices
+        ),
+        "lag_hash_policies": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_hash_policy").flatchoices
+        ),
         "lacp_rates": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_rate").flatchoices
         ),

@@ -4130,6 +4130,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
     lag_protocol_display = ChoiceLabelField("lag_protocol")
+    lag_mode_display = ChoiceLabelField("lag_mode")
+    lag_hash_policy_display = ChoiceLabelField("lag_hash_policy")
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -4216,6 +4218,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         if d:
             d["lag_protocol"] = obj.lag.lag_protocol
             d["lacp_mode"] = obj.lag.lacp_mode
+            d["lag_mode"] = obj.lag.lag_mode
+            d["lag_hash_policy"] = obj.lag.lag_hash_policy
         return d
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -4259,6 +4263,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             for t in obj.tunnel_terminations.all()
             if t.tunnel.tenant_id == obj.device.tenant_id
         ]
+
+    def to_internal_value(self, data):
+        # "static" is how a bond without negotiation is often called; it is
+        # stored as the blank protocol, the one spelling filters and
+        # templates use.
+        if hasattr(data, "get") and str(data.get("lag_protocol", "")).lower() == "static":
+            data = data.copy()
+            data["lag_protocol"] = ""
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -4341,7 +4354,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                          "changing its type."}
             )
         if eff_type != "lag":
-            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links"):
+            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links",
+                      "lag_mode", "lag_hash_policy", "lag_miimon"):
                 if attrs.get(f):
                     raise serializers.ValidationError(
                         {f: "Only an interface of type LAG has bundle settings."}
@@ -4353,6 +4367,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         protocol = attrs.get(
             "lag_protocol", getattr(self.instance, "lag_protocol", "") or ""
         )
+        mode = attrs.get("lag_mode", getattr(self.instance, "lag_mode", "") or "")
+        if mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            protocol = attrs["lag_protocol"] = "lacp"
+        elif mode and protocol == "lacp":
+            raise serializers.ValidationError(
+                {"lag_mode": "LACP runs in 802.3ad mode. Pick 802.3ad, or clear "
+                             "the protocol for a static bond."}
+            )
         if protocol != "lacp":
             attrs["lacp_mode"] = ""
             attrs["lacp_rate"] = ""
@@ -4385,7 +4408,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
-                  "lag_min_links",
+                  "lag_min_links", "lag_mode", "lag_mode_display", "lag_hash_policy",
+                  "lag_hash_policy_display", "lag_miimon",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 

@@ -640,6 +640,17 @@ function InterfaceOverview({
                 { label: "LACP rate", value: i.lacp_rate || dash },
               ]
             : []),
+          { label: "Mode", value: i.lag_mode_display || dash },
+          { label: "Hash policy", value: i.lag_hash_policy_display || dash },
+          {
+            label: "MII monitor",
+            value:
+              i.lag_miimon != null ? (
+                <span className="num">{i.lag_miimon} ms</span>
+              ) : (
+                dash
+              ),
+          },
           {
             label: "Min links",
             value:

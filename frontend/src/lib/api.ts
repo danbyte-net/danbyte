@@ -3477,6 +3477,8 @@ export interface DcimChoices {
   lag_protocols: DcimChoice[]
   lacp_modes: DcimChoice[]
   lacp_rates: DcimChoice[]
+  lag_modes: DcimChoice[]
+  lag_hash_policies: DcimChoice[]
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
@@ -3667,6 +3669,13 @@ export interface Interface {
   lacp_mode: LacpMode
   lacp_rate: LacpRate
   lag_min_links: number | null
+  /** Linux bond settings (aggregate only): bond-mode, hash policy, miimon.
+   * `802.3ad` mode means LACP. */
+  lag_mode: string
+  lag_mode_display: string
+  lag_hash_policy: string
+  lag_hash_policy_display: string
+  lag_miimon: number | null
   created_at: string
   updated_at: string
 }
@@ -3710,6 +3719,9 @@ export interface InterfaceWritePayload {
   lacp_mode?: LacpMode
   lacp_rate?: LacpRate
   lag_min_links?: number | null
+  lag_mode?: string
+  lag_hash_policy?: string
+  lag_miimon?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────

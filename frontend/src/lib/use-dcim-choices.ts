@@ -11,6 +11,8 @@ const EMPTY: DcimChoices = {
   lag_protocols: [],
   lacp_modes: [],
   lacp_rates: [],
+  lag_modes: [],
+  lag_hash_policies: [],
   poe_modes: [],
   poe_types: [],
   cable_types: [],

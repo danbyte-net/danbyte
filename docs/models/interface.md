@@ -182,7 +182,36 @@ bundle settings." Picking type LAG marks the interface virtual.
 
 `lag_protocol`: blank = static aggregate (no negotiation), `lacp` (802.3ad),
 `pagp`. The port-channel / ae / bond is the logical link; this is the protocol
-negotiating it.
+negotiating it. The form labels blank **None (static)**; the API also accepts
+`"static"` as input and stores it blank, so there is one spelling to filter
+and template on.
+
+### Mode / Hash policy / MII monitor
+
+The Linux bond settings, for an `/etc/network/interfaces` or systemd-networkd
+render:
+
+- `lag_mode`: `balance-rr`, `active-backup`, `balance-xor`, `broadcast`,
+  `802.3ad`, `balance-tlb`, `balance-alb` (`bond-mode`). `802.3ad` sets the
+  protocol to LACP; LACP with any other mode is refused.
+- `lag_hash_policy`: `layer2`, `layer2+3`, `layer3+4`, `encap2+3`,
+  `encap3+4`, `vlan+srcmac` (`bond-xmit-hash-policy`).
+- `lag_miimon`: the link-monitor interval in ms (`bond-miimon`).
+
+All three are blank by default and cleared on save when the type is not LAG.
+Nothing guesses a mode for an existing static bundle. A template reads them
+off the interface row, with the members from `lag_members`:
+
+```jinja
+{% for i in interfaces if i.type == "lag" %}
+auto {{ i.name }}
+iface {{ i.name }} inet manual
+    bond-slaves {{ i.lag_members.all()|map(attribute="name")|join(" ") }}
+{% if i.lag_mode %}    bond-mode {{ i.lag_mode }}
+{% endif %}{% if i.lag_hash_policy %}    bond-xmit-hash-policy {{ i.lag_hash_policy }}
+{% endif %}{% if i.lag_miimon %}    bond-miimon {{ i.lag_miimon }}
+{% endif %}{% endfor %}
+```
 
 ### LACP mode / LACP rate
 
