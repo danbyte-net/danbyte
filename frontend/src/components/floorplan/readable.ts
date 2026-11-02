@@ -282,6 +282,19 @@ export function readableOrder(
   return grown.length || top.length ? [...real, ...grown, ...top] : tiles
 }
 
+/** Tiles in drawing order, split: those at their real size, drawn with
+ * the plan and clipped with it, and those grown - a screen-size overlay,
+ * drawn over the plan's surround and never clipped. */
+export function splitGrown(
+  ordered: readonly FloorPlanTile[],
+  shapeOf?: ShapeOf | null
+): { real: FloorPlanTile[]; over: FloorPlanTile[] } {
+  const real: FloorPlanTile[] = []
+  const over: FloorPlanTile[] = []
+  for (const t of ordered) (shapeOf?.(t)?.changed ? over : real).push(t)
+  return { real, over }
+}
+
 /** A cable stub moved out to its tile's grown edge, so it leaves the
  * symbol and not the empty middle of it. */
 export function growStub(

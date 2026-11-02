@@ -20,7 +20,6 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 
-import { AreaMask } from "./area-mask"
 import { CadLayer, useCadSource } from "./cad-layer"
 import { CELL } from "./canvas-geometry"
 import { FloorCanvas } from "./floor-canvas"
@@ -211,11 +210,7 @@ function RegionView({
               </g>
             )
           }
-          worldOverlay={
-            r.outline && (
-              <AreaMask outline={r.outline} width={crop.w} height={crop.h} />
-            )
-          }
+          maskOutline={r.outline}
           onOpenTile={(tile) =>
             void nav({
               to: "/floorplans/$id",

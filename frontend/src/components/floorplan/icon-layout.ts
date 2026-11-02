@@ -12,7 +12,9 @@ import { tileFill } from "./tile-paint"
 // icon sides, and each one moved keeps a leader to where it really is.
 // Only where that cannot work - a crowd over CLUSTER_MAX_SPREAD, or a
 // spread that would move one too far or still overlap - do they fold into
-// one cluster tile at their centroid, like markers on a map.
+// one cluster tile at their centroid, like markers on a map. Given the
+// plan's (or a view's crop) bounds, the spread keeps them inside; it
+// spills past the edge only where nothing fits inside.
 //
 // Everything here is in "units" (screen px or paper mm) at `scale` units
 // per cell; the result keeps each item's displacement in units, so on the
@@ -72,6 +74,21 @@ export interface IconLayoutOptions {
   prev?: IconLayout | null
   /** Relaxation rounds per pass. */
   iterations?: number
+  /** Where icons should stay (units, as the items' centres times
+   * `scale`): the plan's grid or a live view's crop. Spread keeps every
+   * icon inside, and spills past only when nothing fits inside. */
+  bounds?: UnitBox | null
+  /** Past the bounds when nothing fits inside (the canvas); false folds
+   * into a cluster instead (paper, whose frame clips). */
+  spill?: boolean
+}
+
+/** A box in units. */
+export interface UnitBox {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 interface Node {
@@ -149,10 +166,33 @@ function makeNode(items: readonly IconItem[], scale: number, side: number) {
   }
 }
 
+/** Keep a node's box inside `b`, on an axis where it fits - one whose true
+ * place is inside or by the edge (within a side); one well outside (a
+ * close-up's neighbour) stays where it is. */
+function keepInside(n: Node, b: UnitBox) {
+  const h = n.side / 2
+  const [hx, hy] = n.home
+  if (
+    hx < b.x - n.side ||
+    hy < b.y - n.side ||
+    hx > b.x + b.w + n.side ||
+    hy > b.y + b.h + n.side
+  )
+    return
+  if (b.w >= n.side) n.p[0] = Math.min(b.x + b.w - h, Math.max(b.x + h, n.p[0]))
+  if (b.h >= n.side) n.p[1] = Math.min(b.y + b.h - h, Math.max(b.y + h, n.p[1]))
+}
+
 /** Push overlapping nodes apart along the axis they overlap least on -
  * each half the overlap, so they move no more than they must - and never
- * past `cap` from home. */
-function relax(nodes: Node[], gap: number, cap: number, iterations: number) {
+ * past `cap` from home; inside `bounds` when given. */
+function relax(
+  nodes: Node[],
+  gap: number,
+  cap: number,
+  iterations: number,
+  bounds: UnitBox | null = null
+) {
   for (const [i, n] of nodes.entries()) {
     n.p = [n.home[0], n.home[1]]
     // Stacked on one spot: start round it, so the push has a direction.
@@ -161,6 +201,7 @@ function relax(nodes: Node[], gap: number, cap: number, iterations: number) {
       const a = i * 2.39996
       n.p = [n.home[0] + Math.cos(a) * 0.01, n.home[1] + Math.sin(a) * 0.01]
     }
+    if (bounds) keepInside(n, bounds)
   }
   const maxSide = Math.max(...nodes.map((n) => n.side))
   for (let it = 0; it < iterations; it++) {
@@ -196,6 +237,7 @@ function relax(nodes: Node[], gap: number, cap: number, iterations: number) {
         n.p[0] = n.home[0] + (ox / l) * cap
         n.p[1] = n.home[1] + (oy / l) * cap
       }
+      if (bounds) keepInside(n, bounds)
     }
     if (!moved) break
   }
@@ -257,10 +299,14 @@ export function layoutIcons(
     maxSpread = CLUSTER_MAX_SPREAD,
     prev = null,
     iterations = 40,
+    bounds = null,
+    spill = true,
   }: IconLayoutOptions,
   pinned: ReadonlySet<string> = new Set()
 ): IconLayout {
-  if (!(scale > 0) || items.length < 2) return { ...EMPTY_ICON_LAYOUT, scale }
+  // One icon alone only moves to come inside the bounds.
+  if (!(scale > 0) || items.length < (bounds ? 1 : 2))
+    return { ...EMPTY_ICON_LAYOUT, scale }
   const sorted = [...items].sort(readingOrder)
   const homes = sorted.map((it): Pt => [it.c[0] * scale, it.c[1] * scale])
   const spacing = side + gap
@@ -306,10 +352,21 @@ export function layoutIcons(
 
   // Relax; what will not spread merges with what it collides with, and
   // round again.
-  for (let round = 0; round < 8; round++) {
+  // Inside the bounds first; past the edge only where nothing fits inside.
+  const spread = () => {
     const nodes = groups.map((g) => makeNode(g, scale, side))
-    relax(nodes, gap, cap, iterations)
+    relax(nodes, gap, cap, iterations, bounds)
     const bad = badNodes(nodes, gap, cap)
+    if (bad.size && bounds && spill) {
+      const loose = groups.map((g) => makeNode(g, scale, side))
+      relax(loose, gap, cap, iterations)
+      const looseBad = badNodes(loose, gap, cap)
+      if (!looseBad.size) return { nodes: loose, bad: looseBad }
+    }
+    return { nodes, bad }
+  }
+  for (let round = 0; round < 8; round++) {
+    const { nodes, bad } = spread()
     if (!bad.size) return emit(nodes, scale)
     const pin = (i: number) =>
       groups[i].length === 1 && pinned.has(groups[i][0].id)
@@ -355,9 +412,7 @@ export function layoutIcons(
     if (next.size === groups.length) return emit(nodes, scale)
     groups = [...next.values()].map((g) => g.sort(readingOrder))
   }
-  const nodes = groups.map((g) => makeNode(g, scale, side))
-  relax(nodes, gap, cap, iterations)
-  return emit(nodes, scale)
+  return emit(spread().nodes, scale)
 }
 
 function emit(nodes: readonly Node[], scale: number): IconLayout {
@@ -432,6 +487,27 @@ export function drawnCentre(
 export function squareAt(c: Pt, side: number, perCell: number): CellBox {
   const s = side / perCell
   return { x: c[0] - s / 2, y: c[1] - s / 2, w: s, h: s }
+}
+
+/** Where the screen-size overlays keep (cells): a live view's room - its
+ * outline's box, within the grid - else the grid. */
+export function keepBoxOf(
+  gridW: number,
+  gridH: number,
+  outline?: readonly (readonly number[])[] | null
+): CellBox {
+  if (!outline || outline.length < 3) return { x: 0, y: 0, w: gridW, h: gridH }
+  const x0 = Math.max(0, Math.min(...outline.map((p) => p[0])))
+  const y0 = Math.max(0, Math.min(...outline.map((p) => p[1])))
+  const x1 = Math.min(gridW, Math.max(...outline.map((p) => p[0])))
+  const y1 = Math.min(gridH, Math.max(...outline.map((p) => p[1])))
+  if (!(x1 > x0 && y1 > y0)) return { x: 0, y: 0, w: gridW, h: gridH }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+}
+
+/** A cell box in units at `scale` units per cell. */
+export function scaleBox(b: CellBox, scale: number): UnitBox {
+  return { x: b.x * scale, y: b.y * scale, w: b.w * scale, h: b.h * scale }
 }
 
 /** The zoom bucket a layout is kept for: eight to a doubling, so the
