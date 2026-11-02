@@ -16,6 +16,7 @@ export const SOLO_PLAN: ScenePayload["plan"] = {
   ceiling_mm: 3000,
   background_image: null,
   background_opacity: 0,
+  base_map: null,
 }
 
 /** The tile a single rack or cabinet stands on: centred on the origin,

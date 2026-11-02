@@ -204,6 +204,13 @@ export interface ScenePayload {
     ceiling_mm: number
     background_image: string | null
     background_opacity: number
+    /** The floor layer is shown (false: the room draws no picture or CAD
+     * drawing on its floor). */
+    background_shown?: boolean
+    /** The base map, on the ground level (or a floor that is no level)
+     * only; null elsewhere. */
+    base_map?: string | null
+    map_opacity?: number
     /** Building levels: the floor's elevation (set, else computed on an
      * aligned floor plan; null otherwise), slab and align offset. */
     elevation_mm?: number | null

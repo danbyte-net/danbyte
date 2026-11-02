@@ -17,6 +17,9 @@ export const MAX_CELL_MM = 5000
 const MAX_LAT = 85.05112878
 /** The longest side of the rendered background, in pixels. */
 export const MAX_IMAGE_EDGE = 4096
+/** A render smaller than this on its longest side is drawn up to it (at
+ * most 16×), so the attribution in its corner stays small. */
+export const MIN_IMAGE_EDGE = 1600
 /** Tiles fetched for one render, at most. */
 export const MAX_TILES = 400
 const TILE = 256
@@ -260,8 +263,17 @@ export async function renderMapImage({
   load?: (url: string) => Promise<TileImage>
 }): Promise<{ blob: Blob; zoom: number; width: number; height: number }> {
   const zoom = renderZoom(bbox, mapZoom)
-  const { tiles, width, height } = tilesFor(bbox, zoom)
+  const box = tilesFor(bbox, zoom)
+  const { tiles } = box
   if (tiles.length > MAX_TILES) throw new TileReadError("Too many tiles.")
+  // A small box (one building at the deepest zoom) is a few hundred pixels:
+  // drawn larger, so the attribution stays a small corner of it.
+  const scale = Math.min(
+    16,
+    Math.max(1, MIN_IMAGE_EDGE / Math.max(box.width, box.height))
+  )
+  const width = Math.round(box.width * scale)
+  const height = Math.round(box.height * scale)
   const canvas = document.createElement("canvas")
   canvas.width = width
   canvas.height = height
@@ -283,7 +295,13 @@ export async function renderMapImage({
     while (next < tiles.length) {
       const t = tiles[next++]
       const img = await once(tileUrl(template, zoom, t.x, t.y))
-      ctx.drawImage(img, Math.round(t.dx), Math.round(t.dy), TILE, TILE)
+      ctx.drawImage(
+        img,
+        Math.round(t.dx * scale),
+        Math.round(t.dy * scale),
+        Math.ceil(TILE * scale),
+        Math.ceil(TILE * scale)
+      )
     }
   }
   await Promise.all(Array.from({ length: 6 }, worker))

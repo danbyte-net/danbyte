@@ -12623,9 +12623,20 @@ export interface FloorPlan {
   layout_mode: FloorPlanLayoutMode
   /** Room ceiling height (mm). */
   ceiling_mm: number
-  /** Relative /media/… URL for the blueprint under the grid, or null. */
+  /** Relative /media/… URL for the floor's own picture (the floor layer,
+   * over the base map), or null. */
   background_image: string | null
   background_opacity: number
+  /** The floor layer (picture or CAD drawing) is drawn. */
+  background_shown?: boolean
+  /** The base layer: a Site map snapshot, shared by the levels of one
+   * building. */
+  base_map?: FloorPlanBaseMap | null
+  map_opacity?: number
+  /** Set by hand; null: shown except on a basement. */
+  map_shown?: boolean | null
+  /** Whether the base map is drawn. */
+  map_visible?: boolean
   /** View prefs (overlay mode, grid on/off…) - free schema. */
   state: Record<string, unknown>
   description: string
@@ -12647,6 +12658,22 @@ export interface FloorPlan {
 }
 
 export type FloorPlanKind = "plan" | "view"
+
+/** A floor's base map: a Site map snapshot under the floor drawing. */
+export interface FloorPlanBaseMap {
+  id: string
+  /** Relative /media/… URL. */
+  image: string | null
+  /** [south, west, north, east] in degrees. */
+  bbox: [number, number, number, number] | null
+  zoom: number | null
+  basemap: "map" | "sat"
+  attribution: string
+  captured_at: string | null
+  /** Floors drawing it (more than one on a building's levels); null in
+   * lists. */
+  floors: number | null
+}
 
 /** A plan's geo anchor: the Site map box its grid spans, linear in Web
  * Mercator, and the map background rendered for it. */
@@ -14076,6 +14103,9 @@ export interface FloorPlanWritePayload {
   cell_mm?: number
   ceiling_mm?: number
   background_opacity?: number
+  background_shown?: boolean
+  map_opacity?: number
+  map_shown?: boolean | null
   state?: Record<string, unknown>
   layout_mode?: FloorPlanLayoutMode
   description?: string

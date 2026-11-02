@@ -683,6 +683,10 @@ export function FloorCanvas({
   const readable = objectSize === "readable"
   const { theme } = useTheme()
   const muteId = muteFilterId(plan.id)
+  // The base map, when this floor draws it, and whether the floor layer
+  // (picture or CAD drawing) is shown.
+  const mapImage = (plan.map_visible && plan.base_map?.image) || null
+  const floorShown = plan.background_shown !== false
   const pxPerCell = CELL * t.k
   const [hoverStore] = useState(createHoverStore)
   const hoveredTile = useSyncExternalStore(
@@ -2141,7 +2145,7 @@ export function FloorCanvas({
               strokeWidth={1}
             />
           </pattern>
-          {muteBackground && plan.background_image && (
+          {muteBackground && (plan.background_image || mapImage) && (
             <MuteFilter id={muteId} dark={theme === "dark"} />
           )}
         </defs>
@@ -2158,9 +2162,26 @@ export function FloorCanvas({
         >
           {/* Floor surface */}
           <rect width={gw} height={gh} className="fill-muted/30" rx={4} />
-          {plan.background_image && (
+          {/* Two background layers: the base map (a Site map snapshot),
+              then the floor's own picture or CAD drawing over it. */}
+          {mapImage && (
+            <image
+              href={mapImage}
+              data-layer="map"
+              x={(backgroundFrame?.x ?? 0) * CELL}
+              y={(backgroundFrame?.y ?? 0) * CELL}
+              width={backgroundFrame ? backgroundFrame.width * CELL : gw}
+              height={backgroundFrame ? backgroundFrame.height * CELL : gh}
+              opacity={(plan.map_opacity ?? 60) / 100}
+              preserveAspectRatio="none"
+              filter={muteBackground ? `url(#${muteId})` : undefined}
+              data-muted={muteBackground || undefined}
+            />
+          )}
+          {plan.background_image && floorShown && (
             <image
               href={plan.background_image}
+              data-layer="floor"
               x={(backgroundFrame?.x ?? 0) * CELL}
               y={(backgroundFrame?.y ?? 0) * CELL}
               width={backgroundFrame ? backgroundFrame.width * CELL : gw}
@@ -2171,7 +2192,7 @@ export function FloorCanvas({
               data-muted={muteBackground || undefined}
             />
           )}
-          {underlay}
+          {floorShown && underlay}
           {showGrid && (
             <rect
               width={gw}

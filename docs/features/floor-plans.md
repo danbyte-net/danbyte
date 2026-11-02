@@ -79,13 +79,52 @@ page, or **Add floor plan** on a site's **Floor plans** tab). Pick the
 [Site-wide floor plans](#site-wide-floor-plans)). A new floor plan starts
 with one floor, both named as you named it; add more floors from the editor
 (see [Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
-512×512), and can carry an uploaded **background image** - a blueprint or
-photo scaled under the grid with adjustable opacity. **Display → Muted
-background** (on by default) drains most of its colour and pulls it toward
+512×512), and two [background layers](#backgrounds) under it: a **map** (a
+Site map snapshot at true scale) and a **floor drawing** over it (an
+uploaded blueprint or photo, or a [CAD drawing](#cad-drawings)), each with
+its own opacity. **Display → Muted
+background** (on by default) drains most of their colour and pulls it toward
 the page - pale in the light theme, inverted to a dark map in the dark
 theme - so the plan's own rooms, racks, trays and cables read first. Turn it
-off to see the picture as uploaded. The 3D room's floor wears the same
-muted picture; the PNG carries what the screen shows.
+off to see the pictures as uploaded. The 3D room's floor wears the same
+muted pictures; the PNG carries what the screen shows.
+
+### Backgrounds
+
+**Background** in the plan's toolbar (**More → Background…** on a narrow
+screen; floor-plan change permission) holds both layers, drawn in this
+order:
+
+| Layer | What | Controls |
+|---|---|---|
+| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
+| **Floor drawing** | The floor's own picture (PNG, JPEG…) or [CAD drawing](#cad-drawings), over the map. One or the other: a drawing replaces the picture and a picture the drawing, each after a confirm. | **Upload image…** / **Replace image…**, **Remove**; **Upload drawing…** / **Replace drawing…**, **Remove**; the eye; **Opacity** (the picture's, or the drawing's placement opacity). |
+
+The eye hides or shows a layer on this floor and is saved with it, like the
+opacity; the 3D room follows both.
+
+**From site map…** opens a small map with the frame of the floor on it:
+
+- On a plan tied to the map (a [geo anchor](#the-geo-anchor)) the frame is
+  the plan's box.
+- On any other plan the frame is the grid at its real size - its cells at
+  the plan's cell size - kept in the middle of the small map: drag and zoom
+  the map until the frame sits on the building. **Capture** gives the plan
+  that geo anchor too, so GPS placement, the plan's footprint on the Site
+  map, **Refresh map** and **Expand** work for it from then on.
+
+Pick **Map** or **Satellite** and **Capture**. The browser renders the box
+from the deployment's tile server (the Site map's own, or the self-hosted
+one in [Settings → Site map](site-map.md#tile-server)) and uploads it; the
+server never fetches tiles. When the browser can't read the tiles the
+dialog says so and nothing changes.
+
+With a map, **Update snapshot** renders the same box again from the current
+tiles and replaces the picture - everything drawn on the plan stays put -
+and the **Map** / **Satellite** switch does the same with the other
+basemap. The line above reads **Map captured** *date* (and, on a building,
+the number of levels drawing it). **Remove** deletes the map from every
+floor it lies under; the geo anchor stays.
 
 ### Site-wide floor plans
 
@@ -134,11 +173,13 @@ makes a site-wide floor plan from an area of the map:
   is that many cells of the chosen cell size, the area grown east and south
   to whole cells. A grid has at most 512 cells a side, so a larger area
   gets a larger cell; an area over 2.56 km across is refused - zoom in.
-- **Background** - the area as the map showed it (street map or satellite),
-  stretched exactly over the grid, so a 40 m building is 40 cells of 1 m.
+- **Map** - the area as the map showed it (street map or satellite),
+  stretched exactly over the grid as the plan's [map layer](#backgrounds),
+  so a 40 m building is 40 cells of 1 m. The floor-drawing layer stays
+  free for a blueprint or CAD drawing of the building on top of it.
   The tile attribution is drawn in the image's bottom-right corner and
   written in the plan's description, as the tiles' licences require.
-  Without readable tiles the plan has no background.
+  Without readable tiles the plan has no map.
 - **Outlines as areas** - each [building outline](site-map.md#building-outlines)
   of the plan's site inside the area becomes a polygon area linked to the
   outline's location, in the outline's colour (its own, else its location
@@ -148,7 +189,7 @@ makes a site-wide floor plan from an area of the map:
   a location you may not view, are left out.
 
 The plan is an ordinary floor plan from then on: draw on it, add floors,
-replace the background. It also keeps its tie to the map - its **geo
+add a floor drawing over the map. It also keeps its tie to the map - its **geo
 anchor**, below. Its `state.from_map` keeps the box, the tile zoom, the
 basemap and the attribution as well.
 
@@ -157,7 +198,8 @@ takes `name`, `site_id`, `bbox` (`[south, west, north, east]` in degrees,
 as JSON text in a form), `cell_mm` (50-5000, default 1000, raised to fit),
 `zoom` and `basemap` (`map` or `sat`, for the attribution), and an optional
 `background_image`: a PNG, JPEG or WebP of the box, at most 20 MB, 8,192
-pixels a side and 40 megapixels, stretched over the grid. It answers the
+pixels a side and 40 megapixels, stretched over the grid as its map
+(`base_map`; the floor's own `background_image` stays empty). It answers the
 new floor (201) with `areas_created` and `outlines_skipped` (the labels of
 outlines that did not make a valid area). Needs `floorplan · add` at the
 site; outlines are copied only with `sitemapoutline · view`. The server
@@ -165,19 +207,21 @@ never fetches tiles: the image comes from the browser.
 
 #### The geo anchor
 
-A plan made from the Site map stores the box of the map its grid spans:
-`geo_bbox` (`[south, west, north, east]` in degrees), the metres one cell is
-(`geo_mpc`), and the basemap, tile zoom and date of its map background
-(`geo_basemap`, `geo_zoom`, `geo_captured_at`). The grid spans the box
-linearly in Web Mercator, as the background is stretched over it. Plans
-made before the anchor existed got it from their `state.from_map` when
-Danbyte was upgraded (migration `0242`); snapshots, live views and plans not
-made from the map have none and work as before. A copy of the plan
-(**Clone this floor**) keeps it; a snapshot does not.
+A plan made from the Site map - or given a map through
+[**From site map…**](#backgrounds) - stores the box of the map its grid
+spans: `geo_bbox` (`[south, west, north, east]` in degrees), the metres one
+cell is (`geo_mpc`), and the basemap, tile zoom and date of its map
+(`geo_basemap`, `geo_zoom`, `geo_captured_at`, kept equal to the map's).
+The grid spans the box linearly in Web Mercator, as the map is stretched
+over it. Plans made before the anchor existed got it from their
+`state.from_map` when Danbyte was upgraded (migration `0242`); snapshots,
+live views and plans with no map have none and work as before. A copy of
+the plan (**Clone this floor**) keeps it, with a map of its own; a snapshot
+does not.
 
-The editor's header reads **Map captured** with the date of the background
-after the grid size. Uploading another background through **Background**
-keeps the box but drops the capture date: the picture is no longer the map.
+The editor's header reads **Map captured** with the date of the map after
+the grid size. Uploading a floor drawing through **Background** keeps the
+map and its date: the drawing lies over it.
 
 `GET /api/floor-plans/<id>/` reads it as `geo`: `{bbox, mpc, zoom,
 basemap, captured_at, attribution}`, or `null`.
@@ -186,14 +230,18 @@ basemap, captured_at, attribution}`, or `null`.
 
 **Refresh map…** in the plan's name menu (with permission to change floor
 plans) renders the same box again from the current tiles, **Map** or
-**Satellite**, in your browser, and makes it the background. Everything
-drawn on the plan stays where it is; only the image and the capture date
-change, and the change log records it as *Map refreshed from the Site
-map*. When the browser can't read the tiles (see
+**Satellite**, in your browser, and makes it the plan's map - the same as
+**Background → Update snapshot**. Everything drawn on the plan, and its
+floor drawing, stays where it is; only the map's picture and the capture
+date change, and the change log records it on the map and its floors as
+*Map refreshed from the Site map*. On a level of an aligned floor plan the building's map
+is updated, so every level sharing it shows the new one. When the browser
+can't read the tiles (see
 [New floor plan from this view](site-map.md#new-floor-plan-from-this-view))
-the dialog says so and the background stays as it is.
+the dialog says so and the map stays as it is.
 
-`POST /api/floor-plans/<id>/background/` with `map_refresh=1`,
+`POST /api/floor-plans/<id>/map/` (see [Backgrounds API](#backgrounds-api)),
+or as before `POST /api/floor-plans/<id>/background/` with `map_refresh=1`,
 `background_image` (checked like a new plan's: PNG, JPEG or WebP, at most
 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` and `zoom`. It is
 refused on a plan with no geo anchor and on a live view.
@@ -227,10 +275,14 @@ from the Site map*, so the change log shows what moved. If the plan was
 changed by someone else since you opened it, Expand is refused and nothing
 moves.
 
-The background is then rendered for the new box, as for a new plan. When
-the browser can't read the tiles, the plan still grows: the old picture is
+The map is then rendered for the new box, as for a new plan. When
+the browser can't read the tiles, the plan still grows: the old map is
 kept where it was on a larger canvas, the new margins left empty, and a
-note says to **Refresh map** once the tiles can be read.
+note says to **Refresh map** once the tiles can be read. A floor picture
+(not a CAD drawing, which moves with its placement) is kept in place on a
+larger canvas the same way. A level of an aligned floor plan that is
+expanded takes a map of its own first: the other levels keep the box and
+map they had.
 
 `POST /api/floor-plans/<id>/expand/` (multipart, or JSON without an image)
 takes `bbox` (the new box; it must hold the plan's), `version` (the plan's
@@ -269,20 +321,69 @@ Devices of the plan's site whose GPS position falls on the plan are listed
 first in the [Place picker](#the-place-picker), under **At GPS position**.
 **Place at GPS position** places one there in one click.
 
+### Backgrounds API
+
+A floor (`/api/floor-plans/<id>/`) reads and writes its two
+[background layers](#backgrounds):
+
+- `base_map` (read): `{id, image, bbox, zoom, basemap, attribution,
+  captured_at, floors}` - the map, its picture's URL, the box rendered
+  (`[south, west, north, east]`), how many floors draw it (null in lists) -
+  or `null`.
+- `map_opacity` (0-100, default 60), `map_shown` (`true`/`false` set by
+  hand, `null` for the default: shown, except on a basement of an aligned
+  floor plan) and `map_visible` (read: whether it is drawn).
+- `background_image` (read; the floor's own picture), `background_opacity`
+  and `background_shown` (default `true`; hides the picture or the CAD
+  drawing). A live view reads all of these from its source and refuses
+  writes to them.
+
+| Call | What it does |
+|---|---|
+| `POST /api/floor-plans/<id>/background/` | Multipart `background_image` sets the floor's picture; `clear=1` removes it. The map is not touched. |
+| `POST /api/floor-plans/<id>/map/` | Multipart `image` (the browser's render: PNG, JPEG or WebP, at most 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` (`map`/`sat`), `zoom`. On a plan with a geo anchor it renders the anchor's box: the map's picture is replaced (Update snapshot), or a new map is made. On a plan with none, `bbox` (`[south, west, north, east]`, JSON text) is required and must be the grid's real size - `grid_width` × `grid_height` cells of `cell_mm` - within 2%, else 400; it becomes the plan's anchor. A new map on a level of an aligned floor plan lies under the other levels of the same grid and cell size that have none (they take the anchor too, when they have none). Answers the floor. 400 on a live view. |
+| `DELETE /api/floor-plans/<id>/map/` | Removes the map from every floor drawing it and deletes its picture. 204. The geo anchor stays. |
+
+Both need `floorplan · change` on the floor (site-scoped grants apply);
+another tenant's floor is a 404. The map's picture is served under
+`/media/floor-plans/maps/` to whoever may view a floor drawing it. Capture,
+update and removal are in the change log - on the map (`api.floorplanmap`)
+and on each floor it lies under - with the cause *Map captured from the
+Site map*, *Map refreshed from the Site map* or *Map removed*.
+
+The 3D room's payload (`GET …/scene/`) carries `base_map` (the picture's
+URL, only on the ground level of an aligned floor plan or a floor that is
+no level, and only while shown), `map_opacity` and `background_shown`; its
+`background_image` is null while the floor drawing is hidden.
+
+!!! note "Upgrading to 0.19"
+    Before 0.19 a floor had one background picture, and a plan made from
+    the Site map had the map as that picture. The upgrade (migration `0256`)
+    makes each such picture the floor's map - the same file, nothing
+    copied - at the opacity it had, and empties the picture slot for a
+    floor drawing. On an aligned floor plan the levels with the same geo
+    box share one map: the newest capture, the ground level's on a tie,
+    and levels with that box and no map of their own are put on it too.
+    Basements then hide it until **Show map** is turned on. An uploaded
+    picture stays the floor's own picture.
+
 ## CAD drawings
 
-A plan can carry a **CAD drawing** as its background instead of an image: a
-**DXF** file, or a **DWG** when the server has a converter. The drawing is
+A plan can carry a **CAD drawing** as its floor drawing instead of an
+image: a **DXF** file, or a **DWG** when the server has a converter. It is
+the [floor-drawing layer](#backgrounds), over the map when the plan has
+one. The drawing is
 shown at **true scale**: its units and the grid's cell size line up, so a
 600 mm floor tile in the drawing is one 600 mm cell.
 
 ### In the editor
 
-- **Upload**: **Background → Drawing → Upload drawing…** in the plan header
-  (**More → Background…** on a narrow screen). The file picker takes `.dxf`,
+- **Upload**: **Background → Floor drawing → Upload drawing…** in the plan
+  toolbar (**More → Background…** on a narrow screen). The file picker takes `.dxf`,
   and `.dwg` only when the server has a converter; without one the popover
-  says so. A plan has one background: a drawing replaces the image, and an
-  image replaces the drawing, each after a confirm.
+  says so. A floor has one floor drawing: a CAD drawing replaces the image,
+  and an image replaces the CAD drawing, each after a confirm. The map
+  under it stays.
 - **Status**: while the worker has the file, the popover shows the loading
   state; a failed drawing shows why, with **Reprocess**. **Remove** deletes
   the drawing and its files.
@@ -479,8 +580,11 @@ The room reads as a clean architectural model in either theme: a pale (or,
 in the dark theme, deep zinc) slab with a fine edge, light walls with a
 hairline on their edges, rooms and areas as flat tints in their own colour
 with a crisp outline, and name plates in the page's colours, as the 2D
-plan's chips. The uploaded blueprint, map or CAD drawing textures the floor
-- muted like the 2D plan while **Display → Muted background** is on. The
+plan's chips. The [background layers](#backgrounds) texture the floor - the
+map first, then the uploaded blueprint or CAD drawing over it - muted like
+the 2D plan while **Display → Muted background** is on, and left out while
+their eye is off. On an aligned floor plan the map lies on the ground
+level's floor only, never on a basement's or an upper level's slab. The
 grid is a soft guide near the camera: its cell lines fade out a few tens of
 cells away, so a campus seen whole shows no hatch. A site-sized plan keeps
 its floor layers (slab, map background, area tints) apart at any distance.
@@ -793,8 +897,10 @@ named B1, B2… by default, with a negative order. Then:
   [Building levels](#building-levels). It takes the floor's grid size,
   scale, ceiling, slab, layout, geo anchor and align offset, its elevation
   is worked out from the floors below it, and the floor plan becomes
-  *aligned*. Two sub-options, both on by default (Copy background off for a
-  basement):
+  *aligned*. It shares the building's map, if it has one - the same map,
+  never a copy; a basement hides it until shown (see
+  [Building levels](#building-levels)). Two sub-options, both on by
+  default (Copy background off for a basement):
     - **Copy outer walls** - the walls ticked **Exterior wall**, with their
       doors and openings cleared. With none ticked, the walls that run
       along the building's outline: every point and every segment's middle
@@ -803,7 +909,8 @@ named B1, B2… by default, with a negative order. Then:
       set back from the hull (the inside corner of an L-shaped building) -
       tick such walls **Exterior wall** to have them copied. Copied walls
       are marked exterior.
-    - **Copy background** - the same picture and CAD drawing.
+    - **Copy background** - the same floor drawing: the picture or CAD
+      drawing. The map is shared, not copied.
 - Unticked, **Same grid and scale as** the floor on screen is offered as
   before, and the floor is an independent canvas.
 
@@ -860,6 +967,18 @@ climb these heights.
 vertical level picker at the left of the canvas, roof at the top and
 basements at the bottom, each level with its elevation ("2 · +7.2 m"). The
 address stays per floor.
+
+**The building's map.** A Site map snapshot under a building belongs to
+the building, not to a level: the levels share one map, stored once.
+Making it on any level (**Background → From site map…**) puts it under
+every level of the same grid and cell size that has no map yet, and
+**Update snapshot** or **Remove** on any level acts on all of them. Every
+level at or above ground draws it under its own floor drawing (a CAD
+drawing of that floor, say). A basement - a level below ground - does not:
+the map lies on the ground outside, not on the basement's floor. The
+**Map** eye in a basement's **Background** turns it on for that level (and
+off again); the choice is saved per level. A floor plan that is not
+aligned has no building: each of its floors has a map of its own.
 
 **Onion skin.** In 2D the picker's **Onion skin** draws the level below
 (or above) faintly under this one - its walls and the outlines of what
@@ -3131,7 +3250,9 @@ What crosses the rectangle's edge is cut where its shape allows it:
 A linked tile keeps its link, so the rack or device then stands on two
 plans: the Place picker and **Not placed** show both (**On this floor +1**).
 
-The background image is cut to the rectangle's share of the image. A CAD
+The background image, and the map under it, are each cut to the
+rectangle's share of the image; the copy's map is its own, with no geo
+anchor, so it is not updated from the Site map. A CAD
 drawing is copied with its file (as Clone does) and rendered again for the
 rectangle's part only - shapes that miss it are left out, shapes on its edge
 are clipped where they are drawn - by the same background job, sandbox,
@@ -3403,7 +3524,11 @@ none of another site's. A plan's CAD
 drawing is audited too (**Floor-plan drawings**), but its endpoints and files
 follow the plan's own permission; its files are served only to someone who
 may view the plan, in its tenant, are deleted with it, and are part of a
-media backup.
+media backup. A floor's map is audited too (`api.floorplanmap`, and on
+each floor over it, whose change log shows the new capture date): its
+endpoint follows the floor's change permission, its picture is served only
+to someone who may view a floor drawing it, and it is deleted with the last
+floor over it.
 
 Rooms, areas and labels drawn on a plan are their own types, **Floor-plan
 areas** (`floorplanarea`) and **Floor-plan labels** (`floorplanlabel`):
