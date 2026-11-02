@@ -239,6 +239,7 @@ export function PlanCanvas({
     showZoneLabels,
     showPhotoOutlines,
     objectSize,
+    iconTiles,
     muteBackground,
     showTrays,
     showCableLinks,
@@ -398,6 +399,7 @@ export function PlanCanvas({
         showZoneLabels={showZoneLabels}
         photoOutlines={showPhotoOutlines}
         objectSize={objectSize}
+        iconTiles={iconTiles}
         muteBackground={muteBackground}
         mode={mode}
         trays={trays}

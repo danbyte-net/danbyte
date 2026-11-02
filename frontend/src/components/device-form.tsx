@@ -33,6 +33,7 @@ import {
   FormDate,
   FormSection,
   FormStatusSelect,
+  FormIcon,
   FormSelect,
   FormText,
   QuickAddDialog,
@@ -276,6 +277,7 @@ export function DeviceForm({
   const [photoSize, setPhotoSize] = useState(
     photoSizeOf(seed?.topology_photo_size)
   )
+  const [icon, setIcon] = useState(seed?.icon ?? "")
 
   useEffect(() => {
     if (!device) return
@@ -324,6 +326,7 @@ export function DeviceForm({
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
     setTopologyCard(device.topology_card ?? null)
     setPhotoSize(photoSizeOf(device.topology_photo_size))
+    setIcon(device.icon ?? "")
     reset()
   }, [device, reset])
 
@@ -615,6 +618,7 @@ export function DeviceForm({
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
+        icon,
         // Only while PRTG is on: the field is not shown otherwise.
         ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
       }
@@ -838,6 +842,13 @@ export function DeviceForm({
               value={photoSize}
               onChange={setPhotoSize}
               error={fieldErrors.topology_photo_size}
+            />
+            <FormIcon
+              label="Icon"
+              hint="blank uses the type's, then the role's"
+              value={icon}
+              onChange={setIcon}
+              error={fieldErrors.icon}
             />
           </FormSection>
         </FormColumn>

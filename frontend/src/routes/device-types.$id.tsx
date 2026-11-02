@@ -34,6 +34,7 @@ import {
 } from "@/components/locality-badge"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import { NamedIcon } from "@/components/dynamic-icon"
 import { LifecycleCard } from "@/components/lifecycle-card"
 import { LifecycleBadge } from "@/components/cells/lifecycle-cell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -305,6 +306,17 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
       ),
     },
     { label: "Part number", value: d.part_number || dash },
+    {
+      label: "Icon",
+      value: d.icon ? (
+        <span className="inline-flex items-center gap-1.5">
+          <NamedIcon name={d.icon} className="size-4" />
+          <span className="font-mono text-[13px]">{d.icon}</span>
+        </span>
+      ) : (
+        dash
+      ),
+    },
     {
       label: "Rack units",
       value: <span className="num">{d.u_height}U</span>,

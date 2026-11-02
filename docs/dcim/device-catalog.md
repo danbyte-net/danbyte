@@ -68,12 +68,27 @@ Fields:
   *G 32*) and the rail's position: its centreline below the body's top edge,
   the middle when left empty. A type with a profile needs its width and
   height. See [mounting devices](cabinets.md#mounting-devices).
+- **Icon** - a Lucide icon (`icon`, e.g. `router`, `network`, `shield`)
+  that devices of the type draw with on floor plans when zoomed out. It wins
+  over the role's icon; a device can set its own over it. Blank uses the
+  role's. The type's page shows it in the **Hardware** card. See
+  [Icons when zoomed out](../features/floor-plans.md#icon-tiles).
 - **Description**, **tags**, **custom fields**
 
 Device types accept [custom fields](../features/tags-and-custom-fields.md)
 (target **Device types**) - handy for catalog-level attributes such as a
 warranty window or an end-of-life date that belongs to the model, not the
 individual device.
+
+### Picking an icon {#icon-picker}
+
+The role, device type and device forms share one **icon picker**: a search
+box over every Lucide icon, with a **Network** group at the top - router,
+switch, firewall, server, access point, camera, printer, phone, UPS and
+power, PDU, storage, patch panel, load balancer, VPN, cloud and monitor.
+The group's icons are found by what they stand for too: type `firewall` or
+`ups`. **Clear** sets it back to blank. Nothing is pre-filled; every icon is
+optional.
 
 ### Importing from the NetBox devicetype-library
 
@@ -1025,7 +1040,11 @@ background.
 ## Device roles
 
 A **role** classifies what a device *does* - access switch, distribution, core,
-firewall, load balancer. Roles carry a color so devices group visually in lists.
+firewall, load balancer. Roles carry a color so devices group visually in lists,
+and an optional **icon** shown in the role's badge - in the device and role
+lists, on the role's page and on maps. On a floor plan the role's icon is the
+fallback for a device whose type and own record name none (see
+[Icons when zoomed out](../features/floor-plans.md#icon-tiles)).
 Roles also accept [custom fields](../features/tags-and-custom-fields.md) (target
 **Device roles**) - for example a service tier or an escalation team.
 

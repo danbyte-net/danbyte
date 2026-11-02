@@ -48,6 +48,8 @@ import {
   READABLE_FONT_PX,
   fontGrow,
   growStubs,
+  iconTileIds,
+  iconTileShape,
   readableHit,
   readableOrder,
   readableShape,
@@ -63,7 +65,7 @@ import {
   laneOrder,
   layoutCables,
 } from "./cable-draw"
-import type { ObjectSize } from "./readable"
+import type { ObjectSize, ShapeOf } from "./readable"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
@@ -133,6 +135,7 @@ const LOCKED_OPACITY = 0.5
 /** Stable empties, so the memoised cable layer keeps its props. */
 const NO_CABLES: FloorPlanCablePath[] = []
 const NO_IDS: string[] = []
+const NO_ICONS: ReadonlySet<string> = new Set()
 const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
 const NO_STRUCT: StructShape[] = []
 
@@ -222,6 +225,9 @@ export interface FloorCanvasProps {
   /** Readable: placed objects keep a least size on screen from afar, with
    * their names at a constant size (readable.ts). */
   objectSize?: ObjectSize
+  /** Display > Icons when zoomed out: a device, rack or cabinet too small
+   * on screen draws as its icon tile (readable.ts). */
+  iconTiles?: boolean
   /** Display > Muted background: the background image greyed and pushed
    * toward the page (background-look.tsx), so the plan reads over it. */
   muteBackground?: boolean
@@ -517,6 +523,7 @@ export function FloorCanvas({
   showZoneLabels = true,
   photoOutlines = false,
   objectSize = "real",
+  iconTiles = true,
   muteBackground = false,
   mode = "layout",
   trays = [],
@@ -625,12 +632,36 @@ export function FloorCanvas({
     hoverStore.get
   )
   const viewSize = useElementSize(svgRef)
+  // Icons when zoomed out: the tiles drawn as their icon, with hysteresis -
+  // the set from the last render decides which threshold each tile meets
+  // (stored during render, the documented previous-render pattern).
+  const [iconPrev, setIconPrev] = useState<ReadonlySet<string>>(NO_ICONS)
+  const iconIds = useMemo(
+    () => (iconTiles ? iconTileIds(tiles, pxPerCell, iconPrev) : NO_ICONS),
+    [iconTiles, tiles, pxPerCell, iconPrev]
+  )
+  if (iconIds !== iconPrev) setIconPrev(iconIds)
+  /** How a tile draws when not as itself: its icon tile, else Readable's
+   * shape; null draws every tile at its real size. */
+  const shapeAt = useCallback(
+    (perCell: number): ShapeOf | null =>
+      !readable && iconIds.size === 0
+        ? null
+        : (tl) =>
+            iconIds.has(tl.id)
+              ? iconTileShape(tl, perCell)
+              : readable
+                ? readableShape(tl, perCell)
+                : null,
+    [readable, iconIds]
+  )
+  const shapeOf = useMemo(() => shapeAt(pxPerCell), [shapeAt, pxPerCell])
   const shownStubs = useMemo(
     () =>
-      readable && cableStubs
-        ? growStubs(cableStubs, tiles, pxPerCell)
+      shapeOf && cableStubs
+        ? growStubs(cableStubs, tiles, pxPerCell, undefined, undefined, shapeOf)
         : cableStubs,
-    [readable, cableStubs, tiles, pxPerCell]
+    [shapeOf, cableStubs, tiles, pxPerCell]
   )
   const pinnedNames = useMemo(() => {
     const s = new Set(multiSelectedIds ?? [])
@@ -786,7 +817,7 @@ export function FloorCanvas({
             }
           : null,
       tiles,
-      shapeOf: readable ? (tl) => readableShape(tl, scale) : null,
+      shapeOf: shapeAt(scale),
       labelFit,
       zoneGrow: readable ? fontGrow(10, k) : 1,
       pinnedTiles: hoveredTile
@@ -827,6 +858,7 @@ export function FloorCanvas({
     settledView,
     tiles,
     readable,
+    shapeAt,
     labelFit,
     pinnedNames,
     hoveredTile,
@@ -1397,15 +1429,17 @@ export function FloorCanvas({
     }
     // Readable: a grown symbol draws over the areas and labels - it is
     // what the pointer is on.
-    const grownHit = readable
+    const grownHit = shapeOf
       ? readableHit(
-          readableOrder(tiles, pxPerCell, pinnedNames),
+          readableOrder(tiles, pxPerCell, pinnedNames, undefined, shapeOf),
           wx,
           wy,
-          pxPerCell
+          pxPerCell,
+          undefined,
+          shapeOf
         )
       : null
-    if (grownHit && readableShape(grownHit, pxPerCell).changed) {
+    if (grownHit && shapeOf?.(grownHit)?.changed) {
       setCtxMenu({
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
@@ -1518,8 +1552,9 @@ export function FloorCanvas({
     // Readable from afar: drawn grown about its centre (its saved geometry
     // untouched), its name left to the names layer, no resize grip - a
     // resize is done zoomed in, at the real size.
-    const rs = readable ? readableShape(tile, pxPerCell) : null
-    // Too thin, or a photo too small to read: its symbol instead.
+    const rs = shapeOf?.(tile) ?? null
+    // Too thin, a photo too small to read, or an icon tile from afar: its
+    // symbol instead.
     if (rs?.symbol)
       return (
         <g
@@ -1540,6 +1575,11 @@ export function FloorCanvas({
             live={liveState?.tiles[tile.id]}
             colorBy={colorBy}
             figures={figures?.get(tile.id)}
+            iconTile={iconIds.has(tile.id)}
+            highlighted={
+              !!highlightTileIds?.has(tile.id) ||
+              !!tilePick?.picked.has(tile.id)
+            }
             onPointerDown={(e) => handleTileDown(tile, e)}
             onDoubleClick={() => {
               if (mode !== "cable") onOpenTile?.(tile)
@@ -1899,13 +1939,15 @@ export function FloorCanvas({
                   .filter((tl) => !tileIsZone(tl))
                   .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
               : tiles.filter((tl) => !tileIsZone(tl)),
-            readable ? pxPerCell : null,
-            pinnedNames
+            shapeOf ? pxPerCell : null,
+            pinnedNames,
+            undefined,
+            shapeOf ?? undefined
           ).map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
               the whole symbol instead. */}
-          {!readable && (
+          {!readable && !iconTiles && (
             <TileMarkers
               tiles={tiles}
               k={t.k}
@@ -2035,7 +2077,7 @@ export function FloorCanvas({
               previews={cablePreviews}
               stubs={shownStubs}
               tiles={tiles}
-              readable={readable}
+              shapeOf={shapeOf}
             />
           )}
 

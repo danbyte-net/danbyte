@@ -13084,6 +13084,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
             role = getattr(obj, "role", None) if obj is not None else None
             return role.color if role is not None else ""
 
+        def tile_icon(t):
+            """The icon a tile draws with: a device's own or its type's, the
+            tile's type, then its role; "" leaves the default to the client.
+            A hidden object names nothing of its own."""
+            obj = None if t.pk in hidden_tiles else (
+                t.device if t.device_id else t.rack if t.rack_id else
+                t.cabinet if t.cabinet_id else None
+            )
+            role = getattr(obj, "role", None) if obj is not None else None
+            return (
+                (obj.own_icon if t.device_id and obj is not None else "")
+                or (t.tile_type.icon if t.tile_type_id else "")
+                or (t.role_type.icon if t.role_type_id else "")
+                or (getattr(role, "icon", "") or "")
+            )
+
         shown = [t for t in tiles_qs if t.pk not in hidden_tiles]
         rack_ids = {t.rack_id for t in shown if t.rack_id}
         viewable_devices = visible(Device.objects.filter(tenant=tenant), "device")
@@ -13153,6 +13169,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     or t.color
                     or ("" if t.tile_type_id or t.role_type_id else linked_role_color(t))
                 ),
+                "icon": tile_icon(t),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
                 # Perforated zone types render as grate floor in 3D - the
                 # cold-aisle supply-tile read.

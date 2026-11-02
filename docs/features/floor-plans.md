@@ -1025,6 +1025,44 @@ Like the other Display choices, Object size is saved on the plan for those
 who may edit it. A viewer without change rights can switch it for
 themselves; it lasts for the session and is not saved.
 
+#### Icons when zoomed out {#icon-tiles}
+
+**Icons when zoomed out** (under Object size, **on** unless the plan turns
+it off) swaps a device, rack or cabinet for its **icon tile** once it is too
+small on screen for its photo or faceplate to read: when its longer side
+drops under **40 px**. The icon tile is the same symbol Readable draws - a
+rounded square in the tile's colour with its icon in white, **28 px** on a
+side, centred on the tile's true place. It turns back into the tile only
+once the longer side is over **48 px**, so a zoom that rests near the
+threshold does not flicker, and it fades in as it takes the tile's place.
+Planning tiles and zones never turn into icons.
+
+An icon tile behaves like the tile: it selects, hovers, drags and opens its
+menu, keeps its monitoring ring (down or degraded) and its selection
+outline, and its name sits under it as under a grown symbol. With the
+option off the plan draws as it did before: Readable grows the tile, Real
+keeps it at its true size with its 8 px marker.
+
+The icon is the object's own, first one set wins:
+
+1. the **device's** own icon (on its edit form),
+2. its **device type's** icon ([Device catalog](../dcim/device-catalog.md#device-types)),
+3. the **tile's type** icon, when the tile has a type of its own,
+4. the **role's** icon ([Device roles](../dcim/device-catalog.md#device-roles)),
+5. a default by kind: a server for a device, the rack and cabinet icons
+   from the sidebar for racks and cabinets.
+
+Nothing is seeded: the defaults live in code and every icon is yours to
+set. The **Objects** panel shows the same icon beside each placed object's
+name.
+
+The **Export PDF** prints an object under **7 mm** on its longer side as its
+icon tile, 5 mm square. In the **3D** view, with Object size Readable, each
+name label carries the object's icon on a small square in its colour.
+
+The option is saved on the plan with the other Display choices; a viewer
+can switch it for the session.
+
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
 tile keeps its position, size, label, color and object link; only the look
