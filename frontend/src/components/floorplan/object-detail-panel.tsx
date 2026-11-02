@@ -4,9 +4,14 @@ import { Box, PanelRight, Waypoints } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
+  CabinetTilePanel,
+  DeviceTilePanel,
   FloorPlanCablePath,
   FloorPlanTile,
   FloorPlanTilePanel,
+  PanelContentDevice,
+  PanelLayoutItem,
+  RackTilePanel,
 } from "@/lib/api"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -22,7 +27,7 @@ import { Badge } from "@/components/ui/badge"
 import { endText } from "./cable-draw"
 import { tileName } from "./floor-canvas"
 
-/** A device or rack tile's panel payload. */
+/** A device, rack or cabinet tile's panel payload. */
 export function useTilePanel(
   planId: string,
   tileId: string | null,
@@ -41,7 +46,7 @@ export function useTilePanel(
 }
 
 /** The plan's cables with an end on this tile - a device's own, or a
- * rack's devices'. */
+ * rack's or cabinet's devices'. */
 export function tileCables(
   tile: FloorPlanTile,
   cablePaths: readonly FloorPlanCablePath[]
@@ -51,9 +56,8 @@ export function tileCables(
   )
 }
 
-/** The end of `cp` away from `tile`, as text. */
-function otherEnd(cp: FloorPlanCablePath, tile: FloorPlanTile): string {
-  const atA = cp.a_tiles.includes(tile.id)
+/** The end of `cp` away from the tile (or device) it was listed for. */
+function otherEnd(cp: FloorPlanCablePath, atA: boolean): string {
   const pts = atA
     ? cp.b_points.length
       ? cp.b_points
@@ -66,10 +70,19 @@ function otherEnd(cp: FloorPlanCablePath, tile: FloorPlanTile): string {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`
 
+const OPEN = {
+  device: { to: "/devices/$id", label: "Open device" },
+  rack: { to: "/racks/$id", label: "Open rack" },
+  cabinet: { to: "/cabinets/$id", label: "Open cabinet" },
+} as const
+
+const LABEL = { device: "Device", rack: "Rack", cabinet: "Cabinet" } as const
+
 /**
- * What a device or rack tile opens while viewing: the object's facts, its
- * monitoring, a device's ports, a rack's devices by U, and the plan's
- * cables on it - each opens the cable panel and traces it.
+ * What a device, rack or cabinet tile opens while viewing: the fields its
+ * layout names (Settings → Floor plans → Detail panels), in its order, in
+ * its sections - a field with nothing to say is left out, and so is a
+ * section left empty. The plan's cables on it open the cable panel.
  */
 export function ObjectDetailPanel({
   planId,
@@ -83,47 +96,58 @@ export function ObjectDetailPanel({
 }: {
   planId: string
   tile: FloorPlanTile
-  /** One of a rack tile's devices (picked in the 3D room). */
+  /** One of a rack's or cabinet's devices (picked in the 3D room). */
   deviceId?: string
   cablePaths: readonly FloorPlanCablePath[]
   onClose: () => void
   onPickCable: (cableId: string) => void
   /** Open the 3D room on this object; left out in 3D. */
   onOpen3d?: () => void
-  /** The contents and end-to-end paths sheet. */
+  /** The contents and end-to-end paths. */
   onContents?: () => void
 }) {
-  const kind = tile.linked?.kind === "rack" && !deviceId ? "rack" : "device"
+  const linkKind = tile.linked?.kind
+  const kind =
+    !deviceId && (linkKind === "rack" || linkKind === "cabinet")
+      ? linkKind
+      : "device"
   const q = useTilePanel(planId, tile.id, deviceId)
   const p = q.data
-  const fromPanel =
-    p && !p.hidden ? (p.kind === "device" ? p.device : p.rack) : null
   const name =
-    fromPanel?.name || tileName(tile) || tile.linked?.name || "Object"
+    (p && !p.hidden ? panelObject(p).name : null) ||
+    tileName(tile) ||
+    tile.linked?.name ||
+    "Object"
   const id = deviceId ?? (tile.linked?.hidden ? null : tile.linked?.id)
-  // A racked device: the cables on its own ports.
-  const cables = deviceId
-    ? cablePaths.filter((cp) =>
-        [...cp.a_points, ...cp.b_points].some((e) => e.device === deviceId)
-      )
-    : tileCables(tile, cablePaths)
+  // A device in a rack or cabinet: the cables on its own ports.
+  const cables: TileCable[] = deviceId
+    ? cablePaths.flatMap((cp) => {
+        const atA = cp.a_points.some((e) => e.device === deviceId)
+        const atB = cp.b_points.some((e) => e.device === deviceId)
+        return atA || atB ? [{ cp, atA }] : []
+      })
+    : tileCables(tile, cablePaths).map((cp) => ({
+        cp,
+        atA: cp.a_tiles.includes(tile.id),
+      }))
   return (
     <PanelShell
-      label={kind === "rack" ? "Rack" : "Device"}
+      label={LABEL[kind]}
       title={name}
       titleText={name}
       onClose={onClose}
       footer={
         id && (
           <>
-            {kind === "rack" ? (
-              <OpenLink to="/racks/$id" params={{ id }}>
-                Open rack
-              </OpenLink>
-            ) : (
-              <OpenLink to="/devices/$id" params={{ id }}>
-                Open device
-              </OpenLink>
+            <OpenLink to={OPEN[kind].to} params={{ id }}>
+              {OPEN[kind].label}
+            </OpenLink>
+            {p?.kind === "device" && !p.hidden && p.device.rack && (
+              <BarButton asChild>
+                <Link to="/racks/$id" params={{ id: p.device.rack.id }}>
+                  <PanelRight /> Rack
+                </Link>
+              </BarButton>
             )}
             {onOpen3d && (
               <BarButton onClick={onOpen3d}>
@@ -140,318 +164,466 @@ export function ObjectDetailPanel({
         <Loading className="min-h-24" />
       ) : p.hidden ? (
         <span className="text-muted-foreground">Hidden</span>
-      ) : p.kind === "device" ? (
-        <DeviceBody p={p} onContents={onContents} />
       ) : (
-        <RackBody p={p} onContents={onContents} />
-      )}
-      {p && !p.hidden && (
-        <PanelSection label="Cables on this plan">
-          {cables.length === 0 ? (
-            <span className="text-muted-foreground">None</span>
-          ) : (
-            <ul className="grid gap-0.5">
-              {cables.map((cp) => (
-                <li key={cp.id}>
-                  <button
-                    type="button"
-                    data-panel-cable={cp.id}
-                    onClick={() => onPickCable(cp.id)}
-                    className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-muted"
-                  >
-                    <span className="min-w-0 truncate font-mono">
-                      {cp.label || "Cable"}
-                    </span>
-                    <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
-                      {otherEnd(cp, tile)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </PanelSection>
+        <PanelLayoutBody
+          p={p}
+          cables={cables}
+          onPickCable={onPickCable}
+          onContents={onContents}
+        />
       )}
     </PanelShell>
   )
 }
 
-type DevicePanel = Extract<
-  FloorPlanTilePanel,
-  { kind: "device"; device: unknown }
->
-type RackPanel = Extract<FloorPlanTilePanel, { kind: "rack"; rack: unknown }>
+export interface TileCable {
+  cp: FloorPlanCablePath
+  /** The object is the cable's A end. */
+  atA: boolean
+}
 
-function DeviceBody({
+type ShownPanel = DeviceTilePanel | RackTilePanel | CabinetTilePanel
+
+function panelObject(p: ShownPanel): { name: string } {
+  return p.kind === "device" ? p.device : p.kind === "rack" ? p.rack : p.cabinet
+}
+
+/** A layout's entries as sections: a heading and its fields. Fields before
+ * the first heading form a section with none. */
+export function layoutSections(
+  items: readonly PanelLayoutItem[]
+): { label: string; keys: string[] }[] {
+  const out: { label: string; keys: string[] }[] = []
+  for (const it of items) {
+    if ("section" in it) out.push({ label: it.section, keys: [] })
+    else {
+      if (!out.length) out.push({ label: "", keys: [] })
+      out[out.length - 1].keys.push(it.field)
+    }
+  }
+  return out
+}
+
+/** The panel's body as its layout says - shared with the settings
+ * preview. `cables` are the plan's cables on the object (none in the
+ * preview, which has no plan). */
+export function PanelLayoutBody({
   p,
+  cables,
+  onPickCable,
   onContents,
 }: {
-  p: DevicePanel
+  p: ShownPanel
+  cables?: TileCable[]
+  onPickCable?: (cableId: string) => void
   onContents?: () => void
 }) {
-  const d = p.device
-  const ips = [
-    ["Primary IP", d.primary_ip],
-    ["Secondary IP", d.secondary_ip],
-    ["OOB IP", d.oob_ip],
-  ] as const
-  const where = [
-    d.site?.name,
-    d.location?.name,
-    d.rack
-      ? `${d.rack.name}${d.position != null ? ` · U${d.position}` : ""}`
-      : d.cabinet?.name,
-  ].filter(Boolean)
-  const m = p.monitoring
-  const ports = p.ports
+  const ctx: FieldCtx = { p, cables, onPickCable, onContents }
+  const sections = layoutSections(p.layout.items)
+    .map((s) => ({
+      label: s.label,
+      nodes: s.keys
+        .map((k) => ({ k, node: renderField(k, ctx) }))
+        .filter((x) => x.node != null),
+    }))
+    .filter((s) => s.nodes.length)
   return (
     <>
-      <PanelSection label="Device">
-        {d.role && (
-          <PanelRow label="Role">
-            <ColorBadge name={d.role.name} color={d.role.color || undefined} />
-          </PanelRow>
-        )}
-        <PanelRow label="Status">
-          <StatusBadge status={d.status} />
-        </PanelRow>
-        {d.device_type && (
-          <PanelRow label="Type">
-            {[d.device_type.manufacturer, d.device_type.model]
-              .filter(Boolean)
-              .join(" ")}
-          </PanelRow>
-        )}
-        {d.platform && <PanelRow label="Platform">{d.platform.name}</PanelRow>}
-        {d.serial_number && (
-          <PanelRow label="Serial">
-            <span className="font-mono">{d.serial_number}</span>
-          </PanelRow>
-        )}
-        {d.asset_tag && (
-          <PanelRow label="Asset tag">
-            <span className="font-mono">{d.asset_tag}</span>
-          </PanelRow>
-        )}
-        {where.length > 0 && (
-          <PanelRow label="Where">{where.join(" · ")}</PanelRow>
-        )}
-        {ips.map(([label, ip]) =>
-          ip ? (
-            <PanelRow key={label} label={label}>
-              <span className="font-mono">{ip.ip_address}</span>
-            </PanelRow>
-          ) : null
-        )}
-        {d.tenant && <PanelRow label="Tenant">{d.tenant.name}</PanelRow>}
-        {d.profiles.length > 0 && (
-          <PanelRow label="Profiles">
-            <span className="inline-flex flex-wrap justify-end gap-1">
-              {d.profiles.map((pr) => (
-                <ColorBadge
-                  key={pr.id}
-                  name={pr.name}
-                  color={pr.color || undefined}
-                  className="h-4 px-1.5 text-[10px]"
-                />
-              ))}
-            </span>
-          </PanelRow>
-        )}
-        {d.tags.length > 0 && (
-          <PanelRow label="Tags">
-            <span className="inline-flex flex-wrap justify-end gap-1">
-              {d.tags.map((t) => (
-                <ColorBadge
-                  key={t.id}
-                  name={t.name}
-                  color={t.color || undefined}
-                  className="h-4 px-1.5 text-[10px]"
-                />
-              ))}
-            </span>
-          </PanelRow>
-        )}
-      </PanelSection>
-      <PanelSection label="Monitoring">
-        {!m.status ? (
-          <span className="text-muted-foreground">No checks</span>
+      {sections.map((s, i) => {
+        const body = s.nodes.map((x) => <div key={x.k}>{x.node}</div>)
+        return s.label ? (
+          <PanelSection key={i} label={s.label}>
+            {body}
+          </PanelSection>
         ) : (
-          <>
-            <PanelRow label="State">
-              <CheckStatusBadge status={m.status} />
-            </PanelRow>
-            <ul className="mt-1 grid gap-0.5">
-              {m.checks.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex items-center gap-2 text-[11px]"
-                  data-check={c.id}
-                >
-                  <CheckStatusBadge
-                    status={c.status}
-                    className="h-4 shrink-0 px-1.5 text-[10px]"
-                  />
-                  <span className="min-w-0 truncate">{c.name}</span>
-                  <span className="ml-auto shrink-0 text-muted-foreground">
-                    {c.last_checked ? (
-                      <TimeCell iso={c.last_checked} align="right" />
-                    ) : (
-                      "-"
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </PanelSection>
-      <PanelSection label="Ports">
-        <PanelRow label="Interfaces">
-          <span className="num">{ports.total}</span>
-        </PanelRow>
-        <PanelRow label="Connected">
-          <span className="num">
-            {ports.connected} / {ports.total}
-          </span>
-        </PanelRow>
-        {ports.observed && (
-          <PanelRow label="Live">
-            <span className="inline-flex gap-1">
-              <Badge variant="success">{ports.up ?? 0} up</Badge>
-              {!!ports.down && (
-                <Badge variant="destructive">{ports.down} down</Badge>
-              )}
-            </span>
-          </PanelRow>
-        )}
-        {ports.disabled > 0 && (
-          <PanelRow label="Disabled">
-            <span className="num">{ports.disabled}</span>
-          </PanelRow>
-        )}
-        {onContents && (
-          <BarButton className="mt-1.5 w-full" onClick={onContents}>
-            <Waypoints /> Paths
-          </BarButton>
-        )}
-        {d.rack && (
-          <BarButton asChild className="mt-1.5 w-full">
-            <Link to="/racks/$id" params={{ id: d.rack.id }}>
-              <PanelRight /> Rack view
-            </Link>
-          </BarButton>
-        )}
-      </PanelSection>
+          <div key={i} className="mt-2 first:mt-0">
+            {body}
+          </div>
+        )
+      })}
     </>
   )
 }
 
-function RackBody({
-  p,
-  onContents,
-}: {
-  p: RackPanel
+interface FieldCtx {
+  p: ShownPanel
+  cables?: TileCable[]
+  onPickCable?: (cableId: string) => void
   onContents?: () => void
+}
+
+const pill = "h-4 px-1.5 text-[10px]"
+
+function Pills({
+  items,
+}: {
+  items: { id: string | number; name: string; color: string }[]
 }) {
+  if (!items.length) return null
+  return (
+    <span className="inline-flex flex-wrap justify-end gap-1">
+      {items.map((t) => (
+        <ColorBadge
+          key={t.id}
+          name={t.name}
+          color={t.color || undefined}
+          className={pill}
+        />
+      ))}
+    </span>
+  )
+}
+
+const mono = (v: string) => <span className="font-mono">{v}</span>
+
+/** One field of a layout, or null when it has nothing to say. */
+function renderField(key: string, ctx: FieldCtx): React.ReactNode {
+  const { p } = ctx
+  if (key.startsWith("cf:")) {
+    const cf = p.custom_fields.find((c) => c.key === key.slice(3))
+    return cf ? <PanelRow label={cf.label}>{cf.value}</PanelRow> : null
+  }
+  if (key === "cables") return <CablesBlock ctx={ctx} />
+  const o =
+    p.kind === "device" ? p.device : p.kind === "rack" ? p.rack : p.cabinet
+  const row = (label: string, v: React.ReactNode) =>
+    v == null || v === "" || v === false ? null : (
+      <PanelRow label={label}>{v}</PanelRow>
+    )
+  switch (key) {
+    case "role":
+      return (
+        o.role &&
+        row(
+          "Role",
+          <ColorBadge name={o.role.name} color={o.role.color || undefined} />
+        )
+      )
+    case "status":
+      return o.status && row("Status", <StatusBadge status={o.status} />)
+    case "site":
+      return row("Site", o.site?.name)
+    case "location":
+      return row("Location", o.location?.name)
+    case "tenant":
+      return row("Tenant", o.tenant?.name)
+    case "tags":
+      return o.tags.length ? row("Tags", <Pills items={o.tags} />) : null
+    case "description":
+      return row("Description", o.description)
+    case "numid":
+      return o.numid != null ? row("ID", mono(`#${o.numid}`)) : null
+    case "facility_id":
+      return "facility_id" in o && o.facility_id
+        ? row("Facility ID", mono(o.facility_id))
+        : null
+  }
+  if (p.kind === "device") return deviceField(key, p, ctx, row)
+  if (p.kind === "rack") return rackField(key, p, ctx, row)
+  return cabinetField(key, p, ctx, row)
+}
+
+type Row = (label: string, v: React.ReactNode) => React.ReactNode
+
+function deviceField(
+  key: string,
+  p: DeviceTilePanel,
+  ctx: FieldCtx,
+  row: Row
+): React.ReactNode {
+  const d = p.device
+  switch (key) {
+    case "device_type":
+      return (
+        d.device_type &&
+        row(
+          "Type",
+          [d.device_type.manufacturer, d.device_type.model]
+            .filter(Boolean)
+            .join(" ")
+        )
+      )
+    case "platform":
+      return row("Platform", d.platform?.name)
+    case "software_version":
+      return row("Software", d.software_version)
+    case "serial_number":
+      return d.serial_number ? row("Serial", mono(d.serial_number)) : null
+    case "asset_tag":
+      return d.asset_tag ? row("Asset tag", mono(d.asset_tag)) : null
+    case "position":
+      return d.rack
+        ? row(
+            "Rack",
+            `${d.rack.name}${d.position != null ? ` · U${d.position}` : ""}`
+          )
+        : d.cabinet
+          ? row("Cabinet", d.cabinet.name)
+          : null
+    case "primary_ip":
+      return d.primary_ip
+        ? row("Primary IP", mono(d.primary_ip.ip_address))
+        : null
+    case "secondary_ip":
+      return d.secondary_ip
+        ? row("Secondary IP", mono(d.secondary_ip.ip_address))
+        : null
+    case "oob_ip":
+      return d.oob_ip ? row("OOB IP", mono(d.oob_ip.ip_address)) : null
+    case "profiles":
+      return d.profiles.length
+        ? row("Profiles", <Pills items={d.profiles} />)
+        : null
+    case "monitoring":
+      return p.monitoring ? <DeviceMonitoring m={p.monitoring} /> : null
+    case "ports":
+      return p.ports ? (
+        <DevicePorts ports={p.ports} onContents={ctx.onContents} />
+      ) : null
+    case "ips":
+      return p.ips?.length ? (
+        <ul className="grid gap-0.5" data-panel-ips>
+          {p.ips.map((ip) => (
+            <li key={ip.id} className="flex items-baseline gap-2">
+              <span className="font-mono">{ip.ip_address}</span>
+              <span className="ml-auto truncate text-[11px] text-muted-foreground">
+                {ip.interface}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null
+  }
+  return null
+}
+
+function rackField(
+  key: string,
+  p: RackTilePanel,
+  ctx: FieldCtx,
+  row: Row
+): React.ReactNode {
   const r = p.rack
+  switch (key) {
+    case "rack_type":
+      return row("Type", r.rack_type?.name)
+    case "space":
+      return row(
+        "Space",
+        <span className="num">
+          {p.used_units} / {r.u_height}U
+        </span>
+      )
+    case "monitoring":
+      return p.monitoring.status
+        ? row("Monitoring", <CheckStatusBadge status={p.monitoring.status} />)
+        : null
+    case "devices":
+      return (
+        <ContentsBlock
+          devices={p.devices}
+          hidden={p.hidden_count}
+          place={(d) => (d.position != null ? `U${d.position}` : "-")}
+          contents="Contents & trace"
+          onContents={ctx.onContents}
+        />
+      )
+  }
+  return null
+}
+
+function cabinetField(
+  key: string,
+  p: CabinetTilePanel,
+  ctx: FieldCtx,
+  row: Row
+): React.ReactNode {
+  const c = p.cabinet
+  switch (key) {
+    case "cabinet_type":
+      return row("Type", c.cabinet_type?.name)
+    case "size":
+      return c.size_mm
+        ? row("Size", <span className="num">{c.size_mm.join(" × ")} mm</span>)
+        : null
+    case "monitoring":
+      return p.monitoring.status
+        ? row("Monitoring", <CheckStatusBadge status={p.monitoring.status} />)
+        : null
+    case "devices":
+      return (
+        <ContentsBlock
+          devices={p.devices}
+          hidden={p.hidden_count}
+          place={(d) => d.rail || "-"}
+          contents="Plate & trace"
+          onContents={ctx.onContents}
+        />
+      )
+  }
+  return null
+}
+
+function DeviceMonitoring({
+  m,
+}: {
+  m: NonNullable<DeviceTilePanel["monitoring"]>
+}) {
+  if (!m.status) return <span className="text-muted-foreground">No checks</span>
   return (
     <>
-      <PanelSection label="Rack">
-        {r.role && (
-          <PanelRow label="Role">
-            <ColorBadge name={r.role.name} color={r.role.color || undefined} />
-          </PanelRow>
-        )}
-        <PanelRow label="Status">
-          <StatusBadge status={r.status} />
-        </PanelRow>
-        {r.rack_type && <PanelRow label="Type">{r.rack_type.name}</PanelRow>}
-        {r.facility_id && (
-          <PanelRow label="Facility ID">
-            <span className="font-mono">{r.facility_id}</span>
-          </PanelRow>
-        )}
-        {(r.site || r.location) && (
-          <PanelRow label="Where">
-            {[r.site?.name, r.location?.name].filter(Boolean).join(" · ")}
-          </PanelRow>
-        )}
-        <PanelRow label="Space">
-          <span className="num">
-            {p.used_units} / {r.u_height}U
+      <PanelRow label="State">
+        <CheckStatusBadge status={m.status} />
+      </PanelRow>
+      <ul className="mt-1 grid gap-0.5">
+        {m.checks.map((c) => (
+          <li
+            key={c.id}
+            className="flex items-center gap-2 text-[11px]"
+            data-check={c.id}
+          >
+            <CheckStatusBadge
+              status={c.status}
+              className={`${pill} shrink-0`}
+            />
+            <span className="min-w-0 truncate">{c.name}</span>
+            <span className="ml-auto shrink-0 text-muted-foreground">
+              {c.last_checked ? (
+                <TimeCell iso={c.last_checked} align="right" />
+              ) : (
+                "-"
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function DevicePorts({
+  ports,
+  onContents,
+}: {
+  ports: NonNullable<DeviceTilePanel["ports"]>
+  onContents?: () => void
+}) {
+  return (
+    <>
+      <PanelRow label="Interfaces">
+        <span className="num">{ports.total}</span>
+      </PanelRow>
+      <PanelRow label="Connected">
+        <span className="num">
+          {ports.connected} / {ports.total}
+        </span>
+      </PanelRow>
+      {ports.observed && (
+        <PanelRow label="Live">
+          <span className="inline-flex gap-1">
+            <Badge variant="success">{ports.up ?? 0} up</Badge>
+            {!!ports.down && (
+              <Badge variant="destructive">{ports.down} down</Badge>
+            )}
           </span>
         </PanelRow>
-        {p.monitoring.status && (
-          <PanelRow label="Monitoring">
-            <CheckStatusBadge status={p.monitoring.status} />
-          </PanelRow>
-        )}
-        {r.tags.length > 0 && (
-          <PanelRow label="Tags">
-            <span className="inline-flex flex-wrap justify-end gap-1">
-              {r.tags.map((t) => (
-                <ColorBadge
-                  key={t.id}
-                  name={t.name}
-                  color={t.color || undefined}
-                  className="h-4 px-1.5 text-[10px]"
-                />
-              ))}
-            </span>
-          </PanelRow>
-        )}
-      </PanelSection>
-      <PanelSection label={`Devices · ${p.devices.length}`}>
-        {p.devices.length === 0 ? (
-          <span className="text-muted-foreground">Empty</span>
-        ) : (
-          <ul className="grid gap-0.5">
-            {p.devices.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center gap-2"
-                data-rack-device={d.id}
-              >
-                <span className="num w-9 shrink-0 text-right text-[11px] text-muted-foreground">
-                  {d.position != null ? `U${d.position}` : "-"}
-                </span>
-                <Link
-                  to="/devices/$id"
-                  params={{ id: d.id }}
-                  className="link min-w-0 truncate font-mono"
-                >
-                  {d.name}
-                </Link>
-                <span className="ml-auto flex shrink-0 gap-1">
-                  {d.check && (
-                    <CheckStatusBadge
-                      status={d.check}
-                      className="h-4 px-1.5 text-[10px]"
-                    />
-                  )}
-                  {d.status && (
-                    <StatusBadge
-                      status={d.status}
-                      className="h-4 px-1.5 text-[10px]"
-                    />
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {p.hidden_count > 0 && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {plural(p.hidden_count, "hidden device")}
-          </p>
-        )}
-        {onContents && (
-          <BarButton className="mt-1.5 w-full" onClick={onContents}>
-            <PanelRight /> Contents & trace
-          </BarButton>
-        )}
-      </PanelSection>
+      )}
+      {ports.disabled > 0 && (
+        <PanelRow label="Disabled">
+          <span className="num">{ports.disabled}</span>
+        </PanelRow>
+      )}
+      {onContents && (
+        <BarButton className="mt-1.5 w-full" onClick={onContents}>
+          <Waypoints /> Paths
+        </BarButton>
+      )}
     </>
+  )
+}
+
+function ContentsBlock({
+  devices,
+  hidden,
+  place,
+  contents,
+  onContents,
+}: {
+  devices: PanelContentDevice[]
+  hidden: number
+  place: (d: PanelContentDevice) => string
+  contents: string
+  onContents?: () => void
+}) {
+  return (
+    <>
+      {devices.length === 0 ? (
+        <span className="text-muted-foreground">Empty</span>
+      ) : (
+        <ul className="grid gap-0.5">
+          {devices.map((d) => (
+            <li
+              key={d.id}
+              className="flex items-center gap-2"
+              data-rack-device={d.id}
+            >
+              <span className="num w-9 shrink-0 truncate text-right text-[11px] text-muted-foreground">
+                {place(d)}
+              </span>
+              <Link
+                to="/devices/$id"
+                params={{ id: d.id }}
+                className="link min-w-0 truncate font-mono"
+              >
+                {d.name}
+              </Link>
+              <span className="ml-auto flex shrink-0 gap-1">
+                {d.check && (
+                  <CheckStatusBadge status={d.check} className={pill} />
+                )}
+                {d.status && <StatusBadge status={d.status} className={pill} />}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {hidden > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {plural(hidden, "hidden device")}
+        </p>
+      )}
+      {onContents && (
+        <BarButton className="mt-1.5 w-full" onClick={onContents}>
+          <PanelRight /> {contents}
+        </BarButton>
+      )}
+    </>
+  )
+}
+
+function CablesBlock({ ctx }: { ctx: FieldCtx }) {
+  const { cables, onPickCable } = ctx
+  if (!cables) return null
+  if (!cables.length) return <span className="text-muted-foreground">None</span>
+  return (
+    <ul className="grid gap-0.5">
+      {cables.map(({ cp, atA }) => (
+        <li key={cp.id}>
+          <button
+            type="button"
+            data-panel-cable={cp.id}
+            onClick={() => onPickCable?.(cp.id)}
+            className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-muted"
+          >
+            <span className="min-w-0 truncate font-mono">
+              {cp.label || "Cable"}
+            </span>
+            <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
+              {otherEnd(cp, atA)}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }

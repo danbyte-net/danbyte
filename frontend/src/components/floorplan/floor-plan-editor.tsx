@@ -914,16 +914,12 @@ export function FloorPlanEditor({
     // Rack/device tiles open the detail panel (a click while viewing, a
     // double-click or the menu while editing); its Paths / Contents open
     // the end-to-end trace sheet.
-    if (linked?.kind === "rack" || linked?.kind === "device") {
+    if (
+      linked?.kind === "rack" ||
+      linked?.kind === "device" ||
+      linked?.kind === "cabinet"
+    ) {
       openTilePanel(tile)
-      return
-    }
-    // A cabinet tile opens its panel over the canvas - in place of the
-    // popover a click pinned on the way.
-    if (linked?.kind === "cabinet") {
-      popover.close()
-      closeDetail()
-      ed.setCabinetTileId(tile.id)
       return
     }
     setSelectedId(tile.id)
@@ -1279,7 +1275,8 @@ export function FloorPlanEditor({
                 if (!tile) return
                 const k = shownLink(tile.linked)?.kind
                 if (k === "device") openTilePanel(tile)
-                else if (k === "rack" && deviceId) openTilePanel(tile, deviceId)
+                else if ((k === "rack" || k === "cabinet") && deviceId)
+                  openTilePanel(tile, deviceId)
               }}
               focusTarget={focus3d}
               prefs={prefs}
@@ -1676,7 +1673,23 @@ export function FloorPlanEditor({
                           })
                         }
                   }
-                  onContents={() => ed.setDeepTile(tile)}
+                  onContents={() => {
+                    // A cabinet's plate and paths are its own panel.
+                    if (detail.deviceId)
+                      ed.setDeepTile({
+                        ...tile,
+                        linked: {
+                          kind: "device",
+                          id: detail.deviceId,
+                          name: "",
+                          route: `/devices/${detail.deviceId}`,
+                        },
+                      })
+                    else if (tile.linked?.kind === "cabinet") {
+                      closeDetail()
+                      ed.setCabinetTileId(tile.id)
+                    } else ed.setDeepTile(tile)
+                  }}
                 />
               )
             })()}

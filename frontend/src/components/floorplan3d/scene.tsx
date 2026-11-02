@@ -1178,7 +1178,7 @@ export default function FloorScene3D({
             }
           />
         )}
-      {selCabinetDevice && selection?.deviceId && (
+      {selCabinetDevice && selection?.deviceId && !onOpenDevice && (
         <CabinetDeviceHud
           cabinet={selCabinetDevice}
           deviceId={selection.deviceId}

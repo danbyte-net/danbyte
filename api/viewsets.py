@@ -13555,32 +13555,39 @@ class FloorPlanViewSet(TenantScopedViewSet):
         src, crop = self._resolved(plan)
         tenant = _get_active_tenant(request)
         tile = rbac.restrict_queryset(
-            src.tiles.filter(pk=tile_id).select_related("device", "rack"),
+            src.tiles.filter(pk=tile_id).select_related("device", "rack", "cabinet"),
             request.user, tenant, "floorplantile", "view",
         ).first()
         if tile is None or (crop is not None and not snaps.in_crop("tiles", [tile], crop)):
             raise NotFound("No such tile on this plan.")
         kind, _pk = tile_link(tile)
-        if kind not in ("device", "rack"):
-            raise ValidationError({"detail": "Only device and rack tiles have a panel."})
+        if kind not in ("device", "rack", "cabinet"):
+            raise ValidationError(
+                {"detail": "Only device, rack and cabinet tiles have a panel."}
+            )
         links = TileLinks(request.user, tenant)
         if links.hidden(tile):
             return Response({"kind": kind, "hidden": True})
         if kind == "device":
             return Response(floor_plan_panels.device_panel(request, tenant, tile.device))
-        # ?device=<id>: one of the rack's devices (a device clicked in the
-        # 3D room), when the reader may view it.
+        # ?device=<id>: one of the rack's or cabinet's devices (a device
+        # clicked in the 3D room), when the reader may view it.
         from .topology_views import _uuid_param
 
         device_id = _uuid_param(request.query_params, "device")
         if device_id:
+            home = {"rack_id": tile.rack_id} if kind == "rack" else {
+                "cabinet_id": tile.cabinet_id
+            }
             device = rbac.restrict_queryset(
-                Device.objects.filter(tenant=tenant, rack_id=tile.rack_id, pk=device_id),
+                Device.objects.filter(tenant=tenant, pk=device_id, **home),
                 request.user, tenant, "device", "view",
             ).first()
             if device is None:
                 return Response({"kind": "device", "hidden": True})
             return Response(floor_plan_panels.device_panel(request, tenant, device))
+        if kind == "cabinet":
+            return Response(floor_plan_panels.cabinet_panel(request, tenant, tile.cabinet))
         return Response(floor_plan_panels.rack_panel(request, tenant, tile.rack))
 
     @action(detail=True, methods=["get"], url_path="cable-schedule")

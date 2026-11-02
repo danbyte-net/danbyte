@@ -13331,70 +13331,173 @@ export interface FloorPlanPanelCheck {
   latency_ms: number | null
 }
 
-/** GET /api/floor-plans/{id}/tile-panel/{tile}/ */
+/** One entry of a detail panel's layout: a section heading or a field
+ * (a built-in key, a computed block, or `cf:<key>`). */
+export type PanelLayoutItem = { section: string } | { field: string }
+
+export type PanelObjectKind = "device" | "rack" | "cabinet"
+
+export type PanelLayoutScope =
+  | "default"
+  | "device_type"
+  | "device_role"
+  | "profile"
+  | "rack_type"
+  | "rack_role"
+  | "cabinet_type"
+  | "cabinet_role"
+
+/** The layout a panel was drawn with (`id` null: the built-in default). */
+export interface PanelLayoutResolved {
+  id: string | null
+  scope: PanelLayoutScope | "preview"
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+}
+
+/** /api/panel-layouts/ - a tenant's saved layout. */
+export interface PanelLayoutRow {
+  id: string
+  object_kind: PanelObjectKind
+  scope: PanelLayoutScope
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+  updated_at: string
+}
+
+/** /api/panel-layouts/catalog/ */
+export type PanelLayoutCatalog = Record<
+  PanelObjectKind,
+  {
+    fields: { key: string; label: string; computed: boolean }[]
+    scopes: PanelLayoutScope[]
+    default: PanelLayoutItem[]
+    cf_model: string
+  }
+>
+
+export interface PanelCustomFieldValue {
+  key: string
+  label: string
+  type: string
+  value: string
+}
+
+type PanelRef = { id: string; name: string }
+type PanelTag = { id: number; name: string; color: string }
+
+/** A rack's or cabinet's device, as its panel lists it. */
+export type PanelContentDevice = Omit<
+  FloorPlanPanelDevice,
+  "site" | "location" | "rack" | "cabinet"
+> & {
+  device_type: string
+  rail: string
+  rail_offset_mm: number | null
+  check: CheckStatus | null
+}
+
+interface PanelCommon {
+  hidden?: undefined
+  layout: PanelLayoutResolved
+  custom_fields: PanelCustomFieldValue[]
+}
+
+export interface DeviceTilePanel extends PanelCommon {
+  kind: "device"
+  device: FloorPlanPanelDevice & {
+    numid: number | null
+    device_type: { id: string; model: string; manufacturer: string } | null
+    platform: PanelRef | null
+    serial_number: string
+    asset_tag: string
+    primary_ip: { id: string; ip_address: string; dns_name: string } | null
+    secondary_ip: { id: string; ip_address: string; dns_name: string } | null
+    oob_ip: { id: string; ip_address: string; dns_name: string } | null
+    tenant: PanelRef | null
+    description: string
+    software_version: string
+    tags: PanelTag[]
+    profiles: { id: string; name: string; color: string }[]
+  }
+  /** Present only when the layout asks for it. */
+  monitoring?: {
+    status: CheckStatus | null
+    counts: Partial<Record<CheckStatus, number>>
+    checks: FloorPlanPanelCheck[]
+  }
+  ports?: {
+    total: number
+    connected: number
+    free: number
+    disabled: number
+    observed: boolean
+    up: number | null
+    down: number | null
+  }
+  ips?: {
+    id: string
+    ip_address: string
+    dns_name: string
+    interface: string
+  }[]
+}
+
+export interface RackTilePanel extends PanelCommon {
+  kind: "rack"
+  rack: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    rack_type: PanelRef | null
+    u_height: number
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  used_units: number
+  hidden_count: number
+}
+
+export interface CabinetTilePanel extends PanelCommon {
+  kind: "cabinet"
+  cabinet: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    cabinet_type: PanelRef | null
+    /** Outer width × height × depth (mm), when all are known. */
+    size_mm: [number, number, number] | null
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  hidden_count: number
+}
+
+/** GET /api/floor-plans/{id}/tile-panel/{tile}/ (and the settings
+ * preview). */
 export type FloorPlanTilePanel =
-  | { kind: "device" | "rack"; hidden: true }
-  | {
-      kind: "device"
-      hidden?: undefined
-      device: FloorPlanPanelDevice & {
-        numid: number | null
-        device_type: { id: string; model: string; manufacturer: string } | null
-        platform: { id: string; name: string } | null
-        serial_number: string
-        asset_tag: string
-        primary_ip: { id: string; ip_address: string; dns_name: string } | null
-        secondary_ip: {
-          id: string
-          ip_address: string
-          dns_name: string
-        } | null
-        oob_ip: { id: string; ip_address: string; dns_name: string } | null
-        tenant: { id: string; name: string } | null
-        description: string
-        software_version: string
-        tags: { id: number; name: string; color: string }[]
-        profiles: { id: string; name: string; color: string }[]
-      }
-      monitoring: {
-        status: CheckStatus | null
-        counts: Partial<Record<CheckStatus, number>>
-        checks: FloorPlanPanelCheck[]
-      }
-      ports: {
-        total: number
-        connected: number
-        free: number
-        disabled: number
-        observed: boolean
-        up: number | null
-        down: number | null
-      }
-    }
-  | {
-      kind: "rack"
-      hidden?: undefined
-      rack: {
-        id: string
-        name: string
-        facility_id: string
-        role: { id: string; name: string; color: string } | null
-        status: StatusMini | null
-        site: { id: string; name: string } | null
-        location: { id: string; name: string } | null
-        rack_type: { id: string; name: string } | null
-        u_height: number
-        tenant: { id: string; name: string } | null
-        tags: { id: number; name: string; color: string }[]
-      }
-      monitoring: { status: CheckStatus | null }
-      devices: (Omit<
-        FloorPlanPanelDevice,
-        "site" | "location" | "rack" | "cabinet"
-      > & { device_type: string; check: CheckStatus | null })[]
-      used_units: number
-      hidden_count: number
-    }
+  | { kind: PanelObjectKind; hidden: true; empty?: undefined }
+  | DeviceTilePanel
+  | RackTilePanel
+  | CabinetTilePanel
 
 /** Where one leg of a stored route starts or ends: the tile it was routed
  * from and that tile's centre then (cells). */

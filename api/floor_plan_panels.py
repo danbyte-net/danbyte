@@ -343,9 +343,42 @@ def _device_facts(d, view):
     }
 
 
-def device_panel(request, tenant, device):
+def _layout_for(tenant, kind, obj, items):
+    """The resolved layout, or ``items`` as sent (the settings preview)."""
+    from . import panel_layouts
+
+    if items is not None:
+        return {"id": None, "scope": "preview", "scope_id": None, "scope_name": "",
+                "items": items}
+    return panel_layouts.resolve(tenant, kind, obj)
+
+
+def _device_ips(d, request, tenant):
+    """The device's addresses the reader may view, by interface."""
+    from .visible_ips import visible_ips
+
+    rows = (
+        visible_ips(request, tenant)
+        .filter(assigned_device=d)
+        .select_related("assigned_interface")
+        .order_by("assigned_interface__name", "ip_address")[:20]
+    )
+    return [
+        {
+            "id": str(ip.id),
+            "ip_address": ip.ip_address,
+            "dns_name": ip.dns_name or "",
+            "interface": ip.assigned_interface.name if ip.assigned_interface_id else "",
+        }
+        for ip in rows
+    ]
+
+
+def device_panel(request, tenant, device, items=None):
+    """A device's panel, as its resolved layout (or ``items``) asks."""
     from core.tags import TAGS
 
+    from . import panel_layouts
     from .models import Device
 
     user = request.user
@@ -360,38 +393,77 @@ def device_panel(request, tenant, device):
         .get()
     )
     view.prime("ipaddress", {d.primary_ip_id, d.secondary_ip_id, d.oob_ip_id})
-    return {
+    layout = _layout_for(tenant, "device", d, items)
+    want = layout["items"]
+    out = {
         "kind": "device",
+        "layout": layout,
         "device": _device_facts(d, view),
-        "monitoring": _monitoring(_device_checks([d.id], tenant).get(d.id, [])),
-        "ports": _ports_summary(d, user, tenant),
+        "custom_fields": panel_layouts.custom_field_values(
+            request, tenant, "device", d, want
+        ),
     }
+    if panel_layouts.wants(want, "monitoring"):
+        out["monitoring"] = _monitoring(_device_checks([d.id], tenant).get(d.id, []))
+    if panel_layouts.wants(want, "ports"):
+        out["ports"] = _ports_summary(d, user, tenant)
+    if panel_layouts.wants(want, "ips"):
+        out["ips"] = _device_ips(d, request, tenant)
+    return out
 
 
-def rack_panel(request, tenant, rack):
+def _contents(request, tenant, every, order):
+    """The devices of ``every`` the reader may view, their worst checks, and
+    how many they may not."""
     from monitoring.rollup import worst_status
 
-    from .models import Device, Rack
-
-    user = request.user
-    rack = Rack.objects.select_related(
-        "role", "status", "site", "location", "rack_type", "tenant"
-    ).get(pk=rack.pk)
-    every = Device.objects.filter(tenant=tenant, rack=rack)
     devices = list(
-        rbac.restrict_queryset(every, user, tenant, "device", "view")
-        .select_related("role", "status", "device_type")
-        .order_by("-position", "name")
+        rbac.restrict_queryset(every, request.user, tenant, "device", "view")
+        .select_related("role", "status", "device_type", "din_rail")
+        .order_by(*order)
     )
     checks = _device_checks([d.id for d in devices], tenant)
+    rows = [
+        {
+            **{k: v for k, v in _device_where(d).items()
+               if k not in ("site", "location", "rack", "cabinet")},
+            "device_type": str(d.device_type) if d.device_type_id else "",
+            "rail": d.din_rail.label if d.din_rail_id else "",
+            "rail_offset_mm": float(d.din_offset_mm) if d.din_offset_mm is not None else None,
+            "check": worst_status(s.status for s in checks.get(d.id, [])),
+        }
+        for d in devices
+    ]
+    status = worst_status(s.status for states in checks.values() for s in states)
+    return devices, rows, status, every.count() - len(devices)
+
+
+def rack_panel(request, tenant, rack, items=None):
+    from core.tags import TAGS
+
+    from . import panel_layouts
+    from .models import Device, Rack
+
+    rack = (
+        Rack.objects.select_related("role", "status", "site", "location", "rack_type", "tenant")
+        .prefetch_related(TAGS)
+        .get(pk=rack.pk)
+    )
+    layout = _layout_for(tenant, "rack", rack, items)
+    devices, rows, status, hidden = _contents(
+        request, tenant, Device.objects.filter(tenant=tenant, rack=rack),
+        ("-position", "name"),
+    )
     used = sum(
         (d.device_type.u_height or 0) for d in devices
         if d.position is not None and d.device_type_id
     )
     return {
         "kind": "rack",
+        "layout": layout,
         "rack": {
             "id": str(rack.id),
+            "numid": getattr(rack, "numid", None),
             "name": rack.name,
             "facility_id": rack.facility_id or "",
             "role": _role(rack.role),
@@ -402,22 +474,63 @@ def rack_panel(request, tenant, rack):
             if rack.rack_type_id else None,
             "u_height": rack.u_height,
             "tenant": _ref(rack.tenant),
+            "description": getattr(rack, "description", "") or "",
             "tags": _tags(rack),
         },
-        "monitoring": {
-            "status": worst_status(
-                s.status for states in checks.values() for s in states
-            ),
-        },
-        "devices": [
-            {
-                **{k: v for k, v in _device_where(d).items()
-                   if k not in ("site", "location", "rack", "cabinet")},
-                "device_type": str(d.device_type) if d.device_type_id else "",
-                "check": worst_status(s.status for s in checks.get(d.id, [])),
-            }
-            for d in devices
-        ],
+        "custom_fields": panel_layouts.custom_field_values(
+            request, tenant, "rack", rack, layout["items"]
+        ),
+        "monitoring": {"status": status},
+        "devices": rows,
         "used_units": used,
-        "hidden_count": every.count() - len(devices),
+        "hidden_count": hidden,
     }
+
+
+def cabinet_panel(request, tenant, cabinet, items=None):
+    from core.tags import TAGS
+
+    from . import panel_layouts
+    from .models import Cabinet, Device
+
+    cab = (
+        Cabinet.objects.select_related(
+            "role", "status", "site", "location", "cabinet_type", "tenant"
+        )
+        .prefetch_related(TAGS)
+        .get(pk=cabinet.pk)
+    )
+    layout = _layout_for(tenant, "cabinet", cab, items)
+    _devices, rows, status, hidden = _contents(
+        request, tenant, Device.objects.filter(tenant=tenant, cabinet=cab),
+        ("din_rail__y_mm", "din_offset_mm", "name"),
+    )
+    size = [cab.outer_width_mm, cab.outer_height_mm, cab.outer_depth_mm]
+    return {
+        "kind": "cabinet",
+        "layout": layout,
+        "cabinet": {
+            "id": str(cab.id),
+            "numid": getattr(cab, "numid", None),
+            "name": cab.name,
+            "facility_id": cab.facility_id or "",
+            "role": _role(cab.role),
+            "status": _status(cab.status),
+            "site": _ref(cab.site),
+            "location": _ref(cab.location),
+            "cabinet_type": _ref(cab.cabinet_type, name=str(cab.cabinet_type))
+            if cab.cabinet_type_id else None,
+            "size_mm": size if all(v for v in size) else None,
+            "tenant": _ref(cab.tenant),
+            "description": cab.description or "",
+            "tags": _tags(cab),
+        },
+        "custom_fields": panel_layouts.custom_field_values(
+            request, tenant, "cabinet", cab, layout["items"]
+        ),
+        "monitoring": {"status": status},
+        "devices": rows,
+        "hidden_count": hidden,
+    }
+
+

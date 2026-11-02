@@ -23,12 +23,14 @@ import type {
   FloorPlanTile,
   FloorPlanTilePanel,
   FloorPlanTray,
+  DeviceTilePanel,
+  PanelLayoutItem,
 } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
 import { CableDetailPanel } from "./cable-detail-panel"
 import type { CableRoute } from "./cable-draw"
-import { ObjectDetailPanel } from "./object-detail-panel"
+import { ObjectDetailPanel, layoutSections } from "./object-detail-panel"
 
 // The floor plan's detail panels: a cable in full (both ends, a Hidden
 // end, the trays it rides, an out-of-date route) and a device or rack tile
@@ -248,52 +250,90 @@ const DEVICE_TILE = {
   linked: { kind: "device", id: "d1", name: "sw1" },
 } as FloorPlanTile
 
+const items = (...parts: string[]): PanelLayoutItem[] =>
+  parts.map((p) => (p.startsWith("#") ? { section: p.slice(1) } : { field: p }))
+
+const layout = (it: PanelLayoutItem[]) => ({
+  id: null,
+  scope: "default" as const,
+  scope_id: null,
+  scope_name: "",
+  items: it,
+})
+
+const devicePanel = (it: PanelLayoutItem[]): DeviceTilePanel => ({
+  kind: "device",
+  layout: layout(it),
+  custom_fields: [
+    { key: "owner", label: "Owner", type: "text", value: "netops" },
+  ],
+  device: {
+    ...DEVICE,
+    numid: 1,
+    device_type: { id: "dt", model: "C9300-48P", manufacturer: "Cisco" },
+    platform: { id: "pl", name: "IOS-XE" },
+    serial_number: "FOC123",
+    asset_tag: "",
+    primary_ip: { id: "ip", ip_address: "10.0.0.2/24", dns_name: "" },
+    secondary_ip: null,
+    oob_ip: null,
+    tenant: { id: "te", name: "Demo" },
+    description: "",
+    software_version: "",
+    tags: [{ id: 1, name: "core", color: "" }],
+    profiles: [],
+  },
+  monitoring: {
+    status: "down",
+    counts: { down: 1 },
+    checks: [
+      {
+        id: "k1",
+        name: "Ping",
+        kind: "icmp",
+        status: "down",
+        ip: "10.0.0.2",
+        last_checked: null,
+        since: null,
+        latency_ms: null,
+      },
+    ],
+  },
+  ports: {
+    total: 48,
+    connected: 12,
+    free: 36,
+    disabled: 0,
+    observed: true,
+    up: 10,
+    down: 2,
+  },
+})
+
+const sectionLabels = (panel: HTMLElement) =>
+  [...panel.querySelectorAll("section")].map((s) =>
+    s.getAttribute("aria-label")
+  )
+
 describe("ObjectDetailPanel", () => {
   it("shows a device's facts, monitoring, ports and cables", async () => {
-    tilePanel = {
-      kind: "device",
-      device: {
-        ...DEVICE,
-        numid: 1,
-        device_type: { id: "dt", model: "C9300-48P", manufacturer: "Cisco" },
-        platform: { id: "pl", name: "IOS-XE" },
-        serial_number: "FOC123",
-        asset_tag: "",
-        primary_ip: { id: "ip", ip_address: "10.0.0.2/24", dns_name: "" },
-        secondary_ip: null,
-        oob_ip: null,
-        tenant: { id: "te", name: "Demo" },
-        description: "",
-        software_version: "",
-        tags: [{ id: 1, name: "core", color: "" }],
-        profiles: [],
-      },
-      monitoring: {
-        status: "down",
-        counts: { down: 1 },
-        checks: [
-          {
-            id: "k1",
-            name: "Ping",
-            kind: "icmp",
-            status: "down",
-            ip: "10.0.0.2",
-            last_checked: null,
-            since: null,
-            latency_ms: null,
-          },
-        ],
-      },
-      ports: {
-        total: 48,
-        connected: 12,
-        free: 36,
-        disabled: 0,
-        observed: true,
-        up: 10,
-        down: 2,
-      },
-    }
+    tilePanel = devicePanel(
+      items(
+        "#Device",
+        "device_type",
+        "serial_number",
+        "asset_tag",
+        "primary_ip",
+        "platform",
+        "tags",
+        "#Monitoring",
+        "monitoring",
+        "#Ports",
+        "ports",
+        "#Cables on this plan",
+        "cables"
+      )
+    )
     const onPickCable = vi.fn()
     mount(
       <ObjectDetailPanel
@@ -307,6 +347,8 @@ describe("ObjectDetailPanel", () => {
     const panel = await screen.findByRole("complementary", { name: "Device" })
     await within(panel).findByText("Cisco C9300-48P")
     expect(within(panel).getByText("FOC123")).toBeTruthy()
+    // An empty field is left out.
+    expect(within(panel).queryByText("Asset tag")).toBeNull()
     expect(within(panel).getByText("10.0.0.2/24")).toBeTruthy()
     expect(within(panel).getByText("IOS-XE")).toBeTruthy()
     expect(within(panel).getByText("core")).toBeTruthy()
@@ -322,11 +364,41 @@ describe("ObjectDetailPanel", () => {
     expect(onPickCable).toHaveBeenCalledWith("c1")
   })
 
+  it("follows its layout: order, custom fields, empty sections left out", async () => {
+    tilePanel = devicePanel(
+      items(
+        "#Owner",
+        "cf:owner",
+        "#Empty",
+        "asset_tag",
+        "#Facts",
+        "serial_number"
+      )
+    )
+    mount(
+      <ObjectDetailPanel
+        planId="p1"
+        tile={DEVICE_TILE}
+        cablePaths={[]}
+        onClose={vi.fn()}
+        onPickCable={vi.fn()}
+      />
+    )
+    const panel = await screen.findByRole("complementary", { name: "Device" })
+    await within(panel).findByText("netops")
+    expect(sectionLabels(panel)).toEqual(["Owner", "Facts"])
+    expect(within(panel).queryByText("Ping")).toBeNull()
+    expect(within(panel).queryByText("IOS-XE")).toBeNull()
+  })
+
   it("lists a rack's devices by U", async () => {
     tilePanel = {
       kind: "rack",
+      layout: layout(items("#Rack", "status", "space", "#Devices", "devices")),
+      custom_fields: [],
       rack: {
         id: "ra",
+        numid: 4,
         name: "R1",
         facility_id: "",
         role: null,
@@ -336,6 +408,7 @@ describe("ObjectDetailPanel", () => {
         rack_type: null,
         u_height: 42,
         tenant: null,
+        description: "",
         tags: [],
       },
       monitoring: { status: null },
@@ -349,6 +422,8 @@ describe("ObjectDetailPanel", () => {
           face: "front",
           u_height: 1,
           device_type: "C9300",
+          rail: "",
+          rail_offset_mm: null,
           check: null,
         },
       ],
@@ -391,5 +466,15 @@ describe("ObjectDetailPanel", () => {
     const panel = await screen.findByRole("complementary", { name: "Device" })
     await within(panel).findAllByText("Hidden")
     expect(within(panel).queryByText("PATCH-01")).toBeNull()
+  })
+})
+
+describe("layoutSections", () => {
+  it("groups fields under their headings", () => {
+    expect(layoutSections(items("status", "#A", "role", "#B"))).toEqual([
+      { label: "", keys: ["status"] },
+      { label: "A", keys: ["role"] },
+      { label: "B", keys: [] },
+    ])
   })
 })

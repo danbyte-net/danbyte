@@ -90,13 +90,13 @@ export interface PickActions {
   showArea: (area: AreaShape) => void
   /** Select and frame the tile (fly to it in 3D). */
   showTile: (tile: FloorPlanTile) => void
-  /** Open a device or rack tile's panel. */
+  /** Open a device, rack or cabinet tile's panel. */
   openTilePanel: (tile: FloorPlanTile) => void
 }
 
 /** A pick from "Find on plan…": a cable traces, frames and opens its
- * panel; a tray lights; an area or object is framed - and a device or
- * rack opens its panel while viewing. */
+ * panel; a tray lights; an area or object is framed - and a device,
+ * rack or cabinet opens its panel while viewing. */
 export function applyPick(
   h: PlanHit,
   act: PickActions,
@@ -118,7 +118,7 @@ export function applyPick(
       if (
         !editing &&
         !l?.hidden &&
-        (l?.kind === "device" || l?.kind === "rack")
+        (l?.kind === "device" || l?.kind === "rack" || l?.kind === "cabinet")
       )
         act.openTilePanel(h.tile)
     }
