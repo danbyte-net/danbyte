@@ -2702,7 +2702,7 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
 
     class Meta:
         model = DeviceType
-        fields = ["id", "name", "manufacturer", "manufacturer_id",
+        fields = ["id", "name", "manufacturer", "manufacturer_id", "icon",
                   "u_height", "rack_width", "is_full_depth",
                   "width_mm", "height_mm", "din_profiles", "din_rail_mm",
                   "front_image", "rear_image", "front_cal",
@@ -3001,7 +3001,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "part_number", "platform", "platform_id",
                   "u_height", "rack_width", "description",
                   "front_image", "rear_image", "faceplate", "image_ports",
-                  "topology_photo_size",
+                  "topology_photo_size", "icon",
                   "is_full_depth", "airflow", "cooling_method", "heat_output_w",
                   "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
@@ -3949,7 +3949,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "warranty_end", "coverage", "lifecycle_next",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
-                  "port_labels", "topology_card", "topology_photo_size",
+                  "port_labels", "topology_card", "topology_photo_size", "icon",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
                   "model_3d_effective", "model_ports",
                   "latitude", "longitude",
@@ -7744,7 +7744,7 @@ class CabinetSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin,
 class DeviceRoleMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = DeviceRole
-        fields = ["id", "name", "slug", "color", "is_patch_panel", "has_fov"]
+        fields = ["id", "name", "slug", "color", "icon", "is_patch_panel", "has_fov"]
 
 
 class DeviceRoleSerializer(TaggableSerializerMixin, CustomFieldsSerializerMixin, NumIdModelSerializer):
@@ -11360,6 +11360,9 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
                 "id": str(role.pk), "name": role.name, "color": role.color,
                 "icon": getattr(role, "icon", "") or "",
             }
+            # A device's own icon, else its type's: it wins over the tile's
+            # type and the role (linked.role.icon); "" when neither has one.
+            out["icon"] = target.own_icon if obj.link_kind == "device" else ""
         return out
 
     @extend_schema_field(OpenApiTypes.OBJECT)

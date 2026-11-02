@@ -8,6 +8,8 @@ import {
   tileName,
 } from "@/components/floorplan/floor-canvas"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { getLucideIcon } from "@/components/dynamic-icon"
+import { tileIcon } from "@/components/object-icon"
 import {
   CheckCountBadge,
   FoldableGroup,
@@ -49,6 +51,20 @@ interface Group {
   title: string
   color: string
   tiles: FloorPlanTile[]
+}
+
+/** A row's icon: the one its tile draws with from afar (object-icon.ts),
+ * or nothing for a planning tile without one. */
+function TileIconGlyph({ tile }: { tile: FloorPlanTile }) {
+  const Icon = getLucideIcon(tileIcon(tile))
+  if (!Icon) return null
+  return (
+    <Icon
+      data-part="row-icon"
+      aria-hidden="true"
+      className="size-3.5 shrink-0 text-muted-foreground"
+    />
+  )
 }
 
 /** Group tiles by their type identity, ordered by name. */
@@ -305,11 +321,14 @@ export function ObjectsSidebar({
                     onClick={() => onPick(t)}
                     className="flex min-w-0 flex-1 flex-col px-1.5 py-1 pl-6 text-left text-[13px]"
                   >
-                    {name ? (
-                      <TruncatedText className="block">{name}</TruncatedText>
-                    ) : (
-                      <span className="text-muted-foreground">Unnamed</span>
-                    )}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <TileIconGlyph tile={t} />
+                      {name ? (
+                        <TruncatedText className="block">{name}</TruncatedText>
+                      ) : (
+                        <span className="text-muted-foreground">Unnamed</span>
+                      )}
+                    </span>
                     {sub && (
                       <TruncatedText className="block text-[11px] leading-tight font-normal text-muted-foreground">
                         {sub}

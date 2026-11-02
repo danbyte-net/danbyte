@@ -19,6 +19,7 @@ import {
   FormCombobox,
   FormDate,
   FormFooter,
+  FormIcon,
   FormSection,
   FormSelect,
   FormTags,
@@ -93,6 +94,7 @@ export function DeviceTypeForm({
   const [photoSize, setPhotoSize] = useState(
     photoSizeOf(src?.topology_photo_size)
   )
+  const [icon, setIcon] = useState(src?.icon ?? "")
   const [description, setDescription] = useState(src?.description ?? "")
   const [isFullDepth, setIsFullDepth] = useState(src?.is_full_depth ?? true)
   const [airflow, setAirflow] = useState<string | null>(src?.airflow || null)
@@ -137,6 +139,7 @@ export function DeviceTypeForm({
     setUHeight(String(deviceType.u_height))
     setRackWidth(deviceType.rack_width)
     setPhotoSize(photoSizeOf(deviceType.topology_photo_size))
+    setIcon(deviceType.icon ?? "")
     setDescription(deviceType.description)
     setIsFullDepth(deviceType.is_full_depth)
     setAirflow(deviceType.airflow || null)
@@ -182,6 +185,7 @@ export function DeviceTypeForm({
         u_height: uHeight.trim() === "" ? 0 : Number(uHeight),
         rack_width: rackWidth,
         topology_photo_size: photoSize ?? "",
+        icon,
         description: description.trim(),
         is_full_depth: isFullDepth,
         airflow: airflow ?? "",
@@ -382,6 +386,13 @@ export function DeviceTypeForm({
                 value={photoSize}
                 onChange={setPhotoSize}
                 error={fieldErrors.topology_photo_size}
+              />
+              <FormIcon
+                label="Icon"
+                hint="blank uses the role's"
+                value={icon}
+                onChange={setIcon}
+                error={fieldErrors.icon}
               />
             </div>
             <div className="grid gap-3 @md:grid-cols-2">

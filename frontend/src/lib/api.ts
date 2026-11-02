@@ -1502,6 +1502,8 @@ export interface DeviceType extends LifecycleInfo {
   rack_width: "full" | "half"
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Lucide icon name on maps and floor plans; "" uses the role's. */
+  icon?: string
   description: string
   /** Absolute URL of the front rack-face image, or null. */
   front_image: string | null
@@ -1569,6 +1571,7 @@ export interface DeviceTypeWritePayload {
   u_height?: number
   rack_width?: "full" | "half"
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1599,6 +1602,8 @@ export interface DeviceTypeMini {
   name: string
   manufacturer: string | null
   manufacturer_id: string | null
+  /** Lucide icon name; "" uses the role's. */
+  icon?: string
   u_height: number
   rack_width: "full" | "half"
   is_full_depth: boolean
@@ -1781,6 +1786,9 @@ export interface Device {
   topology_card?: string[] | null
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Its own icon on maps and floor plans; "" uses its type's, then its
+   * role's. */
+  icon?: string
   device_type: DeviceTypeMini | null
   site: SiteRegionMini | null
   role: {
@@ -1966,6 +1974,7 @@ export interface DeviceWritePayload {
   config_template_id?: string | null
   topology_card?: string[] | null
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -12116,6 +12125,7 @@ export interface FloorPlanTile {
     name: string
     slug: string
     color: string
+    icon?: string
     is_patch_panel: boolean
     has_fov: boolean
   } | null
@@ -12140,6 +12150,9 @@ export interface FloorPlanTile {
     /** A device, rack or cabinet: its role as it is now - a tile with no
      * type of its own draws in its colour and icon. */
     role?: { id: string; name: string; color: string; icon: string } | null
+    /** A device's own icon, else its type's ("" for neither, and for a
+     * rack or cabinet) - it wins over the tile's type and the role. */
+    icon?: string
   } | null
   fov_deg: number | null
   fov_distance: number | null

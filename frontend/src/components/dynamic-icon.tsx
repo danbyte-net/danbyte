@@ -49,3 +49,19 @@ export function DynamicIcon({
   const Icon = byKebab.get(name) ?? Square
   return <Icon className={cn("h-4 w-4", className)} />
 }
+
+/** A named icon, or nothing for "" or a name Lucide does not know - the
+ * icon a role or a device type chose, beside its name. */
+export function NamedIcon({
+  name,
+  className,
+}: {
+  name: string | null | undefined
+  className?: string
+}) {
+  const Icon = name ? byKebab.get(name.trim()) : undefined
+  if (!Icon) return null
+  return (
+    <Icon aria-hidden="true" className={cn("size-3 shrink-0", className)} />
+  )
+}
