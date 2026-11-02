@@ -5,7 +5,7 @@ each end's device (role, status, where it stands) and port (type, speed,
 enabled, description, untagged VLAN, the addresses on it and, when SNMP has
 polled the device, the port's live state). ``tile_panel`` is what a device or
 rack tile's panel shows: the object's facts, its monitoring, a device's port
-summary and a rack's devices.
+summary and preview (photo or 3D model) and a rack's devices.
 
 Both answer only what the reader may view: the cable is one ``/api/cables/``
 lists them, an end on a device they may not view reads ``{"hidden": true}``
@@ -409,7 +409,48 @@ def device_panel(request, tenant, device, items=None):
         out["ports"] = _ports_summary(d, user, tenant)
     if panel_layouts.wants(want, "ips"):
         out["ips"] = _device_ips(d, request, tenant)
+    if panel_layouts.wants(want, "preview"):
+        out["preview"] = _device_preview(d, user, tenant)
     return out
+
+
+def _image(f):
+    if not f:
+        return None
+    try:
+        return f.url
+    except ValueError:
+        return None
+
+
+def _device_preview(d, user, tenant) -> dict:
+    """What the panel's preview block draws: the type's rack-face photos,
+    else the 3D model the room draws for the device (``api.model_3d.
+    effective``) with its mapped ports. An inherited model points at the
+    type's URL only when the reader may view the type, else at the device's
+    own download, which serves the same file."""
+    from .model_3d import effective
+    from .model_ports import effective_model_ports
+    from .models import DeviceType
+
+    dt = d.device_type
+    type_viewable = dt is not None and rbac.restrict_queryset(
+        DeviceType.objects.filter(pk=dt.pk), user, tenant, "devicetype", "view"
+    ).exists()
+    model = effective(d, type_viewable=type_viewable)
+
+    def mm(v):
+        return float(v) if v is not None else None
+
+    return {
+        "front_image": _image(dt.front_image) if dt else None,
+        "rear_image": _image(dt.rear_image) if dt else None,
+        "model": model,
+        "model_ports": effective_model_ports(d) if model else None,
+        "width_mm": mm(dt.width_mm) if dt else None,
+        "height_mm": mm(dt.height_mm) if dt else None,
+        "depth_mm": mm(dt.depth_mm) if dt else None,
+    }
 
 
 def _contents(request, tenant, every, order):

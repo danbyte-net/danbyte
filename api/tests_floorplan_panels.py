@@ -3,8 +3,13 @@ panel names both ends in full and an end on a device the reader may not view
 as Hidden (#453); a cable the reader may not view, or another tenant's, is a
 404. A device tile's panel carries its facts, monitoring and port summary, a
 rack tile's its devices; a tile whose object the reader may not view reads
-Hidden."""
+Hidden. The preview block carries the photos and the 3D model."""
+import json
+import shutil
+import tempfile
+
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 
 from auth_api.api import assemble_site_role
 from core.models import Organization, Tenant
@@ -135,3 +140,74 @@ class CableNotViewableTests(_Panels):
         r = self.cable_panel(self.cross, expect=404)
         for secret in SECRETS:
             self.assertNotIn(secret, r.content.decode())
+
+
+class PreviewPanelTests(_Panels):
+    """The device panel's preview block: the type's photos and the 3D model
+    the room draws, the type's URL only for a reader who may view the type."""
+
+    def setUp(self):
+        from django.core.files.base import ContentFile
+
+        from .models import DeviceType
+        from .tests_model_3d import glb
+
+        super().setUp()
+        media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media, ignore_errors=True)
+        over = override_settings(MEDIA_ROOT=media)
+        over.enable()
+        self.addCleanup(over.disable)
+        self.dt = DeviceType.objects.create(
+            tenant=self.tenant, name="Printer", width_mm=400, model_3d_up="z"
+        )
+        self.dt.model_3d.save("m.glb", ContentFile(glb()), save=True)
+        self.far.device_type = self.dt
+        self.far.save()
+
+    def admin(self):
+        self.login(User.objects.create_superuser("admin", "a@example.com", "x"))
+
+    def test_default_layout_carries_the_model(self):
+        self.admin()
+        body = self.tile_panel(self.far_tile).json()
+        self.assertEqual(body["layout"]["items"][0], {"field": "preview"})
+        prev = body["preview"]
+        self.assertIsNone(prev["front_image"])
+        self.assertEqual(prev["model"]["source"], "type")
+        self.assertEqual(prev["model"]["up"], "z")
+        self.assertTrue(
+            prev["model"]["url"].startswith(f"/api/device-types/{self.dt.id}/model/")
+        )
+        self.assertEqual(prev["width_mm"], 400.0)
+
+    def test_type_url_only_when_the_type_is_viewable(self):
+        self.grant(["floorplan", "floorplantile", "device"])
+        self.login()
+        prev = self.tile_panel(self.far_tile).json()["preview"]
+        self.assertTrue(prev["model"]["url"].startswith(f"/api/devices/{self.far.id}/model/"))
+        self.assertNotIn(str(self.dt.id), json.dumps(prev))
+
+    def test_no_model_no_preview_model(self):
+        self.dt.model_3d.delete(save=True)
+        self.admin()
+        prev = self.tile_panel(self.far_tile).json()["preview"]
+        self.assertIsNone(prev["model"])
+        self.assertIsNone(prev["model_ports"])
+
+    def test_no_preview_when_the_layout_leaves_it_out(self):
+        from .models import PanelLayout
+
+        PanelLayout.objects.create(
+            tenant=self.tenant, object_kind="device", scope="default",
+            items=[{"field": "status"}],
+        )
+        self.admin()
+        self.assertNotIn("preview", self.tile_panel(self.far_tile).json())
+
+    def test_hidden_device_gets_nothing(self):
+        assemble_site_role(self.tenant, "viewer", [self.site_a], user_ids=[self.user.id])
+        self.login()
+        r = self.tile_panel(self.far_tile)
+        self.assertEqual(r.json(), {"kind": "device", "hidden": True})
+        self.assertNotIn("model", r.content.decode())

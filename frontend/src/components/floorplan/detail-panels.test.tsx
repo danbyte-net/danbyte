@@ -43,6 +43,12 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   api: apiMock,
 }))
+// The live viewer is a WebGL canvas: a stand-in that says what it drew.
+vi.mock("@/components/floorplan3d/model-viewer", () => ({
+  default: (p: { model: { url: string }; deviceId?: string }) => (
+    <div data-testid="model-viewer" data-url={p.model.url} />
+  ),
+}))
 
 const STATUS = { id: "s", name: "Active", color: "#22c55e", text_color: "" }
 const DEVICE = {
@@ -466,6 +472,89 @@ describe("ObjectDetailPanel", () => {
     const panel = await screen.findByRole("complementary", { name: "Device" })
     await within(panel).findAllByText("Hidden")
     expect(within(panel).queryByText("PATCH-01")).toBeNull()
+  })
+})
+
+describe("preview block", () => {
+  const MODEL = {
+    url: "/api/devices/d1/model/?v=abc",
+    source: "type" as const,
+    fit: "auto" as const,
+    up: "y" as const,
+    front: "+z" as const,
+  }
+  const withPreview = (
+    preview: Partial<NonNullable<DeviceTilePanel["preview"]>>
+  ): DeviceTilePanel => ({
+    ...devicePanel(items("preview", "#Device", "serial_number")),
+    preview: {
+      front_image: null,
+      rear_image: null,
+      model: null,
+      model_ports: null,
+      width_mm: null,
+      height_mm: null,
+      depth_mm: null,
+      ...preview,
+    },
+  })
+  const open = (roomIn3d = false) =>
+    mount(
+      <ObjectDetailPanel
+        planId="p1"
+        tile={DEVICE_TILE}
+        cablePaths={[]}
+        onClose={vi.fn()}
+        onPickCable={vi.fn()}
+        roomIn3d={roomIn3d}
+      />
+    )
+
+  beforeEach(() => window.localStorage.clear())
+
+  it("draws the model when there is no photo", async () => {
+    tilePanel = withPreview({ model: MODEL })
+    open()
+    const viewer = await screen.findByTestId("model-viewer")
+    expect(viewer.getAttribute("data-url")).toBe(MODEL.url)
+  })
+
+  it("leads with the photo, the model one click away", async () => {
+    tilePanel = withPreview({ front_image: "/media/f.png", model: MODEL })
+    open()
+    const panel = await screen.findByRole("complementary", { name: "Device" })
+    const img = await within(panel).findByRole("img", { name: "sw1" })
+    expect(img.getAttribute("src")).toBe("/media/f.png")
+    expect(screen.queryByTestId("model-viewer")).toBeNull()
+    fireEvent.click(within(panel).getByRole("button", { name: "3D" }))
+    await screen.findByTestId("model-viewer")
+    // Remembered for the next panel.
+    expect(window.localStorage.getItem("danbyte.preview.panel")).toBe("model")
+  })
+
+  it("opens no second canvas while the room is in 3D", async () => {
+    tilePanel = withPreview({ model: MODEL })
+    open(true)
+    const panel = await screen.findByRole("complementary", { name: "Device" })
+    await within(panel).findByText("FOC123")
+    expect(screen.queryByTestId("model-viewer")).toBeNull()
+    expect(panel.querySelector("canvas")).toBeNull()
+  })
+
+  it("shows the photo in 3D room mode", async () => {
+    tilePanel = withPreview({ rear_image: "/media/r.png", model: MODEL })
+    open(true)
+    const panel = await screen.findByRole("complementary", { name: "Device" })
+    await within(panel).findByRole("img", { name: "sw1" })
+    expect(within(panel).queryByRole("button", { name: "3D" })).toBeNull()
+  })
+
+  it("draws nothing with neither", async () => {
+    tilePanel = withPreview({})
+    open()
+    const panel = await screen.findByRole("complementary", { name: "Device" })
+    await within(panel).findByText("FOC123")
+    expect(panel.querySelector("[data-panel-preview]")).toBeNull()
   })
 })
 

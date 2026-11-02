@@ -1658,6 +1658,7 @@ export function FloorPlanEditor({
                   cablePaths={drawnCablePaths}
                   onClose={closeDetail}
                   onPickCable={(cid) => openCable(cid, true)}
+                  roomIn3d={view3d}
                   onOpen3d={
                     view3d
                       ? undefined
