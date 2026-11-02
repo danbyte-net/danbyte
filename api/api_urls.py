@@ -138,6 +138,7 @@ from routing.viewsets import (
     BFDProfileViewSet,
     BGPAddressFamilyViewSet,
     BGPInstanceViewSet,
+    BGPNeighborAFViewSet,
     BGPPeerGroupViewSet,
     BGPSessionViewSet,
     CommunityListRuleViewSet,
@@ -451,6 +452,7 @@ router.register(r"routing/redistributions", RedistributionViewSet,
                 basename="redistribution")
 router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
 router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
+router.register(r"routing/bgp-neighbor-afs", BGPNeighborAFViewSet, basename="bgpneighboraf")
 router.register(r"routing/ospf-areas", OSPFAreaViewSet, basename="ospfarea")
 router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfinstance")
 router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")

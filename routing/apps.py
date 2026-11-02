@@ -22,6 +22,32 @@ class RoutingConfig(AppConfig):
 
         register_context_provider("routing", routing_context)
 
+        # A neighbour's `address_families` list and its family rows stay one
+        # fact: writing the list reconciles the rows, writing a row rewrites
+        # the list (the v0.16 view).
+        from django.db.models.signals import post_delete, post_save
+
+        def _list_written(sender, instance, raw=False, **kwargs):
+            if not raw:
+                m.sync_af_rows(instance)
+
+        def _row_written(sender, instance, raw=False, **kwargs):
+            if raw:
+                return
+            try:
+                parent = instance.parent
+            except (m.BGPSession.DoesNotExist, m.BGPPeerGroup.DoesNotExist):
+                return
+            m.sync_af_mirror(parent)
+
+        for model in (m.BGPSession, m.BGPPeerGroup):
+            post_save.connect(_list_written, sender=model, weak=False,
+                              dispatch_uid=f"routing-af-rows-{model.__name__}")
+        post_save.connect(_row_written, sender=m.BGPNeighborAF, weak=False,
+                          dispatch_uid="routing-af-mirror-save")
+        post_delete.connect(_row_written, sender=m.BGPNeighborAF, weak=False,
+                            dispatch_uid="routing-af-mirror-delete")
+
         # CSV import/export: the upsert key of a device-bound row is what
         # makes it unique on its device, and an ASN is written as its
         # number, not its id. Catalogs key on their name by default.

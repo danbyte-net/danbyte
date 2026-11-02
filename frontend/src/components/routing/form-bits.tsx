@@ -39,6 +39,7 @@ export const ROUTING_OBJECT_TYPES = {
   bgpaddressfamily: "routing.bgpaddressfamily",
   bgppeergroup: "routing.bgppeergroup",
   bgpsession: "routing.bgpsession",
+  bgpneighboraf: "routing.bgpneighboraf",
   ospfarea: "routing.ospfarea",
   ospfinstance: "routing.ospfinstance",
   ospfinterface: "routing.ospfinterface",

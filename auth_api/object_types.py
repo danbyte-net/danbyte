@@ -158,6 +158,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.Redistribution", "Redistributions", "Routing"),
     ("routing.BGPPeerGroup", "BGP peer groups", "Routing"),
     ("routing.BGPSession", "BGP sessions", "Routing"),
+    ("routing.BGPNeighborAF", "BGP neighbour address families", "Routing"),
     ("routing.OSPFArea", "OSPF areas", "Routing"),
     ("routing.OSPFInstance", "OSPF instances", "Routing"),
     ("routing.OSPFInterface", "OSPF interfaces", "Routing"),

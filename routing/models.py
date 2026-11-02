@@ -12,6 +12,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import uuid
+from contextvars import ContextVar
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -1244,6 +1245,261 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         else:
             out["kind"] = None
         return out
+
+
+#: Families in the order a config lists them.
+AFI_SAFI_ORDER = {v: i for i, (v, _) in enumerate(AFI_SAFI_CHOICES)}
+
+#: The per-address-family neighbour settings. Null (or blank) = inherit.
+AF_KNOBS = (
+    "import_policy", "export_policy", "prefix_list_in", "prefix_list_out",
+    "default_originate", "default_originate_policy", "next_hop_self",
+    "route_reflector_client", "soft_reconfiguration", "as_override",
+    "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
+)
+#: The AF knobs a neighbour-level field also carries (every one but the
+#: prefix lists, which exist per family only).
+AF_NEIGHBOR_KNOBS = tuple(k for k in AF_KNOBS if not k.startswith("prefix_list_"))
+
+
+class BGPNeighborAF(models.Model):
+    """One address family of a neighbour - a session **or** a peer group -
+    with the policies and knobs that apply in that family only
+    (``neighbor X route-map OUT out`` under ``address-family ipv4 vpn``).
+
+    A null knob inherits. Per family and knob the most specific value wins:
+    the session's row for the family, the session's own neighbour-level
+    field, the peer group's row, the peer group's field.
+
+    The neighbour's ``address_families`` JSON list stays as the v0.16 view
+    of the rows: the families with ``activate`` on. Writing either side
+    keeps the other in step (``sync_af_rows`` / ``sync_af_mirror``).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        "BGPSession", on_delete=models.CASCADE, null=True, blank=True, related_name="afs",
+    )
+    peer_group = models.ForeignKey(
+        BGPPeerGroup, on_delete=models.CASCADE, null=True, blank=True, related_name="afs",
+    )
+    afi_safi = models.CharField(max_length=24, choices=AFI_SAFI_CHOICES)
+    #: Off prints ``no neighbor X activate`` - the default-ipv4 case.
+    activate = models.BooleanField(default=True)
+    import_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_imports",
+    )
+    export_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_exports",
+    )
+    prefix_list_in = models.ForeignKey(
+        PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_in",
+    )
+    prefix_list_out = models.ForeignKey(
+        PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_out",
+    )
+    default_originate = models.BooleanField(null=True, blank=True)
+    default_originate_policy = models.ForeignKey(
+        RoutingPolicy, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="neighbor_af_default_originates",
+    )
+    next_hop_self = models.BooleanField(null=True, blank=True)
+    route_reflector_client = models.BooleanField(null=True, blank=True)
+    soft_reconfiguration = models.BooleanField(null=True, blank=True)
+    as_override = models.BooleanField(null=True, blank=True)
+    remove_private_as = models.BooleanField(null=True, blank=True)
+    send_community = models.CharField(
+        max_length=8, choices=SEND_COMMUNITY_CHOICES, blank=True, default=""
+    )
+    allowas_in = models.PositiveSmallIntegerField(null=True, blank=True)
+    maximum_prefix = models.PositiveIntegerField(null=True, blank=True)
+    extra = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["afi_safi"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(session__isnull=False, peer_group__isnull=True)
+                    | models.Q(session__isnull=True, peer_group__isnull=False)
+                ),
+                name="bgpneighboraf_one_parent",
+            ),
+            models.UniqueConstraint(
+                fields=["session", "afi_safi"], condition=models.Q(session__isnull=False),
+                name="uniq_bgpneighboraf_session_afi",
+            ),
+            models.UniqueConstraint(
+                fields=["peer_group", "afi_safi"],
+                condition=models.Q(peer_group__isnull=False),
+                name="uniq_bgpneighboraf_group_afi",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.afi_safi
+
+    @property
+    def parent(self):
+        return self.session if self.session_id else self.peer_group
+
+    def has_knobs(self) -> bool:
+        return any(getattr(self, k) not in (None, "") for k in AF_KNOBS) or bool(self.extra)
+
+    def clean(self):
+        if bool(self.session_id) == bool(self.peer_group_id):
+            raise ValidationError(
+                {"session": "A family belongs to a session or to a peer group."}
+            )
+
+
+def _af_rows(parent) -> list:
+    """The parent's family rows - prefetched when the caller did."""
+    return list(parent.afs.all()) if parent is not None and parent.pk else []
+
+
+#: Set while ``sync_af_rows`` writes rows, so each row's save does not
+#: rewrite the list half-way through.
+_SYNCING: ContextVar[bool] = ContextVar("bgp_af_syncing", default=False)
+
+
+def sync_af_mirror(parent) -> None:
+    """Write the active rows back into ``parent.address_families`` - the
+    list v0.16 clients and raw SQL read - keeping the order it had."""
+    if _SYNCING.get() or parent is None or parent.pk is None:
+        return
+    active = [r.afi_safi for r in parent.afs.all().order_by("afi_safi") if r.activate]
+    old = list(parent.address_families or [])
+    new = [a for a in old if a in active] + [a for a in active if a not in old]
+    if new != old:
+        type(parent).objects.filter(pk=parent.pk).update(address_families=new)
+        parent.address_families = new
+
+
+def sync_af_rows(parent) -> None:
+    """Bring the rows in line with ``parent.address_families`` after a write
+    of the list: a listed family gets a row (all knobs null) and is
+    activated; a dropped one is deleted when it carries nothing, else kept
+    with ``activate`` off - a client that only knows the list never wipes a
+    per-family policy."""
+    wanted = list(parent.address_families or [])
+    rows = {r.afi_safi: r for r in parent.afs.all()}
+    if sorted(wanted) == sorted(a for a, r in rows.items() if r.activate):
+        return
+    token = _SYNCING.set(True)
+    try:
+        _apply_af_list(parent, wanted, rows)
+    finally:
+        _SYNCING.reset(token)
+
+
+def _apply_af_list(parent, wanted, rows) -> None:
+    owner = {"session": parent} if isinstance(parent, BGPSession) else {"peer_group": parent}
+    for afi in wanted:
+        r = rows.get(afi)
+        if r is None:
+            BGPNeighborAF.objects.create(afi_safi=afi, activate=True, **owner)
+        elif not r.activate:
+            r.activate = True
+            r.save(update_fields=["activate"])
+    for afi, r in rows.items():
+        if afi in wanted or not r.activate:
+            continue
+        if r.has_knobs():
+            r.activate = False
+            r.save(update_fields=["activate"])
+        else:
+            r.delete()
+
+
+def _family_sets(session):
+    """``(own_rows, group_rows)`` keyed by family, from the rows or - for a
+    neighbour nothing has synced yet - the legacy list."""
+    group = session.peer_group if session.peer_group_id else None
+
+    def rows_of(parent):
+        if parent is None:
+            return {}
+        rows = {r.afi_safi: r for r in _af_rows(parent)}
+        if not rows:
+            rows = {a: None for a in (parent.address_families or [])}
+        return rows
+
+    return rows_of(session), rows_of(group), group
+
+
+def group_af_effective(row) -> dict:
+    """A peer group's family row with its knobs resolved against the
+    group's own fields - what a session that only names the group gets."""
+    group = row.peer_group
+    knobs = {}
+    for k in AF_KNOBS:
+        v = getattr(row, k)
+        if v in (None, "") and k in AF_NEIGHBOR_KNOBS:
+            v = getattr(group, k)
+        knobs[k] = None if v == "" else v
+    return {"afi_safi": row.afi_safi, "activate": row.activate, **knobs,
+            "extra": dict(row.extra or {})}
+
+
+def group_effective_afs(group) -> list[dict]:
+    """Every family of a peer group, resolved against the group's fields -
+    from its rows, or from the legacy list for a group nothing has synced."""
+    rows = _af_rows(group)
+    if rows:
+        return [group_af_effective(r) for r in
+                sorted(rows, key=lambda r: AFI_SAFI_ORDER.get(r.afi_safi, 99))]
+    out = []
+    for afi in sorted(dict.fromkeys(group.address_families or []),
+                      key=lambda a: AFI_SAFI_ORDER.get(a, 99)):
+        knobs = {}
+        for k in AF_KNOBS:
+            v = getattr(group, k) if k in AF_NEIGHBOR_KNOBS else None
+            knobs[k] = None if v == "" else v
+        out.append({"afi_safi": afi, "activate": True, **knobs, "extra": {}})
+    return out
+
+
+def effective_afs(session) -> list[dict]:
+    """Every family the session speaks, each knob resolved: the session's
+    row, the session's field, the group's row, the group's field. The
+    family set is the session's own when it names any, else the group's -
+    as the list always worked. Values are model rows (policies, lists)."""
+    own, grp, group = _family_sets(session)
+    # A session whose rows are all switched off names no family of its own
+    # (the empty list did the same), so the group's set applies.
+    use_own = any(r is None or r.activate for r in own.values())
+    names = own if use_own else grp
+    out = []
+    for afi in sorted(names, key=lambda a: AFI_SAFI_ORDER.get(a, 99)):
+        srow = own.get(afi) if use_own else None
+        grow = grp.get(afi)
+        row_for_activate = srow if use_own else grow
+        activate = row_for_activate.activate if row_for_activate is not None else True
+        knobs = {}
+        for k in AF_KNOBS:
+            val = None
+            for src, field_level in ((srow, False), (session, True),
+                                     (grow, False), (group, True)):
+                if src is None:
+                    continue
+                if field_level and k not in AF_NEIGHBOR_KNOBS:
+                    continue
+                v = getattr(src, k)
+                if v not in (None, ""):
+                    val = v
+                    break
+            knobs[k] = val
+        extra = {}
+        for src in (grow, srow):
+            if src is not None and src.extra:
+                extra.update(src.extra)
+        out.append({"afi_safi": afi, "activate": activate, **knobs, "extra": extra})
+    return out
 
 
 # ─── OSPF ────────────────────────────────────────────────────────────────────

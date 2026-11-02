@@ -147,6 +147,7 @@ AUDITED_MODELS = [
     "routing.Redistribution",
     "routing.BGPPeerGroup",
     "routing.BGPSession",
+    "routing.BGPNeighborAF",
     "routing.OSPFArea",
     "routing.OSPFInstance",
     "routing.OSPFInterface",

@@ -37,6 +37,7 @@ import { DataTable } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 
 import { knobRows, remoteAsnText } from "./bgp-bits"
+import { NeighborAFTable } from "./neighbor-af-table"
 import type { RoutingListSpec } from "./catalog-page"
 import {
   asPathListRuleColumns,
@@ -562,6 +563,18 @@ export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
   subtitle: (r) =>
     `remote AS ${remoteAsnText(r) || "-"} · ${r.session_count} sessions`,
   related: [
+    {
+      value: "address-families",
+      label: "Address families",
+      count: (r) => r.afs.length,
+      render: (r) => (
+        <NeighborAFTable
+          parent={{ kind: "peer_group", id: r.id }}
+          rows={r.afs}
+          invalidate={["bgp-peer-group", r.id]}
+        />
+      ),
+    },
     {
       value: "sessions",
       label: "Sessions",

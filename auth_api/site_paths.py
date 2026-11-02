@@ -89,6 +89,11 @@ SITE_PATHS: dict[str, str] = {
     "bgpinstance": "device__site|virtual_machine__site",
     "bgpaddressfamily": "instance__device__site|instance__virtual_machine__site",
     "bgpsession": "instance__device__site|instance__virtual_machine__site",
+    # A session's families follow its box; a peer group's are catalog rows
+    # (no site), as the group is.
+    "bgpneighboraf": (
+        "session__instance__device__site|session__instance__virtual_machine__site"
+    ),
     "ospfinstance": "device__site|virtual_machine__site",
     "ospfinterface": "instance__device__site|instance__virtual_machine__site",
     "isisinstance": "device__site|virtual_machine__site",

@@ -9,6 +9,7 @@ import type { BGPSession } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { NeighborAFTable } from "@/components/routing/neighbor-af-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
@@ -56,9 +57,9 @@ function Page() {
 }
 
 function Body({ s }: { s: BGPSession }) {
-  const [tab, setTab] = useUrlTab<"overview" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "address-families" | "journal" | "history"
+  >("overview")
   const nav = useNavigate()
   const qc = useQueryClient()
   const { canDo, humanIds } = useMe()
@@ -293,6 +294,11 @@ function Body({ s }: { s: BGPSession }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        {
+          value: "address-families",
+          label: "Address families",
+          count: s.effective_afs?.length ?? s.afs.length,
+        },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -310,6 +316,21 @@ function Body({ s }: { s: BGPSession }) {
             model="bgpsession"
             values={s.custom_fields}
             layout="cards"
+          />
+        </div>
+      </DetailTab>
+      <DetailTab value="address-families">
+        <div className="grid gap-3">
+          {s.afs.length === 0 && s.peer_group && (
+            <p className="text-sm text-muted-foreground">
+              The families come from {s.peer_group.name}. Add one here to set it
+              for this session.
+            </p>
+          )}
+          <NeighborAFTable
+            parent={{ kind: "session", id: s.id }}
+            rows={s.afs}
+            invalidate={["bgp-session", s.id]}
           />
         </div>
       </DetailTab>

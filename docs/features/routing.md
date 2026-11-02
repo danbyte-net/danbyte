@@ -226,6 +226,37 @@ Sessions whose far end is a device Danbyte knows draw on the
 device pair and table, hidden with the eyes like any other family, with
 the session a click away.
 
+### Address families per neighbour
+
+A neighbour often wants different policies per family: a PE sends one
+route-map in `ipv4-unicast` and another in `vpnv4-unicast` to the same
+neighbour, and a CE's IPv6 family must not get the IPv4 route-map. A
+session's and a peer group's **Address families** tab lists one row per
+family, each with **Activate**, an import and export policy, a **prefix
+list in** and **out**, default originate (and its policy), next-hop self,
+route reflector client, soft reconfiguration, AS override, remove private
+AS, send community, allowas-in and maximum prefix. **Add family** adds a
+row; a blank value inherits, and the In / Out columns show an inherited
+policy muted.
+
+Per family and per setting, the **most specific value wins**:
+
+1. the session's row for that family;
+2. the session's own neighbour-level field (the form's value for all
+   families);
+3. the peer group's row for that family;
+4. the peer group's neighbour-level field.
+
+So a neighbour-level **Export policy** on the session beats a per-family
+value on its group, and a per-family value on the session beats both. The
+family set is the session's active rows when it has any, else the group's.
+Turning **Activate** off keeps the row and prints `no neighbor X activate`.
+
+The session and peer-group forms keep their **Address families** pick
+list: it is the same set as the rows. Dropping a family there deletes a row
+that sets nothing, and switches off one that carries a policy, so a
+per-family policy is never lost by editing the list.
+
 **Create the far end** on a session's page writes the mirror session on the
 peer device - its instance in the same table, addresses swapped, the
 effective settings copied - and links the two, so an iBGP pair is two
@@ -457,8 +488,15 @@ routing:
                                ebgp_multihop, update_source, next_hop_self, route_reflector_client,
                                send_community, keepalive, hold_time, keychain, default_originate,
                                maximum_prefix, allowas_in, as_override, remove_private_as,
-                               soft_reconfiguration, extra}],
-                   peer_groups: [{name, ...}]}]      # only the groups this instance's sessions use
+                               soft_reconfiguration, extra,
+                               afs: [{afi_safi, activate, import_policy, export_policy,
+                                      prefix_list_in, prefix_list_out, default_originate,
+                                      default_originate_policy, next_hop_self,
+                                      route_reflector_client, soft_reconfiguration,
+                                      as_override, remove_private_as, send_community,
+                                      allowas_in, maximum_prefix, extra}],
+                               af_by_name: {AFI_SAFI: <the active afs row>}}],
+                   peer_groups: [{name, ..., afs, af_by_name}]}]  # only the groups this instance's sessions use
   ospf:          [{vrf, process_id, version, router_id, reference_bandwidth, passive_by_default,
                    default_originate, bfd, redistribute: [...],
                    areas: [{area_id, name, kind}],
@@ -513,7 +551,14 @@ each with its `l3vni`. `vtep.vnis` is sorted L2 first, then by VNI, with
 the VLAN resolved for this leaf. `policies` and the three list kinds hold only
 what the device's address families, sessions and peer groups reference, so
 a template prints what the box needs and no more. Session values are the
-effective ones; `remote_asn_mode` is `asn`, `external` or `internal`. Every row carries its
+effective ones; `remote_asn_mode` is `asn`, `external` or `internal`.
+A session's `afs` are resolved per family in the order under
+[Address families per neighbour](#address-families-per-neighbour), so a
+template never computes it; `af_by_name` holds the active ones, so
+`af.afi_safi in s.af_by_name` reads "activated in this family". Every
+policy and prefix list a family names is in `policies` / `prefix_lists`.
+The neighbour-level keys (`address_families`, `import_policy`, …) keep
+their meaning. Every row carries its
 `id`; `vrf` is a name, `null` for the global table.
 
 A static-routes fragment, IOS-style:
@@ -706,7 +751,8 @@ delete's words (`In use: 2 BGP sessions.`).
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `virtual_machine`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
-| `/api/routing/bgp-sessions/` | Sessions with `effective`; filter by `device`, `virtual_machine`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
+| `/api/routing/bgp-neighbor-afs/` | Address-family rows of sessions and peer groups (`?session=`, `?peer_group=`, `?afi_safi=`); write with `session_id` or `peer_group_id`, policies as `import_policy_id`, `export_policy_id`, `default_originate_policy_id`, lists as `prefix_list_in_id` / `prefix_list_out_id`. A row read on its own carries `effective`. |
+| `/api/routing/bgp-sessions/` | Sessions with `effective`, their rows as `afs`, and on a single read `effective_afs` (every family, resolved); `address_families` stays a read/write list of the active families; filter by `device`, `virtual_machine`, `instance`, `vrf` (`global`), `site`, `asn`, `remote_asn`, `peer_group`, `peer_device`, `status`, `af`. `POST …/<id>/create-peer/` writes the mirror session. |
 | `/api/routing/ospf-areas/` | Areas. |
 | `/api/routing/ospf-instances/`, `…/isis-instances/` | Instances with their interfaces and redistributions nested; accept `redistributions: [...]`; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`. |
 | `/api/routing/ospf-interfaces/`, `…/isis-interfaces/` | Enrolled interfaces (`?instance=`, `?interface=`, `?area=`). |

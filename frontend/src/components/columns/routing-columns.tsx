@@ -5,6 +5,7 @@ import type {
   ASPathList,
   BFDProfile,
   BGPInstance,
+  BGPNeighborAF,
   BGPPeerGroup,
   BGPSession,
   Community,
@@ -809,6 +810,141 @@ export function buildPolicyRuleColumns<T extends PolicyRule = PolicyRule>(
       tags: tags<T>(opts),
     },
     opts
+  )
+}
+
+// ─── BGP neighbour address families ─────────────────────────────────────────
+
+export type NeighborAFColumnId =
+  | "afi_safi"
+  | "activate"
+  | "import_policy"
+  | "export_policy"
+  | "prefix_lists"
+  | "knobs"
+
+/** "On"/"Off" for a set tri-state, nothing for inherit. */
+function triWord(label: string, v: boolean | null): string | null {
+  return v == null ? null : v ? label : `no ${label}`
+}
+
+/** The value a row sets, or the effective one muted when it inherits. */
+function ownOrInherited(
+  own: { name: string } | null,
+  eff: { name: string } | null | undefined
+) {
+  if (own) return <span className="font-mono text-xs">{own.name}</span>
+  if (eff)
+    return (
+      <span className="font-mono text-xs text-muted-foreground">
+        {eff.name}
+      </span>
+    )
+  return dash
+}
+
+export function buildNeighborAFColumns<T extends BGPNeighborAF = BGPNeighborAF>(
+  opts: CommonOpts<T, NeighborAFColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, NeighborAFColumnId>(
+    [
+      "afi_safi",
+      "activate",
+      "import_policy",
+      "export_policy",
+      "prefix_lists",
+      "knobs",
+    ],
+    {
+      afi_safi: () => ({
+        id: "afi_safi",
+        accessorKey: "afi_safi",
+        header: "Address family",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs font-medium">
+            {row.original.afi_safi}
+          </span>
+        ),
+      }),
+      activate: () => ({
+        id: "activate",
+        accessorKey: "activate",
+        header: "Active",
+        cell: ({ row }) =>
+          row.original.activate ? (
+            <Badge variant="success">active</Badge>
+          ) : (
+            <Badge variant="secondary">off</Badge>
+          ),
+      }),
+      import_policy: () => ({
+        id: "import_policy",
+        accessorFn: (r) =>
+          r.import_policy?.name ?? r.effective?.import_policy?.name ?? "",
+        header: "In",
+        cell: ({ row }) =>
+          ownOrInherited(
+            row.original.import_policy,
+            row.original.effective?.import_policy
+          ),
+      }),
+      export_policy: () => ({
+        id: "export_policy",
+        accessorFn: (r) =>
+          r.export_policy?.name ?? r.effective?.export_policy?.name ?? "",
+        header: "Out",
+        cell: ({ row }) =>
+          ownOrInherited(
+            row.original.export_policy,
+            row.original.effective?.export_policy
+          ),
+      }),
+      prefix_lists: () => ({
+        id: "prefix_lists",
+        accessorFn: (r) =>
+          [r.prefix_list_in?.name, r.prefix_list_out?.name]
+            .filter(Boolean)
+            .join(" "),
+        header: "Prefix lists",
+        cell: ({ row }) => {
+          const r = row.original
+          if (!r.prefix_list_in && !r.prefix_list_out) return dash
+          return (
+            <span className="font-mono text-xs">
+              {r.prefix_list_in ? `in ${r.prefix_list_in.name}` : ""}
+              {r.prefix_list_in && r.prefix_list_out ? " · " : ""}
+              {r.prefix_list_out ? `out ${r.prefix_list_out.name}` : ""}
+            </span>
+          )
+        },
+      }),
+      knobs: () => ({
+        id: "knobs",
+        header: "Set here",
+        cell: ({ row }) => {
+          const r = row.original
+          const parts = [
+            triWord("default-originate", r.default_originate),
+            triWord("next-hop-self", r.next_hop_self),
+            triWord("route-reflector-client", r.route_reflector_client),
+            triWord("soft-reconfiguration", r.soft_reconfiguration),
+            triWord("as-override", r.as_override),
+            triWord("remove-private-as", r.remove_private_as),
+            r.send_community ? `send-community ${r.send_community}` : null,
+            r.allowas_in != null ? `allowas-in ${r.allowas_in}` : null,
+            r.maximum_prefix != null
+              ? `maximum-prefix ${r.maximum_prefix}`
+              : null,
+          ].filter(Boolean)
+          return parts.length ? (
+            <span className="text-xs">{parts.join(", ")}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Inherited</span>
+          )
+        },
+      }),
+    },
+    { ...opts, humanIds: true }
   )
 }
 

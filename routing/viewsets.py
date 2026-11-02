@@ -33,6 +33,7 @@ from .models import (
     BFDProfile,
     BGPAddressFamily,
     BGPInstance,
+    BGPNeighborAF,
     BGPPeerGroup,
     BGPSession,
     Community,
@@ -67,6 +68,7 @@ from .serializers import (
     BFDProfileSerializer,
     BGPAddressFamilySerializer,
     BGPInstanceSerializer,
+    BGPNeighborAFSerializer,
     BGPPeerGroupMiniSerializer,
     BGPPeerGroupSerializer,
     BGPSessionSerializer,
@@ -528,6 +530,58 @@ class RedistributionViewSet(TenantScopedViewSet):
         serializer.save()
 
 
+_AF_PREFETCH = (
+    "afs__import_policy", "afs__export_policy", "afs__prefix_list_in",
+    "afs__prefix_list_out", "afs__default_originate_policy",
+)
+
+
+class BGPNeighborAFViewSet(TenantScopedViewSet):
+    """Address-family rows of sessions and peer groups. Filter with
+    ``?session=``, ``?peer_group=``, ``?afi_safi=``."""
+
+    tenant_field = None
+    queryset = BGPNeighborAF.objects.select_related(
+        "session__instance__device", "session__instance__virtual_machine",
+        "session__peer_group", "peer_group", "import_policy", "export_policy",
+        "prefix_list_in", "prefix_list_out", "default_originate_policy",
+    ).order_by("afi_safi")
+    serializer_class = BGPNeighborAFSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(Q(session__tenant=tenant) | Q(peer_group__tenant=tenant))
+        if self.request:
+            for key in ("session", "peer_group"):
+                v = self.request.query_params.get(key)
+                if v:
+                    qs = qs.filter(**{f"{key}_id": v})
+            afi = self.request.query_params.get("afi_safi")
+            if afi:
+                qs = qs.filter(afi_safi=afi)
+        return restrict_for_view(self, qs)
+
+    def _check(self, serializer):
+        tenant = self._tenant_or_403()
+        vd = serializer.validated_data
+        inst = serializer.instance
+        parent = (vd.get("session") or vd.get("peer_group")
+                  or (inst.parent if inst is not None else None))
+        if parent is None or parent.tenant_id != tenant.id:
+            raise ValidationError({"session_id": "Pick a neighbour in the current tenant."})
+
+    def perform_create(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+
 class BGPPeerGroupViewSet(_CatalogViewSet):
     queryset = BGPPeerGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = BGPPeerGroupSerializer
@@ -544,6 +598,7 @@ class BGPPeerGroupViewSet(_CatalogViewSet):
         qs = (
             super().get_queryset()
             .select_related("local_asn", "import_policy", "export_policy", "keychain")
+            .prefetch_related(*_AF_PREFETCH)
             .annotate(session_count_annotated=Count("sessions", distinct=True))
         )
         if self.request:
@@ -589,7 +644,7 @@ class BGPSessionViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                 "peer_session__instance__virtual_machine",
                 "import_policy", "export_policy", "keychain", "status",
             )
-            .prefetch_related(TAGS)
+            .prefetch_related(TAGS, *_AF_PREFETCH)
         )
         if not self.request:
             return qs

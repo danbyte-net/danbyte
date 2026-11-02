@@ -51,6 +51,7 @@ from .models import (
     BFDProfile,
     BGPAddressFamily,
     BGPInstance,
+    BGPNeighborAF,
     BGPPeerGroup,
     BGPSession,
     Community,
@@ -75,6 +76,8 @@ from .models import (
     RoutingPolicyRule,
     StaticRoute,
     VTEPMembership,
+    effective_afs,
+    group_af_effective,
     link_remote_address,
     resolve_membership_vlan,
     validate_address_families,
@@ -981,6 +984,123 @@ _KNOB_FIELDS = [
 ]
 
 
+def _af_effective_out(eff: dict) -> dict:
+    """An ``effective_afs`` entry with its rows as mini shapes."""
+    out = {}
+    for k, v in eff.items():
+        if k in ("import_policy", "export_policy", "default_originate_policy"):
+            out[k] = RoutingPolicyMiniSerializer(v).data if v is not None else None
+        elif k in ("prefix_list_in", "prefix_list_out"):
+            out[k] = PrefixListMiniSerializer(v).data if v is not None else None
+        else:
+            out[k] = v
+    return out
+
+
+class BGPNeighborAFSerializer(NumIdModelSerializer):
+    """One address family of a session or a peer group. Written on its own
+    endpoint (``session_id`` or ``peer_group_id``); read nested as ``afs``
+    on both, each row with ``effective`` - what the box ends up with in that
+    family."""
+
+    session_id = TenantScopedPrimaryKeyRelatedField(
+        source="session", queryset=BGPSession.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    peer_group_id = TenantScopedPrimaryKeyRelatedField(
+        source="peer_group", queryset=BGPPeerGroup.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    parent = serializers.SerializerMethodField()
+    afi_safi_display = serializers.CharField(source="get_afi_safi_display", read_only=True)
+    import_policy = RoutingPolicyMiniSerializer(read_only=True)
+    import_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="import_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    export_policy = RoutingPolicyMiniSerializer(read_only=True)
+    export_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="export_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    prefix_list_in = PrefixListMiniSerializer(read_only=True)
+    prefix_list_in_id = TenantScopedPrimaryKeyRelatedField(
+        source="prefix_list_in", queryset=PrefixList.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    prefix_list_out = PrefixListMiniSerializer(read_only=True)
+    prefix_list_out_id = TenantScopedPrimaryKeyRelatedField(
+        source="prefix_list_out", queryset=PrefixList.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    default_originate_policy = RoutingPolicyMiniSerializer(read_only=True)
+    default_originate_policy_id = TenantScopedPrimaryKeyRelatedField(
+        source="default_originate_policy", queryset=RoutingPolicy.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    effective = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_parent(self, obj):
+        if obj.session_id:
+            return {"kind": "session", "id": str(obj.session_id),
+                    "name": str(obj.session)}
+        return {"kind": "peer_group", "id": str(obj.peer_group_id),
+                "name": obj.peer_group.name}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_effective(self, obj):
+        if obj.session_id:
+            for eff in effective_afs(obj.session):
+                if eff["afi_safi"] == obj.afi_safi:
+                    return _af_effective_out(eff)
+            return None
+        return _af_effective_out(group_af_effective(obj))
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        session = attrs.get("session", getattr(self.instance, "session", None))
+        group = attrs.get("peer_group", getattr(self.instance, "peer_group", None))
+        if self.instance is not None and (
+            ("session" in attrs and attrs["session"] != self.instance.session)
+            or ("peer_group" in attrs and attrs["peer_group"] != self.instance.peer_group)
+        ):
+            raise serializers.ValidationError(
+                {"session_id": "A family stays with its neighbour."}
+            )
+        if bool(session) == bool(group):
+            raise serializers.ValidationError(
+                {"session_id": "Give a session or a peer group, not both and not neither."}
+            )
+        afi = attrs.get("afi_safi", getattr(self.instance, "afi_safi", None))
+        taken = BGPNeighborAF.objects.filter(
+            afi_safi=afi, **({"session": session} if session else {"peer_group": group})
+        )
+        if self.instance is not None:
+            taken = taken.exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise serializers.ValidationError(
+                {"afi_safi": f"This neighbour already has {afi}."}
+            )
+        return attrs
+
+    class Meta:
+        model = BGPNeighborAF
+        fields = ["id", "parent", "session_id", "peer_group_id", "afi_safi",
+                  "afi_safi_display", "activate",
+                  "import_policy", "import_policy_id", "export_policy", "export_policy_id",
+                  "prefix_list_in", "prefix_list_in_id",
+                  "prefix_list_out", "prefix_list_out_id",
+                  "default_originate", "default_originate_policy",
+                  "default_originate_policy_id", "next_hop_self",
+                  "route_reflector_client", "soft_reconfiguration", "as_override",
+                  "remove_private_as", "send_community", "allowas_in", "maximum_prefix",
+                  "extra", "effective"]
+        read_only_fields = ["id"]
+        validators = []
+
+
 class BGPPeerGroupSerializer(
     _PeerKnobFields, CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer
 ):
@@ -992,6 +1112,9 @@ class BGPPeerGroupSerializer(
         write_only=True, required=False, allow_null=True,
     )
     session_count = serializers.SerializerMethodField()
+    #: The group's address-family rows; ``address_families`` stays the list
+    #: of the active ones.
+    afs = BGPNeighborAFSerializer(many=True, read_only=True)
 
     def get_session_count(self, obj) -> int:
         annotated = getattr(obj, "session_count_annotated", None)
@@ -1001,7 +1124,7 @@ class BGPPeerGroupSerializer(
         model = BGPPeerGroup
         fields = ["id", "numid", "name", "description",
                   "remote_asn", "remote_asn_mode", "local_asn", "local_asn_id",
-                  "update_source", *_KNOB_FIELDS, "session_count",
+                  "update_source", *_KNOB_FIELDS, "afs", "session_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
@@ -1019,7 +1142,7 @@ class BGPSessionSerializer(
     cf_model = "bgpsession"
     # The resolved knob set the session page draws, not one value a column
     # can show (see api.list_fields).
-    list_columns_exclude = ("effective",)
+    list_columns_exclude = ("effective", "afs", "effective_afs")
 
     instance = BGPInstanceMiniSerializer(read_only=True)
     instance_id = TenantScopedPrimaryKeyRelatedField(
@@ -1058,6 +1181,16 @@ class BGPSessionSerializer(
     )
     peer_session = serializers.SerializerMethodField()
     effective = serializers.SerializerMethodField()
+    #: The session's own address-family rows.
+    afs = BGPNeighborAFSerializer(many=True, read_only=True)
+    #: Every family the session speaks, each knob resolved (own row, own
+    #: field, group row, group field).
+    effective_afs = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_effective_afs(self, obj):
+        return [_af_effective_out(e) for e in effective_afs(obj)]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_peer_session(self, obj):
@@ -1124,7 +1257,7 @@ class BGPSessionSerializer(
                   "remote_address", "interface", "interface_id",
                   "vm_interface", "vm_interface_id", "remote_address_obj",
                   "peer_device", "peer_device_id", "peer_session",
-                  *_KNOB_FIELDS, "effective",
+                  *_KNOB_FIELDS, "effective", "afs", "effective_afs",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "remote_address_obj", "created_at", "updated_at"]

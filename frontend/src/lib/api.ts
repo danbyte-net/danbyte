@@ -6793,7 +6793,57 @@ export interface BGPPeerGroup extends RoutingCatalogBase, BGPPeerKnobs {
   remote_asn_mode: RemoteAsnMode
   local_asn: ASNMini | null
   update_source: string
+  /** One row per address family; `address_families` lists the active ones. */
+  afs: BGPNeighborAF[]
   session_count: number
+}
+
+/** A neighbour family with every knob resolved. */
+export interface BGPNeighborAFEffective {
+  afi_safi: AfiSafi
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: SendCommunity | null
+  allowas_in: number | null
+  maximum_prefix: number | null
+  extra: Record<string, unknown>
+}
+
+/** One address family of a session or a peer group
+ * (`/api/routing/bgp-neighbor-afs/`). A null knob inherits. */
+export interface BGPNeighborAF {
+  id: string
+  parent: { kind: "session" | "peer_group"; id: string; name: string }
+  afi_safi: AfiSafi
+  afi_safi_display: string
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: "" | SendCommunity
+  allowas_in: number | null
+  maximum_prefix: number | null
+  extra: Record<string, unknown>
+  /** What the box ends up with in this family (detail reads only). */
+  effective: BGPNeighborAFEffective | null
 }
 
 export interface BGPPeerGroupMini {
@@ -6861,6 +6911,10 @@ export interface BGPSession extends BGPPeerKnobs {
     virtual_machine?: VMMini
   } | null
   effective: BGPSessionEffective
+  /** The session's own address-family rows. */
+  afs: BGPNeighborAF[]
+  /** Every family it speaks, resolved (detail reads only). */
+  effective_afs: BGPNeighborAFEffective[]
   status: StatusMini | null
   description: string
   tags: Tag[]

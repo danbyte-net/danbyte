@@ -90,6 +90,28 @@ The shared knobs (`_PeerKnobs`): `address_families` JSON list, `import_policy`,
 instance (`bfd`), merges `extra`, and derives `update_source` from the local
 address's interface.
 
+`BGPNeighborAF` - one address family of a neighbour, a session **or** a peer
+group (`bgpneighboraf_one_parent`), unique per parent and `afi_safi`:
+`activate` (off prints `no neighbor X activate`), `import_policy`,
+`export_policy`, `prefix_list_in`, `prefix_list_out`, `default_originate` +
+`default_originate_policy`, `next_hop_self`, `route_reflector_client`,
+`soft_reconfiguration`, `as_override`, `remove_private_as`, `send_community`,
+`allowas_in`, `maximum_prefix`, `extra`. Every knob is nullable: null
+inherits. `routing.models.effective_afs(session)` resolves each family and
+knob, most specific first: the session's row, the session's own field, the
+peer group's row, the peer group's field. The family set is the session's
+active rows when it has any, else the group's. Site-scoped through the
+session's box; a peer group's rows are catalog rows. Audited.
+
+The `address_families` JSON list on sessions and peer groups stays as the
+v0.16 view of the rows - the families with `activate` on. Writing the list
+reconciles the rows (a listed family gets a row with every knob null; a
+dropped one is deleted, or switched off when it carries a knob), and writing
+a row rewrites the list (`sync_af_rows` / `sync_af_mirror`, wired as
+signals in `routing/apps.py`). Migration `routing/0018` backfilled one row
+per listed family with every knob null, so no render changed. The list is
+deprecated and goes no earlier than two releases on.
+
 ## OSPF and IS-IS
 
 | Model | Fields | Unique |
