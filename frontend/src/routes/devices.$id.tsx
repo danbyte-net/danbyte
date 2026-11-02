@@ -70,13 +70,8 @@ import {
 import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import { Model3DCard } from "@/components/model-3d-card"
-import {
-  ModelViewerCard,
-  ModelViewerFrame,
-  OverviewWithAside,
-} from "@/components/model-viewer-card"
-import { modelPlacement, usePreviewKind } from "@/lib/preview-kind"
-import { cn } from "@/lib/utils"
+import { ModelViewerFrame } from "@/components/model-viewer-card"
+import { usePreviewKind } from "@/lib/preview-kind"
 import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
@@ -1321,18 +1316,10 @@ function DeviceOverview({
   // sit at the top of the second column (half-width - readable) rather than
   // wherever a balanced masonry would drop it.
   const photo = !!(d.device_type?.front_image || d.device_type?.rear_image)
-  const showPanel = d.interface_count > 0 || photo
-  // The 3D model: beside a photo it is the Panel's "3D" view; with no photo
-  // it gets the sticky right column of its own.
+  // The 3D model is one of the Panel card's views (its default when there is
+  // no photo), so the overview stays two columns.
   const model = d.model_3d_effective ?? null
-  const placement = modelPlacement({ photo, model })
-  const modelAside =
-    model && placement === "aside" ? (
-      <ModelViewerCard
-        source={{ model, sizeMm: d.device_type, deviceId: d.id }}
-        sourceLabel={model.source === "type" ? "From type" : "Own model"}
-      />
-    ) : null
+  const showPanel = d.interface_count > 0 || photo || !!model
 
   const locationMap = d.latitude !== null && d.longitude !== null && (
     <div className="rounded-lg border border-border bg-card">
@@ -1421,24 +1408,15 @@ function DeviceOverview({
         )}
       />
 
-      <OverviewWithAside aside={modelAside}>
+      <>
         {showPanel ? (
           // Two columns: attributes left, the Panel at the top of the right
           // column (then the map / topology / rack under it).
-          <div
-            className={cn(
-              "grid items-start gap-6 lg:grid-cols-2",
-              modelAside && "xl:grid-cols-1 2xl:grid-cols-2"
-            )}
-          >
+          <div className="grid items-start gap-6 lg:grid-cols-2">
             <div className="min-w-0 space-y-6">{attributeCards}</div>
             <div className="min-w-0 space-y-6">
               {monitoringCompact}
-              <DeviceFrontPanel
-                device={d}
-                glow={portGlow}
-                model={placement === "panel" ? model : null}
-              />
+              <DeviceFrontPanel device={d} glow={portGlow} model={model} />
               <PortUtilizationCard
                 deviceId={d.id}
                 onHoverState={setPortGlow}
@@ -1454,12 +1432,7 @@ function DeviceOverview({
           </div>
         ) : (
           // No panel - the original auto-balanced masonry.
-          <div
-            className={cn(
-              "columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid",
-              modelAside && "xl:columns-1 2xl:columns-2"
-            )}
-          >
+          <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
             {monitoringCompact}
             {attributeCards}
             <PortUtilizationCard
@@ -1475,7 +1448,7 @@ function DeviceOverview({
             <DeviceCabinetCard device={d} />
           </div>
         )}
-      </OverviewWithAside>
+      </>
     </div>
   )
 }
@@ -1663,13 +1636,13 @@ function DeviceFrontPanel({
   // The device says it has ports (or its type a photo): the panel holds its
   // place while they load instead of popping in and pushing the column down.
   if (q.isPending)
-    return device.interface_count > 0 || hasTypeImage ? (
+    return device.interface_count > 0 || hasTypeImage || model ? (
       <Section title="Panel" boxed>
         <Loading className="min-h-32" />
       </Section>
     ) : null
-  // Nothing to draw at all - no ports and no type photo.
-  if (physical.length === 0 && !hasTypeImage) return null
+  // Nothing to draw at all - no ports, no type photo, no model.
+  if (physical.length === 0 && !hasTypeImage && !model) return null
 
   // The views this device actually offers: Photo (image + live port markers),
   // Rendered (mm-true schematic), Bare (the plain rack-face photo). Chosen view

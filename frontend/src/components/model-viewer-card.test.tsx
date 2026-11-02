@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 
-import { ModelViewerCard, OverviewWithAside } from "./model-viewer-card"
+import { ModelViewerCard } from "./model-viewer-card"
 
 // The Overview's "3D model" card: the toolbar drives the viewer (a WebGL
 // canvas, stood in for here), and the right column exists only with a model.
@@ -64,27 +64,6 @@ const MODEL = {
   up: "y" as const,
   front: "+z" as const,
 }
-
-describe("OverviewWithAside", () => {
-  it("adds the right column only with something in it", async () => {
-    mount(
-      <OverviewWithAside aside={null}>
-        <p>cards</p>
-      </OverviewWithAside>
-    )
-    await screen.findByText("cards")
-    expect(document.querySelector("[data-overview-aside]")).toBeNull()
-    cleanup()
-    mount(
-      <OverviewWithAside aside={<p>viewer</p>}>
-        <p>cards</p>
-      </OverviewWithAside>
-    )
-    await screen.findByText("viewer")
-    const grid = document.querySelector("[data-overview-aside]")!
-    expect(grid.querySelector("aside")!.className).toContain("xl:sticky")
-  })
-})
 
 describe("ModelViewerCard", () => {
   it("draws the device's model with its port markers and a source", async () => {

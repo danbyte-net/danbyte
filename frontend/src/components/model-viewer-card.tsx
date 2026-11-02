@@ -150,30 +150,3 @@ export function ModelViewerCard({
     </Section>
   )
 }
-
-/**
- * An Overview with the model's sticky right column: the page's own content
- * left, the viewer right from `xl`, kept in view while the left scrolls.
- * Narrower, the viewer stacks first, under the header. No `aside`: the
- * content alone, as before.
- */
-export function OverviewWithAside({
-  aside,
-  children,
-}: {
-  aside: React.ReactNode
-  children: React.ReactNode
-}) {
-  if (!aside) return <>{children}</>
-  return (
-    <div
-      className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]"
-      data-overview-aside
-    >
-      <aside className="min-w-0 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-1">
-        {aside}
-      </aside>
-      <div className="min-w-0 xl:col-start-1 xl:row-start-1">{children}</div>
-    </div>
-  )
-}

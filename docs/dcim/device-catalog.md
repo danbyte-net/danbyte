@@ -285,9 +285,8 @@ device of the type that stands on the floor with it, fitted to the
 hardware's size. A [device](devices.md#3d-model) can have its own model,
 which wins over its type's.
 
-A type with a model shows it on its Overview in a **3D model** viewer, in a
-column on the right that stays in view while the cards scroll (on narrower
-screens it sits above the cards). The model stands the way the room stands
+A type with a model shows it on its Overview in a **3D model** viewer at
+the top of the right-hand column. The model stands the way the room stands
 it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
 **Front**, **Rear** and **Top** views, **Fit**, **Ports** (the
 [mapped ports](#model-ports), in one neutral colour - a type has no port

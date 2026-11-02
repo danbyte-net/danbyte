@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { act, renderHook } from "@testing-library/react"
 
 import {
-  modelPlacement,
   previewKind,
   rememberPreview,
   rememberedPreview,
@@ -27,15 +26,6 @@ describe("previewKind", () => {
     expect(previewKind({ photo: "/a.png" }, "model")).toBe("photo")
     expect(previewKind({ model: {} }, "photo")).toBe("model")
     expect(previewKind({ photo: "/a.png", model: {} }, "icon")).toBe("photo")
-  })
-})
-
-describe("modelPlacement", () => {
-  it("joins a photo, else takes the right column, else nowhere", () => {
-    expect(modelPlacement({ photo: "/a.png", model: {} })).toBe("panel")
-    expect(modelPlacement({ photo: null, model: {} })).toBe("aside")
-    expect(modelPlacement({ photo: "/a.png", model: null })).toBeNull()
-    expect(modelPlacement({})).toBeNull()
   })
 })
 

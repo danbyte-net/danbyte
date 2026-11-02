@@ -292,16 +292,12 @@ each scoped to its object and gated by that object's change permission.
 ### 3D model {#3d-model}
 
 A device with a model - its own, else its type's - shows it on the
-Overview:
-
-- **No rack-face photo on its type**: a **3D model** viewer takes a column
-  on the right that stays in view while the cards scroll (on narrower
-  screens it sits above the cards). Its header says whose model it is:
-  **From type** or **Own model**.
-- **A rack-face photo**: the model is the **3D** view of the **Panel** card,
-  beside Photo / Rendered / Bare. The photo leads; once you pick **3D** it
-  leads for you on every device until you pick a photo view again (kept in
-  this browser).
+Overview. The model is the **3D** view of the **Panel** card, beside Photo /
+Rendered / Bare, and the card shows for a model alone too. Its header says
+whose model it is: **From type** or **Own model**. With no rack-face photo
+the model leads; with a photo the photo leads, and once you pick **3D** it
+leads for you on every device until you pick a photo view again (kept in
+this browser).
 
 The viewer turns with the mouse (drag to orbit, scroll to zoom). Its
 toolbar has **Front**, **Rear** and **Top** views, **Fit** (back to the

@@ -28,19 +28,6 @@ export function previewKind(
   return "icon"
 }
 
-/**
- * Where an Overview draws an object's 3D model: beside a photo it joins the
- * photo's own view as "3D" (`panel`); with no photo it takes a sticky right
- * column of its own (`aside`); with no model, nowhere.
- */
-export function modelPlacement(obj: {
-  photo?: unknown
-  model?: unknown
-}): "aside" | "panel" | null {
-  if (!obj.model) return null
-  return obj.photo ? "panel" : "aside"
-}
-
 /** The remembered choice, or null - also when storage is unavailable. */
 export function rememberedPreview(scope: PreviewScope): PreviewKind | null {
   try {
