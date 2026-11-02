@@ -28,14 +28,18 @@ import type { ScenePayload, SceneTile } from "./world"
  * devices as plain boxes - and an upper one in "All" as a ghost: outlines
  * only, contents hidden. Each level loads its own scene, lazily and cached
  * (the same query its own 3D view uses). A click on another level makes it
- * the active one (`onGo`, with the tile clicked to fly to).
+ * the active one (`onGo`, with the tile clicked to fly to). With
+ * `ghostWalls` (cables shown) a level below draws its walls see-through,
+ * so the runs climbing its shafts read.
  */
 export function BuildingLevels({
   levels,
   onGo,
+  ghostWalls = false,
 }: {
   levels: LevelPlacement[]
   onGo: (floorId: string, tileId?: string) => void
+  ghostWalls?: boolean
 }) {
   return (
     <>
@@ -46,7 +50,7 @@ export function BuildingLevels({
             position={[lv.x, lv.y, lv.z]}
             rotation={[0, lv.rotY, 0]}
           >
-            <OtherLevel placement={lv} onGo={onGo} />
+            <OtherLevel placement={lv} onGo={onGo} ghostWalls={ghostWalls} />
           </group>
         ) : null
       )}
@@ -57,9 +61,11 @@ export function BuildingLevels({
 function OtherLevel({
   placement,
   onGo,
+  ghostWalls,
 }: {
   placement: LevelPlacement
   onGo: (floorId: string, tileId?: string) => void
+  ghostWalls: boolean
 }) {
   const scene = useScene(placement.floor.id)
   if (!scene.data) return null
@@ -68,6 +74,7 @@ function OtherLevel({
   ) : (
     <SimpleLevel
       scene={scene.data}
+      ghostWalls={ghostWalls}
       onClick={(tileId) => onGo(placement.floor.id, tileId)}
     />
   )
@@ -153,9 +160,11 @@ function tileBox(
  * on it - no ports, faceplates or doors. */
 function SimpleLevel({
   scene,
+  ghostWalls,
   onClick,
 }: {
   scene: ScenePayload
+  ghostWalls: boolean
   onClick: (tileId?: string) => void
 }) {
   const { plan } = scene
@@ -170,7 +179,12 @@ function SimpleLevel({
     <group>
       <Slab scene={scene} onClick={() => onClick()} />
       {(scene.walls ?? []).map((w) => (
-        <WallMesh key={w.id} plan={plan} wall={w} />
+        <WallMesh
+          key={w.id}
+          plan={plan}
+          wall={w}
+          mode={ghostWalls ? "ghost" : "solid"}
+        />
       ))}
       {boxes.map(({ t, box }) => (
         <mesh

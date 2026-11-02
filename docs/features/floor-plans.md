@@ -903,13 +903,31 @@ device there flies to it. **Explode** pulls the levels apart vertically,
 for seeing the runs between them. With cables on, a cable routed between
 two shown levels through a riser draws as one continuous run - this
 level's part, the climb in the shaft, the other level's part - and each
-riser's shaft shows as a faint column.
+riser's shaft shows as a faint column. With cables on, the walls of the
+levels below are drawn see-through, so the runs in the shafts read.
 
 The 3D room's payload, `GET /api/floor-plans/{id}/scene/`, carries the
 level's `elevation_mm` (as above, or null), `slab_mm` and `align_dx` /
 `align_dy` / `align_rot` under `plan`, each wall's `exterior`, and on each
 riser tile `riser_to`: the risers it reaches on floors you may view
 (`[{id, floor_plan}]`).
+
+**Try it.** `manage.py seed_building_demo --tenant <slug>` (or
+`make seed-building-demo TENANT=<slug>`) makes an opt-in demo building in
+that tenant: a location **Tower** at the site **Demo campus** (made when
+missing) with an aligned floor plan **Demo tower** of levels **B1**,
+**Ground**, **1**, **2** and **3**, 30 × 20 cells of 600 mm. Ground is
+drawn first and each other level is added on its footprint with its outer
+walls copied, as **Add floor** does. Every level has the exterior shell, a
+core (stair, lift and riser closet) and a corridor with doors, and rooms
+drawn as areas linked to Rooms; B1 a server room with six racks, a core
+switch, servers, a UPS and a cooling unit; the levels above an IDF rack
+with an access switch, access points and desks (level 3 is meeting rooms).
+Two risers stand in the core through every level, each access switch has
+two fibres down to the B1 core switch routed up the shaft, and the access
+points are cabled along the corridor trays. Run again, it makes only what
+is missing. Like the [demo floor plan](#try-it-the-demo-floor-plan) it is
+never run by bootstrap or a migration.
 
 !!! note "Upgrading to 0.19"
     Before 0.19 the floors of a building were the plans that shared a
@@ -3363,6 +3381,10 @@ since are kept. Its catalog rows (a *Building* location type, *Rack*,
 *Planned run* cable status when the tenant has no planned status, demo
 device types and roles) are made only by this command, never by bootstrap
 or a migration.
+
+For aligned floors stacked in 3D, `manage.py seed_building_demo --tenant
+<slug>` adds a five-level building next to it - see
+[Building levels](#building-levels).
 
 ## Tenancy, permissions, audit
 
