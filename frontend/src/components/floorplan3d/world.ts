@@ -120,6 +120,10 @@ export interface SceneTile {
    * or cabinet) and the reader may view it: drawn as its rack-unit box or
    * its uploaded 3D model. Optional for older cached payloads. */
   device?: SceneFloorDevice | null
+  /** A riser, and the risers it reaches on other floors the reader may
+   * view (by hand, or at the same place of an aligned floor plan). */
+  riser?: boolean
+  riser_to?: { id: string; floor_plan: string }[]
 }
 
 /** An uploaded 3D model as the room draws it (api.model_3d.effective). */
@@ -186,6 +190,8 @@ export interface SceneWall {
   thickness_mm?: number | null
   color: string
   openings: SceneWallOpening[]
+  /** An outer wall: the building's slab follows these. */
+  exterior?: boolean
 }
 
 export interface ScenePayload {
@@ -198,6 +204,13 @@ export interface ScenePayload {
     ceiling_mm: number
     background_image: string | null
     background_opacity: number
+    /** Building levels: the floor's elevation (set, else computed on an
+     * aligned floor plan; null otherwise), slab and align offset. */
+    elevation_mm?: number | null
+    slab_mm?: number
+    align_dx?: number
+    align_dy?: number
+    align_rot?: number
   }
   tiles: SceneTile[]
   trays: SceneTray[]

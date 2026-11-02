@@ -884,6 +884,33 @@ stops being a riser). A cable between any two of the levels routes through
 the shaft, and its vertical run is the difference of the two levels'
 elevations. A riser paired by hand keeps its pair, first.
 
+**3D building.** In 3D an aligned floor plan draws as one building around
+the level on screen, each level at its elevation and offset, with a slab
+under each - drawn from the **Exterior wall** outline (one closed wall as
+drawn, else the hull of the exterior walls), else the grid's box. The level
+picker carries the level mode:
+
+| Mode | Draws |
+|---|---|
+| **All** | Every level. Levels below draw simplified - slab, walls, and racks, cabinets and devices as plain boxes; levels above are ghosted: slab and wall outlines only, contents hidden. |
+| **Up to** | The levels up to the one on screen, cut at its ceiling; nothing above but a faint roofline. |
+| **Only** | The level on screen alone, as a single floor's 3D view. |
+
+The level on screen is the full, interactive room. Each other level loads
+its own scene when first shown, and stays cached. Clicking anything on
+another level makes it the level on screen; clicking a rack, cabinet or
+device there flies to it. **Explode** pulls the levels apart vertically,
+for seeing the runs between them. With cables on, a cable routed between
+two shown levels through a riser draws as one continuous run - this
+level's part, the climb in the shaft, the other level's part - and each
+riser's shaft shows as a faint column.
+
+The 3D room's payload, `GET /api/floor-plans/{id}/scene/`, carries the
+level's `elevation_mm` (as above, or null), `slab_mm` and `align_dx` /
+`align_dy` / `align_rot` under `plan`, each wall's `exterior`, and on each
+riser tile `riser_to`: the risers it reaches on floors you may view
+(`[{id, floor_plan}]`).
+
 !!! note "Upgrading to 0.19"
     Before 0.19 the floors of a building were the plans that shared a
     location. The upgrade makes one floor plan per location holding that

@@ -13,6 +13,7 @@ import type {
   Cable,
   FacePorts,
   FloorPlanLiveState,
+  FloorPlanStack,
   ImagePortMarker,
   InventoryItemRow,
   Paginated,
@@ -85,6 +86,9 @@ import { FloorDevicesLayer, isPlacedDevice } from "./floor-device-mesh"
 import { TrayJunctionMesh, TrayMesh } from "./tray-mesh"
 import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
+import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
+import { placeLevels } from "./building-math"
+import type { LevelMode } from "./building-math"
 import {
   cabinetBoxM,
   cellM,
@@ -98,6 +102,15 @@ import {
   type SceneTile,
   type SceneTray,
 } from "./world"
+
+/** The building around the active level of an aligned floor plan. */
+export interface Building3D {
+  stack: FloorPlanStack
+  mode: LevelMode
+  explode: number
+  /** Another level clicked: make it the active one, flying to `tileId`. */
+  onGoLevel: (floorId: string, tileId?: string) => void
+}
 
 /**
  * The 3D room view - the floor plan extruded into a navigable scene: racks as
@@ -140,7 +153,11 @@ export default function FloorScene3D({
   readableNames = false,
   readableIcons = true,
   muteBackground = true,
+  building = null,
 }: {
+  /** An aligned floor plan: its other levels drawn around this one, as
+   * the level mode says (building.tsx). */
+  building?: Building3D | null
   planId: string
   liveState: FloorPlanLiveState | null
   /** Tiles the plan's eyes have switched off - not drawn here either. */
@@ -206,6 +223,18 @@ export default function FloorScene3D({
 }) {
   const scene = useScene(planId)
   const qc = useQueryClient()
+  const levels = useMemo(
+    () =>
+      building
+        ? placeLevels(
+            building.stack.floors,
+            planId,
+            building.mode,
+            building.explode
+          )
+        : [],
+    [building, planId]
+  )
   // Read once here; every rack and device gets the values as props. The
   // viewer's own switch (View menu) can clear the labels off this screen.
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
@@ -654,6 +683,34 @@ export default function FloorScene3D({
   // explicit Flat pick is already the cheapest and is left alone; an explicit
   // Low/Medium is the operator's call and is respected.
   const BIG_HALL_RACKS = 40
+  // The building: the levels on show, for the camera's fit and the roofline.
+  const shownLevels = levels.filter((l) => l.look !== "hidden")
+  const buildingBounds =
+    shownLevels.length > 1
+      ? {
+          min: [
+            0,
+            Math.min(
+              ...shownLevels.map((l) => l.y - (l.floor.slab_mm ?? 300) / 1000)
+            ),
+            0,
+          ] as [number, number, number],
+          max: [
+            w,
+            Math.max(
+              ...shownLevels.map(
+                (l) => l.y + (l.floor.ceiling_mm ?? 3000) / 1000
+              )
+            ),
+            d,
+          ] as [number, number, number],
+        }
+      : null
+  const activeLevel = levels.find((l) => l.look === "active")
+  const roofLevel =
+    building?.mode === "upto" && activeLevel
+      ? (levels[levels.length - 1] ?? null)
+      : null
   const rq: RenderQuality =
     quality === "auto" && rackTiles.length > BIG_HALL_RACKS ? "low" : detected
 
@@ -788,16 +845,29 @@ export default function FloorScene3D({
       <Stage
         quality={rq}
         camera={{
-          position: [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
+          // A building opens framed whole, from further out and above.
+          position: buildingBounds
+            ? [
+                w / 2 + diag * 0.75,
+                buildingBounds.max[1] + diag * 0.55,
+                d + diag * 0.7,
+              ]
+            : [w / 2 + diag * 0.55, diag * 0.6, d + diag * 0.45],
           far: diag * 10 + 50,
         }}
         lights={roomLights(w, d, diag)}
         controls={{
-          target: [w / 2, 0.8, d / 2],
+          target: buildingBounds
+            ? [
+                w / 2,
+                (buildingBounds.min[1] + buildingBounds.max[1]) / 2,
+                d / 2,
+              ]
+            : [w / 2, 0.8, d / 2],
           maxDistance: diag * 8 + 20,
           requestRef: flyToRef,
           navRef,
-          bounds: planBounds(plan),
+          bounds: buildingBounds ?? planBounds(plan),
         }}
         // Every view setting, the racks' tints among them: a change the
         // demand frameloop doesn't see would leave the old picture.
@@ -835,6 +905,28 @@ export default function FloorScene3D({
           drawingFloor={drawingFloor}
           muted={muteBackground}
         />
+        {building && levels.length > 1 && building.mode !== "only" && (
+          <>
+            <Slab scene={data} sink />
+            <BuildingLevels levels={levels} onGo={building.onGoLevel} />
+            {roofLevel && roofLevel !== activeLevel && (
+              <Roofline placement={roofLevel} />
+            )}
+            {showCables && (
+              <RiserRuns
+                levels={levels}
+                selectedId={cableSel}
+                onSelect={(id) => {
+                  setSelection(null)
+                  setStructSel(null)
+                  setTraySel(null)
+                  setCableSel(id)
+                  onOpenCable?.(id)
+                }}
+              />
+            )}
+          </>
+        )}
         {areas.map((a) => (
           <AreaFloorMesh
             key={a.id}

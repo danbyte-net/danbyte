@@ -593,8 +593,11 @@ export function FloorPlanEditor({
     if (!tile) return
     focusedRef.current = tileParam
     setSelectedId(tile.id)
-    requestAnimationFrame(() => canvasApi.current?.focusTile(tile, 2.5))
-  }, [tileParam, tiles])
+    // In 3D (a click on another level of the building): fly to it.
+    if (view3d)
+      setFocus3d((f) => ({ kind: "tile", id: tile.id, n: (f?.n ?? 0) + 1 }))
+    else requestAnimationFrame(() => canvasApi.current?.focusTile(tile, 2.5))
+  }, [tileParam, tiles, view3d])
 
   const tracedRef = useRef<string | null>(null)
   useEffect(() => {
@@ -1328,6 +1331,16 @@ export function FloorPlanEditor({
               areas={shownShapes}
               showHint={ed.show3dHint}
               onDismissHint={() => ed.setShow3dHint(false)}
+              building={
+                aligned
+                  ? {
+                      stack: stackData,
+                      mode: levelMode,
+                      explode,
+                      onGoLevel: (to, tile) => void goLevel(to, tile),
+                    }
+                  : null
+              }
             />
           )}
           {aligned && (
