@@ -27,13 +27,16 @@ export interface CableChooserAt extends PointerMenuAt {
   ids: string[]
   /** What was clicked, e.g. a tray's name; else "N cables". */
   title?: string
+  /** List in the order given (a click's: nearest first), not lane order. */
+  ordered?: boolean
 }
 
 /**
- * Which cable? A click on a bundle, a cluster of short runs or a tray that
- * carries several opens this at the pointer: each cable with its colour,
- * label, both ends and status, in lane order, and a search box when there
- * are many. The row under the pointer (or the keyboard) shows that cable
+ * Which cable? A click where several cables meet (a bundle, a fan of
+ * stubs, lanes over each other) or on a tray that carries several opens
+ * this at the pointer: each cable once with its colour, label, both ends
+ * and status - nearest first for a click, in lane order for a tray - and a
+ * search box when there are many. The row under the pointer (or the keyboard) shows that cable
  * alone on the plan (`onPreview`); a pick traces it and opens its panel
  * (`onPick`). Arrows, Enter and Esc work as in any menu.
  */
@@ -90,8 +93,11 @@ function ChooserBody({
   onPick: (id: string) => void
 }) {
   const rows = useMemo(
-    () => cableChoices(menu.ids, cablePaths, colorBy, typePalette(cablePaths)),
-    [menu.ids, cablePaths, colorBy]
+    () =>
+      cableChoices(menu.ids, cablePaths, colorBy, typePalette(cablePaths), {
+        keepOrder: menu.ordered,
+      }),
+    [menu.ids, menu.ordered, cablePaths, colorBy]
   )
   const [query, setQuery] = useState("")
   const shown = useMemo(() => filterChoices(rows, query), [rows, query])

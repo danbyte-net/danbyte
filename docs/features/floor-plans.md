@@ -2253,9 +2253,15 @@ Cables that share a tray no longer draw on top of each other:
 
 #### Picking a cable in a bundle
 
-A click on a **bundle** (or its **N cables** name), on a cluster of short
-runs, or in View on a **tray** that carries several cables opens a small
-chooser at the pointer. It lists each cable in lane order (by label):
+A click anywhere several cables meet asks which one. Every cable drawn
+within a few pixels of the pointer counts (a little further for a finger):
+lanes, **bundles** (each of their cables), the stubs of cables with one end
+here, short-run markers, a traced cable's end dots and its own lane. So a
+click among the stubs fanning out of a device, on a bundle, or where a run
+and a stub cross opens a small chooser at the pointer, as does a click in
+View on a **tray** that carries several cables. A click's chooser lists the
+nearest cable first, then by label; a tray's lists its cables in lane order
+(by label). Each cable is listed once:
 
 - the cable's colour as a short line, its label and its status pill;
 - its ends, **A-end → B-end**, each as `device · port`;
@@ -2265,7 +2271,13 @@ Hovering a row (or reaching it with the arrows) shows that cable alone: its
 route drawn above the bundle in its own lane, the other cables dimmed.
 Click a row, or **Enter**, to trace it and open its cable panel; **Esc**
 closes the chooser. A click on a single cable opens its panel at once, as
-before.
+before. While editing the chooser is the same, and a pick selects that
+cable and opens its panel, where it can be rerouted.
+
+A click on a device's tile stays the tile's, even where a run starts inside
+it; only a cable drawn outside the tile, or a traced cable's end dot on the
+tile's edge, takes the click. Icons and clusters, drawn over the cables,
+keep their own click.
 
 A traced cable **leaves its bundles**: along every bundled stretch its own
 lane runs just beside the bundle, highlighted, and the bundle steps back,

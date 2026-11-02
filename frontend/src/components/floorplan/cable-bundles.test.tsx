@@ -395,11 +395,13 @@ describe("the plan's side of picking", () => {
   it("a click or Enter on a bundle asks which cable, at the pointer", () => {
     const onChoose = vi.fn()
     const onSelect = vi.fn()
-    const { container } = render(layer(0.6, { onChoose, onSelect }))
+    const { container } = render(
+      layer(0.6, { onChoose, onSelect, toPlan: () => [230, 148.5] })
+    )
     const bundle = container.querySelector("[data-bundle]")!
     expect(bundle.getAttribute("aria-haspopup")).toBe("menu")
-    fireEvent.pointerDown(bundle, { clientX: 50, clientY: 70 })
-    expect(onChoose).toHaveBeenCalledWith(["df9b", "9370"], expect.anything())
+    fireEvent.pointerDown(pickLayer(container), { clientX: 50, clientY: 70 })
+    expect(onChoose).toHaveBeenCalledWith(["df9b", "9370"], { x: 50, y: 70 })
     fireEvent.keyDown(bundle, { key: "Enter" })
     expect(onChoose).toHaveBeenCalledTimes(2)
     expect(onSelect).not.toHaveBeenCalled()
@@ -416,9 +418,10 @@ describe("the plan's side of picking", () => {
         onSelect,
         cablePaths: [testmap[0]],
         routes: new Map([["df9b", testmapRoutes.get("df9b")!]]),
+        toPlan: () => [230, 148.5],
       })
     )
-    fireEvent.pointerDown(container.querySelector("[data-cable='df9b']")!)
+    fireEvent.pointerDown(pickLayer(container))
     expect(onSelect).toHaveBeenCalledWith("df9b")
     expect(onChoose).not.toHaveBeenCalled()
   })
@@ -459,6 +462,21 @@ describe("the plan's side of picking", () => {
 })
 
 // ── The canvas: bundle → chooser → trace; a tray's Show cables ──────────────
+
+/** The cable layer's one pick target. */
+const pickLayer = (container: HTMLElement) =>
+  container.querySelector<SVGGElement>("[data-part=pick]")!
+
+/** A plan point (cells) as client px, from the canvas's transform (jsdom
+ * puts the svg at 0,0). */
+function clientAt(container: HTMLElement, x: number, y: number) {
+  const g = container.querySelector("g[transform]")!
+  const m = /translate\(([-\d.e]+),([-\d.e]+)\) scale\(([-\d.e]+)\)/.exec(
+    g.getAttribute("transform")!
+  )!
+  const [tx, ty, k] = m.slice(1).map(Number)
+  return { clientX: tx + x * CELL * k, clientY: ty + y * CELL * k }
+}
 
 const plan = {
   id: "p1",
@@ -521,7 +539,10 @@ describe("FloorCanvas cable chooser", () => {
     // from afar or mid range.
     expect(bundle).not.toBeNull()
     await act(async () => {
-      fireEvent.pointerDown(bundle!, { clientX: 40, clientY: 40 })
+      fireEvent.pointerDown(
+        pickLayer(container),
+        clientAt(container, 230, 148.5)
+      )
     })
     expect(rows().map((r) => r.getAttribute("data-cable-choice"))).toEqual([
       "df9b",
