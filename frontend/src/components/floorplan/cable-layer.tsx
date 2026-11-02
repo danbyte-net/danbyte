@@ -373,12 +373,14 @@ export const CableLayer = memo(function CableLayer({
   const clipId = `cable-pick-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
   // A coarse pointer reaches further: the band is a finger's pick wide,
   // so a tap beside a cable lands on the layer.
-  const [coarse] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      "matchMedia" in window &&
-      window.matchMedia("(pointer: coarse)").matches
-  )
+  const [coarse] = useState(() => {
+    if (typeof window === "undefined") return false
+    // Not in every host (jsdom has none).
+    const mm = (window as { matchMedia?: Window["matchMedia"] }).matchMedia
+    return (
+      typeof mm === "function" && mm.call(window, "(pointer: coarse)").matches
+    )
+  })
   const bandPx = coarse ? PICK_TOUCH_PX : PICK_PX
 
   /** The pick layer: a transparent band round every piece - the lanes
