@@ -287,6 +287,10 @@ class FloorPlanSceneParityTests(_PinnedScene):
                 "id": str(self.plan.id), "name": "Hall A", "grid_width": 24,
                 "grid_height": 16, "cell_mm": 600, "ceiling_mm": 3000,
                 "background_image": None, "background_opacity": 60,
+                # Background layers and building levels, added since.
+                "background_shown": True, "base_map": None, "map_opacity": 60,
+                "elevation_mm": None, "slab_mm": 300, "align_dx": 0.0,
+                "align_dy": 0.0, "align_rot": 0.0,
             },
             "tiles": [
                 {**tile, "id": str(self.rack_tile.id), "x": 2, "y": 3,

@@ -92,8 +92,21 @@ def _may_view(request, path: str) -> bool:
         return rbac.restrict_queryset(
             plans, request.user, tenant, "floorplan", "view"
         ).exists()
+    if path.startswith("floor-plans/maps/"):
+        # A base map (Site map snapshot), shared by a building's levels:
+        # any of them the user may view.
+        plans = FloorPlan.objects.filter(
+            tenant=tenant, base_map__tenant=tenant, base_map__image=path
+        )
+        return rbac.restrict_queryset(
+            plans, request.user, tenant, "floorplan", "view"
+        ).exists()
     if path.startswith("floor-plans/"):
-        plans = FloorPlan.objects.filter(tenant=tenant, background_image=path)
+        # A floor's own picture, or a base map that was a floor's picture
+        # before maps were a layer of their own (api 0256 kept its file).
+        plans = FloorPlan.objects.filter(tenant=tenant).filter(
+            Q(background_image=path) | Q(base_map__tenant=tenant, base_map__image=path)
+        )
         return rbac.restrict_queryset(
             plans, request.user, tenant, "floorplan", "view"
         ).exists()

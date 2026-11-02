@@ -177,14 +177,16 @@ def _anchored(plan):
 
 
 def _store_background(plan, upload, ext, basemap, zoom) -> None:
-    plan.background_image.save(f"site-map-{plan.pk.hex[:8]}.{ext}", upload, save=False)
-    plan.geo_basemap = basemap
-    if zoom is not None:
-        plan.geo_zoom = zoom
-    plan.geo_captured_at = timezone.now()
+    """The render as ``plan``'s base map (api/floor_plan_layers.py) - the
+    building's, on a level of an aligned floor plan - and its basemap and
+    zoom in ``state.from_map``. The floor's own picture is left alone."""
+    from .floor_plan_layers import store_map
+
+    attribution = _attribution(basemap)
+    store_map(plan, upload, ext, basemap=basemap, zoom=zoom, attribution=attribution)
     state = dict(plan.state or {})
     fm = dict(state.get("from_map") or {})
-    fm.update({"basemap": basemap, "attribution": _attribution(basemap)})
+    fm.update({"basemap": basemap, "attribution": attribution})
     if zoom is not None:
         fm["zoom"] = zoom
     state["from_map"] = fm
@@ -194,21 +196,25 @@ def _store_background(plan, upload, ext, basemap, zoom) -> None:
 # ── refresh ────────────────────────────────────────────────────────────────
 
 
-def refresh_background(request, plan) -> FloorPlan:
-    """``POST background/`` with ``map_refresh=1``: the browser's render of
-    the plan's box from the current tiles as its new background - checked
-    like a render for a new plan - and the capture date. Nothing drawn on
-    the plan moves."""
+def refresh_background(request, plan, upload_field: str = "background_image") -> FloorPlan:
+    """``POST background/`` with ``map_refresh=1`` (or ``POST map/`` on an
+    anchored plan): the browser's render of the plan's box from the current
+    tiles as its base map - checked like a render for a new plan - and the
+    capture date. Nothing drawn on the plan moves, and the floor's own
+    picture or drawing stays."""
     from audit.context import cause
 
     _anchored(plan)
-    upload = request.FILES.get("background_image")
+    field = upload_field if upload_field in request.FILES else "background_image"
+    upload = request.FILES.get(field)
     if upload is None:
-        raise ValidationError({"background_image": ["The rendered map."]})
+        raise ValidationError({upload_field: ["The rendered map."]})
     ext = check_image(upload)
     basemap = _parse_basemap(request.data.get("basemap"))
     zoom = _parse_zoom(request.data.get("zoom"))
-    with transaction.atomic(), cause("Map refreshed from the Site map"):
+    why = "Map refreshed from the Site map" if plan.base_map_id \
+        else "Map captured from the Site map"
+    with transaction.atomic(), cause(why):
         plan = FloorPlan.objects.select_for_update().get(pk=plan.pk)
         _store_background(plan, upload, ext, basemap, zoom)
         plan.save()
@@ -346,16 +352,17 @@ def shift_contents(plan, dx: int, dy: int) -> dict:
     return moved
 
 
-def pad_background(plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
-    """The old background on a canvas covering the grown grid, at the place
-    its box now has in it - nothing fetched, the new margins left empty.
-    False when there is no background or it can't be read."""
+def _pad_file(field, name: str, plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
+    """The picture in ``field`` (stretched over the old grid) on a canvas
+    covering the grown grid, at the place its box now has in it - nothing
+    fetched, the new margins left empty. False when there is none or it
+    can't be read."""
     from PIL import Image
 
-    if not plan.background_image:
+    if not field:
         return False
     try:
-        with plan.background_image.open("rb") as f:
+        with field.open("rb") as f:
             img = Image.open(f)
             img.load()
     except Exception:  # noqa: BLE001 - a missing or unreadable file stays as it is
@@ -376,10 +383,21 @@ def pad_background(plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
     buf = io.BytesIO()
     canvas.save(buf, "JPEG" if jpeg else "PNG", **({"quality": 90} if jpeg else {}))
     ext = "jpg" if jpeg else "png"
-    plan.background_image.save(
-        f"site-map-{plan.pk.hex[:8]}.{ext}", ContentFile(buf.getvalue()), save=False
-    )
+    field.save(f"{name}.{ext}", ContentFile(buf.getvalue()), save=False)
     return True
+
+
+def pad_background(plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
+    """Both layers padded to the grown grid: the base map (the plan's own by
+    now - Expand detaches a shared one first) and the floor's picture.
+    True when the map was."""
+    padded = False
+    row = plan.base_map if plan.base_map_id else None
+    if row is not None and _pad_file(row.image, "site-map", plan, old_w, old_h, dx, dy):
+        row.save()
+        padded = True
+    _pad_file(plan.background_image, f"floor-{plan.pk.hex[:8]}", plan, old_w, old_h, dx, dy)
+    return padded
 
 
 def expand(view, request, plan):
@@ -430,9 +448,17 @@ def expand(view, request, plan):
             ]})
         old_w, old_h = plan.grid_width, plan.grid_height
         with cause(f"Expanded {plan.name} from the Site map"[:255]):
+            from .floor_plan_layers import detach_map
+
             moved = shift_contents(plan, left, top)
             plan.grid_width, plan.grid_height = gw, gh
             set_anchor(plan, snapped, basemap=plan.geo_basemap)
+            # The other levels keep the box they had: this level takes a
+            # map of its own before it grows.
+            detach_map(plan)
+            if plan.base_map_id:
+                plan.base_map.bbox = list(snapped)
+                plan.base_map.save()
             if upload is not None:
                 _store_background(plan, upload, ext, basemap, zoom)
                 background = "rendered"

@@ -404,9 +404,14 @@ def create_from_map(view, request):
             plan, [fr.south, fr.west, fr.north, fr.east], zoom=zoom,
             basemap=basemap if upload is not None else "", captured=upload is not None,
         )
-        if upload is not None:
-            plan.background_image.save(f"site-map-{plan.pk.hex[:8]}.{ext}", upload, save=False)
         plan.save()
+        if upload is not None:
+            # The render is the plan's base map; its own picture stays free
+            # for a floor drawing (api/floor_plan_layers.py).
+            from .floor_plan_layers import store_map
+
+            store_map(plan, upload, ext, basemap=basemap, zoom=zoom,
+                      attribution=attribution)
         pairs = []
         for outline in _visible_outlines(request, tenant, site):
             pts = outline_cells(outline.points, fr)

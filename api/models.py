@@ -9504,6 +9504,46 @@ class FloorPlanStack(TimestampedModel, TaggableMixin):
         super().save(*args, **kwargs)
 
 
+def _map_upload_to(instance, filename: str) -> str:
+    """Map snapshots live in ``floor-plans/maps/`` under a random name: a
+    new render never reuses a cached URL."""
+    ext = os.path.splitext(filename)[1].lower()[:8] or ".png"
+    return f"floor-plans/maps/{uuid.uuid4().hex}{ext}"
+
+
+class FloorPlanMap(TimestampedModel):
+    """A Site map snapshot under one or more floors: the base layer
+    (api/floor_plan_layers.py). The floors of one building (the levels of an
+    aligned floor plan) share one row, so the picture is stored once and
+    belongs to the building, not to whichever level is the ground; a
+    single floor has its own. ``bbox`` is the box rendered, the box of the
+    geo anchor of every floor that shows it. The floor's own picture or CAD
+    drawing is drawn over it."""
+
+    BASEMAPS = [("map", "Map"), ("sat", "Satellite")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="floor_plan_maps"
+    )
+    site = models.ForeignKey(
+        Site, on_delete=models.CASCADE, related_name="floor_plan_maps"
+    )
+    image = models.ImageField(upload_to=_map_upload_to, max_length=255)
+    # [south, west, north, east] in degrees.
+    bbox = models.JSONField(null=True, blank=True)
+    zoom = models.PositiveSmallIntegerField(null=True, blank=True)
+    basemap = models.CharField(max_length=8, choices=BASEMAPS, default="map")
+    attribution = models.CharField(max_length=512, blank=True, default="")
+    captured_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-captured_at"]
+
+    def __str__(self) -> str:
+        return f"Map of {self.site}" if self.site_id else "Map"
+
+
 class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """One floor of a floor plan: the physical layout of a Location as a grid
     of placed tiles, optionally over an uploaded blueprint image. ``stack``
@@ -9624,6 +9664,21 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         choices=[("", "None"), ("map", "Map"), ("sat", "Satellite")],
     )
     geo_captured_at = models.DateTimeField(null=True, blank=True)
+    # Two background layers, drawn in this order: the base map (a Site map
+    # snapshot, shared by the levels of one building) and the floor's own
+    # picture (``background_image``) or CAD drawing over it. ``map_shown``
+    # null is the default: shown, except on a basement (a level below
+    # ground of an aligned floor plan); True or False is set by hand.
+    base_map = models.ForeignKey(
+        FloorPlanMap, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="floors",
+    )
+    map_opacity = models.PositiveSmallIntegerField(
+        default=60, db_default=60, validators=[MaxValueValidator(100)],
+        help_text="Percent.",
+    )
+    map_shown = models.BooleanField(null=True, blank=True)
+    background_shown = models.BooleanField(default=True, db_default=True)
 
     class Meta:
         ordering = ["name"]
