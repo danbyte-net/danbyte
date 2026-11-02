@@ -145,6 +145,7 @@ from routing.viewsets import (
     CommunityViewSet,
     EIGRPInstanceViewSet,
     EIGRPInterfaceViewSet,
+    EthernetSegmentMemberViewSet,
     EthernetSegmentViewSet,
     ISISInstanceViewSet,
     ISISInterfaceViewSet,
@@ -459,6 +460,8 @@ router.register(r"routing/eigrp-instances", EIGRPInstanceViewSet, basename="eigr
 router.register(r"routing/eigrp-interfaces", EIGRPInterfaceViewSet, basename="eigrpinterface")
 router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
 router.register(r"routing/ethernet-segments", EthernetSegmentViewSet, basename="ethernetsegment")
+router.register(r"routing/ethernet-segment-members", EthernetSegmentMemberViewSet,
+                basename="ethernetsegmentmember")
 router.register(r"routing/ldp-instances", LDPInstanceViewSet, basename="ldpinstance")
 router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")

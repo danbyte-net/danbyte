@@ -368,11 +368,11 @@ export function EthernetSegmentForm({
           </div>
         )}
         <FormText
-          label="DF preference"
+          label="Default DF preference"
           type="number"
           value={dfPreference}
           onChange={setDfPreference}
-          info="Designated-forwarder election preference; higher wins."
+          info="Designated-forwarder election preference; higher wins. Each member port may set its own on the segment page."
           error={fieldErrors.df_preference}
         />
       </FormSection>

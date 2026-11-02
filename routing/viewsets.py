@@ -41,6 +41,7 @@ from .models import (
     EIGRPInstance,
     EIGRPInterface,
     EthernetSegment,
+    EthernetSegmentMember,
     ISISInstance,
     ISISInterface,
     LDPInstance,
@@ -76,6 +77,7 @@ from .serializers import (
     CommunitySerializer,
     EIGRPInstanceSerializer,
     EIGRPInterfaceSerializer,
+    EthernetSegmentMemberSerializer,
     EthernetSegmentSerializer,
     ISISInstanceSerializer,
     ISISInterfaceSerializer,
@@ -927,7 +929,9 @@ class EthernetSegmentViewSet(_CatalogViewSet):
         )
 
     def get_queryset(self):
-        qs = super().get_queryset().prefetch_related("interfaces__device")
+        qs = super().get_queryset().prefetch_related(
+            "interfaces__device", "members__interface__device"
+        )
         if not self.request:
             return qs
         p = self.request.query_params
@@ -938,6 +942,27 @@ class EthernetSegmentViewSet(_CatalogViewSet):
         if iface:
             qs = qs.filter(interfaces__id=iface)
         return qs.distinct()
+
+
+class EthernetSegmentMemberViewSet(_RuleViewSet):
+    """One port in a segment and its own DF preference. Filter with
+    ``?segment=``, ``?device=``, ``?interface=``."""
+
+    parent = "segment"
+    queryset = EthernetSegmentMember.objects.select_related(
+        "segment", "interface__device"
+    ).order_by("segment__name", "interface__device__name", "interface__name")
+    serializer_class = EthernetSegmentMemberSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            p = self.request.query_params
+            if p.get("device"):
+                qs = qs.filter(interface__device_id=p["device"])
+            if p.get("interface"):
+                qs = qs.filter(interface_id=p["interface"])
+        return qs
 
 
 class LDPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):

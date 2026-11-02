@@ -119,7 +119,8 @@ session → group → instance.
 | `VTEP` | `device` OneToOne, `source_interface` (same device), `source_ip`, `anycast_ip` (assigned to the device), `anycast_gateway_mac` (normalised lower-case), `arp_suppression`, `status` (`vtep`), `description`, `extra` | `device` |
 | `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
 
-| `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference`, `interfaces` M2M → `api.Interface` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
+| `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference` (the default for every member), `interfaces` M2M → `api.Interface` through `EthernetSegmentMember` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
+| `EthernetSegmentMember` | the through row: `segment`, `interface`, `df_preference` (null = the segment's). It sits on the table the plain M2M created (`routing_ethernetsegment_interfaces`, adopted in `routing/0016` without a copy) and keeps that table's bigint `id` rather than a UUID, so the upgrade rewrites nothing. Site-scoped `interface__device__site`; audited | `(segment, interface)` |
 | `api.Interface.evpn_mh_uplink` | `evpn mh uplink` on a fabric-facing port of a multihomed leaf | - |
 
 ## MPLS
@@ -151,8 +152,9 @@ instance's `distance` as one object or `None`, a session's
 it, so print it once), and `used_bfd_profiles` (only the profiles this device
 names; `bfd_profiles` stays the whole catalog). Multihoming and MPLS:
 `by_interface[<port>].es` (the segment this port is in, with every member
-on every device), `by_interface[<port>].evpn_mh_uplink`,
-`ethernet_segments` + `es_count` per device, `ldp` (one block or `None`),
+on every device; `df_preference` there is the port's effective value and
+`segment_df_preference` the segment's), `by_interface[<port>].evpn_mh_uplink`,
+`ethernet_segments` (with `local_df_preference`) + `es_count` per device, `ldp` (one block or `None`),
 and a per-VRF BGP instance's `vpn` object or `None`. `keychains[].placeholder`
 is `<keychain:NAME>`, the contract form a push tool substitutes
 (`routing.render.KEYCHAIN_PLACEHOLDER_RE`). It is registered through

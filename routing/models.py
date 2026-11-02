@@ -1795,10 +1795,12 @@ class EthernetSegment(_Catalog):
     #: Type-3: ``evpn mh es-id N`` and ``evpn mh es-sys-mac``.
     es_id = models.PositiveIntegerField(null=True, blank=True)
     sys_mac = models.CharField(max_length=17, blank=True, default="")
-    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment.
+    #: ``evpn mh es-df-pref``: who forwards BUM traffic for the segment. The
+    #: default for every member; a member may set its own.
     df_preference = models.PositiveIntegerField(null=True, blank=True)
     interfaces = models.ManyToManyField(
-        "api.Interface", blank=True, related_name="ethernet_segments"
+        "api.Interface", blank=True, related_name="ethernet_segments",
+        through="EthernetSegmentMember",
     )
 
     class Meta(_Catalog.Meta):
@@ -1826,6 +1828,45 @@ class EthernetSegment(_Catalog):
             )
         if self.es_id is not None and not 1 <= self.es_id <= 16777215:
             raise ValidationError({"es_id": "1 to 16777215."})
+
+
+class EthernetSegmentMember(models.Model):
+    """One port in a segment, with its own DF preference - leaf A and leaf B
+    of one server usually want different ``es-df-pref`` values.
+
+    This is the through model over the table the plain many-to-many created
+    (``routing_ethernetsegment_interfaces``), adopted by migration 0016
+    without copying a row. It keeps that table's integer ``id`` rather than
+    the UUID key domain models use: changing the key would rebuild the table
+    on every upgrade, and nothing outside the routing API names a membership
+    by its id.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    segment = models.ForeignKey(
+        EthernetSegment, on_delete=models.CASCADE, related_name="members",
+        db_column="ethernetsegment_id",
+    )
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.CASCADE,
+        related_name="ethernet_segment_memberships",
+    )
+    #: This port's ``es-df-pref``; null = the segment's.
+    df_preference = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "routing_ethernetsegment_interfaces"
+        ordering = ["segment__name", "interface__device__name", "interface__name"]
+        unique_together = [("segment", "interface")]
+
+    def __str__(self) -> str:
+        return f"{self.segment.name}: {self.interface}"
+
+    @property
+    def df_preference_effective(self):
+        return self.df_preference if self.df_preference is not None else (
+            self.segment.df_preference
+        )
 
 
 # ─── MPLS / LDP ──────────────────────────────────────────────────────────────

@@ -581,10 +581,15 @@ def es_dict(seg: EthernetSegment) -> dict:
         "esi": seg.esi or None,
         "es_id": seg.es_id,
         "sys_mac": seg.sys_mac or None,
+        # The segment's default; each member says what its port runs with.
         "df_preference": seg.df_preference,
         "members": sorted(
-            ({"device": i.device.name, "interface": i.name}
-             for i in seg.interfaces.all()),
+            ({"device": m.interface.device.name, "interface": m.interface.name,
+              "df_preference": m.df_preference,
+              "df_preference_effective": (
+                  m.df_preference if m.df_preference is not None else seg.df_preference
+              )}
+             for m in seg.members.all()),
             key=lambda m: (natural_key(m["device"]), natural_key(m["interface"])),
         ),
         "description": seg.description or "",
@@ -838,12 +843,22 @@ def routing_context(device) -> dict:
     es_by_iface: dict[str, dict] = {}
     for seg in () if is_vm else (
         EthernetSegment.objects.filter(interfaces__device=device)
-        .prefetch_related("interfaces__device").distinct()
+        .prefetch_related("members__interface__device").distinct()
     ):
         row = es_dict(seg)
-        for iface in seg.interfaces.all():
-            if iface.device_id == device.id:
-                es_by_iface[iface.name] = row
+        for m in seg.members.all():
+            if m.interface.device_id == device.id:
+                # This port's view of the segment: `df_preference` is what the
+                # port runs with (its own, else the segment's), and
+                # `segment_df_preference` the segment's default.
+                es_by_iface[m.interface.name] = {
+                    **row,
+                    "df_preference": (
+                        m.df_preference if m.df_preference is not None
+                        else seg.df_preference
+                    ),
+                    "segment_df_preference": seg.df_preference,
+                }
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
         rows = fhrp.get(iface.name, [])
@@ -890,7 +905,14 @@ def routing_context(device) -> dict:
         # The segments this leaf is part of, once each, and how many - a
         # device with any is a multihomed leaf and turns `evpn mh` on.
         "ethernet_segments": sorted(
-            {r["name"]: r for r in es_by_iface.values()}.values(),
+            {
+                r["name"]: {**r, "df_preference": r["segment_df_preference"],
+                            "local_df_preference": r["df_preference"]}
+                # The first port (by name) speaks for the segment on this leaf.
+                for _, r in sorted(
+                    es_by_iface.items(), key=lambda kv: natural_key(kv[0]), reverse=True
+                )
+            }.values(),
             key=lambda r: r["name"],
         ),
         "es_count": len({r["name"] for r in es_by_iface.values()}),

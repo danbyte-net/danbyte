@@ -366,18 +366,32 @@ A server plugged into two leaves is one **Ethernet segment**: the LAG on
 each leaf, sharing one identity. **Routing → Ethernet segments** is that
 catalog. A segment is named either by a full ten-octet **ESI** (type 0) or
 by an **es-id** and a **system MAC** (type 3, which is what FRR's `evpn mh
-es-id` / `es-sys-mac` take), carries the **DF preference** that decides who
-forwards BUM traffic, and lists its **member interfaces** - on different
-devices, which is the point: the segment page is where a reviewer sees that
-`leaf1 bond1` and `leaf2 bond1` are the same server. An interface's page
-shows the segment it is in.
+es-id` / `es-sys-mac` take), carries the **default DF preference** that
+decides who forwards BUM traffic, and lists its **member interfaces** - on
+different devices, which is the point: the segment page is where a reviewer
+sees that `leaf1 bond1` and `leaf2 bond1` are the same server. An interface's
+page shows the segment it is in and the DF preference its port runs with.
+
+Each member may carry its **own DF preference** (`es-df-pref` differs per
+leaf when one leaf should be the designated forwarder): the **Interfaces**
+tab of a segment edits it in place, and a blank one shows the segment's
+default, muted. The effective value is the member's own, else the
+segment's. Changing the segment's member list keeps the members that stay,
+with their own values; a port added starts on the default. A port sits in
+one segment: adding one another segment holds is refused.
 
 Each fabric-facing port on a multihomed leaf is marked **EVPN MH uplink**
 on the interface form (`evpn mh uplink`): FRR watches those to decide
 whether the leaf has lost the fabric and should stop forwarding for its
 segments. The render hands a template `by_interface[port].es`,
 `by_interface[port].evpn_mh_uplink`, the device's `ethernet_segments` and
-`es_count` - a device with any segment is a multihomed leaf.
+`es_count` - a device with any segment is a multihomed leaf. In
+`by_interface[port].es`, `df_preference` is **this port's effective value**
+(so `evpn mh es-df-pref {{ es.df_preference }}` prints the per-leaf value
+with no template change) and `segment_df_preference` the segment's default;
+each entry of `es.members` carries `df_preference` (its own) and
+`df_preference_effective`, and each entry of `ethernet_segments` carries
+`local_df_preference` beside the segment's `df_preference`.
 
 ## MPLS: LDP and L3VPN
 
@@ -699,6 +713,8 @@ delete's words (`In use: 2 BGP sessions.`).
 | `/api/routing/eigrp-instances/`, `…/eigrp-interfaces/` | EIGRP instances (interfaces and redistributions nested; filter by `device`, `virtual_machine`, `vrf`, `site`, `status`) and their enrolled interfaces (`?instance=`, `?interface=`). |
 | `/api/routing/vteps/` | One per device, VNI memberships nested; filter by `device`, `site`, `status`, `l2vpn`. |
 | `/api/routing/vtep-memberships/` | The VNI rows on their own (`?vtep=`, `?l2vpn=`). |
+| `/api/routing/ethernet-segments/` | Segments; `interface_ids` sets the members (kept members keep their own DF preference), `members` reads `[{id, interface, device, df_preference, df_preference_effective}]`, and `member_df_preferences: {interface_id: n \| null}` sets members' own values in the same call. |
+| `/api/routing/ethernet-segment-members/` | One member per row (`?segment=`, `?device=`, `?interface=`); `PATCH` its `df_preference`. |
 | `/api/l2vpns/` | Gains `vrf`/`vrf_id` and `vtep_count`; `?vxlan=1` keeps the VXLAN types, `?vrf=` the L3VNIs of a VRF, `?vlan=` those terminating on a VLAN. |
 
 Child rows - address families, OSPF, IS-IS and EIGRP interface rows, VTEP

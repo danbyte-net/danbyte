@@ -59,6 +59,7 @@ from .models import (
     EIGRPInstance,
     EIGRPInterface,
     EthernetSegment,
+    EthernetSegmentMember,
     ISISInstance,
     ISISInterface,
     LDPInstance,
@@ -1561,6 +1562,67 @@ class VTEPSerializer(
 # ─── EVPN multihoming ────────────────────────────────────────────────────────
 
 
+class EthernetSegmentMemberSerializer(NumIdModelSerializer):
+    """One port in a segment and its own DF preference. On its own endpoint
+    a member is created with ``segment_id`` + ``interface_id``; nested in a
+    segment it is read-only (``interface_ids`` and
+    ``member_df_preferences`` write it)."""
+
+    segment = serializers.SerializerMethodField()
+    segment_id = TenantScopedPrimaryKeyRelatedField(
+        source="segment", queryset=EthernetSegment.objects.all(),
+        write_only=True, required=False,
+    )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False,
+    )
+    device = serializers.SerializerMethodField()
+    df_preference_effective = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_segment(self, obj):
+        return {"id": str(obj.segment_id), "name": obj.segment.name,
+                "df_preference": obj.segment.df_preference}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_device(self, obj):
+        d = obj.interface.device
+        return {"id": str(d.id), "name": d.name}
+
+    def get_df_preference_effective(self, obj) -> int | None:
+        return obj.df_preference_effective
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if self.instance is None and not (attrs.get("segment") and attrs.get("interface")):
+            raise serializers.ValidationError(
+                {"interface_id": "A member needs a segment and an interface."}
+            )
+        if self.instance is not None:
+            for f in ("segment", "interface"):
+                if f in attrs and attrs[f] != getattr(self.instance, f):
+                    raise serializers.ValidationError(
+                        {f"{f}_id": "Move a port by removing it and adding it again."}
+                    )
+        iface = attrs.get("interface")
+        if self.instance is None and iface is not None:
+            other = EthernetSegmentMember.objects.filter(interface=iface).first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"interface_id": f"{iface.name} is already in {other.segment.name}."}
+                )
+        return attrs
+
+    class Meta:
+        model = EthernetSegmentMember
+        fields = ["id", "segment", "segment_id", "interface", "interface_id", "device",
+                  "df_preference", "df_preference_effective"]
+        read_only_fields = ["id"]
+        validators = []
+
+
 class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
     """A segment and the LAG interfaces, on different leaves, that share it.
 
@@ -1577,9 +1639,79 @@ class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdMo
         write_only=True, required=False, many=True,
     )
     device_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    #: ``{interface_id: int | null}`` - set members' own DF preference in the
+    #: same call (a port not in the segment is refused).
+    member_df_preferences = serializers.DictField(
+        child=serializers.IntegerField(min_value=0, allow_null=True),
+        write_only=True, required=False,
+    )
 
     def get_device_count(self, obj) -> int:
         return len({i.device_id for i in obj.interfaces.all()})
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_members(self, obj):
+        rows = sorted(
+            obj.members.all(),
+            key=lambda m: (m.interface.device.name, m.interface.name),
+        )
+        return [
+            {
+                "id": m.id,
+                "interface": {"id": str(m.interface_id), "name": m.interface.name},
+                "device": {"id": str(m.interface.device_id), "name": m.interface.device.name},
+                "df_preference": m.df_preference,
+                "df_preference_effective": (
+                    m.df_preference if m.df_preference is not None else obj.df_preference
+                ),
+            }
+            for m in rows
+        ]
+
+    def _check_free(self, interfaces):
+        """A port sits in one segment: adding one another segment holds is
+        refused (one already a member here stays)."""
+        mine = self.instance.pk if self.instance is not None else None
+        taken = (
+            EthernetSegmentMember.objects.filter(interface__in=interfaces)
+            .exclude(segment_id=mine).select_related("segment", "interface")
+        )
+        for m in taken:
+            raise serializers.ValidationError(
+                {"interface_ids": f"{m.interface.name} is already in {m.segment.name}."}
+            )
+
+    def _set_preferences(self, seg, prefs):
+        if not prefs:
+            return
+        rows = {str(m.interface_id): m for m in seg.members.all()}
+        missing = [k for k in prefs if str(k) not in rows]
+        if missing:
+            raise serializers.ValidationError(
+                {"member_df_preferences": "Only a port in the segment takes a DF preference."}
+            )
+        for key, value in prefs.items():
+            m = rows[str(key)]
+            if m.df_preference != value:
+                m.df_preference = value
+                m.save(update_fields=["df_preference"])
+
+    def create(self, validated_data):
+        prefs = validated_data.pop("member_df_preferences", None)
+        with transaction.atomic():
+            seg = super().create(validated_data)
+            self._set_preferences(seg, prefs)
+        return seg
+
+    def update(self, instance, validated_data):
+        prefs = validated_data.pop("member_df_preferences", None)
+        with transaction.atomic():
+            # `set()` keeps the members that stay, so their own DF preference
+            # survives an `interface_ids` write; new ones start without one.
+            seg = super().update(instance, validated_data)
+            self._set_preferences(seg, prefs)
+        return seg
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1595,12 +1727,15 @@ class EthernetSegmentSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdMo
         for f in ("esi", "sys_mac"):
             if f in attrs:
                 attrs[f] = getattr(probe, f)
+        if "interfaces" in attrs:
+            self._check_free(attrs["interfaces"])
         return attrs
 
     class Meta:
         model = EthernetSegment
         fields = ["id", "numid", "name", "esi", "es_id", "sys_mac", "df_preference",
-                  "interfaces", "interface_ids", "device_count", "description",
+                  "interfaces", "interface_ids", "members", "member_df_preferences",
+                  "device_count", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "device_count", "created_at", "updated_at"]
 

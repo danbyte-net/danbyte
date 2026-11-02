@@ -659,6 +659,10 @@ A few rules keep templates short:
 - **The anycast gateway comes with its neighbour discovery.** `r.gateway` is
   the address with its mask; `r.nd` carries `ra`, `ra_interval` and the
   subnet `prefix` from the gateway's FHRP group, for the `ipv6 nd` lines.
+- **A segment's DF preference is the port's.** `r.es.df_preference` is what
+  this leaf's port runs with - the member's own value, else the segment's
+  default (`r.es.segment_df_preference`) - so the same `es-df-pref` line
+  prints a different value on leaf A and leaf B when their members differ.
 
 ## Reading the two side by side
 

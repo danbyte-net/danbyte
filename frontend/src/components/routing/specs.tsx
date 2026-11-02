@@ -224,7 +224,7 @@ export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
           },
         ]),
     {
-      label: "DF preference",
+      label: "Default DF preference",
       value:
         r.df_preference != null ? (
           <span className="num">{r.df_preference}</span>
@@ -239,21 +239,31 @@ export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
       value: "interfaces",
       label: "Interfaces",
       count: (r) => r.interfaces.length,
-      render: (r) =>
-        r.interfaces.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No member interfaces yet - edit the segment to add some.
-          </p>
-        ) : (
-          <DataTable
-            data={r.interfaces}
-            columns={segmentMemberColumns()}
-            tableId="ethernet-segment-interfaces"
-            enableExport={false}
-          />
-        ),
+      render: (r) => <SegmentMembers segment={r} />,
     },
   ],
+}
+
+function SegmentMembers({ segment: r }: { segment: EthernetSegment }) {
+  const { canDo } = useMe()
+  if (r.members.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No member interfaces yet - edit the segment to add some.
+      </p>
+    )
+  return (
+    <DataTable
+      data={r.members}
+      columns={segmentMemberColumns({
+        segmentDefault: r.df_preference,
+        canEdit: canDo("ethernetsegmentmember", "change"),
+        invalidate: ["ethernet-segment", r.id],
+      })}
+      tableId="ethernet-segment-interfaces"
+      enableExport={false}
+    />
+  )
 }
 
 export const communityList: RoutingListSpec<Community> = {

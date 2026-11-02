@@ -6637,14 +6637,26 @@ export interface EthernetSegment {
   esi: string
   es_id: number | null
   sys_mac: string
+  /** The default `es-df-pref`; a member may set its own. */
   df_preference: number | null
   interfaces: { id: string; name: string; device: DeviceMini }[]
+  members: EthernetSegmentMember[]
   device_count: number
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** One port of a segment (`/api/routing/ethernet-segment-members/`). */
+export interface EthernetSegmentMember {
+  id: number
+  interface: { id: string; name: string }
+  device: { id: string; name: string }
+  /** This port's own value; null = the segment's. */
+  df_preference: number | null
+  df_preference_effective: number | null
 }
 
 /** `mpls ldp` on one device. */
