@@ -1607,6 +1607,8 @@ function DeviceFrontPanel({
   const [lead, setLead] = usePreviewKind("device", {
     photo: hasTypeImage,
     model,
+    // The Rendered schematic is a view beside the model too.
+    other: device.interface_count > 0,
   })
   const setView = (v: PanelView) => {
     setLead(v === "model" ? "model" : "photo")

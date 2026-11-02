@@ -53,14 +53,24 @@ export function rememberPreview(scope: PreviewScope, kind: PreviewKind) {
  */
 export function usePreviewKind(
   scope: PreviewScope,
-  obj: { photo?: unknown; model?: unknown }
+  obj: { photo?: unknown; model?: unknown; other?: unknown }
 ): [PreviewKind, (kind: PreviewKind) => void] {
   const [chosen, setChosen] = useState<PreviewKind | null>(() =>
     rememberedPreview(scope)
   )
-  const kind = previewKind(obj, chosen)
+  // Picked on this page: wins whenever the model has another view beside it
+  // (a photo, or `other` - e.g. the Panel's Rendered schematic), so a click
+  // on that view is never overruled by the default.
+  const [picked, setPicked] = useState<PreviewKind | null>(null)
+  const kind =
+    picked && obj.model && (obj.photo || obj.other)
+      ? picked
+      : previewKind(obj, chosen)
   const set = (k: PreviewKind) => {
+    setPicked(k)
     setChosen(k)
+    // Only a photo-vs-model choice is carried to other objects: without a
+    // photo the model stays the default lead.
     if (obj.photo && obj.model) rememberPreview(scope, k)
   }
   return [kind, set]

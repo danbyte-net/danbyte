@@ -64,4 +64,20 @@ describe("remembered choice", () => {
     expect(one.result.current[0]).toBe("model")
     expect(rememberedPreview("panel")).toBeNull()
   })
+
+  it("lets a pick of another view beat the model default, without remembering it", () => {
+    window.localStorage.clear()
+    const panel = renderHook(() =>
+      usePreviewKind("device", { model: {}, other: true })
+    )
+    // No photo: the model leads...
+    expect(panel.result.current[0]).toBe("model")
+    // ...until the Rendered view is picked on the page.
+    act(() => panel.result.current[1]("photo"))
+    expect(panel.result.current[0]).toBe("photo")
+    act(() => panel.result.current[1]("model"))
+    expect(panel.result.current[0]).toBe("model")
+    // Not carried to other devices: they still lead with their model.
+    expect(rememberedPreview("device")).toBeNull()
+  })
 })
