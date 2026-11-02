@@ -3806,7 +3806,11 @@ def _device_rows(*, one: bool = False, counts: bool = False):
         # every address of the tenant for each row (#455).
         qs = qs.annotate(ip_count_annotated=ip_usage.address_count("device", one=True))
     if counts:
-        qs = qs.select_related("virtual_chassis").annotate(**detail_counts.device_annotations())
+        # The backing VM (an intended router VM) rides the same row: a reverse
+        # one-to-one join instead of a query of its own.
+        qs = qs.select_related("virtual_chassis", "backing_vm").annotate(
+            **detail_counts.device_annotations()
+        )
     # One row: no ordering to compile or plan.
     return qs.order_by() if one else qs.all().order_by(NATURAL_NAME)
 

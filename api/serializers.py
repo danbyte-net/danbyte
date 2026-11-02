@@ -3937,8 +3937,11 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     @extend_schema_field(OpenApiTypes.OBJECT)
     @detail_only(None)
     def get_backing_vm(self, obj):
-        vm = VirtualMachine.objects.filter(represents_device=obj).first()
-        if vm is None:
+        # Joined on the detail read (_device_rows counts=True); a query
+        # otherwise.
+        try:
+            vm = obj.backing_vm
+        except VirtualMachine.DoesNotExist:
             return None
         from .visible_ips import visible_children
 
