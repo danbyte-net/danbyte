@@ -77,6 +77,8 @@ import {
 import { MuteFilter, muteFilterId } from "./background-look"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
 import { layoutPlanLabels } from "./plan-label-pass"
+import { PlanCalloutsLayer } from "./plan-callouts-layer"
+import type { CalloutLine } from "./plan-callouts"
 import { LABEL_FONT_PX, LABEL_REPEAT_PX, CHIP_FONT_PX } from "./plan-labels"
 import {
   LANE_MIN_PX,
@@ -85,7 +87,7 @@ import {
   laneOrder,
   layoutCables,
 } from "./cable-draw"
-import type { ObjectSize, ShapeOf } from "./readable"
+import type { CalloutMode, ObjectSize, ShapeOf } from "./readable"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
@@ -254,6 +256,13 @@ export interface FloorCanvasProps {
   /** Display > Icons when zoomed out: a device, rack or cabinet too small
    * on screen draws as its icon tile (readable.ts). */
   iconTiles?: boolean
+  /** Display > Callouts: Auto names a tile whose name will not sit
+   * cleanly by it in a box off to the side, a leader back to it
+   * (plan-callouts.ts); Off leaves such a name hidden. */
+  callouts?: CalloutMode
+  /** The lines under each tile's callout name (its panel layout's callout
+   * fields), by tile id. */
+  calloutLines?: ReadonlyMap<string, readonly CalloutLine[]>
   /** Display > Muted background: the background image greyed and pushed
    * toward the page (background-look.tsx), so the plan reads over it. */
   muteBackground?: boolean
@@ -556,6 +565,8 @@ export function FloorCanvas({
   photoOutlines = false,
   objectSize = "real",
   iconTiles = true,
+  callouts = "off",
+  calloutLines,
   muteBackground = false,
   mode = "layout",
   trays = [],
@@ -689,6 +700,8 @@ export function FloorCanvas({
     if (selectedId) s.add(selectedId)
     return s
   }, [multiSelectedIds, selectedId])
+  // The tile whose callout is hovered: lit on the plan with it.
+  const [calloutHot, setCalloutHot] = useState<string | null>(null)
   // Settled: the view once a pan or zoom stops - the label pass and the
   // icons' layout run on it, not on every frame.
   const settledView = useSettled(
@@ -1024,6 +1037,7 @@ export function FloorCanvas({
       })),
       planLabels: labels,
       cellMm: plan.cell_mm,
+      callouts: callouts === "auto" ? { lines: calloutLines } : null,
       cables: cablesShown
         ? {
             paths: cablePaths,
@@ -1070,6 +1084,8 @@ export function FloorCanvas({
     bundleCables,
     showCableLabels,
     cableFocus,
+    callouts,
+    calloutLines,
   ])
   const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
   const selectedTile =
@@ -1290,6 +1306,29 @@ export function FloorCanvas({
       onSelectCable?.(null)
       onSelectShape?.(null)
     }
+  }
+
+  /** A press on a tile's callout: what a click on the tile does, but a
+   * drag - the callout never moves its tile. */
+  const pressCallout = (id: string, e: React.PointerEvent) => {
+    const tile = tileById.get(id)
+    if (!tile) return
+    if (tilePick) {
+      tilePick.onPick(tile)
+      return
+    }
+    if (mode === "cable" || mode === "structure" || editing) return
+    if (!editable) {
+      if (onClickTile) onClickTile(tile)
+      else onOpenTile?.(tile)
+      return
+    }
+    if ((e.ctrlKey || e.metaKey || e.shiftKey) && onToggleSelect) {
+      onToggleSelect(tile.id)
+      return
+    }
+    onSelect?.(tile.id)
+    onSelectShape?.(null)
   }
 
   const handleTileDown = (tile: FloorPlanTile, e: React.PointerEvent) => {
@@ -1893,7 +1932,8 @@ export function FloorCanvas({
             iconTile={iconIds.has(tile.id)}
             highlighted={
               !!highlightTileIds?.has(tile.id) ||
-              !!tilePick?.picked.has(tile.id)
+              !!tilePick?.picked.has(tile.id) ||
+              calloutHot === tile.id
             }
             onPointerDown={(e) => handleTileDown(tile, e)}
             onDoubleClick={() => {
@@ -1946,7 +1986,9 @@ export function FloorCanvas({
           colorBy={colorBy}
           figures={figures?.get(tile.id)}
           highlighted={
-            !!highlightTileIds?.has(tile.id) || !!tilePick?.picked.has(tile.id)
+            !!highlightTileIds?.has(tile.id) ||
+            !!tilePick?.picked.has(tile.id) ||
+            calloutHot === tile.id
           }
           dimmed={!!dimTileIds?.has(tile.id)}
           onPointerDown={(e) => handleTileDown(tile, e)}
@@ -2475,6 +2517,20 @@ export function FloorCanvas({
               runs, trays' names, a focused cable's ends, Readable's tile
               names - one pass, the cables first (plan-label-pass.ts). */}
           <PlanLabelsLayer labels={planLabels} k={t.k} trays={trays} />
+
+          {/* Callouts: names that would not sit cleanly by their tiles,
+              in boxes off to the side with a leader each - hovered or
+              selected with their tile, a press opens the tile. */}
+          <PlanCalloutsLayer
+            callouts={planLabels.callouts}
+            k={t.k}
+            hot={calloutHot ?? hoveredTile}
+            selected={pinnedNames}
+            onHover={(id) => {
+              if (!drag.current) setCalloutHot(id)
+            }}
+            onPress={pressCallout}
+          />
 
           {/* Labels - over the tiles, so "North side" reads over a row.
               Clipped to the grid as the plan is, but for one that opens a

@@ -386,3 +386,35 @@ describe("clusterFitView", () => {
     )
   })
 })
+
+describe("layoutIcons keeps a row's order", () => {
+  it("never spreads two neighbours past each other", () => {
+    // Server room A from afar: four racks a cell apart, two more below.
+    const items: IconItem[] = [
+      { id: "R-A01", c: [76.5, 207] },
+      { id: "R-A02", c: [77.5, 207] },
+      { id: "R-A03", c: [78.5, 207] },
+      { id: "R-A04", c: [79.5, 207] },
+      { id: "R-A05", c: [76.5, 215] },
+      { id: "R-A06", c: [77.5, 215] },
+    ]
+    let checked = 0
+    for (const scale of [10, 12, 14, 16, 18, 20, 24, 28]) {
+      const l = layoutIcons(items, scale, { side: S })
+      const row = ["R-A01", "R-A02", "R-A03", "R-A04"]
+      if (row.some((id) => l.clusterOf.has(id))) continue
+      const at = (id: string) =>
+        drawnCentre(l, id, items.find((i) => i.id === id)!.c, scale)
+      // Side by side (not one above the other): in the row's order.
+      for (let i = 0; i < row.length; i++)
+        for (let j = i + 1; j < row.length; j++) {
+          const a = at(row[i])
+          const b = at(row[j])
+          if (Math.abs(a[1] - b[1]) * scale < S)
+            expect(b[0]).toBeGreaterThan(a[0])
+        }
+      checked++
+    }
+    expect(checked).toBeGreaterThan(0)
+  })
+})

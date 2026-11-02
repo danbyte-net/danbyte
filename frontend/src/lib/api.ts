@@ -13592,6 +13592,8 @@ export interface PanelLayoutResolved {
   scope_id: string | null
   scope_name: string
   items: PanelLayoutItem[]
+  /** The fields a 2D plan callout adds under the name (at most 3). */
+  callout?: string[]
 }
 
 /** /api/panel-layouts/ - a tenant's saved layout. */
@@ -13602,6 +13604,8 @@ export interface PanelLayoutRow {
   scope_id: string | null
   scope_name: string
   items: PanelLayoutItem[]
+  /** The fields a 2D plan callout adds under the name (at most 3). */
+  callout: string[]
   updated_at: string
 }
 
@@ -13613,6 +13617,9 @@ export type PanelLayoutCatalog = Record<
     scopes: PanelLayoutScope[]
     default: PanelLayoutItem[]
     cf_model: string
+    /** The attributes a callout may show (and any `cf:<key>`). */
+    callout_fields: string[]
+    callout_max: number
   }
 >
 

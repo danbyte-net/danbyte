@@ -15,7 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Plus, RotateCcw, X } from "lucide-react"
+import { ArrowUp, GripVertical, Plus, RotateCcw, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -111,6 +111,8 @@ export function PanelLayoutsCard() {
     name: string
   } | null>(null)
   const [entries, setEntries] = useState<Entry[] | null>(null)
+  // The fields a callout on the 2D plan adds under the name.
+  const [callout, setCallout] = useState<string[]>([])
 
   const cat = catalog.data?.[kind]
   const mine = useMemo(
@@ -122,24 +124,32 @@ export function PanelLayoutsCard() {
   const tenantDefault = mine.find((r) => r.scope === "default")
   const inherited = tenantDefault?.items ?? cat?.default ?? []
   const saved = row?.items ?? (scope === "default" ? inherited : null)
+  const inheritedCallout = tenantDefault?.callout ?? []
+  const savedCallout = row?.callout ?? inheritedCallout
 
   // The working copy follows the scope picked (and what is saved for it).
   const savedKey = JSON.stringify(saved ?? inherited)
   useEffect(() => {
     if (cat) setEntries(toEntries(JSON.parse(savedKey) as PanelLayoutItem[]))
   }, [sel, kind, cat, savedKey])
+  const savedCalloutKey = JSON.stringify(savedCallout)
+  useEffect(() => {
+    setCallout(JSON.parse(savedCalloutKey) as string[])
+  }, [sel, kind, savedCalloutKey])
 
   const items = useMemo(() => entries?.map((e) => e.item) ?? [], [entries])
   const dirty =
     !!entries &&
-    (saved === null || JSON.stringify(items) !== JSON.stringify(saved))
+    (saved === null ||
+      JSON.stringify(items) !== JSON.stringify(saved) ||
+      JSON.stringify(callout) !== savedCalloutKey)
 
   const save = useMutation({
     mutationFn: () =>
       row
         ? api<PanelLayoutRow>(`/api/panel-layouts/${row.id}/`, {
             method: "PUT",
-            body: JSON.stringify({ items }),
+            body: JSON.stringify({ items, callout }),
           })
         : api<PanelLayoutRow>("/api/panel-layouts/", {
             method: "POST",
@@ -148,12 +158,14 @@ export function PanelLayoutsCard() {
               scope,
               scope_id: scopeId || null,
               items,
+              callout,
             }),
           }),
     onSuccess: () => {
       setPending(null)
       void qc.invalidateQueries({ queryKey: ["panel-layouts"] })
       void qc.invalidateQueries({ queryKey: ["floor-plan-tile-panel"] })
+      void qc.invalidateQueries({ queryKey: ["floor-plan-callouts"] })
       toast.success("Panel layout saved")
     },
     onError: (e) => apiErrorToast(e),
@@ -165,6 +177,7 @@ export function PanelLayoutsCard() {
       setSel(keyOf("default", null))
       void qc.invalidateQueries({ queryKey: ["panel-layouts"] })
       void qc.invalidateQueries({ queryKey: ["floor-plan-tile-panel"] })
+      void qc.invalidateQueries({ queryKey: ["floor-plan-callouts"] })
       toast.success("Panel layout removed")
     },
     onError: (e) => apiErrorToast(e),
@@ -203,7 +216,10 @@ export function PanelLayoutsCard() {
             variant="outline"
             size="sm"
             disabled={!dirty}
-            onClick={() => setEntries(toEntries(saved ?? inherited))}
+            onClick={() => {
+              setEntries(toEntries(saved ?? inherited))
+              setCallout(JSON.parse(savedCalloutKey) as string[])
+            }}
           >
             Reset
           </Button>
@@ -211,7 +227,10 @@ export function PanelLayoutsCard() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setEntries(toEntries(cat.default))}
+              onClick={() => {
+                setEntries(toEntries(cat.default))
+                setCallout([])
+              }}
             >
               Restore defaults
             </Button>
@@ -297,6 +316,14 @@ export function PanelLayoutsCard() {
               entries={entries}
               onChange={setEntries}
               fields={cat.fields}
+              cfModel={cat.cf_model}
+            />
+            <CalloutEditor
+              value={callout}
+              onChange={setCallout}
+              fields={cat.fields}
+              allowed={cat.callout_fields}
+              max={cat.callout_max}
               cfModel={cat.cf_model}
             />
           </div>
@@ -484,6 +511,105 @@ export function LayoutEditor({
         })}
       </div>
     </>
+  )
+}
+
+/**
+ * The callout's lines: the fields a 2D plan callout adds under the
+ * object's name, in order, at most `max` - short attributes and custom
+ * fields, never a block.
+ */
+export function CalloutEditor({
+  value,
+  onChange,
+  fields,
+  allowed,
+  max,
+  cfModel,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  fields: { key: string; label: string; computed: boolean }[]
+  allowed: string[]
+  max: number
+  cfModel: string
+}) {
+  const cfMeta = useCustomFieldMeta([cfModel], { skipHidden: true })
+  const label = (key: string) =>
+    key.startsWith("cf:")
+      ? (cfMeta[`cf_${key.slice(3)}`]?.label ?? key.slice(3))
+      : (fields.find((f) => f.key === key)?.label ?? key)
+  const rest = [
+    ...allowed,
+    ...Object.keys(cfMeta).map((k) => `cf:${k.slice(3)}`),
+  ].filter((k) => !value.includes(k))
+  const full = value.length >= max
+  return (
+    <div className="mt-6 border-t border-border pt-4" data-callout-editor>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+        Callout
+        <InfoTip>
+          Zoomed out, a name that will not sit clearly by its tile goes in a box
+          beside the room, with a line to the tile. These fields show under the
+          name, at most {max}.
+        </InfoTip>
+      </h3>
+      <ul className="mt-2 flex flex-col gap-1">
+        {value.map((k, i) => (
+          <li
+            key={k}
+            data-callout-entry={k}
+            className="flex items-center gap-2 rounded-md border border-border px-2 py-1"
+          >
+            <span className="min-w-0 flex-1 truncate text-[13px]">
+              {label(k)}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground"
+              disabled={i === 0}
+              onClick={() => onChange(arrayMove(value, i, i - 1))}
+              aria-label={`Move ${label(k)} up`}
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+              onClick={() => onChange(value.filter((x) => x !== k))}
+              aria-label={`Remove ${label(k)} from the callout`}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </li>
+        ))}
+        {value.length === 0 && (
+          <li className="rounded-md border border-dashed border-border px-2 py-3 text-center text-[13px] text-muted-foreground">
+            The name alone.
+          </li>
+        )}
+      </ul>
+      {!full && rest.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {rest.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onChange([...value, k])}
+              aria-label={`Add ${label(k)} to the callout`}
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-[12px] text-muted-foreground hover:border-solid hover:text-foreground"
+            >
+              <Plus className="h-3 w-3" />
+              {label(k)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

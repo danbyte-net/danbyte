@@ -15,8 +15,8 @@ import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { readCableColorBy } from "./cable-draw"
 import type { CableColorBy } from "./cable-draw"
 import { readFloorHidden } from "./hidden"
-import { readIconTiles, readObjectSize } from "./readable"
-import type { ObjectSize } from "./readable"
+import { readCallouts, readIconTiles, readObjectSize } from "./readable"
+import type { CalloutMode, ObjectSize } from "./readable"
 import type { FloorHidden } from "./hidden"
 import { readColorBy } from "./tile-paint"
 import type { ColorBy } from "./tile-paint"
@@ -51,6 +51,7 @@ export type ViewPrefKey =
   | "bundle_cables"
   | "object_size"
   | "icon_tiles"
+  | "callouts"
   | "mute_background"
 
 /** The plan's view preferences: seeded from plan.state, a session override
@@ -122,6 +123,9 @@ export function usePlanViewPrefs({
   // Icons when zoomed out: a device, rack or cabinet too small to read
   // draws as its icon tile.
   const [iconTilesLocal, setIconTilesLocal] = useState<boolean | null>(null)
+  // Callouts: a name that will not sit cleanly by its tile in a box off
+  // to the side - Auto unless the plan chose Off.
+  const [calloutsLocal, setCalloutsLocal] = useState<CalloutMode | null>(null)
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -165,6 +169,7 @@ export function usePlanViewPrefs({
     setBundleCablesLocal(null)
     setObjectSizeLocal(null)
     setIconTilesLocal(null)
+    setCalloutsLocal(null)
     setMuteBackgroundLocal(null)
   }, [id])
 
@@ -279,6 +284,7 @@ export function usePlanViewPrefs({
   const objectSize = objectSizeLocal ?? readObjectSize(plan?.state.object_size)
   // On unless the plan turned it off.
   const iconTiles = iconTilesLocal ?? readIconTiles(plan?.state.icon_tiles)
+  const callouts = calloutsLocal ?? readCallouts(plan?.state.callouts)
   // Muted unless the plan turned it off: a map or a photo at full colour
   // drowns the racks, trays and cables drawn over it.
   const muteBackground =
@@ -288,9 +294,17 @@ export function usePlanViewPrefs({
 
   const setViewPref = (
     key: ViewPrefKey,
-    value: boolean | "all" | "selected" | ColorBy | CableColorBy | ObjectSize
+    value:
+      | boolean
+      | "all"
+      | "selected"
+      | ColorBy
+      | CableColorBy
+      | ObjectSize
+      | CalloutMode
   ) => {
     if (key === "object_size") setObjectSizeLocal(value as ObjectSize)
+    else if (key === "callouts") setCalloutsLocal(value as CalloutMode)
     else if (key === "icon_tiles") setIconTilesLocal(value as boolean)
     else if (key === "label_fit") setLabelFitLocal(value as boolean)
     else if (key === "mute_background") setMuteBackgroundLocal(value as boolean)
@@ -354,6 +368,7 @@ export function usePlanViewPrefs({
     bundleCables,
     objectSize,
     iconTiles,
+    callouts,
     muteBackground,
     quality3d,
     setQuality3d,

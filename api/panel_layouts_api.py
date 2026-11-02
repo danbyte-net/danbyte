@@ -3,7 +3,8 @@
 
 - ``GET`` lists the tenant's layouts (``?object_kind=`` narrows them);
 - ``POST`` adds one (``object_kind``, ``scope``, ``scope_id``, ``items``);
-- ``PUT``/``PATCH`` on one changes its ``items``; ``DELETE`` drops it, so its
+- ``PUT``/``PATCH`` on one changes its ``items`` (and ``callout``, the
+  fields a 2D plan callout adds under the name); ``DELETE`` drops it, so its
   scope falls back to the next match;
 - ``GET catalog/`` lists the fields each kind offers, the scopes in
   resolution order and the built-in defaults;
@@ -34,6 +35,7 @@ def _row(r: PanelLayout) -> dict:
         "scope_id": str(r.scope_id) if r.scope_id else None,
         "scope_name": panel_layouts.scope_name(r.scope, r.scope_id),
         "items": r.items,
+        "callout": r.callout or [],
         "updated_at": r.updated_at.isoformat(),
     }
 
@@ -71,11 +73,12 @@ class PanelLayoutViewSet(viewsets.ViewSet):
         kind, scope = d.get("object_kind"), d.get("scope", "default")
         scope_id = d.get("scope_id") or None
         items = panel_layouts.validate(tenant, kind, scope, scope_id, d.get("items", []))
+        callout = panel_layouts.validate_callout(tenant, kind, d.get("callout", []))
         try:
             with transaction.atomic():
                 row = PanelLayout.objects.create(
                     tenant=tenant, object_kind=kind, scope=scope, scope_id=scope_id,
-                    items=items,
+                    items=items, callout=callout,
                 )
         except IntegrityError:
             raise ValidationError({"scope": "That scope already has a layout."}) from None
@@ -91,7 +94,11 @@ class PanelLayoutViewSet(viewsets.ViewSet):
             tenant, row.object_kind, row.scope, row.scope_id,
             request.data.get("items", row.items),
         )
-        row.save(update_fields=["items", "updated_at"])
+        if "callout" in request.data:
+            row.callout = panel_layouts.validate_callout(
+                tenant, row.object_kind, request.data.get("callout")
+            )
+        row.save(update_fields=["items", "callout", "updated_at"])
         return Response(_row(row))
 
     partial_update = update
@@ -112,6 +119,8 @@ class PanelLayoutViewSet(viewsets.ViewSet):
                 "scopes": list(panel_layouts.SCOPES[kind]),
                 "default": panel_layouts.DEFAULTS[kind],
                 "cf_model": panel_layouts.CF_MODEL[kind],
+                "callout_fields": list(panel_layouts.CALLOUT_FIELDS[kind]),
+                "callout_max": panel_layouts.CALLOUT_MAX,
             }
             for kind, fields in panel_layouts.FIELDS.items()
         })

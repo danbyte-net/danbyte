@@ -575,3 +575,122 @@ def cabinet_panel(request, tenant, cabinet, items=None):
     }
 
 
+
+
+# ── callouts ────────────────────────────────────────────────────────────────
+
+def _line(key, label, value, color=None):
+    out = {"key": key, "label": label, "value": str(value)}
+    if color is not None:
+        out["color"] = color or ""
+    return out
+
+
+def _callout_line(kind, key, obj, view):
+    """One attribute of ``obj`` as a callout line, or None with nothing to
+    say. A status or role carries its colour: the callout draws it as its
+    badge."""
+    from . import panel_layouts
+
+    label = panel_layouts.FIELDS[kind][key]
+    if key == "status":
+        st = obj.status
+        return _line(key, label, st.name, st.color) if st is not None else None
+    if key == "role":
+        r = obj.role
+        return _line(key, label, r.name, r.color) if r is not None else None
+    if key in ("device_type", "rack_type", "cabinet_type"):
+        t = getattr(obj, key)
+        if t is None:
+            return None
+        return _line(key, label, getattr(t, "model", "") or str(t))
+    if key in ("platform", "location", "tenant"):
+        ref = getattr(obj, key)
+        return _line(key, label, getattr(ref, "name", "") or str(ref)) if ref else None
+    if key in ("primary_ip", "oob_ip"):
+        ip = getattr(obj, key)
+        if ip is None or not view.may_view("ipaddress", ip.pk):
+            return None
+        return _line(key, label, ip.ip_address)
+    if key == "position":
+        if obj.position is None:
+            return None
+        rack = obj.rack.name if obj.rack_id else ""
+        return _line(key, label, f"{rack} U{obj.position:g}".strip())
+    if key == "size":
+        size = [obj.outer_width_mm, obj.outer_height_mm, obj.outer_depth_mm]
+        if not all(size):
+            return None
+        return _line(key, label, " × ".join(f"{v:g}" for v in size) + " mm")
+    if key == "numid":
+        n = getattr(obj, "numid", None)
+        return _line(key, label, f"#{n}") if n is not None else None
+    value = getattr(obj, key, "") or ""
+    return _line(key, label, value) if value else None
+
+
+def plan_callouts(request, tenant, tiles) -> dict:
+    """``{tile id: [lines]}``: what each device, rack or cabinet tile's
+    callout on the 2D plan adds under its name - the callout fields of the
+    layout its object takes (``api.panel_layouts.CalloutResolver``), in
+    their order, each ``{key, label, value}`` (a status or role with its
+    ``color``). Only tiles whose object the reader may view and whose
+    layout names fields with something to say."""
+    from . import panel_layouts
+    from .floor_plan_placement import TileLinks, tile_link
+    from .models import Cabinet, Device, Rack
+
+    resolver = panel_layouts.CalloutResolver(tenant)
+    if not resolver.any():
+        return {}
+    links = TileLinks(request.user, tenant)
+    links.prime(tiles)
+    want: dict = {"device": {}, "rack": {}, "cabinet": {}}
+    for t in tiles:
+        kind, pk = tile_link(t)
+        if kind in want and not links.hidden(t):
+            want[kind].setdefault(pk, []).append(t.id)
+    if not any(want.values()):
+        return {}
+    view = _Viewable(request.user, tenant)
+    objects = {
+        "device": Device.objects.filter(tenant=tenant, pk__in=want["device"])
+        .select_related(
+            "role", "status", "device_type", "platform", "location", "rack",
+            "primary_ip", "oob_ip", "tenant",
+        )
+        .prefetch_related("device_profile_assignments"),
+        "rack": Rack.objects.filter(tenant=tenant, pk__in=want["rack"]).select_related(
+            "role", "status", "rack_type", "location", "tenant"
+        ),
+        "cabinet": Cabinet.objects.filter(tenant=tenant, pk__in=want["cabinet"])
+        .select_related("role", "status", "cabinet_type", "location", "tenant"),
+    }
+    out: dict = {}
+    for kind, qs in objects.items():
+        if not want[kind]:
+            continue
+        rows = [(o, resolver.fields(kind, o)) for o in qs]
+        rows = [(o, f) for o, f in rows if f]
+        if not rows:
+            continue
+        if kind == "device":
+            view.prime("ipaddress", {
+                pk for o, _f in rows for pk in (o.primary_ip_id, o.oob_ip_id) if pk
+            })
+        cf_keys = sorted({k[3:] for _o, f in rows for k in f if k.startswith("cf:")})
+        cfs = panel_layouts.CustomFieldReader(request, tenant, kind, cf_keys)
+        for obj, fields in rows:
+            lines = []
+            for key in fields:
+                if key.startswith("cf:"):
+                    got = cfs.values(obj, [key[3:]])
+                    lines += [_line(key, g["label"], g["value"]) for g in got]
+                elif key in panel_layouts.CALLOUT_FIELDS[kind]:
+                    line = _callout_line(kind, key, obj, view)
+                    if line is not None:
+                        lines.append(line)
+            if lines:
+                for tid in want[kind][obj.pk]:
+                    out[str(tid)] = lines
+    return out

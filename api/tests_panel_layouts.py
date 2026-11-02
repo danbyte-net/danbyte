@@ -225,3 +225,98 @@ class ApiTests(_Base):
         self.assertEqual(r.status_code, 403)
         # The panel itself still reads.
         self.assertEqual(self.panel()["device"]["name"], "sw1")
+
+
+class CalloutTests(_Base):
+    """A layout's callout fields: at most three short attributes or custom
+    fields, resolved per object as the panel is, read in bulk for a plan."""
+
+    def callouts(self):
+        r = self.client.get(f"/api/floor-plans/{self.plan.id}/callouts/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["tiles"]
+
+    def test_none_without_a_layout(self):
+        self.assertEqual(self.callouts(), {})
+
+    def test_fields_in_order_with_badge_colours(self):
+        from .models import Status
+
+        st = Status.objects.filter(tenant=self.tenant).first() or Status.objects.create(
+            tenant=self.tenant, name="Active", slug="active", color="#22c55e"
+        )
+        self.device.status = st
+        self.device.serial_number = "SN1"
+        self.device.save()
+        row = self.layout("default", None, "status")
+        row.callout = ["serial_number", "status", "role"]
+        row.save()
+        lines = self.callouts()[str(self.tile.id)]
+        self.assertEqual([x["key"] for x in lines], ["serial_number", "status", "role"])
+        self.assertEqual(lines[0]["value"], "SN1")
+        self.assertNotIn("color", lines[0])
+        self.assertEqual(lines[1]["value"], st.name)
+        self.assertEqual(lines[1]["color"], st.color)
+        self.assertEqual(lines[2]["value"], "Access")
+
+    def test_most_specific_layout_wins_even_without_fields(self):
+        row = self.layout("default", None)
+        row.callout = ["role"]
+        row.save()
+        self.assertIn(str(self.tile.id), self.callouts())
+        self.layout("device_type", self.dtype.id)
+        self.assertEqual(self.callouts(), {})
+
+    def test_hidden_custom_field_and_other_tenant_never_show(self):
+        CustomField.objects.create(
+            tenant=self.tenant, key="owner", label="Owner", applies_to=["device"]
+        )
+        CustomField.objects.create(
+            tenant=self.tenant, key="secret", label="Secret", applies_to=["device"],
+            hidden=True,
+        )
+        row = self.layout("default", None)
+        row.callout = ["cf:owner", "cf:secret"]
+        row.save()
+        theirs = self.layout("default", None, tenant=self.other)
+        theirs.callout = ["serial_number"]
+        theirs.save()
+        lines = self.callouts()[str(self.tile.id)]
+        self.assertEqual(lines, [{"key": "cf:owner", "label": "Owner", "value": "netops"}])
+
+    def test_object_the_reader_may_not_view_says_nothing(self):
+        row = self.layout("default", None)
+        row.callout = ["role"]
+        row.save()
+        user = User.objects.create_user("viewer", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="v", object_types=["floorplan", "floorplantile"], actions=["view"],
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self.login(user)
+        self.assertEqual(self.callouts(), {})
+
+    def test_save_and_validate(self):
+        r = self.client.post(URL, {
+            "object_kind": "device", "scope": "default", "items": [],
+            "callout": ["status", "primary_ip"],
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        lid = r.json()["id"]
+        self.assertEqual(r.json()["callout"], ["status", "primary_ip"])
+        # Items alone keep the callout; a callout alone keeps the items.
+        r = self.client.patch(f"{URL}{lid}/", {"items": [{"field": "status"}]}, format="json")
+        self.assertEqual(r.json()["callout"], ["status", "primary_ip"])
+        r = self.client.patch(f"{URL}{lid}/", {"callout": ["role"]}, format="json")
+        self.assertEqual(r.json()["callout"], ["role"])
+        self.assertEqual(r.json()["items"], [{"field": "status"}])
+        for bad in (["status"] * 2, ["ports"], ["tags"], ["cf:nope"],
+                    ["role", "status", "platform", "tenant"], "role"):
+            r = self.client.patch(f"{URL}{lid}/", {"callout": bad}, format="json")
+            self.assertEqual(r.status_code, 400, (bad, r.content))
+        cat = self.client.get(f"{URL}catalog/").json()
+        self.assertIn("status", cat["rack"]["callout_fields"])
+        self.assertNotIn("devices", cat["rack"]["callout_fields"])
+        self.assertEqual(cat["device"]["callout_max"], 3)

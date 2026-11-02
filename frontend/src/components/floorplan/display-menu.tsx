@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { InfoTip } from "@/components/ui/info-tip"
 import { Slider } from "@/components/ui/slider"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { CABLE_SCALE_MAX, CABLE_SCALE_MIN } from "@/lib/render-quality"
@@ -29,7 +30,7 @@ import {
   readCableColorBy,
 } from "./cable-draw"
 import { ColorBySelect } from "./color-by-select"
-import type { ObjectSize } from "./readable"
+import type { CalloutMode, ObjectSize } from "./readable"
 import type { PlanViewPrefs, ShellMode3D } from "./use-plan-view-prefs"
 
 /** The bar's Display popover: what the 2D plan draws, and - in 3D - what the
@@ -53,6 +54,7 @@ export function DisplayMenu({
     bundleCables,
     objectSize,
     iconTiles,
+    callouts,
     muteBackground,
     showPhotos,
     showPhotoOutlines,
@@ -121,6 +123,24 @@ export function DisplayMenu({
             onChange={(v) => setViewPref("icon_tiles", v)}
             className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
           />
+          <div className="px-2 pt-1 pb-1.5">
+            <span className="mb-1 flex items-center gap-1 text-[10px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+              Callouts
+              <InfoTip>
+                A name that will not sit clearly by its tile goes in a box
+                outside the room, with a line to the tile. Its extra lines come
+                from Settings → Floor plans → Detail panels.
+              </InfoTip>
+            </span>
+            <SegmentedTabs<CalloutMode>
+              value={callouts}
+              onValueChange={(v) => setViewPref("callouts", v)}
+              items={[
+                { value: "auto", label: "Auto" },
+                { value: "off", label: "Off" },
+              ]}
+            />
+          </div>
           <div className="my-1 h-px bg-border" />
           <FormCheckbox
             label="Muted background"

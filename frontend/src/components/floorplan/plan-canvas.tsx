@@ -42,6 +42,7 @@ import type { PlanShape } from "./shapes"
 import type { PlanEditState } from "./use-plan-edit-state"
 import type { ShapeEdits } from "./use-shape-edits"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
+import { usePlanCallouts } from "./use-plan-callouts"
 import type { StructureEdits } from "./use-structure-edits"
 import type { RaisedRow } from "./structure"
 import type { TileEdits } from "./use-tile-edits"
@@ -239,6 +240,7 @@ export function PlanCanvas({
     showPhotoOutlines,
     objectSize,
     iconTiles,
+    callouts,
     muteBackground,
     showTrays,
     showCableLinks,
@@ -249,6 +251,8 @@ export function PlanCanvas({
   } = prefs
   // The cable popover: a hover previews a run, a click pins it.
   const cablePopover = useCablePopover()
+  // The lines under the callouts' names, while callouts are on.
+  const calloutLines = usePlanCallouts(plan.id, callouts === "auto")
 
   // The panel follows its tile - its label as edited, and gone with the
   // tile, its cabinet link or its eye.
@@ -399,6 +403,8 @@ export function PlanCanvas({
         photoOutlines={showPhotoOutlines}
         objectSize={objectSize}
         iconTiles={iconTiles}
+        callouts={callouts}
+        calloutLines={calloutLines}
         muteBackground={muteBackground}
         mode={mode}
         trays={trays}

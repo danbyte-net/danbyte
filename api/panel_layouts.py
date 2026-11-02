@@ -123,6 +123,26 @@ DEFAULTS: dict[str, list[dict]] = {
     ),
 }
 
+#: The fields a callout on the 2D plan may add under the object's name: the
+#: short single-line attributes (and ``cf:<key>``), never a block. A callout
+#: takes at most ``CALLOUT_MAX``; with none chosen it shows the name alone.
+CALLOUT_FIELDS: dict[str, tuple[str, ...]] = {
+    "device": (
+        "role", "status", "device_type", "platform", "software_version",
+        "serial_number", "asset_tag", "numid", "location", "position",
+        "primary_ip", "oob_ip", "tenant", "description",
+    ),
+    "rack": (
+        "role", "status", "rack_type", "facility_id", "numid", "location",
+        "tenant", "description",
+    ),
+    "cabinet": (
+        "role", "status", "cabinet_type", "facility_id", "numid", "location",
+        "size", "tenant", "description",
+    ),
+}
+CALLOUT_MAX = 3
+
 #: The scopes each kind takes, most specific first (resolution order).
 SCOPES: dict[str, tuple[str, ...]] = {
     "device": ("device_type", "device_role", "profile", "default"),
@@ -213,6 +233,34 @@ def validate(tenant, kind: str, scope: str, scope_id, items) -> list[dict]:
     return out
 
 
+def validate_callout(tenant, kind: str, keys) -> list[str]:
+    """A layout's callout fields as stored, or a 400 naming what is wrong."""
+    from customization.models import CustomField
+
+    if keys is None:
+        return []
+    if not isinstance(keys, list) or len(keys) > CALLOUT_MAX:
+        raise ValidationError({"callout": f"A list of at most {CALLOUT_MAX} fields."})
+    cf_keys = None
+    out: list[str] = []
+    for i, key in enumerate(keys):
+        ok = isinstance(key, str) and key in CALLOUT_FIELDS[kind]
+        if not ok and isinstance(key, str) and _CF_KEY.match(key):
+            if cf_keys is None:
+                cf_keys = set(
+                    CustomField.objects.filter(
+                        tenant=tenant, applies_to__contains=[CF_MODEL[kind]]
+                    ).values_list("key", flat=True)
+                )
+            ok = key[3:] in cf_keys
+        if not ok:
+            raise ValidationError({"callout": f"Entry {i + 1}: unknown field {key!r}."})
+        if key in out:
+            raise ValidationError({"callout": f"Entry {i + 1}: {key!r} is listed twice."})
+        out.append(key)
+    return out
+
+
 def _candidates(kind: str, obj) -> list[tuple[str, object]]:
     """``(scope, scope_id)`` for ``obj``, most specific first."""
     if kind == "device":
@@ -246,60 +294,110 @@ def resolve(tenant, kind: str, obj) -> dict:
                 "scope_id": str(sid) if sid else None,
                 "scope_name": scope_name(scope, sid),
                 "items": row.items,
+                "callout": row.callout or [],
             }
     return {"id": None, "scope": "default", "scope_id": None, "scope_name": "",
-            "items": DEFAULTS[kind]}
+            "items": DEFAULTS[kind], "callout": []}
+
+
+class CalloutResolver:
+    """The callout fields each object takes, for many objects at once: the
+    tenant's layouts read once, each object's resolved as ``resolve`` does
+    (type, role, profile, default - the first layout found wins, even one
+    with no callout fields)."""
+
+    def __init__(self, tenant):
+        from .models import PanelLayout
+
+        self.rows: dict = {
+            (r.object_kind, r.scope, r.scope_id): list(r.callout or [])
+            for r in PanelLayout.objects.filter(tenant=tenant).only(
+                "object_kind", "scope", "scope_id", "callout"
+            )
+        }
+
+    def any(self) -> bool:
+        return any(self.rows.values())
+
+    def fields(self, kind: str, obj) -> list[str]:
+        for scope, sid in _candidates(kind, obj):
+            got = self.rows.get((kind, scope, sid))
+            if got is not None:
+                return got[:CALLOUT_MAX]
+        return []
 
 
 def wants(items, key: str) -> bool:
     return any(it.get("field") == key for it in items)
 
 
-def custom_field_values(request, tenant, kind: str, obj, items) -> list[dict]:
-    """The custom fields ``items`` names, in its order, with ``obj``'s values:
+class CustomFieldReader:
+    """The custom fields ``keys`` name, read for many objects of one kind:
     only definitions the reader may see (``api.list_fields.
     visible_custom_fields``: not hidden, a site-local one only for its
-    site's readers) whose own scope rules match ``obj``, and only those
+    site's readers) whose own scope rules match the object, and only those
     with a value. An object reference reads as its label - one the reader
-    may view, else nothing."""
-    from customization.models import CustomField
-    from customization.object_registry import resolve_labels
-    from customization.scopes import object_matches_scope
+    may view, else nothing. The definitions are read once."""
 
-    from .list_fields import visible_custom_fields
+    def __init__(self, request, tenant, kind: str, keys):
+        from customization.models import CustomField
 
+        from .list_fields import visible_custom_fields
+
+        self.request, self.tenant = request, tenant
+        self.model = CF_MODEL[kind]
+        self.keys = list(keys)
+        self.visible = {}
+        self.rules = {}
+        if self.keys:
+            self.visible = {
+                d["key"]: d
+                for d in visible_custom_fields(request, tenant, self.model, self.model)
+            }
+            self.rules = dict(
+                CustomField.objects.filter(tenant=tenant, key__in=self.keys).values_list(
+                    "key", "scope_rules"
+                )
+            )
+
+    def values(self, obj, keys=None) -> list[dict]:
+        from customization.object_registry import resolve_labels
+        from customization.scopes import object_matches_scope
+
+        values = obj.custom_fields or {}
+        out = []
+        for key in self.keys if keys is None else keys:
+            d = self.visible.get(key)
+            if d is None or not object_matches_scope(
+                obj, self.model, self.rules.get(key) or {}
+            ):
+                continue
+            value = values.get(key)
+            if value in (None, "", []):
+                continue
+            display = value
+            if d["type"] == "object" and d["related_model"]:
+                ids = value if isinstance(value, list) else [value]
+                labels = resolve_labels(
+                    d["related_model"], [str(v) for v in ids], tenant=self.tenant,
+                    user=self.request.user,
+                )
+                if not labels:
+                    continue
+                display = ", ".join(lab["label"] for lab in labels)
+            elif isinstance(value, list):
+                display = ", ".join(str(v) for v in value)
+            elif isinstance(value, bool):
+                display = "Yes" if value else "No"
+            out.append({"key": key, "label": d["label"], "type": d["type"],
+                        "value": str(display)})
+        return out
+
+
+def custom_field_values(request, tenant, kind: str, obj, items) -> list[dict]:
+    """The custom fields ``items`` names, in its order, with ``obj``'s values
+    (``CustomFieldReader``)."""
     keys = [it["field"][3:] for it in items if str(it.get("field", "")).startswith("cf:")]
     if not keys:
         return []
-    model = CF_MODEL[kind]
-    visible = {d["key"]: d for d in visible_custom_fields(request, tenant, model, model)}
-    rules = dict(
-        CustomField.objects.filter(tenant=tenant, key__in=keys).values_list(
-            "key", "scope_rules"
-        )
-    )
-    values = obj.custom_fields or {}
-    out = []
-    for key in keys:
-        d = visible.get(key)
-        if d is None or not object_matches_scope(obj, model, rules.get(key) or {}):
-            continue
-        value = values.get(key)
-        if value in (None, "", []):
-            continue
-        display = value
-        if d["type"] == "object" and d["related_model"]:
-            ids = value if isinstance(value, list) else [value]
-            labels = resolve_labels(
-                d["related_model"], [str(v) for v in ids], tenant=tenant, user=request.user
-            )
-            if not labels:
-                continue
-            display = ", ".join(lab["label"] for lab in labels)
-        elif isinstance(value, list):
-            display = ", ".join(str(v) for v in value)
-        elif isinstance(value, bool):
-            display = "Yes" if value else "No"
-        out.append({"key": key, "label": d["label"], "type": d["type"],
-                    "value": str(display)})
-    return out
+    return CustomFieldReader(request, tenant, kind, keys).values(obj)

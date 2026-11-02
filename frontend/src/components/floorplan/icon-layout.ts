@@ -241,6 +241,35 @@ function relax(
     }
     if (!moved) break
   }
+  keepOrder(nodes)
+}
+
+/** Two icons side by side (or one above the other) in the reverse of
+ * their true order trade places: the same places taken, but a row reads
+ * in its order - an icon swapped with its neighbour reads as it, and its
+ * name lands by the wrong rack. */
+function keepOrder(nodes: Node[]) {
+  for (let pass = 0; pass < nodes.length; pass++) {
+    let swapped = false
+    for (let i = 0; i < nodes.length; i++)
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i]
+        const b = nodes[j]
+        const half = Math.min(a.side, b.side) / 2
+        const rowWise = Math.abs(a.p[1] - b.p[1]) < half
+        const colWise = Math.abs(a.p[0] - b.p[0]) < half
+        if (!rowWise && !colWise) continue
+        const ax: 0 | 1 = rowWise ? 0 : 1
+        const h = b.home[ax] - a.home[ax]
+        const p = b.p[ax] - a.p[ax]
+        if (Math.abs(h) < 1e-6 || h * p >= 0) continue
+        const t = a.p
+        a.p = b.p
+        b.p = t
+        swapped = true
+      }
+    if (!swapped) break
+  }
 }
 
 /** Nodes that still overlap another, or sit at the cap. */
