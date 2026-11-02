@@ -693,14 +693,24 @@ export function FloorCanvas({
   useEffect(() => {
     lastIconLayout.current = baseIconLayout
   }, [baseIconLayout])
-  // Hovered or pointed at from outside (the rack table, a pick): out of
-  // its cluster, on its own.
+  // The tile the camera was last sent to (a search pick, a panel's Show
+  // on plan, ?tile=): drawn on its own until the next.
+  const [focusedTile, setFocusedTile] = useState<string | null>(null)
+  // Hovered, found, or pointed at from outside (the rack table, a pick):
+  // out of its cluster, on its own.
   const iconLayout = useMemo(() => {
     const out = new Set<string>(highlightTileIds ?? [])
     if (hoveredTile) out.add(hoveredTile)
+    if (focusedTile) out.add(focusedTile)
     for (const id of tilePick?.picked ?? []) out.add(id)
     return pullOut(baseIconLayout, out)
-  }, [baseIconLayout, highlightTileIds, hoveredTile, tilePick?.picked])
+  }, [
+    baseIconLayout,
+    highlightTileIds,
+    hoveredTile,
+    focusedTile,
+    tilePick?.picked,
+  ])
   const tileById = useMemo(
     () => new Map(tiles.map((tl) => [tl.id, tl])),
     [tiles]
@@ -1019,6 +1029,7 @@ export function FloorCanvas({
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
       focusTile: (tile, zoom) => {
+        setFocusedTile(tile.id)
         const svg = svgRef.current
         if (!svg) return
         const rect = svg.getBoundingClientRect()
@@ -1668,9 +1679,11 @@ export function FloorCanvas({
     setT(
       clusterFitView(members, rect.width, rect.height, {
         cell: CELL,
-        spacingPx: READABLE_SYMBOL_PX * 1.25,
+        spacingPx: READABLE_SYMBOL_PX * 1.3,
         tilePx: ICON_TILE_EXIT_PX + 4,
         maxK: 4,
+        // Room round the extent for the icons and their names.
+        margin: 160,
       })
     )
   }
@@ -2553,14 +2566,20 @@ export function FloorCanvas({
                   style={{ left: clusterHint.x, top: clusterHint.y - 10 }}
                 />
               </TooltipTrigger>
-              <TooltipContent side="top" data-part="cluster-members">
-                <div className="font-medium">{face.name}</div>
-                <ul className="mt-0.5 text-xs">
-                  {names.slice(0, 12).map((n, i) => (
-                    <li key={i}>{n}</li>
-                  ))}
-                  {names.length > 12 && <li>+{names.length - 12} more</li>}
-                </ul>
+              <TooltipContent
+                side="top"
+                variant="panel"
+                data-part="cluster-members"
+              >
+                <div className="flex flex-col">
+                  <div className="font-medium">{face.name}</div>
+                  <ul className="mt-0.5 text-xs text-muted-foreground">
+                    {names.slice(0, 12).map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                    {names.length > 12 && <li>+{names.length - 12} more</li>}
+                  </ul>
+                </div>
               </TooltipContent>
             </Tooltip>
           )

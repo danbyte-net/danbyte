@@ -1059,7 +1059,8 @@ function labelsMarkup(
         stroke: "#ffffff",
         "stroke-width": halo,
         "stroke-linejoin": "round",
-      }) + `<text${markupAttrs({ ...attrs, fill })}>${body}</text>`
+      }) +
+      `<text${markupAttrs({ ...attrs, fill })}>${body}</text>`
     )
   }
   const parts: string[] = []
@@ -1492,7 +1493,11 @@ export function planSvg({
     if (!o || icons.clusterOf.has(t.id)) continue
     const home: Pt = [t.x + t.width / 2, t.y + t.height / 2]
     body.push(
-      leaderMarkup(drawnCentre(icons, t.id, home, mmPerCell), home, paperMmPerPx)
+      leaderMarkup(
+        drawnCentre(icons, t.id, home, mmPerCell),
+        home,
+        paperMmPerPx
+      )
     )
   }
   for (const t of ordered) {
@@ -1527,7 +1532,9 @@ export function planSvg({
     body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
   }
   for (const c of icons.clusters)
-    body.push(clusterMarkup(c.id, clusterBoxOf(c), faces.get(c.id)!, paperMmPerPx))
+    body.push(
+      clusterMarkup(c.id, clusterBoxOf(c), faces.get(c.id)!, paperMmPerPx)
+    )
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays)
     for (const tray of trays)

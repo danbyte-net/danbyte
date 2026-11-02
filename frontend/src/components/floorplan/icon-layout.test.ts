@@ -44,14 +44,18 @@ const rack = (
 /** Every drawn box (units) of a layout, single or cluster. */
 function drawn(items: readonly IconItem[], l: IconLayout, scale: number) {
   const out: { id: string; c: Pt; side: number }[] = []
-  for (const it of items) {
-    if (l.clusterOf.has(it.id)) continue
-    const c = drawnCentre(l, it.id, it.c, scale)
-    out.push({ id: it.id, c: [c[0] * scale, c[1] * scale], side: S })
+  for (const item of items) {
+    if (l.clusterOf.has(item.id)) continue
+    const c = drawnCentre(l, item.id, item.c, scale)
+    out.push({ id: item.id, c: [c[0] * scale, c[1] * scale], side: S })
   }
   for (const c of l.clusters) {
     const p = drawnCentre(l, c.id, c.anchor, scale)
-    out.push({ id: c.id, c: [p[0] * scale, p[1] * scale], side: S * CLUSTER_SIDE })
+    out.push({
+      id: c.id,
+      c: [p[0] * scale, p[1] * scale],
+      side: S * CLUSTER_SIDE,
+    })
   }
   return out
 }
@@ -153,6 +157,17 @@ describe("layoutIcons: spread", () => {
     expect(a.clusters).toEqual(b.clusters)
   })
 
+  it("never folds in an icon from across the plan", () => {
+    const its = [
+      ...items(Array.from({ length: 6 }, (_, i) => [i * 0.5, 0])),
+      { id: "far", c: [40, 0] as Pt },
+      { id: "mid", c: [25, 0] as Pt },
+    ]
+    const l = layoutIcons(its, 6, { side: S })
+    expect(l.clusterOf.has("far")).toBe(false)
+    expect(l.clusterOf.has("mid")).toBe(false)
+  })
+
   it("keeps a selected icon out of every cluster", () => {
     const its = items(Array.from({ length: 8 }, () => [0, 0]))
     const l = layoutIcons(its, 10, { side: S }, new Set(["t3"]))
@@ -167,9 +182,9 @@ describe("layoutIcons: hysteresis", () => {
       items(Array.from({ length: 8 }, (_, i) => [i * gap, 0]))
     const tight = layoutIcons(row(0.1), 10, { side: S })
     expect(tight.clusters.length).toBeGreaterThan(0)
-    // Just past the spacing that clusters them (side + gap = 33.6 units):
+    // Just past the spacing that clusters them (side + gap = 36.4 units):
     // fresh, they would not crowd; after the tight layout they still do.
-    const loose = row(3.5)
+    const loose = row(3.8)
     const fresh = layoutIcons(loose, 10, { side: S })
     const held = layoutIcons(loose, 10, { side: S, prev: tight })
     expect(fresh.clusters).toHaveLength(0)
@@ -232,15 +247,15 @@ describe("cluster face", () => {
         rack("d", "R-A05", 3),
       ])
     ).toBe("4 racks")
-    expect(
-      clusterName([rack("a", "R-A01", 0), rack("b", "R-B02", 1)])
-    ).toBe("2 racks")
+    expect(clusterName([rack("a", "R-A01", 0), rack("b", "R-B02", 1)])).toBe(
+      "2 racks"
+    )
     expect(
       clusterName([
         rack("a", "R-A01", 0),
         rack("b", "sw1", 1, {
           linked: { kind: "device", id: "d", name: "sw1", role: null },
-        } as Partial<FloorPlanTile>),
+        }),
       ])
     ).toBe("2 objects")
   })
@@ -261,7 +276,7 @@ describe("cluster face", () => {
       ...racks,
       rack("c", "sw", 2, {
         linked: { kind: "device", id: "d", name: "sw", role: null },
-      } as Partial<FloorPlanTile>),
+      }),
     ]
     expect(clusterFace(mixed, () => null).icon).toBe(CLUSTER_ICON)
     expect(clusterFace(mixed, () => null).count).toBe(3)
@@ -297,13 +312,31 @@ describe("clusterFitView", () => {
     })
     // The fit alone would do (huge viewport): k is the fit.
     expect(v.k).toBeCloseTo(Math.min((4000 - 80) / 160, 3))
-    const close = clusterFitView(tiles, 100, 100, {
+    // A viewport a little small: closer than the fit, to part them
+    // (34 px / 40 px a cell).
+    const part = clusterFitView(tiles, 200, 200, {
       cell: 40,
       spacingPx: 34,
       tilePx: 48,
       maxK: 3,
     })
-    // A tiny viewport: still close enough to part them (34 px / 40 px).
-    expect(close.k).toBeCloseTo(34 / 40)
+    expect(part.k).toBeCloseTo(34 / 40)
+    // A tiny one: no closer than 1.15 x the fit, the extent kept in view;
+    // another click parts what is still folded.
+    const tiny = clusterFitView(tiles, 100, 100, {
+      cell: 40,
+      spacingPx: 34,
+      tilePx: 48,
+      maxK: 3,
+    })
+    expect(tiny.k).toBeCloseTo(((100 - 80) / 160) * 1.15)
+  })
+
+  it("ignores members stacked on one spot", () => {
+    const stacked = [...tiles, rack("e", "sw", 10)]
+    const opts = { cell: 40, spacingPx: 34, tilePx: 48, maxK: 3 }
+    expect(clusterFitView(stacked, 100, 100, opts).k).toBeCloseTo(
+      clusterFitView(tiles, 100, 100, opts).k
+    )
   })
 })

@@ -1039,7 +1039,7 @@ Planning tiles and zones never turn into icons.
 
 An icon tile behaves like the tile: it selects, hovers, drags and opens its
 menu, keeps its monitoring ring (down or degraded) and its selection
-outline, and its name sits under it as under a grown symbol. With the
+outline, and its name sits beside it. With the
 option off the plan draws as it did before: Readable grows the tile, Real
 keeps it at its true size with its 8 px marker.
 
@@ -1056,8 +1056,50 @@ Nothing is seeded: the defaults live in code and every icon is yours to
 set. The **Objects** panel shows the same icon beside each placed object's
 name.
 
+**When icons crowd.** Icon tiles that would overlap on screen do not pile
+up:
+
+- **Spread.** Where there is room they are nudged apart round their true
+  places, along the way they overlap least, never more than **2.5 icon
+  sides** from where they really are. Each one moved keeps a thin
+  **leader** back to its true place, with a small dot there. Cables and
+  stubs leave the icon where it is drawn.
+- **Cluster.** A crowd of more than **6**, or one that cannot spread within
+  that reach, folds into one **cluster tile** at the members' centroid, a
+  little larger than an icon, like markers on a map. It shows the members'
+  shared icon and colour (a stack icon in grey when they differ), a count
+  badge on its corner, and the worst monitoring state among them as its
+  outline and ring (down over stale over degraded).
+- **Its name** reads as a range when the names share a stem and run in
+  sequence, `R-A01–R-A04`; otherwise it counts them, `4 racks` (or
+  `4 objects` when the kinds are mixed). Hover it to list the members.
+  **Click** it to zoom to fit the members' real extent, a little closer
+  when that is all it takes for them to part or turn back into tiles; a
+  wide cluster may leave smaller ones to click again.
+- **Pulled out.** A selected, hovered or found tile (a **Find on plan**
+  pick, a panel's **Show on plan**, a rack table row) leaves its cluster and
+  draws on its own.
+- **Names** of icons and clusters go round their own icon: right, left,
+  below, above, then the corners, the first place free of other icons and
+  names. A name that has nowhere to go hides (the selection and the hovered
+  always show), and never covers another icon.
+- **Steady.** The layout is worked out when a pan or zoom settles, for the
+  zoom level (in eighths of a doubling), never for where you are panned to,
+  so panning does not move anything. Icons ease to their new places.
+  Icons that were clustered stay so until they are clearly further apart
+  than the spacing that clustered them, so a zoom that rests near the
+  point does not flicker.
+
+Icons draw over trays and cables, so a cable ends on the icon rather than
+under it. A cable's or a bundle's name along its line sits on a small plate
+of the page, so the line breaks cleanly round the text.
+
+With **Icons when zoomed out** off, nothing spreads or clusters; Readable
+behaves as before. The **3D** view is not affected.
+
 The **Export PDF** prints an object under **7 mm** on its longer side as its
-icon tile, 5 mm square. In the **3D** view, with Object size Readable, each
+icon tile, 5 mm square, and spreads and clusters them the same way at the
+paper's scale. In the **3D** view, with Object size Readable, each
 name label carries the object's icon on a small square in its colour.
 
 The option is saved on the plan with the other Display choices; a viewer

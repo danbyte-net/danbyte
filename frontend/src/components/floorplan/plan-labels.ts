@@ -127,7 +127,9 @@ export function placeLabels<T>(
     .sort((a, b) => b.r.priority - a.r.priority || a.i - b.i)
   const out = new Map<string, LabelSpot<T>>()
   for (const { r } of order) {
-    const spots = r.block ? r.spots.filter((s) => r.block!.free(s.box)) : r.spots
+    const spots = r.block
+      ? r.spots.filter((s) => r.block!.free(s.box))
+      : r.spots
     if (!spots.length && !(r.force && r.spots.length)) continue
     let pick: LabelSpot<T> | undefined
     if (r.avoid?.length)

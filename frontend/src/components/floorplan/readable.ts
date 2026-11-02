@@ -331,7 +331,10 @@ export function growStubs(
       const k = Math.min(tx, ty)
       return {
         ...s,
-        from: [bc[0] + dx * (Number.isFinite(k) ? k : 0), bc[1] + dy * (Number.isFinite(k) ? k : 0)] as Pt,
+        from: [
+          bc[0] + dx * (Number.isFinite(k) ? k : 0),
+          bc[1] + dy * (Number.isFinite(k) ? k : 0),
+        ] as Pt,
       }
     }
     const sx = shape.box.w / t.width

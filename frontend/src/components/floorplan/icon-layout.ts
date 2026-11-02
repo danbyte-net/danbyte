@@ -156,9 +156,7 @@ function relax(nodes: Node[], gap: number, cap: number, iterations: number) {
   for (const [i, n] of nodes.entries()) {
     n.p = [n.home[0], n.home[1]]
     // Stacked on one spot: start round it, so the push has a direction.
-    const twin = nodes.findIndex(
-      (o, j) => j < i && cheb(o.home, n.home) < 1e-6
-    )
+    const twin = nodes.findIndex((o, j) => j < i && cheb(o.home, n.home) < 1e-6)
     if (twin >= 0) {
       const a = i * 2.39996
       n.p = [n.home[0] + Math.cos(a) * 0.01, n.home[1] + Math.sin(a) * 0.01]
@@ -262,8 +260,7 @@ export function layoutIcons(
   }: IconLayoutOptions,
   pinned: ReadonlySet<string> = new Set()
 ): IconLayout {
-  if (!(scale > 0) || items.length < 2)
-    return { ...EMPTY_ICON_LAYOUT, scale }
+  if (!(scale > 0) || items.length < 2) return { ...EMPTY_ICON_LAYOUT, scale }
   const sorted = [...items].sort(readingOrder)
   const homes = sorted.map((it): Pt => [it.c[0] * scale, it.c[1] * scale])
   const spacing = side + gap
@@ -326,10 +323,17 @@ export function layoutIcons(
         const d = (nodes[i].side + nodes[j].side) / 2 + gap * 0.5
         if (cheb(pts[i], pts[j]) < d) merge.union(i, j)
       }
-    // One pushed past the cap with nothing on it: its nearest home.
+    // One pushed past the cap with nothing on it: its nearest home, if
+    // that is near - never a fold across the plan.
+    const joined = new Set<number>()
+    nodes.forEach((_, j) => {
+      if (merge.find(j) !== j) {
+        joined.add(j)
+        joined.add(merge.find(j))
+      }
+    })
     for (const i of bad) {
-      if (pin(i) || merge.find(i) !== i) continue
-      if ([...bad].some((j) => j !== i && merge.find(j) === i)) continue
+      if (pin(i) || joined.has(i)) continue
       let best = -1
       let bd = Infinity
       nodes.forEach((n, j) => {
@@ -340,7 +344,8 @@ export function layoutIcons(
           best = j
         }
       })
-      if (best >= 0) merge.union(i, best)
+      const reach = cap + (nodes[i].side + maxSide) / 2 + gap
+      if (best >= 0 && bd <= reach) merge.union(i, best)
     }
     const next = new Map<number, IconItem[]>()
     groups.forEach((g, i) => {
@@ -531,12 +536,18 @@ export function clusterExtent(tiles: readonly FloorPlanTile[]): CellBox {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
 }
 
+/** Members closer than this (cells) are stacked, not crowded. */
+const STACKED_CELLS = 0.25
+/** A cluster's click zooms no closer than this times its extent's fit. */
+const FIT_REACH = 1.15
+
 /**
  * Where a click on a cluster takes the view: its members' extent fitted
- * into the viewport (`vw` x `vh` px, `margin` round it), and close enough
- * that the members no longer overlap as icons - the closest two centres at
- * least `spacingPx` apart - or turn back into tiles (`tilePx` on their
- * long side), whichever comes first. Capped at `maxK`. Plan px per cell:
+ * into the viewport (`vw` x `vh` px, `margin` round it), and closer if
+ * that is what it takes for the members to stop overlapping as icons - the
+ * closest two centres at least `spacingPx` apart - or turn back into tiles
+ * (`tilePx` on their long side), whichever comes first; at most FIT_REACH
+ * times the fit, so the extent stays in view. Capped at `maxK`. Plan px per cell:
  * `cell`.
  */
 export function clusterFitView(
@@ -561,26 +572,33 @@ export function clusterFitView(
   const w = Math.max(e.w * cell, 1)
   const h = Math.max(e.h * cell, 1)
   const fit = Math.min((vw - margin) / w, (vh - margin) / h)
-  // The closest two members (Chebyshev, plan px).
+  // The closest two members (Chebyshev, plan px). Objects stacked on one
+  // spot (a device over its rack) never part by zooming - the spread
+  // parts them - so they do not count.
   let near = Infinity
   for (let i = 0; i < tiles.length; i++)
     for (let j = i + 1; j < tiles.length; j++) {
       const a = tiles[i]
       const b = tiles[j]
-      near = Math.min(
-        near,
-        Math.max(
-          Math.abs(a.x + a.width / 2 - b.x - b.width / 2),
-          Math.abs(a.y + a.height / 2 - b.y - b.height / 2)
-        ) * cell
+      const d = Math.max(
+        Math.abs(a.x + a.width / 2 - b.x - b.width / 2),
+        Math.abs(a.y + a.height / 2 - b.y - b.height / 2)
       )
+      if (d >= STACKED_CELLS) near = Math.min(near, d * cell)
     }
-  const apart = near > 0 && Number.isFinite(near) ? spacingPx / near : maxK
-  const smallest = Math.min(
+  const apart = Number.isFinite(near) ? spacingPx / near : fit
+  // The largest member back as a tile: the first to turn.
+  const largest = Math.max(
     ...tiles.map((t) => Math.max(t.width, t.height) * cell)
   )
-  const asTiles = smallest > 0 ? tilePx / smallest : maxK
-  const k = Math.min(maxK, Math.max(fit, Math.min(apart, asTiles)))
+  const asTiles = largest > 0 ? tilePx / largest : maxK
+  // Fitted, and closer when that parts them - but never so close the
+  // extent is lost: past FIT_REACH x the fit, a click on what is still
+  // folded goes the rest of the way.
+  const k = Math.min(
+    maxK,
+    Math.max(fit, Math.min(apart, asTiles, fit * FIT_REACH))
+  )
   const cx = (e.x + e.w / 2) * cell
   const cy = (e.y + e.h / 2) * cell
   return { k, x: vw / 2 - cx * k, y: vh / 2 - cy * k }
