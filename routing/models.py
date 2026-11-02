@@ -403,6 +403,21 @@ class _Owned:
         return o.name if o is not None else "?"
 
 
+#: Kernel table numbers a policy route may not name: unspec, default, main
+#: and local.
+RESERVED_TABLES = {0, 253, 254, 255}
+
+
+def validate_table(value, field: str = "table") -> None:
+    if value is None:
+        return
+    if value in RESERVED_TABLES or value > 4294967295:
+        raise ValidationError(
+            {field: "0, 253, 254 and 255 are the kernel's own tables "
+                    "(unspec, default, main, local)."}
+        )
+
+
 class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     """``ip route vrf X 10.0.0.0/8 10.1.1.1`` on one device or VM."""
 
@@ -452,6 +467,9 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
         "api.VRF", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="leaked_static_routes",
     )
+    #: A kernel routing table number (``ip route … table 100``) for policy
+    #: routing. Null = main, or the VRF's own table.
+    table = models.PositiveIntegerField(null=True, blank=True)
     distance = models.PositiveSmallIntegerField(null=True, blank=True)
     metric = models.PositiveIntegerField(null=True, blank=True)
     tag = models.PositiveIntegerField(null=True, blank=True)
@@ -466,12 +484,13 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
         ordering = ["device__name", "vrf__name", "prefix"]
         constraints = [
             models.UniqueConstraint(
-                fields=["device", "vrf", "prefix", "next_hop", "next_hop_interface"],
+                fields=["device", "vrf", "table", "prefix", "next_hop",
+                        "next_hop_interface"],
                 name="uniq_staticroute_path",
                 nulls_distinct=False, condition=_on_device(),
             ),
             models.UniqueConstraint(
-                fields=["virtual_machine", "vrf", "prefix", "next_hop",
+                fields=["virtual_machine", "vrf", "table", "prefix", "next_hop",
                         "next_hop_vm_interface"],
                 name="uniq_staticroute_vm_path",
                 nulls_distinct=False, condition=_on_vm(),
@@ -495,6 +514,12 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
             self.next_hop = normalize_address(self.next_hop)
         if bool(self.device_id) == bool(self.virtual_machine_id):
             raise ValidationError({"device": "A route belongs to a device or to a VM."})
+        validate_table(self.table)
+        if self.table is not None and self.vrf_id:
+            raise ValidationError(
+                {"table": "A VRF is its own table: set the VRF or a table number, "
+                          "not both."}
+            )
         if self.next_hop_interface_id and self.virtual_machine_id:
             raise ValidationError({"next_hop_interface": "Pick one of the VM's interfaces."})
         if self.next_hop_vm_interface_id and self.device_id:
@@ -534,6 +559,138 @@ class StaticRoute(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, Tagga
             raise ValidationError(
                 {"next_hop_vm_interface": "That interface is on another VM."}
             )
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRule(_Owned, NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """``ip rule add from 10.0.0.0/24 lookup 100 priority 1000`` on one device
+    or VM: which table a packet is looked up in, chosen by its source,
+    destination, ports or firewall mark."""
+
+    ACTION_CHOICES = [
+        ("lookup", "Lookup"),
+        ("blackhole", "Blackhole"),
+        ("unreachable", "Unreachable"),
+        ("prohibit", "Prohibit"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="policy_rules"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    #: A routing VM (#217); exactly one of the two is set.
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    family = models.CharField(max_length=4, choices=FAMILY_CHOICES, default="ipv4")
+    priority = models.PositiveIntegerField()
+    action = models.CharField(max_length=12, choices=ACTION_CHOICES, default="lookup")
+    #: The table a ``lookup`` rule sends the packet to - or ``vrf``, its table.
+    table = models.PositiveIntegerField(null=True, blank=True)
+    vrf = models.ForeignKey(
+        "api.VRF", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    from_prefix = models.CharField(max_length=64, blank=True, default="")
+    to_prefix = models.CharField(max_length=64, blank=True, default="")
+    iif = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_in",
+    )
+    oif = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_out",
+    )
+    #: The same two, on a VM.
+    vm_iif = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_in",
+    )
+    vm_oif = models.ForeignKey(
+        "api.VMInterface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="policy_rules_out",
+    )
+    fwmark = models.PositiveIntegerField(null=True, blank=True)
+    #: ``not``: the rule matches what its selectors do not.
+    invert = models.BooleanField(default=False)
+    status = models.ForeignKey(
+        "api.Status", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="policy_rules",
+    )
+    description = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ["device__name", "virtual_machine__name", "family", "priority"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["device", "family", "priority"],
+                name="uniq_policyrule_device_priority", condition=_on_device(),
+            ),
+            models.UniqueConstraint(
+                fields=["virtual_machine", "family", "priority"],
+                name="uniq_policyrule_vm_priority", condition=_on_vm(),
+            ),
+            _owner_check("policyrule_device_xor_vm"),
+        ]
+
+    @property
+    def in_interface(self):
+        return self.iif if self.iif_id else (self.vm_iif if self.vm_iif_id else None)
+
+    @property
+    def out_interface(self):
+        return self.oif if self.oif_id else (self.vm_oif if self.vm_oif_id else None)
+
+    def __str__(self) -> str:
+        return f"{self.priority} {self.action}"
+
+    def clean(self):
+        if bool(self.device_id) == bool(self.virtual_machine_id):
+            raise ValidationError({"device": "A rule belongs to a device or to a VM."})
+        fams = set()
+        for f in ("from_prefix", "to_prefix"):
+            raw = (getattr(self, f) or "").strip()
+            if not raw:
+                setattr(self, f, "")
+                continue
+            try:
+                # A host address reads as its /32 or /128, as `ip rule` prints it.
+                net = ipaddress.ip_network(raw, strict=True)
+            except ValueError as exc:
+                raise ValidationError({f: f"Not a valid network: {exc}"}) from exc
+            setattr(self, f, str(net))
+            fams.add("ipv4" if net.version == 4 else "ipv6")
+        if len(fams) > 1:
+            raise ValidationError({"to_prefix": "From and to are different families."})
+        if fams:
+            self.family = fams.pop()
+        if self.family not in ("ipv4", "ipv6"):
+            raise ValidationError({"family": "IPv4 or IPv6."})
+        validate_table(self.table)
+        if self.action == "lookup":
+            if (self.table is None) == (not self.vrf_id):
+                raise ValidationError(
+                    {"table": "A lookup rule names a table number or a VRF - one of the two."}
+                )
+        elif self.table is not None or self.vrf_id:
+            raise ValidationError({"table": f"A {self.action} rule looks nothing up."})
+        if self.virtual_machine_id and (self.iif_id or self.oif_id):
+            raise ValidationError({"iif": "Pick one of the VM's interfaces."})
+        if self.device_id and (self.vm_iif_id or self.vm_oif_id):
+            raise ValidationError({"vm_iif": "Pick one of the device's interfaces."})
+        for f in ("iif", "oif"):
+            port = getattr(self, f) if getattr(self, f"{f}_id") else None
+            if port is not None and port.device_id != self.device_id:
+                raise ValidationError({f: "That interface is on another device."})
+            vport = getattr(self, f"vm_{f}") if getattr(self, f"vm_{f}_id") else None
+            if vport is not None and vport.vm_id != self.virtual_machine_id:
+                raise ValidationError({f"vm_{f}": "That interface is on another VM."})
 
 
 # ─── BGP ─────────────────────────────────────────────────────────────────────

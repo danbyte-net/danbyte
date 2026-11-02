@@ -65,6 +65,7 @@ from .models import (
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
+    PolicyRule,
     PrefixList,
     PrefixListRule,
     Redistribution,
@@ -610,7 +611,75 @@ class StaticRouteSerializer(
                   "next_hop", "next_hop_interface", "next_hop_interface_id",
                   "next_hop_vm_interface", "next_hop_vm_interface_id",
                   "next_hop_vrf", "next_hop_vrf_id",
-                  "distance", "metric", "tag", "bfd",
+                  "table", "distance", "metric", "tag", "bfd",
+                  "status", "status_id", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRuleSerializer(
+    _OwnerFields, CustomFieldsSerializerMixin, StatusSerializerMixin, _TagsMixin,
+    NumIdModelSerializer,
+):
+    """``ip rule`` on a device or VM. The ports and the VRF are checked
+    against the tenant by their fields and against the owner by the model."""
+
+    cf_model = "policyrule"
+
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    vrf = VRFMiniSerializer(read_only=True)
+    vrf_id = TenantScopedPrimaryKeyRelatedField(
+        source="vrf", queryset=VRF.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    iif = InterfaceMiniSerializer(read_only=True)
+    iif_id = TenantScopedPrimaryKeyRelatedField(
+        source="iif", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    oif = InterfaceMiniSerializer(read_only=True)
+    oif_id = TenantScopedPrimaryKeyRelatedField(
+        source="oif", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_iif = VMInterfaceMiniSerializer(read_only=True)
+    vm_iif_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_iif", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    vm_oif = VMInterfaceMiniSerializer(read_only=True)
+    vm_oif_id = TenantScopedPrimaryKeyRelatedField(
+        source="vm_oif", queryset=VMInterface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = PolicyRule(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in PolicyRule._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in PolicyRule._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        _run_clean(probe)
+        for name in ("from_prefix", "to_prefix", "family"):
+            if name in attrs or name == "family":
+                attrs[name] = getattr(probe, name)
+        return attrs
+
+    class Meta:
+        model = PolicyRule
+        # The priority constraint spans nullable owner columns; the DB answers
+        # a duplicate with a 409.
+        validators = []
+        fields = ["id", "numid", *_OWNER_FIELDS, "family", "priority",
+                  "action", "action_display", "table", "vrf", "vrf_id",
+                  "from_prefix", "to_prefix", "iif", "iif_id", "oif", "oif_id",
+                  "vm_iif", "vm_iif_id", "vm_oif", "vm_oif_id", "fwmark", "invert",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]

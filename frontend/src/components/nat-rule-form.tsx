@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import { apiAll } from "@/lib/api-all"
-import type { NATRule, Status } from "@/lib/api"
+import type { InterfaceOption, NATRule, Status } from "@/lib/api"
 import { DevicePicker } from "@/components/device-picker"
 import { IpPicker } from "@/components/ip-picker"
 import { PrefixPicker } from "@/components/prefix-picker"
@@ -86,6 +86,9 @@ export function NATRuleForm({
   const [sourcePrefixId, setSourcePrefixId] = useState<string | null>(
     rule?.source_prefix?.id ?? null
   )
+  const [outIfaceId, setOutIfaceId] = useState<string | null>(
+    rule?.out_interface?.id ?? null
+  )
   const [statusId, setStatusId] = useState<string | null>(
     rule?.status?.id ?? null
   )
@@ -102,6 +105,13 @@ export function NATRuleForm({
     queryFn: () =>
       apiAll<Status>("/api/statuses/?available_to=natrule&picker=1"),
     staleTime: 5 * 60_000,
+  })
+
+  const ports = useQuery({
+    queryKey: ["interfaces-picker", deviceId],
+    queryFn: () =>
+      apiAll<InterfaceOption>(`/api/interfaces/?device=${deviceId}`),
+    enabled: !!deviceId,
   })
 
   const portless = useMemo(() => PORTLESS.has(protocol ?? ""), [protocol])
@@ -126,6 +136,7 @@ export function NATRuleForm({
           internal_ports: portless ? "" : internalPorts.trim(),
           source_ip_id: sourceIpId,
           source_prefix_id: sourcePrefixId,
+          out_interface_id: deviceId ? outIfaceId : null,
           status_id: statusId,
           description: description.trim(),
           tag_ids: tagIds,
@@ -180,8 +191,27 @@ export function NATRuleForm({
               label="Firewall"
               hint="optional - the device enforcing the rule"
               value={deviceId}
-              onChange={setDeviceId}
+              onChange={(v) => {
+                setDeviceId(v)
+                setOutIfaceId(null)
+              }}
               error={fieldErrors.device_id}
+            />
+            <FormCombobox
+              label="Out interface"
+              value={outIfaceId}
+              onChange={setOutIfaceId}
+              options={(ports.data?.results ?? []).map((i) => ({
+                value: i.id,
+                label: i.name,
+              }))}
+              noneLabel="Any"
+              placeholder={deviceId ? "Any" : "Pick a firewall first"}
+              disabled={!deviceId}
+              searchPlaceholder="Search interfaces…"
+              emptyText="No interfaces."
+              info="The egress port the rule applies on, as in masquerade on mgmt0."
+              error={fieldErrors.out_interface_id}
             />
             <FormStatusSelect
               value={statusId}

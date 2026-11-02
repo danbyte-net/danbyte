@@ -7843,7 +7843,7 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             super().get_queryset()
             # The source prefix's mini shape names its VRF, site and VLAN.
             .select_related("device", "status", "external_ip", "internal_ip",
-                            "source_ip", "source_prefix", "source_prefix__vrf",
+                            "out_interface", "source_ip", "source_prefix", "source_prefix__vrf",
                             "source_prefix__site", "source_prefix__vlan")
             .prefetch_related(TAGS)
         )

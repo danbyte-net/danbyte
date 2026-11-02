@@ -66,12 +66,12 @@ with a richer context:
 | `config_context` | The merged [config context](config-contexts.md) for the device. |
 | `interfaces` | The device's interfaces; each carries `vlan`, `tagged_vlans`, `vrf`, `mtu`, `enabled`, … and `link_peer` - the cable's far end as `{device, interface, description, custom_fields}`, or `None` on an uncabled port. Read-only: it is a plain dict, so `i.link_peer.custom_fields.frr_name` works and nothing behind the peer row is reachable. |
 | `ip_addresses` | Every address assigned to the device; `assigned_interface_id` says where. |
-| `routing` | What the device routes with - VRFs, static routes, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
+| `routing` | What the device routes with - VRFs, static routes, policy rules, BGP / OSPF / IS-IS, the VTEP and its VNIs, the policies and lists they reference, keychains. See [Routing](routing.md#rendering-a-config). |
 | `tunnels` | Every tunnel end on the device, with its far end(s) resolved. See [Tunnels](#tunnels). |
 | `tunnels_by_interface` | The same rows keyed by the local port name (`tunnels_by_interface["wg0"]`). |
 
 Virtual machines render the same way (`vm` and `device` both name the VM;
-`routing` carries the parts a VM runs - static routes, BGP and
+`routing` carries the parts a VM runs - static routes, policy rules, BGP and
 the IGPs).
 
 #### Tunnels

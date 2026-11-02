@@ -14,6 +14,7 @@ import type {
   ISISInstance,
   OSPFArea,
   OSPFInstance,
+  PolicyRule,
   PrefixList,
   RoutingKeychain,
   RoutingPolicy,
@@ -145,12 +146,7 @@ function tags<
 // ─── Prefix lists ────────────────────────────────────────────────────────────
 
 export type PrefixListColumnId =
-  | "numid"
-  | "name"
-  | "family"
-  | "rule_count"
-  | "description"
-  | "tags"
+  "numid" | "name" | "family" | "rule_count" | "description" | "tags"
 const PREFIX_LIST_ORDER: PrefixListColumnId[] = [
   "numid",
   "name",
@@ -195,12 +191,7 @@ export function buildPrefixListColumns<T extends PrefixList = PrefixList>(
 // ─── Communities ─────────────────────────────────────────────────────────────
 
 export type CommunityColumnId =
-  | "numid"
-  | "value"
-  | "name"
-  | "kind"
-  | "description"
-  | "tags"
+  "numid" | "value" | "name" | "kind" | "description" | "tags"
 const COMMUNITY_ORDER: CommunityColumnId[] = [
   "numid",
   "value",
@@ -271,12 +262,7 @@ export function buildCommunityColumns<T extends Community = Community>(
 // ─── Community lists ─────────────────────────────────────────────────────────
 
 export type CommunityListColumnId =
-  | "numid"
-  | "name"
-  | "kind"
-  | "rule_count"
-  | "description"
-  | "tags"
+  "numid" | "name" | "kind" | "rule_count" | "description" | "tags"
 const COMMUNITY_LIST_ORDER: CommunityListColumnId[] = [
   "numid",
   "name",
@@ -322,11 +308,7 @@ export function buildCommunityListColumns<
 // ─── AS-path lists ───────────────────────────────────────────────────────────
 
 export type ASPathListColumnId =
-  | "numid"
-  | "name"
-  | "rule_count"
-  | "description"
-  | "tags"
+  "numid" | "name" | "rule_count" | "description" | "tags"
 const AS_PATH_LIST_ORDER: ASPathListColumnId[] = [
   "numid",
   "name",
@@ -354,11 +336,7 @@ export function buildASPathListColumns<T extends ASPathList = ASPathList>(
 // ─── Routing policies ────────────────────────────────────────────────────────
 
 export type RoutingPolicyColumnId =
-  | "numid"
-  | "name"
-  | "rule_count"
-  | "description"
-  | "tags"
+  "numid" | "name" | "rule_count" | "description" | "tags"
 const ROUTING_POLICY_ORDER: RoutingPolicyColumnId[] = [
   "numid",
   "name",
@@ -387,12 +365,7 @@ export function buildRoutingPolicyColumns<
 // ─── Keychains ───────────────────────────────────────────────────────────────
 
 export type RoutingKeychainColumnId =
-  | "numid"
-  | "name"
-  | "algorithm"
-  | "key"
-  | "description"
-  | "tags"
+  "numid" | "name" | "algorithm" | "key" | "description" | "tags"
 const KEYCHAIN_ORDER: RoutingKeychainColumnId[] = [
   "numid",
   "name",
@@ -463,6 +436,7 @@ export type StaticRouteColumnId =
   | "vrf"
   | "next_hop"
   | "kind"
+  | "table"
   | "distance"
   | "metric"
   | "status"
@@ -475,6 +449,7 @@ const STATIC_ROUTE_ORDER: StaticRouteColumnId[] = [
   "vrf",
   "next_hop",
   "kind",
+  "table",
   "distance",
   "metric",
   "status",
@@ -621,6 +596,17 @@ export function buildStaticRouteColumns<T extends StaticRoute = StaticRoute>(
           },
         },
       }),
+      table: () => ({
+        id: "table",
+        accessorKey: "table",
+        header: ({ column }) => <SortHeader column={column} label="Table" />,
+        cell: ({ row }) =>
+          row.original.table != null ? (
+            <span className="num text-xs">{row.original.table}</span>
+          ) : (
+            dash
+          ),
+      }),
       distance: () => ({
         id: "distance",
         accessorKey: "distance",
@@ -659,6 +645,165 @@ export function buildStaticRouteColumns<T extends StaticRoute = StaticRoute>(
             }),
           },
         },
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── Policy rules (ip rule) ──────────────────────────────────────────────────
+
+export type PolicyRuleColumnId =
+  | "numid"
+  | "priority"
+  | "device"
+  | "family"
+  | "selector"
+  | "action"
+  | "lookup"
+  | "status"
+  | "description"
+  | "tags"
+const POLICY_RULE_ORDER: PolicyRuleColumnId[] = [
+  "numid",
+  "priority",
+  "device",
+  "family",
+  "selector",
+  "action",
+  "lookup",
+  "status",
+  "description",
+  "tags",
+]
+
+/** `from 10.0.0.0/24 iif eth0` - what the rule matches, as `ip rule` reads. */
+export function policyRuleSelector(r: PolicyRule): string {
+  const parts: string[] = []
+  if (r.invert) parts.push("not")
+  if (r.from_prefix) parts.push(`from ${r.from_prefix}`)
+  if (r.to_prefix) parts.push(`to ${r.to_prefix}`)
+  const iif = r.iif ?? r.vm_iif
+  const oif = r.oif ?? r.vm_oif
+  if (iif) parts.push(`iif ${iif.name}`)
+  if (oif) parts.push(`oif ${oif.name}`)
+  if (r.fwmark != null) parts.push(`fwmark ${r.fwmark}`)
+  return parts.length ? parts.join(" ") : "from all"
+}
+
+export function buildPolicyRuleColumns<T extends PolicyRule = PolicyRule>(
+  opts: CommonOpts<T, PolicyRuleColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, PolicyRuleColumnId>(
+    POLICY_RULE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      priority: () => ({
+        id: "priority",
+        accessorKey: "priority",
+        header: ({ column }) => <SortHeader column={column} label="Priority" />,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              to="/policy-rules/$id"
+              params={{ id: row.original.id }}
+              className="link num font-medium"
+            >
+              {row.original.priority}
+            </Link>
+            <PlannedChangeMarker
+              objectType="routing.policyrule"
+              objectId={row.original.id}
+            />
+          </span>
+        ),
+      }),
+      device: () => ({
+        id: "device",
+        accessorFn: (r) => ownerName(r),
+        header: ({ column }) => (
+          <SortHeader column={column} label="Device / VM" />
+        ),
+        cell: ({ row }) => (
+          <OwnerLink
+            owner={ownerOf(row.original)}
+            tab="overview"
+            className="link text-xs"
+          />
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Device / VM",
+            get: (r: T) => ownerOf(r)?.id ?? "__none__",
+            formatValue: (_v, sample) => ({ label: ownerName(sample) }),
+          },
+        },
+      }),
+      family: () => ({
+        id: "family",
+        accessorKey: "family",
+        header: "Family",
+        cell: ({ row }) => (
+          <span className="text-xs">{familyLabel(row.original.family)}</span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Family",
+            get: (r: T) => r.family,
+            formatValue: (v) => ({ label: familyLabel(String(v)) }),
+          },
+        },
+      }),
+      selector: () => ({
+        id: "selector",
+        accessorFn: (r) => policyRuleSelector(r),
+        header: "Match",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {policyRuleSelector(row.original)}
+          </span>
+        ),
+      }),
+      action: () => ({
+        id: "action",
+        accessorKey: "action",
+        header: "Action",
+        cell: ({ row }) => (
+          <span className="text-xs">{row.original.action_display}</span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Action",
+            get: (r: T) => r.action,
+            formatValue: (_v, sample) => ({ label: sample.action_display }),
+          },
+        },
+      }),
+      lookup: () => ({
+        id: "lookup",
+        accessorFn: (r) =>
+          r.vrf?.name ?? (r.table != null ? String(r.table) : ""),
+        header: "Table",
+        cell: ({ row }) => {
+          const r = row.original
+          if (r.vrf) return <ColorBadge name={r.vrf.name} color={r.vrf.color} />
+          return r.table != null ? (
+            <span className="num text-xs">{r.table}</span>
+          ) : (
+            dash
+          )
+        },
+      }),
+      status: () => ({
+        id: "status",
+        accessorFn: (r) => r.status?.name ?? "",
+        header: ({ column }) => <SortHeader column={column} label="Status" />,
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),
@@ -1888,9 +2033,7 @@ export function buildEthernetSegmentColumns<
                 {members.length} interfaces
               </span>
             )
-          return (
-            <span className="font-mono text-xs">{members.join(", ")}</span>
-          )
+          return <span className="font-mono text-xs">{members.join(", ")}</span>
         },
       }),
       description: () => descriptionColumn<T>(),

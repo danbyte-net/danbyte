@@ -6642,6 +6642,12 @@ class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="nat_source",
     )
+    #: The egress port a rule applies on - "masquerade on mgmt0". On the
+    #: rule's device.
+    out_interface = models.ForeignKey(
+        "Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules_out",
+    )
 
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,

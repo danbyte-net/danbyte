@@ -8,6 +8,7 @@ import type {
   Community,
   EthernetSegment,
   InterfaceOption,
+  PolicyRule,
   RoutingKeychain,
   StaticRoute,
   Status,
@@ -272,15 +273,11 @@ export function EthernetSegmentForm({
 }) {
   const isEdit = !!item
   const [name, setName] = useState(item?.name ?? "")
-  const [kind, setKind] = useState<string | null>(
-    item?.esi ? "type0" : "type3"
-  )
+  const [kind, setKind] = useState<string | null>(item?.esi ? "type0" : "type3")
   const [esi, setEsi] = useState(item?.esi ?? "")
   const [esId, setEsId] = useState(numText(item?.es_id))
   const [sysMac, setSysMac] = useState(item?.sys_mac ?? "")
-  const [dfPreference, setDfPreference] = useState(
-    numText(item?.df_preference)
-  )
+  const [dfPreference, setDfPreference] = useState(numText(item?.df_preference))
   const [members, setMembers] = useState<SegmentMember[]>(
     item?.interfaces ?? []
   )
@@ -654,6 +651,7 @@ export function StaticRouteForm({
   const [nextHopVrfId, setNextHopVrfId] = useState<string | null>(
     item?.next_hop_vrf?.id ?? null
   )
+  const [table, setTable] = useState(numText(item?.table))
   const [distance, setDistance] = useState(numText(item?.distance))
   const [metric, setMetric] = useState(numText(item?.metric))
   const [tag, setTag] = useState(numText(item?.tag))
@@ -719,6 +717,7 @@ export function StaticRouteForm({
         mutation.mutate({
           ...ownerPayload(on.id ? { ...on, id: on.id, name: "" } : null),
           vrf_id: vrfId,
+          table: vrfId ? null : numOrNull(table),
           prefix: prefix.trim(),
           prefix_obj_id: prefixObjId,
           kind,
@@ -766,6 +765,17 @@ export function StaticRouteForm({
             searchPlaceholder="Search VRFs…"
             emptyText="No VRFs."
             error={fieldErrors.vrf_id}
+          />
+          <FormText
+            label="Table"
+            type="number"
+            min={1}
+            value={vrfId ? "" : table}
+            onChange={setTable}
+            disabled={!!vrfId}
+            placeholder={vrfId ? "The VRF's" : "Main"}
+            info="A kernel table number for policy routing (ip route … table 100). A VRF is already its own table, so it takes one or the other."
+            error={fieldErrors.table}
           />
         </div>
         <div className="grid gap-3 @md:grid-cols-2">
@@ -917,6 +927,293 @@ export function StaticRouteForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create route"}
+      />
+    </form>
+  )
+}
+
+// ─── Policy rule (ip rule) ───────────────────────────────────────────────────
+
+const RULE_ACTIONS = [
+  { value: "lookup", label: "Lookup" },
+  { value: "blackhole", label: "Blackhole" },
+  { value: "unreachable", label: "Unreachable" },
+  { value: "prohibit", label: "Prohibit" },
+]
+const FAMILIES = [
+  { value: "ipv4", label: "IPv4" },
+  { value: "ipv6", label: "IPv6" },
+]
+
+export function PolicyRuleForm({
+  item,
+  owner,
+  onSaved,
+  onCancel,
+}: {
+  item?: PolicyRule | null
+  /** Pre-set box when adding from a device's or VM's own Routing tab. */
+  owner?: RoutingOwner
+  onSaved: (v: PolicyRule) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const start = (item ? ownerOf(item) : null) ?? owner ?? null
+  const [on, setOn] = useState<{ kind: OwnerKind; id: string | null }>({
+    kind: start?.kind ?? "device",
+    id: start?.id ?? null,
+  })
+  const [family, setFamily] = useState<string | null>(item?.family ?? "ipv4")
+  const [priority, setPriority] = useState(numText(item?.priority))
+  const [action, setAction] = useState<string | null>(item?.action ?? "lookup")
+  const [table, setTable] = useState(numText(item?.table))
+  const [vrfId, setVrfId] = useState<string | null>(item?.vrf?.id ?? null)
+  const [fromPrefix, setFromPrefix] = useState(item?.from_prefix ?? "")
+  const [toPrefix, setToPrefix] = useState(item?.to_prefix ?? "")
+  const [iifId, setIifId] = useState<string | null>(
+    item?.iif?.id ?? item?.vm_iif?.id ?? null
+  )
+  const [oifId, setOifId] = useState<string | null>(
+    item?.oif?.id ?? item?.vm_oif?.id ?? null
+  )
+  const [fwmark, setFwmark] = useState(numText(item?.fwmark))
+  const [invert, setInvert] = useState(item?.invert ?? false)
+  const [statusId, setStatusId] = useState<string | null>(
+    item?.status?.id ?? null
+  )
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+
+  const vrfs = useQuery({
+    queryKey: ["vrfs-picker"],
+    queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
+  })
+  const statuses = useQuery({
+    queryKey: ["statuses", "staticroute"],
+    queryFn: () =>
+      apiAll<Status>("/api/statuses/?available_to=staticroute&picker=1"),
+    staleTime: 5 * 60_000,
+  })
+  const interfaces = useOwnerPorts(on.id ? { kind: on.kind, id: on.id } : null)
+  const boxPicked = !!on.id
+  const pickFirst = on.kind === "vm" ? "Pick a VM first" : "Pick a device first"
+  const vrfOptions = (vrfs.data?.results ?? []).map((v) => ({
+    value: v.id,
+    label: v.rd ? `${v.name} · ${v.rd}` : v.name,
+    color: v.color,
+  }))
+  const ifaceOptions = (interfaces.data?.results ?? []).map((i) => ({
+    value: i.id,
+    label: i.name,
+  }))
+  const lookup = action === "lookup"
+
+  const { mutation, fieldErrors } = useRoutingSave<PolicyRule>({
+    objectType: ROUTING_OBJECT_TYPES.policyrule,
+    endpoint: "/api/routing/ip-rules/",
+    queryKey: "policy-rules",
+    id: item?.id,
+    label: (v) => `Rule ${v.priority}`,
+    onSaved,
+  })
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          ...ownerPayload(on.id ? { ...on, id: on.id, name: "" } : null),
+          family,
+          priority: numOrNull(priority),
+          action,
+          table: lookup && !vrfId ? numOrNull(table) : null,
+          vrf_id: lookup ? vrfId : null,
+          from_prefix: fromPrefix.trim(),
+          to_prefix: toPrefix.trim(),
+          ...portPayload(on.kind, iifId, ["iif_id", "vm_iif_id"]),
+          ...portPayload(on.kind, oifId, ["oif_id", "vm_oif_id"]),
+          fwmark: numOrNull(fwmark),
+          invert,
+          status_id: statusId,
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Rule" card>
+        <OwnerField
+          value={on}
+          onChange={(v) => {
+            setOn(v)
+            setIifId(null)
+            setOifId(null)
+          }}
+          locked={!!owner}
+          error={firstError(
+            fieldErrors,
+            "device_id",
+            "virtual_machine_id",
+            "device"
+          )}
+        />
+        <div className="grid gap-3 @md:grid-cols-3">
+          <FormText
+            label="Priority"
+            type="number"
+            required
+            min={0}
+            autoFocus={!isEdit}
+            value={priority}
+            onChange={setPriority}
+            error={fieldErrors.priority}
+          />
+          <FormSelect
+            label="Family"
+            value={family}
+            onChange={setFamily}
+            options={FAMILIES}
+            info="Set from the prefixes when they are given."
+            error={fieldErrors.family}
+          />
+          <FormSelect
+            label="Action"
+            value={action}
+            onChange={setAction}
+            options={RULE_ACTIONS}
+            error={fieldErrors.action}
+          />
+        </div>
+        {lookup && (
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormText
+              label="Table"
+              type="number"
+              min={1}
+              value={vrfId ? "" : table}
+              onChange={setTable}
+              disabled={!!vrfId}
+              error={fieldErrors.table}
+            />
+            <FormCombobox
+              label="VRF"
+              value={vrfId}
+              onChange={setVrfId}
+              options={vrfOptions}
+              noneLabel="None"
+              placeholder="None"
+              searchPlaceholder="Search VRFs…"
+              emptyText="No VRFs."
+              info="Look up the VRF's table instead of a table number."
+              error={fieldErrors.vrf_id}
+            />
+          </div>
+        )}
+        <FormStatusSelect
+          value={statusId}
+          onChange={setStatusId}
+          options={statuses.data?.results ?? []}
+          placeholder="Select a status…"
+          error={fieldErrors.status_id}
+        />
+      </FormSection>
+
+      <FormSection title="Match" card>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormText
+            label="From"
+            mono
+            value={fromPrefix}
+            onChange={setFromPrefix}
+            placeholder="10.0.0.0/24"
+            error={fieldErrors.from_prefix}
+          />
+          <FormText
+            label="To"
+            mono
+            value={toPrefix}
+            onChange={setToPrefix}
+            placeholder="0.0.0.0/0"
+            error={fieldErrors.to_prefix}
+          />
+          <FormCombobox
+            label="In interface"
+            value={iifId}
+            onChange={setIifId}
+            options={ifaceOptions}
+            noneLabel="Any"
+            placeholder={boxPicked ? "Any" : pickFirst}
+            disabled={!boxPicked}
+            searchPlaceholder="Search interfaces…"
+            emptyText="No interfaces."
+            error={firstError(
+              fieldErrors,
+              "iif_id",
+              "vm_iif_id",
+              "iif",
+              "vm_iif"
+            )}
+          />
+          <FormCombobox
+            label="Out interface"
+            value={oifId}
+            onChange={setOifId}
+            options={ifaceOptions}
+            noneLabel="Any"
+            placeholder={boxPicked ? "Any" : pickFirst}
+            disabled={!boxPicked}
+            searchPlaceholder="Search interfaces…"
+            emptyText="No interfaces."
+            error={firstError(
+              fieldErrors,
+              "oif_id",
+              "vm_oif_id",
+              "oif",
+              "vm_oif"
+            )}
+          />
+          <FormText
+            label="Firewall mark"
+            type="number"
+            min={0}
+            value={fwmark}
+            onChange={setFwmark}
+            error={fieldErrors.fwmark}
+          />
+        </div>
+        <FormCheckbox
+          label="Invert"
+          checked={invert}
+          onChange={setInvert}
+          info="Match what the selectors do not: ip rule add not …"
+        />
+      </FormSection>
+
+      <FormSection title="Notes" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="policyrule"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create rule"}
       />
     </form>
   )

@@ -127,11 +127,47 @@ is one path on one box:
 | **Kind** | Next hop, interface, blackhole or reject. |
 | **Next hop** / **Interface** | For a next-hop route: an address, an interface on the same device, or both (`ip route 0.0.0.0/0 10.1.1.1 eth0`). An **interface** route points out of a port with no address - the point-to-point shape some platforms write (`ip route 10.30.0.0/16 Serial0/0`). |
 | **Next hop VRF** | Route leaking - the table the next hop is looked up in. |
+| **Table** | A kernel table number for policy routing (`ip route … table 100`). Blank is the main table, or the VRF's own. |
 | **Distance**, **Metric**, **Tag**, **BFD** | As on the box; blank means the platform default. |
 | **Status** | Your own status catalog; the built-ins are active, planned and disabled. |
 
 The same prefix through two next hops is two rows (ECMP); the same path twice
-is refused. A next-hop interface on another box is refused too.
+is refused. The same prefix in the main table and in table 100 is two paths.
+A next-hop interface on another box is refused too.
+
+**Table** and **VRF** exclude each other: a Linux VRF already is a table,
+so a route names one or the other. Tables 0, 253, 254 and 255 are the
+kernel's own (unspec, default, main, local) and are refused.
+
+## Policy rules
+
+**Routing → Policy rules**, or the **Policy rules** section of a device's or
+VM's **Routing** tab. One row is one `ip rule`: which table a packet is
+looked up in, chosen by where it comes from or goes to.
+
+| Field | What it records |
+|---|---|
+| **Runs on** | The router: a device or a virtual machine. |
+| **Priority** | The rule's preference; unique per box and family. |
+| **Family** | IPv4 or IPv6. Taken from **From** / **To** when either is set. |
+| **Action** | *Lookup* (the default), *blackhole*, *unreachable* or *prohibit*. |
+| **Table** / **VRF** | For a lookup: a table number, or a VRF (its table) - one of the two. |
+| **From**, **To** | Source and destination prefixes; a host address is stored as its /32 or /128. Blank matches all. |
+| **In interface**, **Out interface** | `iif` / `oif`, ports on the same box. |
+| **Firewall mark** | `fwmark`. |
+| **Invert** | `not`: the rule matches what its selectors do not. |
+
+Together with a static route's **Table**, this renders a source-routed
+management interface:
+
+```jinja
+{% for r in routing.static_routes if r.table %}
+    post-up ip route replace {{ r.prefix|replace("0.0.0.0/0", "default") }} via {{ r.next_hop }} dev {{ r.next_hop_interface }} table {{ r.table }}
+{% endfor %}
+{% for p in routing.policy_rules %}
+    post-up ip rule add{% if p.invert %} not{% endif %}{% if p.from %} from {{ p.from }}{% endif %}{% if p.to %} to {{ p.to }}{% endif %} lookup {{ p.table or p.vrf }} priority {{ p.priority }}
+{% endfor %}
+```
 
 ## BGP
 
@@ -395,7 +431,9 @@ for the address filters that turn an address into a mask or a length):
 routing:
   vrfs:          [{name, rd, import_targets, export_targets, l3vni, description}]
   static_routes: [{vrf, prefix, kind, next_hop, next_hop_interface, next_hop_vrf,
-                   distance, metric, tag, bfd, description}]
+                   table, distance, metric, tag, bfd, description}]
+  policy_rules:  [{family, priority, action, table, vrf, from, to, iif, oif,
+                   fwmark, invert, description}]     # sorted by family, then priority
   bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd,
                    address_families: [{afi_safi, networks, maximum_paths, maximum_paths_ibgp,
                                        import_policy, export_policy, redistribute: [{source, policy, metric}]}],
@@ -594,7 +632,7 @@ it.
 
 Every routing list has tick boxes: BGP instances, sessions and peer groups;
 OSPF instances and areas; IS-IS and EIGRP instances; VTEPs and Ethernet
-segments; static routes; routing policies, prefix lists, communities,
+segments; static routes and policy rules; routing policies, prefix lists, communities,
 community lists and AS-path lists; keychains and BFD profiles. A device's or
 VM's **Routing** tab (static routes and BGP sessions) and a VRF's, an ASN's,
 a peer group's and a prefix's **BGP sessions** and **Static routes** tabs
@@ -649,7 +687,8 @@ delete's words (`In use: 2 BGP sessions.`).
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/bfd-profiles/` | BFD profiles; every instance, enrolled interface, session and peer group takes `bfd_profile_id`. |
-| `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `table`, `kind`, `status`, `site`, `prefix_obj`. |
+| `/api/routing/ip-rules/` | Policy rules (`ip rule`); filter by `device`, `virtual_machine`, `family`, `action`, `table`, `vrf`, `status`, `site`. Ports are `iif_id` / `oif_id`, or `vm_iif_id` / `vm_oif_id` on a VM. (`…/policy-rules/` is the routing-policy rule endpoint.) |
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `virtual_machine`, `vrf`, `asn`, `site`, `status`. |
 | `/api/routing/bgp-address-families/`, `…/redistributions/` | The rows on their own (`?instance=`, `?bgp_af=`, `?ospf_instance=`, `?isis_instance=`, `?eigrp_instance=`); an address family or IGP instance accepts `redistributions: [...]`. |
 | `/api/routing/bgp-peer-groups/` | Peer groups. |
@@ -675,7 +714,7 @@ interfaces) or `next_hop_vm_interface_id` (static routes). Reads carry both
 `device` and `virtual_machine`, one of them null, plus `site`.
 
 Every list takes `?picker=1` for the compact row shape, `?search=`, and
-supports CSV import/export like the rest of Danbyte. The seventeen lists
+supports CSV import/export like the rest of Danbyte. The eighteen lists
 above also answer:
 
 - `POST …/bulk-delete/` with `{"ids": [...]}` (add `"dry_run": true` for
@@ -713,7 +752,7 @@ their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 
 The **Routing** menu is grouped by protocol: **BGP** (instances, sessions,
 peer groups), **OSPF** (instances, areas), **IS-IS**, **EIGRP**, **EVPN /
-VXLAN** (VTEPs), **Static** (static routes), **Policy** (routing policies,
+VXLAN** (VTEPs), **Static** (static routes, policy rules), **Policy** (routing policies,
 prefix lists, communities, community lists, AS-path lists) and
 **Profiles** (keychains, BFD profiles). An instance
 or a VTEP is added and edited on its device's Routing tab - the fleet list

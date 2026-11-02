@@ -34,6 +34,7 @@ export const ROUTING_OBJECT_TYPES = {
   routingkeychain: "routing.routingkeychain",
   bfdprofile: "routing.bfdprofile",
   staticroute: "routing.staticroute",
+  policyrule: "routing.policyrule",
   bgpinstance: "routing.bgpinstance",
   bgpaddressfamily: "routing.bgpaddressfamily",
   bgppeergroup: "routing.bgppeergroup",

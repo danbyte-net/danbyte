@@ -43,6 +43,7 @@ import {
 import { RoutingDeleteDialog } from "./catalog-page"
 import { EIGRPSection, ISISSection, OSPFSection } from "./device-igp-section"
 import { LDPSection } from "./device-ldp-section"
+import { PolicyRulesSection } from "./device-policy-rules-section"
 import { VTEPSection } from "./device-vtep-section"
 import { StaticRouteForm } from "./object-forms"
 import { ownerDetailKey, ownerName, ownerNoun, ownerParam } from "./owner"
@@ -168,6 +169,7 @@ export function RoutingPanel({ owner }: { owner: RoutingOwner }) {
           canDelete={canDelete}
         />
       </Section>
+      <PolicyRulesSection owner={owner} />
 
       <Dialog
         open={adding || !!editing}

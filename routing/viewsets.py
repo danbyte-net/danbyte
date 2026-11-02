@@ -47,6 +47,7 @@ from .models import (
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
+    PolicyRule,
     PrefixList,
     PrefixListRule,
     Redistribution,
@@ -83,6 +84,7 @@ from .serializers import (
     OSPFAreaSerializer,
     OSPFInstanceSerializer,
     OSPFInterfaceSerializer,
+    PolicyRuleSerializer,
     PrefixListMiniSerializer,
     PrefixListRuleSerializer,
     PrefixListSerializer,
@@ -292,7 +294,7 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
 
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
-    editable_int_fields = ("distance", "metric", "tag")
+    editable_int_fields = ("distance", "metric", "tag", "table")
     bulk_edit = BulkEditSpec(
         fields=("status_id", "description", "vrf_id", "next_hop", "distance")
     )
@@ -301,7 +303,7 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     pagination_class = StandardPagination
     clone_fields = ("device", "virtual_machine", "vrf", "kind", "next_hop",
                     "next_hop_interface", "next_hop_vm_interface",
-                    "next_hop_vrf", "distance", "metric", "tag", "bfd", "status")
+                    "next_hop_vrf", "table", "distance", "metric", "tag", "bfd", "status")
 
     def normalize_bulk_updates(self, updates):
         # Written as the box prints it, as a PATCH writes it; a bad address
@@ -352,6 +354,60 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
             qs = qs.filter(vrf__isnull=True)
         elif vrf:
             qs = qs.filter(vrf_id=vrf)
+        if p.get("table"):
+            qs = qs.filter(table=p["table"])
+        return qs.distinct()
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRuleViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
+    """``ip rule`` rows per device or VM. Filter with ``?device=``,
+    ``?virtual_machine=``, ``?family=``, ``?action=``, ``?table=``, ``?vrf=``,
+    ``?status=``, ``?site=``."""
+
+    editable_str_fields = ("description",)
+    editable_bool_fields = ("invert",)
+    editable_int_fields = ("priority", "table", "fwmark")
+    bulk_edit = BulkEditSpec(fields=("status_id", "description"), status_model="staticroute")
+    queryset = PolicyRule.objects.all()
+    serializer_class = PolicyRuleSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("device", "virtual_machine", "family", "action", "table", "vrf",
+                    "from_prefix", "to_prefix", "iif", "oif", "vm_iif", "vm_oif",
+                    "fwmark", "invert", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device__site", "virtual_machine__site", "vrf",
+                            "iif__device", "oif__device", "vm_iif__vm", "vm_oif__vm",
+                            "status")
+            .prefetch_related(TAGS)
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            q = (Q(from_prefix__icontains=s) | Q(to_prefix__icontains=s)
+                 | Q(description__icontains=s) | Q(device__name__icontains=s)
+                 | Q(virtual_machine__name__icontains=s) | cf_text_q(qs.model, s))
+            if s.isdigit():
+                q |= Q(priority=int(s)) | Q(table=int(s))
+            qs = qs.filter(q)
+        for key, field in (
+            ("device", "device_id"), ("virtual_machine", "virtual_machine_id"),
+            ("family", "family"), ("action", "action"), ("table", "table"),
+            ("status", "status_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        if p.get("vrf"):
+            qs = qs.filter(vrf_id=p["vrf"])
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS["policyrule"], [p["site"]]))
         return qs.distinct()
 
 

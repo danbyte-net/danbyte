@@ -40,13 +40,37 @@ Shared shape: `tenant` FK, `name` char(128), `description` text, unique
 | `next_hop` | char(64) | normalised address; blank for a blackhole/reject |
 | `next_hop_interface` | FK → `Interface` | must be on `device` |
 | `next_hop_vrf` | FK → `VRF` | route leaking |
+| `table` | int | kernel table for policy routing; null = main or the VRF's. Exclusive with `vrf`; 0 and 253-255 refused |
 | `distance`, `metric`, `tag` | int | nullable |
 | `bfd` | bool | |
 | `status` | FK → `Status` | scope `staticroute` |
 
-Unique `(device, vrf, prefix, next_hop, next_hop_interface)` with
+Unique `(device, vrf, table, prefix, next_hop, next_hop_interface)` with
 `nulls_distinct=False`, so the same path twice is refused while the same
-prefix through another next hop (ECMP) is not.
+prefix through another next hop (ECMP), or in another table, is not.
+
+## Policy rules
+
+`PolicyRule` - one `ip rule` on a device or VM.
+
+| Field | Type | Notes |
+|---|---|---|
+| `tenant` | FK → `Tenant` | |
+| `device` / `virtual_machine` | FK | exactly one (`policyrule_device_xor_vm`) |
+| `family` | `ipv4` / `ipv6` | derived from the prefixes when given |
+| `priority` | int | unique per (owner, family) |
+| `action` | `lookup` / `blackhole` / `unreachable` / `prohibit` | |
+| `table` | int | for `lookup`; exclusive with `vrf`; 0 and 253-255 refused |
+| `vrf` | FK → `VRF` | for `lookup`: the VRF's table |
+| `from_prefix`, `to_prefix` | char(64) | normalised CIDR; a host is its /32 or /128 |
+| `iif`, `oif` | FK → `Interface` | on `device` |
+| `vm_iif`, `vm_oif` | FK → `VMInterface` | on `virtual_machine` |
+| `fwmark` | int | |
+| `invert` | bool | `not` |
+| `status` | FK → `Status` | the static-route statuses (scope `staticroute`) |
+
+Site-scoped as `device__site|virtual_machine__site`; audited; RBAC type
+`policyrule`.
 
 ## BGP
 

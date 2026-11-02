@@ -6467,6 +6467,8 @@ export interface NATRule {
   /** Optional restriction on who the rule applies to. */
   source_ip: { id: string; ip_address: string; dns_name: string } | null
   source_prefix: { id: string; cidr: string } | null
+  /** The egress port the rule applies on ("masquerade on mgmt0"). */
+  out_interface: { id: string; name: string } | null
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -7057,10 +7059,41 @@ export interface StaticRoute {
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null
   next_hop_vm_interface: { id: string; name: string; vm: VMMini } | null
   next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
+  /** Kernel table number for policy routing; null = main or the VRF's. */
+  table: number | null
   distance: number | null
   metric: number | null
   tag: number | null
   bfd: boolean
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** An `ip rule` on a device or VM (`/api/routing/ip-rules/`). */
+export interface PolicyRule {
+  id: string
+  numid: number | null
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
+  site: { id: string; name: string } | null
+  family: "ipv4" | "ipv6"
+  priority: number
+  action: "lookup" | "blackhole" | "unreachable" | "prohibit"
+  action_display: string
+  table: number | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  from_prefix: string
+  to_prefix: string
+  iif: { id: string; name: string; device: DeviceMini } | null
+  oif: { id: string; name: string; device: DeviceMini } | null
+  vm_iif: { id: string; name: string; vm: VMMini } | null
+  vm_oif: { id: string; name: string; vm: VMMini } | null
+  fwmark: number | null
+  invert: boolean
   status: StatusMini | null
   description: string
   tags: Tag[]

@@ -85,6 +85,7 @@ SITE_PATHS: dict[str, str] = {
     # Routing rows hang off their device or VM (#217); the catalogs they reference
     # (policies, prefix lists, keychains) are tenant-wide.
     "staticroute": "device__site|virtual_machine__site",
+    "policyrule": "device__site|virtual_machine__site",
     "bgpinstance": "device__site|virtual_machine__site",
     "bgpaddressfamily": "instance__device__site|instance__virtual_machine__site",
     "bgpsession": "instance__device__site|instance__virtual_machine__site",

@@ -152,6 +152,7 @@ from routing.viewsets import (
     OSPFAreaViewSet,
     OSPFInstanceViewSet,
     OSPFInterfaceViewSet,
+    PolicyRuleViewSet,
     PrefixListRuleViewSet,
     PrefixListViewSet,
     RedistributionViewSet,
@@ -440,6 +441,8 @@ router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
 router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
+# `ip rule` rows; `routing/policy-rules` is the route-map rule endpoint.
+router.register(r"routing/ip-rules", PolicyRuleViewSet, basename="policyrule")
 router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
 router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,
                 basename="bgpaddressfamily")

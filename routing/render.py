@@ -27,6 +27,7 @@ from .models import (
     ISISInstance,
     LDPInstance,
     OSPFInstance,
+    PolicyRule,
     PrefixList,
     RoutingKeychain,
     RoutingPolicy,
@@ -99,11 +100,34 @@ def static_route_dict(r: StaticRoute) -> dict:
         "next_hop": r.next_hop or None,
         "next_hop_interface": r.via_interface.name if r.via_interface is not None else None,
         "next_hop_vrf": _vrf_name(r.next_hop_vrf),
+        # A kernel table number for policy routing; None = main / the VRF's.
+        "table": r.table,
         "distance": r.distance,
         "metric": r.metric,
         "tag": r.tag,
         "bfd": r.bfd,
         "description": r.description or "",
+    }
+
+
+def policy_rule_dict(p: PolicyRule) -> dict:
+    """One ``ip rule``. ``from`` / ``to`` are CIDRs (a host is its /32 or
+    /128); ``vrf`` is the VRF's name when the rule looks up a VRF's table."""
+    iif, oif = p.in_interface, p.out_interface
+    return {
+        "id": str(p.id),
+        "family": p.family,
+        "priority": p.priority,
+        "action": p.action,
+        "table": p.table,
+        "vrf": _vrf_name(p.vrf),
+        "from": p.from_prefix or None,
+        "to": p.to_prefix or None,
+        "iif": iif.name if iif is not None else None,
+        "oif": oif.name if oif is not None else None,
+        "fwmark": p.fwmark,
+        "invert": p.invert,
+        "description": p.description or "",
     }
 
 
@@ -675,6 +699,12 @@ def routing_context(device) -> dict:
         .order_by(F("vrf__name").asc(nulls_first=True), "prefix", "next_hop")
     )
 
+    policy_rules = list(
+        PolicyRule.objects.filter(**own)
+        .select_related("vrf", "iif", "oif", "vm_iif", "vm_oif")
+        .order_by("family", "priority")
+    )
+
     # VRFs the box has to define: whatever its interfaces and routes sit in.
     vrfs = {}
     # `.all()` on purpose: the inventory prefetches interfaces with their
@@ -686,6 +716,9 @@ def routing_context(device) -> dict:
         for vrf in (r.vrf, r.next_hop_vrf):
             if vrf is not None:
                 vrfs[vrf.name] = vrf
+    for p in policy_rules:
+        if p.vrf is not None:
+            vrfs[p.vrf.name] = p.vrf
 
     referenced_policies: set[str] = set()
     instances = (
@@ -846,6 +879,7 @@ def routing_context(device) -> dict:
     out = {
         "vrfs": [vrf_dict(v, l3vnis.get(name)) for name, v in sorted(vrfs.items())],
         "static_routes": [static_route_dict(r) for r in static_routes],
+        "policy_rules": [policy_rule_dict(p) for p in policy_rules],
         "bgp": bgp,
         "ospf": ospf,
         "isis": isis,

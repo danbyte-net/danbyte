@@ -105,6 +105,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/tunnel-groups": "features/vpn/",
   "/ipsec-profiles": "features/vpn/",
   "/static-routes": "features/routing/",
+  "/policy-rules": "features/routing/",
   "/routing-policies": "features/routing/",
   "/prefix-lists": "features/routing/",
   "/community-lists": "features/routing/",

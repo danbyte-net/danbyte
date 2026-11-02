@@ -8135,11 +8135,21 @@ class NATRuleSerializer(
         source="source_prefix", queryset=Prefix.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    out_interface = serializers.SerializerMethodField()
+    out_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="out_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_out_interface(self, obj):
+        i = obj.out_interface if obj.out_interface_id else None
+        return {"id": str(i.id), "name": i.name} if i is not None else None
 
     def validate_external_ports(self, value):
         return _clean_port_spec(value, "external_ports")
@@ -8150,6 +8160,14 @@ class NATRuleSerializer(
     def validate(self, attrs):
         attrs = super().validate(attrs)
         get = lambda f: attrs.get(f, getattr(self.instance, f, None))  # noqa: E731
+
+        out = get("out_interface")
+        if out is not None:
+            device = get("device")
+            if device is None or out.device_id != device.id:
+                raise serializers.ValidationError(
+                    {"out_interface_id": "Pick a port on the rule's device."}
+                )
 
         proto = get("protocol")
         ext, internal = get("external_ports") or "", get("internal_ports") or ""
@@ -8182,6 +8200,7 @@ class NATRuleSerializer(
                   "internal_ip", "internal_ip_id", "internal_ports",
                   "source_ip", "source_ip_id",
                   "source_prefix", "source_prefix_id",
+                  "out_interface", "out_interface_id",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]

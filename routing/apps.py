@@ -32,6 +32,7 @@ class RoutingConfig(AppConfig):
             )())
 
         io(m.StaticRoute, ["device", "prefix", "next_hop"])
+        io(m.PolicyRule, ["device", "family", "priority"])
         io(m.BGPInstance, ["device", "vrf"], asn="asn")
         io(m.BGPSession, ["instance", "remote_address"])
         io(m.OSPFInstance, ["device", "process_id"])
