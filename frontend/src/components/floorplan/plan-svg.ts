@@ -93,6 +93,7 @@ import {
   clusterFace,
   drawnCentre,
   layoutIcons,
+  scaleBox,
   squareAt,
 } from "./icon-layout"
 import type { ClusterFace, IconLayout } from "./icon-layout"
@@ -1342,6 +1343,16 @@ export function planSvg({
       // No photos on paper: only a tile too thin turns symbol.
       minPhoto: 0,
     })
+  // What the page shows (cells): the frame, else the grid. Its edge clips,
+  // so icons and their names keep inside - folded into a cluster rather
+  // than cut off.
+  const page = frame ?? { x: 0, y: 0, w, h }
+  const pageCells: CellBox = {
+    x: page.x / CELL,
+    y: page.y / CELL,
+    w: page.w / CELL,
+    h: page.h / CELL,
+  }
   // Icons that would overlap on paper: spread, or folded into clusters,
   // as on the canvas (icon-layout.ts) - at the paper's scale.
   const icons: IconLayout = layoutIcons(
@@ -1352,7 +1363,11 @@ export function planSvg({
         c: [t.x + t.width / 2, t.y + t.height / 2] as Pt,
       })),
     mmPerCell,
-    { side: READABLE_SYMBOL_MM }
+    {
+      side: READABLE_SYMBOL_MM,
+      bounds: scaleBox(pageCells, mmPerCell),
+      spill: false,
+    }
   )
   const tileById = new Map(tiles.map((t) => [t.id, t]))
   const clusterBoxOf = (c: IconLayout["clusters"][number]) =>
@@ -1420,6 +1435,8 @@ export function planSvg({
     chipFont: CHIP_FONT_MM,
     repeat: LABEL_REPEAT_MM,
     gap: 0.6,
+    bounds: scaleBox(pageCells, mmPerCell),
+    boundsOnly: true,
     tiles,
     shapeOf: anyShape ? shapeOf : null,
     iconIds,
@@ -1545,7 +1562,7 @@ export function planSvg({
   for (const s of shapes.filter((x) => x.kind === "label").sort(byZ))
     body.push(labelMarkup(s, plan.cell_mm, readable ? paperMmPerPx : null))
   for (const s of shapes) body.push(opensNoteMarkup(s, plan.cell_mm))
-  const vb = frame ?? { x: 0, y: 0, w, h }
+  const vb = page
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.x} ${vb.y} ${vb.w} ${vb.h}" ` +
     `width="${vb.w}" height="${vb.h}" font-family="Inter, sans-serif">` +

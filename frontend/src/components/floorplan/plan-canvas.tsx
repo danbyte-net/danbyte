@@ -32,7 +32,6 @@ import type {
 import { LinkedObjectLink } from "./linked-object-link"
 import { OutlinePanel, OutlinePreview } from "./outline-tool"
 import type { OutlineDetect } from "./outline-tool"
-import { AreaMask } from "./area-mask"
 import { isLiveView, viewBackgroundFrame, viewMask } from "./snapshot"
 import { SelectionBar } from "./selection-bar"
 import { TilePopover } from "./tile-popover"
@@ -451,13 +450,6 @@ export function PlanCanvas({
         }
         worldOverlay={
           <>
-            {mask && (
-              <AreaMask
-                outline={mask}
-                width={plan.grid_width}
-                height={plan.grid_height}
-              />
-            )}
             {outline && <OutlinePreview od={outline} />}
             {calibration.active && cad.drawing && (
               <CalibrateMarks
@@ -497,6 +489,7 @@ export function PlanCanvas({
         onSnapshotShape={onSnapshotShape}
         lockedIds={lockedIds}
         clipToGrid={isLiveView(plan)}
+        maskOutline={mask}
         backgroundFrame={viewBackgroundFrame(plan)}
       />
       {overlays}

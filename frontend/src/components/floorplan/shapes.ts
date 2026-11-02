@@ -734,6 +734,14 @@ export function byZ<T extends { z: number }>(a: T, b: T): number {
 
 // ── Opens links and plates ─────────────────────────────────────────────────
 
+/** A shape that opens a link (a back label): the canvas never covers it
+ * with a live view's surround. */
+export function opensLink(
+  s: Partial<Pick<FloorPlanArea, "opens" | "opens_hidden">>
+): boolean {
+  return !!(s.opens || s.opens_hidden)
+}
+
 /** What a shape's Opens target is called: "Campus · B1", or the plan's
  * name; null when it opens nothing the reader may view. */
 export function opensName(s: Pick<FloorPlanArea, "opens">): string | null {

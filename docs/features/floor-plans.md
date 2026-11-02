@@ -1083,6 +1083,11 @@ up:
   below, above, then the corners, the first place free of other icons and
   names. A name that has nowhere to go hides (the selection and the hovered
   always show), and never covers another icon.
+- **Inside the plan.** Spread icons and their names stay inside the
+  plan's grid, or a live view's room, and go past its edge only when
+  nothing fits inside, never off-screen. Grown symbols, icons, their names
+  and labels that open a link (a **Back to the campus** label) draw over a
+  live view's dimmed surround and are never cut off at its edge.
 - **Steady.** The layout is worked out when a pan or zoom settles, for the
   zoom level (in eighths of a doubling), never for where you are panned to,
   so panning does not move anything. Icons ease to their new places.
@@ -1099,7 +1104,8 @@ behaves as before. The **3D** view is not affected.
 
 The **Export PDF** prints an object under **7 mm** on its longer side as its
 icon tile, 5 mm square, and spreads and clusters them the same way at the
-paper's scale. In the **3D** view, with Object size Readable, each
+paper's scale, inside the page's frame: where they cannot spread inside
+it they cluster rather than be cut off. In the **3D** view, with Object size Readable, each
 name label carries the object's icon on a small square in its colour.
 
 The option is saved on the plan with the other Display choices; a viewer

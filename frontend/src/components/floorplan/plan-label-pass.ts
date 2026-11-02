@@ -108,6 +108,16 @@ export interface PlanLabelInput {
   gap: number
   /** In view (units), on the canvas; the paper lays out everything. */
   view?: Box | null
+  /** The plan's grid, or a live view's crop or room (units): names go
+   * inside it first, past its edge only when nothing fits inside, and
+   * never off-screen (out of `view`) when a spot on screen exists. */
+  bounds?: Box | null
+  /** Only inside `bounds` (paper: its frame clips the rest). */
+  boundsOnly?: boolean
+  /** Where the plan shows (units), when it is clipped there (a live
+   * view's grid): a name along a run or a tray stays inside it, as the
+   * line it rides does. `bounds` when absent. */
+  clip?: Box | null
   tiles: readonly FloorPlanTile[]
   /** How Readable draws a tile, or null under Real. */
   shapeOf?: ShapeOf | null
@@ -227,11 +237,44 @@ function inTileNameBox(
   }
 }
 
+const contains = (o: Box, b: Box) =>
+  b.x >= o.x - 1e-6 &&
+  b.y >= o.y - 1e-6 &&
+  b.x + b.w <= o.x + o.w + 1e-6 &&
+  b.y + b.h <= o.y + o.h + 1e-6
+
+/** `spots` best first: inside `bounds` before past its edge, the rest in
+ * their own order; off-screen ones left out while one on screen exists. */
+export function preferInside<T>(
+  spots: readonly LabelSpot<T>[],
+  bounds: Box | null | undefined,
+  view: Box | null | undefined,
+  only = false
+): LabelSpot<T>[] {
+  let out = [...spots]
+  if (bounds && only) return out.filter((s) => contains(bounds, s.box))
+  if (view) {
+    const shown = out.filter((s) => contains(view, s.box))
+    if (shown.length) out = shown
+  }
+  if (bounds) {
+    const inside = out.filter((s) => contains(bounds, s.box))
+    if (inside.length && inside.length < out.length)
+      out = [...inside, ...out.filter((s) => !contains(bounds, s.box))]
+  }
+  return out
+}
+
 /** The pass: plan labels, then the cables (the focus first), the tiles'
  * fixed names, the trays, the tiles' movable names, the areas, the raised
  * floors - each at its first free place, or hidden. */
 export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
-  const { scale, unitsPerPx: u, font, gap, view } = input
+  const { scale, unitsPerPx: u, font, gap, view, bounds } = input
+  const inside = <T>(spots: readonly LabelSpot<T>[]) =>
+    preferInside(spots, bounds, view, input.boundsOnly)
+  // Names along a run or a tray: only where the line they ride shows.
+  const along = <T>(spots: readonly LabelSpot<T>[]) =>
+    preferInside(spots, input.clip ?? bounds, view, true)
   const occ = new Occupancy(Math.max(16, font * 6))
   const reqs: LabelRequest<unknown>[] = []
   const inView = (b: Box) =>
@@ -306,11 +349,13 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     const text = clipName(name)
     tileText.set(t.id, text)
     const icon = !!input.iconIds?.has(t.id)
-    const spots = (icon ? aroundSpots : besideSpots)(
-      drawn,
-      textSize(text, font),
-      gap / 2,
-      scale
+    const spots = inside(
+      (icon ? aroundSpots : besideSpots)(
+        drawn,
+        textSize(text, font),
+        gap / 2,
+        scale
+      )
     )
     if (!spots.some((s) => inView(s.box))) continue
     const pinned = !!input.pinnedTiles?.has(t.id)
@@ -325,7 +370,9 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   for (const c of input.iconClusters ?? []) {
     const text = clipName(c.name)
     tileText.set(c.id, text)
-    const spots = aroundSpots(c.box, textSize(text, font), gap / 2, scale)
+    const spots = inside(
+      aroundSpots(c.box, textSize(text, font), gap / 2, scale)
+    )
     if (!spots.some((s) => inView(s.box))) continue
     tileReqs.push({
       id: `tile:${c.id}`,
@@ -362,7 +409,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         scale,
         repeat: input.repeat,
         view,
-      })
+      }).map((spots) => along(spots))
       const base = focus
         ? RANK.focus
         : route.stored
@@ -403,12 +450,14 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
             id: key,
             priority: RANK.focus - 1,
             force: true,
-            spots: endChipSpots(
-              e,
-              e.rect,
-              textSize(text, input.chipFont),
-              gap,
-              scale
+            spots: inside(
+              endChipSpots(
+                e,
+                e.rect,
+                textSize(text, input.chipFont),
+                gap,
+                scale
+              )
             ),
           })
         })
@@ -428,7 +477,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
           reqs.push({
             id: `bundle:${key}#${k}`,
             priority: RANK.bundle - k * 10,
-            spots,
+            spots: along(spots),
           })
         )
       }
@@ -455,7 +504,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       reqs.push({
         id: `tray:${tray.id}#${k}`,
         priority: RANK.tray - k * 10,
-        spots,
+        spots: along(spots),
         avoid: tileBodies,
       })
     )
