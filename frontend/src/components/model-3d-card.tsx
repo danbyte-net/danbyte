@@ -27,11 +27,8 @@ import {
   UP_CHOICES,
 } from "@/components/model-3d-choice"
 
-// three.js stays in the 3D chunk: the preview and the converter load only
-// when the card has a model to show or the upload dialog opens.
-const ModelPreview = lazy(
-  () => import("@/components/floorplan3d/model-preview")
-)
+// three.js stays in the 3D chunk: the converter and the port editor load
+// only when their dialog opens.
 const ModelUpload = lazy(() => import("@/components/floorplan3d/model-upload"))
 const ModelPortsEditor = lazy(
   () => import("@/components/floorplan3d/model-ports-editor")
@@ -39,8 +36,8 @@ const ModelPortsEditor = lazy(
 
 /**
  * The "3D model" card on a device type's and a device's Overview: what the
- * 3D room draws for it, a small turntable of it, and upload / replace /
- * remove. A device shows its type's model until it gets its own. "Map
+ * 3D room draws for it, and upload / replace / remove. The model itself is
+ * drawn once, by the Overview's viewer (model-viewer-card). A device shows its type's model until it gets its own. "Map
  * ports" opens the editor that places the ports on the model
  * (floorplan3d/model-ports-editor).
  */
@@ -205,14 +202,6 @@ export function Model3DCard({
             </Button>
           )}
         </div>
-      ),
-    })
-    rows.push({
-      label: "Preview",
-      value: (
-        <Suspense fallback={<Loading />}>
-          <ModelPreview url={shown.url} up={shown.up} front={shown.front} />
-        </Suspense>
       ),
     })
   }

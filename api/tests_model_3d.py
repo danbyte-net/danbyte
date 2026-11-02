@@ -185,9 +185,10 @@ class DeviceTypeModelTests(_Base):
         self.assertFalse(self.dt.model_3d.storage.exists(first))
 
     def test_audit_entry(self):
-        before = ChangeLogEntry.objects.count()
+        # UUID ids carry no order: take the entries the upload added.
+        before = set(ChangeLogEntry.objects.values_list("id", flat=True))
         self._upload(f"/api/device-types/{self.dt.id}/model/")
-        entries = ChangeLogEntry.objects.order_by("-id")[: ChangeLogEntry.objects.count() - before]
+        entries = ChangeLogEntry.objects.exclude(id__in=before)
         self.assertTrue(any("model_3d" in json.dumps(e.changes or {}, default=str)
                             for e in entries), [e.changes for e in entries])
 

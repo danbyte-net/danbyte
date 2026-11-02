@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useThree } from "@react-three/fiber"
 import type { ThreeEvent } from "@react-three/fiber"
 import { Html } from "@react-three/drei"
@@ -13,7 +13,7 @@ import {
   modelPortHex,
   portLocal,
 } from "@/lib/model-ports"
-import type { V3 } from "@/lib/model-ports"
+import type { ModelPort, V3 } from "@/lib/model-ports"
 import {
   normalizePortName,
   useObservedPorts,
@@ -30,6 +30,8 @@ import {
  * Hover names the port, its state, the far end and its VLAN; click selects
  * it (the room's port card); double-click flies to it. The caller mounts
  * this only up close (`markersVisible`), so a hall of devices draws none.
+ * The Overview's model viewer and the floor plan panel draw the same
+ * markers, scaled to the model they frame.
  */
 
 const QUAD = new THREE.PlaneGeometry(1, 1)
@@ -65,6 +67,7 @@ export function ModelPortMarkers({
   selectedPort,
   onSelect,
   onFly,
+  markerM = PORT_MARKER_M,
 }: {
   deviceId: string
   /** The fitted model's upright size (m). */
@@ -72,9 +75,10 @@ export function ModelPortMarkers({
   /** The mapped port selected in the room (its marker name), if any. */
   selectedPort: string | null
   onSelect: (pick: MappedPortPick) => void
-  onFly: (pick: MappedPortPick) => void
+  onFly?: (pick: MappedPortPick) => void
+  /** A square's edge (m); the room's 8 mm unless a viewer scales it. */
+  markerM?: number
 }) {
-  const invalidate = useThree((s) => s.invalidate)
   const facePorts = useQuery({
     queryKey: ["device-face-ports", deviceId],
     queryFn: (): Promise<FacePorts> => fetchFacePortsBatched(deviceId),
@@ -94,38 +98,118 @@ export function ModelPortMarkers({
       })),
     [ports, size]
   )
+  const colors = useMemo(
+    () =>
+      placed.map((pk) =>
+        pk.port.marker === selectedPort
+          ? MODEL_PORT_SELECTED
+          : modelPortHex(
+              pk.port,
+              pk.port.kind === "interface"
+                ? observed?.get(normalizePortName(pk.port.name))
+                : undefined
+            )
+      ),
+    [placed, observed, selectedPort]
+  )
+  return (
+    <MarkerMesh
+      placed={placed}
+      colors={colors}
+      markerM={markerM}
+      onSelect={onSelect}
+      onFly={onFly}
+      card={(pk) => <ModelPortCard port={pk.port} />}
+    />
+  )
+}
+
+/** A device type's mapped ports: no device, so no state - one neutral
+ * colour, the name on hover. */
+export const MODEL_PORT_TEMPLATE = "#a1a1aa"
+
+export function TemplatePortMarkers({
+  ports,
+  size,
+  markerM = PORT_MARKER_M,
+}: {
+  ports: readonly ModelPort[]
+  size: V3
+  markerM?: number
+}) {
+  const placed = useMemo(
+    () =>
+      ports.map((mp) => ({
+        port: mp,
+        at: portLocal(mp.p, size),
+        normal: mp.n,
+      })),
+    [ports, size]
+  )
+  const colors = useMemo(() => placed.map(() => MODEL_PORT_TEMPLATE), [placed])
+  return (
+    <MarkerMesh
+      placed={placed}
+      colors={colors}
+      markerM={markerM}
+      card={(pk) => (
+        <div className="ml-3 -translate-y-1/2 rounded-md border border-border bg-popover/95 px-2 py-1.5 text-[11px] whitespace-nowrap text-popover-foreground shadow-md">
+          <span className="font-mono font-semibold">{pk.port.name}</span>
+        </div>
+      )}
+    />
+  )
+}
+
+/** One instanced draw of squares on the model's surface, each facing out
+ * along its normal, with a hover card. */
+function MarkerMesh<P extends { at: V3; normal: V3 }>({
+  placed,
+  colors,
+  markerM,
+  onSelect,
+  onFly,
+  card,
+}: {
+  placed: P[]
+  colors: string[]
+  markerM: number
+  onSelect?: (pick: P) => void
+  onFly?: (pick: P) => void
+  card: (pick: P) => React.ReactNode
+}) {
+  const invalidate = useThree((s) => s.invalidate)
   const ref = useRef<THREE.InstancedMesh>(null)
   const [hover, setHover] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const im = ref.current
     if (!im) return
+    // The lift scales with the square, so a bigger one never sinks in.
+    const lift = (LIFT_M * markerM) / PORT_MARKER_M
     placed.forEach((pk, i) => {
       _n.set(...pk.normal).normalize()
       _q.setFromUnitVectors(Z_AXIS, _n)
-      _p.set(...pk.at).addScaledVector(_n, LIFT_M)
+      _p.set(...pk.at).addScaledVector(_n, lift)
       const k = i === hover ? 1.4 : 1
-      _s.set(PORT_MARKER_M * k, PORT_MARKER_M * k, 1)
+      _s.set(markerM * k, markerM * k, 1)
       im.setMatrixAt(i, _m.compose(_p, _q, _s))
-      const live = observed?.get(normalizePortName(pk.port.name))
-      im.setColorAt(
-        i,
-        _c.set(
-          pk.port.marker === selectedPort
-            ? MODEL_PORT_SELECTED
-            : modelPortHex(
-                pk.port,
-                pk.port.kind === "interface" ? live : undefined
-              )
-        )
-      )
+      im.setColorAt(i, _c.set(colors[i] ?? MODEL_PORT_TEMPLATE))
     })
     im.count = placed.length
     im.instanceMatrix.needsUpdate = true
     if (im.instanceColor) im.instanceColor.needsUpdate = true
     im.computeBoundingSphere()
     invalidate()
-  }, [placed, observed, selectedPort, hover, invalidate])
+  }, [placed, colors, hover, markerM, invalidate])
+
+  // The cursor is the page's: never leave it a pointer after unmount.
+  useEffect(
+    () => () => {
+      document.body.style.cursor = ""
+    },
+    []
+  )
 
   if (placed.length === 0) return null
   const hot = hover != null ? placed[hover] : null
@@ -142,7 +226,7 @@ export function ModelPortMarkers({
           e.stopPropagation()
           if (e.instanceId != null && e.instanceId !== hover) {
             setHover(e.instanceId)
-            document.body.style.cursor = "pointer"
+            if (onSelect) document.body.style.cursor = "pointer"
           }
         }}
         onPointerOut={() => {
@@ -151,13 +235,13 @@ export function ModelPortMarkers({
         }}
         onClick={(e) => {
           const pk = pick(e)
-          if (!pk) return
+          if (!pk || !onSelect) return
           e.stopPropagation()
           onSelect(pk)
         }}
         onDoubleClick={(e) => {
           const pk = pick(e)
-          if (!pk) return
+          if (!pk || !onFly) return
           e.stopPropagation()
           onFly(pk)
         }}
@@ -170,7 +254,7 @@ export function ModelPortMarkers({
           zIndexRange={[20, 0]}
           style={{ pointerEvents: "none" }}
         >
-          <ModelPortCard port={hot.port} />
+          {card(hot)}
         </Html>
       )}
     </>
