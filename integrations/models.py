@@ -163,7 +163,13 @@ class DeployRun(TimestampedModel):
     )
     target_name = models.CharField(max_length=128)
     event = models.CharField(max_length=32, default="manual")
+    #: The ids dispatched. Named for devices because that is the stored
+    #: column and the payload key runners read; ``object_type`` says what
+    #: they are (``virtualmachine`` for a provision run).
     device_ids = models.JSONField(default=list)
+    object_type = models.CharField(
+        max_length=64, default="device", db_default="device",
+    )
     status = models.CharField(
         max_length=16, choices=STATUS_CHOICES, default="queued"
     )

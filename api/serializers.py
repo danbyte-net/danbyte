@@ -331,6 +331,7 @@ _NULLABLE_TENANT_MODELS = {"Tag"}
 _PARENT_TENANT_PATH = {
     "Interface": "device__tenant",
     "VMInterface": "vm__tenant",
+    "VirtualDisk": "vm__tenant",
     "FrontPort": "device__tenant",
     "RearPort": "device__tenant",
     "ConsolePort": "device__tenant",
@@ -3928,6 +3929,22 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             object_type="api.device", object_id=obj.id
         ).count()
 
+    # The VM this device runs as (a virtual router), when the caller may
+    # view it. Detail only: a list would pay a lookup per row.
+    backing_vm = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_backing_vm(self, obj):
+        vm = VirtualMachine.objects.filter(represents_device=obj).first()
+        if vm is None:
+            return None
+        from .visible_ips import visible_children
+
+        if not visible_children([vm], self.context, "virtualmachine", "tenant"):
+            return None
+        return {"id": str(vm.id), "name": vm.name, "intended": vm.intended}
+
     class Meta:
         model = Device
         list_serializer_class = _DeviceListSerializer
@@ -3963,6 +3980,7 @@ class DeviceSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "install_count", "device_profiles",
+                  "backing_vm",
                   "permissions", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "u_height", "rack_width",
                             "model_3d", "model_3d_effective",
@@ -6547,16 +6565,34 @@ class VirtualMachineMiniSerializer(NumIdModelSerializer):
 
 
 class VirtualDiskSerializer(serializers.ModelSerializer):
-    """A VM's virtual disk. Read+write so operators can edit an adopted VM's
-    disks; sync fills sync-created rows."""
+    """A VM's virtual disk (``/api/virtual-disks/``, and nested on the VM).
+    Operators author disks for an intended VM here; sync fills and prunes only
+    the rows it created itself."""
 
+    vm = VirtualMachineMiniSerializer(read_only=True)
     vm_id = TenantScopedPrimaryKeyRelatedField(
         source="vm", queryset=VirtualMachine.objects.all(), write_only=True
     )
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        vm = attrs.get("vm", getattr(self.instance, "vm", None))
+        key = attrs.get("key", getattr(self.instance, "key", ""))
+        if vm is not None and key:
+            clash = VirtualDisk.objects.filter(vm=vm, key=key)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"key": f"{vm.name} already has a disk {key}."}
+                )
+        if self.instance is not None and "vm" in attrs and attrs["vm"].pk != self.instance.vm_id:
+            raise serializers.ValidationError({"vm_id": "A disk cannot move to another VM."})
+        return attrs
+
     class Meta:
         model = VirtualDisk
-        fields = ["id", "vm_id", "key", "name", "size_gb", "storage",
+        fields = ["id", "vm", "vm_id", "key", "name", "size_gb", "storage",
                   "controller", "disk_format", "created_disk", "description",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_disk", "created_at", "updated_at"]
@@ -6827,12 +6863,82 @@ class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixi
     synced_from_id = serializers.CharField(read_only=True, default=None)
     #: Unresolved differences between Danbyte and the hypervisor.
     drift_count = serializers.IntegerField(read_only=True, default=0)
+    #: When the hypervisor stopped reporting the guest that backs this VM;
+    #: null while it is present (or never synced). An intended VM keeps its
+    #: tracking row, so this is how its page says "not running anywhere".
+    missing_since = serializers.DateTimeField(read_only=True, default=None)
+
+    # The Device this VM is (a virtual router), as opposed to ``device``, the
+    # host it runs on. Shown only when the caller may view that device.
+    represents_device = serializers.SerializerMethodField()
+    represents_device_id = TenantScopedPrimaryKeyRelatedField(
+        source="represents_device", queryset=Device.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_represents_device(self, obj):
+        if obj.represents_device_id is None:
+            return None
+        from .visible_ips import visible_children
+
+        rows = visible_children([obj.represents_device], self.context, "device", "tenant")
+        if not rows:
+            return None
+        d = rows[0]
+        return {"id": str(d.id), "name": d.name}
+
+    def validate_hypervisor_options(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("An object of option names and values.")
+        return value
+
+    def get_validators(self):
+        # The conditional cluster+VMID constraint is checked in
+        # _validate_intent, which names the field and the VM holding it.
+        return [v for v in super().get_validators()
+                if "vmid" not in (getattr(v, "fields", None) or ())]
+
+    def _validate_intent(self, attrs):
+        """The build fields' own rules: the represented device is not the
+        host, is taken by one VM at most, and a VMID is unique per cluster."""
+        def cur(name):
+            return attrs[name] if name in attrs else getattr(self.instance, name, None)
+
+        rep = cur("represents_device")
+        if rep is not None:
+            host = cur("device")
+            if host is not None and host.pk == rep.pk:
+                raise serializers.ValidationError(
+                    {"represents_device_id": "A VM cannot be the device it runs on."}
+                )
+            taken = VirtualMachine.objects.filter(represents_device=rep)
+            if self.instance is not None:
+                taken = taken.exclude(pk=self.instance.pk)
+            other = taken.first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"represents_device_id": f"{rep.name} is already backed by {other.name}."}
+                )
+        vmid, cluster = cur("vmid"), cur("cluster")
+        if vmid is not None and cluster is not None:
+            clash = VirtualMachine.objects.filter(cluster=cluster, vmid=vmid)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            other = clash.first()
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"vmid": f"{other.name} already has VMID {vmid} on {cluster.name}."}
+                )
 
     def validate(self, attrs):
         """A VM group sits below one cluster, so a VM can only join a group on
         the cluster it runs on. Moving the VM to another cluster without
         naming a group drops the old one rather than refusing the move."""
         attrs = super().validate(attrs)
+        self._validate_intent(attrs)
         from .software_target import mark_manual
 
         mark_manual(attrs, self.instance)
@@ -6860,6 +6966,9 @@ class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixi
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",
                   "vcpus", "memory_mb", "disk_gb", "disks",
+                  "intended", "represents_device", "represents_device_id",
+                  "vmid", "cpu_type", "sockets", "image", "storage",
+                  "hypervisor_options", "missing_since",
                   "software_version", "software_version_seen_at",
                   "software_version_source",
                   "interface_count", "disk_count", "service_count",
@@ -6870,6 +6979,7 @@ class VirtualMachineSerializer(StatusSerializerMixin, CustomFieldsSerializerMixi
                   "created_at", "updated_at"]
         read_only_fields = ["id", "power_state", "power_state_at",
                             "synced_from", "synced_from_id", "drift_count",
+                            "missing_since",
                             "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
 
@@ -6899,8 +7009,26 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
             else None
         )
 
+    def get_validators(self):
+        # The conditional vm+index constraint is checked in validate, which
+        # names the field and the NIC holding the slot.
+        return [v for v in super().get_validators()
+                if "index" not in (getattr(v, "fields", None) or ())]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # The hypervisor slot (netN) is one NIC's per VM.
+        index = attrs["index"] if "index" in attrs else getattr(self.instance, "index", None)
+        if index is not None:
+            vm = attrs.get("vm", getattr(self.instance, "vm", None))
+            clash = VMInterface.objects.filter(vm=vm, index=index)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            other = clash.first() if vm is not None else None
+            if other is not None:
+                raise serializers.ValidationError(
+                    {"index": f"{other.name} already uses index {index}."}
+                )
         # Nesting stays inside one VM and never loops: wg0 over eth0 is the
         # point; eth0 over wg0 over eth0 is a render-breaking cycle.
         parent = attrs.get("parent", getattr(self.instance, "parent", None))
@@ -6972,6 +7100,7 @@ class VMInterfaceSerializer(TaggableSerializerMixin, NumIdModelSerializer):
     class Meta:
         model = VMInterface
         fields = ["id", "vm", "vm_id", "name", "enabled", "kind",
+                  "index", "model", "bridge", "firewall",
                   "parent", "parent_id", "mac_address", "snmp_name",
                   "sync_ignore_ips",
                   "mtu", "speed", "description", "ip_addresses",

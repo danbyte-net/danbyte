@@ -317,6 +317,7 @@ from .viewsets import (
     TunnelTerminationViewSet,
     TunnelViewSet,
     VirtualChassisViewSet,
+    VirtualDiskViewSet,
     VirtualMachineGroupViewSet,
     VirtualMachineViewSet,
     VirtualSwitchViewSet,
@@ -400,6 +401,7 @@ router.register(r"virtual-machines", VirtualMachineViewSet, basename="virtual-ma
 router.register(r"vm-groups", VirtualMachineGroupViewSet, basename="vm-group")
 router.register(r"virtual-switches", VirtualSwitchViewSet, basename="virtual-switch")
 router.register(r"vm-interfaces",  VMInterfaceViewSet, basename="vm-interface")
+router.register(r"virtual-disks",  VirtualDiskViewSet, basename="virtual-disk")
 router.register(r"racks",         RackViewSet,        basename="rack")
 router.register(r"rack-roles",    RackRoleViewSet,    basename="rack-role")
 router.register(r"rack-types",    RackTypeViewSet,    basename="rack-type")
