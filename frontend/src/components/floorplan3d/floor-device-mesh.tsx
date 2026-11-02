@@ -51,7 +51,9 @@ import type { ScenePayload, SceneFloorDevice, SceneTile, Tier } from "./world"
  * and rear photos, front on the tile's front edge. A device with an uploaded
  * 3D model (its own, else its type's) draws the model instead, fitted to the
  * hardware's size; the box (or the flat tile for 0U gear) stands in while it
- * loads or when it fails. 0U gear with no model keeps its flat tile.
+ * loads or when it fails. A device whose width, height and depth are
+ * measured (its own, else its type's) stands as a box of exactly that size
+ * in its role colour; other 0U gear with no model keeps its flat tile.
  *
  * Far off, every box is ONE instanced draw call with no photos; near, each
  * is its own mesh. Models draw per device (geometry shared), within a
@@ -73,10 +75,11 @@ interface Placed {
 }
 
 /** Whether a tile is a placed device this layer draws (rather than the
- * flat ghost): it has rack units, or a model to load. */
+ * flat ghost): it has a box (rack units, or a measured size), or a model
+ * to load. */
 export function isPlacedDevice(t: SceneTile): boolean {
   const d = t.device
-  return !!d && (d.u_height > 0 || !!d.model)
+  return !!d && (floorDeviceBoxM(d) !== null || !!d.model)
 }
 
 export function placedOf(scene: ScenePayload, tile: SceneTile): Placed | null {

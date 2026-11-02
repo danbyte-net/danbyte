@@ -63,7 +63,11 @@ Fields:
   draw when it adds up its heat. Blank counts the draw. Cooling and heat
   output sit in the form's **Chassis** card and the page's **Hardware** card.
 - **Size (mm)** - the body's width, height and depth, in tenths of a
-  millimetre. Drawings scale the hardware by it.
+  millimetre. Drawings scale the hardware by it, and it sizes the type's
+  devices on floor plans: a free plan places a device at its width × depth
+  ([True size](../features/floor-plans.md#true-size)), and the 3D room
+  stands one with no model as a box of that size. A device can carry its
+  own size over the type's ([Size](devices.md#size)).
 - **DIN rail** - the rail profiles the type mounts on (*TS 35*, *TS 15*,
   *G 32*) and the rail's position: its centreline below the body's top edge,
   the middle when left empty. A type with a profile needs its width and
@@ -298,7 +302,7 @@ then:
 
 | Setting | What it does |
 |---|---|
-| **Size** | **Fit to size** (the default) scales the model to the type's width, height and depth where they are recorded, else to the footprint of the tile it stands on, so a model fills its tile. Give the type a width, height or depth to size it exactly. Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
+| **Size** | **Fit to size** (the default) scales the model to the device's width, height and depth where they are recorded - its own ([Size](devices.md#size)), else the type's - else to the footprint of the tile it stands on, so a model fills its tile. Give the type a width, height or depth to size it exactly. Scaling is uniform, by the tightest axis, so nothing is squashed. **Own size** draws it at its own size in metres. |
 | **Up axis** | **Y up** (glTF's convention) or **Z up** (most CAD exports). |
 | **Front** | The model axis its front faces: +Z (glTF's convention), −Z, +X or −X. The room turns that face to the tile's front edge. |
 

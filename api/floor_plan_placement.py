@@ -224,6 +224,9 @@ def placeable(plan, user, tenant, *, q="", kinds=None, near_room=None,
             "status": _ref(obj.status, "name", "color"),
             "role": _ref(obj.role, "name", "color", "icon"),
             "photo": photos.get((kind, obj.pk)),
+            # A device's measured size (its own, else its type's): a free
+            # plan places it at its true footprint.
+            "size_mm": obj.size_mm if kind == "device" else None,
             "placed_count": where["count"],
             "placed_on": where["on"],
             "gps_cell": cell,
@@ -382,7 +385,9 @@ def object_photos(objects, user, tenant) -> dict:
             if pk not in visible:
                 continue
             dt = obj.device_type if kind == "device" and obj.device_type_id else None
-            width_mm = float(dt.width_mm) if dt is not None and dt.width_mm else None
+            # The device's own width, else its type's.
+            w = obj.effective_width_mm if kind == "device" else None
+            width_mm = float(w) if w else None
             photo = None
             img = first.get(pk)
             if img is not None:

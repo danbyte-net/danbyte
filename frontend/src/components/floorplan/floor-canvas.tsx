@@ -96,7 +96,7 @@ import {
   LabelShapeView,
   VertexHandles,
 } from "./shape-layer"
-import { PLACE_MIME } from "./placement"
+import { PLACE_MIME, fitToSizeRect } from "./placement"
 import {
   boxBounds,
   byZ,
@@ -3129,6 +3129,26 @@ export function FloorCanvas({
                         : ctxMenu.tile.linked.kind}
                     </DropdownMenuItem>
                   )}
+                {editable &&
+                  onChangeTile &&
+                  !isLocked(ctxMenu.tile.id) &&
+                  (() => {
+                    // A free plan's device tile to its measured width ×
+                    // depth - only when asked, never by itself.
+                    const rect = fitToSizeRect(ctxMenu.tile, plan)
+                    if (!rect) return null
+                    const id = ctxMenu.tile.id
+                    return (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          onChangeTile(id, rect)
+                          setCtxMenu(null)
+                        }}
+                      >
+                        Fit to size
+                      </DropdownMenuItem>
+                    )
+                  })()}
                 <DropdownMenuSeparator />
               </>
             )}

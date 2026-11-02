@@ -1611,6 +1611,7 @@ export interface DeviceTypeMini {
   /** Body width and height in mm; what a cabinet drawing sizes it by. */
   width_mm: number | null
   height_mm: number | null
+  depth_mm?: number | null
   /** Empty = not DIN-mounted. */
   din_profiles: DinProfile[]
   /** The rail's centreline below the body's top edge; null = the middle. */
@@ -1844,6 +1845,14 @@ export interface Device {
   cooling_method?: string
   /** Read-only: its own cooling method, else its type's, else "air". */
   effective_cooling_method?: string
+  /** The body size in mm; null inherits its type's. */
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
+  /** Read-only: its own size, else its type's, else null. */
+  effective_width_mm?: number | null
+  effective_height_mm?: number | null
+  effective_depth_mm?: number | null
   /** Port labels on this device's faceplate renders: inherit / on / off. */
   port_labels: DevicePortLabels
   latitude: string | null
@@ -1966,6 +1975,9 @@ export interface DeviceWritePayload {
   comments?: string
   airflow?: string
   cooling_method?: string
+  width_mm?: number | null
+  height_mm?: number | null
+  depth_mm?: number | null
   port_labels?: DevicePortLabels
   latitude?: string | null
   longitude?: string | null
@@ -12352,6 +12364,8 @@ export interface FloorPlanTile {
     /** A device's own icon, else its type's ("" for neither, and for a
      * rack or cabinet) - it wins over the tile's type and the role. */
     icon?: string
+    /** A device's measured size - what "Fit to size" resizes to. */
+    size_mm?: FloorObjectSize | null
   } | null
   fov_deg: number | null
   fov_distance: number | null
@@ -12449,8 +12463,17 @@ export interface FloorTilePhoto {
   aspect: number | null
   /** The object's own image, or its device type's front image. */
   source: "device" | "rack" | "type"
-  /** The device type's width, for a true-size photo. */
+  /** The device's width (its own, else its type's), for a true-size
+   * photo. */
   width_mm: number | null
+}
+
+/** A device's measured body size in mm - its own, else its type's; each
+ * axis null where unknown. */
+export interface FloorObjectSize {
+  width_mm: number | null
+  height_mm: number | null
+  depth_mm: number | null
 }
 
 export interface FloorPlanRoomRef {
@@ -12473,6 +12496,9 @@ export interface FloorPlanPlaceable {
   status: { id: string; name: string; color: string } | null
   role: { id: string; name: string; color: string; icon?: string } | null
   photo: FloorTilePhoto | null
+  /** A device's measured size; null without one (and for racks and
+   * cabinets). Optional for older payloads. */
+  size_mm?: FloorObjectSize | null
   placed_count: number
   placed_on: {
     floor_plan: { id: string; name: string; stack: string }

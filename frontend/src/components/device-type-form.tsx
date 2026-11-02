@@ -38,19 +38,7 @@ import {
 } from "@/components/topology-photo-size-select"
 import { useSaveObject } from "@/lib/save-object"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
-
-/** A size as the form holds it: blank stays blank, not 0. */
-const mmText = (v: number | string | null | undefined) =>
-  v == null || v === "" ? "" : String(Number(v))
-/** Blank clears the size. */
-const mmOrNull = (v: string) => (v.trim() === "" ? null : Number(v))
-/** Tenths of a millimetre, as the API keeps sizes. */
-const MM = {
-  type: "number",
-  inputMode: "decimal",
-  step: 0.1,
-  max: 5000,
-} as const
+import { MM_INPUT as MM, mmOrNull, mmText } from "@/lib/mm-field"
 
 export interface DeviceTypeFormProps {
   deviceType?: DeviceType

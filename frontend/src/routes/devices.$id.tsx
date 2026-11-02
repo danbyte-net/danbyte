@@ -1094,6 +1094,38 @@ function DeviceOverview({
       ),
     },
     { label: "Height", value: <span className="num">{d.u_height} U</span> },
+    // The body size, W × H × D: its own, else its type's - what floor
+    // plans and the 3D room size it by.
+    ...(d.effective_width_mm != null ||
+    d.effective_height_mm != null ||
+    d.effective_depth_mm != null
+      ? [
+          {
+            label: "Size",
+            value: (
+              <span className="inline-flex items-center gap-2">
+                <span className="num">
+                  {[
+                    d.effective_width_mm,
+                    d.effective_height_mm,
+                    d.effective_depth_mm,
+                  ]
+                    .map((v) => (v != null ? fmtMm(v) : "–"))
+                    .join(" × ")}{" "}
+                  mm
+                </span>
+                {d.width_mm == null &&
+                  d.height_mm == null &&
+                  d.depth_mm == null && (
+                    <span className="text-[11px] text-muted-foreground">
+                      (from type)
+                    </span>
+                  )}
+              </span>
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     ...(visibility.airflow
       ? [
           {
