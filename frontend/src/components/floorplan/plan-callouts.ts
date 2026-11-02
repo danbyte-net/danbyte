@@ -4,12 +4,15 @@ import type { Box } from "./plan-labels"
 
 // Callouts: a tile whose plain name will not sit cleanly by it - no room,
 // or so close to another tile that the name could be either's - is named
-// in a small box set off in free space instead, preferably outside its room
-// (or its group of tiles), with a thin leader back to the tile. The boxes
-// along one side of a room line up in the order of their tiles, so the
-// leaders never cross; they never cover each other, a tile or a label
-// placed before them. The layout depends on the tiles and the zoom only,
-// never on the view, so a pan never moves a box.
+// in a small box set off in free space instead, with a leader back to the
+// tile: a straight line from the middle of the box's edge facing the tile
+// to the tile's edge, aimed at its centre. A row of tiles in a room gets a
+// tidy row of boxes beside the room when that keeps every leader short;
+// otherwise each box takes the nearest free spot round its own tile. No
+// leader is longer than `maxLeader`, none crosses another, a box or a
+// tile; the boxes never cover each other, a tile or a label placed before
+// them. The layout depends on the tiles and the zoom only, never on the
+// view, so a pan never moves a box.
 //
 // Units: as the label pass - screen px at the settled zoom.
 
@@ -52,16 +55,27 @@ export const CALLOUT_FONT_PX = 11
 export const CALLOUT_LINE_FONT_PX = 10
 export const CALLOUT_PAD_X = 6
 export const CALLOUT_PAD_Y = 4
+/** The accent down a box's left edge, in its tile's colour (px). */
+export const CALLOUT_ACCENT_PX = 3
+/** How far the tab on a box's edge reaches out towards its tile (px):
+ * the leader starts at its tip. */
+export const CALLOUT_TAB_PX = 5
 /** A line's height (px), a badge line's a little taller. */
 export const CALLOUT_LINE_PX = 15
 /** A callout shows its name and at most this many lines. */
 export const CALLOUT_MAX_LINES = 3
+/** The longest leader (px): four icons (READABLE_SYMBOL_PX) - a box
+ * farther off reads as no one's. A last try allows twice this. */
+export const CALLOUT_MAX_LEADER = 112
 /** Room between the room's edge and the first row of boxes (px). */
 const ROW_GAP = 10
 /** Between two boxes in a row (px). */
 const BOX_GAP = 6
 /** How many rows out a box may go looking for a free place. */
 const MAX_STEPS = 8
+/** A box by its own tile: at least this far off it, out in these steps. */
+const NEAR_GAP = 18
+const NEAR_STEP = 6
 /** A room's left or right side counts as this much farther than it is. */
 const SIDE_WEIGHT = 2
 
@@ -83,7 +97,7 @@ export function calloutSize(
   }
   const n = Math.min(lines.length, CALLOUT_MAX_LINES)
   return {
-    w: Math.ceil(w + CALLOUT_PAD_X * 2),
+    w: Math.ceil(w + CALLOUT_PAD_X * 2 + CALLOUT_ACCENT_PX),
     h: Math.ceil(
       CALLOUT_FONT_PX * 1.3 + n * CALLOUT_LINE_PX + CALLOUT_PAD_Y * 2
     ),
@@ -92,8 +106,6 @@ export function calloutSize(
 
 const cx = (b: Box) => b.x + b.w / 2
 const cy = (b: Box) => b.y + b.h / 2
-const clamp = (v: number, lo: number, hi: number) =>
-  lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v))
 
 /** Which sides of its room a tile's callout may go on, nearest first; on
  * a tie top, bottom, left, right. A side with no room inside `bounds` for
@@ -229,40 +241,44 @@ export function leaderBoxes(l: [Pt, Pt], every = 8, half = 2): Box[] {
   return out
 }
 
-/** The leader from a box on `side` to its tile `a` (units). */
-export function leaderFor(box: Box, a: Box, side: CalloutSide): [Pt, Pt] {
-  const r = 4
+/** Where a box's leader starts: the tip of the tab at the middle of the
+ * edge facing its tile (a box above its tile, `side` top, leaves from its
+ * bottom). */
+export function leaderStart(box: Box, side: CalloutSide): Pt {
+  const t = CALLOUT_TAB_PX
   switch (side) {
-    case "top": {
-      const x = clamp(cx(a), box.x + r, box.x + box.w - r)
-      return [
-        [x, box.y + box.h],
-        [cx(a), a.y],
-      ]
-    }
-    case "bottom": {
-      const x = clamp(cx(a), box.x + r, box.x + box.w - r)
-      return [
-        [x, box.y],
-        [cx(a), a.y + a.h],
-      ]
-    }
-    case "left": {
-      const y = clamp(cy(a), box.y + r, box.y + box.h - r)
-      return [
-        [box.x + box.w, y],
-        [a.x, cy(a)],
-      ]
-    }
-    case "right": {
-      const y = clamp(cy(a), box.y + r, box.y + box.h - r)
-      return [
-        [box.x, y],
-        [a.x + a.w, cy(a)],
-      ]
-    }
+    case "top":
+      return [cx(box), box.y + box.h + t]
+    case "bottom":
+      return [cx(box), box.y - t]
+    case "left":
+      return [box.x + box.w + t, cy(box)]
+    case "right":
+      return [box.x - t, cy(box)]
   }
 }
+
+/** Where the line from `p` to the centre of `a` meets `a`'s edge (`p`
+ * itself when it is inside). */
+export function tileEnd(p: Pt, a: Box): Pt {
+  const dx = cx(a) - p[0]
+  const dy = cy(a) - p[1]
+  const sx = Math.abs(dx) > 1e-9 ? a.w / 2 / Math.abs(dx) : Infinity
+  const sy = Math.abs(dy) > 1e-9 ? a.h / 2 / Math.abs(dy) : Infinity
+  const f = Math.min(sx, sy)
+  if (f >= 1) return [p[0], p[1]]
+  return [cx(a) - dx * f, cy(a) - dy * f]
+}
+
+/** The leader from a box on `side` of its tile `a` (units): the middle of
+ * the box's facing edge to the tile's edge, aimed at its centre. */
+export function leaderFor(box: Box, a: Box, side: CalloutSide): [Pt, Pt] {
+  const p = leaderStart(box, side)
+  return [p, tileEnd(p, a)]
+}
+
+const leaderLength = (l: [Pt, Pt]) =>
+  Math.hypot(l[1][0] - l[0][0], l[1][1] - l[0][1])
 
 const horizontal = (s: CalloutSide) => s === "top" || s === "bottom"
 
@@ -288,14 +304,72 @@ function boxAt(
   }
 }
 
+/** A box on `side` of tile `a`, `d` from it, shifted `off` along the
+ * side (its centre from the tile's). */
+function boxBy(
+  a: Box,
+  side: CalloutSide,
+  d: number,
+  off: number,
+  size: { w: number; h: number }
+): Box {
+  const { w, h } = size
+  switch (side) {
+    case "top":
+      return { x: cx(a) + off - w / 2, y: a.y - d - h, w, h }
+    case "bottom":
+      return { x: cx(a) + off - w / 2, y: a.y + a.h + d, w, h }
+    case "left":
+      return { x: a.x - d - w, y: cy(a) + off - h / 2, w, h }
+    case "right":
+      return { x: a.x + a.w + d, y: cy(a) + off - h / 2, w, h }
+  }
+}
+
+/** The places round a tile its box may take, shortest leader first: on
+ * each side, straight out or shifted along it, out a step at a time -
+ * none with a leader past `max`. Ties go top, bottom, left, right, then
+ * the smaller shift. */
+export function nearSpots(
+  it: CalloutItem,
+  max: number
+): { box: Box; side: CalloutSide; leader: [Pt, Pt]; len: number }[] {
+  const out: {
+    box: Box
+    side: CalloutSide
+    leader: [Pt, Pt]
+    len: number
+    rank: number
+  }[] = []
+  const sides = ["top", "bottom", "left", "right"] as const
+  sides.forEach((side, si) => {
+    const along = horizontal(side) ? it.size.w : it.size.h
+    const offs = [0, 0.35, -0.35, 0.7, -0.7].map((f) => f * along)
+    for (let k = 0; k < 40; k++) {
+      const d = NEAR_GAP + k * NEAR_STEP
+      if (d > max) break
+      offs.forEach((off, oi) => {
+        const box = boxBy(it.anchor, side, d, off, it.size)
+        const leader = leaderFor(box, it.anchor, side)
+        const len = leaderLength(leader)
+        if (len > max) return
+        out.push({ box, side, leader, len, rank: si * 10 + oi })
+      })
+    }
+  })
+  out.sort((p, q) => p.len - q.len || p.rank - q.rank)
+  return out
+}
+
 /**
  * Place the callouts. `free(box)` says a box is clear of what was placed
  * before (tiles, icons, labels); each box placed is taken for the rest.
- * Groups go in key order, a group's tiles to the nearest side of their
- * room, each side's boxes in one row in the order of their tiles; a row
- * that hits something moves out, and a box that still hits something on
- * its own row goes out alone. A tile with no free place anywhere is left
- * out (its name hides, as a plain name with nowhere to go does).
+ * Groups go in key order. A group's tiles first try one row per side of
+ * their room (the nearest side), in the order of their tiles, out a step
+ * at a time - kept only when no leader runs past `maxLeader`. A tile its
+ * row could not seat takes the free spot nearest it. A tile with no free
+ * place within reach is left out (its name hides, as a plain name with
+ * nowhere to go does).
  */
 export function layoutCallouts(
   items: readonly CalloutItem[],
@@ -305,19 +379,35 @@ export function layoutCallouts(
     /** Callout boxes placed before (an earlier round): no leader through
      * one. */
     prior?: readonly Box[]
+    /** Their leaders: none crossed. */
+    priorLeaders?: readonly [Pt, Pt][]
     /** The tiles as drawn: a leader keeps off them where it can (a
      * second try lets it cross one rather than leave a name out). */
-    bodies?: { near: (b: Box, r: number) => { box: Box }[] }
+    bodies?: { near: (b: Box, r: number) => { id: string; box: Box }[] }
+    /** The longest leader (units); a last try allows twice as long. */
+    maxLeader?: number
   }
 ): Map<string, PlacedCallout> {
   const out = new Map<string, PlacedCallout>()
   const taken: Box[] = [...(opts.prior ?? [])]
-  const leaders: [Pt, Pt][] = []
-  const clear = (b: Box) => opts.free(b) && !taken.some((t) => boxesHit(t, b))
-  // A leader through a box placed already, or a box over a leader.
+  const leaders: [Pt, Pt][] = [...(opts.priorLeaders ?? [])]
+  const bounds = opts.bounds
+  const inBounds = (b: Box) =>
+    !bounds ||
+    (b.x >= bounds.x &&
+      b.y >= bounds.y &&
+      b.x + b.w <= bounds.x + bounds.w &&
+      b.y + b.h <= bounds.y + bounds.h)
+  const clear = (b: Box) =>
+    inBounds(b) && opts.free(b) && !taken.some((t) => boxesHit(t, b))
   let strict = !!opts.bodies
-  const leaderOk = (l: [Pt, Pt], anchor: Box) => {
+  let cap = opts.maxLeader ?? Infinity
+  // A leader through a box placed already, across another leader or (on
+  // the strict try) across another tile.
+  const leaderOk = (l: [Pt, Pt], it: CalloutItem) => {
+    if (leaderLength(l) > cap + 1e-6) return false
     if (taken.some((t) => segmentHitsBox(l[0], l[1], t))) return false
+    if (leaders.some((o) => segmentsCross(l, o))) return false
     if (!strict || !opts.bodies) return true
     const span = {
       x: Math.min(l[0][0], l[1][0]),
@@ -327,13 +417,15 @@ export function layoutCallouts(
     }
     return !opts.bodies
       .near(span, 0)
-      .some(
-        (o) => !boxesHit(o.box, anchor) && segmentHitsBox(l[0], l[1], o.box)
-      )
+      .some((o) => o.id !== it.id && segmentHitsBox(l[0], l[1], o.box))
   }
   const boxOk = (b: Box) => !leaders.some((l) => segmentHitsBox(l[0], l[1], b))
-  const take = (it: CalloutItem, box: Box, side: CalloutSide) => {
-    const leader = leaderFor(box, it.anchor, side)
+  const take = (
+    it: CalloutItem,
+    box: Box,
+    side: CalloutSide,
+    leader: [Pt, Pt]
+  ) => {
     taken.push(box)
     leaders.push(leader)
     out.set(it.id, { id: it.id, box, side, leader })
@@ -345,18 +437,15 @@ export function layoutCallouts(
     if (g) g.push(it)
     else groups.set(it.group, [it])
   }
-  const placeGroup = (list: readonly CalloutItem[]) => {
+  // A row by the room, per side: all of it or none.
+  const placeRows = (list: readonly CalloutItem[]) => {
     const bySide = new Map<CalloutSide, CalloutItem[]>()
-    const prefs = new Map<string, CalloutSide[]>()
     for (const it of list) {
-      const sides = sidesFor(it, opts.bounds)
-      prefs.set(it.id, sides)
-      const s = sides[0]
+      const s = sidesFor(it, bounds)[0]
       const l = bySide.get(s)
       if (l) l.push(it)
       else bySide.set(s, [it])
     }
-    const left: CalloutItem[] = []
     for (const side of ["top", "bottom", "left", "right"] as const) {
       const row = bySide.get(side)
       if (!row) continue
@@ -376,69 +465,98 @@ export function layoutCallouts(
       const step = h
         ? Math.max(...row.map((it) => it.size.h)) + BOX_GAP
         : Math.max(...row.map((it) => it.size.w)) / 2 + BOX_GAP
-      // The whole row, out a step at a time until it is clear.
-      let placed = false
-      for (let k = 0; k <= MAX_STEPS && !placed; k++) {
+      for (let k = 0; k <= MAX_STEPS; k++) {
         const d = ROW_GAP + k * step
         const boxes = row.map((it, i) => boxAt(c, side, d, starts[i], it.size))
-        if (!boxes.every((b) => clear(b) && boxOk(b))) continue
         const ls = boxes.map((b, i) => leaderFor(b, row[i].anchor, side))
-        if (!ls.every((l, i) => leaderOk(l, row[i].anchor))) continue
-        // No leader through a box of its own row.
+        // Too long already: a row farther out is no nearer.
+        if (ls.some((l) => leaderLength(l) > cap)) break
+        if (!boxes.every((b) => clear(b) && boxOk(b))) continue
+        if (!ls.every((l, i) => leaderOk(l, row[i]))) continue
+        // No leader through a box of its own row, nor across another's.
         if (
-          ls.some((l, i) =>
-            boxes.some((b, j) => j !== i && segmentHitsBox(l[0], l[1], b))
+          ls.some(
+            (l, i) =>
+              boxes.some((b, j) => j !== i && segmentHitsBox(l[0], l[1], b)) ||
+              ls.some((o, j) => j > i && segmentsCross(l, o))
           )
         )
           continue
-        row.forEach((it, i) => take(it, boxes[i], side))
-        placed = true
+        row.forEach((it, i) => take(it, boxes[i], side, ls[i]))
+        break
       }
-      if (placed) continue
-      // Box by box: each out until it is clear.
-      row.forEach((it, i) => {
-        for (let k = 0; k <= MAX_STEPS; k++) {
-          const b = boxAt(c, side, ROW_GAP + k * step, starts[i], it.size)
-          if (!clear(b) || !boxOk(b)) continue
-          const l = leaderFor(b, it.anchor, side)
-          if (!leaderOk(l, it.anchor)) continue
-          take(it, b, side)
-          return
-        }
-        left.push(it)
-      })
     }
-    // What found no place on its side: the other sides, alone.
-    for (const it of left) {
-      for (const side of prefs.get(it.id)!.slice(1)) {
-        const h = horizontal(side)
-        const s = h
-          ? cx(it.anchor) - it.size.w / 2
-          : cy(it.anchor) - it.size.h / 2
-        const step = h ? it.size.h + BOX_GAP : it.size.w / 2 + BOX_GAP
-        let done = false
-        for (let k = 0; k <= MAX_STEPS && !done; k++) {
-          const b = boxAt(it.container, side, ROW_GAP + k * step, s, it.size)
-          if (!clear(b) || !boxOk(b)) continue
-          const l = leaderFor(b, it.anchor, side)
-          if (!leaderOk(l, it.anchor)) continue
-          take(it, b, side)
-          done = true
-        }
-        if (done) break
+  }
+  // The rest, one by one, at the free spot nearest the tile.
+  const placeNear = (list: readonly CalloutItem[]) => {
+    const rest = list
+      .filter((it) => !out.has(it.id))
+      .sort(
+        (p, q) =>
+          cy(p.anchor) - cy(q.anchor) ||
+          cx(p.anchor) - cx(q.anchor) ||
+          (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)
+      )
+    // A spot is free: a little air round its box (two never read as
+    // one), no leader through it, its own leader clear.
+    const fits = (it: CalloutItem, s: ReturnType<typeof nearSpots>[number]) =>
+      clear({
+        x: s.box.x - BOX_GAP / 2,
+        y: s.box.y - BOX_GAP / 2,
+        w: s.box.w + BOX_GAP,
+        h: s.box.h + BOX_GAP,
+      }) &&
+      boxOk(s.box) &&
+      leaderOk(s.leader, it)
+    const spots = new Map(rest.map((it) => [it.id, nearSpots(it, cap)]))
+    // The tile with the fewest free spots goes first (a few at a time, in
+    // a crowd: in order), so a crowded tile is not boxed in by its
+    // neighbours' choices.
+    const FEW = 400
+    while (rest.length) {
+      let pick = 0
+      if (rest.length <= 40) {
+        let fewest = Infinity
+        rest.forEach((it, i) => {
+          let n = 0
+          for (const s of spots.get(it.id)!)
+            if (fits(it, s) && ++n >= FEW) break
+          if (n < fewest) {
+            fewest = n
+            pick = i
+          }
+        })
       }
+      const it = rest.splice(pick, 1)[0]
+      const s = spots.get(it.id)!.find((x) => fits(it, x))
+      if (s) take(it, s.box, s.side, s.leader)
     }
   }
   const keys = [...groups.keys()].sort()
-  for (const key of keys) placeGroup(groups.get(key)!)
-  if (strict) {
-    // Again for the rest, a leader free to cross a tile.
-    strict = false
-    for (const key of keys) {
-      const rest = groups.get(key)!.filter((it) => !out.has(it.id))
-      if (rest.length) placeGroup(rest)
-    }
+  for (const key of keys) {
+    // Tiles in no room (out on a site map): each by its own tile.
+    if (!key.startsWith("near:")) placeRows(groups.get(key)!)
+    placeNear(groups.get(key)!)
   }
+  // Again for the rest: a leader twice as long, then (as long, then
+  // twice) free to cross a tile - a long line reads better than one over
+  // another tile.
+  const base = cap
+  const again = (c: number, s: boolean) => {
+    cap = c
+    strict = s
+    for (const key of keys) placeNear(groups.get(key)!)
+  }
+  const tries: [number, boolean][] = [
+    [base * 2, strict],
+    ...(strict
+      ? ([
+          [base, false],
+          [base * 2, false],
+        ] as [number, boolean][])
+      : []),
+  ]
+  for (const [c, s] of tries) if (Number.isFinite(c) || !s) again(c, s)
   return out
 }
 
@@ -522,6 +640,42 @@ export function calloutGroups(
         container: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 },
       })
   }
+  return out
+}
+
+/** Tiles near each other (their drawn boxes within `join` units, chained)
+ * as clusters: each tile's cluster number - the same for a whole
+ * cluster, whatever the order. */
+export function calloutClusters(
+  tiles: readonly { id: string; box: Box }[],
+  join: number
+): Map<string, number> {
+  const index = new BoxIndex(Math.max(16, join * 2))
+  const at = new Map<string, number>()
+  tiles.forEach((t, i) => {
+    index.add(t.id, t.box)
+    at.set(t.id, i)
+  })
+  const parent = tiles.map((_, i) => i)
+  const find = (i: number): number =>
+    parent[i] === i ? i : (parent[i] = find(parent[i]))
+  tiles.forEach((t, i) => {
+    for (const o of index.near(t.box, join, t.id)) {
+      const a = find(i)
+      const b = find(at.get(o.id)!)
+      if (a !== b) parent[Math.max(a, b)] = Math.min(a, b)
+    }
+  })
+  // Numbered by the cluster's first id: the same in any input order.
+  const first = new Map<number, string>()
+  tiles.forEach((t, i) => {
+    const r = find(i)
+    const f = first.get(r)
+    if (f === undefined || t.id < f) first.set(r, t.id)
+  })
+  const names = [...new Set(first.values())].sort()
+  const out = new Map<string, number>()
+  tiles.forEach((t, i) => out.set(t.id, names.indexOf(first.get(find(i))!)))
   return out
 }
 

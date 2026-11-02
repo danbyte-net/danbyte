@@ -34,6 +34,8 @@ import {
   BoxIndex,
   CALLOUT_MAX_LINES,
   boxGap,
+  CALLOUT_MAX_LEADER,
+  calloutClusters,
   calloutGroups,
   calloutSize,
   layoutCallouts,
@@ -483,6 +485,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   // clear before.
   const callouts: CalloutLabel[] = []
   const calledOut = new Set<string>()
+  const noName = new Set<string>()
   if (wantCallouts && ours.length) {
     const cell = Math.max(16, font * 6)
     // Nearer another tile than this (units) beyond its own: ambiguous.
@@ -501,6 +504,11 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     for (const cl of input.iconClusters ?? [])
       solid.add(boxOfCells(cl.box, scale))
     const gaveUp = new Set<string>()
+    const leaders: [Pt, Pt][] = []
+    // Tiles near each other read as one cluster: when one of them is
+    // named in a callout, all of them are - never boxes and plain names
+    // mixed in one cluster.
+    const clusterOf = calloutClusters(ours, join)
     for (let round = 0; round < 3; round++) {
       const fixed = new Occupancy(cell)
       for (const b of fixedBoxes) fixed.add(b)
@@ -509,13 +517,25 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         trial.filter((r) => !calledOut.has(r.id.slice(5))),
         fixed
       )
-      const want = ours.filter((o) => {
+      const unclear = ours.filter((o) => {
         if (calledOut.has(o.id) || gaveUp.has(o.id)) return false
         const spot = tried.get(`tile:${o.id}`)
         if (!spot) return true
         const own = boxGap(spot.box, o.box)
         return bodies.near(spot.box, own + margin, o.id).length > 0
       })
+      // Their clusters whole, and the rest of a cluster called out before.
+      const boxed = new Set(
+        [...unclear.map((o) => o.id), ...calledOut].map((id) =>
+          clusterOf.get(id)
+        )
+      )
+      const want = ours.filter(
+        (o) =>
+          !calledOut.has(o.id) &&
+          !gaveUp.has(o.id) &&
+          boxed.has(clusterOf.get(o.id))
+      )
       if (!want.length) break
       const groups = calloutGroups(
         want.map((o) => ({ id: o.id, anchor: o.box, home: o.home })),
@@ -540,7 +560,9 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         free: (b) => solid.free(b),
         bounds: input.boundsOnly ? bounds : null,
         prior: calloutBoxes,
+        priorLeaders: leaders,
         bodies,
+        maxLeader: CALLOUT_MAX_LEADER,
       })
       for (const it of items) {
         const p = placed.get(it.id)
@@ -550,6 +572,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
           continue
         }
         calledOut.add(it.id)
+        leaders.push(p.leader)
         const lb = leaderBoxes(p.leader)
         taken.push(p.box, ...lb)
         calloutBoxes.push(p.box)
@@ -569,11 +592,20 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     // Taken before anything else is placed: the lower ranked keep off the
     // boxes and their leaders.
     for (const b of taken) occ.add(b)
+    // A tile whose box found no place in a cluster of callouts: no plain
+    // name either - the cluster reads one way.
+    const boxedClusters = new Set([...calledOut].map((id) => clusterOf.get(id)))
+    for (const id of gaveUp)
+      if (boxedClusters.has(clusterOf.get(id))) noName.add(id)
   }
   // A tile named in a callout has no plain name.
-  const tileReqsShown = calledOut.size
-    ? tileReqs.filter((r) => !calledOut.has(r.id.slice(5)))
-    : tileReqs
+  const tileReqsShown =
+    calledOut.size || noName.size
+      ? tileReqs.filter((r) => {
+          const id = r.id.slice(5)
+          return !calledOut.has(id) && !noName.has(id)
+        })
+      : tileReqs
 
   // Cables: along their lanes, road names; a bundle's count along it.
   const cableText = new Map<string, { text: string; suffix?: string }>()

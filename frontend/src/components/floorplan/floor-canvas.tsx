@@ -2532,6 +2532,10 @@ export function FloorCanvas({
             k={t.k}
             hot={calloutHot ?? hoveredTile}
             selected={pinnedNames}
+            colorOf={(id) => {
+              const tile = tileById.get(id)
+              return tile ? tileFill(tile) : undefined
+            }}
             onHover={(id) => {
               if (!drag.current) setCalloutHot(id)
             }}
