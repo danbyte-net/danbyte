@@ -75,6 +75,8 @@ import {
   splitGrown,
 } from "./readable"
 import { MuteFilter, muteFilterId } from "./background-look"
+import { OnionLayer } from "./onion-layer"
+import type { OnionSkin } from "./onion-layer"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
 import { layoutPlanLabels } from "./plan-label-pass"
 import { PlanCalloutsLayer } from "./plan-callouts-layer"
@@ -269,6 +271,8 @@ export interface FloorCanvasProps {
   // ── Raised floors and walls (Structure mode) ───────────────────────────
   /** Raised-floor rectangles, drawn UNDER every tile in all modes. */
   raisedFloors?: RaisedFloorArea[]
+  /** Another level of an aligned floor plan, drawn faintly under this one. */
+  onion?: OnionSkin | null
   selectedAreaId?: string | null
   /** Structure mode: a raised floor was clicked. */
   onSelectArea?: (id: string | null) => void
@@ -568,6 +572,7 @@ export function FloorCanvas({
   callouts = "off",
   calloutLines,
   muteBackground = false,
+  onion = null,
   mode = "layout",
   trays = [],
   showTrays = true,
@@ -2256,6 +2261,7 @@ export function FloorCanvas({
             )
           })}
 
+          {onion && <OnionLayer skin={onion} />}
           {/* Zones first (background), then areas (rooms), then normal
               tiles, then FOV cones. */}
           {tiles.filter(tileIsZone).map(renderTile)}

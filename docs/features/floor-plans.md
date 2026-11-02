@@ -774,7 +774,8 @@ A floor plan with one floor looks the same as a single plan.
 
 The editor header names the floor plan and shows the **floor switcher**:
 the floors as segmented tabs in order, or a compact **Floor: 2** dropdown
-past six floors. The address is the floor's own (`/floorplans/<floor id>`),
+past six floors (an aligned floor plan has the
+[level picker](#building-levels) instead). The address is the floor's own (`/floorplans/<floor id>`),
 so a link, a bookmark or a reload lands on the same floor; switching floors
 keeps the 2D or 3D view. Switching with unsaved edits asks first - the same
 guard that covers every other way out of the editor, described under
@@ -821,6 +822,7 @@ The floor plan's name is a menu (floor-plan change permission):
   Two floors with the same name are refused, listed, until one is renamed.
 - **Edit…** - the floor plan's name, location (one of its site's, or
   **Whole site**) and description.
+- **Align floors…** - see [Building levels](#building-levels).
 - **Clone this floor** - see [Cloning a plan](#cloning-a-plan).
 
 Nothing groups, merges or renames floors on its own; each of these is an
@@ -853,6 +855,34 @@ below's ceiling plus this floor's **slab** (300 mm unless set), and a
 basement sits its own ceiling plus the slab above it below the floor over
 it. A set elevation anchors the floors around it. Risers between levels
 climb these heights.
+
+**Level picker.** On an aligned floor plan the floor tabs give way to a
+vertical level picker at the left of the canvas, roof at the top and
+basements at the bottom, each level with its elevation ("2 · +7.2 m"). The
+address stays per floor.
+
+**Onion skin.** In 2D the picker's **Onion skin** draws the level below
+(or above) faintly under this one - its walls and the outlines of what
+stands on it, through the levels' alignment - for drawing the next floor
+over the last.
+
+**Align floors…** (the floor plan's menu, when it has two levels or more)
+lines up floors drawn before they were aligned: pick the **Level** to move
+and the level it lies **Over**, then nudge it with the arrows (or the arrow
+keys; the **Step** sets how far) and turn it ( **[** and **]** turn by a
+degree) until the walls match, or type **X**, **Y** (cells) and **Turn °**.
+Grid sizes may differ: alignment is an offset, not a resize. **Save**
+stores the level's offset; **Aligned floors** turns the floor plan's
+alignment on or off.
+
+**Risers through levels.** On an aligned floor plan, risers standing at
+the same place on two levels pair on their own - no hunting for the
+matching tile. A saved riser's inspector shows **Through to**: tick a
+level to place a riser of the same type, size and label at the same place
+there; untick it to take that riser off (one linked to an object only
+stops being a riser). A cable between any two of the levels routes through
+the shaft, and its vertical run is the difference of the two levels'
+elevations. A riser paired by hand keeps its pair, first.
 
 !!! note "Upgrading to 0.19"
     Before 0.19 the floors of a building were the plans that shared a
@@ -2890,6 +2920,7 @@ copied or cloned riser is not paired.
 | `POST /api/floor-plans/{id}/bulk/` | Also takes `cable_paths`: `{"upsert": [...], "delete": [cable ids or {"cable", "version"}]}`, in the same transaction, written after the tiles (so a route sees the tiles as saved), at most 256 upserts. An upsert is `{"cable", "legs"?, "kind"?, "tray_order"?, "version"?, "write_length"?, "replace_length"?, "cable_version"?}`: without `legs` the route is worked out on the server; with them (`[{"points": [[x, y], ...]}]`, one per far tile, each from its A tile's centre to its far tile's) they are checked against the plan and measured on the server - lengths, ends and tray spans are never taken from the payload, and every tray named must be this plan's. `version` is the stored route's, `cable_version` the cable's `updated_at` when a length is written: a change since answers **409** with `kind` `cable_path` or `cable`, and nothing is written. A save that carried `cable_paths` also answers `cable_paths`, the routes written. An upsert with `riser` (a riser tile of this plan) routes the cable between floors on the server, through that riser and the one it pairs with, against the tiles as saved: it writes a route here and one on the other floor (which needs floor plan · change and the route's own add or change there), each with `riser` and `riser_mm`; `legs` are ignored. Deleting such a route deletes the other floor's part too when you may edit it. It also takes `trays`: `{"create": [{"key", "points", "level"?, "elevation_mm"?, "name"?, "kind"?, "color"?, "capacity"?}]}` (at most 64) - new trays, created before the routes, each needing tray `add`; a tray without a name is `Run N`. An upsert's `tray_order` may name a new tray by its `key`, and the answer carries `trays` (`[{key, id}]`). It also takes `cables`: `{"create": [{"key", "a", "b", "status_id", "type"?, "color"?, ...}]}` (at most 256) - new cables (Connect to…), each validated as `POST /api/cables/bulk-create/` validates it, in a status marked planned, made after the trays and before the routes, all or nothing (400 with `cables`, one error object per cable in order). It needs cable · add, and each cable's ends inside your cable grant's sites. An upsert's `cable` may name a new cable by its `key`; the answer carries `cables` (`[{key, id}]`). |
 | `POST /api/cables/{id}/auto-route/` | Stores the route and answers its `path`. |
 | `GET`/`PUT /api/cables/{id}/routing/` | Stores the route through the trays named; answers `path`, and on `PUT` `reachable` (`false` with `detail` when the trays do not connect the ends: assigned, no route stored). |
+| `GET`/`POST /api/floor-plan-tiles/{id}/through/` | A riser on an aligned floor plan: the other levels (`levels`: `[{id, name, tile}]`, `tile` the riser standing at its place there, or null; empty off an aligned floor plan). `POST {"floors": [ids]}` places a riser at its place on each level named that has none and takes it off the others ([Building levels](#building-levels)); needs tile change here, tile add on the levels reached and delete on those left. |
 | `GET /api/floor-plans/{id}/risers/` | The riser tiles on the other floors of the plan's site that you may view (`[{id, label, floor_plan: {id, name, stack}, pair}]`; `pair` is the riser it pairs with now, or null): what a riser of this plan may pair with. |
 
 Tiles carry `riser`, `riser_pair` (`{id, label, floor_plan: {id, name}}`;

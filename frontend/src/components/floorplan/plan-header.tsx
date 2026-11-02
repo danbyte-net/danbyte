@@ -26,6 +26,7 @@ import {
   MergeStacksDialog,
   RenameStackDialog,
 } from "./floor-dialogs"
+import { AlignFloorsDialog } from "./align-floors-dialog"
 import { FloorSwitcher } from "./floor-switcher"
 import {
   capturedLabel,
@@ -38,6 +39,7 @@ import { UnlinkViewDialog } from "./snapshot-dialogs"
 type Open =
   | "add"
   | "manage"
+  | "align"
   | "merge"
   | "rename"
   | "unlink"
@@ -74,6 +76,9 @@ export function PlanHeader({
   const qc = useQueryClient()
   const [open, setOpen] = useState<Open>(null)
   const floors = stack?.floors ?? []
+  // An aligned floor plan picks its level in the canvas (LevelPanel).
+  const aligned = !!stack?.aligned && plan.kind !== "view"
+  const levels = floors.filter((f) => f.kind !== "view").length
   // Switching floors keeps the 2D/3D choice; the floor itself is the URL.
   const goFloor = (id: string) =>
     nav({
@@ -123,6 +128,14 @@ export function PlanHeader({
               <DropdownMenuItem onSelect={() => setOpen("manage")}>
                 Manage floors…
               </DropdownMenuItem>
+              {levels > 1 && (
+                <DropdownMenuItem
+                  disabled={isDirty}
+                  onSelect={() => setOpen("align")}
+                >
+                  Align floors…
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => setOpen("merge")}>
                 Merge floor plans…
               </DropdownMenuItem>
@@ -179,7 +192,7 @@ export function PlanHeader({
       {isDirty && <Badge variant="secondary">Edited</Badge>}
       {(floors.length > 1 || (canAdd && stack)) && (
         <div className="ml-4 flex min-w-0 items-center gap-1">
-          {floors.length > 1 && (
+          {floors.length > 1 && !aligned && (
             // Unsaved edits on a switch are the leave guard's to confirm.
             <FloorSwitcher
               floors={floors}
@@ -222,6 +235,12 @@ export function PlanHeader({
             stack={stack}
             current={plan}
             onAdded={(p) => goFloor(p.id)}
+          />
+          <AlignFloorsDialog
+            open={open === "align"}
+            onOpenChange={(o) => setOpen(o ? "align" : null)}
+            stack={stack}
+            currentId={plan.id}
           />
           <ManageFloorsDialog
             open={open === "manage"}

@@ -28,7 +28,7 @@ import math
 
 from django.db import transaction
 from django.db.models import Max
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .models import FloorPlan, FloorPlanStack, unique_stack_name
 
@@ -439,3 +439,100 @@ def merge_stacks(target, sources: list):
         for s in sources:
             drop_if_empty(s)
     return target
+
+
+# ─── risers through levels ──────────────────────────────────────────────────
+
+
+def _frame_to_level(fx_mm: float, fy_mm: float, plan) -> tuple[float, float]:
+    """A point of the aligned frame (mm) in ``plan``'s cells."""
+    cx, cy = plan.grid_width / 2, plan.grid_height / 2
+    x = fx_mm / plan.cell_mm - cx - (plan.align_dx or 0)
+    y = fy_mm / plan.cell_mm - cy - (plan.align_dy or 0)
+    r = math.radians(-(plan.align_rot or 0))
+    return x * math.cos(r) - y * math.sin(r) + cx, x * math.sin(r) + y * math.cos(r) + cy
+
+
+def shaft_levels(tile) -> list[dict]:
+    """The levels of ``tile``'s aligned floor plan (other than its own),
+    each with the riser standing at its place there, or None:
+    ``[{"floor": FloorPlan, "tile": FloorPlanTile | None}]``, lowest
+    first."""
+    from .cable_routing import shaft_risers
+
+    plan = tile.floor_plan
+    stack = plan.stack if plan.stack_id else None
+    if stack is None or not stack.aligned:
+        return []
+    hits = shaft_risers(plan, [tile]).get(tile.pk, [])
+    at = {}
+    for h in hits:
+        at.setdefault(h.floor_plan_id, h)
+    return [
+        {"floor": f, "tile": at.get(f.pk)}
+        for f in ordered_floors(stack) if f.kind == "plan" and f.pk != plan.pk
+    ]
+
+
+def riser_through(tile, floor_ids, *, may_add, may_delete) -> list[dict]:
+    """Make the riser ``tile`` reach exactly the levels ``floor_ids`` (of its
+    aligned floor plan): a riser of the same type, size and label is placed
+    at the same place on each level that has none, and on a level left out
+    the riser standing there goes - when it is linked to nothing, else it
+    only stops being a riser. ``may_add(plan)`` / ``may_delete(tile)`` are
+    the caller's permission checks. Risers at one place pair on their own
+    (cable_routing.shaft_risers). One transaction, each row saved (logged).
+    Answers :func:`shaft_levels` after."""
+    from .cable_routing import tile_frame_mm
+    from .models import FloorPlanTile
+
+    if not tile.riser:
+        raise ValidationError({"riser": ["Tick Riser first."]})
+    levels = shaft_levels(tile)
+    if not levels:
+        raise ValidationError({"floors": ["Only on a floor plan with aligned floors."]})
+    by_id = {str(lv["floor"].pk): lv for lv in levels}
+    want = {str(x) for x in floor_ids or []}
+    unknown = want - set(by_id)
+    if unknown:
+        raise ValidationError({"floors": ["Pick levels of this floor plan."]})
+    plan = tile.floor_plan
+    fx, fy = tile_frame_mm(tile, plan)
+    with transaction.atomic():
+        for fid, lv in by_id.items():
+            floor, there = lv["floor"], lv["tile"]
+            if fid in want and there is None:
+                if not tile.tile_type_id and not tile.role_type_id:
+                    raise ValidationError(
+                        {"floors": ["Give the riser a tile type first."]}
+                    )
+                if not may_add(floor):
+                    raise PermissionDenied(f"You may not add tiles to {floor.name}.")
+                turn = round(((floor.align_rot or 0) - (plan.align_rot or 0)) / 90) % 2
+                scale = plan.cell_mm / floor.cell_mm
+                w, h = tile.width * scale, tile.height * scale
+                if turn:
+                    w, h = h, w
+                cx, cy = _frame_to_level(fx, fy, floor)
+                x, y = cx - w / 2, cy - h / 2
+                if floor.layout_mode == "grid":
+                    w, h = max(1, round(w)), max(1, round(h))
+                    x, y = round(cx - w / 2), round(cy - h / 2)
+                x = max(0, min(x, floor.grid_width - w))
+                y = max(0, min(y, floor.grid_height - h))
+                FloorPlanTile.objects.create(
+                    floor_plan=floor, x=x, y=y, width=w, height=h,
+                    tile_type_id=tile.tile_type_id, role_type_id=tile.role_type_id,
+                    label=tile.label, orientation=tile.orientation, riser=True,
+                )
+            elif fid not in want and there is not None:
+                if not may_delete(there):
+                    raise PermissionDenied(f"You may not remove the riser on {floor.name}.")
+                linked = any(getattr(there, f + "_id") for f in FloorPlanTile.LINK_FIELDS.values())
+                if linked:
+                    there.riser = False
+                    there.riser_to = None
+                    there.save(update_fields=["riser", "riser_to", "updated_at"])
+                else:
+                    there.delete()
+    return shaft_levels(FloorPlanTile.objects.select_related("floor_plan__stack").get(pk=tile.pk))

@@ -24,6 +24,7 @@ import type { CableRoute, CableStub } from "./cable-draw"
 import { CablePopover, useCablePopover } from "./cable-popover"
 import { CanvasHints } from "./canvas-hints"
 import { FloorCanvas, tileIsZone } from "./floor-canvas"
+import type { OnionSkin } from "./onion-layer"
 import type {
   FloorCanvasApi,
   FloorCanvasProps,
@@ -113,7 +114,10 @@ export function PlanCanvas({
   onRerouteCable,
   onOpenCable,
   outline,
+  onion = null,
 }: {
+  /** Another level of an aligned floor plan, faintly under this one. */
+  onion?: OnionSkin | null
   /** A cable clicked: its panel opens and it is traced; null clears. */
   onOpenCable: (cableId: string | null) => void
   /** Edit, the Detect outline tool in hand: its picks, preview and card. */
@@ -265,6 +269,7 @@ export function PlanCanvas({
     <>
       <FloorCanvas
         plan={plan}
+        onion={onion}
         tiles={shownTiles}
         selectedId={selectedId}
         editable={canEdit}

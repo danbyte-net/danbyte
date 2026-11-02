@@ -195,3 +195,92 @@ class SameFootprintTests(StackTestCase):
             "exterior": True}, format="json")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertTrue(r.json()["exterior"])
+
+
+class RiserShaftTests(StackTestCase):
+    """Risers at one place of an aligned floor plan pair on their own, and
+    Through to places or removes them on the other levels."""
+
+    def setUp(self):
+        super().setUp()
+        self.stack = FloorPlanStack.objects.create(
+            tenant=self.tenant, location=self.bldg, name="Tower", aligned=True)
+        self.floors = [
+            FloorPlan.objects.create(tenant=self.tenant, location=self.bldg,
+                                     stack=self.stack, name=n, floor_order=i * 10)
+            for i, n in enumerate(("G", "1", "2"))
+        ]
+        self.tt = FloorTileType.objects.create(tenant=self.tenant, name="Shaft",
+                                               slug="shaft")
+        self.r0 = FloorPlanTile.objects.create(floor_plan=self.floors[0], x=4, y=3,
+                                               tile_type=self.tt, riser=True, label="S1")
+
+    def _through(self, floors, tile=None):
+        return self.client.post(f"/api/floor-plan-tiles/{(tile or self.r0).id}/through/",
+                                {"floors": [str(f.id) for f in floors]}, format="json")
+
+    def test_through_places_risers_that_pair_at_the_same_place(self):
+        from .cable_routing import riser_links, riser_pairs
+
+        r = self._through(self.floors[1:])
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(all(lv["tile"] for lv in r.json()["levels"]))
+        up = FloorPlanTile.objects.get(floor_plan=self.floors[2])
+        self.assertEqual((up.x, up.y, up.label, up.riser), (4, 3, "S1", True))
+        links = riser_links(self.floors[0], [self.r0])[self.r0.pk]
+        self.assertEqual([t.floor_plan_id for t in links],
+                         [self.floors[1].pk, self.floors[2].pk])
+        self.assertEqual(riser_pairs(self.floors[0], [self.r0])[self.r0.pk].floor_plan_id,
+                         self.floors[1].pk)
+        # The scene names them for the 3D building.
+        scene = self.client.get(f"/api/floor-plans/{self.floors[0].id}/scene/").json()
+        tile = next(t for t in scene["tiles"] if t["id"] == str(self.r0.id))
+        self.assertEqual([x["floor_plan"] for x in tile["riser_to"]],
+                         [str(self.floors[1].id), str(self.floors[2].id)])
+        self.assertEqual(scene["plan"]["elevation_mm"], 0)
+        # Untick a level: its riser goes.
+        r = self._through(self.floors[1:2])
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(FloorPlanTile.objects.filter(floor_plan=self.floors[2]).exists())
+
+    def test_an_offset_level_gets_the_riser_at_its_own_cells(self):
+        FloorPlan.objects.filter(pk=self.floors[1].pk).update(align_dx=2, align_dy=-1)
+        r = self._through(self.floors[1:2])
+        self.assertEqual(r.status_code, 200, r.content)
+        t = FloorPlanTile.objects.get(floor_plan=self.floors[1])
+        self.assertEqual((t.x, t.y), (2, 4))
+
+    def test_not_aligned_or_not_a_riser_is_refused(self):
+        r = self._through([], tile=FloorPlanTile.objects.create(
+            floor_plan=self.floors[0], x=0, y=0, tile_type=self.tt))
+        self.assertEqual(r.status_code, 400)
+        FloorPlanStack.objects.filter(pk=self.stack.pk).update(aligned=False)
+        r = self._through(self.floors[1:])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client.get(
+            f"/api/floor-plan-tiles/{self.r0.id}/through/").json()["levels"], [])
+
+    def test_a_level_of_another_stack_is_refused(self):
+        other = self._stack(name="Other", floors=("X",)).floors.get()
+        r = self._through([other])
+        self.assertEqual(r.status_code, 400)
+
+    def test_another_tenants_user_finds_nothing(self):
+        their_user = self._limited_user("them", ["view", "change", "add"],
+                                        types=("floorplan", "floorplantile"))
+        their_user.profile.tenants.set([self.tenant2])
+        self.client.force_login(their_user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant2.id)
+        sess.save()
+        r = self._through(self.floors[1:])
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(FloorPlanTile.objects.count(), 1)
+
+    def test_tile_add_is_needed(self):
+        u = self._limited_user("chg", ["view", "change"],
+                               types=("floorplan", "floorplantile"))
+        self._login(u)
+        r = self._through(self.floors[1:])
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(FloorPlanTile.objects.count(), 1)

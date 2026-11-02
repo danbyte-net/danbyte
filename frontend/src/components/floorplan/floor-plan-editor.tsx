@@ -65,6 +65,11 @@ import { BackLabelDeleteDialog } from "./opens-field"
 import { PlanCanvas } from "./plan-canvas"
 import { PlanDialogs } from "./plan-dialogs"
 import { PlanHeader } from "./plan-header"
+import { LevelPanel } from "./level-panel"
+import type { LevelMode, OnionSide } from "./level-panel"
+import { neighbours } from "./levels"
+import { onionSkin } from "./onion-layer"
+import { useScene } from "@/components/floorplan3d/use-scene"
 import {
   AreaWallsDeleteDialog,
   UpdateWallsCard,
@@ -179,6 +184,40 @@ export function FloorPlanEditor({
     area: areaParam,
   } = search
   const view3d = vizParam === "3d"
+
+  // Building levels: an aligned floor plan's level picker, the 2D onion
+  // skin and the 3D level mode. Kept across floors - the editor stays
+  // mounted when the level changes.
+  const stackData = data.stack.data
+  const aligned = !!stackData?.aligned && plan?.kind !== "view"
+  const [onion, setOnion] = useState<OnionSide>("off")
+  const [levelMode, setLevelMode] = useState<LevelMode>("all")
+  const [explode, setExplode] = useState(0)
+  const levelNb = useMemo(
+    () => (stackData ? neighbours(stackData.floors, id) : null),
+    [stackData, id]
+  )
+  const onionFloor =
+    aligned && !view3d && onion !== "off" && levelNb
+      ? onion === "below"
+        ? levelNb.below
+        : levelNb.above
+      : null
+  const onionScene = useScene(onionFloor?.id ?? "", { enabled: !!onionFloor })
+  const onionLayer = useMemo(() => {
+    const me = stackData?.floors.find((f) => f.id === id)
+    if (!onionFloor || !me || !onionScene.data) return null
+    return onionSkin(onionScene.data, onionFloor, me)
+  }, [onionFloor, onionScene.data, stackData, id])
+  const goLevel = (to: string, tile?: string) =>
+    nav({
+      to: "/floorplans/$id",
+      params: { id: to },
+      search: {
+        ...(view3d ? { viz: "3d" as const } : {}),
+        ...(tile ? { tile } : {}),
+      },
+    })
 
   const ed = usePlanEditState(
     id,
@@ -1291,6 +1330,20 @@ export function FloorPlanEditor({
               onDismissHint={() => ed.setShow3dHint(false)}
             />
           )}
+          {aligned && (
+            <LevelPanel
+              stack={stackData}
+              currentId={id}
+              onGo={(to) => void goLevel(to)}
+              view3d={view3d}
+              onion={onion}
+              onOnion={setOnion}
+              mode={levelMode}
+              onMode={setLevelMode}
+              explode={explode}
+              onExplode={setExplode}
+            />
+          )}
           {!view3d && (
             <PlanCanvas
               plan={plan}
@@ -1355,6 +1408,7 @@ export function FloorPlanEditor({
               edits={edits}
               structure={structure}
               outline={editing ? outline : undefined}
+              onion={onionLayer}
               prefs={prefs}
               liveState={liveState.data ?? null}
               trays={planTrays}

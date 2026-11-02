@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowDown,
   ArrowLeft,
@@ -12,6 +12,7 @@ import {
 
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { apiErrorToast } from "@/lib/api-toast"
 import type {
   DeviceRole,
   FloorPlanLinkKind,
@@ -37,6 +38,7 @@ import {
 } from "@/components/forms"
 import { RackPicker } from "@/components/rack-picker"
 import { cn } from "@/lib/utils"
+import { isTemp } from "./use-tile-edits"
 
 import { CabinetLinkField } from "./cabinet-link-field"
 import { tileFill, tileHasFov, tileIsZone } from "./floor-canvas"
@@ -500,6 +502,7 @@ function RiserFields({
             emptyText="No risers on other floors."
           />
         ))}
+      {tile.riser && !isTemp(tile.id) && <RiserThrough tileId={tile.id} />}
       {tile.riser && (
         <Field label="Height (mm)" hint="Blank: from the floors">
           <Input
@@ -518,6 +521,57 @@ function RiserFields({
         </Field>
       )}
     </div>
+  )
+}
+
+/** On a floor plan with aligned floors: the levels a riser runs through.
+ * Ticking a level places a riser at the same place there (risers at one
+ * place pair on their own); unticking takes it off. Written at once. */
+function RiserThrough({ tileId }: { tileId: string }) {
+  const qc = useQueryClient()
+  const key = ["floor-plan-riser-through", tileId]
+  const levels = useQuery({
+    queryKey: key,
+    queryFn: () =>
+      api<{ levels: { id: string; name: string; tile: string | null }[] }>(
+        `/api/floor-plan-tiles/${tileId}/through/`
+      ),
+    staleTime: 30_000,
+  })
+  const save = useMutation({
+    mutationFn: (floors: string[]) =>
+      api<{ levels: { id: string; name: string; tile: string | null }[] }>(
+        `/api/floor-plan-tiles/${tileId}/through/`,
+        { method: "POST", body: JSON.stringify({ floors }) }
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData(key, data)
+      void qc.invalidateQueries({ queryKey: ["floor-plan-contents"] })
+      void qc.invalidateQueries({ queryKey: ["floor-plan-scene"] })
+      void qc.invalidateQueries({ queryKey: ["floor-plan-risers"] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  const rows = levels.data?.levels ?? []
+  if (!rows.length) return null
+  const on = rows.filter((r) => r.tile).map((r) => r.id)
+  return (
+    <Field label="Through to">
+      <div className="grid gap-1">
+        {[...rows].reverse().map((r) => (
+          <FormCheckbox
+            key={r.id}
+            label={r.name}
+            checked={!!r.tile}
+            disabled={save.isPending}
+            onChange={(v) =>
+              save.mutate(v ? [...on, r.id] : on.filter((x) => x !== r.id))
+            }
+            className="items-center text-[13px]"
+          />
+        ))}
+      </div>
+    </Field>
   )
 }
 
