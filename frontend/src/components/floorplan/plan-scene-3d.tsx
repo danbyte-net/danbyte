@@ -21,6 +21,9 @@ export function PlanScene3D({
   liveState,
   hiddenTileIds,
   traceCableId,
+  onOpenCable,
+  onOpenDevice,
+  focusTarget,
   prefs,
   capacity,
   rackFocus,
@@ -38,6 +41,12 @@ export function PlanScene3D({
   liveState: FloorPlanLiveState | null
   hiddenTileIds: Set<string>
   traceCableId: string | null
+  /** A cable run clicked: the plan's cable panel (null: clicked away). */
+  onOpenCable?: (cableId: string | null) => void
+  /** A device clicked: the plan's device panel. */
+  onOpenDevice?: (tileId: string, deviceId: string) => void
+  /** Fly to a cable's run or a tile; a new `n` flies again. */
+  focusTarget?: { kind: "cable" | "tile"; id: string; n: number } | null
   prefs: PlanViewPrefs
   capacity: PlanCapacity
   rackFocus: { tileId: string; n: number } | null
@@ -55,6 +64,9 @@ export function PlanScene3D({
           liveState={liveState}
           hiddenTileIds={hiddenTileIds}
           traceCableId={traceCableId}
+          onOpenCable={onOpenCable}
+          onOpenDevice={onOpenDevice}
+          focusTarget={focusTarget}
           showUNumbers={prefs.show3dU}
           showNames={prefs.show3dNames}
           namesScope={prefs.names3dScope}

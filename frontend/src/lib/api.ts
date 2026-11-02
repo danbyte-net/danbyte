@@ -13248,6 +13248,154 @@ export type FloorPlanCableFar =
     }
   | { device: null; port: null; hidden: true }
 
+/** A device as a floor plan panel names it: what it is and where it stands. */
+export interface FloorPlanPanelDevice {
+  id: string
+  name: string
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
+  cabinet: { id: string; name: string } | null
+  position: number | null
+  face: string
+  u_height: number | null
+}
+
+/** One end of a cable in the cable panel - Hidden (#453) names nothing. */
+export type FloorPlanCablePanelEnd =
+  | { hidden: true; device?: undefined; port?: undefined }
+  | {
+      hidden?: undefined
+      device: FloorPlanPanelDevice | null
+      port:
+        | ({
+            kind: string
+            id: string
+            name: string
+            label: string
+            type: string
+            type_display: string
+            description: string
+          } & Partial<{
+            speed: string
+            enabled: boolean
+            mode: string
+            mac_address: string
+            vlan: {
+              id: string
+              vlan_id: number
+              name: string
+              color: string
+            } | null
+            ip_addresses: { id: string; ip_address: string }[]
+            tagged_vlan_count: number
+            lag: { id: string; name: string } | null
+            /** From the device's last SNMP poll; null when never polled. */
+            observed: {
+              oper_status: string
+              admin_status: string
+              speed_mbps: string
+            } | null
+          }>)
+        | null
+    }
+
+/** GET /api/floor-plans/{id}/cable-panel/{cable}/ */
+export interface FloorPlanCablePanel {
+  id: string
+  numid: number | null
+  label: string
+  /** The cable's display name ("Cable #12" without a label). */
+  name: string
+  type: string
+  type_display: string
+  color: string
+  status: StatusMini | null
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  description: string
+  ends: { A: FloorPlanCablePanelEnd[]; B: FloorPlanCablePanelEnd[] }
+}
+
+export interface FloorPlanPanelCheck {
+  id: string
+  name: string
+  kind: string
+  status: CheckStatus
+  ip: string
+  last_checked: string | null
+  since: string | null
+  latency_ms: number | null
+}
+
+/** GET /api/floor-plans/{id}/tile-panel/{tile}/ */
+export type FloorPlanTilePanel =
+  | { kind: "device" | "rack"; hidden: true }
+  | {
+      kind: "device"
+      hidden?: undefined
+      device: FloorPlanPanelDevice & {
+        numid: number | null
+        device_type: { id: string; model: string; manufacturer: string } | null
+        platform: { id: string; name: string } | null
+        serial_number: string
+        asset_tag: string
+        primary_ip: { id: string; ip_address: string; dns_name: string } | null
+        secondary_ip: {
+          id: string
+          ip_address: string
+          dns_name: string
+        } | null
+        oob_ip: { id: string; ip_address: string; dns_name: string } | null
+        tenant: { id: string; name: string } | null
+        description: string
+        software_version: string
+        tags: { id: number; name: string; color: string }[]
+        profiles: { id: string; name: string; color: string }[]
+      }
+      monitoring: {
+        status: CheckStatus | null
+        counts: Partial<Record<CheckStatus, number>>
+        checks: FloorPlanPanelCheck[]
+      }
+      ports: {
+        total: number
+        connected: number
+        free: number
+        disabled: number
+        observed: boolean
+        up: number | null
+        down: number | null
+      }
+    }
+  | {
+      kind: "rack"
+      hidden?: undefined
+      rack: {
+        id: string
+        name: string
+        facility_id: string
+        role: { id: string; name: string; color: string } | null
+        status: StatusMini | null
+        site: { id: string; name: string } | null
+        location: { id: string; name: string } | null
+        rack_type: { id: string; name: string } | null
+        u_height: number
+        tenant: { id: string; name: string } | null
+        tags: { id: number; name: string; color: string }[]
+      }
+      monitoring: { status: CheckStatus | null }
+      devices: (Omit<
+        FloorPlanPanelDevice,
+        "site" | "location" | "rack" | "cabinet"
+      > & { device_type: string; check: CheckStatus | null })[]
+      used_units: number
+      hidden_count: number
+    }
+
 /** Where one leg of a stored route starts or ends: the tile it was routed
  * from and that tile's centre then (cells). */
 export interface CablePathAnchor {

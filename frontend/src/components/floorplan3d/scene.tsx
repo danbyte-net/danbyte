@@ -45,6 +45,7 @@ import { usePortLabelsShown } from "@/lib/port-labels-pref"
 
 import {
   cableEndsAnchored,
+  cableRunBox,
   CablesLayer,
   CableTrace3D,
   useCablePaths,
@@ -86,6 +87,7 @@ import { WallMesh } from "./wall-mesh"
 import { useScene } from "./use-scene"
 import {
   cabinetBoxM,
+  cellM,
   cellToWorld,
   floorDeviceBoxM,
   rackFootprintM,
@@ -113,6 +115,9 @@ export default function FloorScene3D({
   liveState,
   hiddenTileIds,
   traceCableId,
+  onOpenCable,
+  onOpenDevice,
+  focusTarget = null,
   showUNumbers = false,
   showNames = false,
   namesScope = "all",
@@ -140,6 +145,14 @@ export default function FloorScene3D({
   /** Tiles the plan's eyes have switched off - not drawn here either. */
   hiddenTileIds?: Set<string>
   traceCableId?: string | null
+  /** A cable run clicked: the plan's cable panel in place of the room's
+   * cable card (null: clicked away). */
+  onOpenCable?: (cableId: string | null) => void
+  /** A device clicked: the plan's device panel in place of its card. */
+  onOpenDevice?: (tileId: string, deviceId: string) => void
+  /** Fly to a cable's run or a tile (Find, Show on plan); a new `n` flies
+   * again. */
+  focusTarget?: { kind: "cable" | "tile"; id: string; n: number } | null
   /** Overlay toggles - owned by the route's View popover, like the 2D prefs. */
   showUNumbers?: boolean
   showNames?: boolean
@@ -419,6 +432,8 @@ export default function FloorScene3D({
     // render-phase side effect React is allowed to double-fire.)
     if (selection?.tileId !== sel.tileId) setViewSide("front")
     setSelection(sel)
+    if (sel.kind === "device" && sel.deviceId)
+      onOpenDevice?.(sel.tileId, sel.deviceId)
   }
 
   // Esc cancels an in-flight connect.
@@ -531,6 +546,52 @@ export default function FloorScene3D({
     // A prop change, demand frameloop: kick a frame so the rig moves.
     invalidateRef.current?.()
   }, [focusRack, scene.data])
+
+  // Find or the plan's panels: fly to a cable's run or a tile. The cable
+  // paths are the plan's own query, so this waits for them.
+  const focusPaths = useCablePaths(planId)
+  const focusTargetRef = useRef(0)
+  useEffect(() => {
+    const d = scene.data
+    if (!focusTarget || !d || focusTargetRef.current === focusTarget.n) return
+    if (focusTarget.kind === "cable") {
+      const cp = focusPaths.data?.cables.find((c) => c.id === focusTarget.id)
+      if (!cp) return
+      focusTargetRef.current = focusTarget.n
+      const box = cableRunBox(d, cp)
+      if (box) navRef.current?.frame(box.min, box.max)
+      return
+    }
+    const t = d.tiles.find((x) => x.id === focusTarget.id)
+    if (!t) return
+    focusTargetRef.current = focusTarget.n
+    if (t.rack) {
+      setSelection({ kind: "rack", tileId: t.id })
+      setViewSide("front")
+      const vp = rackViewpoint(
+        d.plan,
+        t,
+        rackFootprintM(t.rack).height,
+        "front"
+      )
+      flyToRef.current = {
+        target: new THREE.Vector3(...vp.target),
+        position: new THREE.Vector3(...vp.position),
+      }
+      invalidateRef.current?.()
+      return
+    }
+    const c = cellM(d.plan)
+    const h = t.cabinet
+      ? cabinetBoxM(t.cabinet).height
+      : t.device
+        ? (floorDeviceBoxM(t.device)?.h ?? 0.5)
+        : 1
+    navRef.current?.frame(
+      [t.x * c, 0, t.y * c],
+      [(t.x + t.w) * c, h, (t.y + t.h) * c]
+    )
+  }, [focusTarget, scene.data, focusPaths.data])
 
   // Every near-tier device reports the colours it draws; the HUD legend keys
   // their union (and hides when nothing photo-anchored is in view). Above the
@@ -757,6 +818,7 @@ export default function FloorScene3D({
           setSelection(null)
           setStructSel(null)
           setConnecting(null)
+          if (cableSel) onOpenCable?.(null)
           setCableSel(null)
           // Focus follows the selection - a click into nothing ends both.
           setFocusOn(false)
@@ -1027,6 +1089,7 @@ export default function FloorScene3D({
               setStructSel(null)
               setTraySel(null)
               setCableSel(id)
+              onOpenCable?.(id)
             }}
           />
         )}
@@ -1132,7 +1195,7 @@ export default function FloorScene3D({
           onConnect={(path) => void startConnect(selection, path)}
         />
       )}
-      {selFloor?.device && (
+      {selFloor?.device && !onOpenDevice && (
         <DeviceHud
           tile={selFloor}
           dev={selFloor.device}
@@ -1149,14 +1212,17 @@ export default function FloorScene3D({
           </div>
         </div>
       )}
-      {selTile && selDevice && selection?.kind === "device" && (
-        <DeviceHud
-          tile={selTile}
-          dev={selDevice}
-          focused={focusOn}
-          onToggleFocus={() => setFocusOn((v) => !v)}
-        />
-      )}
+      {selTile &&
+        selDevice &&
+        selection?.kind === "device" &&
+        !onOpenDevice && (
+          <DeviceHud
+            tile={selTile}
+            dev={selDevice}
+            focused={focusOn}
+            onToggleFocus={() => setFocusOn((v) => !v)}
+          />
+        )}
       {/* Isolation pill - hidden racks must read as "isolated", never as
           "my racks vanished". */}
       {isolation && (
@@ -1191,7 +1257,9 @@ export default function FloorScene3D({
           }
         />
       )}
-      {cableSel && <CableHud planId={planId} cableId={cableSel} />}
+      {cableSel && !onOpenCable && (
+        <CableHud planId={planId} cableId={cableSel} />
+      )}
       <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
       {traySel && (
         <TrayHud
