@@ -95,6 +95,7 @@ DEVICE_ROWS = (
     ("prtg.PrtgSensor", "device", "PRTG sensor {}", "name"),
     ("monitoring.PortUtilizationRule", "device", "port rule {}", "name"),
     ("routing.StaticRoute", "device", "static route {}", "prefix"),
+    ("routing.PolicyRule", "device", "policy rule {}", "priority"),
     ("routing.BGPInstance", "device", "BGP AS{}", "asn__asn"),
     ("routing.BGPSession", "instance__device", "BGP session {}", "remote_address"),
     ("routing.OSPFInstance", "device", "OSPF {}", "process_id"),
