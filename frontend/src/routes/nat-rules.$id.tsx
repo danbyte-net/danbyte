@@ -95,6 +95,20 @@ function NATRuleDetailBody({ rule: r }: { rule: NATRule }) {
       ),
     },
     {
+      label: "Out interface",
+      value: r.out_interface ? (
+        <Link
+          to="/interfaces/$id"
+          params={{ id: r.out_interface.id }}
+          className="link font-mono"
+        >
+          {r.out_interface.name}
+        </Link>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Status",
       value: r.status ? <StatusBadge status={r.status} /> : dash,
     },
@@ -129,7 +143,11 @@ function NATRuleDetailBody({ rule: r }: { rule: NATRule }) {
       actions={
         <>
           {canDo("natrule", "change") && (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEditing(true)}
+            >
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
           )}

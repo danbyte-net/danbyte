@@ -123,6 +123,11 @@ export function rackPortInterfaces(
     lacp_mode: "",
     lacp_rate: "",
     lag_min_links: null,
+    lag_mode: "",
+    lag_mode_display: "",
+    lag_hash_policy: "",
+    lag_hash_policy_display: "",
+    lag_miimon: null,
     created_at: "",
     updated_at: "",
   }))

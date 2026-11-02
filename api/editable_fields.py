@@ -48,6 +48,8 @@ DCIM_CHOICE_KEYS: dict[tuple[str, str], str] = {
     ("api.interface", "lag_protocol"): "lag_protocols",
     ("api.interface", "lacp_mode"): "lacp_modes",
     ("api.interface", "lacp_rate"): "lacp_rates",
+    ("api.interface", "lag_mode"): "lag_modes",
+    ("api.interface", "lag_hash_policy"): "lag_hash_policies",
     ("api.interface", "duplex"): "interface_duplex",
     ("api.interface", "poe_mode"): "poe_modes",
     ("api.interface", "poe_type"): "poe_types",

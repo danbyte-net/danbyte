@@ -659,6 +659,27 @@ A few rules keep templates short:
 - **The anycast gateway comes with its neighbour discovery.** `r.gateway` is
   the address with its mask; `r.nd` carries `ra`, `ra_interval` and the
   subnet `prefix` from the gateway's FHRP group, for the `ipv6 nd` lines.
+- **Policies per address family come resolved.** `s.af_by_name[afi]` is the
+  neighbour's settings in that family, already resolved (session row,
+  session field, group row, group field), so a PE prints a different
+  route-map in `ipv4 unicast` and `vpnv4 unicast` to one neighbour:
+
+  ```jinja
+  {% for af in b.address_families %}
+   address-family {{ af.afi_safi|replace("-", " ") }}
+  {% for s in b.sessions if af.afi_safi in s.af_by_name %}{% set a = s.af_by_name[af.afi_safi] %}
+    neighbor {{ s.remote_address }} activate
+  {% if a.import_policy %}  neighbor {{ s.remote_address }} route-map {{ a.import_policy }} in
+  {% endif %}{% if a.export_policy %}  neighbor {{ s.remote_address }} route-map {{ a.export_policy }} out
+  {% endif %}{% if a.prefix_list_out %}  neighbor {{ s.remote_address }} prefix-list {{ a.prefix_list_out }} out
+  {% endif %}{% endfor %}
+   exit-address-family
+  {% endfor %}
+  ```
+- **A segment's DF preference is the port's.** `r.es.df_preference` is what
+  this leaf's port runs with - the member's own value, else the segment's
+  default (`r.es.segment_df_preference`) - so the same `es-df-pref` line
+  prints a different value on leaf A and leaf B when their members differ.
 
 ## Reading the two side by side
 

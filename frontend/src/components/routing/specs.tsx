@@ -37,6 +37,7 @@ import { DataTable } from "@/components/data-table"
 import { dash } from "@/components/cells/dash"
 
 import { knobRows, remoteAsnText } from "./bgp-bits"
+import { NeighborAFTable } from "./neighbor-af-table"
 import type { RoutingListSpec } from "./catalog-page"
 import {
   asPathListRuleColumns,
@@ -224,7 +225,7 @@ export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
           },
         ]),
     {
-      label: "DF preference",
+      label: "Default DF preference",
       value:
         r.df_preference != null ? (
           <span className="num">{r.df_preference}</span>
@@ -239,21 +240,31 @@ export const ethernetSegmentDetail: RoutingDetailSpec<EthernetSegment> = {
       value: "interfaces",
       label: "Interfaces",
       count: (r) => r.interfaces.length,
-      render: (r) =>
-        r.interfaces.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No member interfaces yet - edit the segment to add some.
-          </p>
-        ) : (
-          <DataTable
-            data={r.interfaces}
-            columns={segmentMemberColumns()}
-            tableId="ethernet-segment-interfaces"
-            enableExport={false}
-          />
-        ),
+      render: (r) => <SegmentMembers segment={r} />,
     },
   ],
+}
+
+function SegmentMembers({ segment: r }: { segment: EthernetSegment }) {
+  const { canDo } = useMe()
+  if (r.members.length === 0)
+    return (
+      <p className="text-sm text-muted-foreground">
+        No member interfaces yet - edit the segment to add some.
+      </p>
+    )
+  return (
+    <DataTable
+      data={r.members}
+      columns={segmentMemberColumns({
+        segmentDefault: r.df_preference,
+        canEdit: canDo("ethernetsegmentmember", "change"),
+        invalidate: ["ethernet-segment", r.id],
+      })}
+      tableId="ethernet-segment-interfaces"
+      enableExport={false}
+    />
+  )
 }
 
 export const communityList: RoutingListSpec<Community> = {
@@ -552,6 +563,18 @@ export const peerGroupDetail: RoutingDetailSpec<BGPPeerGroup> = {
   subtitle: (r) =>
     `remote AS ${remoteAsnText(r) || "-"} · ${r.session_count} sessions`,
   related: [
+    {
+      value: "address-families",
+      label: "Address families",
+      count: (r) => r.afs.length,
+      render: (r) => (
+        <NeighborAFTable
+          parent={{ kind: "peer_group", id: r.id }}
+          rows={r.afs}
+          invalidate={["bgp-peer-group", r.id]}
+        />
+      ),
+    },
     {
       value: "sessions",
       label: "Sessions",

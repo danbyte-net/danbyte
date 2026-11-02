@@ -139,6 +139,11 @@ export function InterfaceForm({
   const [lagMinLinks, setLagMinLinks] = useState(
     iface?.lag_min_links != null ? String(iface.lag_min_links) : ""
   )
+  const [lagMode, setLagMode] = useState(iface?.lag_mode ?? "")
+  const [lagHash, setLagHash] = useState(iface?.lag_hash_policy ?? "")
+  const [lagMiimon, setLagMiimon] = useState(
+    iface?.lag_miimon != null ? String(iface.lag_miimon) : ""
+  )
   const isLag = type === "lag"
   // Virtual, bridge and aggregate types have no physical port - the server
   // flags them virtual whatever the box says.
@@ -187,6 +192,9 @@ export function InterfaceForm({
     setLagMinLinks(
       iface.lag_min_links != null ? String(iface.lag_min_links) : ""
     )
+    setLagMode(iface.lag_mode ?? "")
+    setLagHash(iface.lag_hash_policy ?? "")
+    setLagMiimon(iface.lag_miimon != null ? String(iface.lag_miimon) : "")
     setTagIds(iface.tags.map((t) => t.id))
     reset()
   }, [iface, reset])
@@ -320,6 +328,9 @@ export function InterfaceForm({
         lacp_mode: isLag && lagProtocol === "lacp" ? lacpMode : "",
         lacp_rate: isLag && lagProtocol === "lacp" ? lacpRate : "",
         lag_min_links: isLag && lagMinLinks.trim() ? Number(lagMinLinks) : null,
+        lag_mode: isLag ? lagMode : "",
+        lag_hash_policy: isLag ? lagHash : "",
+        lag_miimon: isLag && lagMiimon.trim() ? Number(lagMiimon) : null,
       }
       if (isEdit)
         return saveObject<Interface>({
@@ -761,8 +772,8 @@ export function InterfaceForm({
                 label="Protocol"
                 value={lagProtocol || null}
                 onChange={(v) => setLagProtocol((v ?? "") as LagProtocol)}
-                noneLabel="Static (no protocol)"
-                placeholder="Static (no protocol)"
+                noneLabel="None (static)"
+                placeholder="None (static)"
                 searchPlaceholder="Search…"
                 emptyText="No protocols."
                 options={choices.lag_protocols}
@@ -796,6 +807,39 @@ export function InterfaceForm({
                 info="Members that must be up for the bundle to count as up."
                 error={fieldErrors.lag_min_links}
               />
+              <div className="grid grid-cols-3 gap-3">
+                <FormSelect
+                  label="Mode"
+                  value={lagMode || null}
+                  onChange={(v) => {
+                    setLagMode(v ?? "")
+                    if (v === "802.3ad") setLagProtocol("lacp" as LagProtocol)
+                  }}
+                  noneLabel="Not set"
+                  options={choices.lag_modes}
+                  info="The Linux bond mode (bond-mode). 802.3ad is LACP; the others are static bonds."
+                  error={fieldErrors.lag_mode}
+                />
+                <FormSelect
+                  label="Hash policy"
+                  value={lagHash || null}
+                  onChange={(v) => setLagHash(v ?? "")}
+                  noneLabel="Not set"
+                  options={choices.lag_hash_policies}
+                  info="bond-xmit-hash-policy: how traffic is spread over the members."
+                  error={fieldErrors.lag_hash_policy}
+                />
+                <FormText
+                  label="MII monitor"
+                  type="number"
+                  min={0}
+                  value={lagMiimon}
+                  onChange={setLagMiimon}
+                  placeholder="100"
+                  info="bond-miimon: the link check interval, in ms."
+                  error={fieldErrors.lag_miimon}
+                />
+              </div>
             </FormSection>
           )}
 

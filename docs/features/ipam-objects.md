@@ -338,6 +338,10 @@ A rule carries:
 - the **firewall** it runs on - an ordinary Device link, so a firewall's page
   can show everything it translates. Deleting the device leaves the rule: you
   replaced a box, the mapping did not stop existing;
+- an optional **out interface** - the firewall's egress port the rule applies
+  on, as in *masquerade on mgmt0* (`out_interface_id`; a port of the rule's
+  own device). A config template reaches it as
+  `device.nat_rules.all()` → `rule.out_interface.name`;
 - the **outside** end - an *external address* and *external port*;
 - the **inside** end - an *internal address* and *internal port*;
 - an optional **source restriction** - a prefix ("our office only") or a single

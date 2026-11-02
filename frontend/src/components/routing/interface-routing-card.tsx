@@ -269,6 +269,14 @@ export function InterfaceRoutingCard({
               {segmentIdentity(seg)}
             </span>
           )}
+          {(() => {
+            const df = seg.members?.find(
+              (m) => m.interface.id === interfaceId
+            )?.df_preference_effective
+            return df != null ? (
+              <span className="num text-muted-foreground">DF {df}</span>
+            ) : null
+          })()}
         </span>
       ),
     })),

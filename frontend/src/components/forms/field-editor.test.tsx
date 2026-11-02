@@ -34,6 +34,8 @@ const NO_CHOICES: DcimChoices = {
   lag_protocols: [],
   lacp_modes: [],
   lacp_rates: [],
+  lag_modes: [],
+  lag_hash_policies: [],
   poe_modes: [],
   poe_types: [],
   interface_types: [],

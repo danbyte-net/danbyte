@@ -219,6 +219,7 @@ PATHS = importlib.import_module(
     "auth_api.migrations.0047_site_roles_floor_plan_cable_paths"
 )
 AREA_TYPES = importlib.import_module("auth_api.migrations.0048_site_roles_area_types")
+ROUTING_ROWS = importlib.import_module("auth_api.migrations.0049_site_roles_routing_rows")
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -331,7 +332,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(STACKS.NEW_TYPES)
             | set(AREAS.NEW_TYPES)
             | set(OUTLINES.NEW_TYPES)
-            | set(PATHS.NEW_TYPES),
+            | set(PATHS.NEW_TYPES)
+            | set(ROUTING_ROWS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -401,6 +403,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + PRTG_OVERRIDES.NEW_CATALOGS
                 + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
                 + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
+                + ROUTING_ROWS.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -784,3 +787,44 @@ class RoutedViewsetsRestrictTests(TestCase):
              "redistribution", "device", "interface", "tag"},
             checked,
         )
+
+
+class SiteRoleRoutingRowsUpgradeTests(SiteRoleUpgradeTests):
+    """0049 gives the site roles built before it the new routing rows, and
+    the viewers and the editors' catalog view their catalogs."""
+
+    def _role(self, name, actions):
+        """A role as 0048 left it."""
+        types = set(PATHS.KNOWN) - set(CATALOG_MIGRATION.ROLE_CATALOGS) - {
+            "supportcontract", "application", "applicationgroup", "deviceprofile",
+            "applicationflowrequirement", "site", "locationtype", "areatype"}
+        if actions == ["view"]:
+            types = types | {"site", "locationtype", "areatype"} | set(
+                CATALOG_MIGRATION.ROLE_CATALOGS
+            )
+        return self._old(name, actions, types=sorted(types))
+
+    def test_roles_gain_the_routing_rows(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + OUTLINES.NEW_CATALOGS
+                                + AREA_TYPES.NEW_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        ROUTING_ROWS.forwards(django_apps, None)
+        ROUTING_ROWS.forwards(django_apps, None)
+        for perm in (view, edit, catalog, custom):
+            perm.refresh_from_db()
+        for slug in ("policyrule", "ethernetsegmentmember", "bgpneighboraf"):
+            self.assertIn(slug, view.object_types)
+            self.assertIn(slug, edit.object_types)
+            self.assertNotIn(slug, catalog.object_types)
+        for slug in ("ethernetsegment", "prefixlist"):
+            self.assertIn(slug, view.object_types)
+            self.assertNotIn(slug, edit.object_types)
+            self.assertIn(slug, catalog.object_types)
+        self.assertEqual(len(view.object_types), len(set(view.object_types)))
+        self.assertEqual(custom.object_types, ["device", "prefix"])

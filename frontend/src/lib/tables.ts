@@ -101,6 +101,10 @@ const ROWS: Row[] = [
   ["embedded-static-routes", "Static routes (embedded)", "Routing", "/api/routing/static-routes/"],
   ["embedded-vteps", "VTEPs (embedded)", "Routing", "/api/routing/vteps/"],
   ["device-static-routes", "Device · Static routes", "Routing", "/api/routing/static-routes/", sub],
+  ["policy-rules", "Policy rules", "Routing", "/api/routing/ip-rules/", { ioType: "policyrule" }],
+  ["device-policy-rules", "Device · Policy rules", "Routing", "/api/routing/ip-rules/", sub],
+  // A neighbour's families ride nested in the session or peer group.
+  ["neighbor-afs", "BGP neighbour · Address families", "Routing", null, sub],
   // Rules ride nested in their list's detail payload, not a list of their own.
   ["prefix-list-rules", "Prefix list · Rules", "Routing", null, sub],
   ["community-list-rules", "Community list · Rules", "Routing", null, sub],

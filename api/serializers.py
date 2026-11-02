@@ -11,6 +11,7 @@ import math
 import os
 import re
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.utils.text import slugify
@@ -4147,6 +4148,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
     bridge = serializers.SerializerMethodField()
     lag_member_count = serializers.SerializerMethodField()
     lag_protocol_display = ChoiceLabelField("lag_protocol")
+    lag_mode_display = ChoiceLabelField("lag_mode")
+    lag_hash_policy_display = ChoiceLabelField("lag_hash_policy")
     # Lenient (CharField, not the model's ChoiceField) so legacy/custom values
     # round-trip; the UI offers the standard dropdown via dcim_choices.
     type = serializers.CharField(required=False, allow_blank=True)
@@ -4233,6 +4236,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         if d:
             d["lag_protocol"] = obj.lag.lag_protocol
             d["lacp_mode"] = obj.lag.lacp_mode
+            d["lag_mode"] = obj.lag.lag_mode
+            d["lag_hash_policy"] = obj.lag.lag_hash_policy
         return d
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -4276,6 +4281,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             for t in obj.tunnel_terminations.all()
             if t.tunnel.tenant_id == obj.device.tenant_id
         ]
+
+    def to_internal_value(self, data):
+        # "static" is how a bond without negotiation is often called; it is
+        # stored as the blank protocol, the one spelling filters and
+        # templates use.
+        if hasattr(data, "get") and str(data.get("lag_protocol", "")).lower() == "static":
+            data = data.copy()
+            data["lag_protocol"] = ""
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -4358,7 +4372,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                          "changing its type."}
             )
         if eff_type != "lag":
-            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links"):
+            for f in ("lag_protocol", "lacp_mode", "lacp_rate", "lag_min_links",
+                      "lag_mode", "lag_hash_policy", "lag_miimon"):
                 if attrs.get(f):
                     raise serializers.ValidationError(
                         {f: "Only an interface of type LAG has bundle settings."}
@@ -4370,6 +4385,15 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         protocol = attrs.get(
             "lag_protocol", getattr(self.instance, "lag_protocol", "") or ""
         )
+        mode = attrs.get("lag_mode", getattr(self.instance, "lag_mode", "") or "")
+        if mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            protocol = attrs["lag_protocol"] = "lacp"
+        elif mode and protocol == "lacp":
+            raise serializers.ValidationError(
+                {"lag_mode": "LACP runs in 802.3ad mode. Pick 802.3ad, or clear "
+                             "the protocol for a static bond."}
+            )
         if protocol != "lacp":
             attrs["lacp_mode"] = ""
             attrs["lacp_rate"] = ""
@@ -4402,7 +4426,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
-                  "lag_min_links",
+                  "lag_min_links", "lag_mode", "lag_mode_display", "lag_hash_policy",
+                  "lag_hash_policy_display", "lag_miimon",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 
@@ -8239,11 +8264,21 @@ class NATRuleSerializer(
         source="source_prefix", queryset=Prefix.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    out_interface = serializers.SerializerMethodField()
+    out_interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="out_interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_out_interface(self, obj):
+        i = obj.out_interface if obj.out_interface_id else None
+        return {"id": str(i.id), "name": i.name} if i is not None else None
 
     def validate_external_ports(self, value):
         return _clean_port_spec(value, "external_ports")
@@ -8254,6 +8289,14 @@ class NATRuleSerializer(
     def validate(self, attrs):
         attrs = super().validate(attrs)
         get = lambda f: attrs.get(f, getattr(self.instance, f, None))  # noqa: E731
+
+        out = get("out_interface")
+        if out is not None:
+            device = get("device")
+            if device is None or out.device_id != device.id:
+                raise serializers.ValidationError(
+                    {"out_interface_id": "Pick a port on the rule's device."}
+                )
 
         proto = get("protocol")
         ext, internal = get("external_ports") or "", get("internal_ports") or ""
@@ -8286,6 +8329,7 @@ class NATRuleSerializer(
                   "internal_ip", "internal_ip_id", "internal_ports",
                   "source_ip", "source_ip_id",
                   "source_prefix", "source_prefix_id",
+                  "out_interface", "out_interface_id",
                   "status", "status_id", "description",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
@@ -9756,6 +9800,20 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         ip = outside_ip(obj, self.context, obj.tunnel.tenant_id)
         return {"id": str(ip.id), "ip_address": ip.ip_address} if ip else None
 
+    allowed_ips = serializers.JSONField(required=False)
+    peers = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only([])
+    def get_peers(self, obj):
+        """The far end(s) this end talks to, as a render sees them. Only on
+        a WireGuard tunnel's detail - a list does not pay for it."""
+        from .wireguard import peer_dict, peer_terminations
+
+        if obj.tunnel.encapsulation != "wireguard":
+            return []
+        return [peer_dict(o) for o in peer_terminations(obj, list(obj.tunnel.terminations.all()))]
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         iface = attrs.get("interface", getattr(self.instance, "interface", None))
@@ -9766,6 +9824,36 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "A termination binds exactly one of an interface or a VM interface."
             )
+        probe = TunnelTermination(**{
+            k: v for k, v in attrs.items()
+            if k in {f.name for f in TunnelTermination._meta.concrete_fields}
+        })
+        if self.instance is not None:
+            for f in TunnelTermination._meta.concrete_fields:
+                if f.name not in attrs:
+                    setattr(probe, f.name, getattr(self.instance, f.name))
+        try:
+            probe.clean()
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                exc.message_dict if hasattr(exc, "message_dict") else exc.messages
+            ) from exc
+        for f in ("public_key", "private_key_ref", "allowed_ips"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        # One key, one end: unique among the tenant's terminations. A lookup in
+        # the tenant, not a global constraint, so it never says whether a key
+        # exists in another tenant.
+        if probe.public_key and probe.tunnel_id:
+            clash = TunnelTermination.objects.filter(
+                tunnel__tenant_id=probe.tunnel.tenant_id, public_key=probe.public_key,
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"public_key": "Another tunnel end already has this key."}
+                )
         return attrs
 
     class Meta:
@@ -9773,6 +9861,8 @@ class TunnelTerminationSerializer(serializers.ModelSerializer):
         fields = ["id", "tunnel_id", "role", "role_display",
                   "interface", "interface_id", "vm_interface",
                   "vm_interface_id", "outside_ip", "outside_ip_id",
+                  "listen_port", "public_key", "private_key_ref", "allowed_ips",
+                  "endpoint_port", "persistent_keepalive", "peers",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 

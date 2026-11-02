@@ -745,6 +745,7 @@ class InterfaceListTests(_Base):
             "id": str(ae.id), "name": "ae0",
             "device": {"id": str(sw3.id), "name": "sw-3"},
             "lag_protocol": "lacp", "lacp_mode": "active",
+            "lag_mode": "", "lag_hash_policy": "",
         })
         self.assertEqual(rows[("sw-3", "eth1")]["bridge"]["name"], "br0")
         self.assertEqual(rows[("sw-3", "eth3")]["parent"]["name"], "eth2")

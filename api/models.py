@@ -3894,6 +3894,36 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         null=True, blank=True,
         help_text="Members that must be up for the bundle to count as up.",
     )
+    # Linux bond settings (``bond-mode``, ``bond-xmit-hash-policy``,
+    # ``bond-miimon``), on the aggregate only. 802.3ad is LACP; every other
+    # mode is a static bundle.
+    LAG_MODE_CHOICES = [
+        ("balance-rr", "balance-rr"),
+        ("active-backup", "active-backup"),
+        ("balance-xor", "balance-xor"),
+        ("broadcast", "broadcast"),
+        ("802.3ad", "802.3ad (LACP)"),
+        ("balance-tlb", "balance-tlb"),
+        ("balance-alb", "balance-alb"),
+    ]
+    LAG_HASH_POLICY_CHOICES = [
+        ("layer2", "layer2"),
+        ("layer2+3", "layer2+3"),
+        ("layer3+4", "layer3+4"),
+        ("encap2+3", "encap2+3"),
+        ("encap3+4", "encap3+4"),
+        ("vlan+srcmac", "vlan+srcmac"),
+    ]
+    lag_mode = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=LAG_MODE_CHOICES,
+    )
+    lag_hash_policy = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=LAG_HASH_POLICY_CHOICES,
+    )
+    lag_miimon = models.PositiveIntegerField(
+        null=True, blank=True, help_text="MII link-monitor interval, in ms.",
+    )
 
     class Meta:
         unique_together = ("device", "name")
@@ -3906,6 +3936,13 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # same shape - and port utilization agrees with the faceplate.
         if self.type in VIRTUAL_INTERFACE_TYPES:
             self.virtual = True
+        if self.type != "lag":
+            self.lag_mode = ""
+            self.lag_hash_policy = ""
+            self.lag_miimon = None
+        elif self.lag_mode == "802.3ad":
+            # 802.3ad is LACP: set it rather than refuse.
+            self.lag_protocol = "lacp"
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
             self.lacp_rate = ""
@@ -6677,6 +6714,12 @@ class NATRule(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "IPAddress", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="nat_source",
     )
+    #: The egress port a rule applies on - "masquerade on mgmt0". On the
+    #: rule's device.
+    out_interface = models.ForeignKey(
+        "Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="nat_rules_out",
+    )
 
     status = models.ForeignKey(
         "Status", on_delete=models.PROTECT, null=True, blank=True,
@@ -8639,6 +8682,36 @@ class TunnelTermination(TimestampedModel):
         related_name="tunnel_terminations",
         help_text="The underlay / public IP this tunnel end rides on.",
     )
+    # ── WireGuard: meaningful on a ``wireguard`` tunnel only. The private key
+    # never enters Danbyte; ``private_key_ref`` names where it lives (a
+    # ``<keychain:NAME>`` placeholder or a path on the box).
+    listen_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    public_key = models.CharField(max_length=44, blank=True, default="", db_default="")
+    private_key_ref = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+    )
+    #: The addresses behind this end, as CIDRs. Every other end prints them
+    #: in its peer block for this end (WireGuard's own meaning).
+    allowed_ips = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
+    #: The port the far end dials to reach this end, when NAT makes it differ
+    #: from ``listen_port``. Null = ``listen_port``.
+    endpoint_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    persistent_keepalive = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+    )
+
+    WIREGUARD_FIELDS = (
+        "listen_port", "public_key", "private_key_ref", "allowed_ips",
+        "endpoint_port", "persistent_keepalive",
+    )
 
     class Meta:
         ordering = ["created_at"]
@@ -8658,6 +8731,40 @@ class TunnelTermination(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.tunnel.name}: {self.point}"
+
+    def has_wireguard(self) -> bool:
+        return bool(
+            self.listen_port or self.public_key or self.private_key_ref
+            or self.allowed_ips or self.endpoint_port or self.persistent_keepalive
+        )
+
+    def clean(self):
+        """WireGuard values: only on a WireGuard tunnel, keys in their shape,
+        and never a private key in ``private_key_ref``."""
+        from django.core.exceptions import ValidationError
+
+        from .wireguard import (
+            normalize_allowed_ips,
+            validate_private_key_ref,
+            validate_public_key,
+        )
+
+        self.public_key = (self.public_key or "").strip()
+        self.private_key_ref = (self.private_key_ref or "").strip()
+        self.allowed_ips = normalize_allowed_ips(self.allowed_ips)
+        if self.has_wireguard() and self.tunnel_id and (
+            self.tunnel.encapsulation != "wireguard"
+        ):
+            raise ValidationError(
+                {"public_key": "WireGuard settings need a WireGuard tunnel."}
+            )
+        if self.public_key:
+            validate_public_key(self.public_key)
+        if self.private_key_ref:
+            validate_private_key_ref(
+                self.private_key_ref,
+                tenant_id=self.tunnel.tenant_id if self.tunnel_id else None,
+            )
 
 
 class L2VPN(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):

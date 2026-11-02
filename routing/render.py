@@ -27,10 +27,13 @@ from .models import (
     ISISInstance,
     LDPInstance,
     OSPFInstance,
+    PolicyRule,
     PrefixList,
     RoutingKeychain,
     RoutingPolicy,
     StaticRoute,
+    effective_afs,
+    group_effective_afs,
     resolve_membership_vlan,
 )
 
@@ -68,6 +71,9 @@ def vtep_dict(vtep: VTEP) -> dict:
             "vlan": vlan.vlan_id if vlan is not None else None,
             "vlan_name": vlan.name if vlan is not None else None,
             "vrf": l2.vrf.name if l2.vrf_id else None,
+            # The leaf's vxlan netdev when it is an interface row; None when
+            # the template names it from the VNI.
+            "interface": m.interface.name if m.interface_id else None,
             "rd": m.rd or None,
             "import_targets": _rt_names(l2.import_targets),
             "export_targets": _rt_names(l2.export_targets),
@@ -99,11 +105,34 @@ def static_route_dict(r: StaticRoute) -> dict:
         "next_hop": r.next_hop or None,
         "next_hop_interface": r.via_interface.name if r.via_interface is not None else None,
         "next_hop_vrf": _vrf_name(r.next_hop_vrf),
+        # A kernel table number for policy routing; None = main / the VRF's.
+        "table": r.table,
         "distance": r.distance,
         "metric": r.metric,
         "tag": r.tag,
         "bfd": r.bfd,
         "description": r.description or "",
+    }
+
+
+def policy_rule_dict(p: PolicyRule) -> dict:
+    """One ``ip rule``. ``from`` / ``to`` are CIDRs (a host is its /32 or
+    /128); ``vrf`` is the VRF's name when the rule looks up a VRF's table."""
+    iif, oif = p.in_interface, p.out_interface
+    return {
+        "id": str(p.id),
+        "family": p.family,
+        "priority": p.priority,
+        "action": p.action,
+        "table": p.table,
+        "vrf": _vrf_name(p.vrf),
+        "from": p.from_prefix or None,
+        "to": p.to_prefix or None,
+        "iif": iif.name if iif is not None else None,
+        "oif": oif.name if oif is not None else None,
+        "fwmark": p.fwmark,
+        "invert": p.invert,
+        "description": p.description or "",
     }
 
 
@@ -240,7 +269,43 @@ def _name(obj) -> str | None:
     return obj.name if obj is not None else None
 
 
-def session_dict(s, policies: set[str]) -> dict:
+def af_render(eff: dict, policies: set[str], prefix_lists: set[str] | None) -> dict:
+    """One address family of a neighbour, every knob already resolved, as a
+    template prints it: names for policies and lists, plain booleans."""
+    for key in ("import_policy", "export_policy", "default_originate_policy"):
+        if eff[key] is not None:
+            policies.add(eff[key].name)
+    for key in ("prefix_list_in", "prefix_list_out"):
+        if eff[key] is not None and prefix_lists is not None:
+            prefix_lists.add(eff[key].name)
+    return {
+        "afi_safi": eff["afi_safi"],
+        "activate": bool(eff["activate"]),
+        "import_policy": _name(eff["import_policy"]),
+        "export_policy": _name(eff["export_policy"]),
+        "prefix_list_in": _name(eff["prefix_list_in"]),
+        "prefix_list_out": _name(eff["prefix_list_out"]),
+        "default_originate": bool(eff["default_originate"]),
+        "default_originate_policy": _name(eff["default_originate_policy"]),
+        "next_hop_self": bool(eff["next_hop_self"]),
+        "route_reflector_client": bool(eff["route_reflector_client"]),
+        "soft_reconfiguration": bool(eff["soft_reconfiguration"]),
+        "as_override": bool(eff["as_override"]),
+        "remove_private_as": bool(eff["remove_private_as"]),
+        "send_community": eff["send_community"] or None,
+        "allowas_in": eff["allowas_in"],
+        "maximum_prefix": eff["maximum_prefix"],
+        "extra": eff["extra"],
+    }
+
+
+def _af_keys(rows: list[dict]) -> dict:
+    """``afs`` (every family, ``activate`` on or off) and ``af_by_name``
+    (the active ones by name) - so ``af in s.af_by_name`` is "activated"."""
+    return {"afs": rows, "af_by_name": {r["afi_safi"]: r for r in rows if r["activate"]}}
+
+
+def session_dict(s, policies: set[str], prefix_lists: set[str] | None = None) -> dict:
     """One neighbour with every knob resolved (session → group → instance)."""
     eff = s.effective()
     for key in ("import_policy", "export_policy", "default_originate_policy"):
@@ -303,10 +368,14 @@ def session_dict(s, policies: set[str]) -> dict:
         ),
         "description": s.description or "",
         "extra": eff["extra"],
+        # Per address family, resolved: the session's row, its own field,
+        # the group's row, the group's field.
+        **_af_keys([af_render(e, policies, prefix_lists) for e in effective_afs(s)]),
     }
 
 
-def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
+def bgp_dict(inst: BGPInstance, policies: set[str],
+             prefix_lists: set[str] | None = None) -> dict:
     afs = []
     for af in inst.address_families.all():
         for key in ("import_policy", "export_policy"):
@@ -345,7 +414,7 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
         key=lambda s: (not s.remote_address, s.remote_address,
                        natural_key(s.port.name if s.port is not None else "")),
     )
-    sessions = [session_dict(s, policies) for s in ordered]
+    sessions = [session_dict(s, policies, prefix_lists) for s in ordered]
     groups = {}
     for s in inst.sessions.all():
         if s.peer_group_id and s.peer_group.name not in groups:
@@ -382,6 +451,8 @@ def bgp_dict(inst: BGPInstance, policies: set[str]) -> dict:
                 "capability_extended_nexthop": bool(g.capability_extended_nexthop),
                 "ttl_security_hops": g.ttl_security_hops,
                 "extra": g.extra or {},
+                **_af_keys([af_render(e, policies, prefix_lists)
+                            for e in group_effective_afs(g)]),
             }
     return {
         "id": str(inst.id),
@@ -557,10 +628,15 @@ def es_dict(seg: EthernetSegment) -> dict:
         "esi": seg.esi or None,
         "es_id": seg.es_id,
         "sys_mac": seg.sys_mac or None,
+        # The segment's default; each member says what its port runs with.
         "df_preference": seg.df_preference,
         "members": sorted(
-            ({"device": i.device.name, "interface": i.name}
-             for i in seg.interfaces.all()),
+            ({"device": m.interface.device.name, "interface": m.interface.name,
+              "df_preference": m.df_preference,
+              "df_preference_effective": (
+                  m.df_preference if m.df_preference is not None else seg.df_preference
+              )}
+             for m in seg.members.all()),
             key=lambda m: (natural_key(m["device"]), natural_key(m["interface"])),
         ),
         "description": seg.description or "",
@@ -619,9 +695,10 @@ def eigrp_dict(inst: EIGRPInstance, policies: set[str]) -> dict:
     }
 
 
-def _policies_closure(tenant_id, names: set[str]) -> dict:
+def _policies_closure(tenant_id, names: set[str], prefix_lists: set[str] = frozenset()) -> dict:
     """The policies a device references, plus every list those policies
-    match on - so a template prints only what the box needs."""
+    match on and the prefix lists its neighbours name per family - so a
+    template prints only what the box needs."""
     policies = {
         p.name: policy_dict(p)
         for p in RoutingPolicy.objects.filter(tenant_id=tenant_id, name__in=names)
@@ -630,7 +707,7 @@ def _policies_closure(tenant_id, names: set[str]) -> dict:
             "rules__match_as_path_lists", "rules__set_communities",
         )
     }
-    pl_names, cl_names, al_names = set(), set(), set()
+    pl_names, cl_names, al_names = set(prefix_lists), set(), set()
     for p in policies.values():
         for r in p["rules"]:
             pl_names.update(r["match"]["prefix_lists"])
@@ -675,6 +752,12 @@ def routing_context(device) -> dict:
         .order_by(F("vrf__name").asc(nulls_first=True), "prefix", "next_hop")
     )
 
+    policy_rules = list(
+        PolicyRule.objects.filter(**own)
+        .select_related("vrf", "iif", "oif", "vm_iif", "vm_oif")
+        .order_by("family", "priority")
+    )
+
     # VRFs the box has to define: whatever its interfaces and routes sit in.
     vrfs = {}
     # `.all()` on purpose: the inventory prefetches interfaces with their
@@ -686,8 +769,12 @@ def routing_context(device) -> dict:
         for vrf in (r.vrf, r.next_hop_vrf):
             if vrf is not None:
                 vrfs[vrf.name] = vrf
+    for p in policy_rules:
+        if p.vrf is not None:
+            vrfs[p.vrf.name] = p.vrf
 
     referenced_policies: set[str] = set()
+    referenced_prefix_lists: set[str] = set()
     instances = (
         BGPInstance.objects.filter(**own)
         .select_related("vrf", "asn")
@@ -701,10 +788,18 @@ def routing_context(device) -> dict:
             "sessions__local_address__assigned_vm_interface", "sessions__vm_interface",
             "sessions__peer_device", "sessions__import_policy",
             "sessions__export_policy", "sessions__keychain",
+            "sessions__afs__import_policy", "sessions__afs__export_policy",
+            "sessions__afs__prefix_list_in", "sessions__afs__prefix_list_out",
+            "sessions__afs__default_originate_policy",
+            "sessions__peer_group__afs__import_policy",
+            "sessions__peer_group__afs__export_policy",
+            "sessions__peer_group__afs__prefix_list_in",
+            "sessions__peer_group__afs__prefix_list_out",
+            "sessions__peer_group__afs__default_originate_policy",
         )
         .order_by(F("vrf__name").asc(nulls_first=True))
     )
-    bgp = [bgp_dict(i, referenced_policies) for i in instances]
+    bgp = [bgp_dict(i, referenced_policies, referenced_prefix_lists) for i in instances]
     ospf_instances = (
         OSPFInstance.objects.filter(**own)
         .select_related("vrf", "bfd_profile")
@@ -743,7 +838,7 @@ def routing_context(device) -> dict:
         .prefetch_related(
             "memberships__l2vpn__vrf", "memberships__l2vpn__import_targets",
             "memberships__l2vpn__export_targets", "memberships__vlan",
-            "memberships__l2vpn__terminations__vlan",
+            "memberships__l2vpn__terminations__vlan", "memberships__interface",
         )
         .first()
     )
@@ -805,12 +900,22 @@ def routing_context(device) -> dict:
     es_by_iface: dict[str, dict] = {}
     for seg in () if is_vm else (
         EthernetSegment.objects.filter(interfaces__device=device)
-        .prefetch_related("interfaces__device").distinct()
+        .prefetch_related("members__interface__device").distinct()
     ):
         row = es_dict(seg)
-        for iface in seg.interfaces.all():
-            if iface.device_id == device.id:
-                es_by_iface[iface.name] = row
+        for m in seg.members.all():
+            if m.interface.device_id == device.id:
+                # This port's view of the segment: `df_preference` is what the
+                # port runs with (its own, else the segment's), and
+                # `segment_df_preference` the segment's default.
+                es_by_iface[m.interface.name] = {
+                    **row,
+                    "df_preference": (
+                        m.df_preference if m.df_preference is not None
+                        else seg.df_preference
+                    ),
+                    "segment_df_preference": seg.df_preference,
+                }
     by_interface: dict[str, dict] = {}
     for iface in device.interfaces.all():
         rows = fhrp.get(iface.name, [])
@@ -846,6 +951,7 @@ def routing_context(device) -> dict:
     out = {
         "vrfs": [vrf_dict(v, l3vnis.get(name)) for name, v in sorted(vrfs.items())],
         "static_routes": [static_route_dict(r) for r in static_routes],
+        "policy_rules": [policy_rule_dict(p) for p in policy_rules],
         "bgp": bgp,
         "ospf": ospf,
         "isis": isis,
@@ -856,11 +962,18 @@ def routing_context(device) -> dict:
         # The segments this leaf is part of, once each, and how many - a
         # device with any is a multihomed leaf and turns `evpn mh` on.
         "ethernet_segments": sorted(
-            {r["name"]: r for r in es_by_iface.values()}.values(),
+            {
+                r["name"]: {**r, "df_preference": r["segment_df_preference"],
+                            "local_df_preference": r["df_preference"]}
+                # The first port (by name) speaks for the segment on this leaf.
+                for _, r in sorted(
+                    es_by_iface.items(), key=lambda kv: natural_key(kv[0]), reverse=True
+                )
+            }.values(),
             key=lambda r: r["name"],
         ),
         "es_count": len({r["name"] for r in es_by_iface.values()}),
-        **_policies_closure(device.tenant_id, referenced_policies),
+        **_policies_closure(device.tenant_id, referenced_policies, referenced_prefix_lists),
         "communities": [
             {"id": str(c.id), "value": c.value, "kind": c.kind, "name": c.name}
             for c in Community.objects.filter(tenant_id=device.tenant_id).order_by("value")

@@ -138,6 +138,7 @@ from routing.viewsets import (
     BFDProfileViewSet,
     BGPAddressFamilyViewSet,
     BGPInstanceViewSet,
+    BGPNeighborAFViewSet,
     BGPPeerGroupViewSet,
     BGPSessionViewSet,
     CommunityListRuleViewSet,
@@ -145,6 +146,7 @@ from routing.viewsets import (
     CommunityViewSet,
     EIGRPInstanceViewSet,
     EIGRPInterfaceViewSet,
+    EthernetSegmentMemberViewSet,
     EthernetSegmentViewSet,
     ISISInstanceViewSet,
     ISISInterfaceViewSet,
@@ -152,6 +154,7 @@ from routing.viewsets import (
     OSPFAreaViewSet,
     OSPFInstanceViewSet,
     OSPFInterfaceViewSet,
+    PolicyRuleViewSet,
     PrefixListRuleViewSet,
     PrefixListViewSet,
     RedistributionViewSet,
@@ -443,6 +446,8 @@ router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
 router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
+# `ip rule` rows; `routing/policy-rules` is the route-map rule endpoint.
+router.register(r"routing/ip-rules", PolicyRuleViewSet, basename="policyrule")
 router.register(r"routing/bgp-instances", BGPInstanceViewSet, basename="bgpinstance")
 router.register(r"routing/bgp-address-families", BGPAddressFamilyViewSet,
                 basename="bgpaddressfamily")
@@ -450,6 +455,7 @@ router.register(r"routing/redistributions", RedistributionViewSet,
                 basename="redistribution")
 router.register(r"routing/bgp-peer-groups", BGPPeerGroupViewSet, basename="bgppeergroup")
 router.register(r"routing/bgp-sessions", BGPSessionViewSet, basename="bgpsession")
+router.register(r"routing/bgp-neighbor-afs", BGPNeighborAFViewSet, basename="bgpneighboraf")
 router.register(r"routing/ospf-areas", OSPFAreaViewSet, basename="ospfarea")
 router.register(r"routing/ospf-instances", OSPFInstanceViewSet, basename="ospfinstance")
 router.register(r"routing/ospf-interfaces", OSPFInterfaceViewSet, basename="ospfinterface")
@@ -459,6 +465,8 @@ router.register(r"routing/eigrp-instances", EIGRPInstanceViewSet, basename="eigr
 router.register(r"routing/eigrp-interfaces", EIGRPInterfaceViewSet, basename="eigrpinterface")
 router.register(r"routing/vteps", VTEPViewSet, basename="vtep")
 router.register(r"routing/ethernet-segments", EthernetSegmentViewSet, basename="ethernetsegment")
+router.register(r"routing/ethernet-segment-members", EthernetSegmentMemberViewSet,
+                basename="ethernetsegmentmember")
 router.register(r"routing/ldp-instances", LDPInstanceViewSet, basename="ldpinstance")
 router.register(r"routing/vtep-memberships", VTEPMembershipViewSet, basename="vtepmembership")
 router.register(r"services",      ServiceViewSet,     basename="service")

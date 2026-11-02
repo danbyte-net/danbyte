@@ -33,6 +33,7 @@ from .models import (
     BFDProfile,
     BGPAddressFamily,
     BGPInstance,
+    BGPNeighborAF,
     BGPPeerGroup,
     BGPSession,
     Community,
@@ -41,12 +42,14 @@ from .models import (
     EIGRPInstance,
     EIGRPInterface,
     EthernetSegment,
+    EthernetSegmentMember,
     ISISInstance,
     ISISInterface,
     LDPInstance,
     OSPFArea,
     OSPFInstance,
     OSPFInterface,
+    PolicyRule,
     PrefixList,
     PrefixListRule,
     Redistribution,
@@ -65,6 +68,7 @@ from .serializers import (
     BFDProfileSerializer,
     BGPAddressFamilySerializer,
     BGPInstanceSerializer,
+    BGPNeighborAFSerializer,
     BGPPeerGroupMiniSerializer,
     BGPPeerGroupSerializer,
     BGPSessionSerializer,
@@ -75,6 +79,7 @@ from .serializers import (
     CommunitySerializer,
     EIGRPInstanceSerializer,
     EIGRPInterfaceSerializer,
+    EthernetSegmentMemberSerializer,
     EthernetSegmentSerializer,
     ISISInstanceSerializer,
     ISISInterfaceSerializer,
@@ -83,6 +88,7 @@ from .serializers import (
     OSPFAreaSerializer,
     OSPFInstanceSerializer,
     OSPFInterfaceSerializer,
+    PolicyRuleSerializer,
     PrefixListMiniSerializer,
     PrefixListRuleSerializer,
     PrefixListSerializer,
@@ -292,7 +298,7 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
 
     editable_str_fields = ("description",)
     editable_bool_fields = ("bfd",)
-    editable_int_fields = ("distance", "metric", "tag")
+    editable_int_fields = ("distance", "metric", "tag", "table")
     bulk_edit = BulkEditSpec(
         fields=("status_id", "description", "vrf_id", "next_hop", "distance")
     )
@@ -301,7 +307,7 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
     pagination_class = StandardPagination
     clone_fields = ("device", "virtual_machine", "vrf", "kind", "next_hop",
                     "next_hop_interface", "next_hop_vm_interface",
-                    "next_hop_vrf", "distance", "metric", "tag", "bfd", "status")
+                    "next_hop_vrf", "table", "distance", "metric", "tag", "bfd", "status")
 
     def normalize_bulk_updates(self, updates):
         # Written as the box prints it, as a PATCH writes it; a bad address
@@ -352,6 +358,60 @@ class StaticRouteViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
             qs = qs.filter(vrf__isnull=True)
         elif vrf:
             qs = qs.filter(vrf_id=vrf)
+        if p.get("table"):
+            qs = qs.filter(table=p["table"])
+        return qs.distinct()
+
+
+# ─── Policy routing ──────────────────────────────────────────────────────────
+
+class PolicyRuleViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
+    """``ip rule`` rows per device or VM. Filter with ``?device=``,
+    ``?virtual_machine=``, ``?family=``, ``?action=``, ``?table=``, ``?vrf=``,
+    ``?status=``, ``?site=``."""
+
+    editable_str_fields = ("description",)
+    editable_bool_fields = ("invert",)
+    editable_int_fields = ("priority", "table", "fwmark")
+    bulk_edit = BulkEditSpec(fields=("status_id", "description"), status_model="staticroute")
+    queryset = PolicyRule.objects.all()
+    serializer_class = PolicyRuleSerializer
+    pagination_class = StandardPagination
+    clone_fields = ("device", "virtual_machine", "family", "action", "table", "vrf",
+                    "from_prefix", "to_prefix", "iif", "oif", "vm_iif", "vm_oif",
+                    "fwmark", "invert", "status")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("device__site", "virtual_machine__site", "vrf",
+                            "iif__device", "oif__device", "vm_iif__vm", "vm_oif__vm",
+                            "status")
+            .prefetch_related(TAGS)
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            q = (Q(from_prefix__icontains=s) | Q(to_prefix__icontains=s)
+                 | Q(description__icontains=s) | Q(device__name__icontains=s)
+                 | Q(virtual_machine__name__icontains=s) | cf_text_q(qs.model, s))
+            if s.isdigit():
+                q |= Q(priority=int(s)) | Q(table=int(s))
+            qs = qs.filter(q)
+        for key, field in (
+            ("device", "device_id"), ("virtual_machine", "virtual_machine_id"),
+            ("family", "family"), ("action", "action"), ("table", "table"),
+            ("status", "status_id"),
+        ):
+            v = p.get(key)
+            if v:
+                qs = qs.filter(**{field: v})
+        if p.get("vrf"):
+            qs = qs.filter(vrf_id=p["vrf"])
+        if p.get("site"):
+            qs = qs.filter(site_in_q(SITE_PATHS["policyrule"], [p["site"]]))
         return qs.distinct()
 
 
@@ -470,6 +530,58 @@ class RedistributionViewSet(TenantScopedViewSet):
         serializer.save()
 
 
+_AF_PREFETCH = (
+    "afs__import_policy", "afs__export_policy", "afs__prefix_list_in",
+    "afs__prefix_list_out", "afs__default_originate_policy",
+)
+
+
+class BGPNeighborAFViewSet(TenantScopedViewSet):
+    """Address-family rows of sessions and peer groups. Filter with
+    ``?session=``, ``?peer_group=``, ``?afi_safi=``."""
+
+    tenant_field = None
+    queryset = BGPNeighborAF.objects.select_related(
+        "session__instance__device", "session__instance__virtual_machine",
+        "session__peer_group", "peer_group", "import_policy", "export_policy",
+        "prefix_list_in", "prefix_list_out", "default_originate_policy",
+    ).order_by("afi_safi")
+    serializer_class = BGPNeighborAFSerializer
+    pagination_class = StandardPagination
+
+    def get_queryset(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(Q(session__tenant=tenant) | Q(peer_group__tenant=tenant))
+        if self.request:
+            for key in ("session", "peer_group"):
+                v = self.request.query_params.get(key)
+                if v:
+                    qs = qs.filter(**{f"{key}_id": v})
+            afi = self.request.query_params.get("afi_safi")
+            if afi:
+                qs = qs.filter(afi_safi=afi)
+        return restrict_for_view(self, qs)
+
+    def _check(self, serializer):
+        tenant = self._tenant_or_403()
+        vd = serializer.validated_data
+        inst = serializer.instance
+        parent = (vd.get("session") or vd.get("peer_group")
+                  or (inst.parent if inst is not None else None))
+        if parent is None or parent.tenant_id != tenant.id:
+            raise ValidationError({"session_id": "Pick a neighbour in the current tenant."})
+
+    def perform_create(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._check(serializer)
+        serializer.save()
+
+
 class BGPPeerGroupViewSet(_CatalogViewSet):
     queryset = BGPPeerGroup.objects.all().order_by(NATURAL_NAME)
     serializer_class = BGPPeerGroupSerializer
@@ -486,6 +598,7 @@ class BGPPeerGroupViewSet(_CatalogViewSet):
         qs = (
             super().get_queryset()
             .select_related("local_asn", "import_policy", "export_policy", "keychain")
+            .prefetch_related(*_AF_PREFETCH)
             .annotate(session_count_annotated=Count("sessions", distinct=True))
         )
         if self.request:
@@ -531,7 +644,7 @@ class BGPSessionViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                 "peer_session__instance__virtual_machine",
                 "import_policy", "export_policy", "keychain", "status",
             )
-            .prefetch_related(TAGS)
+            .prefetch_related(TAGS, *_AF_PREFETCH)
         )
         if not self.request:
             return qs
@@ -815,6 +928,7 @@ class VTEPViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                             "anycast_ip", "status")
             .prefetch_related(
                 TAGS, "memberships__l2vpn__vrf", "memberships__vlan",
+                "memberships__interface__device",
                 "memberships__l2vpn__terminations__vlan",
             )
         )
@@ -842,7 +956,7 @@ class VTEPMembershipViewSet(_RuleViewSet):
 
     parent = "vtep"
     queryset = VTEPMembership.objects.select_related(
-        "vtep__device", "l2vpn__vrf", "vlan"
+        "vtep__device", "l2vpn__vrf", "vlan", "interface__device"
     ).prefetch_related("l2vpn__terminations__vlan")
     serializer_class = VTEPMembershipSerializer
 
@@ -871,7 +985,9 @@ class EthernetSegmentViewSet(_CatalogViewSet):
         )
 
     def get_queryset(self):
-        qs = super().get_queryset().prefetch_related("interfaces__device")
+        qs = super().get_queryset().prefetch_related(
+            "interfaces__device", "members__interface__device"
+        )
         if not self.request:
             return qs
         p = self.request.query_params
@@ -882,6 +998,27 @@ class EthernetSegmentViewSet(_CatalogViewSet):
         if iface:
             qs = qs.filter(interfaces__id=iface)
         return qs.distinct()
+
+
+class EthernetSegmentMemberViewSet(_RuleViewSet):
+    """One port in a segment and its own DF preference. Filter with
+    ``?segment=``, ``?device=``, ``?interface=``."""
+
+    parent = "segment"
+    queryset = EthernetSegmentMember.objects.select_related(
+        "segment", "interface__device"
+    ).order_by("segment__name", "interface__device__name", "interface__name")
+    serializer_class = EthernetSegmentMemberSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            p = self.request.query_params
+            if p.get("device"):
+                qs = qs.filter(interface__device_id=p["device"])
+            if p.get("interface"):
+                qs = qs.filter(interface_id=p["interface"])
+        return qs
 
 
 class LDPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):

@@ -34,6 +34,12 @@ function dev(
     },
     vm_interface: null,
     outside_ip: outside ? { id: `ip${seq}`, ip_address: outside } : null,
+    listen_port: null,
+    public_key: "",
+    private_key_ref: "",
+    allowed_ips: [],
+    endpoint_port: null,
+    persistent_keepalive: null,
     created_at: "",
     updated_at: "",
   }

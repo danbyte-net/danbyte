@@ -29,6 +29,7 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
         ("virtual", "Virtual"),
         ("bridge", "Bridge"),
         ("lag", "Link Aggregation Group (LAG)"),
+        ("vxlan", "VXLAN"),
     ]),
     ("Fast Ethernet (100M)", [
         ("100base-tx", "100BASE-TX (10/100ME)"),
@@ -297,7 +298,7 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
 #: one of these types is always ``virtual`` - ``Interface.save()``, bulk edit
 #: and the template and module installs set the flag - and port utilization
 #: counts it as virtual even where the flag was never set.
-VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag")
+VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag", "vxlan")
 
 # ─── Cable types (standard cable-type taxonomy) ──────────────────────────────
 CABLE_TYPE_CHOICES: GroupedChoices = [
@@ -739,6 +740,12 @@ def dcim_choices_view(request):
         ),
         "lacp_modes": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_mode").flatchoices
+        ),
+        "lag_modes": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_mode").flatchoices
+        ),
+        "lag_hash_policies": flat(
+            apps.get_model("api", "Interface")._meta.get_field("lag_hash_policy").flatchoices
         ),
         "lacp_rates": flat(
             apps.get_model("api", "Interface")._meta.get_field("lacp_rate").flatchoices

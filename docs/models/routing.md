@@ -40,13 +40,37 @@ Shared shape: `tenant` FK, `name` char(128), `description` text, unique
 | `next_hop` | char(64) | normalised address; blank for a blackhole/reject |
 | `next_hop_interface` | FK → `Interface` | must be on `device` |
 | `next_hop_vrf` | FK → `VRF` | route leaking |
+| `table` | int | kernel table for policy routing; null = main or the VRF's. Exclusive with `vrf`; 0 and 253-255 refused |
 | `distance`, `metric`, `tag` | int | nullable |
 | `bfd` | bool | |
 | `status` | FK → `Status` | scope `staticroute` |
 
-Unique `(device, vrf, prefix, next_hop, next_hop_interface)` with
+Unique `(device, vrf, table, prefix, next_hop, next_hop_interface)` with
 `nulls_distinct=False`, so the same path twice is refused while the same
-prefix through another next hop (ECMP) is not.
+prefix through another next hop (ECMP), or in another table, is not.
+
+## Policy rules
+
+`PolicyRule` - one `ip rule` on a device or VM.
+
+| Field | Type | Notes |
+|---|---|---|
+| `tenant` | FK → `Tenant` | |
+| `device` / `virtual_machine` | FK | exactly one (`policyrule_device_xor_vm`) |
+| `family` | `ipv4` / `ipv6` | derived from the prefixes when given |
+| `priority` | int | unique per (owner, family) |
+| `action` | `lookup` / `blackhole` / `unreachable` / `prohibit` | |
+| `table` | int | for `lookup`; exclusive with `vrf`; 0 and 253-255 refused |
+| `vrf` | FK → `VRF` | for `lookup`: the VRF's table |
+| `from_prefix`, `to_prefix` | char(64) | normalised CIDR; a host is its /32 or /128 |
+| `iif`, `oif` | FK → `Interface` | on `device` |
+| `vm_iif`, `vm_oif` | FK → `VMInterface` | on `virtual_machine` |
+| `fwmark` | int | |
+| `invert` | bool | `not` |
+| `status` | FK → `Status` | the static-route statuses (scope `staticroute`) |
+
+Site-scoped as `device__site|virtual_machine__site`; audited; RBAC type
+`policyrule`.
 
 ## BGP
 
@@ -65,6 +89,28 @@ The shared knobs (`_PeerKnobs`): `address_families` JSON list, `import_policy`,
 `capability_extended_nexthop` (RFC 5549), `ttl_security_hops` (GTSM), `extra`. `BGPSession.effective()` resolves session → group →
 instance (`bfd`), merges `extra`, and derives `update_source` from the local
 address's interface.
+
+`BGPNeighborAF` - one address family of a neighbour, a session **or** a peer
+group (`bgpneighboraf_one_parent`), unique per parent and `afi_safi`:
+`activate` (off prints `no neighbor X activate`), `import_policy`,
+`export_policy`, `prefix_list_in`, `prefix_list_out`, `default_originate` +
+`default_originate_policy`, `next_hop_self`, `route_reflector_client`,
+`soft_reconfiguration`, `as_override`, `remove_private_as`, `send_community`,
+`allowas_in`, `maximum_prefix`, `extra`. Every knob is nullable: null
+inherits. `routing.models.effective_afs(session)` resolves each family and
+knob, most specific first: the session's row, the session's own field, the
+peer group's row, the peer group's field. The family set is the session's
+active rows when it has any, else the group's. Site-scoped through the
+session's box; a peer group's rows are catalog rows. Audited.
+
+The `address_families` JSON list on sessions and peer groups stays as the
+v0.16 view of the rows - the families with `activate` on. Writing the list
+reconciles the rows (a listed family gets a row with every knob null; a
+dropped one is deleted, or switched off when it carries a knob), and writing
+a row rewrites the list (`sync_af_rows` / `sync_af_mirror`, wired as
+signals in `routing/apps.py`). Migration `routing/0018` backfilled one row
+per listed family with every knob null, so no render changed. The list is
+deprecated and goes no earlier than two releases on.
 
 ## OSPF and IS-IS
 
@@ -93,9 +139,10 @@ session → group → instance.
 |---|---|---|
 | `api.L2VPN` (extended) | `vrf` FK, allowed on `EVPN_TYPES` only (`clean()`); `vtep_memberships` reverse | `(tenant, identifier)` for `type in VXLAN_TYPES` (`uniq_l2vpn_vxlan_vni`) |
 | `VTEP` | `device` OneToOne, `source_interface` (same device), `source_ip`, `anycast_ip` (assigned to the device), `anycast_gateway_mac` (normalised lower-case), `arp_suppression`, `status` (`vtep`), `description`, `extra` | `device` |
-| `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
+| `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `interface` (optional FK → `api.Interface` on the VTEP's device - the leaf's `vxlan` netdev; the VNI stays on the L2VPN), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
 
-| `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference`, `interfaces` M2M → `api.Interface` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
+| `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference` (the default for every member), `interfaces` M2M → `api.Interface` through `EthernetSegmentMember` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
+| `EthernetSegmentMember` | the through row: `segment`, `interface`, `df_preference` (null = the segment's). It sits on the table the plain M2M created (`routing_ethernetsegment_interfaces`, adopted in `routing/0016` without a copy) and keeps that table's bigint `id` rather than a UUID, so the upgrade rewrites nothing. Site-scoped `interface__device__site`; audited | `(segment, interface)` |
 | `api.Interface.evpn_mh_uplink` | `evpn mh uplink` on a fabric-facing port of a multihomed leaf | - |
 
 ## MPLS
@@ -127,8 +174,9 @@ instance's `distance` as one object or `None`, a session's
 it, so print it once), and `used_bfd_profiles` (only the profiles this device
 names; `bfd_profiles` stays the whole catalog). Multihoming and MPLS:
 `by_interface[<port>].es` (the segment this port is in, with every member
-on every device), `by_interface[<port>].evpn_mh_uplink`,
-`ethernet_segments` + `es_count` per device, `ldp` (one block or `None`),
+on every device; `df_preference` there is the port's effective value and
+`segment_df_preference` the segment's), `by_interface[<port>].evpn_mh_uplink`,
+`ethernet_segments` (with `local_df_preference`) + `es_count` per device, `ldp` (one block or `None`),
 and a per-VRF BGP instance's `vpn` object or `None`. `keychains[].placeholder`
 is `<keychain:NAME>`, the contract form a push tool substitutes
 (`routing.render.KEYCHAIN_PLACEHOLDER_RE`). It is registered through

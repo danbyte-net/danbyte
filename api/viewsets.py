@@ -4853,12 +4853,12 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
 
     bulk_str_fields = (
         "type", "mode", "speed", "duplex", "description",
-        "lag_protocol", "lacp_mode", "lacp_rate",
+        "lag_protocol", "lacp_mode", "lacp_rate", "lag_mode", "lag_hash_policy",
     )
     bulk_bool_fields = (
         "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
     )
-    bulk_int_fields = ("mtu", "lag_min_links")
+    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon")
     bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
     bulk_name_scope_field = "device_id"
 
@@ -4879,6 +4879,15 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             updates["is_uplink"] = False
         if updates.get("type") in VIRTUAL_INTERFACE_TYPES:
             updates["virtual"] = True
+        if str(updates.get("lag_protocol", "")).lower() == "static":
+            updates["lag_protocol"] = ""
+        if updates.get("lag_mode") == "802.3ad":
+            updates["lag_protocol"] = "lacp"
+        elif updates.get("lag_mode") and updates.get("lag_protocol") == "lacp":
+            raise ValidationError(
+                {"lag_mode": "LACP runs in 802.3ad mode. Pick 802.3ad, or clear "
+                             "the protocol for a static bond."}
+            )
         if "lag_protocol" in updates and updates["lag_protocol"] != "lacp":
             updates["lacp_mode"] = ""
             updates["lacp_rate"] = ""
@@ -7963,7 +7972,7 @@ class NATRuleViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             super().get_queryset()
             # The source prefix's mini shape names its VRF, site and VLAN.
             .select_related("device", "status", "external_ip", "internal_ip",
-                            "source_ip", "source_prefix", "source_prefix__vrf",
+                            "out_interface", "source_ip", "source_prefix", "source_prefix__vrf",
                             "source_prefix__site", "source_prefix__vlan")
             .prefetch_related(TAGS)
         )

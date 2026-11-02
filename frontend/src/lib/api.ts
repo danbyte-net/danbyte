@@ -3490,6 +3490,8 @@ export interface DcimChoices {
   lag_protocols: DcimChoice[]
   lacp_modes: DcimChoice[]
   lacp_rates: DcimChoice[]
+  lag_modes: DcimChoice[]
+  lag_hash_policies: DcimChoice[]
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
@@ -3680,6 +3682,13 @@ export interface Interface {
   lacp_mode: LacpMode
   lacp_rate: LacpRate
   lag_min_links: number | null
+  /** Linux bond settings (aggregate only): bond-mode, hash policy, miimon.
+   * `802.3ad` mode means LACP. */
+  lag_mode: string
+  lag_mode_display: string
+  lag_hash_policy: string
+  lag_hash_policy_display: string
+  lag_miimon: number | null
   created_at: string
   updated_at: string
 }
@@ -3723,6 +3732,9 @@ export interface InterfaceWritePayload {
   lacp_mode?: LacpMode
   lacp_rate?: LacpRate
   lag_min_links?: number | null
+  lag_mode?: string
+  lag_hash_policy?: string
+  lag_miimon?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────
@@ -6517,6 +6529,8 @@ export interface NATRule {
   /** Optional restriction on who the rule applies to. */
   source_ip: { id: string; ip_address: string; dns_name: string } | null
   source_prefix: { id: string; cidr: string } | null
+  /** The egress port the rule applies on ("masquerade on mgmt0"). */
+  out_interface: { id: string; name: string } | null
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -6685,14 +6699,26 @@ export interface EthernetSegment {
   esi: string
   es_id: number | null
   sys_mac: string
+  /** The default `es-df-pref`; a member may set its own. */
   df_preference: number | null
   interfaces: { id: string; name: string; device: DeviceMini }[]
+  members: EthernetSegmentMember[]
   device_count: number
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+/** One port of a segment (`/api/routing/ethernet-segment-members/`). */
+export interface EthernetSegmentMember {
+  id: number
+  interface: { id: string; name: string }
+  device: { id: string; name: string }
+  /** This port's own value; null = the segment's. */
+  df_preference: number | null
+  df_preference_effective: number | null
 }
 
 /** `mpls ldp` on one device. */
@@ -6829,7 +6855,57 @@ export interface BGPPeerGroup extends RoutingCatalogBase, BGPPeerKnobs {
   remote_asn_mode: RemoteAsnMode
   local_asn: ASNMini | null
   update_source: string
+  /** One row per address family; `address_families` lists the active ones. */
+  afs: BGPNeighborAF[]
   session_count: number
+}
+
+/** A neighbour family with every knob resolved. */
+export interface BGPNeighborAFEffective {
+  afi_safi: AfiSafi
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: SendCommunity | null
+  allowas_in: number | null
+  maximum_prefix: number | null
+  extra: Record<string, unknown>
+}
+
+/** One address family of a session or a peer group
+ * (`/api/routing/bgp-neighbor-afs/`). A null knob inherits. */
+export interface BGPNeighborAF {
+  id: string
+  parent: { kind: "session" | "peer_group"; id: string; name: string }
+  afi_safi: AfiSafi
+  afi_safi_display: string
+  activate: boolean
+  import_policy: { id: string; name: string } | null
+  export_policy: { id: string; name: string } | null
+  prefix_list_in: { id: string; name: string } | null
+  prefix_list_out: { id: string; name: string } | null
+  default_originate: boolean | null
+  default_originate_policy: { id: string; name: string } | null
+  next_hop_self: boolean | null
+  route_reflector_client: boolean | null
+  soft_reconfiguration: boolean | null
+  as_override: boolean | null
+  remove_private_as: boolean | null
+  send_community: "" | SendCommunity
+  allowas_in: number | null
+  maximum_prefix: number | null
+  extra: Record<string, unknown>
+  /** What the box ends up with in this family (detail reads only). */
+  effective: BGPNeighborAFEffective | null
 }
 
 export interface BGPPeerGroupMini {
@@ -6897,6 +6973,10 @@ export interface BGPSession extends BGPPeerKnobs {
     virtual_machine?: VMMini
   } | null
   effective: BGPSessionEffective
+  /** The session's own address-family rows. */
+  afs: BGPNeighborAF[]
+  /** Every family it speaks, resolved (detail reads only). */
+  effective_afs: BGPNeighborAFEffective[]
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -7032,6 +7112,8 @@ export interface VTEPMembership {
   vlan: VLANMini | null
   /** The VLAN the render resolves for this leaf (own, else the site's). */
   resolved_vlan: VLANMini | null
+  /** The leaf's vxlan netdev, when it is an interface row. */
+  interface: { id: string; name: string; device: DeviceMini } | null
   rd: string
   ingress_replication: boolean
   mcast_group: string
@@ -7107,10 +7189,41 @@ export interface StaticRoute {
   next_hop_interface: { id: string; name: string; device: DeviceMini } | null
   next_hop_vm_interface: { id: string; name: string; vm: VMMini } | null
   next_hop_vrf: { id: string; name: string; rd: string; color: string } | null
+  /** Kernel table number for policy routing; null = main or the VRF's. */
+  table: number | null
   distance: number | null
   metric: number | null
   tag: number | null
   bfd: boolean
+  status: StatusMini | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+/** An `ip rule` on a device or VM (`/api/routing/ip-rules/`). */
+export interface PolicyRule {
+  id: string
+  numid: number | null
+  device: DeviceMini | null
+  virtual_machine: VMMini | null
+  site: { id: string; name: string } | null
+  family: "ipv4" | "ipv6"
+  priority: number
+  action: "lookup" | "blackhole" | "unreachable" | "prohibit"
+  action_display: string
+  table: number | null
+  vrf: { id: string; name: string; rd: string; color: string } | null
+  from_prefix: string
+  to_prefix: string
+  iif: { id: string; name: string; device: DeviceMini } | null
+  oif: { id: string; name: string; device: DeviceMini } | null
+  vm_iif: { id: string; name: string; vm: VMMini } | null
+  vm_oif: { id: string; name: string; vm: VMMini } | null
+  fwmark: number | null
+  invert: boolean
   status: StatusMini | null
   description: string
   tags: Tag[]
@@ -11241,8 +11354,32 @@ export interface TunnelTermination {
     vm: { id: string; name: string }
   } | null
   outside_ip: { id: string; ip_address: string } | null
+  /** WireGuard (a `wireguard` tunnel only). `private_key_ref` is a reference
+   * - `<keychain:NAME>` or a path on the box - never the key. */
+  listen_port: number | null
+  public_key: string
+  private_key_ref: string
+  /** The addresses behind this end; the other ends route them to it. */
+  allowed_ips: string[]
+  endpoint_port: number | null
+  persistent_keepalive: number | null
+  /** The far end(s) this end talks to (detail reads only). */
+  peers?: TunnelPeer[]
   created_at: string
   updated_at: string
+}
+
+export interface TunnelPeer {
+  id: string
+  device: string | null
+  interface: string | null
+  role: TunnelTerminationRole
+  outside_ip: string | null
+  endpoint_port: number | null
+  endpoint: string | null
+  public_key: string | null
+  allowed_ips: string[]
+  persistent_keepalive: number | null
 }
 
 export interface TunnelTerminationWritePayload {
@@ -11251,6 +11388,12 @@ export interface TunnelTerminationWritePayload {
   interface_id?: string | null
   vm_interface_id?: string | null
   outside_ip_id?: string | null
+  listen_port?: number | null
+  public_key?: string
+  private_key_ref?: string
+  allowed_ips?: string[]
+  endpoint_port?: number | null
+  persistent_keepalive?: number | null
 }
 
 export interface Tunnel {

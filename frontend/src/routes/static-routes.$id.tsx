@@ -107,6 +107,10 @@ function Body({ r }: { r: StaticRoute }) {
         "Global"
       ),
     },
+    {
+      label: "Table",
+      value: r.table != null ? <span className="num">{r.table}</span> : dash,
+    },
     { label: "Status", value: <StatusBadge status={r.status} /> },
     { label: "Description", value: r.description || dash },
   ]

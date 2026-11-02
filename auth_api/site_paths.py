@@ -85,9 +85,15 @@ SITE_PATHS: dict[str, str] = {
     # Routing rows hang off their device or VM (#217); the catalogs they reference
     # (policies, prefix lists, keychains) are tenant-wide.
     "staticroute": "device__site|virtual_machine__site",
+    "policyrule": "device__site|virtual_machine__site",
     "bgpinstance": "device__site|virtual_machine__site",
     "bgpaddressfamily": "instance__device__site|instance__virtual_machine__site",
     "bgpsession": "instance__device__site|instance__virtual_machine__site",
+    # A session's families follow its box; a peer group's are catalog rows
+    # (no site), as the group is.
+    "bgpneighboraf": (
+        "session__instance__device__site|session__instance__virtual_machine__site"
+    ),
     "ospfinstance": "device__site|virtual_machine__site",
     "ospfinterface": "instance__device__site|instance__virtual_machine__site",
     "isisinstance": "device__site|virtual_machine__site",
@@ -97,6 +103,8 @@ SITE_PATHS: dict[str, str] = {
     "vtep": "device__site",
     "ldpinstance": "device__site",
     "vtepmembership": "vtep__device__site",
+    # A segment is a tenant-wide catalog; each member port is its leaf's.
+    "ethernetsegmentmember": "interface__device__site",
     # An Oxidized node link follows the device or VM it backs (#386).
     "oxidizednodelink": "device__site|virtual_machine__site",
     # Rows that belong to a site through their device, VM, prefix, address or
