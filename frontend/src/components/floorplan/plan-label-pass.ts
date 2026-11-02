@@ -30,7 +30,17 @@ import type {
   LabelRequest,
   LabelSpot,
 } from "./plan-labels"
-import { clipName, namePriority } from "./readable"
+import {
+  BoxIndex,
+  CALLOUT_MAX_LINES,
+  boxGap,
+  calloutGroups,
+  calloutSize,
+  layoutCallouts,
+  leaderBoxes,
+} from "./plan-callouts"
+import type { CalloutItem, CalloutLine, CalloutSide } from "./plan-callouts"
+import { READABLE_SYMBOL_PX, clipName, namePriority } from "./readable"
 import type { ShapeOf } from "./readable"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
 import type { AreaShape, LabelShape } from "./shapes"
@@ -159,6 +169,25 @@ export interface PlanLabelInput {
     /** Their ends' ports in chips beside the tiles. */
     ends: boolean
   }
+  /** Callouts (the canvas, Display > Callouts: Auto): a tile whose name
+   * will not sit cleanly by it is named in a box set off to the side, a
+   * leader back to it, its `lines` under the name. */
+  callouts?: {
+    lines?: ReadonlyMap<string, readonly CalloutLine[]>
+  } | null
+}
+
+/** A callout as drawn: its box's centre (cells) and size (px, constant
+ * on screen), its name and lines, the side of its room it sits on and its
+ * leader's two ends (cells): the box's edge, the tile's. */
+export interface CalloutLabel {
+  id: string
+  name: string
+  lines: readonly CalloutLine[]
+  at: Pt
+  size: { w: number; h: number }
+  side: CalloutSide
+  leader: [Pt, Pt]
 }
 
 /** A cluster tile, for the label pass. */
@@ -183,6 +212,8 @@ export interface PlanLabels {
   areas: Map<string, Pt | null>
   /** Raised-floor captions that would cover another text. */
   hiddenRaised: Set<string>
+  /** The tiles named in a callout instead (their name not drawn). */
+  callouts: CalloutLabel[]
   /** Every box taken (units), for a caller laying out more. */
   taken: readonly Box[]
 }
@@ -237,6 +268,27 @@ function inTileNameBox(
   }
 }
 
+/** The rooms a callout goes round (units): the areas linked to a room -
+ * a plain area (an aisle, a zone) or a building outline is no room. */
+function roomBoxes(
+  areas: readonly AreaShape[],
+  cellMm: number,
+  scale: number
+): { id: string; box: Box }[] {
+  return areas
+    .filter((a) => !!a.room)
+    .map((a) => {
+      const b = shapeBounds(a, cellMm)
+      return {
+        id: a.id,
+        box: boxOfCells(
+          { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY },
+          scale
+        ),
+      }
+    })
+}
+
 const contains = (o: Box, b: Box) =>
   b.x >= o.x - 1e-6 &&
   b.y >= o.y - 1e-6 &&
@@ -284,6 +336,11 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       b.y < view.y + view.h &&
       b.y + b.h > view.y)
 
+  // What callouts must keep off, whatever the view: the plan labels and
+  // the names fixed in their tiles, everywhere on the plan - so a pan
+  // never moves a callout.
+  const fixedBoxes: Box[] = []
+
   // Plan labels: never hidden - there first.
   for (const l of input.planLabels ?? []) {
     const b = shapeBounds(l, input.cellMm)
@@ -291,6 +348,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY },
       scale
     )
+    fixedBoxes.push(box)
     if (!inView(box)) continue
     reqs.push({
       id: `label:${l.id}`,
@@ -306,6 +364,9 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   const tileBodies: Box[] = []
   const tileReqs: LabelRequest<{ at: Pt }>[] = []
   const tileText = new Map<string, string>()
+  // A zone's name is drawn in the zone, but gives way to an icon or a
+  // callout: hidden (drawn by "this layer", which draws nothing).
+  const zoneNames = new Set<string>()
   // The icons and cluster tiles: a name never goes over one.
   const clustered = new Set(
     (input.iconClusters ?? []).flatMap((c) => c.members)
@@ -317,6 +378,18 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     const box = input.shapeOf?.(t)?.box
     if (box) icons.add(boxOfCells(box, scale))
   }
+  // Callouts: every tile whose name we place, wherever it is, tried as a
+  // plain name first (`trial`), with its drawn box (units).
+  const wantCallouts = !!input.callouts
+  // With callouts, a name kept by its tile was cleared against the fixed
+  // text, the other names and the callouts: it outranks the trays' and the
+  // cables' names, which would otherwise hide it there.
+  const named = wantCallouts ? RANK.cableStored + 5e5 : RANK.tile
+  const trial: LabelRequest<{ at: Pt }>[] = []
+  const ours: { id: string; box: Box; home: Box; text: string }[] = []
+  const bodies = new BoxIndex(Math.max(16, font * 6))
+  for (const c of input.iconClusters ?? [])
+    bodies.add(c.id, boxOfCells(c.box, scale))
   for (const t of input.tiles) {
     const name = tileName(t)
     const shape = input.shapeOf?.(t)
@@ -328,19 +401,24 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       tileNamesHere.add(t.id)
       continue
     }
+    if (!zone) bodies.add(t.id, boxOfCells(drawn, scale))
     if (!name) continue
-    const ours =
+    const ours_ =
       !!shape &&
       !zone &&
       (shape.changed || (t.display === "photo" && !!t.photo))
-    if (!ours) {
+    if (!ours_) {
       const b = inTileNameBox(t, name, !!input.labelFit, input.zoneGrow)
       const box = { x: b.x * u, y: b.y * u, w: b.w * u, h: b.h * u }
+      if (!zone) fixedBoxes.push(box)
       if (!inView(box)) continue
+      if (zone) zoneNames.add(t.id)
       reqs.push({
         id: `tilefix:${t.id}`,
         priority: RANK.tileFixed,
-        force: true,
+        // A zone's name yields to an icon or a callout over it.
+        force: !zone,
+        block: zone ? icons : undefined,
         spots: [{ box, data: null }],
       })
       continue
@@ -349,19 +427,32 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     const text = clipName(name)
     tileText.set(t.id, text)
     const icon = !!input.iconIds?.has(t.id)
-    const spots = inside(
-      (icon ? aroundSpots : besideSpots)(
-        drawn,
-        textSize(text, font),
-        gap / 2,
-        scale
-      )
+    const all = (icon ? aroundSpots : besideSpots)(
+      drawn,
+      textSize(text, font),
+      gap / 2,
+      scale
     )
+    if (wantCallouts) {
+      ours.push({
+        id: t.id,
+        box: boxOfCells(drawn, scale),
+        home: boxOfCells({ x: t.x, y: t.y, w: t.width, h: t.height }, scale),
+        text,
+      })
+      trial.push({
+        id: `tile:${t.id}`,
+        priority: RANK.tile + namePriority(t),
+        spots: preferInside(all, bounds, null, input.boundsOnly),
+        block: icon ? icons : undefined,
+      })
+    }
+    const spots = inside(all)
     if (!spots.some((s) => inView(s.box))) continue
     const pinned = !!input.pinnedTiles?.has(t.id)
     tileReqs.push({
       id: `tile:${t.id}`,
-      priority: pinned ? RANK.tilePinned : RANK.tile + namePriority(t),
+      priority: pinned ? RANK.tilePinned : named + namePriority(t),
       force: pinned,
       spots,
       block: icon ? icons : undefined,
@@ -370,18 +461,119 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
   for (const c of input.iconClusters ?? []) {
     const text = clipName(c.name)
     tileText.set(c.id, text)
-    const spots = inside(
-      aroundSpots(c.box, textSize(text, font), gap / 2, scale)
-    )
+    const all = aroundSpots(c.box, textSize(text, font), gap / 2, scale)
+    // Over a single rack's name: it stands for several.
+    const priority = named + 1000 + Math.min(999, c.members.length)
+    if (wantCallouts)
+      trial.push({
+        id: `tile:${c.id}`,
+        priority,
+        spots: preferInside(all, bounds, null, input.boundsOnly),
+        block: icons,
+      })
+    const spots = inside(all)
     if (!spots.some((s) => inView(s.box))) continue
-    tileReqs.push({
-      id: `tile:${c.id}`,
-      // Over a single rack's name: it stands for several.
-      priority: RANK.tile + 1000 + Math.min(999, c.members.length),
-      spots,
-      block: icons,
-    })
+    tileReqs.push({ id: `tile:${c.id}`, priority, spots, block: icons })
   }
+
+  // Callouts: a name with no place by its tile, or one as near another
+  // tile as its own (which could be either's), goes in a box off to the
+  // side. Decided and laid out over the whole plan, not the view - a few
+  // rounds, as the boxes and their leaders can crowd out a name that sat
+  // clear before.
+  const callouts: CalloutLabel[] = []
+  const calledOut = new Set<string>()
+  if (wantCallouts && ours.length) {
+    const cell = Math.max(16, font * 6)
+    // Nearer another tile than this (units) beyond its own: ambiguous.
+    const margin = font
+    const lines = input.callouts?.lines
+    const rooms = roomBoxes(input.areas ?? [], input.cellMm, scale)
+    const join = READABLE_SYMBOL_PX * 1.5
+    const toCells = (p: Pt): Pt => [p[0] / scale, p[1] / scale]
+    // Boxes and leaders placed so far.
+    const taken: Box[] = []
+    const calloutBoxes: Box[] = []
+    // Clear of every tile, icon and fixed text.
+    const solid = new Occupancy(cell)
+    for (const b of fixedBoxes) solid.add(b)
+    for (const b of tileBodies) solid.add(b)
+    for (const cl of input.iconClusters ?? [])
+      solid.add(boxOfCells(cl.box, scale))
+    const gaveUp = new Set<string>()
+    for (let round = 0; round < 3; round++) {
+      const fixed = new Occupancy(cell)
+      for (const b of fixedBoxes) fixed.add(b)
+      for (const b of taken) fixed.add(b)
+      const tried = placeLabels(
+        trial.filter((r) => !calledOut.has(r.id.slice(5))),
+        fixed
+      )
+      const want = ours.filter((o) => {
+        if (calledOut.has(o.id) || gaveUp.has(o.id)) return false
+        const spot = tried.get(`tile:${o.id}`)
+        if (!spot) return true
+        const own = boxGap(spot.box, o.box)
+        return bodies.near(spot.box, own + margin, o.id).length > 0
+      })
+      if (!want.length) break
+      const groups = calloutGroups(
+        want.map((o) => ({ id: o.id, anchor: o.box, home: o.home })),
+        rooms,
+        join,
+        gap * 2
+      )
+      const items: CalloutItem[] = want.map((o) => {
+        const g = groups.get(o.id)!
+        return {
+          id: o.id,
+          anchor: o.box,
+          size: calloutSize(
+            o.text,
+            (lines?.get(o.id) ?? []).slice(0, CALLOUT_MAX_LINES)
+          ),
+          group: g.group,
+          container: g.container,
+        }
+      })
+      const placed = layoutCallouts(items, {
+        free: (b) => solid.free(b),
+        bounds: input.boundsOnly ? bounds : null,
+        prior: calloutBoxes,
+        bodies,
+      })
+      for (const it of items) {
+        const p = placed.get(it.id)
+        if (!p) {
+          // Nowhere for a box either: its plain name, if it fits.
+          gaveUp.add(it.id)
+          continue
+        }
+        calledOut.add(it.id)
+        const lb = leaderBoxes(p.leader)
+        taken.push(p.box, ...lb)
+        calloutBoxes.push(p.box)
+        solid.add(p.box)
+        for (const b of lb) solid.add(b)
+        callouts.push({
+          id: it.id,
+          name: tileText.get(it.id) ?? "",
+          lines: (lines?.get(it.id) ?? []).slice(0, CALLOUT_MAX_LINES),
+          at: toCells([p.box.x + p.box.w / 2, p.box.y + p.box.h / 2]),
+          size: { w: p.box.w, h: p.box.h },
+          side: p.side,
+          leader: [toCells(p.leader[0]), toCells(p.leader[1])],
+        })
+      }
+    }
+    // Taken before anything else is placed: the lower ranked keep off the
+    // boxes and their leaders.
+    for (const b of taken) occ.add(b)
+  }
+  // A tile named in a callout has no plain name.
+  const tileReqsShown = calledOut.size
+    ? tileReqs.filter((r) => !calledOut.has(r.id.slice(5)))
+    : tileReqs
 
   // Cables: along their lanes, road names; a bundle's count along it.
   const cableText = new Map<string, { text: string; suffix?: string }>()
@@ -506,11 +698,13 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         priority: RANK.tray - k * 10,
         spots: along(spots),
         avoid: tileBodies,
+        // Never over an icon: a tray's name read as a rack's.
+        block: icons,
       })
     )
   }
 
-  reqs.push(...tileReqs)
+  reqs.push(...tileReqsShown)
 
   // Areas: the name in its corner, else a free spot inside, off the racks.
   const areaReqs = new Map<string, "fixed" | "move">()
@@ -538,19 +732,34 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
         id: `area:${a.id}`,
         priority: RANK.area,
         spots: [{ box, data: null }],
+        block: icons,
       })
       continue
     }
     if (a.rotation) continue
     const rect = { x: a.x, y: a.y, w: a.width, h: a.height }
-    const spots = insideSpots(rect, size, 6 * u * (fpx / 12), scale)
-    if (!spots.length || !spots.some((s) => inView(s.box))) continue
+    const pad = 6 * u * (fpx / 12)
+    let spots = insideSpots(rect, size, pad, scale)
+    // A room narrower than its name: its top left corner, the name running
+    // past the edge - shown only where it covers no icon or callout.
+    if (!spots.length) {
+      const x = rect.x * scale + pad
+      const y = rect.y * scale + pad
+      spots = [
+        {
+          box: { x, y, ...size },
+          data: { at: [x / scale, y / scale] as Pt },
+        },
+      ]
+    }
+    if (!spots.some((s) => inView(s.box))) continue
     areaReqs.set(a.id, "move")
     reqs.push({
       id: `area:${a.id}`,
       priority: RANK.area,
       spots,
       avoid: tileBodies,
+      block: icons,
     })
   }
 
@@ -570,6 +779,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       id: `raised:${r.id}`,
       priority: RANK.raised,
       spots: [{ box: cap, data: null }],
+      block: icons,
     })
   }
 
@@ -584,6 +794,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
     tileNamesHere,
     areas: new Map(),
     hiddenRaised: new Set(),
+    callouts,
     taken: occ.boxes(),
   }
   for (const [key, spot] of placed) {
@@ -630,6 +841,9 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
       out.areas.set(rest, (spot.data as { at: Pt }).at)
     }
   }
+  // A zone's name that gave way: drawn by no one.
+  for (const id of zoneNames)
+    if (!placed.has(`tilefix:${id}`)) tileNamesHere.add(id)
   for (const [id] of areaReqs)
     if (!placed.has(`area:${id}`)) out.areas.set(id, null)
   for (const r of input.raised ?? [])

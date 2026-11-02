@@ -10627,7 +10627,11 @@ class PanelLayout(TimestampedModel):
     ``items`` is ``[{"section": "Label"} | {"field": "key"}, ...]`` - a
     field key is a built-in attribute, a computed block (``monitoring``,
     ``ports``, ``ips``, ``cables``, ``devices``) or ``cf:<custom field
-    key>``."""
+    key>``.
+
+    ``callout`` is the at most three field keys a callout on the 2D plan
+    adds under the object's name when its plain name will not sit cleanly
+    by its tile (``api.panel_layouts.CALLOUT_FIELDS``)."""
 
     KIND_CHOICES = [("device", "Device"), ("rack", "Rack"), ("cabinet", "Cabinet")]
     SCOPE_CHOICES = [
@@ -10649,6 +10653,7 @@ class PanelLayout(TimestampedModel):
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default="default")
     scope_id = models.UUIDField(null=True, blank=True)
     items = models.JSONField(default=list, blank=True)
+    callout = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["object_kind", "scope", "created_at"]

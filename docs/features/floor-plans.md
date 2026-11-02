@@ -1000,11 +1000,16 @@ you zoom or pan. In order:
    bundle's **N cables**.
 4. **Tray names** with their counts.
 5. **Tile names** (a name drawn inside its tile stays there, and others
-   keep clear of it).
+   keep clear of it). With [Callouts](#callouts) on, a tile's name that
+   sits clear by its tile ranks above the cable and tray names.
 6. **Room and area names**. A rectangle's name starts in its top-left
    corner and moves to another free spot inside it - a corner, the middle -
    off the racks, rather than sit on a tray's name or a rack.
 7. **Raised-floor captions**.
+
+Tray names, room and area names, raised-floor captions and a zone's name
+(*Hot aisle*) never cover an icon tile or a callout: where they would, they
+move to their next place or hide.
 
 The pass runs once the view settles after a pan or zoom, and lays out only
 what is in view. The **PDF** runs the same pass at the paper's scale.
@@ -1110,6 +1115,46 @@ name label carries the object's icon on a small square in its colour.
 
 The option is saved on the plan with the other Display choices; a viewer
 can switch it for the session.
+
+A spread keeps a row in its order: two icons side by side (or one above
+the other) never end up the other way round from the racks they stand
+for, so a row of R-A01 to R-A04 still reads left to right.
+
+#### Callouts {#callouts}
+
+From afar a row of racks is a row of icons a few pixels apart, and a name
+beside one icon is as near the next. **Display → Callouts** (**Auto** unless
+the plan turns it **Off**) names such a tile in a small **callout** instead:
+a box with the name, set off in free space - outside the tile's room
+(an area linked to a room), else outside its group of tiles - with a thin
+**leader** to the tile's edge.
+
+- **Which tiles.** A device, rack or cabinet drawn as an icon or grown
+  symbol whose name has no free place by it, or whose name would sit as
+  near another tile as its own. A name that fits clearly stays a plain
+  name; the ends of a row often do, the middle ones become callouts.
+- **Where.** Each tile's callout goes to the nearest side of its room,
+  above or below first; the boxes along a side sit in one row in the order
+  of their tiles, so the leaders never cross. A row that would cover a tile,
+  an icon, a label or another callout moves out, a box at a time if it
+  must; as a last resort a leader may cross another tile rather than leave
+  a name out. A tile with no place anywhere keeps its plain name, or hides
+  as any name does.
+- **Steady.** Callouts are laid out for the whole plan at the settled
+  zoom, never for the view, so panning does not move them.
+- **What they show.** The name, then up to three lines chosen per
+  [panel layout](#panel-layouts) under **Callout**: a status or role as its
+  badge, anything else as muted text. With none chosen it is the name alone.
+- **Hover and click.** Hovering a callout lights its tile and its leader;
+  hovering or selecting the tile lights its callout. A click opens the
+  object's detail panel, as a click on the tile does (in Edit it selects
+  the tile).
+- Lower-ranked texts - tray, room and area names, raised-floor captions -
+  keep off the boxes and their leaders.
+
+Callouts are on the canvas only; the PDF keeps plain names. **Off** draws
+names as before. The choice is saved on the plan with the other Display
+choices; a viewer can switch it for the session.
 
 **Changing a tile's type.** Select a placed tile and pick another **Type**
 in the inspector - any tile type, or a device role standing in as one. The
@@ -1855,6 +1900,13 @@ above applies. **Inherit** removes a scope's layout so it falls back to the
 next match; **Restore defaults** puts the built-in default back into the
 Default layout. The **Preview** draws the panel as the layout would, for
 the first object in the scope you may view.
+
+**Callout** under the list picks up to **3** fields a plan
+[callout](#callouts) shows under the object's name: short attributes
+(role, status, type, platform, software, serial, asset tag, ID, location,
+rack position, primary or OOB IP, facility ID, a cabinet's size, tenant,
+description) and custom fields, never a block. They follow the same layout
+resolution as the panel.
 
 Layouts are tenant admin settings (the same gate as the tile popover's) and
 every change is in the change log.
@@ -2754,7 +2806,8 @@ copied or cloned riser is not paired.
 |---|---|
 | `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. `a_far` / `b_far` list each end on no tile here: `device`, `port`, `device_name`, `floor_plan` (`{id, name}`: the floor of this plan's stack it is placed on, one you may view, or null) and `place` (`{kind, id}`: the device - or the rack or cabinet it is in - to place to bring it here, when it is on this plan's site; else null). An end on a device you may not view reads `{"device": null, "port": null, "hidden": true}` and nothing more. |
 | `GET /api/floor-plans/{id}/cable-panel/{cable_id}/` | The [cable panel](#the-cable-panel): the cable (`label`, `name`, `status`, `type`, `type_display`, `color`, `length`, `length_unit`, `length_source`, `description`) and `ends` (`{"A": [...], "B": [...]}`), each end's `device` (`id`, `name`, `role`, `status`, `site`, `location`, `rack`, `cabinet`, `position`, `face`, `u_height`) and `port` (`kind`, `id`, `name`, `label`, `type`, `type_display`, `description`; an interface also `speed`, `enabled`, `mode`, `mac_address`, `vlan`, `ip_addresses` - the ones you may view - `tagged_vlan_count`, `lag` and `observed`, its `oper_status` / `admin_status` / `speed_mbps` from the last SNMP poll, or null). An end on a device you may not view reads `{"hidden": true}` only; an interface you may not view reads `port: null`. A cable you may not view, or another tenant's, is a 404. Needs view on the plan. |
-| `/api/panel-layouts/` | The [panel layouts](#panel-layouts), tenant admins only (403 otherwise). `GET` lists the tenant's (`?object_kind=`), each `{id, object_kind, scope, scope_id, scope_name, items, updated_at}`; `POST` adds one (`object_kind` `device`/`rack`/`cabinet`, `scope` - `default`, `device_type`, `device_role`, `profile`, `rack_type`, `rack_role`, `cabinet_type`, `cabinet_role` as fits the kind - `scope_id`, one of the tenant's, null for `default`, and `items`); one layout per scope (400 for a second). `PUT`/`PATCH` `{id}/` changes `items`; `DELETE` removes it. `items` is at most 80 entries, each `{"section": "Label"}` (1-64 characters) or `{"field": key}` - a key of `catalog/`, or `cf:<key>` for one of the tenant's custom fields of that kind, each at most once. `GET catalog/` answers per kind its `fields` (`key`, `label`, `computed`), `scopes` in resolution order, the built-in `default` and `cf_model`. `POST preview/` (`object_kind`, `scope`, `scope_id`, `items`, optional `object_id`) answers the tile-panel payload for that object, else the first in the scope you may view, else `{"kind", "empty": true}`. |
+| `/api/panel-layouts/` | The [panel layouts](#panel-layouts), tenant admins only (403 otherwise). `GET` lists the tenant's (`?object_kind=`), each `{id, object_kind, scope, scope_id, scope_name, items, callout, updated_at}`; `POST` adds one (`object_kind` `device`/`rack`/`cabinet`, `scope` - `default`, `device_type`, `device_role`, `profile`, `rack_type`, `rack_role`, `cabinet_type`, `cabinet_role` as fits the kind - `scope_id`, one of the tenant's, null for `default`, `items` and optional `callout`); one layout per scope (400 for a second). `PUT`/`PATCH` `{id}/` changes `items` and, when sent, `callout`; `DELETE` removes it. `items` is at most 80 entries, each `{"section": "Label"}` (1-64 characters) or `{"field": key}` - a key of `catalog/`, or `cf:<key>` for one of the tenant's custom fields of that kind, each at most once. `callout` is at most 3 distinct keys from the kind's `callout_fields` or `cf:<key>` - the lines a plan [callout](#callouts) shows. `GET catalog/` answers per kind its `fields` (`key`, `label`, `computed`), `scopes` in resolution order, the built-in `default`, `cf_model`, `callout_fields` and `callout_max`. `POST preview/` (`object_kind`, `scope`, `scope_id`, `items`, optional `object_id`) answers the tile-panel payload for that object, else the first in the scope you may view, else `{"kind", "empty": true}`. |
+| `GET /api/floor-plans/{id}/callouts/` | What each device, rack or cabinet tile's [callout](#callouts) shows under its name: `{"tiles": {tile id: [{key, label, value, color?}]}}` - the `callout` fields of the panel layout its object takes, in order, those with a value; a status or role carries its `color`. Only tiles you may view whose object you may view; a live view answers for the tiles in its room. Without a layout naming callout fields, `{"tiles": {}}`. |
 | `GET /api/floor-plans/{id}/tile-panel/{tile_id}/` | A device, rack or cabinet tile's [panel](#device-rack-and-cabinet-panels). Every answer carries `layout` (`id` - null for the built-in default - `scope`, `scope_id`, `scope_name`, `items`) and `custom_fields` (`[{key, label, type, value}]`: the layout's custom fields you may see, matching the object, with a value). A device: `device` (as above plus `device_type`, `platform`, `serial_number`, `asset_tag`, `primary_ip` / `secondary_ip` / `oob_ip` - those you may view - `tenant`, `description`, `software_version`, `tags`, `profiles`), and, only when its layout names them, `monitoring` (`status`, `counts`, the six worst `checks`), `ports` (`total`, `connected`, `free`, `disabled`, `observed`, `up`, `down` over the physical interfaces you may view) `ips` (its addresses you may view, with their `interface`) and `preview` (`front_image`, `rear_image` - the type's rack-face photos - `model`, the model the room draws as `{url, source, fit, up, front}` or null, `model_ports`, its mapped ports, and the type's `width_mm` / `height_mm` / `depth_mm`; an inherited model's `url` is the type's download only when you may view the type, else the device's own). A rack: `rack`, `monitoring.status`, `devices` (those you may view, top U first, each with its worst `check`), `used_units` and `hidden_count`; a cabinet: `cabinet` (with `size_mm`), `monitoring.status`, `devices` (rail by rail, with `rail` and `rail_offset_mm`) and `hidden_count`. `?device=<id>` on a rack or cabinet tile answers that device of it instead. A tile whose object you may not view reads `{"kind", "hidden": true}`; a tile of another plan or one you may not view is a 404, another kind of tile a 400. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
 | `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. A cable between floors (`cable_ids` or `objects`) whose far end is placed on a floor a riser of this plan pairs with - one you may view - reads `via` `riser`; its `route` is this floor's part, to the riser, with `riser` (`tile`, `label`, `pair`, `pair_label`, `floor_plan` `{id, name}`, `riser_mm`) and the whole cable's lengths. One leaving the floor otherwise names the nearest riser of this plan in `via_riser`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |

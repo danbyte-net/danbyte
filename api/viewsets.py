@@ -13766,6 +13766,33 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return Response(floor_plan_panels.cabinet_panel(request, tenant, tile.cabinet))
         return Response(floor_plan_panels.rack_panel(request, tenant, tile.rack))
 
+    @action(detail=True, methods=["get"], url_path="callouts")
+    def callouts(self, request, pk=None):
+        """What each device, rack or cabinet tile's callout on the 2D plan
+        adds under its name (``api.floor_plan_panels.plan_callouts``):
+        ``{"tiles": {tile id: [{key, label, value, color?}]}}`` - the
+        callout fields of the panel layout its object takes, only for
+        tiles the reader may view whose object they may view."""
+        from auth_api import rbac
+
+        from . import floor_plan_panels
+        from . import floor_plan_snapshots as snaps
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tiles = list(
+            rbac.restrict_queryset(
+                src.tiles.filter(
+                    Q(device__isnull=False) | Q(rack__isnull=False) | Q(cabinet__isnull=False)
+                ),
+                request.user, tenant, "floorplantile", "view",
+            )
+        )
+        if crop is not None:
+            tiles = [t for t, _edge in snaps.in_crop("tiles", tiles, crop)]
+        return Response({"tiles": floor_plan_panels.plan_callouts(request, tenant, tiles)})
+
     @action(detail=True, methods=["get"], url_path="cable-schedule")
     def cable_schedule(self, request, pk=None):
         """The plan's cable schedule (``api/cable_schedule.py``): every cable

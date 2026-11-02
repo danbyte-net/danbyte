@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { PanelLayoutItem } from "@/lib/api"
 
-import { LayoutEditor } from "./panel-layouts-card"
+import { CalloutEditor, LayoutEditor } from "./panel-layouts-card"
 
 // The panel layout editor: the entries in order, a chip per field not yet
 // listed (custom fields of the kind among them), a section to add.
@@ -74,5 +74,63 @@ describe("LayoutEditor", () => {
       }
     )
     expect(onItems.mock.lastCall?.[0][0]).toEqual({ section: "Facts" })
+  })
+})
+
+describe("CalloutEditor", () => {
+  function CalloutHarness({ onValue }: { onValue: (v: string[]) => void }) {
+    const [value, setValue] = useState<string[]>(["status"])
+    return (
+      <CalloutEditor
+        value={value}
+        onChange={(v) => {
+          setValue(v)
+          onValue(v)
+        }}
+        fields={FIELDS}
+        allowed={["status", "serial_number"]}
+        max={3}
+        cfModel="device"
+      />
+    )
+  }
+
+  it("adds up to the most, in order, never a block, and removes", async () => {
+    const onValue = vi.fn()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CalloutHarness onValue={onValue} />
+      </QueryClientProvider>
+    )
+    // A block is never offered.
+    expect(
+      screen.queryByRole("button", { name: "Add Monitoring to the callout" })
+    ).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add Serial to the callout" })
+    )
+    expect(onValue).toHaveBeenLastCalledWith(["status", "serial_number"])
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add Owner to the callout" })
+    )
+    expect(onValue).toHaveBeenLastCalledWith([
+      "status",
+      "serial_number",
+      "cf:owner",
+    ])
+    // Full: nothing more to add.
+    expect(
+      screen.queryAllByRole("button", { name: /to the callout$/ })
+    ).toEqual([])
+    fireEvent.click(screen.getByRole("button", { name: "Move Owner up" }))
+    expect(onValue).toHaveBeenLastCalledWith([
+      "status",
+      "cf:owner",
+      "serial_number",
+    ])
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove Status from the callout" })
+    )
+    expect(onValue).toHaveBeenLastCalledWith(["cf:owner", "serial_number"])
   })
 })

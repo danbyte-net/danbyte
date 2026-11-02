@@ -155,6 +155,16 @@ export function readIconTiles(v: unknown): boolean {
   return v !== false
 }
 
+/** Display > Callouts: Auto names a tile whose name will not sit cleanly
+ * by it in a box off to the side (plan-callouts.ts); Off does not. */
+export const CALLOUT_MODES = ["auto", "off"] as const
+export type CalloutMode = (typeof CALLOUT_MODES)[number]
+
+/** A stored value as the Callouts option: Auto unless the plan chose Off. */
+export function readCallouts(v: unknown): CalloutMode {
+  return v === "off" ? "off" : "auto"
+}
+
 /** Under this long side on screen (px) a tile turns into its icon. */
 export const ICON_TILE_PX = 40
 /** Over this long side (px) an icon tile turns back into the tile. */
