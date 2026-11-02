@@ -38,14 +38,30 @@ import type { Pt } from "./cable-route"
 import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
+  ClusterTile,
   FovCone,
+  IconLeader,
   ReadableSymbol,
   TileMarkers,
   TileShape,
   createHoverStore,
 } from "./tile-layer"
 import {
+  CLUSTER_SIDE,
+  EMPTY_ICON_LAYOUT,
+  clusterFace,
+  clusterFitView,
+  drawnCentre,
+  layoutIcons,
+  pullOut,
+  squareAt,
+  zoomBucket,
+} from "./icon-layout"
+import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
+import {
+  ICON_TILE_EXIT_PX,
   READABLE_FONT_PX,
+  READABLE_SYMBOL_PX,
   fontGrow,
   growStubs,
   iconTileIds,
@@ -641,19 +657,107 @@ export function FloorCanvas({
     [iconTiles, tiles, pxPerCell, iconPrev]
   )
   if (iconIds !== iconPrev) setIconPrev(iconIds)
-  /** How a tile draws when not as itself: its icon tile, else Readable's
-   * shape; null draws every tile at its real size. */
+  const pinnedNames = useMemo(() => {
+    const s = new Set(multiSelectedIds ?? [])
+    if (selectedId) s.add(selectedId)
+    return s
+  }, [multiSelectedIds, selectedId])
+  // Settled: the view once a pan or zoom stops - the label pass and the
+  // icons' layout run on it, not on every frame.
+  const settledView = useSettled(
+    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
+    120,
+    sameView
+  )
+  // Icons that would overlap spread apart, or fold into clusters where
+  // there is no room (icon-layout.ts) - laid out for the settled zoom's
+  // bucket, so a pan never moves them; the last layout holds clusters a
+  // little longer (hysteresis). The selection never joins a cluster.
+  const layoutK = zoomBucket(settledView.k)
+  const lastIconLayout = useRef<IconLayout>(EMPTY_ICON_LAYOUT)
+  const baseIconLayout = useMemo(() => {
+    if (iconIds.size < 2) return EMPTY_ICON_LAYOUT
+    const items = tiles
+      .filter((tl) => iconIds.has(tl.id))
+      .map((tl) => ({
+        id: tl.id,
+        c: [tl.x + tl.width / 2, tl.y + tl.height / 2] as Pt,
+      }))
+    return layoutIcons(
+      items,
+      CELL * layoutK,
+      { side: READABLE_SYMBOL_PX, prev: lastIconLayout.current },
+      pinnedNames
+    )
+  }, [iconIds, tiles, layoutK, pinnedNames])
+  useEffect(() => {
+    lastIconLayout.current = baseIconLayout
+  }, [baseIconLayout])
+  // Hovered or pointed at from outside (the rack table, a pick): out of
+  // its cluster, on its own.
+  const iconLayout = useMemo(() => {
+    const out = new Set<string>(highlightTileIds ?? [])
+    if (hoveredTile) out.add(hoveredTile)
+    for (const id of tilePick?.picked ?? []) out.add(id)
+    return pullOut(baseIconLayout, out)
+  }, [baseIconLayout, highlightTileIds, hoveredTile, tilePick?.picked])
+  const tileById = useMemo(
+    () => new Map(tiles.map((tl) => [tl.id, tl])),
+    [tiles]
+  )
+  const clusterFaces = useMemo(() => {
+    const m = new Map<string, ClusterFace>()
+    for (const c of iconLayout.clusters)
+      m.set(
+        c.id,
+        clusterFace(
+          c.members.map((id) => tileById.get(id)!).filter(Boolean),
+          (tl) => liveState?.tiles[tl.id]?.check
+        )
+      )
+    return m
+  }, [iconLayout, tileById, liveState])
+  /** A cluster's drawn box (cells) at `perCell` px per cell. */
+  const clusterBox = useCallback(
+    (c: IconCluster, perCell: number) =>
+      squareAt(
+        drawnCentre(iconLayout, c.id, c.anchor, perCell),
+        READABLE_SYMBOL_PX * CLUSTER_SIDE,
+        perCell
+      ),
+    [iconLayout]
+  )
+  /** How a tile draws when not as itself: its icon tile - spread, or
+   * its cluster's box - else Readable's shape; null draws every tile at
+   * its real size. */
   const shapeAt = useCallback(
     (perCell: number): ShapeOf | null =>
       !readable && iconIds.size === 0
         ? null
-        : (tl) =>
-            iconIds.has(tl.id)
-              ? iconTileShape(tl, perCell)
-              : readable
-                ? readableShape(tl, perCell)
-                : null,
-    [readable, iconIds]
+        : (tl) => {
+            if (!iconIds.has(tl.id))
+              return readable ? readableShape(tl, perCell) : null
+            const c = iconLayout.clusterOf.get(tl.id)
+            const box = c
+              ? clusterBox(c, perCell)
+              : squareAt(
+                  drawnCentre(
+                    iconLayout,
+                    tl.id,
+                    [tl.x + tl.width / 2, tl.y + tl.height / 2],
+                    perCell
+                  ),
+                  READABLE_SYMBOL_PX,
+                  perCell
+                )
+            return {
+              box,
+              grow: box.w / Math.max(tl.width, tl.height),
+              changed: true,
+              symbol: true,
+            }
+          },
+    [readable, iconIds, iconLayout, clusterBox]
   )
   const shapeOf = useMemo(() => shapeAt(pxPerCell), [shapeAt, pxPerCell])
   const shownStubs = useMemo(
@@ -663,11 +767,15 @@ export function FloorCanvas({
         : cableStubs,
     [shapeOf, cableStubs, tiles, pxPerCell]
   )
-  const pinnedNames = useMemo(() => {
-    const s = new Set(multiSelectedIds ?? [])
-    if (selectedId) s.add(selectedId)
-    return s
-  }, [multiSelectedIds, selectedId])
+  // Mid-zoom the icons follow the view as it is; once settled a new
+  // layout eases them to their new places.
+  const iconsSettled = t.k === settledView.k
+  // Hovering a cluster lists its members.
+  const [clusterHint, setClusterHint] = useState<{
+    id: string
+    x: number
+    y: number
+  } | null>(null)
 
   // The cable layer is memoised; its callbacks must hold still while the
   // canvas re-renders on every pan frame.
@@ -782,11 +890,6 @@ export function FloorCanvas({
   const labels = shapes.filter((s) => s.kind === "label").sort(byZ)
   // The label pass, run when a pan or zoom settles: everything the plan
   // writes, in view, the cables first (plan-label-pass.ts).
-  const settledView = useSettled(
-    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
-    120,
-    sameView
-  )
   const labelLayout = useMemo(
     () => layoutCables(cableRoutes, laneOrder(cablePaths, cableRoutes)),
     [cableRoutes, cablePaths]
@@ -818,6 +921,13 @@ export function FloorCanvas({
           : null,
       tiles,
       shapeOf: shapeAt(scale),
+      iconIds,
+      iconClusters: iconLayout.clusters.map((c) => ({
+        id: c.id,
+        box: clusterBox(c, scale),
+        name: clusterFaces.get(c.id)?.name ?? "",
+        members: c.members,
+      })),
       labelFit,
       zoneGrow: readable ? fontGrow(10, k) : 1,
       pinnedTiles: hoveredTile
@@ -859,6 +969,10 @@ export function FloorCanvas({
     tiles,
     readable,
     shapeAt,
+    iconIds,
+    iconLayout,
+    clusterBox,
+    clusterFaces,
     labelFit,
     pinnedNames,
     hoveredTile,
@@ -1439,6 +1553,7 @@ export function FloorCanvas({
           shapeOf
         )
       : null
+    if (grownHit && iconLayout.clusterOf.has(grownHit.id)) return
     if (grownHit && shapeOf?.(grownHit)?.changed) {
       setCtxMenu({
         x: e.clientX - rect.left,
@@ -1541,6 +1656,25 @@ export function FloorCanvas({
       )
       .map((cp) => cp.id)
 
+  /** A click on a cluster: zoom to its members, close enough that they
+   * part or turn back into tiles. */
+  const fitCluster = (c: IconCluster) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    const members = c.members
+      .map((id) => tileById.get(id))
+      .filter((x): x is FloorPlanTile => !!x)
+    if (!rect || !members.length) return
+    setClusterHint(null)
+    setT(
+      clusterFitView(members, rect.width, rect.height, {
+        cell: CELL,
+        spacingPx: READABLE_SYMBOL_PX * 1.25,
+        tilePx: ICON_TILE_EXIT_PX + 4,
+        maxK: 4,
+      })
+    )
+  }
+
   /** One tile on the plan. */
   const renderTile = (tile: FloorPlanTile) => {
     // A free plan draws a tile turned by what its angle has beyond
@@ -1553,6 +1687,17 @@ export function FloorCanvas({
     // untouched), its name left to the names layer, no resize grip - a
     // resize is done zoomed in, at the real size.
     const rs = shapeOf?.(tile) ?? null
+    // Folded into a cluster: the cluster draws it.
+    if (iconLayout.clusterOf.has(tile.id)) return null
+    // An icon spread off its true place: drawn there and moved, so a new
+    // layout eases it across.
+    const iconHome = iconIds.has(tile.id)
+      ? iconTileShape(tile, pxPerCell).box
+      : null
+    const shift =
+      iconHome && rs
+        ? [(rs.box.x - iconHome.x) * CELL, (rs.box.y - iconHome.y) * CELL]
+        : null
     // Too thin, a photo too small to read, or an icon tile from afar: its
     // symbol instead.
     if (rs?.symbol)
@@ -1564,10 +1709,20 @@ export function FloorCanvas({
           }
           opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
           data-grown=""
+          style={
+            shift
+              ? {
+                  transform: `translate(${shift[0]}px, ${shift[1]}px)`,
+                  transition: iconsSettled
+                    ? "transform 180ms ease-out"
+                    : undefined,
+                }
+              : undefined
+          }
         >
           <ReadableSymbol
             tile={tile}
-            box={rs.box}
+            box={iconHome ?? rs.box}
             k={t.k}
             selected={
               tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
@@ -1943,7 +2098,9 @@ export function FloorCanvas({
             pinnedNames,
             undefined,
             shapeOf ?? undefined
-          ).map(renderTile)}
+          )
+            .filter((tl) => !iconIds.has(tl.id))
+            .map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
               the whole symbol instead. */}
@@ -2080,6 +2237,60 @@ export function FloorCanvas({
               shapeOf={shapeOf}
             />
           )}
+
+          {/* Icons when zoomed out: over the trays and the cables that
+              end on them - their leaders, the icons (the selection last)
+              and the clusters. */}
+          <g data-layer="icon-tiles">
+            {/* Spread icons: a leader back to where each really is. */}
+            {tiles.map((tl) => {
+              if (!iconIds.has(tl.id) || iconLayout.clusterOf.has(tl.id))
+                return null
+              const o = iconLayout.offsets.get(tl.id)
+              if (!o || Math.hypot(o[0], o[1]) < 2) return null
+              const home: Pt = [tl.x + tl.width / 2, tl.y + tl.height / 2]
+              return (
+                <IconLeader
+                  key={`leader-${tl.id}-${Math.round(o[0])}-${Math.round(o[1])}`}
+                  from={drawnCentre(iconLayout, tl.id, home, pxPerCell)}
+                  to={home}
+                  k={t.k}
+                />
+              )
+            })}
+            {readableOrder(
+              tiles.filter((tl) => iconIds.has(tl.id)),
+              pxPerCell,
+              pinnedNames,
+              undefined,
+              shapeOf ?? undefined
+            ).map(renderTile)}
+            {/* Icons folded together: one tile each, the count on it. */}
+            {iconLayout.clusters.map((c) => {
+              const face = clusterFaces.get(c.id)
+              if (!face) return null
+              return (
+                <ClusterTile
+                  key={c.id}
+                  id={c.id}
+                  box={clusterBox(c, pxPerCell)}
+                  k={t.k}
+                  face={face}
+                  onActivate={() => fitCluster(c)}
+                  onPointerEnter={(e) => {
+                    const rect = svgRef.current?.getBoundingClientRect()
+                    if (!rect || drag.current) return
+                    setClusterHint({
+                      id: c.id,
+                      x: e.clientX - rect.left,
+                      y: e.clientY - rect.top,
+                    })
+                  }}
+                  onPointerLeave={() => setClusterHint(null)}
+                />
+              )
+            })}
+          </g>
 
           {/* Every text the label pass places: cable names along their
               runs, trays' names, a focused cable's ends, Readable's tile
@@ -2323,6 +2534,37 @@ export function FloorCanvas({
         )
       })()}
 
+      {/* Hovering a cluster: its members. */}
+      {clusterHint &&
+        (() => {
+          const c = iconLayout.clusters.find((x) => x.id === clusterHint.id)
+          const face = c && clusterFaces.get(c.id)
+          if (!c || !face) return null
+          const names = c.members.map((id) => {
+            const tl = tileById.get(id)
+            return tl ? tileName(tl) || tl.linked?.name || "Tile" : ""
+          })
+          return (
+            <Tooltip open>
+              <TooltipTrigger asChild>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute"
+                  style={{ left: clusterHint.x, top: clusterHint.y - 10 }}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="top" data-part="cluster-members">
+                <div className="font-medium">{face.name}</div>
+                <ul className="mt-0.5 text-xs">
+                  {names.slice(0, 12).map((n, i) => (
+                    <li key={i}>{n}</li>
+                  ))}
+                  {names.length > 12 && <li>+{names.length - 12} more</li>}
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          )
+        })()}
       {opensHint && !editable && (
         <div
           role="status"

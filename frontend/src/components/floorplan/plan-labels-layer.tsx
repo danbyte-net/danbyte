@@ -57,6 +57,23 @@ export function PlanLabelsLayer({
     textAnchor: "middle" as const,
     dominantBaseline: "central" as const,
   }
+  // A name on its line: a plate of the page under it, so the line - a
+  // traced run's casing, a lane beside it - breaks cleanly round the text
+  // instead of showing through a thin halo.
+  const knockout = (text: string) => {
+    const { w, h } = textSize(text, LABEL_FONT_PX)
+    return (
+      <rect
+        data-part="name-plate"
+        x={(-w / 2) * s}
+        y={(-h / 2) * s}
+        width={w * s}
+        height={h * s}
+        rx={3 * s}
+        fill="var(--background)"
+      />
+    )
+  }
   return (
     <g data-layer="plan-labels" pointerEvents="none">
       {labels.trays.map((l) => (
@@ -74,31 +91,33 @@ export function PlanLabelsLayer({
         </text>
       ))}
       {labels.bundles.map((l) => (
-        <text
-          key={l.key}
-          data-bundle-name={l.id}
-          transform={at(l.at, l.angle)}
-          fontSize={LABEL_FONT_PX * s}
-          fontWeight={600}
-          {...halo}
-        >
-          {l.text}
-        </text>
+        <g key={l.key} transform={at(l.at, l.angle)}>
+          {knockout(l.text)}
+          <text
+            data-bundle-name={l.id}
+            fontSize={LABEL_FONT_PX * s}
+            fontWeight={600}
+            {...halo}
+          >
+            {l.text}
+          </text>
+        </g>
       ))}
       {labels.cables.map((l) => (
-        <text
-          key={l.key}
-          data-cable-name={l.id}
-          transform={at(l.at, l.angle)}
-          fontSize={LABEL_FONT_PX * s}
-          fontWeight={500}
-          {...halo}
-        >
-          {l.text}
-          {l.suffix && (
-            <tspan className="fill-muted-foreground">{l.suffix}</tspan>
-          )}
-        </text>
+        <g key={l.key} transform={at(l.at, l.angle)}>
+          {knockout(l.text + (l.suffix ?? ""))}
+          <text
+            data-cable-name={l.id}
+            fontSize={LABEL_FONT_PX * s}
+            fontWeight={500}
+            {...halo}
+          >
+            {l.text}
+            {l.suffix && (
+              <tspan className="fill-muted-foreground">{l.suffix}</tspan>
+            )}
+          </text>
+        </g>
       ))}
       {labels.tiles.map((l) => (
         <text
