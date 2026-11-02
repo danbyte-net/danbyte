@@ -30,7 +30,11 @@ export function usePlanMutations(id: string) {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["floor-plan", id] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["floor-plan", id] })
+      // The 3D room draws the background layers too.
+      void qc.invalidateQueries({ queryKey: ["floor-plan-scene", id] })
+    },
     onError: (err) => apiErrorToast(err),
   })
 

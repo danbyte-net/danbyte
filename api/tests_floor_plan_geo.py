@@ -181,11 +181,13 @@ class AnchorTests(_Base):
                              {"bbox": BBOX}, format="json")
         self.assertEqual(r.status_code, 400)
 
-    def test_a_plain_background_upload_drops_the_capture(self):
+    def test_a_floor_picture_upload_keeps_the_map_and_its_capture(self):
         r = self.client.post(f"/api/floor-plans/{self.plan.id}/background/",
                              {"background_image": _png()}, format="multipart")
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertIsNone(r.json()["geo"]["captured_at"])
+        # The picture is the floor layer, over the map.
+        self.assertIsNotNone(r.json()["geo"]["captured_at"])
+        self.assertIsNotNone(r.json()["base_map"])
         self.assertEqual(r.json()["geo"]["bbox"], BBOX)
 
 
@@ -195,7 +197,7 @@ class RefreshTests(_Base):
     def test_refresh_replaces_only_the_background(self):
         area = self.plan.areas.first()
         before = (area.points, self.plan.grid_width, self.plan.geo_captured_at)
-        old_name = self.plan.background_image.name
+        old_name = self.plan.base_map.image.name
         r = self.client.post(self.URL.format(self.plan.id), {
             "map_refresh": "1", "basemap": "sat", "zoom": "17",
             "background_image": _png(fmt="JPEG"),
@@ -206,8 +208,8 @@ class RefreshTests(_Base):
         self.assertEqual((area.points, self.plan.grid_width), before[:2])
         self.assertGreater(self.plan.geo_captured_at, before[2])
         self.assertEqual((self.plan.geo_basemap, self.plan.geo_zoom), ("sat", 17))
-        self.assertNotEqual(self.plan.background_image.name, old_name)
-        self.assertTrue(self.plan.background_image.name.endswith(".jpg"))
+        self.assertNotEqual(self.plan.base_map.image.name, old_name)
+        self.assertTrue(self.plan.base_map.image.name.endswith(".jpg"))
         self.assertIn("Esri", r.json()["geo"]["attribution"])
         entry = ChangeLogEntry.objects.filter(
             object_type="api.floorplan", object_id=str(self.plan.pk),
@@ -387,7 +389,7 @@ class ExpandTests(_Base):
         self.assertEqual(r.json()["expanded"]["background"], "padded")
         self.plan.refresh_from_db()
         self.assertEqual(self.plan.geo_captured_at, old)
-        with self.plan.background_image.open("rb") as f:
+        with self.plan.base_map.image.open("rb") as f:
             img = Image.open(f)
             img.load()
         self.assertEqual(img.size, (80, 60))
@@ -405,7 +407,8 @@ class ExpandTests(_Base):
         self.plan.refresh_from_db()
         self.assertGreater(self.plan.geo_captured_at, old)
         self.assertEqual(self.plan.geo_basemap, "sat")
-        self.assertEqual(Image.open(self.plan.background_image.path).size, (90, 40))
+        self.assertEqual(Image.open(self.plan.base_map.image.path).size, (90, 40))
+        self.assertEqual(self.plan.base_map.bbox, self.plan.geo_bbox)
 
     def test_stale_version_is_a_conflict_and_nothing_moves(self):
         stamp = self.plan.updated_at.isoformat()

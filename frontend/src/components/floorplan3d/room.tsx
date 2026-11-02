@@ -183,7 +183,22 @@ export function Room({
           depthWrite={!xray}
         />
       </mesh>
-      {drawingFloor && <DrawingFloorMesh floor={drawingFloor} />}
+      {/* Two layers: the base map (on the ground level only - the server
+          leaves it out elsewhere), then the floor drawing over it. */}
+      {plan.base_map && (
+        <Blueprint
+          url={plan.base_map}
+          w={w}
+          d={d}
+          opacity={(plan.map_opacity ?? 60) / 100}
+          muted={muted}
+          dark={dark}
+          under
+        />
+      )}
+      {drawingFloor && plan.background_shown !== false && (
+        <DrawingFloorMesh floor={drawingFloor} />
+      )}
       {!drawingFloor && plan.background_image && (
         <Blueprint
           url={plan.background_image}
@@ -330,16 +345,17 @@ function DrawingFloorMesh({ floor }: { floor: DrawingFloor }) {
   )
 }
 
-/** The uploaded blueprint, textured onto the floor. Loaded manually (not
- * useLoader) so a missing/broken image degrades to the plain slab instead of
- * suspending forever. */
-function Blueprint({
+/** The uploaded blueprint (or the base map, `under` it), textured onto
+ * the floor. Loaded manually (not useLoader) so a missing/broken image
+ * degrades to the plain slab instead of suspending forever. */
+export function Blueprint({
   url,
   w,
   d,
   opacity,
   muted,
   dark,
+  under = false,
 }: {
   url: string
   w: number
@@ -347,6 +363,9 @@ function Blueprint({
   opacity: number
   muted: boolean
   dark: boolean
+  /** The base map: drawn first, a hair lower, so the floor drawing lies
+   * over it. */
+  under?: boolean
 }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   useEffect(() => {
@@ -375,7 +394,11 @@ function Blueprint({
   useEffect(() => () => texture?.dispose(), [texture])
   if (!texture) return null
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[w / 2, 0.001, d / 2]}>
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[w / 2, under ? 0.0005 : 0.001, d / 2]}
+      renderOrder={under ? -1 : 0}
+    >
       <planeGeometry args={[w, d]} />
       <meshBasicMaterial
         map={texture}
@@ -386,8 +409,8 @@ function Blueprint({
         // A picture on the floor: it never hides what lies on it.
         depthWrite={false}
         polygonOffset
-        polygonOffsetFactor={-1}
-        polygonOffsetUnits={-2}
+        polygonOffsetFactor={under ? -0.5 : -1}
+        polygonOffsetUnits={under ? -1 : -2}
       />
     </mesh>
   )

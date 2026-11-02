@@ -180,6 +180,11 @@ describe("renderMapImage", () => {
     )
     expect(out.zoom).toBe(17)
     expect(out.blob.type).toBe("image/png")
+    // A small box is drawn larger (up to 16×), so the attribution stays a
+    // corner of it.
+    const native = tilesFor(b, 17)
+    expect(Math.max(out.width, out.height)).toBe(1600)
+    expect(out.width / out.height).toBeCloseTo(native.width / native.height, 2)
   })
 
   it("fails as TileReadError when a tile can't be read", async () => {

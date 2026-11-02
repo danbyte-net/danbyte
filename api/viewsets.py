@@ -11247,7 +11247,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
     queryset = (
         FloorPlan.objects.select_related(
-            "site", "location", "location__site", "drawing", "stack", "source",
+            "site", "location", "location__site", "drawing", "stack", "source", "base_map",
             "source__stack", "source_area__room", "source_area__location",
         )
         .prefetch_related(TAGS)
@@ -11683,7 +11683,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
             name = base[: maxlen - len(suffix)] + suffix
             n += 1
         skip = {"id", "numid", "name", "background_image", "created_at", "updated_at",
-                "stack", "floor_order"}
+                "stack", "floor_order", "base_map"}
         from . import floor_plan_snapshots as snaps
 
         if snaps.is_view(src):
@@ -11719,6 +11719,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     ContentFile(src.background_image.read()),
                     save=False,
                 )
+            # A map of its own: updating the clone's leaves the original's.
+            from .floor_plan_layers import copy_map
+
+            copy_map(src, dst)
             dst.save()
             dst.tags.set(tags_of(src))
             # Areas before walls: a wall made from an area stays linked to
@@ -13408,11 +13412,18 @@ class FloorPlanViewSet(TenantScopedViewSet):
             for w in visible(src.walls.all(), "floorplanwall")
             if crop is None or snaps.classify("walls", w, crop)
         ]
-        background = img(plan.background_image)
+        from .floor_plan_layers import map_in_3d
+
+        background = img(plan.background_image) if plan.background_shown else None
+        # The base map lies on the ground level only (and on a floor that
+        # is no level), never on a basement's slab.
+        base_map = img(plan.base_map.image) \
+            if plan.base_map_id and map_in_3d(plan) else None
         if crop is not None:
             # In view cells; the 3D room draws no cut of the source's image.
             snaps.frame(plan)
             background = None
+            base_map = None
             tiles = [snaps.shift("tiles", t, -crop.x, -crop.y) for t in tiles]
             raised_floors = [
                 snaps.shift("raised_floors", a, -crop.x, -crop.y) for a in raised_floors
@@ -13429,6 +13440,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "ceiling_mm": plan.ceiling_mm,
                 "background_image": background,
                 "background_opacity": plan.background_opacity,
+                "background_shown": plan.background_shown,
+                "base_map": base_map,
+                "map_opacity": plan.map_opacity,
                 # Building levels: where this floor sits in its aligned
                 # floor plan (floor_stacks.floor_elevation), its slab and
                 # its offset in the stack's frame.
@@ -13925,16 +13939,55 @@ class FloorPlanViewSet(TenantScopedViewSet):
 
             plan = refresh_background(request, plan)
             return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+        # The floor's own picture: the layer over the base map, which stays
+        # (``map/``).
         if "background_image" in request.FILES:
             plan.background_image = request.FILES["background_image"]
-            # Not the map any more.
-            plan.geo_captured_at = None
-            plan.geo_basemap = ""
         if request.data.get("clear"):
             plan.background_image = None
-            plan.geo_captured_at = None
-            plan.geo_basemap = ""
         plan.save()
+        return Response(FloorPlanSerializer(plan, context={"request": request}).data)
+
+    @extend_schema(summary="Set, update or remove a floor's base map (a Site map snapshot)")
+    @action(detail=True, methods=["post", "delete"], url_path="map",
+            parser_classes=[MultiPartParser, FormParser])
+    def base_map(self, request, pk=None):
+        """``POST``: ``image`` (the browser's render of the box), ``basemap``
+        (``map``/``sat``), ``zoom``, and ``bbox`` on a plan with no geo
+        anchor yet - the box must be the grid's real size. On an anchored
+        plan the box is the anchor's and the render replaces the map
+        (Update snapshot). ``DELETE`` removes the map from every floor it
+        lies under (api/floor_plan_layers.py)."""
+        from audit.context import cause
+
+        from .floor_plan_from_map import _clean_bbox
+        from .floor_plan_geo import has_anchor, refresh_background, set_anchor
+        from .floor_plan_layers import check_frame, remove_map
+
+        plan = self.get_object()
+        self._not_on_view(plan, "The map")
+        if request.method == "DELETE":
+            with transaction.atomic(), cause("Map removed"):
+                plan = FloorPlan.objects.select_for_update().get(pk=plan.pk)
+                remove_map(plan)
+            return Response(status=drf_status.HTTP_204_NO_CONTENT)
+        if "image" not in request.FILES:
+            raise ValidationError({"image": ["The rendered map."]})
+        if not has_anchor(plan):
+            raw = request.data.get("bbox")
+            if raw in (None, ""):
+                raise ValidationError({"bbox": ["Frame the plan on the map."]})
+            bbox = _clean_bbox(raw)
+            check_frame(plan, bbox)
+            with transaction.atomic():
+                locked = FloorPlan.objects.select_for_update().get(pk=plan.pk)
+                set_anchor(locked, list(bbox))
+                locked.save()
+                plan = refresh_background(request, locked, "image")
+        else:
+            plan = refresh_background(request, plan, "image")
+        plan = FloorPlan.objects.select_related(
+            "site", "location", "stack", "base_map").get(pk=plan.pk)
         return Response(FloorPlanSerializer(plan, context={"request": request}).data)
 
     @extend_schema(summary="Grow a plan made from the Site map to a larger box")

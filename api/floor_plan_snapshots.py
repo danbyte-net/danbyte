@@ -886,7 +886,10 @@ def make_snapshot(src, crop: Crop, *, name: str, mode: str, stack=None, area=Non
         plan.source_area = area
         plan.source_margin = margin
     if mode != "view":
+        from .floor_plan_layers import copy_map
+
         crop_raster(src, plan, crop)
+        copy_map(src, plan, crop)
     plan.save()
     crossing: list[dict] = []
     if mode != "view":
@@ -910,7 +913,10 @@ def unlink(view) -> list[dict]:
     view.crop = crop.as_dict()
     view.source_area = None
     view.source_margin = 0
+    from .floor_plan_layers import copy_map
+
     crop_raster(src, view, crop)
+    copy_map(src, view, crop)
     view.save()
     crossing = copy_contents(src, view, crop)
     copy_drawing(src, view, crop)

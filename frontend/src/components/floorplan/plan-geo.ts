@@ -6,6 +6,7 @@
 
 import type { FloorPlan, FloorPlanGeo } from "@/lib/api"
 import {
+  EARTH_CIRCUMFERENCE_M,
   latOf,
   lngOf,
   MAX_GRID,
@@ -124,6 +125,27 @@ export function expandFrame(plan: AnchoredPlan, s: Sides): ExpandFrame {
       `That makes the plan ${gridWidth} × ${gridHeight} cells; a plan has at most ${MAX_GRID} a side, ` +
       `${(MAX_GRID * plan.cell_mm) / 1000} m at ${cell} m a cell. Expand less, or make a new plan from the Site map with larger cells.`
   return out
+}
+
+/** The box a grid of `widthM` × `heightM` metres covers with its centre at
+ * `center` - how a plan with no geo anchor is framed on the map, at true
+ * scale (the server checks the box against the grid's size). */
+export function frameAt(
+  center: { lat: number; lng: number },
+  widthM: number,
+  heightM: number
+): Bbox {
+  const per = EARTH_CIRCUMFERENCE_M * Math.cos((center.lat * Math.PI) / 180)
+  const dx = widthM / per
+  const dy = heightM / per
+  const x0 = mercX(center.lng) - dx / 2
+  const y0 = mercY(center.lat) - dy / 2
+  return {
+    west: lngOf(x0),
+    east: lngOf(x0 + dx),
+    north: latOf(y0),
+    south: latOf(y0 + dy),
+  }
 }
 
 /** The most cells a side can still grow by, the opposite side as it is. */

@@ -260,7 +260,8 @@ def _copy_walls(src, dst) -> int:
 
 
 def _copy_background(src, dst) -> None:
-    """``src``'s background picture and CAD drawing on ``dst``, whole."""
+    """``src``'s floor drawing - its picture or CAD drawing - on ``dst``,
+    whole. The base map is not copied: a level shares its building's."""
     from .floor_plan_snapshots import Crop, copy_drawing, crop_raster
 
     whole = Crop(0, 0, src.grid_width, src.grid_height)
@@ -280,10 +281,12 @@ def add_floor(stack, name: str, *, position: int | None = None, copy_from=None,
 
     ``same_footprint`` (needs ``copy_from``) makes the stack aligned and the
     new floor a level of it: it also takes the geo anchor, slab and align
-    offset, its elevation is left to be computed, and on request the outer
-    walls (:func:`outer_walls`, openings cleared) and the background are
-    copied. One transaction; every row is written through ``save()``, so
-    each is in the change log."""
+    offset, its elevation is left to be computed, and it shares the
+    building's base map (one picture for every level; a basement hides it
+    until shown - api/floor_plan_layers.py). On request the outer walls
+    (:func:`outer_walls`, openings cleared) and the floor drawing (picture
+    or CAD) are copied. One transaction; every row is written through
+    ``save()``, so each is in the change log."""
     name = (name or "").strip()
     if not name:
         raise ValidationError({"name": ["Name the floor."]})
@@ -316,8 +319,10 @@ def add_floor(stack, name: str, *, position: int | None = None, copy_from=None,
                 setattr(plan, f, getattr(copy_from, f))
         if same_footprint:
             for f in ("slab_mm", "align_dx", "align_dy", "align_rot",
-                      "geo_bbox", "geo_mpc", "geo_zoom", "geo_basemap"):
+                      "geo_bbox", "geo_mpc", "geo_zoom", "geo_basemap",
+                      "base_map", "map_opacity"):
                 setattr(plan, f, getattr(copy_from, f))
+            plan.geo_captured_at = copy_from.geo_captured_at if plan.base_map_id else None
             plan.elevation_mm = None
         plan.save()
         if position is not None:
@@ -333,9 +338,6 @@ def add_floor(stack, name: str, *, position: int | None = None, copy_from=None,
                 _copy_walls(copy_from, plan)
             if copy_background:
                 _copy_background(copy_from, plan)
-                if plan.geo_bbox and copy_from.geo_captured_at:
-                    plan.geo_captured_at = copy_from.geo_captured_at
-                    plan.save(update_fields=["geo_captured_at", "updated_at"])
     return plan
 
 

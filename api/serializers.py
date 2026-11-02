@@ -11057,6 +11057,8 @@ class FloorPlanSerializer(
     drawing = serializers.SerializerMethodField()
     snapshot = serializers.SerializerMethodField()
     geo = serializers.SerializerMethodField()
+    base_map = serializers.SerializerMethodField()
+    map_visible = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -11073,6 +11075,23 @@ class FloorPlanSerializer(
         from .floor_plan_geo import geo_data
 
         return geo_data(obj)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_base_map(self, obj):
+        """The base layer: a Site map snapshot (api/floor_plan_layers.py),
+        shared by the levels of one building - ``{id, image, bbox, zoom,
+        basemap, attribution, captured_at, floors}`` - or null."""
+        from .floor_plan_layers import map_data
+
+        view = self.context.get("view")
+        return map_data(obj, count=getattr(view, "action", None) != "list")
+
+    def get_map_visible(self, obj) -> bool:
+        """Whether the base map is drawn: ``map_shown`` when set, else on
+        every floor but a basement of an aligned floor plan."""
+        from .floor_plan_layers import map_visible
+
+        return map_visible(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
@@ -11176,6 +11195,7 @@ class FloorPlanSerializer(
         if obj.kind != "view" or obj.source_id is None:
             return data
         from . import floor_plan_snapshots as snaps
+        from .floor_plan_layers import map_data, map_visible
 
         src, crop = snaps.resolve(obj)
         data.update({
@@ -11184,6 +11204,11 @@ class FloorPlanSerializer(
             "layout_mode": src.layout_mode,
             "background_image": _img_url(self, src.background_image),
             "background_opacity": src.background_opacity,
+            "background_shown": src.background_shown,
+            "base_map": map_data(obj, source=src),
+            "map_opacity": src.map_opacity,
+            "map_shown": src.map_shown,
+            "map_visible": map_visible(src),
             "tile_count": len(snaps.in_crop("tiles", src.tiles.all(), crop)),
             "drawing": self._view_drawing(src, crop),
         })
@@ -11206,7 +11231,7 @@ class FloorPlanSerializer(
 
     #: What a live view takes from its source.
     VIEW_FIXED = ("grid_width", "grid_height", "cell_mm", "ceiling_mm", "layout_mode",
-                  "background_opacity")
+                  "background_opacity", "background_shown", "map_opacity", "map_shown")
 
     def validate(self, attrs):
         from .floor_stacks import clash_message, location_error, name_clash, name_taken
@@ -11325,11 +11350,13 @@ class FloorPlanSerializer(
                   "slab_mm", "align_dx", "align_dy", "align_rot",
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
-                  "background_opacity", "state", "description", "tile_count",
+                  "background_opacity", "background_shown", "base_map", "map_opacity",
+                  "map_shown", "map_visible", "state", "description", "tile_count",
                   "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "elevation", "background_image",
+                            "base_map", "map_visible",
                             "tile_count", "drawing", "kind", "snapshot", "geo",
                             "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own

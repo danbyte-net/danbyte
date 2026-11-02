@@ -8,6 +8,7 @@ import { useTheme } from "@/components/theme-provider"
 import { slabOutline } from "./building-math"
 import type { LevelPlacement } from "./building-math"
 import { useCablePaths } from "./cable-trace-3d"
+import { Blueprint } from "./room"
 import { roomLook } from "./room-look"
 import { useScene } from "./use-scene"
 import { WallMesh } from "./wall-mesh"
@@ -168,6 +169,7 @@ function SimpleLevel({
   onClick: (tileId?: string) => void
 }) {
   const { plan } = scene
+  const dark = useTheme().theme === "dark"
   const boxes = useMemo(
     () =>
       scene.tiles
@@ -175,9 +177,23 @@ function SimpleLevel({
         .filter((b) => b.box && !b.t.hidden),
     [scene.tiles, plan]
   )
+  const [mapW, mapD] = cellToWorld(plan, plan.grid_width, plan.grid_height)
   return (
     <group>
       <Slab scene={scene} onClick={() => onClick()} />
+      {/* The building's base map lies on the ground level's slab (the
+          server sends it for that level only). */}
+      {plan.base_map && (
+        <Blueprint
+          url={plan.base_map}
+          w={mapW}
+          d={mapD}
+          opacity={(plan.map_opacity ?? 60) / 100}
+          muted
+          dark={dark}
+          under
+        />
+      )}
       {(scene.walls ?? []).map((w) => (
         <WallMesh
           key={w.id}

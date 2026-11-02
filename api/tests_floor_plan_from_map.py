@@ -238,7 +238,9 @@ class EndpointTests(APITestCase):
         self.assertEqual(plan.site_id, self.site.id)
         self.assertEqual((plan.grid_width, plan.grid_height, plan.cell_mm),
                          (fr.grid_width, fr.grid_height, 1000))
-        self.assertTrue(plan.background_image.name.endswith(".png"))
+        # The render is the plan's map layer; its own picture stays free.
+        self.assertTrue(plan.base_map.image.name.endswith(".png"))
+        self.assertFalse(plan.background_image)
         self.assertIn("OpenStreetMap contributors", plan.description)
         self.assertEqual(plan.state["from_map"]["zoom"], 18)
         self.assertEqual(plan.state["from_map"]["basemap"], "map")

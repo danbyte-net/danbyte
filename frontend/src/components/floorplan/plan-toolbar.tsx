@@ -166,7 +166,7 @@ export function PlanToolbar({
                 <ImageIcon /> Background
               </BarMenuTrigger>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-64 gap-3 p-3">
+            <PopoverContent align="end" className="w-72 gap-3 p-3">
               {backgroundControls}
             </PopoverContent>
           </Popover>
