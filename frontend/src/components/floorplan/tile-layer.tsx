@@ -6,7 +6,14 @@ import { tileIcon } from "@/components/object-icon"
 
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
-import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
+import type { ClusterFace } from "./icon-layout"
+import {
+  CHECK_COLOR,
+  rackFigures,
+  tileFill,
+  tilePaint,
+  tileRoleIcon,
+} from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
 /** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
@@ -880,6 +887,185 @@ export function ReadableSymbol({
           aria-hidden="true"
         />
       )}
+    </g>
+  )
+}
+
+/**
+ * Icons that would overlap folded into one (icon-layout.ts): a square in
+ * the members' shared colour with their shared icon - the stack when they
+ * differ - the count in a badge on its corner, and the worst member's
+ * monitoring state as its outline and ring. A click zooms to the members.
+ */
+export function ClusterTile({
+  id,
+  box,
+  k,
+  face,
+  onActivate,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  id: string
+  box: { x: number; y: number; w: number; h: number }
+  /** The canvas zoom: screen px per plan px. */
+  k: number
+  face: ClusterFace
+  onActivate: () => void
+  onPointerEnter?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
+}) {
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const r = Math.min(w, h) * 0.2
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const Icon = face.icon ? getLucideIcon(face.icon) : null
+  const icon = Math.min(w, h) * 0.55
+  // The count: a squarish badge over the top right corner.
+  const text = String(face.count)
+  const bh = 14 / k
+  const bw = (text.length * 6.6 + 8) / k
+  return (
+    <g
+      data-icon-cluster={id}
+      className="animate-in duration-150 fade-in"
+      role="button"
+      aria-label={`${face.name}, ${face.count} objects`}
+      tabIndex={0}
+      style={{ cursor: "zoom-in", outline: "none" }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.stopPropagation()
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onActivate()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onActivate()
+        }
+      }}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      {alarm && (
+        <rect
+          data-part="alarm"
+          x={x - 3 / k}
+          y={y - 3 / k}
+          width={w + 6 / k}
+          height={h + 6 / k}
+          rx={r + 3 / k}
+          fill="none"
+          stroke={alarm}
+          strokeOpacity={0.35}
+          strokeWidth={4 / k}
+          pointerEvents="none"
+        />
+      )}
+      {/* A second square peeking out behind: a stack, not one object. */}
+      <rect
+        x={x + 3 / k}
+        y={y - 3 / k}
+        width={w}
+        height={h}
+        rx={r}
+        fill={face.fill}
+        fillOpacity={0.45}
+        stroke="var(--background)"
+        strokeWidth={1.25 / k}
+      />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={r}
+        fill={face.fill}
+        fillOpacity={0.95}
+        stroke={alarm ?? "var(--background)"}
+        strokeWidth={(alarm ? 2 : 1.25) / k}
+      />
+      {Icon && (
+        <Icon
+          data-part="cluster-icon"
+          x={x + w / 2 - icon / 2}
+          y={y + h / 2 - icon / 2}
+          width={icon}
+          height={icon}
+          color="#ffffff"
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
+      <g data-part="cluster-count" pointerEvents="none">
+        <rect
+          x={x + w - bw * 0.6}
+          y={y - bh * 0.45}
+          width={bw}
+          height={bh}
+          rx={4 / k}
+          fill="var(--foreground)"
+          stroke="var(--background)"
+          strokeWidth={1 / k}
+        />
+        <text
+          x={x + w - bw * 0.6 + bw / 2}
+          y={y - bh * 0.45 + bh / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={10 / k}
+          fontWeight={600}
+          fill="var(--background)"
+        >
+          {text}
+        </text>
+      </g>
+    </g>
+  )
+}
+
+/** Where a spread icon really is: a thin leader from its drawn centre
+ * (cells) back to its true centre, and a dot there. */
+export function IconLeader({
+  from,
+  to,
+  k,
+}: {
+  from: readonly [number, number]
+  to: readonly [number, number]
+  k: number
+}) {
+  return (
+    <g
+      data-icon-leader=""
+      pointerEvents="none"
+      className="animate-in duration-200 fade-in"
+    >
+      <line
+        x1={from[0] * CELL}
+        y1={from[1] * CELL}
+        x2={to[0] * CELL}
+        y2={to[1] * CELL}
+        className="stroke-muted-foreground"
+        strokeOpacity={0.7}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle
+        cx={to[0] * CELL}
+        cy={to[1] * CELL}
+        r={2.5 / k}
+        className="fill-muted-foreground"
+        stroke="var(--background)"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
     </g>
   )
 }

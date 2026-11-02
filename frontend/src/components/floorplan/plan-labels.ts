@@ -111,6 +111,9 @@ export interface LabelRequest<T> {
   spots: LabelSpot<T>[]
   /** Kept clear when it can be (an area's name off its racks). */
   avoid?: readonly Box[]
+  /** Never placed over these (an icon's name off the other icons): a spot
+   * that hits one is no spot, forced or not. */
+  block?: { free: (b: Box) => boolean }
 }
 
 /** Place the requests, highest ranked first, each at its first free spot.
@@ -124,14 +127,17 @@ export function placeLabels<T>(
     .sort((a, b) => b.r.priority - a.r.priority || a.i - b.i)
   const out = new Map<string, LabelSpot<T>>()
   for (const { r } of order) {
-    if (!r.spots.length) continue
+    const spots = r.block
+      ? r.spots.filter((s) => r.block!.free(s.box))
+      : r.spots
+    if (!spots.length && !(r.force && r.spots.length)) continue
     let pick: LabelSpot<T> | undefined
     if (r.avoid?.length)
-      pick = r.spots.find(
+      pick = spots.find(
         (s) => occ.free(s.box) && !r.avoid!.some((a) => boxesHit(s.box, a))
       )
-    pick ??= r.spots.find((s) => occ.free(s.box))
-    if (!pick && r.force) pick = r.spots[0]
+    pick ??= spots.find((s) => occ.free(s.box))
+    if (!pick && r.force) pick = spots[0] ?? r.spots[0]
     if (!pick) continue
     occ.add(pick.box)
     out.set(r.id, pick)
@@ -440,6 +446,43 @@ export function besideSpots(
       [cx, y0 - gap - h / 2],
       [x1 + gap + w / 2, cy],
       [x0 - gap - w / 2, cy],
+    ] as [number, number][]
+  ).map(([x, y]) => ({
+    box: { x: x - w / 2, y: y - h / 2, w, h },
+    data: { at: [x / scale, y / scale] as Pt },
+  }))
+}
+
+/** The places a name may go round an icon `rect` (cells), best first:
+ * right, left, below, above, then the four corners. Data: the name's
+ * centre (cells). */
+export function aroundSpots(
+  rect: Box,
+  size: { w: number; h: number },
+  gap: number,
+  scale: number
+): LabelSpot<{ at: Pt }>[] {
+  const { w, h } = size
+  const x0 = rect.x * scale
+  const y0 = rect.y * scale
+  const x1 = (rect.x + rect.w) * scale
+  const y1 = (rect.y + rect.h) * scale
+  const cx = (x0 + x1) / 2
+  const cy = (y0 + y1) / 2
+  const right = x1 + gap + w / 2
+  const left = x0 - gap - w / 2
+  const below = y1 + gap + h / 2
+  const above = y0 - gap - h / 2
+  return (
+    [
+      [right, cy],
+      [left, cy],
+      [cx, below],
+      [cx, above],
+      [right, below],
+      [left, below],
+      [right, above],
+      [left, above],
     ] as [number, number][]
   ).map(([x, y]) => ({
     box: { x: x - w / 2, y: y - h / 2, w, h },
