@@ -16,7 +16,7 @@ import {
 } from "./cable-draw"
 import { CableLayer } from "./cable-layer"
 import type { Pt } from "./cable-route"
-import { layoutPlanLabels } from "./plan-label-pass"
+import { layoutPlanLabels, preferInside } from "./plan-label-pass"
 import type { PlanLabelInput } from "./plan-label-pass"
 import {
   Occupancy,
@@ -523,5 +523,75 @@ describe("the canvas and the export", () => {
     expect(name.getAttribute("transform")).toBe(
       `translate(${+(first.at[0] * 40).toFixed(2)},${+(first.at[1] * 40).toFixed(2)})`
     )
+  })
+})
+
+describe("names by the plan's edge", () => {
+  const spot = (x: number, y: number, id: string) => ({
+    box: { x, y, w: 20, h: 10 },
+    data: id,
+  })
+  const bounds = { x: 0, y: 0, w: 100, h: 100 }
+  const view = { x: -50, y: -50, w: 200, h: 200 }
+
+  it("go inside first, in their own order", () => {
+    const out = preferInside(
+      [spot(-15, 0, "out"), spot(10, 0, "in1"), spot(30, 0, "in2")],
+      bounds,
+      view
+    )
+    expect(out.map((s) => s.data)).toEqual(["in1", "in2", "out"])
+  })
+
+  it("never off-screen while a spot on screen exists", () => {
+    const out = preferInside(
+      [spot(-80, 0, "off"), spot(-15, 0, "out")],
+      bounds,
+      view
+    )
+    expect(out.map((s) => s.data)).toEqual(["out"])
+  })
+
+  it("only inside on paper", () => {
+    const out = preferInside(
+      [spot(-15, 0, "out"), spot(10, 0, "in")],
+      bounds,
+      null,
+      true
+    )
+    expect(out.map((s) => s.data)).toEqual(["in"])
+  })
+
+  it("place an icon's name inside the plan where one fits", () => {
+    // An icon by the left edge: its name never goes past it.
+    const t = {
+      id: "a",
+      x: 0,
+      y: 5,
+      width: 1,
+      height: 1,
+      orientation: 0,
+      tile_type: null,
+      role_type: null,
+      label: "",
+      linked: { kind: "rack", id: "r", name: "R-A03", route: "/r" },
+    } as never
+    const scale = 10
+    const box = { x: 0, y: 4.1, w: 2.8, h: 2.8 }
+    const labels = layoutPlanLabels({
+      scale,
+      unitsPerPx: 0.25,
+      font: 11,
+      chipFont: 10,
+      repeat: 400,
+      gap: 4,
+      bounds: { x: 0, y: 0, w: 200, h: 200 },
+      tiles: [t],
+      shapeOf: () => ({ box, grow: 2.8, changed: true, symbol: true }),
+      iconIds: new Set(["a"]),
+      cellMm: 600,
+    })
+    expect(labels.tiles.map((l) => l.id)).toEqual(["a"])
+    expect(labels.taken.every((b) => b.x >= 0 && b.y >= 0)).toBe(true)
   })
 })

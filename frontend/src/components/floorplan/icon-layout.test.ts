@@ -175,6 +175,52 @@ describe("layoutIcons: spread", () => {
   })
 })
 
+describe("layoutIcons: bounds", () => {
+  // A small plan: 4 x 4 cells at 10 units per cell - 40 units, a side
+  // and a half of room.
+  const bounds = { x: 0, y: 0, w: 40 * 2, h: 40 * 2 }
+  const inside = (d: { c: Pt; side: number }) =>
+    d.c[0] - d.side / 2 >= bounds.x - 1e-6 &&
+    d.c[1] - d.side / 2 >= bounds.y - 1e-6 &&
+    d.c[0] + d.side / 2 <= bounds.x + bounds.w + 1e-6 &&
+    d.c[1] + d.side / 2 <= bounds.y + bounds.h + 1e-6
+
+  it("spreads icons by the edge inward, not past it", () => {
+    // Two racks on the left edge: an unbounded spread pushes one out.
+    const its = items([
+      [0.5, 3],
+      [1, 3],
+    ])
+    const free = layoutIcons(its, 20, { side: S })
+    expect(drawn(its, free, 20).every(inside)).toBe(false)
+    const l = layoutIcons(its, 20, { side: S, bounds })
+    expect(l.clusters).toHaveLength(0)
+    const d = drawn(its, l, 20)
+    expect(overlaps(d)).toBe(0)
+    expect(d.every(inside)).toBe(true)
+  })
+
+  it("brings a lone icon over the edge inside", () => {
+    const its = items([[0.2, 2]])
+    const l = layoutIcons(its, 20, { side: S, bounds })
+    expect(drawn(its, l, 20).every(inside)).toBe(true)
+  })
+
+  it("spills past the edge only when nothing fits inside", () => {
+    // Room for one icon: two cannot both fit inside.
+    const tiny = { x: 0, y: 0, w: 40, h: 40 }
+    const its = items([
+      [1, 1],
+      [1.2, 1],
+    ])
+    const l = layoutIcons(its, 20, { side: S, bounds: tiny })
+    expect(l.clusters).toHaveLength(0)
+    const d = drawn(its, l, 20)
+    expect(overlaps(d)).toBe(0)
+    expect(d.some((x) => x.c[0] + x.side / 2 > tiny.w + 1e-6)).toBe(true)
+  })
+})
+
 describe("layoutIcons: hysteresis", () => {
   it("holds a cluster together a little past where it formed", () => {
     // Eight in a row: clustered at a tight spacing.

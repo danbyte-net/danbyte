@@ -29,37 +29,41 @@ class AuditSiteBackfillMigrationTests(TransactionTestCase):
         super().setUp()
         executor = MigrationExecutor(connection)
         executor.migrate([self.migrate_from])
-        old_apps = executor.loader.project_state([self.migrate_from]).apps
+        # The state of everything still applied, not just audit's ancestors:
+        # the fixtures below need core and api models as they are now.
+        rolled_back = MigrationExecutor(connection)
+        old_apps = rolled_back.loader.project_state(
+            list(rolled_back.loader.applied_migrations)
+        ).apps
 
-        # The audit table is rolled back to 0006 here, but these fixture
-        # creates run the LIVE signal, whose model writes columns added by
-        # later migrations (e.g. 0010's `via`). Suspend capture - the test
-        # seeds its own old-schema entries below.
-        from .context import suspended
-
-        with suspended():
-            org = Organization.objects.create(
-                name="Migration Org", slug="migration-org"
-            )
-            self.tenant = Tenant.objects.create(
-                org=org, name="Migration Tenant", slug="migration-tenant"
-            )
-            self.site = Site.objects.create(
-                tenant=self.tenant, name="Migration Site"
-            )
-            DeploymentSettings.objects.update_or_create(
-                pk=1, defaults={"enhanced_site_separation": False}
-            )
-            TenantSettings.objects.create(
-                tenant=self.tenant,
-                override_separation=True,
-                enhanced_site_separation=True,
-            )
-            device_type = DeviceType.objects.create(
-                tenant=self.tenant,
-                name="Local catalog",
-                owning_site=self.site,
-            )
+        # Rolling audit back to 0006 also unapplies the later migrations of
+        # other apps that depend on it, so the fixtures are written through
+        # the 0006-state models: the live ones would write columns (and fire
+        # signals) from migrations that aren't applied at this point.
+        OldOrg = old_apps.get_model("core", "Organization")
+        OldTenant = old_apps.get_model("core", "Tenant")
+        OldSite = old_apps.get_model("api", "Site")
+        OldDeployment = old_apps.get_model("core", "DeploymentSettings")
+        OldTenantSettings = old_apps.get_model("core", "TenantSettings")
+        OldDeviceType = old_apps.get_model("api", "DeviceType")
+        org = OldOrg.objects.create(name="Migration Org", slug="migration-org")
+        self.tenant = OldTenant.objects.create(
+            org=org, name="Migration Tenant", slug="migration-tenant"
+        )
+        self.site = OldSite.objects.create(tenant=self.tenant, name="Migration Site")
+        OldDeployment.objects.update_or_create(
+            pk=1, defaults={"enhanced_site_separation": False}
+        )
+        OldTenantSettings.objects.create(
+            tenant=self.tenant,
+            override_separation=True,
+            enhanced_site_separation=True,
+        )
+        device_type = OldDeviceType.objects.create(
+            tenant=self.tenant,
+            name="Local catalog",
+            owning_site=self.site,
+        )
 
         OldChange = old_apps.get_model("audit", "ChangeLogEntry")
         OldJournal = old_apps.get_model("audit", "JournalEntry")
@@ -82,7 +86,7 @@ class AuditSiteBackfillMigrationTests(TransactionTestCase):
             object_type="api.devicetype",
             object_label="Device Type",
             object_id=str(device_type.id),
-            object_repr=str(device_type),
+            object_repr=device_type.name,
             changes={},
         ).pk
         self.deleted_journal_id = OldJournal.objects.create(

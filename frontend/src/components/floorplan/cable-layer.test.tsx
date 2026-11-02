@@ -133,9 +133,12 @@ describe("CableLayer level of detail", () => {
     expect(casing).toHaveLength(3)
     expect(casing[0].getAttribute("stroke")).toBe("var(--background)")
 
-    const off = render(layer(0.6, { showLabels: false }))
-    const bundle = off.container.querySelector("[data-bundle]")!
-    fireEvent.pointerDown(bundle)
+    // A click on the bundle (one hit-test: the pick layer), no chooser.
+    const off = render(
+      layer(0.6, { showLabels: false, toPlan: (): Pt => [5, 2] })
+    )
+    expect(off.container.querySelector("[data-bundle]")).not.toBeNull()
+    fireEvent.pointerDown(off.container.querySelector("[data-part=pick]")!)
     expect(off.container.querySelector("[data-bundle]")).toBeNull()
     expect(off.container.querySelectorAll("[data-cable]")).toHaveLength(3)
   })
@@ -143,7 +146,9 @@ describe("CableLayer level of detail", () => {
   it("keeps every stroke its width on screen at any zoom", () => {
     const { container } = render(layer(2))
     const strokes = [...container.querySelectorAll("path")].filter(
-      (p) => p.getAttribute("stroke") !== "transparent"
+      (p) =>
+        p.getAttribute("stroke") !== "transparent" &&
+        !p.closest("[data-part=pick]")
     )
     expect(strokes.length).toBeGreaterThan(0)
     for (const p of strokes)

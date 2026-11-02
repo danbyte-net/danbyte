@@ -17,7 +17,7 @@ import { modelRotation } from "./world"
  */
 
 /** Studio light from three's procedural room: no files, airgap-safe. */
-function Studio() {
+export function Studio() {
   const gl = useThree((s) => s.gl)
   const scene = useThree((s) => s.scene)
   useEffect(() => {

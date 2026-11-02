@@ -52,11 +52,14 @@ import {
   clusterFace,
   clusterFitView,
   drawnCentre,
+  keepBoxOf,
   layoutIcons,
   pullOut,
+  scaleBox,
   squareAt,
   zoomBucket,
 } from "./icon-layout"
+import { AreaMask } from "./area-mask"
 import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
 import {
   ICON_TILE_EXIT_PX,
@@ -69,6 +72,7 @@ import {
   readableHit,
   readableOrder,
   readableShape,
+  splitGrown,
 } from "./readable"
 import { MuteFilter, muteFilterId } from "./background-look"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
@@ -97,6 +101,7 @@ import {
   boxBounds,
   byZ,
   labelBox,
+  opensLink as opensLabel,
   opensName,
   pointInBox,
   pointInPolygon,
@@ -105,7 +110,7 @@ import {
   tileBox,
   tileQuarter,
 } from "./shapes"
-import type { PlanShape } from "./shapes"
+import type { LabelShape, PlanShape } from "./shapes"
 import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
@@ -377,8 +382,14 @@ export interface FloorCanvasProps {
   /** Rows shown but not editable here: on a live view, the ones crossing
    * its edge. Dimmed and inert while editing. */
   lockedIds?: ReadonlySet<string>
-  /** Clip everything to the grid (a live view's objects run past it). */
+  /** Clip everything to the grid (a live view's objects run past it).
+   * The screen-size overlays - grown symbols, icon tiles, their names -
+   * are never clipped. */
   clipToGrid?: boolean
+  /** A live view's room (cells): everything outside it dimmed. The
+   * screen-size overlays draw over the dimming and keep inside it where
+   * they can. */
+  maskOutline?: [number, number][] | null
   /** Where the background image spans, in cells, when it is not the grid
    * (a live view shows its part of the source's image). */
   backgroundFrame?: {
@@ -581,6 +592,7 @@ export function FloorCanvas({
   onSnapshotShape,
   lockedIds,
   clipToGrid = false,
+  maskOutline = null,
   backgroundFrame = null,
   onSelectShape,
   onChangeShape,
@@ -689,22 +701,33 @@ export function FloorCanvas({
   // bucket, so a pan never moves them; the last layout holds clusters a
   // little longer (hysteresis). The selection never joins a cluster.
   const layoutK = zoomBucket(settledView.k)
+  // Where the overlays keep (cells): the room of a live view, else the
+  // grid - inside first, past the edge only when nothing fits.
+  const keepBox = useMemo(
+    () => keepBoxOf(plan.grid_width, plan.grid_height, maskOutline),
+    [plan.grid_width, plan.grid_height, maskOutline]
+  )
   const lastIconLayout = useRef<IconLayout>(EMPTY_ICON_LAYOUT)
   const baseIconLayout = useMemo(() => {
-    if (iconIds.size < 2) return EMPTY_ICON_LAYOUT
+    if (iconIds.size < 1) return EMPTY_ICON_LAYOUT
     const items = tiles
       .filter((tl) => iconIds.has(tl.id))
       .map((tl) => ({
         id: tl.id,
         c: [tl.x + tl.width / 2, tl.y + tl.height / 2] as Pt,
       }))
+    const scale = CELL * layoutK
     return layoutIcons(
       items,
-      CELL * layoutK,
-      { side: READABLE_SYMBOL_PX, prev: lastIconLayout.current },
+      scale,
+      {
+        side: READABLE_SYMBOL_PX,
+        prev: lastIconLayout.current,
+        bounds: scaleBox(keepBox, scale),
+      },
       pinnedNames
     )
-  }, [iconIds, tiles, layoutK, pinnedNames])
+  }, [iconIds, tiles, layoutK, pinnedNames, keepBox])
   useEffect(() => {
     lastIconLayout.current = baseIconLayout
   }, [baseIconLayout])
@@ -815,13 +838,29 @@ export function FloorCanvas({
   /** Several cables under one click: ask which (the chooser), no hover
    * popover over it. */
   const chooseCables = useCallback(
-    (ids: string[], at: CablePickAt, title?: string) => {
+    (ids: string[], at: CablePickAt, title?: string, ordered?: boolean) => {
       cableProps.current.onHoverCable?.(null, null)
       setChooserSolo(null)
-      setChooser({ x: at.x, y: at.y, ids, title })
+      setChooser({ x: at.x, y: at.y, ids, title, ordered })
     },
     []
   )
+  /** The cables under a click on the plan, nearest first (cable-pick.ts). */
+  const choosePicked = useCallback(
+    (ids: string[], at: CablePickAt) => chooseCables(ids, at, undefined, true),
+    [chooseCables]
+  )
+  /** A client point on the plan, in cells - for the cable layer's pick. */
+  const clientToCell = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    const tt = tNow.current
+    return [
+      (clientX - rect.left - tt.x) / tt.k / CELL,
+      (clientY - rect.top - tt.y) / tt.k / CELL,
+    ] as Pt
+  }, [])
   // The hovered run's ids, for the label pass: its name and its ends.
   const [hoveredCables, setHoveredCables] = useState<readonly string[]>(NO_IDS)
   const hoverCable = useCallback(
@@ -954,6 +993,11 @@ export function FloorCanvas({
               h: settledView.h,
             }
           : null,
+      bounds: scaleBox(keepBox, scale),
+      clip: scaleBox(
+        { x: 0, y: 0, w: plan.grid_width, h: plan.grid_height },
+        scale
+      ),
       tiles,
       shapeOf: shapeAt(scale),
       iconIds,
@@ -1001,6 +1045,9 @@ export function FloorCanvas({
     })
   }, [
     settledView,
+    keepBox,
+    plan.grid_width,
+    plan.grid_height,
     tiles,
     readable,
     shapeAt,
@@ -1755,6 +1802,39 @@ export function FloorCanvas({
     )
   }
 
+  const gridClipId = `fp-grid-clip-${plan.id}`
+  // The tiles but zones and icons, in drawing order: at their real size
+  // (clipped with the plan) and grown (Readable, in the overlays).
+  const solidTiles = (() => {
+    const ordered = readableOrder(
+      free
+        ? tiles
+            .filter((tl) => !tileIsZone(tl))
+            .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
+        : tiles.filter((tl) => !tileIsZone(tl)),
+      shapeOf ? pxPerCell : null,
+      pinnedNames,
+      undefined,
+      shapeOf ?? undefined
+    ).filter((tl) => !iconIds.has(tl.id))
+    return splitGrown(ordered, shapeOf)
+  })()
+
+  /** One label on the plan. */
+  const renderLabel = (l: LabelShape) => (
+    <LabelShapeView
+      key={l.id}
+      label={l}
+      cellMm={plan.cell_mm}
+      minFontPx={readable ? READABLE_FONT_PX : undefined}
+      zoom={t.k}
+      // View: a label takes the pointer only to open its link.
+      interactive={shapesLive && (editable ? !isLocked(l.id) : opensLabel(l))}
+      viewing={!editable}
+      onPointerDown={(e) => shapeG.shapeDown(l, e)}
+    />
+  )
+
   /** One tile on the plan. */
   const renderTile = (tile: FloorPlanTile) => {
     // A free plan draws a tile turned by what its angle has beyond
@@ -2020,14 +2100,14 @@ export function FloorCanvas({
         </defs>
         {clipToGrid && (
           <defs>
-            <clipPath id={`fp-grid-clip-${plan.id}`}>
+            <clipPath id={gridClipId}>
               <rect width={gw} height={gh} />
             </clipPath>
           </defs>
         )}
         <g
           transform={`translate(${t.x},${t.y}) scale(${t.k})`}
-          clipPath={clipToGrid ? `url(#fp-grid-clip-${plan.id})` : undefined}
+          clipPath={clipToGrid ? `url(#${gridClipId})` : undefined}
         >
           {/* Floor surface */}
           <rect width={gw} height={gh} className="fill-muted/30" rx={4} />
@@ -2170,21 +2250,8 @@ export function FloorCanvas({
             ))}
           </g>
           {/* On a free plan tiles may overlap: their z says which is on
-              top. Readable draws the grown symbols over the rest, the
-              selection last. */}
-          {readableOrder(
-            free
-              ? tiles
-                  .filter((tl) => !tileIsZone(tl))
-                  .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
-              : tiles.filter((tl) => !tileIsZone(tl)),
-            shapeOf ? pxPerCell : null,
-            pinnedNames,
-            undefined,
-            shapeOf ?? undefined
-          )
-            .filter((tl) => !iconIds.has(tl.id))
-            .map(renderTile)}
+              top. Readable's grown symbols draw in the overlays. */}
+          {solidTiles.real.map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
               the whole symbol instead. */}
@@ -2318,14 +2385,37 @@ export function FloorCanvas({
               interactive={!trayPick}
               onSelect={selectCable}
               onHover={hoverCable}
-              onChoose={chooseCables}
+              onChoose={choosePicked}
               soloId={chooser ? chooserSolo : null}
+              toPlan={clientToCell}
               previews={cablePreviews}
               stubs={shownStubs}
               tiles={tiles}
               shapeOf={shapeOf}
             />
           )}
+
+          {/* A live view's room: the rest dimmed - over the plan, under
+              the overlays. */}
+          {maskOutline && (
+            <AreaMask
+              outline={maskOutline}
+              width={plan.grid_width}
+              height={plan.grid_height}
+            />
+          )}
+        </g>
+
+        {/* Screen-size overlays: grown symbols, icon tiles, the label
+            pass's names and the labels that open a link. Over the plan's
+            surround and a live view's dimming, never clipped to the grid -
+            the layout keeps them inside where it can. */}
+        <g
+          data-layer="overlays"
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+        >
+          {/* Readable: the grown symbols, the selection last. */}
+          <g data-layer="grown-tiles">{solidTiles.over.map(renderTile)}</g>
 
           {/* Icons when zoomed out: over the trays and the cables that
               end on them - their leaders, the icons (the selection last)
@@ -2386,26 +2476,28 @@ export function FloorCanvas({
               names - one pass, the cables first (plan-label-pass.ts). */}
           <PlanLabelsLayer labels={planLabels} k={t.k} trays={trays} />
 
-          {/* Labels - over the tiles, so "North side" reads over a row. */}
+          {/* Labels - over the tiles, so "North side" reads over a row.
+              Clipped to the grid as the plan is, but for one that opens a
+              link (a back label): never covered or cut. */}
           <g data-layer="labels">
-            {labels.map((l) => (
-              <LabelShapeView
-                key={l.id}
-                label={l}
-                cellMm={plan.cell_mm}
-                minFontPx={readable ? READABLE_FONT_PX : undefined}
-                zoom={t.k}
-                // View: a label takes the pointer only to open its link.
-                interactive={
-                  shapesLive &&
-                  (editable ? !isLocked(l.id) : !!(l.opens || l.opens_hidden))
-                }
-                viewing={!editable}
-                onPointerDown={(e) => shapeG.shapeDown(l, e)}
-              />
-            ))}
+            {labels.map((l) =>
+              clipToGrid && !opensLabel(l) ? (
+                <g key={l.id} clipPath={`url(#${gridClipId})`}>
+                  {renderLabel(l)}
+                </g>
+              ) : (
+                renderLabel(l)
+              )
+            )}
           </g>
+        </g>
 
+        {/* Editing on top: handles, previews, calibration marks. */}
+        <g
+          data-layer="edit-overlay"
+          transform={`translate(${t.x},${t.y}) scale(${t.k})`}
+          clipPath={clipToGrid ? `url(#${gridClipId})` : undefined}
+        >
           {/* The selection's handles: a box (area, label, free tile) turns
               and resizes; a polygon drags its points. */}
           {editable &&

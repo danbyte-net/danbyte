@@ -1,0 +1,832 @@
+{
+ "plan": {
+  "id": "2f0d3807-f37d-4992-b1b4-c27d59e28aa8",
+  "name": "testmap",
+  "grid_width": 512,
+  "grid_height": 266,
+  "cell_mm": 1187,
+  "ceiling_mm": 3000,
+  "layout_mode": "free"
+ },
+ "tiles": [
+  {
+   "id": "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125",
+   "x": 208.34,
+   "y": 123.434,
+   "width": 5.66,
+   "height": 0.566,
+   "orientation": 0,
+   "label": ""
+  },
+  {
+   "id": "f13f94e6-8446-4c71-a50a-bc374d8ffecf",
+   "x": 206.0,
+   "y": 125.232,
+   "width": 1.0,
+   "height": 1.0,
+   "orientation": 0,
+   "label": ""
+  },
+  {
+   "id": "ad05f436-fcfb-4622-b03d-4f5852906f9f",
+   "x": 208.85,
+   "y": 126.232,
+   "width": 1.0,
+   "height": 1.0,
+   "orientation": 0,
+   "label": ""
+  },
+  {
+   "id": "a0a2f28a-7aba-4b82-93c0-057fc8922912",
+   "x": 211.86,
+   "y": 126.5,
+   "width": 1.0,
+   "height": 1.0,
+   "orientation": 0,
+   "label": ""
+  },
+  {
+   "id": "3b6ad8d1-e881-4c76-ad44-9c192e061bcc",
+   "x": 183.0,
+   "y": 133.0,
+   "width": 1.0,
+   "height": 1.0,
+   "orientation": 0,
+   "label": ""
+  },
+  {
+   "id": "c07f4862-0e92-4205-bf47-5d1aa642b046",
+   "x": 242.0,
+   "y": 148.0,
+   "width": 1.0,
+   "height": 1.0,
+   "orientation": 0,
+   "label": ""
+  }
+ ],
+ "trays": [
+  {
+   "id": "3a9d9c52-b777-4351-80d8-1bab12fb1686",
+   "name": "xzx",
+   "kind": "",
+   "color": "#71717a",
+   "points": [
+    [
+     50.5,
+     60.0
+    ],
+    [
+     48.5,
+     92.0
+    ],
+    [
+     93.0,
+     85.0
+    ],
+    [
+     110.5,
+     59.0
+    ],
+    [
+     133.5,
+     57.5
+    ]
+   ],
+   "level": "underfloor",
+   "elevation_mm": null,
+   "capacity": null,
+   "description": "",
+   "cables": [
+    {
+     "id": "fc14cb04-8fe1-4fc2-8b26-73ff9053ff6a",
+     "numid": 1270,
+     "label": "Cable #1270",
+     "type": "cat5",
+     "color": ""
+    },
+    {
+     "id": "2073f6c9-7613-4ca5-a4b9-4c0d7cd37fe1",
+     "numid": 1268,
+     "label": "Cable #1268",
+     "type": "cat6",
+     "color": ""
+    }
+   ],
+   "hidden_cable_count": 0,
+   "created_at": "2026-10-30T20:34:44.667722Z",
+   "updated_at": "2026-10-30T20:35:07.707929Z"
+  }
+ ],
+ "cables": [
+  {
+   "id": "8f564da6-6c98-480b-a0b2-d8d3a7f1d991",
+   "label": "AALBORG-UP1",
+   "color": "#f59e0b",
+   "type": "mmf-om4",
+   "type_display": "Multimode Fiber (OM4)",
+   "status": {
+    "id": "7b84011b-2296-42bb-8275-29b5a9144b33",
+    "name": "Active",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/1",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "7453c141-4fa4-4663-a52b-1e6ad8bb6e0a",
+     "port": "Te1/1/1",
+     "device_name": "aalborg-asw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "rack",
+      "id": "2900b489-5943-43c8-b565-d1007f2dbfaa"
+     }
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "15a6e5cc-ffa6-477d-88ed-18dd85fb6be4",
+   "label": "Cable #45",
+   "color": "",
+   "type": "",
+   "type_display": "",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/2",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "67a80936-8f38-469d-9ada-5395dc5ef364",
+     "port": "Ethernet1/14",
+     "device_name": "kbh-core1",
+     "floor_plan": null,
+     "place": null
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "51f24d59-4be4-43be-a4e9-a4e1ad8c1960",
+   "label": "BREAKOUT-DEMO",
+   "color": "#c026d3",
+   "type": "mmf-om4",
+   "type_display": "Multimode Fiber (OM4)",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/4",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "a1320f76-94c2-4ed3-aad7-2831873d501a",
+     "port": "eno2",
+     "device_name": "aalborg-srv1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "a1320f76-94c2-4ed3-aad7-2831873d501a"
+     }
+    },
+    {
+     "device": "a1320f76-94c2-4ed3-aad7-2831873d501a",
+     "port": "eno3",
+     "device_name": "aalborg-srv1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "a1320f76-94c2-4ed3-aad7-2831873d501a"
+     }
+    },
+    {
+     "device": "a1320f76-94c2-4ed3-aad7-2831873d501a",
+     "port": "eno4",
+     "device_name": "aalborg-srv1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "a1320f76-94c2-4ed3-aad7-2831873d501a"
+     }
+    },
+    {
+     "device": "a1320f76-94c2-4ed3-aad7-2831873d501a",
+     "port": "idrac",
+     "device_name": "aalborg-srv1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "a1320f76-94c2-4ed3-aad7-2831873d501a"
+     }
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "2da1b108-1aab-4c85-a812-e2b5e5b9fbc2",
+   "label": "TEST",
+   "color": "#f43f5e",
+   "type": "cat5e",
+   "type_display": "CAT5e",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": 12.0,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/6",
+     "device_name": "aalborg-core1"
+    },
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/3",
+     "device_name": "aalborg-core1"
+    },
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/7",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [
+    {
+     "device": "8d63e2cb-7feb-4370-a504-37a38d428570",
+     "port": "Gi1/0/3",
+     "device_name": "aarhus-asw1",
+     "floor_plan": null,
+     "place": null
+    },
+    {
+     "device": "8d63e2cb-7feb-4370-a504-37a38d428570",
+     "port": "Gi1/0/4",
+     "device_name": "aarhus-asw1",
+     "floor_plan": null,
+     "place": null
+    }
+   ],
+   "b_far": [
+    {
+     "device": "50ca7bd9-5677-4dc9-bcf0-5ea08b9e9e76",
+     "port": "ethernet1/4",
+     "device_name": "aarhus-fw1",
+     "floor_plan": null,
+     "place": null
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "ed69146e-b3d5-41f6-b557-a6e02f51a537",
+   "label": "zz15-coax",
+   "color": "",
+   "type": "lmr-400",
+   "type_display": "LMR-400",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [],
+   "b_tiles": [
+    "f13f94e6-8446-4c71-a50a-bc374d8ffecf"
+   ],
+   "a_points": [],
+   "b_points": [
+    {
+     "device": "7734ee31-a6cf-4bef-b070-8bf8e2f07d26",
+     "port": "N1",
+     "device_name": "zz15-sector-1"
+    }
+   ],
+   "a_far": [
+    {
+     "device": "ac45f26b-33e9-4e8a-936e-4463db817f13",
+     "port": "RF1",
+     "device_name": "zz15-ap-1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "ac45f26b-33e9-4e8a-936e-4463db817f13"
+     }
+    }
+   ],
+   "b_far": [],
+   "tray_ids": []
+  },
+  {
+   "id": "c6b3478a-0158-448d-b6ed-ee1555ff1fed",
+   "label": "aalborg-sw1 uplink 1",
+   "color": "",
+   "type": "1000base-t",
+   "type_display": "1000base-t",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1",
+     "port": "Gi1/0/1",
+     "device_name": "aalborg-sw1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "82648bc7-2116-4bfc-aa0d-f368c0106e50",
+     "port": "ethernet1/1",
+     "device_name": "aalborg-fw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "82648bc7-2116-4bfc-aa0d-f368c0106e50"
+     }
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "1b21b67a-a23e-46dd-a82a-e8ec94a1790e",
+   "label": "aalborg-sw1 uplink 2",
+   "color": "",
+   "type": "1000base-t",
+   "type_display": "1000base-t",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1",
+     "port": "Gi1/0/2",
+     "device_name": "aalborg-sw1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "82648bc7-2116-4bfc-aa0d-f368c0106e50",
+     "port": "ethernet1/2",
+     "device_name": "aalborg-fw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "82648bc7-2116-4bfc-aa0d-f368c0106e50"
+     }
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "2b501050-1721-4269-a8ff-6d2fed0c67f5",
+   "label": "Cable #83",
+   "color": "",
+   "type": "",
+   "type_display": "",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125"
+   ],
+   "b_tiles": [],
+   "a_points": [
+    {
+     "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1",
+     "port": "Gi1/0/3",
+     "device_name": "aalborg-sw1"
+    }
+   ],
+   "b_points": [],
+   "a_far": [],
+   "b_far": [
+    {
+     "device": "82648bc7-2116-4bfc-aa0d-f368c0106e50",
+     "port": "ethernet1/3",
+     "device_name": "aalborg-fw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "device",
+      "id": "82648bc7-2116-4bfc-aa0d-f368c0106e50"
+     }
+    }
+   ],
+   "tray_ids": []
+  },
+  {
+   "id": "2073f6c9-7613-4ca5-a4b9-4c0d7cd37fe1",
+   "label": "Cable #1268",
+   "color": "",
+   "type": "cat6",
+   "type_display": "CAT6",
+   "status": null,
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [],
+   "b_tiles": [],
+   "a_points": [],
+   "b_points": [],
+   "a_far": [
+    {
+     "device": "1a84f201-e467-43b7-b90d-82d1f671d0c1",
+     "port": "P5",
+     "device_name": "k1-sw01",
+     "floor_plan": null,
+     "place": null
+    }
+   ],
+   "b_far": [
+    {
+     "device": "55270dea-a991-404c-a137-0b61b4d89316",
+     "port": "P5",
+     "device_name": "k1-sw04",
+     "floor_plan": null,
+     "place": null
+    }
+   ],
+   "tray_ids": [
+    "3a9d9c52-b777-4351-80d8-1bab12fb1686"
+   ]
+  },
+  {
+   "id": "cb069c12-70a6-4347-9c10-c817c814cd56",
+   "label": "Cable #1269",
+   "color": "",
+   "type": "cat5",
+   "type_display": "CAT5",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [],
+   "b_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "a_points": [],
+   "b_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/32",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "a_far": [
+    {
+     "device": "7453c141-4fa4-4663-a52b-1e6ad8bb6e0a",
+     "port": "Gi1/0/36",
+     "device_name": "aalborg-asw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "rack",
+      "id": "2900b489-5943-43c8-b565-d1007f2dbfaa"
+     }
+    }
+   ],
+   "b_far": [],
+   "tray_ids": []
+  },
+  {
+   "id": "fc14cb04-8fe1-4fc2-8b26-73ff9053ff6a",
+   "label": "Cable #1270",
+   "color": "",
+   "type": "cat5",
+   "type_display": "CAT5",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": null,
+   "length_unit": "m",
+   "length_source": "",
+   "path": null,
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [],
+   "b_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "a_points": [],
+   "b_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/33",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "a_far": [
+    {
+     "device": "7453c141-4fa4-4663-a52b-1e6ad8bb6e0a",
+     "port": "Gi1/0/37",
+     "device_name": "aalborg-asw1",
+     "floor_plan": null,
+     "place": {
+      "kind": "rack",
+      "id": "2900b489-5943-43c8-b565-d1007f2dbfaa"
+     }
+    }
+   ],
+   "b_far": [],
+   "tray_ids": [
+    "3a9d9c52-b777-4351-80d8-1bab12fb1686"
+   ]
+  },
+  {
+   "id": "df9b4644-10de-462c-bcd5-01461cc1d9ed",
+   "label": "Cable #1271",
+   "color": "#3b82f6",
+   "type": "",
+   "type_display": "",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": 20.0,
+   "length_unit": "m",
+   "length_source": "",
+   "path": {
+    "id": "5a6ab4d2-cb65-4ca9-b149-184cf17b2403",
+    "kind": "direct",
+    "legs": [
+     {
+      "to": {
+       "at": [
+        211.17,
+        123.717
+       ],
+       "end": "B",
+       "tile": "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125",
+       "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1"
+      },
+      "from": {
+       "at": [
+        242.5,
+        148.5
+       ],
+       "end": "A",
+       "tile": "c07f4862-0e92-4205-bf47-5d1aa642b046",
+       "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318"
+      },
+      "trays": [],
+      "points": [
+       [
+        242.5,
+        148.5
+       ],
+       [
+        211.17,
+        148.5
+       ],
+       [
+        211.17,
+        123.717
+       ]
+      ],
+      "waypoints": []
+     }
+    ],
+    "tray_order": [],
+    "run_mm": 66606,
+    "drop_a_mm": 0,
+    "drop_b_mm": 0,
+    "extra_mm": 0,
+    "slack_mm": 6661,
+    "length_mm": 73500,
+    "computed_at": "2026-10-31T14:59:18.036649+00:00",
+    "stale": false,
+    "version": "2026-10-31T14:59:18.041667+00:00",
+    "riser": null
+   },
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [
+    "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125"
+   ],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/22",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [
+    {
+     "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1",
+     "port": "Gi1/0/12",
+     "device_name": "aalborg-sw1"
+    }
+   ],
+   "a_far": [],
+   "b_far": [],
+   "tray_ids": []
+  },
+  {
+   "id": "9370fe35-3e87-4bb8-9c7c-e49f18c09c64",
+   "label": "Cable #1272",
+   "color": "#3b82f6",
+   "type": "",
+   "type_display": "",
+   "status": {
+    "id": "e4d9578e-19a0-47a8-a95a-f0557601daee",
+    "name": "Connected",
+    "color": "#10b981",
+    "text_color": "#fff",
+    "is_planned": false
+   },
+   "length": 20.0,
+   "length_unit": "m",
+   "length_source": "",
+   "path": {
+    "id": "4c27b7a5-023b-4fd1-ab4c-17d266782b5a",
+    "kind": "direct",
+    "legs": [
+     {
+      "to": {
+       "at": [
+        211.17,
+        123.717
+       ],
+       "end": "B",
+       "tile": "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125",
+       "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1"
+      },
+      "from": {
+       "at": [
+        242.5,
+        148.5
+       ],
+       "end": "A",
+       "tile": "c07f4862-0e92-4205-bf47-5d1aa642b046",
+       "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318"
+      },
+      "trays": [],
+      "points": [
+       [
+        242.5,
+        148.5
+       ],
+       [
+        211.17,
+        148.5
+       ],
+       [
+        211.17,
+        123.717
+       ]
+      ],
+      "waypoints": []
+     }
+    ],
+    "tray_order": [],
+    "run_mm": 66606,
+    "drop_a_mm": 0,
+    "drop_b_mm": 0,
+    "extra_mm": 0,
+    "slack_mm": 6661,
+    "length_mm": 73500,
+    "computed_at": "2026-10-31T14:59:18.081361+00:00",
+    "stale": false,
+    "version": "2026-10-31T14:59:18.085281+00:00",
+    "riser": null
+   },
+   "a_top_mm": 0,
+   "b_top_mm": 0,
+   "a_tiles": [
+    "c07f4862-0e92-4205-bf47-5d1aa642b046"
+   ],
+   "b_tiles": [
+    "cad6a98c-ac3d-4d0f-9e7d-3654ad46b125"
+   ],
+   "a_points": [
+    {
+     "device": "bc0ed74d-6e68-4476-8dd1-2d5b9fbb6318",
+     "port": "Ethernet1/23",
+     "device_name": "aalborg-core1"
+    }
+   ],
+   "b_points": [
+    {
+     "device": "bf29ec3c-ec78-4b8e-94a9-3e3b0b818cf1",
+     "port": "Gi1/0/13",
+     "device_name": "aalborg-sw1"
+    }
+   ],
+   "a_far": [],
+   "b_far": [],
+   "tray_ids": []
+  }
+ ]
+}

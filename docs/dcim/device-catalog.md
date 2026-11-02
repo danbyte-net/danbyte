@@ -285,9 +285,16 @@ device of the type that stands on the floor with it, fitted to the
 hardware's size. A [device](devices.md#3d-model) can have its own model,
 which wins over its type's.
 
-The **3D model** card on the type's Overview tab shows the model as a small
-turntable, turned the way the room will turn it (its front toward you), with
-**Upload** / **Replace** and **Remove**. Under the model:
+A type with a model shows it on its Overview in a **3D model** viewer at
+the top of the right-hand column. The model stands the way the room stands
+it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
+**Front**, **Rear** and **Top** views, **Fit**, **Ports** (the
+[mapped ports](#model-ports), in one neutral colour - a type has no port
+state; hovering one names it) and **Fullscreen**. The type's rack-face
+photos stay in their own section below the cards.
+
+The **3D model** card manages it - **Upload** / **Replace** and **Remove**,
+then:
 
 | Setting | What it does |
 |---|---|

@@ -43,6 +43,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
 import { objCan, useMe } from "@/lib/use-me"
 import { Model3DCard } from "@/components/model-3d-card"
+import { ModelViewerCard } from "@/components/model-viewer-card"
 
 const DEVICE_TYPE_TABS = [
   "overview",
@@ -443,6 +444,20 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
         )}
       </div>
       <div className="grid gap-6">
+        {d.model_3d && (
+          <ModelViewerCard
+            source={{
+              model: {
+                url: d.model_3d,
+                fit: d.model_3d_fit ?? "auto",
+                up: d.model_3d_up ?? "y",
+                front: d.model_3d_front ?? "+z",
+              },
+              sizeMm: d,
+              templatePorts: d.model_ports ?? null,
+            }}
+          />
+        )}
         <KvCard title="Usage" rows={usage} />
         <KvCard title="Monitoring" rows={monitoring} />
         <LifecycleCard item={d} />
