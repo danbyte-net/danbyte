@@ -1720,10 +1720,88 @@ and tag, and its advanced filter reaches custom fields.
 - The table lists the racks the [Objects](#finding-things) sidebar otherwise
   would: while it is open, the sidebar keeps the plan's other tiles.
 
+## Detail panels
+
+Clicking a cable or a device or rack tile opens a panel on the right of the
+plan - the same map panel the Site map and Topology open. One panel is open
+at a time; **Close** (or a click on empty plan) closes it.
+
+### The cable panel
+
+A click on a cable run - in 2D or 3D - traces it and opens its panel; the
+trace stays while the panel is open and goes when it closes. Hovering a run
+still shows its popover. The panel shows:
+
+- **Cable**: label (with a copy button), status, type, colour and the stored
+  length with where it came from (*entered* or *computed*).
+- **Route**: *Documented* (a stored route) or *Inferred* (worked out on the
+  plan), the length the route works out against the stored one, the trays
+  it rides - each a button that lights the tray and frames it - the riser
+  and floor a route between floors leaves by, and **Out of date** when the
+  stored route no longer matches the plan.
+- **A end** and **B end**: the device (a link) with its role and status, its
+  site, location, rack and U; the port with its type, speed, whether it is
+  enabled, its description, the live state from the device's last SNMP
+  poll, its untagged VLAN and its addresses. **Show on plan** frames the
+  end's tile (flies to it in 3D); an end on another floor links that floor.
+  An end on a device you may not view reads only **Hidden**.
+- **Path**: when the run passes through patch panels (front and rear ports),
+  the whole path, one line per device, from the cable's trace.
+- **Open cable**, and in Edit **Edit route** (Update routes for this cable).
+
+### Device, rack and cabinet panels
+
+While viewing, a click on a device, rack or cabinet tile opens its panel
+(in Edit, a double-click or right-click → Open, so a click still selects and
+drags). Out of the box a device shows its role, status, type, platform,
+serial and asset tag, where it stands, its primary, secondary and OOB
+addresses, tenant, profiles and tags; its **Monitoring** state and its worst
+checks; its **Ports** - the interfaces, how many are connected and, when
+SNMP has polled it, how many are up and down; and the **Cables on this
+plan** with an end on it - a click traces the cable and opens the cable
+panel. A rack shows its role, status, type, space used and monitoring, and
+its devices by U; a cabinet its devices rail by rail; both say how many
+devices are hidden from you. **Open device** / **Open rack** / **Open
+cabinet**, **Rack** (a racked device's rack), **3D** (the room, flown to the
+object), and **Paths** / **Contents & trace** / **Plate & trace** (the deep
+view below, or a cabinet's plate). In 3D, clicking a device - on the floor,
+in a rack or in a cabinet - opens the same panel. A tile whose object you
+may not view shows only **Hidden**. A field with nothing to say is left
+out, and so is a section left empty.
+
+#### Panel layouts
+
+What these panels show is configurable in **Settings → Floor plans →
+Detail panels**, per kind (Devices, Racks, Cabinets). A layout is an ordered
+list of sections and fields - drag a row to move it, **+ Section** adds a
+heading (click its label to rename it), and the chips add a field:
+
+- **Attributes**: the object's own fields (role, status, type, serial,
+  addresses, site, location, tenant, tags, description…);
+- **Blocks**: monitoring, the port summary, the device's IP addresses, the
+  cables on this plan, a rack's or cabinet's devices;
+- **Custom fields** of that kind. A panel shows a custom field only where
+  you may see it (not a hidden field, a site-local one only to its site's
+  readers) and where its own scope rules match the object; an object
+  reference reads as its name when you may view it.
+
+A layout applies to the tenant's **Default** or to one scope - **Add a
+layout for…** picks a device type, device role or profile (a rack or
+cabinet: its type or role). The most specific wins: a device takes its
+device type's layout, else its role's, else that of the first of its
+profiles that has one, else the default; a rack or cabinet its type's, else
+its role's, else the default. Without any layout the built-in default
+above applies. **Inherit** removes a scope's layout so it falls back to the
+next match; **Restore defaults** puts the built-in default back into the
+Default layout. The **Preview** draws the panel as the layout would, for
+the first object in the scope you may view.
+
+Layouts are tenant admin settings (the same gate as the tile popover's) and
+every change is in the change log.
+
 ## Rack & device deep view
 
-A click on a rack or device tile pins its popover; its **Contents & trace**
-(a device: **Trace**) button, a double-click or right-click → Open opens a
+A rack panel's **Contents & trace** (a device's: **Paths**) opens a
 side panel with the rack's capacity, its **real elevation** (front/rear, role-colored),
 and the device list - each device has an **End-to-end** button that shows its
 cable paths through patch panels to the far end, the same trace view as the
@@ -1739,9 +1817,8 @@ right-click → Open.
 
 Click a tile to see what it is and jump to the linked object (**Open rack**,
 **Open device**…, the same link every map panel uses).
-A click on a rack or device tile pins its popover, where **Contents & trace**
-(**Trace** for a device) opens the deep view, as a double-click does; on a
-touch screen, with no hover to pin, a tap opens it straight away. A cabinet
+A click on a rack or device tile opens its [detail panel](#detail-panels);
+a pinned popover's **Details** does the same. A cabinet
 tile opens its panel on a click; a tile linked to **another floor
 plan** navigates into it on click - use this to nest a cage or suite plan
 inside a hall plan.
@@ -2576,6 +2653,9 @@ copied or cloned riser is not paired.
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-paths/` | Each cable also carries `length_source` and `path`: its stored route (`id`, `kind` `trays`/`manual`/`direct`, `legs`, `tray_order`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `extra_mm`, `slack_mm`, `length_mm`, `computed_at`, `stale`, `version`) or null. `stale` is true when the stored flag is set or an end's tile or device has moved since. A cable with a stored route here is listed even when nothing else would list it. `a_far` / `b_far` list each end on no tile here: `device`, `port`, `device_name`, `floor_plan` (`{id, name}`: the floor of this plan's stack it is placed on, one you may view, or null) and `place` (`{kind, id}`: the device - or the rack or cabinet it is in - to place to bring it here, when it is on this plan's site; else null). An end on a device you may not view reads `{"device": null, "port": null, "hidden": true}` and nothing more. |
+| `GET /api/floor-plans/{id}/cable-panel/{cable_id}/` | The [cable panel](#the-cable-panel): the cable (`label`, `name`, `status`, `type`, `type_display`, `color`, `length`, `length_unit`, `length_source`, `description`) and `ends` (`{"A": [...], "B": [...]}`), each end's `device` (`id`, `name`, `role`, `status`, `site`, `location`, `rack`, `cabinet`, `position`, `face`, `u_height`) and `port` (`kind`, `id`, `name`, `label`, `type`, `type_display`, `description`; an interface also `speed`, `enabled`, `mode`, `mac_address`, `vlan`, `ip_addresses` - the ones you may view - `tagged_vlan_count`, `lag` and `observed`, its `oper_status` / `admin_status` / `speed_mbps` from the last SNMP poll, or null). An end on a device you may not view reads `{"hidden": true}` only; an interface you may not view reads `port: null`. A cable you may not view, or another tenant's, is a 404. Needs view on the plan. |
+| `/api/panel-layouts/` | The [panel layouts](#panel-layouts), tenant admins only (403 otherwise). `GET` lists the tenant's (`?object_kind=`), each `{id, object_kind, scope, scope_id, scope_name, items, updated_at}`; `POST` adds one (`object_kind` `device`/`rack`/`cabinet`, `scope` - `default`, `device_type`, `device_role`, `profile`, `rack_type`, `rack_role`, `cabinet_type`, `cabinet_role` as fits the kind - `scope_id`, one of the tenant's, null for `default`, and `items`); one layout per scope (400 for a second). `PUT`/`PATCH` `{id}/` changes `items`; `DELETE` removes it. `items` is at most 80 entries, each `{"section": "Label"}` (1-64 characters) or `{"field": key}` - a key of `catalog/`, or `cf:<key>` for one of the tenant's custom fields of that kind, each at most once. `GET catalog/` answers per kind its `fields` (`key`, `label`, `computed`), `scopes` in resolution order, the built-in `default` and `cf_model`. `POST preview/` (`object_kind`, `scope`, `scope_id`, `items`, optional `object_id`) answers the tile-panel payload for that object, else the first in the scope you may view, else `{"kind", "empty": true}`. |
+| `GET /api/floor-plans/{id}/tile-panel/{tile_id}/` | A device, rack or cabinet tile's [panel](#device-rack-and-cabinet-panels). Every answer carries `layout` (`id` - null for the built-in default - `scope`, `scope_id`, `scope_name`, `items`) and `custom_fields` (`[{key, label, type, value}]`: the layout's custom fields you may see, matching the object, with a value). A device: `device` (as above plus `device_type`, `platform`, `serial_number`, `asset_tag`, `primary_ip` / `secondary_ip` / `oob_ip` - those you may view - `tenant`, `description`, `software_version`, `tags`, `profiles`), and, only when its layout names them, `monitoring` (`status`, `counts`, the six worst `checks`), `ports` (`total`, `connected`, `free`, `disabled`, `observed`, `up`, `down` over the physical interfaces you may view) and `ips` (its addresses you may view, with their `interface`). A rack: `rack`, `monitoring.status`, `devices` (those you may view, top U first, each with its worst `check`), `used_units` and `hidden_count`; a cabinet: `cabinet` (with `size_mm`), `monitoring.status`, `devices` (rail by rail, with `rail` and `rail_offset_mm`) and `hidden_count`. `?device=<id>` on a rack or cabinet tile answers that device of it instead. A tile whose object you may not view reads `{"kind", "hidden": true}`; a tile of another plan or one you may not view is a 404, another kind of tile a 400. |
 | `GET /api/floor-plans/{id}/contents/` | Also lists `cable_paths`: the stored routes you may view, of cables you may view, each with its `cable` (on a view, those ending on a tile it shows, in its cells). Here `stale` is the stored flag only; their `updated_at` counts toward `version`. |
 | `POST /api/floor-plans/{id}/cable-plan/` | A preview; nothing is stored. Body (each key optional): `cable_ids` (at most 256); else `objects` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, at most 64: what was just placed - every cable of their devices you may view, including those leaving the floor); else every cable you may view with both ends on the plan (`truncated` when there were more). The unsaved draft: `positions` (`{tile_id: {x, y, width?, height?}}`), `new_tiles` (`[{id, x, y, width, height, link_kind, link_id}]`, at most 256, linked to a device, rack or cabinet of the tenant), `removed_tiles` (ids), `draft_trays` (`[{id, points, level, elevation_mm?}]`, at most 64; one with a saved tray's id is that tray as the draft reshaped it) and `removed_trays` (ids of saved trays the draft deletes). A stored `path` riding a tray the draft changed reads `stale`. Routing: `tray_ids` (route through only those), `choices` (`{cable_id: {"via": "auto"\|"trays"\|"suggest"\|"direct", "tray_ids"?}}`), `suggest_runs` (suggest a run for every cable no tray path serves), `keep_runs` (default true: a run is a new tray; false: the cable's own path) and `run_level` (`overhead` or `underfloor`). Per cable: `route` (the computed route in the stored shape, or null with `reason`), `reachable`, `via` (`trays`, `suggest`, `direct`), `suggestions` (the run keys it uses), `path` (the stored one), `length`, `length_unit`, `length_source`, `cable_version`, `delta_mm`, `write_length` (whether a save would fill the length without replacing one a person entered) and `can_change`; with `objects` also `far` (the other end's `device_name` and `port`, or `hidden`) and `off_floor`. A cable between floors (`cable_ids` or `objects`) whose far end is placed on a floor a riser of this plan pairs with - one you may view - reads `via` `riser`; its `route` is this floor's part, to the riser, with `riser` (`tile`, `label`, `pair`, `pair_label`, `floor_plan` `{id, name}`, `riser_mm`) and the whole cable's lengths. One leaving the floor otherwise names the nearest riser of this plan in `via_riser`. Plus `suggestions` (`[{key, level, elevation_mm, points, run, cable_ids}]`; `run` is the new tray's points, null when nothing new is needed), `cell_mm`, `scale_source` and `hidden_count`. Needs view on the plan. |
 | `POST /api/floor-plans/{id}/cable-plan/` with `mode: "new"` | Connect to…: a preview of new cables; nothing is stored. Body: `source` and `targets` (`[{"kind": "device"\|"rack"\|"cabinet", "id"}]`, each at most 64; devices you may view and that are placed on this plan), `family` (`data`, `console`, `power`; default `data`), `per_target` (1-8, default 1), `include_mgmt`, `exclude_ports` (`[{kind, id}]` the draft's new cables take), the unsaved draft as above, and `choices` (by pair key), `suggest_runs`, `keep_runs`, `run_level`. Without `pairs` the server proposes; with `pairs` (`[{"key", "a": {kind, id}, "b": {kind, id}}]`, at most 256) it checks and routes those, each pair failing a check carrying `error`. Answers `pairs` (`[{key, a, b, type, route, via, suggestions, reason, error}]`, each port `{kind, id, name, device, device_name, type, media, connector, speed_mbps, uplink, mgmt_only, poe_mode}`), `short` (`[{a_device, b_device, made, reason}]`), `statuses` (the tenant's planned cable statuses), `can_add` (cable · add), `suggestions`, `cell_mm` and `scale_source`. Needs view on the plan. |
@@ -2595,11 +2675,21 @@ floors.
 
 ## Finding things
 
-- **Find on plan…** (Layout mode, the bar under the header): type a tile's
-  label, the rack, device, cabinet or panel it links, or its type or role,
-  and pick a hit - the canvas pans and zooms to it. Every word must match, in
-  any order (`r12 core`), and hits by name come before hits by type; ++enter++
-  jumps to the first. Hidden tiles are not offered.
+- **Find on plan…** (Layout mode, the bar under the header) finds, grouped
+  as **Objects**, **Cables**, **Trays** and **Areas**:
+    - a tile by its label, the rack, device, cabinet or panel it links, or
+      its type or role;
+    - a cable by its label or id, or by either end's device and port
+      (`sw1 Gi1/0/1` - both words on the same end);
+    - a tray by its name, and an area by its name.
+
+    Every word must match, in any order (`r12 core`); hits by name come
+    before hits by type. ++up++ / ++down++ move through the list and
+    ++enter++ picks. An object is framed (and, while viewing, a device or
+    rack opens its [panel](#detail-panels)); a cable is traced, framed and
+    opens the [cable panel](#the-cable-panel); a tray lights up and is
+    framed; an area is selected or opened. In 3D the room flies to the pick.
+    Hidden tiles and ends are not offered.
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -3080,6 +3170,9 @@ plan you may view. A live view reads and writes the source's routes in the
 view's cells; a copy snapshot or a clone copies no routes.
 
 ## Popover fields
+
+The detail panel a click opens has its own layouts - see
+[Panel layouts](#panel-layouts).
 
 **Settings → Floor plans → Tile popover** picks which rows the tile popover
 shows, and in what order. A field with nothing to say for a given tile is skipped
