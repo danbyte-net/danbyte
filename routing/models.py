@@ -1984,6 +1984,13 @@ class VTEPMembership(models.Model):
         related_name="vtep_memberships",
     )
     rd = models.CharField(max_length=32, blank=True, default="", help_text="Per-device RD override")
+    #: The leaf's ``vxlan<N>`` netdev for this VNI, when it is modelled as an
+    #: interface row (MTU, bridge membership). The VNI itself stays on the
+    #: L2VPN.
+    interface = models.ForeignKey(
+        "api.Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="vtep_memberships",
+    )
     ingress_replication = models.BooleanField(default=True)
     mcast_group = models.CharField(max_length=64, blank=True, default="")
     extra = models.JSONField(default=dict, blank=True)
@@ -2000,6 +2007,9 @@ class VTEPMembership(models.Model):
     def clean(self):
         if self.l2vpn_id and self.l2vpn.type not in self.l2vpn.VXLAN_TYPES:
             raise ValidationError({"l2vpn": "A VTEP carries VXLAN overlays only."})
+        if (self.interface_id and self.vtep_id
+                and self.interface.device_id != self.vtep.device_id):
+            raise ValidationError({"interface": "That interface is on another device."})
         if self.mcast_group:
             self.mcast_group = normalize_address(self.mcast_group, "mcast_group")
 

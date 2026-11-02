@@ -1623,6 +1623,11 @@ class VTEPMembershipSerializer(_ParentRefMixin, _ChildRowSerializer):
         source="vlan", queryset=VLAN.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    interface = InterfaceMiniSerializer(read_only=True)
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
     #: The VLAN the render resolves for this leaf (own, else the site's).
     resolved_vlan = serializers.SerializerMethodField()
 
@@ -1634,6 +1639,7 @@ class VTEPMembershipSerializer(_ParentRefMixin, _ChildRowSerializer):
     class Meta:
         model = VTEPMembership
         fields = ["id", "vtep", "vtep_id", "l2vpn", "l2vpn_id", "vlan", "vlan_id", "resolved_vlan",
+                  "interface", "interface_id",
                   "rd", "ingress_replication", "mcast_group", "extra"]
         read_only_fields = ["id"]
         validators = []

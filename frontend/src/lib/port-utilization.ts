@@ -6,6 +6,7 @@ export const VIRTUAL_INTERFACE_TYPES: ReadonlySet<string> = new Set([
   "virtual",
   "bridge",
   "lag",
+  "vxlan",
 ])
 
 /**

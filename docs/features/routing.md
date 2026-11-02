@@ -366,6 +366,15 @@ targets. Two things are added for it:
   optionally a device-local VLAN, a per-leaf RD, ingress replication or a
   multicast group.
 
+The `vxlan<N>` netdevs a leaf runs need no interface rows: a template
+writes them from `routing.vtep.vnis` (VNI, VLAN, VRF, multicast group).
+When you want them as rows - for an MTU, bridge membership or the cabling
+views - create an interface of type **VXLAN** (a virtual type) and pick it
+as the VNI's **Interface** on the VTEP; it must be on the VTEP's device.
+The VNI stays on the L2VPN and is never typed on the interface, so there is
+one place to change it. The render gives each `vtep.vnis[]` entry its
+`interface` (the port's name, or `null`).
+
 A VNI's VLAN on a given leaf resolves in this order: the membership's own
 VLAN → the L2VPN's termination on a VLAN at the device's site → the L2VPN's
 sole VLAN termination → none. A VNI stretched across sites therefore needs
@@ -517,8 +526,9 @@ routing:
                                  auth_type, key_set, key_placeholder}],
                          gateway: "10.100.0.1/24" | null}}
   vtep:          {source_interface, source_ip, anycast_ip, anycast_gateway_mac, arp_suppression,
-                  vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, rd, import_targets,
-                          export_targets, ingress_replication, mcast_group, extra}]} | null
+                  vnis: [{vni, name, kind: l2|l3, vlan, vlan_name, vrf, interface, rd,
+                          import_targets, export_targets, ingress_replication,
+                          mcast_group, extra}]} | null
   policies:      {NAME: {rules: [{sequence, action, match: {...}, set: {...}, continue}]}}
   prefix_lists:  {NAME: {family, rules: [{sequence, action, prefix, ge, le}]}}
   community_lists: {NAME: {kind, rules: [...]}}

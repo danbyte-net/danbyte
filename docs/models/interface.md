@@ -32,6 +32,9 @@ the name fans out into one interface per number.
 
 The media type (`1000base-t`, `10gbase-x-sfpp`, …) from the standard
 taxonomy. Drives the faceplate rendering and the speed-capability colouring.
+The virtual types - `virtual`, `bridge`, `lag` and `vxlan` (a VXLAN netdev a
+[VTEP membership](../features/routing.md#overlay-evpn-and-vxlan) can point
+at) - have no physical port and always save as virtual.
 
 ### Enabled
 

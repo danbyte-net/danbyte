@@ -7050,6 +7050,8 @@ export interface VTEPMembership {
   vlan: VLANMini | null
   /** The VLAN the render resolves for this leaf (own, else the site's). */
   resolved_vlan: VLANMini | null
+  /** The leaf's vxlan netdev, when it is an interface row. */
+  interface: { id: string; name: string; device: DeviceMini } | null
   rd: string
   ingress_replication: boolean
   mcast_group: string

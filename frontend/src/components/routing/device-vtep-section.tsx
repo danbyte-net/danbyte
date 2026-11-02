@@ -252,6 +252,15 @@ export function VTEPSection({
                     {m.vlan && (
                       <span className="text-muted-foreground">own VLAN</span>
                     )}
+                    {m.interface && (
+                      <Link
+                        to="/interfaces/$id"
+                        params={{ id: m.interface.id }}
+                        className="link font-mono"
+                      >
+                        {m.interface.name}
+                      </Link>
+                    )}
                     {m.rd && (
                       <span className="font-mono text-muted-foreground">
                         rd {m.rd}

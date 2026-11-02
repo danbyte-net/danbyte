@@ -139,7 +139,7 @@ session → group → instance.
 |---|---|---|
 | `api.L2VPN` (extended) | `vrf` FK, allowed on `EVPN_TYPES` only (`clean()`); `vtep_memberships` reverse | `(tenant, identifier)` for `type in VXLAN_TYPES` (`uniq_l2vpn_vxlan_vni`) |
 | `VTEP` | `device` OneToOne, `source_interface` (same device), `source_ip`, `anycast_ip` (assigned to the device), `anycast_gateway_mac` (normalised lower-case), `arp_suppression`, `status` (`vtep`), `description`, `extra` | `device` |
-| `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
+| `VTEPMembership` | `vtep`, `l2vpn` (VXLAN type), `vlan` (at the device's site), `interface` (optional FK → `api.Interface` on the VTEP's device - the leaf's `vxlan` netdev; the VNI stays on the L2VPN), `rd`, `ingress_replication`, `mcast_group`, `extra` | `(vtep, l2vpn)` |
 
 | `EthernetSegment` | catalog; `esi` (type 0, ten octets) **or** `es_id` + `sys_mac` (type 3, normalised), `df_preference` (the default for every member), `interfaces` M2M → `api.Interface` through `EthernetSegmentMember` - the LAG on each leaf that shares the segment, so the ports are on different devices by design | `(tenant, name)` |
 | `EthernetSegmentMember` | the through row: `segment`, `interface`, `df_preference` (null = the segment's). It sits on the table the plain M2M created (`routing_ethernetsegment_interfaces`, adopted in `routing/0016` without a copy) and keeps that table's bigint `id` rather than a UUID, so the upgrade rewrites nothing. Site-scoped `interface__device__site`; audited | `(segment, interface)` |

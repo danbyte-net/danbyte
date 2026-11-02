@@ -928,6 +928,7 @@ class VTEPViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                             "anycast_ip", "status")
             .prefetch_related(
                 TAGS, "memberships__l2vpn__vrf", "memberships__vlan",
+                "memberships__interface__device",
                 "memberships__l2vpn__terminations__vlan",
             )
         )
@@ -955,7 +956,7 @@ class VTEPMembershipViewSet(_RuleViewSet):
 
     parent = "vtep"
     queryset = VTEPMembership.objects.select_related(
-        "vtep__device", "l2vpn__vrf", "vlan"
+        "vtep__device", "l2vpn__vrf", "vlan", "interface__device"
     ).prefetch_related("l2vpn__terminations__vlan")
     serializer_class = VTEPMembershipSerializer
 

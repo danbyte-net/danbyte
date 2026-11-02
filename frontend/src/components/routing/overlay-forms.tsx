@@ -250,6 +250,17 @@ export function VTEPMembershipForm({
   const [rd, setRd] = useState(item?.rd ?? "")
   const [ingress, setIngress] = useState(item?.ingress_replication ?? true)
   const [mcast, setMcast] = useState(item?.mcast_group ?? "")
+  const [ifaceId, setIfaceId] = useState<string | null>(
+    item?.interface?.id ?? null
+  )
+  const netdevs = useQuery({
+    queryKey: ["interfaces-picker", vtep.device.id, "vxlan"],
+    queryFn: () =>
+      api<Paginated<{ id: string; name: string }>>(
+        `/api/interfaces/?device=${vtep.device.id}&type=vxlan&page_size=500`
+      ),
+    staleTime: 60_000,
+  })
   const l2vpns = useQuery({
     queryKey: ["l2vpns-picker", "vxlan"],
     queryFn: () => api<Paginated<L2VPN>>("/api/l2vpns/?vxlan=1&page_size=500"),
@@ -283,6 +294,7 @@ export function VTEPMembershipForm({
           rd: rd.trim(),
           ingress_replication: ingress,
           mcast_group: mcast.trim(),
+          interface_id: ifaceId,
         })
       }}
       className="@container grid gap-4"
@@ -346,6 +358,21 @@ export function VTEPMembershipForm({
             error={fieldErrors.mcast_group}
           />
         </div>
+        <FormCombobox
+          label="Interface"
+          value={ifaceId}
+          onChange={setIfaceId}
+          options={(netdevs.data?.results ?? []).map((i) => ({
+            value: i.id,
+            label: i.name,
+          }))}
+          noneLabel="None"
+          placeholder="None"
+          searchPlaceholder="Search interfaces…"
+          emptyText="No VXLAN interfaces on this device."
+          info="The leaf's vxlan netdev for this VNI, when it is an interface of type VXLAN. The VNI stays on the L2VPN."
+          error={fieldErrors.interface_id ?? fieldErrors.interface}
+        />
         <FormCheckbox
           label="Ingress replication"
           checked={ingress}

@@ -71,6 +71,9 @@ def vtep_dict(vtep: VTEP) -> dict:
             "vlan": vlan.vlan_id if vlan is not None else None,
             "vlan_name": vlan.name if vlan is not None else None,
             "vrf": l2.vrf.name if l2.vrf_id else None,
+            # The leaf's vxlan netdev when it is an interface row; None when
+            # the template names it from the VNI.
+            "interface": m.interface.name if m.interface_id else None,
             "rd": m.rd or None,
             "import_targets": _rt_names(l2.import_targets),
             "export_targets": _rt_names(l2.export_targets),
@@ -835,7 +838,7 @@ def routing_context(device) -> dict:
         .prefetch_related(
             "memberships__l2vpn__vrf", "memberships__l2vpn__import_targets",
             "memberships__l2vpn__export_targets", "memberships__vlan",
-            "memberships__l2vpn__terminations__vlan",
+            "memberships__l2vpn__terminations__vlan", "memberships__interface",
         )
         .first()
     )
