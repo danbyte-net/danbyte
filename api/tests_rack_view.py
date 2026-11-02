@@ -275,10 +275,12 @@ class FloorPlanSceneParityTests(_PinnedScene):
     device, feed and cabinet geometry moved to api.scene_geo (#248)."""
 
     def test_scene_is_unchanged(self):
+        self.maxDiff = None
         tile = {
             "w": 1, "h": 1, "orientation": 0, "status": "", "device_name": "",
             "type_name": "Rack", "color": "#64748b", "is_zone": False,
-            "perforated": False, "rack": None, "cabinet": None,
+            "perforated": False, "rack": None, "cabinet": None, "device": None,
+            "hidden": False, "icon": "", "riser": False, "riser_to": [],
         }
         body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
         self.assertTrue(body.pop("as_of"))
