@@ -43,6 +43,10 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { SnmpBindingControl } from "@/components/snmp-binding-control"
 import { objCan, useMe } from "@/lib/use-me"
 import { Model3DCard } from "@/components/model-3d-card"
+import {
+  ModelViewerCard,
+  OverviewWithAside,
+} from "@/components/model-viewer-card"
 
 const DEVICE_TYPE_TABS = [
   "overview",
@@ -198,18 +202,38 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
       onTabChange={(v) => setTab(v as typeof tab)}
     >
       <DetailTab value="overview">
-        <DeviceTypeOverview deviceType={d} />
+        {/* With a model: its viewer on the right, kept in view. */}
+        <OverviewWithAside
+          aside={
+            d.model_3d && (
+              <ModelViewerCard
+                source={{
+                  model: {
+                    url: d.model_3d,
+                    fit: d.model_3d_fit ?? "auto",
+                    up: d.model_3d_up ?? "y",
+                    front: d.model_3d_front ?? "+z",
+                  },
+                  sizeMm: d,
+                  templatePorts: d.model_ports ?? null,
+                }}
+              />
+            )
+          }
+        >
+          <DeviceTypeOverview deviceType={d} narrow={!!d.model_3d} />
 
-        <div className="mt-6">
-          <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
-            Rack-face images
-          </h2>
-          <p className="mb-3 max-w-2xl text-[12px] text-muted-foreground">
-            Front and rear images are painted onto this type's devices in rack
-            elevations.
-          </p>
-          <DeviceTypeImages deviceType={d} />
-        </div>
+          <div className="mt-6">
+            <h2 className="mb-2 text-[11px] font-semibold tracking-wide text-foreground uppercase">
+              Rack-face images
+            </h2>
+            <p className="mb-3 max-w-2xl text-[12px] text-muted-foreground">
+              Front and rear images are painted onto this type's devices in rack
+              elevations.
+            </p>
+            <DeviceTypeImages deviceType={d} />
+          </div>
+        </OverviewWithAside>
       </DetailTab>
       <DetailTab value="components" bare>
         <DeviceTypeComponentsPane deviceTypeId={d.id} />
@@ -270,7 +294,14 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
 
 /** Device-type attributes that used to crowd the header, grouped into labelled
  * tables. Only the identifying manufacturer/model stay up top. */
-function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
+function DeviceTypeOverview({
+  deviceType: d,
+  narrow = false,
+}: {
+  deviceType: DeviceType
+  /** The model's column takes the right: one column until 2xl. */
+  narrow?: boolean
+}) {
   const { humanIds, canDo } = useMe()
   const choices = useDcimChoices()
 
@@ -429,7 +460,13 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
   ]
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div
+      className={
+        narrow
+          ? "grid gap-6 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2"
+          : "grid gap-6 lg:grid-cols-2"
+      }
+    >
       <div className="grid gap-6">
         <KvCard title="Hardware" rows={hardware} />
         <CustomFieldValues
