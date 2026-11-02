@@ -55,11 +55,10 @@ export const CALLOUT_FONT_PX = 11
 export const CALLOUT_LINE_FONT_PX = 10
 export const CALLOUT_PAD_X = 6
 export const CALLOUT_PAD_Y = 4
-/** The accent down a box's left edge, in its tile's colour (px). */
-export const CALLOUT_ACCENT_PX = 3
-/** How far the tab on a box's edge reaches out towards its tile (px):
- * the leader starts at its tip. */
-export const CALLOUT_TAB_PX = 5
+/** No accent bar: a callout is a plain box. Kept so the width sum reads. */
+export const CALLOUT_ACCENT_PX = 0
+/** No tab: the leader starts on the edge facing its tile. */
+export const CALLOUT_TAB_PX = 0
 /** A line's height (px), a badge line's a little taller. */
 export const CALLOUT_LINE_PX = 15
 /** A callout shows its name and at most this many lines. */
@@ -241,8 +240,7 @@ export function leaderBoxes(l: [Pt, Pt], every = 8, half = 2): Box[] {
   return out
 }
 
-/** Where a box's leader starts: the tip of the tab at the middle of the
- * edge facing its tile (a box above its tile, `side` top, leaves from its
+/** Where a box's leader starts: the middle of the edge facing its tile (a box above its tile, `side` top, leaves from its
  * bottom). */
 export function leaderStart(box: Box, side: CalloutSide): Pt {
   const t = CALLOUT_TAB_PX

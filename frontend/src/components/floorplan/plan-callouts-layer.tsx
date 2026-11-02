@@ -15,37 +15,10 @@ import {
 import type { CalloutSide } from "./plan-callouts"
 import type { CalloutLabel } from "./plan-label-pass"
 
-/** The box's pointer tab (px): its width along the edge and its depth. */
-const TAB_W = 10
 const TAB_H = CALLOUT_TAB_PX
-const RADIUS = 5
+const RADIUS = 4
 
-/** The box's outline (px, about its centre): a rounded rectangle with a
- * small tab at the middle of the edge facing its tile. */
-export function calloutPath(w: number, h: number, side: CalloutSide): string {
-  const x0 = -w / 2
-  const y0 = -h / 2
-  const x1 = w / 2
-  const y1 = h / 2
-  const r = RADIUS
-  const t = TAB_W / 2
-  const d = TAB_H
-  return [
-    `M${x0 + r},${y0}`,
-    side === "bottom" ? `L${-t},${y0} L0,${y0 - d} L${t},${y0}` : "",
-    `L${x1 - r},${y0} Q${x1},${y0} ${x1},${y0 + r}`,
-    side === "left" ? `L${x1},${-t} L${x1 + d},0 L${x1},${t}` : "",
-    `L${x1},${y1 - r} Q${x1},${y1} ${x1 - r},${y1}`,
-    side === "top" ? `L${t},${y1} L0,${y1 + d} L${-t},${y1}` : "",
-    `L${x0 + r},${y1} Q${x0},${y1} ${x0},${y1 - r}`,
-    side === "right" ? `L${x0},${t} L${x0 - d},0 L${x0},${-t}` : "",
-    `L${x0},${y0 + r} Q${x0},${y0} ${x0 + r},${y0} Z`,
-  ]
-    .filter(Boolean)
-    .join(" ")
-}
-
-/** The tip of the box's tab (px, about its centre). */
+/** Where the leader leaves the box (px, about its centre). */
 function tabTip(w: number, h: number, side: CalloutSide): [number, number] {
   switch (side) {
     case "top":
@@ -63,11 +36,10 @@ function tabTip(w: number, h: number, side: CalloutSide): [number, number] {
  * The callouts the label pass placed (plan-callouts.ts): each a small box
  * at a constant size on screen (`k`, the zoom now) with the tile's name
  * and the lines its panel layout chose - a status or role as its badge -
- * an accent in the tile's colour down its left edge, and a leader from a
- * tab on the box to a dot on the tile: a solid line in the foreground
- * colour on a casing of the background, so it reads over a map, a photo
- * or a dark plan. A callout answers the pointer as its tile does:
- * hovering either lights the pair - a thicker leader in the accent colour
+ * in a plain bordered box, and a thin muted leader from the box's edge to
+ * a small dot on the tile, on a casing of the background so it reads over
+ * a map, a photo or a dark plan. A callout answers the pointer as its tile does:
+ * hovering either lights the pair - a thicker leader in the primary colour
  * - and dims the other callouts; a press opens the tile.
  */
 export function PlanCalloutsLayer({
@@ -75,7 +47,6 @@ export function PlanCalloutsLayer({
   k,
   hot,
   selected,
-  colorOf,
   onHover,
   onPress,
 }: {
@@ -85,7 +56,7 @@ export function PlanCalloutsLayer({
   hot: string | null
   /** The selection: its callouts lit. */
   selected?: ReadonlySet<string>
-  /** The tile's colour, as its symbol is drawn: the box's accent. */
+  /** Unused since boxes dropped their accent; kept for callers. */
   colorOf?: (id: string) => string | undefined
   onHover?: (id: string | null) => void
   onPress?: (id: string, e: React.PointerEvent) => void
@@ -142,7 +113,7 @@ export function PlanCalloutsLayer({
               x2={to[0]}
               y2={to[1]}
               stroke="var(--background)"
-              strokeWidth={(lit ? 6 : 4.5) * s}
+              strokeWidth={(lit ? 4.5 : 3) * s}
               strokeLinecap="round"
             />
             <line
@@ -151,25 +122,22 @@ export function PlanCalloutsLayer({
               y1={from[1]}
               x2={to[0]}
               y2={to[1]}
-              stroke={lit ? "var(--primary)" : "var(--foreground)"}
-              strokeWidth={(lit ? 2.75 : 1.75) * s}
+              stroke={lit ? "var(--primary)" : "var(--muted-foreground)"}
+              strokeWidth={(lit ? 2 : 1.25) * s}
               strokeLinecap="round"
             />
             <circle
               data-part="anchor"
               cx={to[0]}
               cy={to[1]}
-              r={(lit ? 4 : 3.25) * s}
-              fill={lit ? "var(--primary)" : "var(--foreground)"}
-              stroke="var(--background)"
-              strokeWidth={1.5 * s}
+              r={(lit ? 2.75 : 2.25) * s}
+              fill={lit ? "var(--primary)" : "var(--muted-foreground)"}
             />
           </g>
         ))}
       </g>
       {geo.map(({ c, cx, cy, lit, dim }) => {
         const { w, h } = c.size
-        const accent = cssColor(colorOf?.(c.id)) ?? "var(--muted-foreground)"
         const left = -w / 2 + CALLOUT_ACCENT_PX + CALLOUT_PAD_X
         return (
           <g
@@ -181,31 +149,23 @@ export function PlanCalloutsLayer({
             {...handlers(c.id)}
           >
             <g transform={`translate(${cx},${cy}) scale(${s})`}>
-              <path
-                data-part="box"
-                d={calloutPath(w, h, c.side)}
-                fill="var(--popover)"
-                stroke={lit ? "var(--primary)" : "var(--foreground)"}
-                strokeOpacity={lit ? 1 : 0.45}
-                strokeWidth={lit ? 2 : 1}
-                strokeLinejoin="round"
-              />
-              {/* The tile's colour down the left edge: the box is its. */}
               <rect
-                data-part="accent"
-                x={-w / 2 + 1.5}
-                y={-h / 2 + 2.5}
-                width={CALLOUT_ACCENT_PX}
-                height={h - 5}
-                rx={CALLOUT_ACCENT_PX / 2}
-                fill={accent}
+                data-part="box"
+                x={-w / 2}
+                y={-h / 2}
+                width={w}
+                height={h}
+                rx={RADIUS}
+                fill="var(--popover)"
+                stroke={lit ? "var(--primary)" : "var(--border)"}
+                strokeWidth={lit ? 1.5 : 1}
               />
               <text
                 x={left}
                 y={-h / 2 + CALLOUT_PAD_Y + CALLOUT_FONT_PX * 0.65}
                 dominantBaseline="central"
                 fontSize={CALLOUT_FONT_PX}
-                fontWeight={600}
+                fontWeight={500}
                 fill="var(--popover-foreground)"
               >
                 {c.name}

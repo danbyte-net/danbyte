@@ -1258,15 +1258,13 @@ a box with the name, set off in free space near the tile, with a
   when any name in a cluster needs a callout, every name in it gets one,
   so a cluster never mixes boxes and plain names. A tile apart from the
   rest keeps its plain name when it fits.
-- **The leader.** A solid line in the foreground colour on a casing of the
-  background, so it reads on a light map, a satellite photo or a dark
-  plan. It leaves from a small tab in the middle of the box's edge that
-  faces the tile and runs straight to the tile's edge, aimed at its
-  centre, ending in a dot. Leaders never cross each other or a box and
+- **The leader.** A thin muted line on a casing of the background, so it
+  reads on a light map, a satellite photo or a dark plan. It leaves from
+  the middle of the box's edge that faces the tile and runs straight to
+  the tile's edge, aimed at its centre, ending in a small dot. Leaders never cross each other or a box and
   keep off other tiles where they can; they are drawn over the map, trays
   and cables, never under them.
-- **The box.** A thin bar down its left edge in the tile's own colour,
-  the colour its icon is drawn in.
+- **The box.** A plain bordered box, like the plan's other plates.
 - **Where.** Close to the tile: no leader is longer than about four icons.
   The racks of a room first try a tidy row along the nearest side of the
   room, in the order of their tiles; when that row would be too far, would
