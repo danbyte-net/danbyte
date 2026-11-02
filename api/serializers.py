@@ -11059,6 +11059,7 @@ class FloorPlanSerializer(
     geo = serializers.SerializerMethodField()
     base_map = serializers.SerializerMethodField()
     map_visible = serializers.SerializerMethodField()
+    map_levels = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -11092,6 +11093,17 @@ class FloorPlanSerializer(
         from .floor_plan_layers import map_visible
 
         return map_visible(obj)
+
+    def get_map_levels(self, obj) -> int | None:
+        """The floors a larger frame in From site map grows together: this
+        one and, on an aligned floor plan, the levels of the same grid and
+        map (api/floor_plan_geo.py ``grow_levels``). Null on a list."""
+        from .floor_plan_geo import grow_levels
+
+        view = self.context.get("view")
+        if getattr(view, "action", None) == "list" or getattr(obj, "kind", "plan") == "view":
+            return None
+        return len(grow_levels(obj))
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
@@ -11351,12 +11363,12 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
                   "background_opacity", "background_shown", "base_map", "map_opacity",
-                  "map_shown", "map_visible", "state", "description", "tile_count",
-                  "drawing", "kind", "snapshot", "geo",
+                  "map_shown", "map_visible", "map_levels", "state", "description",
+                  "tile_count", "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "elevation", "background_image",
-                            "base_map", "map_visible",
+                            "base_map", "map_visible", "map_levels",
                             "tile_count", "drawing", "kind", "snapshot", "geo",
                             "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own

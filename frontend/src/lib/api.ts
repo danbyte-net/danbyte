@@ -12637,6 +12637,10 @@ export interface FloorPlan {
   map_shown?: boolean | null
   /** Whether the base map is drawn. */
   map_visible?: boolean
+  /** The floors a larger frame in From site map grows together: this one
+   * and the levels of an aligned floor plan of the same grid and map. Null
+   * on a list. */
+  map_levels?: number | null
   /** View prefs (overlay mode, grid on/off…) - free schema. */
   state: Record<string, unknown>
   description: string

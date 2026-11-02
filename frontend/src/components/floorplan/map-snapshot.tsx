@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
@@ -18,10 +19,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { observeMapSize, setBaseLayer } from "@/components/site-map/map-core"
-import { TileReadError } from "@/components/site-map/plan-from-map"
+import {
+  mercX,
+  mercY,
+  TileReadError,
+} from "@/components/site-map/plan-from-map"
 import type { Bbox } from "@/components/site-map/plan-from-map"
 
-import { bboxOf, frameAt } from "./plan-geo"
+import { frameLayer } from "./frame-layer"
+import {
+  bboxOf,
+  centreInner,
+  frameAround,
+  frameBbox,
+  frameError,
+  frameOfPlan,
+  moveFrame,
+} from "./plan-geo"
+import type { CellFrame } from "./plan-geo"
 import { renderPlanMap } from "./plan-map-dialogs"
 
 // A floor's base map: a Site map snapshot under its floor drawing
@@ -35,8 +50,6 @@ export const BASEMAPS = [
   { value: "map" as const, label: "Map" },
   { value: "sat" as const, label: "Satellite" },
 ]
-
-const FRAME = "#2563eb"
 
 /** The site map's own query: tiles and the sites' positions. */
 function useSiteMap(enabled: boolean) {
@@ -59,31 +72,47 @@ export function useRefetchBackgrounds() {
       ["floor-plan-stack"],
       ["floor-plan-stacks"],
       ["floor-plans"],
+      ["floor-plan-contents"],
       ["site-map"],
     ])
       void qc.invalidateQueries({ queryKey: key })
   }
 }
 
-/** Render `bbox` and send it as the plan's map. Throws TileReadError when
- * the tiles can't be read from this browser. */
+/** A frame larger than the grid: its size and where the grid sits in it,
+ * in cells (the server grows the grid to it). */
+export interface GrowTo {
+  grid: [number, number]
+  offset: [number, number]
+  version?: string
+}
+
+/** Render `bbox` and send it as the plan's map. `frame` sends the box (a
+ * plan with no anchor yet); `grow` a frame larger than the grid. Throws
+ * TileReadError when the tiles can't be read from this browser. */
 export async function captureMap(
   plan: Pick<FloorPlan, "id">,
   tiles: SiteMapPayload["tiles"] | undefined,
   basemap: Basemap,
   bbox: Bbox,
   zoom: number,
-  frame: boolean
+  frame: boolean,
+  grow?: GrowTo
 ) {
   const img = await renderPlanMap(tiles, basemap, bbox, zoom)
   const fd = new FormData()
   fd.append("basemap", basemap)
   fd.append("zoom", String(img.zoom))
-  if (frame)
+  if (frame || grow)
     fd.append(
       "bbox",
       JSON.stringify([bbox.south, bbox.west, bbox.north, bbox.east])
     )
+  if (grow) {
+    fd.append("grid", JSON.stringify(grow.grid))
+    fd.append("offset", JSON.stringify(grow.offset))
+    if (grow.version) fd.append("version", grow.version)
+  }
   fd.append(
     "image",
     img.blob,
@@ -95,12 +124,32 @@ export async function captureMap(
   })
 }
 
+/** "30 × 20 cells · 18 × 12 m" for a frame of cells of `cellMm`. */
+export function frameReadout(w: number, h: number, cellMm: number) {
+  const m = (n: number) => +((n * cellMm) / 1000).toFixed(1)
+  return `${w} × ${h} cells · ${m(w)} × ${m(h)} m`
+}
+
+/** The old box's middle, kept after the map was removed: where the dialog
+ * opens, never a lock. */
+function lastCentre(plan: FloorPlan) {
+  const fm = (plan.state as { from_map?: { bbox?: unknown } } | undefined)
+    ?.from_map
+  const b = fm?.bbox
+  if (!Array.isArray(b) || b.length !== 4 || !b.every(Number.isFinite))
+    return null
+  const [s, w, n, e] = b as number[]
+  return { lat: (s + n) / 2, lng: (w + e) / 2 }
+}
+
 /**
  * **From site map…**: pick Map or Satellite and frame the floor on a small
- * map. A plan tied to the map already (a geo anchor) shows its box; one
- * that is not is framed by a box of the grid's real size - its cells at
- * their cell size - that stays in the middle while the map is dragged
- * under it.
+ * map. The frame starts at the grid's real size - its cells at their cell
+ * size - and its corner and edge handles grow it in whole cells; the grid
+ * as it is shows dashed inside it. A plan tied to the map already (a geo
+ * anchor) keeps its box where it is; on any other the frame and the dashed
+ * grid are dragged where they belong. A larger frame grows the grid on
+ * Capture, everything on it moving with the dashed box.
  */
 export function MapSnapshotDialog({
   plan,
@@ -122,12 +171,15 @@ export function MapSnapshotDialog({
   )
 }
 
-function SnapshotForm({
+export function SnapshotForm({
   plan,
   onClose,
+  renderMap = (p) => <FrameMap {...p} />,
 }: {
   plan: FloorPlan
   onClose: () => void
+  /** The small map (tests swap it: Leaflet needs a real layout). */
+  renderMap?: (p: FrameMapProps) => ReactNode
 }) {
   const siteMap = useSiteMap(true)
   const tiles = siteMap.data?.tiles
@@ -138,10 +190,8 @@ function SnapshotForm({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const anchored = !!plan.geo
-  const widthM = (plan.grid_width * plan.cell_mm) / 1000
-  const heightM = (plan.grid_height * plan.cell_mm) / 1000
-  // Start on the plan's box, else its site, else any site with a position
-  // (a site not placed on the map yet).
+  // Start on the plan's box, else the box it had, else its site, else any
+  // site with a position (a site not placed on the map yet).
   const sites = siteMap.data?.sites
   const site =
     sites?.find((s) => s.id === plan.site.id && s.latitude != null) ??
@@ -151,23 +201,34 @@ function SnapshotForm({
       const b = bboxOf(plan.geo)
       return { lat: (b.north + b.south) / 2, lng: (b.west + b.east) / 2 }
     }
+    const last = lastCentre(plan)
+    if (last) return last
     if (site?.latitude != null && site.longitude != null)
       return { lat: site.latitude, lng: site.longitude }
     return null
-  }, [plan.geo, site?.latitude, site?.longitude])
-  const [center, setCenter] = useState<{ lat: number; lng: number } | null>(
-    null
-  )
+  }, [plan.geo, plan.state, site?.latitude, site?.longitude])
+  const initial = useMemo(() => {
+    if (plan.geo) return frameOfPlan({ ...plan, geo: plan.geo })
+    if (!start) return null
+    return frameAround(start, plan.grid_width, plan.grid_height, plan.cell_mm)
+  }, [plan, start])
+  const [edited, setEdited] = useState<CellFrame | null>(null)
+  // The dashed grid stays in the middle until it is dragged.
+  const [placed, setPlaced] = useState(false)
   const [zoom, setZoom] = useState(plan.geo?.zoom ?? 18)
-  const at = center ?? start
-  const bbox: Bbox | null = plan.geo
-    ? bboxOf(plan.geo)
-    : at
-      ? frameAt(at, widthM, heightM)
-      : null
+  const frame = edited ?? initial
+  const grown =
+    !!frame && (frame.w !== plan.grid_width || frame.h !== plan.grid_height)
+  const error = frame ? frameError(frame) : undefined
+  const levels = plan.map_levels ?? 1
+
+  const onFrame = (f: CellFrame, what: "resize" | "move" | "inner") => {
+    if (what === "inner") setPlaced(true)
+    setEdited(what === "resize" && !anchored && !placed ? centreInner(f) : f)
+  }
 
   const capture = async () => {
-    if (!bbox) return
+    if (!frame || error) return
     setBusy(true)
     try {
       // The deepest tiles: a floor is a building, not a campus (the render
@@ -176,12 +237,21 @@ function SnapshotForm({
         plan,
         tiles,
         basemap,
-        bbox,
+        frameBbox(frame),
         Math.max(zoom, 19),
-        !anchored
+        !anchored,
+        grown
+          ? {
+              grid: [frame.w, frame.h],
+              offset: [frame.ix, frame.iy],
+              version: plan.updated_at,
+            }
+          : undefined
       )
       refetch()
-      toast.success("Map captured")
+      toast.success(
+        grown ? `Grown to ${frame.w} × ${frame.h} cells` : "Map captured"
+      )
       onClose()
     } catch (e) {
       if (e instanceof TileReadError) setFailed(true)
@@ -207,33 +277,37 @@ function SnapshotForm({
             items={BASEMAPS}
           />
         </Field>
-        {siteMap.isLoading ? null : start && tiles ? (
-          <FrameMap
-            start={start}
-            startZoom={plan.geo?.zoom ?? 18}
-            bbox={bbox}
-            fixed={anchored}
-            tiles={tiles}
-            basemap={basemap}
-            onMove={(c, z) => {
-              setCenter(c)
-              setZoom(z)
-            }}
-          />
+        {siteMap.isLoading ? null : start && tiles && frame ? (
+          renderMap({
+            start,
+            startZoom: plan.geo?.zoom ?? 18,
+            frame,
+            anchored,
+            tiles,
+            basemap,
+            onFrame,
+            onZoom: setZoom,
+          })
         ) : (
           <p className="text-sm text-muted-foreground">
             {tiles ? "No site has a position on the map." : "No map tiles."}
           </p>
         )}
-        <p className="text-xs text-muted-foreground" data-testid="frame-size">
-          <span className="num">
-            {plan.grid_width} × {plan.grid_height}
-          </span>{" "}
-          cells ·{" "}
-          <span className="num">
-            {+widthM.toFixed(1)} × {+heightM.toFixed(1)} m
-          </span>
-        </p>
+        {frame && (
+          <p
+            className="flex flex-wrap gap-x-3 text-xs text-muted-foreground"
+            data-testid="frame-size"
+          >
+            <span className="num">
+              {frameReadout(frame.w, frame.h, plan.cell_mm)}
+            </span>
+            {error ? (
+              <span className="text-destructive">{error}</span>
+            ) : grown && levels > 1 ? (
+              <span>Grows all {levels} levels</span>
+            ) : null}
+          </p>
+        )}
         {failed && (
           <div
             role="alert"
@@ -249,7 +323,7 @@ function SnapshotForm({
         </Button>
         <Button
           type="button"
-          disabled={busy || !bbox || !tiles}
+          disabled={busy || !frame || !tiles || !!error}
           onClick={() => void capture()}
         >
           {busy ? "Capturing…" : "Capture"}
@@ -259,57 +333,82 @@ function SnapshotForm({
   )
 }
 
-/** The small framing map: the frame drawn over it, fixed to the plan's
- * box when it has one, else kept in the middle as the map moves. */
+export interface FrameMapProps {
+  start: { lat: number; lng: number }
+  startZoom: number
+  frame: CellFrame
+  anchored: boolean
+  tiles: SiteMapPayload["tiles"]
+  basemap: Basemap
+  onFrame: (f: CellFrame, what: "resize" | "move" | "inner") => void
+  onZoom: (zoom: number) => void
+}
+
+/** The small framing map with the shared frame (frame-layer.ts) on it: its
+ * handles resize it; on a plan with no anchor the frame and the dashed
+ * grid are dragged too, and a double-click brings the frame there. */
 function FrameMap({
   start,
   startZoom,
-  bbox,
-  fixed,
+  frame,
+  anchored,
   tiles,
   basemap,
-  onMove,
-}: {
-  start: { lat: number; lng: number }
-  startZoom: number
-  bbox: Bbox | null
-  fixed: boolean
-  tiles: SiteMapPayload["tiles"]
-  basemap: Basemap
-  onMove: (center: { lat: number; lng: number }, zoom: number) => void
-}) {
+  onFrame,
+  onZoom,
+}: FrameMapProps) {
   const el = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const baseRef = useRef<L.TileLayer | null>(null)
-  const rectRef = useRef<L.Rectangle | null>(null)
-  const move = useRef(onMove)
-  move.current = onMove
+  const layerRef = useRef<ReturnType<typeof frameLayer> | null>(null)
+  const frameRef = useRef(frame)
+  frameRef.current = frame
+  const change = useRef(onFrame)
+  change.current = onFrame
+  const zoomed = useRef(onZoom)
+  zoomed.current = onZoom
 
   useEffect(() => {
     if (!el.current || mapRef.current) return
     const map = L.map(el.current, {
       zoomControl: true,
       attributionControl: true,
+      doubleClickZoom: anchored,
     })
     map.setView([start.lat, start.lng], Math.min(19, startZoom))
-    if (fixed && bbox)
-      map.fitBounds(
-        [
-          [bbox.south, bbox.west],
-          [bbox.north, bbox.east],
-        ],
-        { padding: [32, 32] }
-      )
-    const report = () => {
-      const c = map.getCenter()
-      move.current({ lat: c.lat, lng: c.lng }, Math.round(map.getZoom()))
-    }
-    map.on("move zoomend", report)
-    report()
+    const b = frameBbox(frame)
+    map.fitBounds(
+      [
+        [b.south, b.west],
+        [b.north, b.east],
+      ],
+      { padding: [48, 48], maxZoom: 19 }
+    )
+    map.on("zoomend", () => zoomed.current(Math.round(map.getZoom())))
+    zoomed.current(Math.round(map.getZoom()))
+    if (!anchored)
+      map.on("dblclick", (e: L.LeafletMouseEvent) => {
+        // The frame's middle to where it was double-clicked.
+        const f = frameRef.current
+        const fb = frameBbox(f)
+        const mx = (mercX(fb.west) + mercX(fb.east)) / 2
+        const my = (mercY(fb.north) + mercY(fb.south)) / 2
+        change.current(
+          moveFrame(f, mercX(e.latlng.lng) - mx, mercY(e.latlng.lat) - my),
+          "move"
+        )
+      })
     mapRef.current = map
+    layerRef.current = frameLayer(map, frame, {
+      movable: !anchored,
+      innerMovable: !anchored,
+      onChange: (f, what) => change.current(f, what),
+    })
     const unobserve = observeMapSize(map, el.current)
     return () => {
       unobserve()
+      layerRef.current?.remove()
+      layerRef.current = null
       map.remove()
       mapRef.current = null
     }
@@ -328,26 +427,13 @@ function FrameMap({
   }, [url, basemap, tiles])
 
   useEffect(() => {
-    const map = mapRef.current
-    if (!map || !bbox) return
-    const bounds: L.LatLngBoundsExpression = [
-      [bbox.south, bbox.west],
-      [bbox.north, bbox.east],
-    ]
-    if (rectRef.current) rectRef.current.setBounds(bounds)
-    else
-      rectRef.current = L.rectangle(bounds, {
-        color: FRAME,
-        weight: 2,
-        fillOpacity: 0.06,
-        interactive: false,
-      }).addTo(map)
-  }, [bbox])
+    layerRef.current?.update(frame)
+  }, [frame])
 
   return (
     <div
       ref={el}
-      className="h-72 w-full overflow-hidden rounded-md border border-border"
+      className="h-80 w-full overflow-hidden rounded-md border border-border"
       data-testid="frame-map"
     />
   )

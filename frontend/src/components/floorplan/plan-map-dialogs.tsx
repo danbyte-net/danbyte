@@ -474,9 +474,9 @@ function ExpandForm({
         <ExpandMap
           plan={plan}
           sides={sides}
-          onChange={(side, cells) => {
-            setSide(side, cells)
-            setTyped((t) => ({ ...t, [side]: undefined }))
+          onChange={(next) => {
+            setSides(next)
+            setTyped({})
           }}
           tiles={tiles}
           basemap={basemap}

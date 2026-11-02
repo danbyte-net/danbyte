@@ -122,12 +122,6 @@ def _mirror(row) -> None:
         f.save(update_fields=["geo_captured_at", "geo_basemap", "geo_zoom", "updated_at"])
 
 
-def _unmirror(floor_ids) -> None:
-    for f in FloorPlan.objects.filter(pk__in=list(floor_ids)).order_by("pk"):
-        f.geo_captured_at, f.geo_basemap = None, ""
-        f.save(update_fields=["geo_captured_at", "geo_basemap", "updated_at"])
-
-
 def _delete_file(name: str) -> None:
     if not name:
         return
@@ -297,19 +291,31 @@ def _crop_bbox(src, crop):
     ]
 
 
+def _unanchor(floor_ids) -> None:
+    """Untie each floor from the map: no geo anchor, so the next From site
+    map frames it anew. The old box stays in ``state.from_map.bbox`` - only
+    where the dialog opens, never a lock."""
+    for f in FloorPlan.objects.filter(pk__in=list(floor_ids)).order_by("pk"):
+        f.geo_bbox = f.geo_mpc = f.geo_zoom = f.geo_captured_at = None
+        f.geo_basemap = ""
+        f.save(update_fields=["geo_bbox", "geo_mpc", "geo_zoom", "geo_captured_at",
+                              "geo_basemap", "updated_at"])
+
+
 def remove_map(plan) -> None:
     """Take the map away - from every floor it lies under (one building's
-    map is one map) - and delete its picture. The geo anchor stays. Call
-    inside a transaction."""
+    map is one map) - and delete its picture. The geo anchor of each of
+    those floors goes too. Call inside a transaction."""
     if not plan.base_map_id:
         return
     row = plan.base_map
     ids = list(row.floors.values_list("pk", flat=True))
     # Its picture goes with it (api/signals.py).
     row.delete()
-    _unmirror(ids)
+    _unanchor(ids)
     plan.base_map = None
-    plan.refresh_from_db(fields=["geo_captured_at", "geo_basemap", "base_map"])
+    plan.refresh_from_db(fields=["geo_bbox", "geo_mpc", "geo_zoom", "geo_captured_at",
+                                 "geo_basemap", "base_map"])
 
 
 def drop_orphan(map_id) -> None:
@@ -325,17 +331,19 @@ def drop_orphan(map_id) -> None:
 # ── framing a plan that has no anchor ──────────────────────────────────────
 
 
-def check_frame(plan, bbox) -> None:
+def check_frame(plan, bbox, cells=None) -> None:
     """A box given to anchor ``plan`` must be the grid's real size - its
-    cells at ``cell_mm`` - give or take :data:`FRAME_TOLERANCE`."""
+    cells at ``cell_mm`` - give or take :data:`FRAME_TOLERANCE`. ``cells``
+    (width, height) is the size the grid grows to with it, if larger."""
     from .floor_plan_from_map import merc_x, merc_y, metres_per_unit
 
     s, w, n, e = bbox
     per = metres_per_unit(s, n)
     width_m = (merc_x(e) - merc_x(w)) * per
     height_m = (merc_y(s) - merc_y(n)) * per
-    want_w = plan.grid_width * plan.cell_mm / 1000
-    want_h = plan.grid_height * plan.cell_mm / 1000
+    gw, gh = cells or (plan.grid_width, plan.grid_height)
+    want_w = gw * plan.cell_mm / 1000
+    want_h = gh * plan.cell_mm / 1000
     if abs(width_m - want_w) > want_w * FRAME_TOLERANCE or \
             abs(height_m - want_h) > want_h * FRAME_TOLERANCE:
         raise ValidationError({"bbox": [

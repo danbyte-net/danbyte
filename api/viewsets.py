@@ -13956,8 +13956,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
         (``map``/``sat``), ``zoom``, and ``bbox`` on a plan with no geo
         anchor yet - the box must be the grid's real size. On an anchored
         plan the box is the anchor's and the render replaces the map
-        (Update snapshot). ``DELETE`` removes the map from every floor it
-        lies under (api/floor_plan_layers.py)."""
+        (Update snapshot). With ``grid`` [w, h] and ``offset`` [x, y] the
+        frame may be larger than the grid: the grid grows to it and
+        everything moves by ``offset``, on every level that grows with it
+        (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
+        from every floor it lies under (api/floor_plan_layers.py)."""
         from audit.context import cause
 
         from .floor_plan_from_map import _clean_bbox
@@ -13973,6 +13976,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
             return Response(status=drf_status.HTTP_204_NO_CONTENT)
         if "image" not in request.FILES:
             raise ValidationError({"image": ["The rendered map."]})
+        if request.data.get("grid") not in (None, ""):
+            # A frame larger than the grid: grow it (and the levels that
+            # share it) and map the whole frame (api/floor_plan_geo.py).
+            from .floor_plan_geo import grow_and_map
+
+            return grow_and_map(self, request, plan)
         if not has_anchor(plan):
             raw = request.data.get("bbox")
             if raw in (None, ""):

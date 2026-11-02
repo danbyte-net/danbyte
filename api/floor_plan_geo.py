@@ -479,6 +479,177 @@ def expand(view, request, plan):
     return Response(data)
 
 
+# ── a larger frame in From site map ────────────────────────────────────────
+
+
+def grow_levels(plan) -> list:
+    """The floors a larger frame grows together: ``plan`` and, on an
+    aligned floor plan, every other level of the same grid and cell size
+    that draws the same map (or none) and is tied to the same box (or to
+    none) - so the building's levels stay aligned under one map."""
+    from django.db.models import Q
+
+    from .floor_plan_layers import _key
+
+    if not (plan.stack_id and plan.stack.aligned) or getattr(plan, "kind", "plan") != "plan":
+        return [plan]
+    qs = FloorPlan.objects.filter(
+        stack_id=plan.stack_id, kind="plan", grid_width=plan.grid_width,
+        grid_height=plan.grid_height, cell_mm=plan.cell_mm,
+    ).exclude(pk=plan.pk)
+    if plan.base_map_id:
+        qs = qs.filter(Q(base_map__isnull=True) | Q(base_map_id=plan.base_map_id))
+    else:
+        qs = qs.filter(base_map__isnull=True)
+    key = _key(plan.geo_bbox) if has_anchor(plan) else None
+    return [plan, *(
+        f for f in qs.order_by("floor_order", "pk")
+        if _key(f.geo_bbox) is None or _key(f.geo_bbox) == key
+    )]
+
+
+def _parse_pair(raw, field: str) -> tuple[int, int]:
+    import json
+
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2 or not all(
+        isinstance(v, int) and not isinstance(v, bool) for v in raw
+    ):
+        raise ValidationError({field: ["Two whole numbers."]})
+    return int(raw[0]), int(raw[1])
+
+
+def grow_and_map(view, request, plan):
+    """``POST map/`` with a frame larger than the grid: ``bbox`` (the whole
+    frame), ``grid`` [width, height] (its size in cells), ``offset`` [x, y]
+    (where the grid as it is sits in it, in cells), ``image`` (the render
+    of the frame), ``basemap``, ``zoom`` and optionally ``version``.
+
+    In one transaction the plan - with the levels that grow with it
+    (:func:`grow_levels`) - grows to ``grid``, everything on each moves by
+    ``offset`` (as Expand moves it), each takes ``bbox`` as its anchor and
+    the render becomes their map. On a plan with an anchor the frame must
+    hold its box where it is: ``offset`` is the cells added west and north.
+    """
+    from audit.context import cause
+
+    from .floor_plan_layers import _key, check_frame
+    from .floor_plan_placement import changed_by, parse_version
+    from .serializers import FloorPlanSerializer
+
+    body = request.data
+    upload = request.FILES.get("image")
+    if upload is None:
+        raise ValidationError({"image": ["The rendered map."]})
+    gw, gh = _parse_pair(body.get("grid"), "grid")
+    ox, oy = _parse_pair(body.get("offset") or "[0, 0]", "offset")
+    raw = body.get("bbox")
+    if raw in (None, ""):
+        raise ValidationError({"bbox": ["Frame the plan on the map."]})
+    bbox = list(_clean_bbox(raw))
+    stamp = parse_version(body.get("version"))
+    if gw < plan.grid_width or gh < plan.grid_height:
+        raise ValidationError({"grid": [
+            f"At least {plan.grid_width} × {plan.grid_height} cells: the grid as it is."
+        ]})
+    if gw > MAX_GRID or gh > MAX_GRID:
+        raise ValidationError({"grid": [f"At most {MAX_GRID} cells a side."]})
+    if not (0 <= ox <= gw - plan.grid_width and 0 <= oy <= gh - plan.grid_height):
+        raise ValidationError({"offset": ["The grid must lie inside the frame."]})
+    ext = check_image(upload)
+    basemap = _parse_basemap(body.get("basemap"))
+    zoom = _parse_zoom(body.get("zoom"))
+    tenant = view._tenant_or_403()
+
+    with transaction.atomic():
+        plan = FloorPlan.objects.select_for_update(of=("self",)).select_related(
+            "site", "location", "stack", "base_map"
+        ).get(pk=plan.pk)
+        if stamp is not None and stamp != plan.updated_at:
+            return Response(
+                {"detail": "Changed elsewhere since you opened the plan.",
+                 "conflicts": [{
+                     "kind": "plan", "id": str(plan.pk),
+                     "current": FloorPlanSerializer(
+                         plan, context=view.get_serializer_context()).data,
+                     "changed_by": changed_by(tenant, plan.pk),
+                 }]},
+                status=drf_status.HTTP_409_CONFLICT,
+            )
+        if has_anchor(plan):
+            left, top, right, bottom, snapped = growth(plan, bbox)
+            if (left, top) != (ox, oy) or (
+                plan.grid_width + left + right, plan.grid_height + top + bottom
+            ) != (gw, gh):
+                raise ValidationError({"bbox": [
+                    "The frame must hold the plan's box where it is: "
+                    f"{gw} × {gh} cells with the plan {ox} in and {oy} down."
+                ]})
+            bbox = snapped
+        else:
+            check_frame(plan, bbox, (gw, gh))
+        levels = grow_levels(plan)
+        ids = [f.pk for f in levels]
+        list(FloorPlan.objects.select_for_update().filter(pk__in=ids)
+             .order_by("pk").values_list("pk", flat=True))
+        allowed = rbac.restrict_queryset(
+            FloorPlan.objects.filter(pk__in=ids), request.user, tenant, "floorplan", "change",
+        ).count()
+        if allowed != len(ids):
+            raise PermissionDenied("You may not change every level that grows with this one.")
+        old_w, old_h = plan.grid_width, plan.grid_height
+        grown = (gw, gh) != (old_w, old_h)
+        why = (f"Grew {plan.name} to {gw} × {gh} cells from the Site map" if grown
+               else "Map captured from the Site map")
+        moved = {}
+        with cause(why[:255]):
+            row = plan.base_map if plan.base_map_id else None
+            # A map shared with floors that do not grow stays theirs; the
+            # grown levels get a new one.
+            own = row is not None and not row.floors.exclude(pk__in=ids).exists()
+            for f in levels:
+                f = plan if f.pk == plan.pk else f
+                n = shift_contents(f, ox, oy)
+                if f.pk == plan.pk:
+                    moved = n
+                f.grid_width, f.grid_height = gw, gh
+                if grown:
+                    # The floor's own picture keeps its place on the grid.
+                    _pad_file(f.background_image, f"floor-{f.pk.hex[:8]}", f,
+                              old_w, old_h, ox, oy)
+                set_anchor(f, bbox, basemap=f.geo_basemap)
+                if not own:
+                    f.base_map = None
+                elif row is not None:
+                    f.base_map = row
+                if f.pk != plan.pk:
+                    f.save()
+            plan.save()
+            _store_background(plan, upload, ext, basemap, zoom)
+            plan.save()
+            # Levels that took the box but not the map (store_map shares a
+            # new map only with levels that had none): the same map.
+            for f in FloorPlan.objects.filter(pk__in=ids).exclude(pk=plan.pk).order_by("pk"):
+                if f.base_map_id != plan.base_map_id and _key(f.geo_bbox) == _key(plan.geo_bbox):
+                    f.base_map_id = plan.base_map_id
+                    f.geo_captured_at, f.geo_basemap, f.geo_zoom = (
+                        plan.geo_captured_at, plan.geo_basemap, plan.geo_zoom)
+                    f.save()
+    plan = FloorPlan.objects.select_related("site", "location", "stack", "base_map") \
+        .get(pk=plan.pk)
+    data = FloorPlanSerializer(plan, context=view.get_serializer_context()).data
+    data["grown"] = {
+        "left": ox, "top": oy,
+        "right": gw - old_w - ox, "bottom": gh - old_h - oy,
+        "levels": len(ids), "moved": moved,
+    }
+    return Response(data)
+
+
 # ── re-import outlines ─────────────────────────────────────────────────────
 
 
