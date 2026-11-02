@@ -156,3 +156,200 @@ export function roomOn(plan: AnchoredPlan, s: Sides, side: keyof Sides) {
     : plan.grid_height + s.north + s.south - s[side]
   return Math.max(0, MAX_GRID - used)
 }
+
+// ── a frame in whole cells ──────────────────────────────────────────────────
+// The frame both Expand and From site map draw: the grid as it is (dashed)
+// inside a frame that grows from it in whole cells. Corner and edge handles
+// resize the frame; it never gets smaller than the grid it holds.
+
+/** A frame on the map in whole cells, with the grid as it is inside it. */
+export interface CellFrame {
+  /** The frame's north-west corner, Mercator units. */
+  x: number
+  y: number
+  /** One cell, Mercator units across and down. */
+  cx: number
+  cy: number
+  /** The frame's size, cells. */
+  w: number
+  h: number
+  /** The grid as it is: its place in the frame and its size, cells. */
+  ix: number
+  iy: number
+  iw: number
+  ih: number
+  /** A cell in metres, when the frame is placed by hand (no anchor): its
+   * Mercator size is worked out again where it is moved to. */
+  cellM?: number
+}
+
+export type FrameHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"
+
+export const FRAME_HANDLES: FrameHandle[] = [
+  "n",
+  "ne",
+  "e",
+  "se",
+  "s",
+  "sw",
+  "w",
+  "nw",
+]
+
+const unitsAt = (lat: number, cellM: number) =>
+  cellM / (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180))
+
+/** A frame of the grid's own size, centred on `center` - a plan with no
+ * geo anchor, at true scale (the server checks the box's size). */
+export function frameAround(
+  center: { lat: number; lng: number },
+  gridWidth: number,
+  gridHeight: number,
+  cellMm: number
+): CellFrame {
+  const cellM = cellMm / 1000
+  const c = unitsAt(center.lat, cellM)
+  return {
+    x: mercX(center.lng) - (gridWidth * c) / 2,
+    y: mercY(center.lat) - (gridHeight * c) / 2,
+    cx: c,
+    cy: c,
+    w: gridWidth,
+    h: gridHeight,
+    ix: 0,
+    iy: 0,
+    iw: gridWidth,
+    ih: gridHeight,
+    cellM,
+  }
+}
+
+/** An anchored plan's box grown by `s`, as a frame. */
+export function frameOfPlan(
+  plan: AnchoredPlan,
+  s: Sides = NO_GROWTH
+): CellFrame {
+  const { b, cx, cy } = cellUnits(plan)
+  return {
+    x: mercX(b.west) - s.west * cx,
+    y: mercY(b.north) - s.north * cy,
+    cx,
+    cy,
+    w: plan.grid_width + s.west + s.east,
+    h: plan.grid_height + s.north + s.south,
+    ix: s.west,
+    iy: s.north,
+    iw: plan.grid_width,
+    ih: plan.grid_height,
+  }
+}
+
+/** The cells the frame adds on each side of the grid. */
+export function sidesOfFrame(f: CellFrame): Sides {
+  return {
+    west: f.ix,
+    north: f.iy,
+    east: f.w - f.iw - f.ix,
+    south: f.h - f.ih - f.iy,
+  }
+}
+
+const boxOf = (x: number, y: number, w: number, h: number): Bbox => ({
+  west: lngOf(x),
+  east: lngOf(x + w),
+  north: latOf(y),
+  south: latOf(y + h),
+})
+
+/** The frame's box. */
+export const frameBbox = (f: CellFrame): Bbox =>
+  boxOf(f.x, f.y, f.w * f.cx, f.h * f.cy)
+
+/** The box of the grid as it is, inside the frame. */
+export const innerBbox = (f: CellFrame): Bbox =>
+  boxOf(f.x + f.ix * f.cx, f.y + f.iy * f.cy, f.iw * f.cx, f.ih * f.cy)
+
+/** Where a handle sits on the map: a corner, or the middle of an edge. */
+export function handleAt(f: CellFrame, h: FrameHandle) {
+  const b = frameBbox(f)
+  const lat = h.includes("n")
+    ? b.north
+    : h.includes("s")
+      ? b.south
+      : latOf(f.y + (f.h * f.cy) / 2)
+  const lng = h.includes("w")
+    ? b.west
+    : h.includes("e")
+      ? b.east
+      : lngOf(f.x + (f.w * f.cx) / 2)
+  return { lat, lng }
+}
+
+/** `f` with handle `h` dragged to `at`: its sides on whole cells, never
+ * inside the grid as it is. */
+export function resizeFrame(
+  f: CellFrame,
+  h: FrameHandle,
+  at: { lat: number; lng: number }
+): CellFrame {
+  const px = mercX(at.lng)
+  const py = mercY(at.lat)
+  const out = { ...f }
+  if (h.includes("w")) {
+    const k = Math.min(f.ix, Math.round((px - f.x) / f.cx))
+    out.x = f.x + k * f.cx
+    out.w = f.w - k
+    out.ix = f.ix - k
+  } else if (h.includes("e")) {
+    out.w = Math.max(f.ix + f.iw, Math.round((px - f.x) / f.cx))
+  }
+  if (h.includes("n")) {
+    const k = Math.min(f.iy, Math.round((py - f.y) / f.cy))
+    out.y = f.y + k * f.cy
+    out.h = f.h - k
+    out.iy = f.iy - k
+  } else if (h.includes("s")) {
+    out.h = Math.max(f.iy + f.ih, Math.round((py - f.y) / f.cy))
+  }
+  return out
+}
+
+/** `f` moved by (dx, dy) Mercator units, the grid with it. */
+export function moveFrame(f: CellFrame, dx: number, dy: number): CellFrame {
+  const out = { ...f, x: f.x + dx, y: f.y + dy }
+  if (f.cellM) {
+    // Its cells keep their real size where it now is.
+    const mx = out.x + (f.w * f.cx) / 2
+    const my = out.y + (f.h * f.cy) / 2
+    const c = unitsAt(latOf(my), f.cellM)
+    out.cx = out.cy = c
+    out.x = mx - (f.w * c) / 2
+    out.y = my - (f.h * c) / 2
+  }
+  return out
+}
+
+/** The grid moved inside `f` by (dx, dy) Mercator units, in whole cells,
+ * kept inside the frame. */
+export function moveInner(f: CellFrame, dx: number, dy: number): CellFrame {
+  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v))
+  return {
+    ...f,
+    ix: clamp(f.ix + Math.round(dx / f.cx), f.w - f.iw),
+    iy: clamp(f.iy + Math.round(dy / f.cy), f.h - f.ih),
+  }
+}
+
+/** The grid in the middle of the frame (to the cell, rounded down). */
+export const centreInner = (f: CellFrame): CellFrame => ({
+  ...f,
+  ix: Math.floor((f.w - f.iw) / 2),
+  iy: Math.floor((f.h - f.ih) / 2),
+})
+
+/** Why the frame can't be captured, if so. */
+export function frameError(f: CellFrame): string | undefined {
+  if (f.w > MAX_GRID || f.h > MAX_GRID)
+    return `At most ${MAX_GRID} cells a side`
+  return undefined
+}
