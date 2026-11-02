@@ -7,10 +7,8 @@ just register a viewset on the router.
 from __future__ import annotations
 
 from django.urls import include, path
-from django.views.decorators.cache import cache_page
 from django.views.generic import RedirectView
 from drf_spectacular.views import (
-    SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
@@ -191,6 +189,7 @@ from .presence_views import (
     presence_leave,
     presence_list,
 )
+from .schema_view import CachedSpectacularAPIView
 from .search_views import search as search_view
 from .site_map_outlines import SiteMapOutlineViewSet
 from .site_map_views import site_map, site_map_cables, site_map_connections
@@ -562,10 +561,9 @@ router.register(r"tenant-ldap-group-mappings", TenantLDAPGroupMappingViewSet, ba
 urlpatterns = [
     # OpenAPI schema + interactive reference. /api/ lands on the docs so hitting
     # the API root gives the object-grouped reference, not the raw router index.
-    # Generating the schema walks every viewset and takes well over a minute
-    # on this API; it only changes with the code, so one copy an hour is
-    # plenty for the people who write templates against it.
-    path("schema/", cache_page(60 * 60)(SpectacularAPIView.as_view()), name="schema"),
+    # Generating the schema walks every viewset; the view caches one copy
+    # per release, after the permission check (schema_view.py).
+    path("schema/", CachedSpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
     path("docs/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     path("", RedirectView.as_view(pattern_name="docs", permanent=False), name="api-root"),
