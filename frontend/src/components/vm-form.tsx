@@ -13,6 +13,7 @@ import {
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import {
+  FormCheckbox,
   FormColumn,
   FormColumns,
   FormSection,
@@ -104,6 +105,18 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
   const [softwareVersion, setSoftwareVersion] = useState(
     vm?.software_version ?? ""
   )
+  // Build: what a runner needs to (re)create the VM.
+  const [intended, setIntended] = useState(vm?.intended ?? false)
+  const [representsId, setRepresentsId] = useState<string | null>(
+    vm?.represents_device?.id ?? null
+  )
+  const [vmid, setVmid] = useState(vm?.vmid != null ? String(vm.vmid) : "")
+  const [cpuType, setCpuType] = useState(vm?.cpu_type ?? "")
+  const [sockets, setSockets] = useState(
+    vm?.sockets != null ? String(vm.sockets) : ""
+  )
+  const [image, setImage] = useState(vm?.image ?? "")
+  const [storage, setStorage] = useState(vm?.storage ?? "")
   const [description, setDescription] = useState(vm?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     vm?.tags.map((t) => t.id) ?? []
@@ -130,6 +143,13 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
     setMemoryMb(vm.memory_mb != null ? String(vm.memory_mb) : "")
     setDiskGb(vm.disk_gb != null ? String(vm.disk_gb) : "")
     setSoftwareVersion(vm.software_version ?? "")
+    setIntended(vm.intended ?? false)
+    setRepresentsId(vm.represents_device?.id ?? null)
+    setVmid(vm.vmid != null ? String(vm.vmid) : "")
+    setCpuType(vm.cpu_type ?? "")
+    setSockets(vm.sockets != null ? String(vm.sockets) : "")
+    setImage(vm.image ?? "")
+    setStorage(vm.storage ?? "")
     setDescription(vm.description)
     setTagIds(vm.tags.map((t) => t.id))
     setCustomFields(vm.custom_fields ?? {})
@@ -185,6 +205,17 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
         memory_mb: numOrNull(memoryMb),
         disk_gb: numOrNull(diskGb),
         software_version: softwareVersion.trim(),
+        intended,
+        vmid: numOrNull(vmid),
+        cpu_type: cpuType.trim(),
+        sockets: numOrNull(sockets),
+        image: image.trim(),
+        storage: storage.trim(),
+        // Sent only when changed: a represented device the caller may not
+        // view reads back as null and must not be cleared by a save.
+        ...(representsId !== (vm?.represents_device?.id ?? null)
+          ? { represents_device_id: representsId }
+          : {}),
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -467,6 +498,72 @@ export function VmForm({ vm, onSaved, onCancel }: VmFormProps) {
                 value={diskGb}
                 onChange={setDiskGb}
                 error={fieldErrors.disk_gb}
+              />
+            </div>
+          </FormSection>
+          <FormSection title="Build" card>
+            <FormCheckbox
+              label="Intended"
+              checked={intended}
+              onChange={setIntended}
+              info="Danbyte holds the intent. Sync reports differences as drift and never overwrites, deletes or prunes this VM."
+            />
+            <DevicePicker
+              label="Is router"
+              hint="optional"
+              value={representsId}
+              onChange={setRepresentsId}
+              noneLabel="No device"
+              placeholder="Select the device this VM is…"
+              error={fieldErrors.represents_device_id}
+            />
+            <div className="grid gap-3 @md:grid-cols-3">
+              <FormText
+                label="VMID"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={vmid}
+                onChange={setVmid}
+                placeholder="-"
+                mono
+                error={fieldErrors.vmid}
+              />
+              <FormText
+                label="CPU type"
+                value={cpuType}
+                onChange={setCpuType}
+                placeholder="host"
+                mono
+                error={fieldErrors.cpu_type}
+              />
+              <FormText
+                label="Sockets"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={sockets}
+                onChange={setSockets}
+                placeholder="-"
+                error={fieldErrors.sockets}
+              />
+            </div>
+            <div className="grid gap-3 @md:grid-cols-2">
+              <FormText
+                label="Image"
+                value={image}
+                onChange={setImage}
+                placeholder="local:import/debian-13.qcow2"
+                mono
+                error={fieldErrors.image}
+              />
+              <FormText
+                label="Storage"
+                value={storage}
+                onChange={setStorage}
+                placeholder="local-lvm"
+                mono
+                error={fieldErrors.storage}
               />
             </div>
           </FormSection>

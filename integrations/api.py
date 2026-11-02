@@ -240,7 +240,7 @@ class DeployRunSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeployRun
-        fields = ["id", "target_name", "event", "device_ids", "status",
+        fields = ["id", "target_name", "event", "device_ids", "object_type", "status",
                   "detail", "created_at", "finished_at", "attempt", "retry_of",
                   "can_retry", "duration_ms"]
         read_only_fields = fields
@@ -277,6 +277,9 @@ class DeployRunViewSet(TenantScopedViewSet):
         status_ = self.request.query_params.get("status")
         if status_:
             qs = qs.filter(status=status_)
+        object_type = self.request.query_params.get("object_type")
+        if object_type:
+            qs = qs.filter(object_type=object_type)
         return qs
 
     @action(detail=True, methods=["post"])
@@ -308,6 +311,8 @@ class DeployRunViewSet(TenantScopedViewSet):
             return Response(
                 {"detail": "Target is missing or disabled."}, status=400
             )
+        if run.object_type == "virtualmachine":
+            return self._retry_provision(request, run, target)
         from api.models import Device
 
         valid = list(
@@ -328,6 +333,41 @@ class DeployRunViewSet(TenantScopedViewSet):
             target, valid, event=run.event,
             attempt=run.attempt + 1, retry_of=run.retry_of or run,
         )
+        return Response(DeployRunSerializer(new).data, status=202)
+
+
+    def _retry_provision(self, request, run, target):
+        """A provision retry needs the provision grant on each VM, and only
+        VMs still intended in the target's tenant go again."""
+        from api.models import VirtualMachine
+        from auth_api import rbac
+
+        from .dispatch import enqueue_deploy, target_covers
+        from .provision import audit_provision
+
+        if not target_covers(target, "virtualmachine"):
+            return Response(
+                {"detail": f"{target.name} does not take virtual machines."}, status=400
+            )
+        vms = list(
+            rbac.restrict_queryset(
+                VirtualMachine.objects.filter(
+                    tenant=target.tenant, intended=True, id__in=run.device_ids
+                ),
+                request.user, target.tenant, "virtualmachine", "provision",
+            )
+        )
+        if not vms:
+            return Response(
+                {"detail": "No intended VM here that you may provision."}, status=403
+            )
+        new = enqueue_deploy(
+            target, [v.id for v in vms], event=run.event,
+            attempt=run.attempt + 1, retry_of=run.retry_of or run,
+            object_type="virtualmachine",
+        )
+        for vm in vms:
+            audit_provision(request, vm, target, new, retry_of=run)
         return Response(DeployRunSerializer(new).data, status=202)
 
 
@@ -380,6 +420,9 @@ class DeviceConfigStateViewSet(TenantScopedViewSet):
         status_ = self.request.query_params.get("status")
         if status_:
             qs = qs.filter(status=status_)
+        object_type = self.request.query_params.get("object_type")
+        if object_type:
+            qs = qs.filter(object_type=object_type)
         return qs
 
 
