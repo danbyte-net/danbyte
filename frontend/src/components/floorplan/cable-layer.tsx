@@ -19,6 +19,7 @@ import {
   longestLegMid,
   roundedPath,
   routeLengthM,
+  splitLanes,
   sharedColor,
   shortRuns,
   STUB_PX,
@@ -34,6 +35,7 @@ import type { Pt } from "./cable-route"
 import { routeEnds } from "./plan-label-pass"
 import type { Box } from "./plan-labels"
 import { readableShape } from "./readable"
+import type { ShapeOf } from "./readable"
 
 /** floor-canvas.tsx's CELL. */
 const CELL = 40
@@ -58,6 +60,13 @@ export interface CableHoverHit {
  * plan (cells) when the keyboard focused it. */
 export type CableAnchor = { clientX: number; clientY: number } | { cell: Pt }
 
+/** Where a pick was made, in client px: the pointer, or the middle of the
+ * focused run for a key. */
+export interface CablePickAt {
+  x: number
+  y: number
+}
+
 const px = (pts: readonly Pt[]): Pt[] =>
   pts.map(([x, y]) => [x * CELL, y * CELL])
 
@@ -68,9 +77,14 @@ const px = (pts: readonly Pt[]): Pt[] =>
  * state; strokes the same width on screen at every zoom.
  *
  * Level of detail by cell size on screen: far draws the traced runs and
- * the runs that ride no tray (the trays carry the others' counts); mid
- * draws bundles and single runs; near draws every lane that fits, with
- * labels when they are on.
+ * the runs that ride no tray, bundled where they share a stretch (the
+ * trays carry the others' counts); mid draws bundles and single runs; near
+ * draws every lane that fits, with labels when they are on. Nothing is
+ * culled to the view: every leg of every drawn run is in the drawing.
+ *
+ * A click on a bundle (or a cluster of short runs) asks which cable
+ * (`onChoose`, the cable chooser); a traced cable, or the chooser's row
+ * under the pointer (`soloId`), runs in its own lane beside its bundles.
  *
  * From afar a run too short to see draws as a marker between its ends (a
  * count beside it where several meet), and a cable with one end here as
@@ -94,6 +108,9 @@ export const CableLayer = memo(function CableLayer({
   stubs = NO_STUBS,
   tiles = NO_TILES,
   readable = false,
+  shapeOf,
+  onChoose,
+  soloId = null,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -115,6 +132,16 @@ export const CableLayer = memo(function CableLayer({
   tiles?: readonly FloorPlanTile[]
   /** Readable: an end's tile as its grown symbol. */
   readable?: boolean
+  /** How a tile draws when not as itself (Readable, icon tiles); wins over
+   * `readable`. */
+  shapeOf?: ShapeOf | null
+  /** A click on several cables at once - a bundle, a cluster of short
+   * runs - asks which one (the cable chooser). Without it a bundle fans
+   * out into its lanes. */
+  onChoose?: (ids: string[], at: CablePickAt) => void
+  /** The one cable the chooser's row under the pointer shows: drawn
+   * apart from its bundles, above the rest, the others dimmed. */
+  soloId?: string | null
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -162,9 +189,9 @@ export const CableLayer = memo(function CableLayer({
   const rectOf = (id: string): Box | null => {
     const t = tileById.get(id)
     if (!t) return null
-    return readable
-      ? readableShape(t, pxPerCell).box
-      : { x: t.x, y: t.y, w: t.width, h: t.height }
+    const real = { x: t.x, y: t.y, w: t.width, h: t.height }
+    if (shapeOf !== undefined) return shapeOf?.(t)?.box ?? real
+    return readable ? readableShape(t, pxPerCell).box : real
   }
 
   const colorOf = (id: string) => {
@@ -176,7 +203,10 @@ export const CableLayer = memo(function CableLayer({
   // A run hovered on its own (not through its bundle) swaps its hit band
   // for its whole route; a bundle's members stay under the bundle's.
   const hovOne = new Set(hover && !hover.bundle ? hover.ids : [])
-  const dim = hi.size > 0
+  const solo = soloId && byId.has(soloId) ? soloId : null
+  const dim = hi.size > 0 || !!solo
+  /** In the focus: traced, or the chooser's row. */
+  const lit = (id: string) => hi.has(id) || id === solo
 
   const enter = (hit: CableHoverHit, at: CableAnchor) => {
     setHover(hit)
@@ -192,7 +222,7 @@ export const CableLayer = memo(function CableLayer({
   const handlers = (
     hit: CableHoverHit,
     mid: Pt,
-    activate: () => void,
+    activate: (at: CablePickAt) => void,
     focusable = true
   ) =>
     interactive
@@ -201,7 +231,7 @@ export const CableLayer = memo(function CableLayer({
           role: focusable ? "button" : undefined,
           onPointerDown: (e: React.PointerEvent) => {
             e.stopPropagation()
-            activate()
+            activate({ x: e.clientX, y: e.clientY })
           },
           onPointerEnter: (e: React.PointerEvent) =>
             enter(hit, { clientX: e.clientX, clientY: e.clientY }),
@@ -211,7 +241,8 @@ export const CableLayer = memo(function CableLayer({
           onKeyDown: (e: React.KeyboardEvent) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault()
-              activate()
+              const r = e.currentTarget.getBoundingClientRect()
+              activate({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
             } else if (e.key === "Escape") onSelect(null)
           },
           style: { cursor: "pointer", outline: "none" },
@@ -321,14 +352,19 @@ export const CableLayer = memo(function CableLayer({
     const line: Pt[] = [g.a, g.b]
     const mid: Pt = [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2]
     const n = g.members.length
-    const lit = g.members.some((id) => hi.has(id))
+    // A traced member runs beside the bundle (splitLanes); the bundle
+    // steps back so the one reads apart from the rest.
+    const holds = g.members.some(lit)
     return (
       <g
         key={g.key}
         data-bundle={g.key}
         aria-label={`${n} cables`}
-        opacity={dim && !lit ? 0.2 : 1}
-        {...handlers({ ids: g.members, bundle: g.key }, mid, () => fan(g.key))}
+        aria-haspopup={onChoose ? "menu" : undefined}
+        opacity={dim ? (holds ? 0.45 : 0.2) : 1}
+        {...handlers({ ids: g.members, bundle: g.key }, mid, (at) =>
+          onChoose ? onChoose(g.members, at) : fan(g.key)
+        )}
       >
         {hitPaths([line])}
         <path
@@ -363,8 +399,11 @@ export const CableLayer = memo(function CableLayer({
   const lifted = (id: string, traced: boolean) => {
     const cp = byId.get(id)
     const route = routes.get(id)
-    const lines = full.get(id)
-    if (!cp || !route || !lines) return null
+    // Traced or the chooser's: its own lane, out beside its bundles.
+    const lines = lit(id)
+      ? splitLanes(layout, id, bundled, pxPerCell)
+      : full.get(id)
+    if (!cp || !route || !lines?.length) return null
     const color = colorOf(id)
     // The ends' dots where the run leaves each tile, not mid-tile.
     const ends = routeEnds(cp, route, rectOf).map((e) => e.at)
@@ -373,13 +412,17 @@ export const CableLayer = memo(function CableLayer({
       <g
         key={`lift-${id}`}
         data-lifted={id}
+        data-solo={id === solo && !traced ? id : undefined}
         pointerEvents={traced ? undefined : "none"}
         {...(traced
           ? handlers({ ids: [id] }, mid.at, () => onSelect(null), false)
           : {})}
       >
         {traced && hitPaths(lines)}
-        {strokes(id, lines, { extra: traced ? 1.5 : 1, halo: traced })}
+        {strokes(id, lines, {
+          extra: traced || id === solo ? 1.5 : 1,
+          halo: traced || id === solo,
+        })}
         {ends.map((p, i) => (
           <circle
             key={i}
@@ -478,7 +521,7 @@ export const CableLayer = memo(function CableLayer({
       const half = 6 / k
       const [x, y] = [g.at[0] * CELL, g.at[1] * CELL]
       const [dx, dy] = [g.dir[0] * half, g.dir[1] * half]
-      const lit = g.ids.some((id) => hi.has(id))
+      const holds = g.ids.some(lit)
       return (
         <g
           key={`short-${g.key}`}
@@ -488,13 +531,15 @@ export const CableLayer = memo(function CableLayer({
               ? `${g.ids.length} cables`
               : ariaFor(byId.get(g.ids[0]))
           }
-          opacity={dim && !lit ? 0.2 : 1}
+          opacity={dim && !holds ? 0.2 : 1}
           {...handlers(
             g.ids.length > 1 ? { ids: g.ids, bundle: g.key } : { ids: g.ids },
             g.at,
-            () =>
+            (at) =>
               g.ids.length > 1
-                ? onSelect(null)
+                ? onChoose
+                  ? onChoose(g.ids, at)
+                  : onSelect(null)
                 : onSelect(hi.has(g.ids[0]) ? null : g.ids[0])
           )}
         >
@@ -544,14 +589,14 @@ export const CableLayer = memo(function CableLayer({
       s.from[1] + (s.dir[1] * len) / 2 / CELL,
     ]
     const traced = hi.has(s.id)
-    const lit = traced || hov.has(s.id)
+    const raised = traced || hov.has(s.id) || s.id === solo
     return (
       <g
         key={`stub-${s.id}`}
         data-stub={s.id}
         aria-label={`${ariaFor(cp)} - far end not on this plan`}
         aria-pressed={interactive ? traced : undefined}
-        opacity={dim && !traced ? 0.2 : 1}
+        opacity={dim && !traced && s.id !== solo ? 0.2 : 1}
         {...handlers({ ids: [s.id] }, mid, () =>
           onSelect(traced ? null : s.id)
         )}
@@ -568,7 +613,7 @@ export const CableLayer = memo(function CableLayer({
           d={`M${x0},${y0}L${x1},${y1}`}
           fill="none"
           stroke={color}
-          strokeWidth={lit ? 3 : 2}
+          strokeWidth={raised ? 3 : 2}
           strokeDasharray="4 3"
           strokeLinecap="butt"
           vectorEffect="non-scaling-stroke"
@@ -588,14 +633,13 @@ export const CableLayer = memo(function CableLayer({
 
   return (
     <g data-layer="cables" data-lod={lod}>
-      {lod !== "far" &&
-        [...bundled].map((key) => bundleView(layout.groups.get(key)!))}
+      {[...bundled].map((key) => bundleView(layout.groups.get(key)!))}
       {/* The runs' casing: a background edge under every line, all
           before any line, so a run reads over a map or a photo while the
           lanes of a tray stay side by side. */}
       <g data-part="casing" pointerEvents="none">
         {layout.order.map((id) => {
-          if (hi.has(id) || hovOne.has(id) || hov.has(id)) return null
+          if (lit(id) || hovOne.has(id) || hov.has(id)) return null
           if (lod === "far" && routes.get(id)?.trayIds.length) return null
           const lines = pieces.get(id)
           if (!lines?.length) return null
@@ -622,7 +666,7 @@ export const CableLayer = memo(function CableLayer({
           only while it is neither (the lifted copy above draws it then). */}
       {layout.order.map((id) => {
         const up = hi.has(id) || hovOne.has(id)
-        if (lod === "far" && !hi.has(id) && routes.get(id)?.trayIds.length)
+        if (lod === "far" && !lit(id) && routes.get(id)?.trayIds.length)
           return null
         const lines = up ? full.get(id) : pieces.get(id)
         if (!lines?.length) return null
@@ -634,13 +678,13 @@ export const CableLayer = memo(function CableLayer({
             data-cable={id}
             aria-label={ariaFor(cp)}
             aria-pressed={interactive ? hi.has(id) : undefined}
-            opacity={dim && !hi.has(id) ? 0.2 : 1}
+            opacity={dim && !lit(id) ? 0.2 : 1}
             {...handlers({ ids: [id] }, mid, () =>
               onSelect(hi.has(id) ? null : id)
             )}
           >
             {hitPaths(lines)}
-            {!(up || hov.has(id)) && strokes(id, lines)}
+            {!(up || hov.has(id) || id === solo) && strokes(id, lines)}
           </g>
         )
       })}
@@ -653,8 +697,11 @@ export const CableLayer = memo(function CableLayer({
           if (dim && !hi.has(id)) return null
           return staleMarks(id, route.moved)
         })}
-      {[...hov].filter((id) => !hi.has(id)).map((id) => lifted(id, false))}
+      {[...hov]
+        .filter((id) => !hi.has(id) && id !== solo)
+        .map((id) => lifted(id, false))}
       {highlightIds.map((id) => lifted(id, true))}
+      {solo && !hi.has(solo) && lifted(solo, false)}
       {previews && [...previews].map(([id, route]) => previewView(id, route))}
     </g>
   )

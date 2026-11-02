@@ -18,8 +18,9 @@ from drf_spectacular.utils import (
     OpenApiResponse,
     extend_schema,
     extend_schema_view,
+    inline_serializer,
 )
-from rest_framework import permissions, status as drf_status, viewsets
+from rest_framework import permissions, serializers, status as drf_status, viewsets
 from rest_framework.decorators import (
     action,
     api_view,
@@ -115,7 +116,7 @@ from .models import (
     PowerPortTemplate, Prefix, Provider, ProviderNetwork, RearPort,
     RearPortTemplate,
     Cabinet, CabinetRole, CabinetType,
-    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
+    DeviceRole, Platform, PlatformGroup, Rack, RackRole, RackType, RackTypeAccessory, RIR, RouteTarget, Service, ServiceTemplate, Site, VirtualDisk, VirtualMachine, VirtualSwitch, VMInterface, VLAN, VLANGroup, VRF, Zone,
     WirelessLAN, WirelessLANGroup,
     Tunnel, TunnelGroup, TunnelTermination, IPSecProfile,
     L2VPN, L2VPNTermination, VirtualChassis,
@@ -233,6 +234,7 @@ from .serializers import (
     VirtualMachineSerializer,
     VirtualMachineMiniSerializer,
     VMInterfaceSerializer,
+    VirtualDiskSerializer,
     MACAddressSerializer,
     CabinetMiniSerializer,
     CabinetRoleMiniSerializer,
@@ -6537,6 +6539,49 @@ class ClusterViewSet(TenantScopedViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
+    @extend_schema(
+        parameters=[OpenApiParameter(
+            "template", OpenApiTypes.UUID, required=True,
+            description="An export template with object type cluster.",
+        )],
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"])
+    def render(self, request, pk=None):
+        """``{output, template}``: a cluster export template rendered for this
+        cluster - the same as ``/api/export-templates/<id>/render/?object=``.
+        The caller needs view on the cluster and on export templates."""
+        from jinja2 import TemplateError
+
+        from auth_api import rbac
+
+        from .export_templates import object_for, render_object_config
+
+        cluster = self.get_object()
+        tenant = self._tenant_or_403()
+        user = request.user
+        if not (user.is_superuser or rbac.has_action(user, tenant, "exporttemplate", "view")):
+            raise PermissionDenied("You may not view export templates.")
+        tid = request.query_params.get("template")
+        try:
+            tmpl = rbac.restrict_queryset(
+                ExportTemplate.objects.filter(tenant=tenant, object_type="cluster"),
+                user, tenant, "exporttemplate", "view",
+            ).filter(pk=tid).first() if tid else None
+        except (ValueError, DjangoValidationError):
+            tmpl = None
+        if tmpl is None:
+            return Response({"detail": "Unknown cluster template."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        try:
+            obj = object_for(tmpl, tenant, user, cluster.pk)
+            if obj is None:
+                raise NotFound("Unknown cluster.")
+            output = render_object_config(tmpl, obj, tenant, user)
+        except (ValueError, TemplateError) as exc:
+            return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        return Response({"output": output, "template": tmpl.name})
+
 
 class VirtualSwitchViewSet(TenantScopedViewSet):
     queryset = VirtualSwitch.objects.all().order_by(NATURAL_NAME)
@@ -6622,6 +6667,8 @@ class VirtualMachineViewSet(
     rbac_action_map = {
         **BulkEditMixin.rbac_action_map,
         **PrtgCleanupDeleteMixin.rbac_action_map,
+        # Sending an intended VM to a runner is its own grant, not change.
+        "provision": "provision",
     }
 
     def bulk_row_updates(self, rows, updates):
@@ -6707,6 +6754,53 @@ class VirtualMachineViewSet(
 
         return Response(render_config_context(self.get_object()))
 
+    @extend_schema(
+        request=inline_serializer(
+            name="VMProvisionRequest", fields={"target_id": serializers.UUIDField()},
+        ),
+        responses={202: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["post"])
+    def provision(self, request, pk=None):
+        """Send this intended VM to an automation runner to be built.
+        Body: ``{"target_id": "<automation target id>"}``. Danbyte never calls
+        a hypervisor's write API: the runner holds those credentials. Needs
+        the ``provision`` grant on virtual machines; audited."""
+        from integrations.dispatch import enqueue_deploy, target_covers
+        from integrations.models import AutomationTarget
+
+        vm = self.get_object()
+        if not vm.intended:
+            return Response(
+                {"detail": "Only an intended VM can be provisioned."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        tenant = self._tenant_or_403()
+        tid = (request.data or {}).get("target_id")
+        try:
+            target = AutomationTarget.objects.filter(
+                id=tid, tenant=tenant, enabled=True
+            ).first() if tid else None
+        except (ValueError, DjangoValidationError):
+            target = None
+        if target is None:
+            return Response({"target_id": "Unknown or disabled target."},
+                            status=drf_status.HTTP_400_BAD_REQUEST)
+        if not target_covers(target, "virtualmachine"):
+            return Response(
+                {"target_id": f"{target.name} does not take virtual machines."},
+                status=drf_status.HTTP_400_BAD_REQUEST,
+            )
+        run = enqueue_deploy(
+            target, [vm.id], event="provision", object_type="virtualmachine",
+        )
+        from integrations.provision import audit_provision
+
+        audit_provision(request, vm, target, run)
+        from integrations.api import DeployRunSerializer
+
+        return Response(DeployRunSerializer(run).data, status=202)
+
     def get_serializer_class(self):
         if self.action == "list" and self.request and \
                 self.request.query_params.get("picker") == "1":
@@ -6738,13 +6832,14 @@ class VirtualMachineViewSet(
                             # otherwise fire one query per VM for it.
                             "group", "platform", "platform__eol_mapping",
                             # The nested cluster renders its status (#427).
-                            "cluster__status")
+                            "cluster__status", "represents_device")
             # `disks` is serialised inline, so without this the list endpoint
             # fires one query per VM.
             .prefetch_related(TAGS, "disks", "device_profile_assignments__profile")
             .annotate(
                 power_state=Subquery(latest.values("power_state")[:1]),
                 power_state_at=Subquery(latest.values("last_seen_at")[:1]),
+                missing_since=Subquery(latest.values("missing_since")[:1]),
                 synced_from=Subquery(latest_src),
                 synced_from_id=Subquery(latest.values("source_id")[:1]),
                 # Installed software's soonest end (#436), for Next end of life.
@@ -6795,6 +6890,17 @@ class VirtualMachineViewSet(
             site = self.request.query_params.get("site")
             if site:
                 qs = qs.filter(site_id=site)
+            intended = self.request.query_params.get("intended")
+            if intended in ("true", "1", "false", "0"):
+                qs = qs.filter(intended=intended in ("true", "1"))
+            rep = self.request.query_params.get("represents_device")
+            if rep:
+                qs = qs.filter(represents_device_id=rep)
+            vmid = self.request.query_params.get("vmid")
+            if vmid:
+                if not vmid.isdigit():
+                    raise ValidationError({"vmid": "A whole number."})
+                qs = qs.filter(vmid=int(vmid))
             # VMs whose *cluster* sits at a site - they run there even when the
             # cluster's site was not applied to them (see Cluster.
             # apply_site_to_vms). Lets a site page show what it hosts.
@@ -6812,6 +6918,29 @@ class VirtualMachineViewSet(
             qs = software_target.apply_filter(qs, self.request)
             # ?software_version= / ?software_version_source= (#451).
             qs = software_versions.apply_list_filters(qs, self.request)
+        return qs
+
+
+class VirtualDiskViewSet(TenantScopedViewSet):
+    """A VM's virtual disks. Tenant and site come through the VM, as for VM
+    interfaces. Sync prunes only the rows it created, and never on an
+    intended VM."""
+
+    queryset = VirtualDisk.objects.select_related("vm__status").order_by("vm__name", "key")
+    serializer_class = VirtualDiskSerializer
+    pagination_class = StandardPagination
+    tenant_field = "vm__tenant"
+
+    def perform_create(self, serializer):
+        # The tenant is the VM's; the scoped vm_id field already checked it.
+        serializer.save()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request:
+            vm = self.request.query_params.get("vm")
+            if vm:
+                qs = qs.filter(vm_id=vm)
         return qs
 
 
@@ -10217,32 +10346,49 @@ class ExportTemplateViewSet(TenantScopedViewSet):
         return qs
 
     def _render(self, request, *, preview=False):
+        """The list render, or with ``?object=<id>`` the one object's (C1):
+        that row of the template's type, tenant-, row- and site-checked. An
+        id of another type or out of reach is a 404, not a different row."""
         from jinja2 import TemplateError
 
-        from .export_templates import render_export_template
+        from .export_templates import object_for, render_export_template, render_object_config
         from .views import _get_active_tenant
 
         tmpl = self.get_object()
         tenant = _get_active_tenant(request)
+        object_id = request.query_params.get("object")
         try:
+            if object_id:
+                obj = object_for(tmpl, tenant, request.user, object_id)
+                if obj is None:
+                    raise NotFound("Unknown object for this template.")
+                return render_object_config(tmpl, obj, tenant, request.user), tmpl
             return render_export_template(
                 tmpl, tenant, request.user, preview=preview
             ), tmpl
         except (ValueError, TemplateError) as exc:
             return None, exc
 
+    @extend_schema(parameters=[OpenApiParameter(
+        "object", OpenApiTypes.UUID, description="Render for this one object of the template's type.",
+    )])
     @action(detail=True, methods=["get"])
     def preview(self, request, pk=None):
         """Render and return the text as JSON (for the editor preview pane).
-        Over the first rows only; ``count`` in the template stays the total."""
+        Over the first rows only; ``count`` in the template stays the total.
+        ``?object=<id>`` renders that one object instead."""
         out, info = self._render(request, preview=True)
         if out is None:
             return Response({"detail": str(info)}, status=drf_status.HTTP_400_BAD_REQUEST)
         return Response({"output": out})
 
+    @extend_schema(parameters=[OpenApiParameter(
+        "object", OpenApiTypes.UUID, description="Render for this one object of the template's type.",
+    )])
     @action(detail=True, methods=["get"])
     def render(self, request, pk=None):
-        """Render and return as a downloadable file."""
+        """Render and return as a downloadable file: every row the caller may
+        view in one file, or with ``?object=<id>`` that one object."""
         from django.http import HttpResponse
 
         out, info = self._render(request)
@@ -13093,6 +13239,22 @@ class FloorPlanViewSet(TenantScopedViewSet):
             role = getattr(obj, "role", None) if obj is not None else None
             return role.color if role is not None else ""
 
+        def tile_icon(t):
+            """The icon a tile draws with: a device's own or its type's, the
+            tile's type, then its role; "" leaves the default to the client.
+            A hidden object names nothing of its own."""
+            obj = None if t.pk in hidden_tiles else (
+                t.device if t.device_id else t.rack if t.rack_id else
+                t.cabinet if t.cabinet_id else None
+            )
+            role = getattr(obj, "role", None) if obj is not None else None
+            return (
+                (obj.own_icon if t.device_id and obj is not None else "")
+                or (t.tile_type.icon if t.tile_type_id else "")
+                or (t.role_type.icon if t.role_type_id else "")
+                or (getattr(role, "icon", "") or "")
+            )
+
         shown = [t for t in tiles_qs if t.pk not in hidden_tiles]
         rack_ids = {t.rack_id for t in shown if t.rack_id}
         viewable_devices = visible(Device.objects.filter(tenant=tenant), "device")
@@ -13162,6 +13324,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                     or t.color
                     or ("" if t.tile_type_id or t.role_type_id else linked_role_color(t))
                 ),
+                "icon": tile_icon(t),
                 "is_zone": bool(t.tile_type_id and t.tile_type.is_zone),
                 # Perforated zone types render as grate floor in 3D - the
                 # cold-aisle supply-tile read.
@@ -13527,6 +13690,77 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 }
             )
         return Response({"cables": result, "hidden_count": len(candidates - visible)})
+
+    @action(detail=True, methods=["get"], url_path=r"cable-panel/(?P<cable_id>[0-9a-f-]{36})")
+    def cable_panel(self, request, pk=None, cable_id=None):
+        """The cable panel (``api.floor_plan_panels``): a cable the reader may
+        view, with each end's device and port in full. An end on a device
+        the reader may not view reads only ``{"hidden": true}`` (#453); a
+        cable they may not view is a 404."""
+        from . import floor_plan_panels
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable
+
+        plan = self.get_object()
+        self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        cable = Cable.objects.filter(tenant=tenant, pk=cable_id).select_related(
+            "status"
+        ).first()
+        if cable is None or not viewable_cable_ids(request.user, tenant, {cable.pk}):
+            raise NotFound("No such cable.")
+        return Response(floor_plan_panels.cable_panel(request, tenant, cable))
+
+    @action(detail=True, methods=["get"], url_path=r"tile-panel/(?P<tile_id>[0-9a-f-]{36})")
+    def tile_panel(self, request, pk=None, tile_id=None):
+        """A device or rack tile's panel (``api.floor_plan_panels``): the
+        object's facts, monitoring, a device's port summary or a rack's
+        devices. A tile whose object the reader may not view reads only
+        ``{"kind": …, "hidden": true}``; another tile kind is a 400."""
+        from auth_api import rbac
+
+        from . import floor_plan_panels
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import TileLinks, tile_link
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tile = rbac.restrict_queryset(
+            src.tiles.filter(pk=tile_id).select_related("device", "rack", "cabinet"),
+            request.user, tenant, "floorplantile", "view",
+        ).first()
+        if tile is None or (crop is not None and not snaps.in_crop("tiles", [tile], crop)):
+            raise NotFound("No such tile on this plan.")
+        kind, _pk = tile_link(tile)
+        if kind not in ("device", "rack", "cabinet"):
+            raise ValidationError(
+                {"detail": "Only device, rack and cabinet tiles have a panel."}
+            )
+        links = TileLinks(request.user, tenant)
+        if links.hidden(tile):
+            return Response({"kind": kind, "hidden": True})
+        if kind == "device":
+            return Response(floor_plan_panels.device_panel(request, tenant, tile.device))
+        # ?device=<id>: one of the rack's or cabinet's devices (a device
+        # clicked in the 3D room), when the reader may view it.
+        from .topology_views import _uuid_param
+
+        device_id = _uuid_param(request.query_params, "device")
+        if device_id:
+            home = {"rack_id": tile.rack_id} if kind == "rack" else {
+                "cabinet_id": tile.cabinet_id
+            }
+            device = rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant, pk=device_id, **home),
+                request.user, tenant, "device", "view",
+            ).first()
+            if device is None:
+                return Response({"kind": "device", "hidden": True})
+            return Response(floor_plan_panels.device_panel(request, tenant, device))
+        if kind == "cabinet":
+            return Response(floor_plan_panels.cabinet_panel(request, tenant, tile.cabinet))
+        return Response(floor_plan_panels.rack_panel(request, tenant, tile.rack))
 
     @action(detail=True, methods=["get"], url_path="cable-schedule")
     def cable_schedule(self, request, pk=None):

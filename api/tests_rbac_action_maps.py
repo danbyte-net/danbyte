@@ -161,3 +161,46 @@ class WatchedEndpointBulkDeleteTests(_Base):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["deleted"], 2)
         self.assertEqual(WatchedEndpoint.objects.filter(tenant=self.tenant).count(), 2)
+
+
+class VMProvisionActionTests(_Base):
+    """``provision`` is its own verb, not ``change`` (the default for a
+    mutating @action): sending a VM to a runner to be built is a grant of its
+    own."""
+
+    def setUp(self):
+        super().setUp()
+        from api.models import Cluster, ClusterType, VirtualMachine
+
+        ct = ClusterType.objects.create(tenant=self.tenant, name="P", slug="p")
+        cluster = Cluster.objects.create(tenant=self.tenant, name="c", type=ct)
+        self.vm = VirtualMachine.objects.create(
+            tenant=self.tenant, name="r1", cluster=cluster, intended=True,
+        )
+
+    def provision(self):
+        return self.client.post(
+            f"/api/virtual-machines/{self.vm.id}/provision/", {"target_id": ""}, format="json",
+        )
+
+    def test_the_map_names_provision(self):
+        from api.viewsets import VirtualMachineViewSet
+
+        self.assertEqual(VirtualMachineViewSet.rbac_action_map["provision"], "provision")
+
+    def test_provision_is_a_grantable_verb_on_vms(self):
+        from auth_api.object_types import ACTIONS, CAPABILITY_VERBS
+
+        self.assertIn("provision", ACTIONS)
+        self.assertIn("provision", CAPABILITY_VERBS["virtualmachine"])
+
+    def test_change_alone_cannot_provision(self):
+        self.member("editor", ["virtualmachine"], ["view", "change"])
+        self.assertEqual(self.provision().status_code, 403)
+
+    def test_provision_reaches_the_action(self):
+        self.member("builder", ["virtualmachine"], ["view", "provision"])
+        r = self.provision()
+        # Past the permission check: the missing target is the complaint.
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("target_id", r.json())

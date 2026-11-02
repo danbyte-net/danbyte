@@ -534,11 +534,27 @@ def _render_ips(obj, tenant, user) -> list:
     return list(rbac.restrict_queryset(ips, user, tenant, "ipaddress", "view"))
 
 
+def _backing_vm(device, tenant, user):
+    """The build spec of the VM ``device`` runs as (``api.vm_build``), when
+    there is one the reader may view; else ``None``."""
+    from .models import VirtualMachine
+    from .vm_build import vm_build_spec
+
+    qs = VirtualMachine.objects.filter(represents_device=device, tenant=tenant)
+    if user is not None:
+        from auth_api import rbac
+
+        qs = rbac.restrict_queryset(qs, user, tenant, "virtualmachine", "view")
+    vm = qs.select_related("cluster", "device", "represents_device").first()
+    return vm_build_spec(vm, user, tenant) if vm is not None else None
+
+
 def render_device_config(template, device, tenant, user=None) -> str:
     """Render an export template for a single device - the per-device
     intended-config generator. Context: ``device``, its merged ``config_context``,
     ``interfaces`` (each with ``link_peer``, the cable's far end),
-    ``ip_addresses`` (and ``objects``/``count`` for parity), plus every
+    ``ip_addresses`` (and ``objects``/``count`` for parity), ``backing_vm``
+    (the build spec of the VM the device runs as, or ``None``), plus every
     registered provider's key (``routing``).
 
     ``user`` is who the render is for: relations a template walks hold only
@@ -553,6 +569,7 @@ def render_device_config(template, device, tenant, user=None) -> str:
         config_context=render_config_context(device)["rendered"],
         interfaces=device_render_interfaces(device),
         ip_addresses=_render_ips(device, tenant, user),
+        backing_vm=_backing_vm(device, tenant, user),
         objects=[device],
         count=1,
         **provider_context(device),
@@ -563,19 +580,147 @@ def render_vm_config(template, vm, tenant, user=None) -> str:
     """Render an export template for a single virtual machine - the per-VM
     generator behind the Terraform-for-VMs flow (the template author writes
     tfvars/HCL). Context mirrors the device renderer: ``vm`` (also exposed as
-    ``device`` for template parity), merged ``config_context``, ``interfaces``,
-    ``ip_addresses``. ``user`` limits what the template sees, as for devices."""
+    ``device`` for template parity), merged ``config_context``, ``interfaces``
+    (in slot order), ``disks``, ``ip_addresses``, ``represents_device``
+    (``{id, name}`` or ``None``) and ``build``, the plain build spec a
+    provision sends (``api.vm_build``). ``user`` limits what the template
+    sees, as for devices."""
     from .config_context import render_config_context
+    from .vm_build import _iface_order, vm_build_spec
 
     tenant = tenant or vm.tenant
     tmpl = _env(tenant, user).from_string(template.template_code or "")
+    build = vm_build_spec(vm, user, tenant)
     return tmpl.render(
         vm=vm,
         device=vm,  # parity: templates can use the same `device.*` accessor
         config_context=render_config_context(vm)["rendered"],
-        interfaces=list(vm.interfaces.all()),
+        interfaces=sorted(vm.interfaces.all(), key=_iface_order),
+        disks=list(vm.disks.all()),
         ip_addresses=_render_ips(vm, tenant, user),
+        represents_device=build["represents_device"],
+        build=build,
         objects=[vm],
         count=1,
         **provider_context(vm),
+    )
+
+
+# ─── Per-object render for any template type (C1) ────────────────────────────
+# A list render loops over every row of the type; these render one object.
+# Device and VM keep their own renderers above; any other type gets the
+# object under its type name plus whatever context hook the type registers.
+
+def _restricted(qs, user, tenant, slug):
+    """``qs`` narrowed to what ``user`` may view (``None`` = a system
+    render, unnarrowed)."""
+    if user is None:
+        return qs
+    from auth_api import rbac
+
+    return rbac.restrict_queryset(qs, user, tenant, slug, "view")
+
+
+def _cluster_context(cluster, tenant, user) -> dict:
+    """``hosts`` (devices in the cluster, and hosts its VMs run on),
+    ``virtual_machines``, ``vm_groups``: each only the rows ``user`` may view."""
+    from django.db.models import Q
+
+    from .models import Device, VirtualMachine, VirtualMachineGroup
+
+    vms = list(
+        _restricted(
+            VirtualMachine.objects.filter(tenant=tenant, cluster=cluster),
+            user, tenant, "virtualmachine",
+        ).select_related("device", "group", "role", "platform", "status", "primary_ip")
+        .order_by("name")
+    )
+    hosts = list(
+        _restricted(
+            Device.objects.filter(tenant=tenant).filter(
+                Q(cluster=cluster) | Q(virtual_machines__cluster=cluster)
+            ).distinct(),
+            user, tenant, "device",
+        ).select_related("role", "platform", "status", "primary_ip")
+        .order_by("name")
+    )
+    groups = list(
+        _restricted(
+            VirtualMachineGroup.objects.filter(tenant=tenant, cluster=cluster),
+            user, tenant, "virtualmachinegroup",
+        ).order_by("name")
+    )
+    return {"hosts": hosts, "virtual_machines": vms, "vm_groups": groups}
+
+
+#: object_type slug -> fn(obj, tenant, user) -> extra render context. A
+#: plugin may add its own with :func:`register_object_context`.
+_OBJECT_CONTEXTS = {"cluster": _cluster_context}
+
+
+def register_object_context(slug: str, fn) -> None:
+    _OBJECT_CONTEXTS[slug] = fn
+
+
+def object_for(template, tenant, user, object_id):
+    """The one row of the template's type that ``object_id`` names, when
+    ``user`` may view it - the same tenant, row, site and field gates a list
+    render applies. ``None`` when it is unknown or out of reach; a
+    ``ValueError`` when the type cannot be a template's subject."""
+    import uuid
+
+    from auth_api.object_types import model_for
+
+    model = model_for(template.object_type)
+    if model is None:
+        raise ValueError(f"Unknown object type: {template.object_type}")
+    if has_secret_fields(model):
+        raise ValueError(
+            f"{template.object_type} carries credentials and cannot be exported by template."
+        )
+    if not template_subject_allowed(model):
+        raise ValueError(f"{template.object_type} cannot be exported by template.")
+    try:
+        pk = uuid.UUID(str(object_id))
+    except (TypeError, ValueError):
+        return None
+    if user is None:
+        return None
+    qs = model.objects.filter(pk=pk)
+    if any(f.name == "tenant" for f in model._meta.concrete_fields):
+        qs = qs.filter(tenant=tenant)
+    elif model._meta.label_lower == "core.tenant":
+        qs = qs.filter(pk=getattr(tenant, "pk", None))
+    else:
+        # A type with no tenant of its own has no per-object render: there
+        # is no fence to hold it to the caller's tenant.
+        return None
+    from auth_api import rbac
+    from core.hidden_fields import RowFieldGate
+
+    qs = rbac.restrict_queryset(qs, user, tenant, template.object_type, "view")
+    qs = RowFieldGate(user, tenant).narrow(qs)
+    return qs.first()
+
+
+def render_object_config(template, obj, tenant, user=None) -> str:
+    """Render ``template`` for the one object ``obj``. Devices and VMs use
+    their own renderers; any other type sees ``obj`` under its type name
+    (``cluster``) and as ``object``, ``objects=[obj]``, ``count=1``, and the
+    keys its context hook adds."""
+    slug = template.object_type
+    if slug == "device":
+        return render_device_config(template, obj, tenant, user)
+    if slug == "virtualmachine":
+        return render_vm_config(template, obj, tenant, user)
+    env = _env(tenant, user)
+    if env._gate is not None:
+        env._gate.prime([obj])
+    extra = {}
+    hook = _OBJECT_CONTEXTS.get(slug)
+    if hook is not None:
+        extra = hook(obj, tenant, user)
+    tmpl = env.from_string(template.template_code or "")
+    return tmpl.render(
+        **{slug: obj}, object=obj, objects=[obj], queryset=[obj], count=1, **extra,
     )

@@ -142,8 +142,11 @@ export function TrayInspector({
   onHighlightCable,
   onPatch,
   onDelete,
+  onShowCables,
   saved = true,
 }: {
+  /** Show cables: the tray's cables in the cable chooser, at the button. */
+  onShowCables?: (at: { x: number; y: number }) => void
   tray: FloorPlanTray
   /** On the server: a new tray takes cables once the plan is saved. */
   saved?: boolean
@@ -237,9 +240,25 @@ export function TrayInspector({
       </Field>
 
       <div className="grid gap-2">
-        <span className="text-[11px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-          Cables in this tray
-        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+            Cables in this tray
+          </span>
+          {onShowCables && tray.cables.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              aria-haspopup="menu"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                onShowCables({ x: r.left, y: r.bottom })
+              }}
+            >
+              Show cables
+            </Button>
+          )}
+        </div>
         {tray.cables.length === 0 && (
           <p className="text-xs text-muted-foreground">
             {saved ? "None assigned yet." : "Save the plan to add cables."}

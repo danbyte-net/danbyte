@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0248_interface_type_vxlan'),
+        ('api', '0251_interface_type_vxlan'),
         ('routing', '0018_backfill_neighbor_afs'),
     ]
 

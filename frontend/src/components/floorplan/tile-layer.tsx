@@ -2,10 +2,18 @@ import { ArrowUpDown, Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
+import { tileIcon } from "@/components/object-icon"
 
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
-import { rackFigures, tileFill, tilePaint, tileRoleIcon } from "./tile-paint"
+import type { ClusterFace } from "./icon-layout"
+import {
+  CHECK_COLOR,
+  rackFigures,
+  tileFill,
+  tilePaint,
+  tileRoleIcon,
+} from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
 /** Native hover tooltip text: name · type · linked · (rack) used-U/%. */
@@ -743,15 +751,18 @@ export function createHoverStore(): HoverStore {
   }
 }
 
-/**
- * Readable, a tile too thin or a photo too small to read as itself: its
- * symbol instead - a rounded box in its colour at the drawn size (`box`,
- * cells), with its type's or role's icon, and its outline for selection
- * and monitoring. Back to the tile itself once it is big enough on screen.
- */
 /** The soft ring round an alarming tile, plan px. */
 const ALARM_RING_PX = 5
 
+/**
+ * A tile drawn as its symbol: a rounded box in its colour at the drawn
+ * size (`box`, cells) with its icon in white (object-icon.ts: the device,
+ * its type, the tile's type, the role, the kind's default), and its
+ * outline for selection and monitoring. Readable draws it for a tile too
+ * thin or a photo too small to read; Icons when zoomed out draws it, a
+ * square, for a device, rack or cabinet too small on screen. Back to the
+ * tile itself once it is big enough.
+ */
 export function ReadableSymbol({
   tile,
   box,
@@ -760,6 +771,8 @@ export function ReadableSymbol({
   live,
   colorBy = "type",
   figures,
+  iconTile = false,
+  highlighted = false,
   onPointerDown,
   onDoubleClick,
   onPointerEnter,
@@ -773,6 +786,10 @@ export function ReadableSymbol({
   live?: FloorPlanLiveState["tiles"][string]
   colorBy?: ColorBy
   figures?: RackFigures
+  /** Drawn as its icon from afar (Display > Icons when zoomed out). */
+  iconTile?: boolean
+  /** Pointed at from outside the canvas - a rack table row. */
+  highlighted?: boolean
   onPointerDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
   onPointerEnter?: (e: React.PointerEvent) => void
@@ -790,13 +807,18 @@ export function ReadableSymbol({
   const y = box.y * CELL
   const w = box.w * CELL
   const h = box.h * CELL
-  const iconName = tile.tile_type?.icon || tileRoleIcon(tile)
+  const iconName = tileIcon(tile)
   const Icon = iconName ? getLucideIcon(iconName) : null
-  const icon = Math.min(w, h) * 0.7
+  // An icon tile is a square: the icon a little smaller, so it reads.
+  const icon = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
   return (
     <g
       data-tile={tile.id}
       data-part="symbol"
+      data-icon-tile={iconTile || undefined}
+      data-highlighted={highlighted || undefined}
+      // Fades in as it takes the tile's place, so the swap reads as one.
+      className={iconTile ? "animate-in duration-150 fade-in" : undefined}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       onPointerEnter={onPointerEnter}
@@ -836,6 +858,22 @@ export function ReadableSymbol({
         stroke={paint.alarm || selected ? paint.stroke : "var(--background)"}
         strokeWidth={(selected || paint.alarm ? 2 : 1.25) / k}
       />
+      {/* Pointed at from outside the canvas (a rack table row): the same
+          accent ring a full tile wears. */}
+      {highlighted && (
+        <rect
+          data-part="highlight"
+          x={x - 2.5 / k}
+          y={y - 2.5 / k}
+          width={w + 5 / k}
+          height={h + 5 / k}
+          rx={Math.min(w, h) * 0.2 + 2.5 / k}
+          fill="none"
+          className="stroke-primary"
+          strokeWidth={2.5 / k}
+          pointerEvents="none"
+        />
+      )}
       {Icon && (
         <Icon
           data-part="symbol-icon"
@@ -849,6 +887,185 @@ export function ReadableSymbol({
           aria-hidden="true"
         />
       )}
+    </g>
+  )
+}
+
+/**
+ * Icons that would overlap folded into one (icon-layout.ts): a square in
+ * the members' shared colour with their shared icon - the stack when they
+ * differ - the count in a badge on its corner, and the worst member's
+ * monitoring state as its outline and ring. A click zooms to the members.
+ */
+export function ClusterTile({
+  id,
+  box,
+  k,
+  face,
+  onActivate,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  id: string
+  box: { x: number; y: number; w: number; h: number }
+  /** The canvas zoom: screen px per plan px. */
+  k: number
+  face: ClusterFace
+  onActivate: () => void
+  onPointerEnter?: (e: React.PointerEvent) => void
+  onPointerLeave?: (e: React.PointerEvent) => void
+}) {
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const r = Math.min(w, h) * 0.2
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const Icon = face.icon ? getLucideIcon(face.icon) : null
+  const icon = Math.min(w, h) * 0.55
+  // The count: a squarish badge over the top right corner.
+  const text = String(face.count)
+  const bh = 14 / k
+  const bw = (text.length * 6.6 + 8) / k
+  return (
+    <g
+      data-icon-cluster={id}
+      className="animate-in duration-150 fade-in"
+      role="button"
+      aria-label={`${face.name}, ${face.count} objects`}
+      tabIndex={0}
+      style={{ cursor: "zoom-in", outline: "none" }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.stopPropagation()
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onActivate()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onActivate()
+        }
+      }}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      {alarm && (
+        <rect
+          data-part="alarm"
+          x={x - 3 / k}
+          y={y - 3 / k}
+          width={w + 6 / k}
+          height={h + 6 / k}
+          rx={r + 3 / k}
+          fill="none"
+          stroke={alarm}
+          strokeOpacity={0.35}
+          strokeWidth={4 / k}
+          pointerEvents="none"
+        />
+      )}
+      {/* A second square peeking out behind: a stack, not one object. */}
+      <rect
+        x={x + 3 / k}
+        y={y - 3 / k}
+        width={w}
+        height={h}
+        rx={r}
+        fill={face.fill}
+        fillOpacity={0.45}
+        stroke="var(--background)"
+        strokeWidth={1.25 / k}
+      />
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={r}
+        fill={face.fill}
+        fillOpacity={0.95}
+        stroke={alarm ?? "var(--background)"}
+        strokeWidth={(alarm ? 2 : 1.25) / k}
+      />
+      {Icon && (
+        <Icon
+          data-part="cluster-icon"
+          x={x + w / 2 - icon / 2}
+          y={y + h / 2 - icon / 2}
+          width={icon}
+          height={icon}
+          color="#ffffff"
+          strokeWidth={2.25}
+          pointerEvents="none"
+          aria-hidden="true"
+        />
+      )}
+      <g data-part="cluster-count" pointerEvents="none">
+        <rect
+          x={x + w - bw * 0.6}
+          y={y - bh * 0.45}
+          width={bw}
+          height={bh}
+          rx={4 / k}
+          fill="var(--foreground)"
+          stroke="var(--background)"
+          strokeWidth={1 / k}
+        />
+        <text
+          x={x + w - bw * 0.6 + bw / 2}
+          y={y - bh * 0.45 + bh / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={10 / k}
+          fontWeight={600}
+          fill="var(--background)"
+        >
+          {text}
+        </text>
+      </g>
+    </g>
+  )
+}
+
+/** Where a spread icon really is: a thin leader from its drawn centre
+ * (cells) back to its true centre, and a dot there. */
+export function IconLeader({
+  from,
+  to,
+  k,
+}: {
+  from: readonly [number, number]
+  to: readonly [number, number]
+  k: number
+}) {
+  return (
+    <g
+      data-icon-leader=""
+      pointerEvents="none"
+      className="animate-in duration-200 fade-in"
+    >
+      <line
+        x1={from[0] * CELL}
+        y1={from[1] * CELL}
+        x2={to[0] * CELL}
+        y2={to[1] * CELL}
+        className="stroke-muted-foreground"
+        strokeOpacity={0.7}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle
+        cx={to[0] * CELL}
+        cy={to[1] * CELL}
+        r={2.5 / k}
+        className="fill-muted-foreground"
+        stroke="var(--background)"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
     </g>
   )
 }

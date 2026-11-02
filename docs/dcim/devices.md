@@ -69,6 +69,10 @@ role's or All devices list; **Custom** gives the device its own list, and
 **Name only** shows just its name. See
 [Card lines](../features/topology.md#card-lines).
 
+Under it, **Icon** gives this device its own icon on floor plans (`icon`),
+over its type's and its role's; blank uses theirs. See
+[Icons when zoomed out](../features/floor-plans.md#icon-tiles).
+
 You can also add devices in bulk from a spreadsheet - see
 [Import & export](../features/import-export.md).
 

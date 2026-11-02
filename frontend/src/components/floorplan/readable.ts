@@ -139,6 +139,91 @@ export function readableShape(
   }
 }
 
+/** How a tile is drawn when not at its real size, or null (as itself). */
+export type ShapeOf = (t: FloorPlanTile) => ReadableShape | null
+
+// Icons when zoomed out (Display): a device, rack or cabinet whose long
+// side drops under ICON_TILE_PX on screen draws as its icon tile - the
+// same symbol Readable draws, a rounded square in its colour with its icon
+// in white, READABLE_SYMBOL_PX on a side. It turns back only once the
+// long side is over ICON_TILE_EXIT_PX, so a zoom that hovers about the
+// threshold does not flicker. On paper there is no zoom to hover: one
+// threshold, ICON_TILE_MM.
+
+/** A stored value as the Icons option: on unless the plan turned it off. */
+export function readIconTiles(v: unknown): boolean {
+  return v !== false
+}
+
+/** Under this long side on screen (px) a tile turns into its icon. */
+export const ICON_TILE_PX = 40
+/** Over this long side (px) an icon tile turns back into the tile. */
+export const ICON_TILE_EXIT_PX = 48
+/** On paper: under this long side (mm) a tile prints as its icon. */
+export const ICON_TILE_MM = 7
+
+/** Tiles that turn into icons: those linked to a device, rack or cabinet
+ * (never a zone, never a planning tile). */
+export function iconTileSubject(tile: FloorPlanTile): boolean {
+  const k = tile.linked?.kind
+  return (
+    (k === "device" || k === "rack" || k === "cabinet") && growsReadable(tile)
+  )
+}
+
+/** Whether a tile draws as its icon at `perCell` units per cell: under
+ * `enter` on its long side, or - already an icon (`was`) - until it is
+ * over `exit`. */
+export function isIconTile(
+  tile: FloorPlanTile,
+  perCell: number,
+  was: boolean,
+  enter: number = ICON_TILE_PX,
+  exit: number = ICON_TILE_EXIT_PX
+): boolean {
+  if (!iconTileSubject(tile) || !(perCell > 0)) return false
+  const long = Math.max(tile.width, tile.height) * perCell
+  return long < (was ? exit : enter)
+}
+
+/** The tiles drawn as icons at `perCell`, given those that were (`prev`):
+ * `prev` itself when nothing changed, so a memo keyed on it holds. */
+export function iconTileIds(
+  tiles: readonly FloorPlanTile[],
+  perCell: number,
+  prev: ReadonlySet<string>,
+  enter: number = ICON_TILE_PX,
+  exit: number = ICON_TILE_EXIT_PX
+): ReadonlySet<string> {
+  const next = new Set<string>()
+  for (const t of tiles)
+    if (isIconTile(t, perCell, prev.has(t.id), enter, exit)) next.add(t.id)
+  if (next.size === prev.size && [...next].every((id) => prev.has(id)))
+    return prev
+  return next
+}
+
+/** An icon tile's shape: a square `side` units on a side (screen px or
+ * paper mm) centred on the tile - Readable's least symbol. */
+export function iconTileShape(
+  tile: FloorPlanTile,
+  perCell: number,
+  side: number = READABLE_SYMBOL_PX
+): ReadableShape {
+  const s = side / perCell
+  return {
+    box: {
+      x: tile.x + tile.width / 2 - s / 2,
+      y: tile.y + tile.height / 2 - s / 2,
+      w: s,
+      h: s,
+    },
+    grow: s / Math.max(tile.width, tile.height),
+    changed: true,
+    symbol: true,
+  }
+}
+
 /**
  * The tile under (wx, wy) cells as Readable draws it: a grown symbol first
  * (they draw on top, the last drawn wins), then a tile's true footprint.
@@ -149,15 +234,19 @@ export function readableHit(
   wx: number,
   wy: number,
   pxPerCell: number,
-  minPx: number = READABLE_SYMBOL_PX
+  minPx: number = READABLE_SYMBOL_PX,
+  shapeOf?: ShapeOf
 ): FloorPlanTile | null {
   const inside = (b: CellBox) =>
     wx >= b.x && wx < b.x + b.w && wy >= b.y && wy < b.y + b.h
+  const shapeFor =
+    shapeOf ??
+    ((t: FloorPlanTile) => readableShape(t, pxPerCell, { minLong: minPx }))
   for (let i = tiles.length - 1; i >= 0; i--) {
     const t = tiles[i]
     if (!growsReadable(t)) continue
-    const shape = readableShape(t, pxPerCell, { minLong: minPx })
-    if (shape.changed && inside(shape.box)) return t
+    const shape = shapeFor(t)
+    if (shape?.changed && inside(shape.box)) return t
   }
   for (let i = tiles.length - 1; i >= 0; i--) {
     const t = tiles[i]
@@ -174,14 +263,19 @@ export function readableOrder(
   tiles: readonly FloorPlanTile[],
   pxPerCell: number | null,
   pinned?: ReadonlySet<string>,
-  minPx: number = READABLE_SYMBOL_PX
+  minPx: number = READABLE_SYMBOL_PX,
+  shapeOf?: ShapeOf
 ): readonly FloorPlanTile[] {
   if (pxPerCell == null) return tiles
   const real: FloorPlanTile[] = []
   const grown: FloorPlanTile[] = []
   const top: FloorPlanTile[] = []
+  const changed = shapeOf
+    ? (t: FloorPlanTile) => !!shapeOf(t)?.changed
+    : (t: FloorPlanTile) =>
+        readableShape(t, pxPerCell, { minLong: minPx }).changed
   for (const t of tiles) {
-    if (!readableShape(t, pxPerCell, { minLong: minPx }).changed) real.push(t)
+    if (!changed(t)) real.push(t)
     else if (pinned?.has(t.id)) top.push(t)
     else grown.push(t)
   }
@@ -213,16 +307,36 @@ export function growStubs(
   tiles: readonly FloorPlanTile[],
   perCell: number,
   min: number = READABLE_SYMBOL_PX,
-  minShort: number = READABLE_SHORT_PX
+  minShort: number = READABLE_SHORT_PX,
+  shapeOf?: ShapeOf
 ): readonly CableStub[] {
   if (!stubs.length) return stubs
   const byId = new Map(tiles.map((t) => [t.id, t]))
   const out = stubs.map((s) => {
     const t = byId.get(s.tile)
     if (!t) return s
-    const shape = readableShape(t, perCell, { minLong: min, minShort })
-    if (!shape.changed) return s
+    const shape = shapeOf
+      ? shapeOf(t)
+      : readableShape(t, perCell, { minLong: min, minShort })
+    if (!shape?.changed) return s
     const c: Pt = [t.x + t.width / 2, t.y + t.height / 2]
+    const b = shape.box
+    const bc: Pt = [b.x + b.w / 2, b.y + b.h / 2]
+    // Drawn away from its true place (a spread icon, a cluster): the stub
+    // leaves the drawn box's edge along its direction.
+    if (Math.abs(bc[0] - c[0]) > 1e-9 || Math.abs(bc[1] - c[1]) > 1e-9) {
+      const [dx, dy] = s.dir
+      const tx = Math.abs(dx) > 1e-9 ? b.w / 2 / Math.abs(dx) : Infinity
+      const ty = Math.abs(dy) > 1e-9 ? b.h / 2 / Math.abs(dy) : Infinity
+      const k = Math.min(tx, ty)
+      return {
+        ...s,
+        from: [
+          bc[0] + dx * (Number.isFinite(k) ? k : 0),
+          bc[1] + dy * (Number.isFinite(k) ? k : 0),
+        ] as Pt,
+      }
+    }
     const sx = shape.box.w / t.width
     const sy = shape.box.h / t.height
     return {

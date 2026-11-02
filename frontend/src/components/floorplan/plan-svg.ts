@@ -75,16 +75,28 @@ import {
   textSize,
 } from "./plan-labels"
 import {
+  ICON_TILE_MM,
   READABLE_FONT_MM,
   READABLE_SHORT_MM,
   READABLE_SYMBOL_MM,
   READABLE_TRAY_MM,
   fontGrow,
   growStubs,
+  iconTileShape,
+  isIconTile,
   readableShape,
 } from "./readable"
-import type { CellBox, ObjectSize } from "./readable"
-import { rackFigures, tileFill, tilePaint } from "./tile-paint"
+import type { CellBox, ObjectSize, ReadableShape } from "./readable"
+import { tileIcon } from "@/components/object-icon"
+import {
+  CLUSTER_SIDE,
+  clusterFace,
+  drawnCentre,
+  layoutIcons,
+  squareAt,
+} from "./icon-layout"
+import type { ClusterFace, IconLayout } from "./icon-layout"
+import { CHECK_COLOR, rackFigures, tileFill, tilePaint } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 
 // The 2D plan as a standalone, light-themed SVG for the PDF export
@@ -141,6 +153,9 @@ export interface PlanSvgInput {
    * READABLE_SYMBOL_MM on paper, names at READABLE_FONT_MM, thinned where
    * they would overlap - at the paper's scale. */
   objectSize?: ObjectSize
+  /** Icons when zoomed out: a device, rack or cabinet under ICON_TILE_MM
+   * on its long side prints as its icon tile, READABLE_SYMBOL_MM square. */
+  iconTiles?: boolean
   /** Paper mm per plan px of the sheet (planPaperScale) when the drawing
    * is not framed to its content; A3 landscape otherwise. */
   mmPerPx?: number
@@ -1006,7 +1021,26 @@ function labelsMarkup(
   const font = r(LABEL_FONT_MM / mmPerPx)
   const halo = r(font * 0.27)
   const color = new Map(trays.map((t) => [t.id, t.color || TRAY_DEFAULT]))
-  const along = (l: AlongLabel, fill: string, weight: number) => {
+  const along = (
+    l: AlongLabel,
+    fill: string,
+    weight: number,
+    plate = false
+  ) => {
+    // A cable's name on its line: a white plate under it, so the line
+    // breaks cleanly round the text (canvas: plan-labels-layer.tsx).
+    const size = textSize(l.text + (l.suffix ?? ""), font)
+    const plateMarkup = plate
+      ? el("rect", {
+          transform: `translate(${r(l.at[0] * CELL)},${r(l.at[1] * CELL)})${l.angle ? ` rotate(${r(l.angle)})` : ""}`,
+          x: r(-size.w / 2),
+          y: r(-size.h / 2),
+          width: r(size.w),
+          height: r(size.h),
+          rx: r(size.h * 0.2),
+          fill: "#ffffff",
+        })
+      : ""
     const attrs = {
       transform: `translate(${r(l.at[0] * CELL)},${r(l.at[1] * CELL)})${l.angle ? ` rotate(${r(l.angle)})` : ""}`,
       y: r(font * 0.35),
@@ -1018,20 +1052,22 @@ function labelsMarkup(
       ? `${esc(l.text)}<tspan fill="${MUTED_INK}">${esc(l.suffix)}</tspan>`
       : esc(l.text)
     return (
+      plateMarkup +
       text(l.text + (l.suffix ?? ""), {
         ...attrs,
         fill: "#ffffff",
         stroke: "#ffffff",
         "stroke-width": halo,
         "stroke-linejoin": "round",
-      }) + `<text${markupAttrs({ ...attrs, fill })}>${body}</text>`
+      }) +
+      `<text${markupAttrs({ ...attrs, fill })}>${body}</text>`
     )
   }
   const parts: string[] = []
   for (const l of labels.trays)
     parts.push(along(l, color.get(l.id) ?? TRAY_DEFAULT, 600))
-  for (const l of labels.bundles) parts.push(along(l, PAPER_INK, 600))
-  for (const l of labels.cables) parts.push(along(l, PAPER_INK, 500))
+  for (const l of labels.bundles) parts.push(along(l, PAPER_INK, 600, true))
+  for (const l of labels.cables) parts.push(along(l, PAPER_INK, 500, true))
   const chipFont = r(CHIP_FONT_MM / mmPerPx)
   for (const l of labels.ends) {
     const { w, h } = textSize(l.text, chipFont)
@@ -1081,23 +1117,138 @@ function labelsMarkup(
   )
 }
 
-/** A tile too thin, or a photo too small, to read on paper: its symbol -
- * a rounded box in its colour at the drawn size (`box`, cells). */
-function symbolMarkup(t: FloorPlanTile, box: CellBox): string {
+/** A tile too thin, or too small, to read on paper: its symbol - a
+ * rounded box in its colour at the drawn size (`box`, cells) with its icon
+ * in white (object-icon.ts), as the canvas draws it (ReadableSymbol). */
+function symbolMarkup(
+  t: FloorPlanTile,
+  box: CellBox,
+  iconTile = false
+): string {
   const r = (n: number) => +n.toFixed(2)
   const w = box.w * CELL
   const h = box.h * CELL
-  return el("rect", {
-    x: r(box.x * CELL),
-    y: r(box.y * CELL),
-    width: r(w),
-    height: r(h),
-    rx: r(Math.min(w, h) * 0.2),
-    fill: tileFill(t),
-    "fill-opacity": 0.9,
-    stroke: tileFill(t),
-    "data-symbol": t.id,
-  })
+  const side = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
+  return (
+    el("rect", {
+      x: r(box.x * CELL),
+      y: r(box.y * CELL),
+      width: r(w),
+      height: r(h),
+      rx: r(Math.min(w, h) * 0.2),
+      fill: tileFill(t),
+      "fill-opacity": 0.9,
+      stroke: tileFill(t),
+      "data-symbol": t.id,
+      ...(iconTile ? { "data-icon-tile": t.id } : {}),
+    }) +
+    iconMarkup(
+      tileIcon(t),
+      r(box.x * CELL + w / 2 - side / 2),
+      r(box.y * CELL + h / 2 - side / 2),
+      r(side),
+      "#ffffff"
+    )
+  )
+}
+
+/** A spread icon's leader on paper: a hairline from its drawn centre back
+ * to its true one (cells), a dot there. */
+function leaderMarkup(from: Pt, to: Pt, mmPerPx: number): string {
+  const r = (n: number) => +n.toFixed(2)
+  return (
+    el("line", {
+      x1: r(from[0] * CELL),
+      y1: r(from[1] * CELL),
+      x2: r(to[0] * CELL),
+      y2: r(to[1] * CELL),
+      stroke: MUTED_INK,
+      "stroke-width": r(0.2 / mmPerPx),
+      "data-icon-leader": "",
+    }) +
+    el("circle", {
+      cx: r(to[0] * CELL),
+      cy: r(to[1] * CELL),
+      r: r(0.5 / mmPerPx),
+      fill: MUTED_INK,
+    })
+  )
+}
+
+/** A cluster tile on paper, as the canvas draws it (ClusterTile): the
+ * stack, the shared icon, the worst state's outline and the count. */
+function clusterMarkup(
+  id: string,
+  box: CellBox,
+  face: ClusterFace,
+  mmPerPx: number
+): string {
+  const r = (n: number) => +n.toFixed(2)
+  const x = box.x * CELL
+  const y = box.y * CELL
+  const w = box.w * CELL
+  const h = box.h * CELL
+  const rx = Math.min(w, h) * 0.2
+  const alarm = face.check ? CHECK_COLOR[face.check] : undefined
+  const off = 0.6 / mmPerPx
+  const icon = Math.min(w, h) * 0.55
+  const count = String(face.count)
+  const font = 1.6 / mmPerPx
+  const bh = font * 1.4
+  const bw = count.length * font * 0.62 + font * 0.8
+  const bx = x + w - bw * 0.6
+  const by = y - bh * 0.45
+  return (
+    `<g data-icon-cluster="${esc(id)}">` +
+    el("rect", {
+      x: r(x + off),
+      y: r(y - off),
+      width: r(w),
+      height: r(h),
+      rx: r(rx),
+      fill: face.fill,
+      "fill-opacity": 0.45,
+      stroke: "#ffffff",
+      "stroke-width": r(0.2 / mmPerPx),
+    }) +
+    el("rect", {
+      x: r(x),
+      y: r(y),
+      width: r(w),
+      height: r(h),
+      rx: r(rx),
+      fill: face.fill,
+      "fill-opacity": 0.95,
+      stroke: alarm ?? "#ffffff",
+      "stroke-width": r((alarm ? 0.4 : 0.2) / mmPerPx),
+    }) +
+    iconMarkup(
+      face.icon,
+      r(x + w / 2 - icon / 2),
+      r(y + h / 2 - icon / 2),
+      r(icon),
+      "#ffffff"
+    ) +
+    el("rect", {
+      x: r(bx),
+      y: r(by),
+      width: r(bw),
+      height: r(bh),
+      rx: r(bh * 0.28),
+      fill: PAPER_INK,
+      stroke: "#ffffff",
+      "stroke-width": r(0.15 / mmPerPx),
+    }) +
+    text(count, {
+      x: r(bx + bw / 2),
+      y: r(by + bh / 2 + font * 0.35),
+      "text-anchor": "middle",
+      "font-size": r(font),
+      "font-weight": 600,
+      fill: "#ffffff",
+    }) +
+    "</g>"
+  )
 }
 
 /** The plan as SVG markup, `viewBox="0 0 W H"` in plan pixels. */
@@ -1116,6 +1267,7 @@ export function planSvg({
   cables,
   fitContent,
   objectSize = "real",
+  iconTiles = false,
   mmPerPx: sheetMmPerPx,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
@@ -1175,15 +1327,77 @@ export function planSvg({
   // Readable on paper: mm per cell, and how much each tile grows.
   const readable = objectSize === "readable"
   const mmPerCell = CELL * paperMmPerPx
-  const shapeOf = (t: FloorPlanTile) =>
+  // Icons on paper: one threshold, no zoom to hover about it.
+  const iconIds = new Set(
+    iconTiles
+      ? tiles
+          .filter((t) => isIconTile(t, mmPerCell, false, ICON_TILE_MM))
+          .map((t) => t.id)
+      : []
+  )
+  const readableOf = (t: FloorPlanTile) =>
     readableShape(t, mmPerCell, {
       minLong: READABLE_SYMBOL_MM,
       minShort: READABLE_SHORT_MM,
       // No photos on paper: only a tile too thin turns symbol.
       minPhoto: 0,
     })
-  const growOf = (t: FloorPlanTile) => (readable ? shapeOf(t).grow : 1)
-  if (readable && cables?.stubs)
+  // Icons that would overlap on paper: spread, or folded into clusters,
+  // as on the canvas (icon-layout.ts) - at the paper's scale.
+  const icons: IconLayout = layoutIcons(
+    tiles
+      .filter((t) => iconIds.has(t.id))
+      .map((t) => ({
+        id: t.id,
+        c: [t.x + t.width / 2, t.y + t.height / 2] as Pt,
+      })),
+    mmPerCell,
+    { side: READABLE_SYMBOL_MM }
+  )
+  const tileById = new Map(tiles.map((t) => [t.id, t]))
+  const clusterBoxOf = (c: IconLayout["clusters"][number]) =>
+    squareAt(
+      drawnCentre(icons, c.id, c.anchor, mmPerCell),
+      READABLE_SYMBOL_MM * CLUSTER_SIDE,
+      mmPerCell
+    )
+  const faces = new Map<string, ClusterFace>(
+    icons.clusters.map((c) => [
+      c.id,
+      clusterFace(
+        c.members.map((id) => tileById.get(id)!),
+        (t) => liveState?.tiles[t.id]?.check
+      ),
+    ])
+  )
+  /** How a tile prints when not as itself, or null. */
+  const shapeOf = (t: FloorPlanTile): ReadableShape | null => {
+    if (!iconIds.has(t.id)) return readable ? readableOf(t) : null
+    const c = icons.clusterOf.get(t.id)
+    if (!c && !icons.offsets.has(t.id))
+      return iconTileShape(t, mmPerCell, READABLE_SYMBOL_MM)
+    const box = c
+      ? clusterBoxOf(c)
+      : squareAt(
+          drawnCentre(
+            icons,
+            t.id,
+            [t.x + t.width / 2, t.y + t.height / 2],
+            mmPerCell
+          ),
+          READABLE_SYMBOL_MM,
+          mmPerCell
+        )
+    return {
+      box,
+      grow: box.w / Math.max(t.width, t.height),
+      changed: true,
+      symbol: true,
+    }
+  }
+  const anyShape = readable || iconIds.size > 0
+  const growOf = (t: FloorPlanTile) => shapeOf(t)?.grow ?? 1
+  if (anyShape && cables?.stubs)
     cables = {
       ...cables,
       stubs: growStubs(
@@ -1191,7 +1405,8 @@ export function planSvg({
         tiles,
         mmPerCell,
         READABLE_SYMBOL_MM,
-        READABLE_SHORT_MM
+        READABLE_SHORT_MM,
+        shapeOf
       ),
     }
   // The one label pass, at the paper's scale: plan labels, the cables'
@@ -1206,7 +1421,14 @@ export function planSvg({
     repeat: LABEL_REPEAT_MM,
     gap: 0.6,
     tiles,
-    shapeOf: readable ? shapeOf : null,
+    shapeOf: anyShape ? shapeOf : null,
+    iconIds,
+    iconClusters: icons.clusters.map((c) => ({
+      id: c.id,
+      box: clusterBoxOf(c),
+      name: faces.get(c.id)?.name ?? "",
+      members: c.members,
+    })),
     zoneGrow: readable ? fontGrow(10, paperMmPerPx, READABLE_FONT_MM) : 1,
     trays: showTrays ? trays : [],
     trayWidth: readable
@@ -1259,19 +1481,34 @@ export function planSvg({
   const free = plan.layout_mode === "free"
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
-  const ordered = readable
+  const ordered = anyShape
     ? [
-        ...solid.filter((t) => !shapeOf(t).changed),
-        ...solid.filter((t) => shapeOf(t).changed),
+        ...solid.filter((t) => !shapeOf(t)?.changed),
+        ...solid.filter((t) => shapeOf(t)?.changed),
       ]
     : solid
+  // Spread icons: a leader back to where each really is.
   for (const t of ordered) {
+    const o = icons.offsets.get(t.id)
+    if (!o || icons.clusterOf.has(t.id)) continue
+    const home: Pt = [t.x + t.width / 2, t.y + t.height / 2]
+    body.push(
+      leaderMarkup(
+        drawnCentre(icons, t.id, home, mmPerCell),
+        home,
+        paperMmPerPx
+      )
+    )
+  }
+  for (const t of ordered) {
+    // Folded into a cluster: the cluster prints it.
+    if (icons.clusterOf.has(t.id)) continue
     // A free plan's tile turned past its quarter turn (shapes.ts).
     const r = free ? tileBox(t).rotation : 0
     // Too thin to read: its symbol at the drawn size.
-    const shape = readable ? shapeOf(t) : null
+    const shape = shapeOf(t)
     if (shape?.symbol) {
-      body.push(symbolMarkup(t, shape.box))
+      body.push(symbolMarkup(t, shape.box, iconIds.has(t.id)))
       continue
     }
     const g = growOf(t)
@@ -1294,6 +1531,10 @@ export function planSvg({
       .join(" ")
     body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
   }
+  for (const c of icons.clusters)
+    body.push(
+      clusterMarkup(c.id, clusterBoxOf(c), faces.get(c.id)!, paperMmPerPx)
+    )
   for (const wall of walls) body.push(wallMarkup(wall, plan.cell_mm))
   if (showTrays)
     for (const tray of trays)

@@ -125,6 +125,10 @@ import { structureLists } from "./structure"
 import { StructureToolbar } from "./structure-toolbar"
 import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
 import { shownLink } from "./shown-link"
+import { CableDetailPanel } from "./cable-detail-panel"
+import { ObjectDetailPanel } from "./object-detail-panel"
+import { applyPick } from "./plan-search"
+import type { PlanHit } from "./plan-search"
 
 /** The floor-plan page's search params (validated by the route). */
 export interface FloorPlanSearch {
@@ -205,6 +209,21 @@ export function FloorPlanEditor({
   const { tiles, isDirty, selectedId, setSelectedId } = ed
   // An area opened while viewing (its room in the map panel).
   const [openArea, setOpenArea] = useState<string | null>(null)
+  // The detail panel: a cable (traced while it is open) or a device or
+  // rack tile - a racked device clicked in 3D names its device.
+  const [detail, setDetail] = useState<
+    | { kind: "cable"; id: string }
+    | { kind: "tile"; id: string; deviceId?: string }
+    | null
+  >(null)
+  // A tray the cable panel lit, cleared with the panel.
+  const [panelTray, setPanelTray] = useState<string | null>(null)
+  // What the 3D room flies to next: a cable's run or a tile.
+  const [focus3d, setFocus3d] = useState<{
+    kind: "cable" | "tile"
+    id: string
+    n: number
+  } | null>(null)
   const [snapOpen, setSnapOpen] = useState(false)
   // The Snapshot tool's rectangle, or the area "Snapshot this room…" was
   // asked of, while its dialog is open.
@@ -546,6 +565,7 @@ export function FloorPlanEditor({
     tracedRef.current = traceParam
     prefs.setShowLinksLocal(true)
     ed.setHighlightCableIds([traceParam])
+    setDetail({ kind: "cable", id: traceParam })
     const route = cableRoutes.get(cp.id)?.points ?? []
     if (route.length >= 2)
       requestAnimationFrame(() => canvasApi.current?.focusPoints(route))
@@ -851,6 +871,7 @@ export function FloorPlanEditor({
           showTrays: prefs.showTrays,
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
+          iconTiles: prefs.iconTiles,
           mmPerPx: planPaperScale(plan, paper),
           cables: withCables
             ? {
@@ -891,21 +912,113 @@ export function FloorPlanEditor({
       nav({ to: "/floorplans/$id", params: { id: linked.id } })
       return
     }
-    // Rack/device tiles open the contents + end-to-end trace sheet (from
-    // the popover's Trace or a double-click - a click pins the popover).
-    if (linked?.kind === "rack" || linked?.kind === "device") {
-      popover.close()
-      ed.setDeepTile(tile)
-      return
-    }
-    // A cabinet tile opens its panel over the canvas - in place of the
-    // popover a click pinned on the way.
-    if (linked?.kind === "cabinet") {
-      popover.close()
-      ed.setCabinetTileId(tile.id)
+    // Rack/device tiles open the detail panel (a click while viewing, a
+    // double-click or the menu while editing); its Paths / Contents open
+    // the end-to-end trace sheet.
+    if (
+      linked?.kind === "rack" ||
+      linked?.kind === "device" ||
+      linked?.kind === "cabinet"
+    ) {
+      openTilePanel(tile)
       return
     }
     setSelectedId(tile.id)
+  }
+
+  /** Open the detail panel on a device or rack tile (`deviceId`: one of a
+   * rack's devices). */
+  function openTilePanel(tile: FloorPlanTile, deviceId?: string) {
+    popover.close()
+    ed.setCabinetTileId(null)
+    setOpenArea(null)
+    if (detail?.kind === "cable") ed.setHighlightCableIds([])
+    setDetail({ kind: "tile", id: tile.id, deviceId })
+  }
+
+  /** Open the cable panel and trace the cable; `fit` frames its route. */
+  function openCable(cableId: string, fit = false) {
+    popover.close()
+    ed.setCabinetTileId(null)
+    setOpenArea(null)
+    prefs.setShowLinksLocal(true)
+    ed.setHighlightCableIds([cableId])
+    setDetail({ kind: "cable", id: cableId })
+    if (!fit) return
+    if (view3d) {
+      setFocus3d((f) => ({ kind: "cable", id: cableId, n: (f?.n ?? 0) + 1 }))
+      return
+    }
+    const pts = cableRoutes.get(cableId)?.points ?? []
+    if (pts.length >= 2)
+      requestAnimationFrame(() => canvasApi.current?.focusPoints(pts))
+  }
+
+  /** Close the detail panel: a cable's trace and the tray it lit go too. */
+  function closeDetail() {
+    if (detail?.kind === "cable") ed.setHighlightCableIds([])
+    if (panelTray && ed.selectedTrayId === panelTray) ed.setSelectedTrayId(null)
+    setPanelTray(null)
+    setDetail(null)
+  }
+
+  /** Light a tray (the cable panel's tray list, Find). */
+  function highlightTray(trayId: string, frame = false) {
+    ed.setSelectedTrayId(trayId)
+    setPanelTray(trayId)
+    const tray = planTrays.find((t) => t.id === trayId)
+    if (frame && tray && tray.points.length >= 2 && !view3d)
+      canvasApi.current?.focusPoints(tray.points)
+  }
+
+  /** Bring a tile into view: zoomed to on the plan, flown to in 3D. */
+  function showTile(tile: FloorPlanTile) {
+    if (view3d) {
+      setFocus3d((f) => ({ kind: "tile", id: tile.id, n: (f?.n ?? 0) + 1 }))
+      return
+    }
+    if (editing) setSelectedId(tile.id)
+    canvasApi.current?.focusTile(tile)
+  }
+
+  /** A pick from "Find on plan…". */
+  function pickHit(h: PlanHit) {
+    applyPick(
+      h,
+      {
+        openCable,
+        highlightTray: (tid) => highlightTray(tid, true),
+        showArea: (s) => {
+          if (editing) {
+            if (ed.mode !== "layout") selectTool("select")
+            shapeEdits.select(s.id)
+          } else {
+            closeDetail()
+            setOpenArea(s.id)
+          }
+          if (view3d) return
+          const b = shapeBounds(s, plan!.cell_mm)
+          canvasApi.current?.focusPoints([
+            [b.minX, b.minY],
+            [b.maxX, b.maxY],
+          ])
+        },
+        showTile: (tile) => {
+          if (view3d) {
+            setFocus3d((f) => ({
+              kind: "tile",
+              id: tile.id,
+              n: (f?.n ?? 0) + 1,
+            }))
+            return
+          }
+          setSelectedId(tile.id)
+          canvasApi.current?.focusTile(tile)
+        },
+        openTilePanel: (tile) => openTilePanel(tile),
+      },
+      { editing }
+    )
   }
 
   // From a device's paths in the deep-view: close the sheet and highlight one
@@ -1010,13 +1123,15 @@ export function FloorPlanEditor({
         mode={ed.mode}
         view3d={view3d}
         canEdit={editing}
-        tiles={shownTiles}
+        searchIn={{
+          tiles: shownTiles,
+          cables: shownCables,
+          trays: planTrays,
+          shapes: shownShapes,
+        }}
         search={ed.search}
         onSearchChange={ed.setSearch}
-        onPickTile={(tile) => {
-          setSelectedId(tile.id)
-          canvasApi.current?.focusTile(tile)
-        }}
+        onPickHit={pickHit}
         onFit={() => canvasApi.current?.fit()}
         showGrid={ed.showGrid}
         onShowGridChange={ed.setShowGrid}
@@ -1148,7 +1263,23 @@ export function FloorPlanEditor({
               plan={plan}
               liveState={liveState.data ?? null}
               hiddenTileIds={hiddenTileIds}
-              traceCableId={traceParam ?? null}
+              traceCableId={
+                detail?.kind === "cable" ? detail.id : (traceParam ?? null)
+              }
+              onOpenCable={(cid) => {
+                if (cid) return openCable(cid)
+                ed.setHighlightCableIds([])
+                closeDetail()
+              }}
+              onOpenDevice={(tileId, deviceId) => {
+                const tile = tiles.find((t) => t.id === tileId)
+                if (!tile) return
+                const k = shownLink(tile.linked)?.kind
+                if (k === "device") openTilePanel(tile)
+                else if ((k === "rack" || k === "cabinet") && deviceId)
+                  openTilePanel(tile, deviceId)
+              }}
+              focusTarget={focus3d}
               prefs={prefs}
               capacity={capacity}
               rackFocus={ed.rackFocus3d}
@@ -1243,6 +1374,11 @@ export function FloorPlanEditor({
               onRerouteCable={
                 editing ? (cid) => openReroute([cid], null) : undefined
               }
+              onOpenCable={(cid) => {
+                if (cid) return openCable(cid)
+                ed.setHighlightCableIds([])
+                closeDetail()
+              }}
               tileTypes={tileTypes.data?.results ?? []}
               roles={roles.data?.results ?? []}
               popover={popover}
@@ -1481,6 +1617,83 @@ export function FloorPlanEditor({
                 <AreaPanel area={a} onClose={() => setOpenArea(null)} />
               ) : null
             })()}
+          {/* The detail panel - out of the way of the edit panels that
+              take the same corner. */}
+          {!(placeCablesOpen || reroute || connect || docRoutesOpen) &&
+            (() => {
+              if (detail?.kind === "cable")
+                return (
+                  <CableDetailPanel
+                    key={detail.id}
+                    planId={id}
+                    cableId={detail.id}
+                    cablePath={drawnCablePaths.find((c) => c.id === detail.id)}
+                    route={cableRoutes.get(detail.id)}
+                    trays={planTrays}
+                    cellMm={plan.cell_mm}
+                    onClose={closeDetail}
+                    onShowTile={(tileId) => {
+                      const tile = tiles.find((t) => t.id === tileId)
+                      if (tile) showTile(tile)
+                    }}
+                    onHighlightTray={(tid) => highlightTray(tid, true)}
+                    onEditRoute={
+                      editing && !view3d
+                        ? (cid) => openReroute([cid], null)
+                        : undefined
+                    }
+                  />
+                )
+              const tile =
+                detail?.kind === "tile"
+                  ? tiles.find((t) => t.id === detail.id)
+                  : undefined
+              if (!tile || !detail || detail.kind !== "tile") return null
+              return (
+                <ObjectDetailPanel
+                  key={`${tile.id}:${detail.deviceId ?? ""}`}
+                  planId={id}
+                  tile={tile}
+                  deviceId={detail.deviceId}
+                  cablePaths={drawnCablePaths}
+                  onClose={closeDetail}
+                  onPickCable={(cid) => openCable(cid, true)}
+                  onOpen3d={
+                    view3d
+                      ? undefined
+                      : () => {
+                          setFocus3d((f) => ({
+                            kind: "tile",
+                            id: tile.id,
+                            n: (f?.n ?? 0) + 1,
+                          }))
+                          void nav({
+                            to: "/floorplans/$id",
+                            params: { id },
+                            search: { viz: "3d" },
+                          })
+                        }
+                  }
+                  onContents={() => {
+                    // A cabinet's plate and paths are its own panel.
+                    if (detail.deviceId)
+                      ed.setDeepTile({
+                        ...tile,
+                        linked: {
+                          kind: "device",
+                          id: detail.deviceId,
+                          name: "",
+                          route: `/devices/${detail.deviceId}`,
+                        },
+                      })
+                    else if (tile.linked?.kind === "cabinet") {
+                      closeDetail()
+                      ed.setCabinetTileId(tile.id)
+                    } else ed.setDeepTile(tile)
+                  }}
+                />
+              )
+            })()}
         </div>
 
         {editing && !view3d && (
@@ -1497,6 +1710,9 @@ export function FloorPlanEditor({
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             openTile={openTile}
+            onShowTrayCables={(tid, at) =>
+              canvasApi.current?.showTrayCables?.(tid, at)
+            }
             onSelectWalls={(ids) => {
               selectTool("structure")
               ed.setSelectedWallId(ids[0] ?? null)

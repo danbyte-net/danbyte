@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0245_tunneltermination_wireguard'),
+        ('api', '0248_tunneltermination_wireguard'),
     ]
 
     operations = [

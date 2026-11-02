@@ -38,16 +38,34 @@ import type { Pt } from "./cable-route"
 import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
+  ClusterTile,
   FovCone,
+  IconLeader,
   ReadableSymbol,
   TileMarkers,
   TileShape,
   createHoverStore,
 } from "./tile-layer"
 import {
+  CLUSTER_SIDE,
+  EMPTY_ICON_LAYOUT,
+  clusterFace,
+  clusterFitView,
+  drawnCentre,
+  layoutIcons,
+  pullOut,
+  squareAt,
+  zoomBucket,
+} from "./icon-layout"
+import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
+import {
+  ICON_TILE_EXIT_PX,
   READABLE_FONT_PX,
+  READABLE_SYMBOL_PX,
   fontGrow,
   growStubs,
+  iconTileIds,
+  iconTileShape,
   readableHit,
   readableOrder,
   readableShape,
@@ -63,7 +81,7 @@ import {
   laneOrder,
   layoutCables,
 } from "./cable-draw"
-import type { ObjectSize } from "./readable"
+import type { ObjectSize, ShapeOf } from "./readable"
 import { tileFill } from "./tile-paint"
 import type { ColorBy, RackFigures } from "./tile-paint"
 import {
@@ -91,7 +109,9 @@ import type { PlanShape } from "./shapes"
 import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
-import type { CableAnchor, CableHoverHit } from "./cable-layer"
+import type { CableAnchor, CableHoverHit, CablePickAt } from "./cable-layer"
+import { CableChooser } from "./cable-chooser"
+import type { CableChooserAt } from "./cable-chooser"
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import { usePanZoom } from "./use-pan-zoom"
 import { useShapeGestures } from "./use-shape-gestures"
@@ -133,6 +153,7 @@ const LOCKED_OPACITY = 0.5
 /** Stable empties, so the memoised cable layer keeps its props. */
 const NO_CABLES: FloorPlanCablePath[] = []
 const NO_IDS: string[] = []
+const NO_ICONS: ReadonlySet<string> = new Set()
 const NO_ROUTES: ReadonlyMap<string, CableRoute> = new Map()
 const NO_STRUCT: StructShape[] = []
 
@@ -152,6 +173,9 @@ export interface FloorCanvasApi {
    * pointer while it is over the plan (the Place picker's "near"). */
   centerCell?: () => Pt
   pointerCell?: () => Pt | null
+  /** A tray's cables in the cable chooser, opened at a client point (a
+   * panel's Show cables). */
+  showTrayCables?: (trayId: string, at: CablePickAt) => void
 }
 
 export interface FloorCanvasProps {
@@ -222,6 +246,9 @@ export interface FloorCanvasProps {
   /** Readable: placed objects keep a least size on screen from afar, with
    * their names at a constant size (readable.ts). */
   objectSize?: ObjectSize
+  /** Display > Icons when zoomed out: a device, rack or cabinet too small
+   * on screen draws as its icon tile (readable.ts). */
+  iconTiles?: boolean
   /** Display > Muted background: the background image greyed and pushed
    * toward the page (background-look.tsx), so the plan reads over it. */
   muteBackground?: boolean
@@ -517,6 +544,7 @@ export function FloorCanvas({
   showZoneLabels = true,
   photoOutlines = false,
   objectSize = "real",
+  iconTiles = true,
   muteBackground = false,
   mode = "layout",
   trays = [],
@@ -582,6 +610,16 @@ export function FloorCanvas({
   } | null>(null)
   // A right-click on a wall, door, tray or raised floor.
   const [structMenu, setStructMenu] = useState<StructMenu | null>(null)
+  // Which cable? A bundle's, a cluster's or a tray's (cable-chooser.tsx),
+  // and the row under the pointer, drawn alone on the plan.
+  const [chooser, setChooser] = useState<CableChooserAt | null>(null)
+  const [chooserSolo, setChooserSolo] = useState<string | null>(null)
+  // View: a tray pressed - a click on it (no drag) lists its cables.
+  const trayClick = useRef<{ id: string; x: number; y: number } | null>(null)
+  // View: a tray right-clicked - its menu (Show cables).
+  const [trayMenu, setTrayMenu] = useState<
+    (CablePickAt & { id: string }) | null
+  >(null)
   // Right-click menu: screen-relative position + what's under the cursor.
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
@@ -625,18 +663,144 @@ export function FloorCanvas({
     hoverStore.get
   )
   const viewSize = useElementSize(svgRef)
-  const shownStubs = useMemo(
-    () =>
-      readable && cableStubs
-        ? growStubs(cableStubs, tiles, pxPerCell)
-        : cableStubs,
-    [readable, cableStubs, tiles, pxPerCell]
+  // Icons when zoomed out: the tiles drawn as their icon, with hysteresis -
+  // the set from the last render decides which threshold each tile meets
+  // (stored during render, the documented previous-render pattern).
+  const [iconPrev, setIconPrev] = useState<ReadonlySet<string>>(NO_ICONS)
+  const iconIds = useMemo(
+    () => (iconTiles ? iconTileIds(tiles, pxPerCell, iconPrev) : NO_ICONS),
+    [iconTiles, tiles, pxPerCell, iconPrev]
   )
+  if (iconIds !== iconPrev) setIconPrev(iconIds)
   const pinnedNames = useMemo(() => {
     const s = new Set(multiSelectedIds ?? [])
     if (selectedId) s.add(selectedId)
     return s
   }, [multiSelectedIds, selectedId])
+  // Settled: the view once a pan or zoom stops - the label pass and the
+  // icons' layout run on it, not on every frame.
+  const settledView = useSettled(
+    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
+    120,
+    sameView
+  )
+  // Icons that would overlap spread apart, or fold into clusters where
+  // there is no room (icon-layout.ts) - laid out for the settled zoom's
+  // bucket, so a pan never moves them; the last layout holds clusters a
+  // little longer (hysteresis). The selection never joins a cluster.
+  const layoutK = zoomBucket(settledView.k)
+  const lastIconLayout = useRef<IconLayout>(EMPTY_ICON_LAYOUT)
+  const baseIconLayout = useMemo(() => {
+    if (iconIds.size < 2) return EMPTY_ICON_LAYOUT
+    const items = tiles
+      .filter((tl) => iconIds.has(tl.id))
+      .map((tl) => ({
+        id: tl.id,
+        c: [tl.x + tl.width / 2, tl.y + tl.height / 2] as Pt,
+      }))
+    return layoutIcons(
+      items,
+      CELL * layoutK,
+      { side: READABLE_SYMBOL_PX, prev: lastIconLayout.current },
+      pinnedNames
+    )
+  }, [iconIds, tiles, layoutK, pinnedNames])
+  useEffect(() => {
+    lastIconLayout.current = baseIconLayout
+  }, [baseIconLayout])
+  // The tile the camera was last sent to (a search pick, a panel's Show
+  // on plan, ?tile=): drawn on its own until the next.
+  const [focusedTile, setFocusedTile] = useState<string | null>(null)
+  // Hovered, found, or pointed at from outside (the rack table, a pick):
+  // out of its cluster, on its own.
+  const iconLayout = useMemo(() => {
+    const out = new Set<string>(highlightTileIds ?? [])
+    if (hoveredTile) out.add(hoveredTile)
+    if (focusedTile) out.add(focusedTile)
+    for (const id of tilePick?.picked ?? []) out.add(id)
+    return pullOut(baseIconLayout, out)
+  }, [
+    baseIconLayout,
+    highlightTileIds,
+    hoveredTile,
+    focusedTile,
+    tilePick?.picked,
+  ])
+  const tileById = useMemo(
+    () => new Map(tiles.map((tl) => [tl.id, tl])),
+    [tiles]
+  )
+  const clusterFaces = useMemo(() => {
+    const m = new Map<string, ClusterFace>()
+    for (const c of iconLayout.clusters)
+      m.set(
+        c.id,
+        clusterFace(
+          c.members.map((id) => tileById.get(id)!).filter(Boolean),
+          (tl) => liveState?.tiles[tl.id]?.check
+        )
+      )
+    return m
+  }, [iconLayout, tileById, liveState])
+  /** A cluster's drawn box (cells) at `perCell` px per cell. */
+  const clusterBox = useCallback(
+    (c: IconCluster, perCell: number) =>
+      squareAt(
+        drawnCentre(iconLayout, c.id, c.anchor, perCell),
+        READABLE_SYMBOL_PX * CLUSTER_SIDE,
+        perCell
+      ),
+    [iconLayout]
+  )
+  /** How a tile draws when not as itself: its icon tile - spread, or
+   * its cluster's box - else Readable's shape; null draws every tile at
+   * its real size. */
+  const shapeAt = useCallback(
+    (perCell: number): ShapeOf | null =>
+      !readable && iconIds.size === 0
+        ? null
+        : (tl) => {
+            if (!iconIds.has(tl.id))
+              return readable ? readableShape(tl, perCell) : null
+            const c = iconLayout.clusterOf.get(tl.id)
+            const box = c
+              ? clusterBox(c, perCell)
+              : squareAt(
+                  drawnCentre(
+                    iconLayout,
+                    tl.id,
+                    [tl.x + tl.width / 2, tl.y + tl.height / 2],
+                    perCell
+                  ),
+                  READABLE_SYMBOL_PX,
+                  perCell
+                )
+            return {
+              box,
+              grow: box.w / Math.max(tl.width, tl.height),
+              changed: true,
+              symbol: true,
+            }
+          },
+    [readable, iconIds, iconLayout, clusterBox]
+  )
+  const shapeOf = useMemo(() => shapeAt(pxPerCell), [shapeAt, pxPerCell])
+  const shownStubs = useMemo(
+    () =>
+      shapeOf && cableStubs
+        ? growStubs(cableStubs, tiles, pxPerCell, undefined, undefined, shapeOf)
+        : cableStubs,
+    [shapeOf, cableStubs, tiles, pxPerCell]
+  )
+  // Mid-zoom the icons follow the view as it is; once settled a new
+  // layout eases them to their new places.
+  const iconsSettled = t.k === settledView.k
+  // Hovering a cluster lists its members.
+  const [clusterHint, setClusterHint] = useState<{
+    id: string
+    x: number
+    y: number
+  } | null>(null)
 
   // The cable layer is memoised; its callbacks must hold still while the
   // canvas re-renders on every pan frame.
@@ -646,6 +810,16 @@ export function FloorCanvas({
   cableProps.current = { onSelectCable, onHoverCable }
   const selectCable = useCallback(
     (id: string | null) => cableProps.current.onSelectCable?.(id),
+    []
+  )
+  /** Several cables under one click: ask which (the chooser), no hover
+   * popover over it. */
+  const chooseCables = useCallback(
+    (ids: string[], at: CablePickAt, title?: string) => {
+      cableProps.current.onHoverCable?.(null, null)
+      setChooserSolo(null)
+      setChooser({ x: at.x, y: at.y, ids, title })
+    },
     []
   )
   // The hovered run's ids, for the label pass: its name and its ends.
@@ -751,11 +925,6 @@ export function FloorCanvas({
   const labels = shapes.filter((s) => s.kind === "label").sort(byZ)
   // The label pass, run when a pan or zoom settles: everything the plan
   // writes, in view, the cables first (plan-label-pass.ts).
-  const settledView = useSettled(
-    { k: t.k, x: t.x, y: t.y, w: viewSize.w, h: viewSize.h },
-    120,
-    sameView
-  )
   const labelLayout = useMemo(
     () => layoutCables(cableRoutes, laneOrder(cablePaths, cableRoutes)),
     [cableRoutes, cablePaths]
@@ -786,7 +955,14 @@ export function FloorCanvas({
             }
           : null,
       tiles,
-      shapeOf: readable ? (tl) => readableShape(tl, scale) : null,
+      shapeOf: shapeAt(scale),
+      iconIds,
+      iconClusters: iconLayout.clusters.map((c) => ({
+        id: c.id,
+        box: clusterBox(c, scale),
+        name: clusterFaces.get(c.id)?.name ?? "",
+        members: c.members,
+      })),
       labelFit,
       zoneGrow: readable ? fontGrow(10, k) : 1,
       pinnedTiles: hoveredTile
@@ -827,6 +1003,11 @@ export function FloorCanvas({
     settledView,
     tiles,
     readable,
+    shapeAt,
+    iconIds,
+    iconLayout,
+    clusterBox,
+    clusterFaces,
     labelFit,
     pinnedNames,
     hoveredTile,
@@ -873,6 +1054,7 @@ export function FloorCanvas({
     apiRef.current = {
       fit: () => fitTo(svgRef.current, gw, gh),
       focusTile: (tile, zoom) => {
+        setFocusedTile(tile.id)
         const svg = svgRef.current
         if (!svg) return
         const rect = svg.getBoundingClientRect()
@@ -908,6 +1090,24 @@ export function FloorCanvas({
       },
     }
   }, [apiRef, fitTo, setT, gw, gh])
+  /** A tray's cables drawn on this plan (the reader's; hidden ones are
+   * only counted). */
+  const trayCableIds = (tray: FloorPlanTray) => {
+    const drawn = new Set(cablePaths.map((cp) => cp.id))
+    return tray.cables.map((c) => c.id).filter((id) => drawn.has(id))
+  }
+  /** Show cables: one opens at once, several ask which. */
+  const showTrayCables = (trayId: string, at: CablePickAt) => {
+    const tray = trays.find((tr) => tr.id === trayId)
+    if (!tray) return
+    const ids = trayCableIds(tray)
+    if (ids.length === 1) selectCable(ids[0])
+    else if (ids.length > 1) chooseCables(ids, at, tray.name || "Tray")
+  }
+  /** View: a tray click lists its cables - not while picking trays for a
+   * route, nor while editing, where a click selects or drags it. */
+  const trayChooses = !editable && !trayPick && showCableLinks
+
   // The polygon tool's keys (Enter, Backspace, Esc) reach it through the
   // same handle; refreshed each render, as the drawing is state.
   useEffect(() => {
@@ -924,6 +1124,7 @@ export function FloorCanvas({
       return [w.x / CELL, w.y / CELL]
     }
     apiRef.current.pointerCell = () => pointerAt.current
+    apiRef.current.showTrayCables = showTrayCables
   })
   // Putting the tool down drops a drawing it left open.
   useEffect(() => {
@@ -1132,6 +1333,13 @@ export function FloorCanvas({
   // Grab a tray body → select it (Shift or Ctrl/⌘: pick it to join) and
   // drag it whole.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
+    if (trayChooses) {
+      // Not stopped: a drag from a tray still pans the plan; the release
+      // in place opens its cables (the svg's pointerup).
+      if (e.button === 0)
+        trayClick.current = { id: tray.id, x: e.clientX, y: e.clientY }
+      return
+    }
     if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
     if (trayPick) {
@@ -1329,6 +1537,22 @@ export function FloorCanvas({
     const rect = svg.getBoundingClientRect()
     const wx = (e.clientX - rect.left - t.x) / t.k / CELL
     const wy = (e.clientY - rect.top - t.y) / t.k / CELL
+    // View: a tray that carries cables gets its menu (Show cables).
+    if (trayChooses && showTrays) {
+      const slack = 6 / (CELL * t.k)
+      let best: { id: string; d: number } | null = null
+      for (const tray of trays) {
+        if (tray.points.length < 2 || !trayCableIds(tray).length) continue
+        const n = nearestSegment(tray.points, [wx, wy])
+        const half = Math.max(5, 2 / t.k) / CELL
+        if (n && n.dist <= half + slack && (!best || n.dist < best.d))
+          best = { id: tray.id, d: n.dist }
+      }
+      if (best) {
+        setTrayMenu({ x: e.clientX, y: e.clientY, id: best.id })
+        return
+      }
+    }
     // Editing: a door, a wall or a tray under the pointer (they draw over
     // the rest), then a raised floor in Structure mode, get their own menu.
     if (editable && structureActions) {
@@ -1397,15 +1621,18 @@ export function FloorCanvas({
     }
     // Readable: a grown symbol draws over the areas and labels - it is
     // what the pointer is on.
-    const grownHit = readable
+    const grownHit = shapeOf
       ? readableHit(
-          readableOrder(tiles, pxPerCell, pinnedNames),
+          readableOrder(tiles, pxPerCell, pinnedNames, undefined, shapeOf),
           wx,
           wy,
-          pxPerCell
+          pxPerCell,
+          undefined,
+          shapeOf
         )
       : null
-    if (grownHit && readableShape(grownHit, pxPerCell).changed) {
+    if (grownHit && iconLayout.clusterOf.has(grownHit.id)) return
+    if (grownHit && shapeOf?.(grownHit)?.changed) {
       setCtxMenu({
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
@@ -1507,6 +1734,27 @@ export function FloorCanvas({
       )
       .map((cp) => cp.id)
 
+  /** A click on a cluster: zoom to its members, close enough that they
+   * part or turn back into tiles. */
+  const fitCluster = (c: IconCluster) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    const members = c.members
+      .map((id) => tileById.get(id))
+      .filter((x): x is FloorPlanTile => !!x)
+    if (!rect || !members.length) return
+    setClusterHint(null)
+    setT(
+      clusterFitView(members, rect.width, rect.height, {
+        cell: CELL,
+        spacingPx: READABLE_SYMBOL_PX * 1.3,
+        tilePx: ICON_TILE_EXIT_PX + 4,
+        maxK: 4,
+        // Room round the extent for the icons and their names.
+        margin: 160,
+      })
+    )
+  }
+
   /** One tile on the plan. */
   const renderTile = (tile: FloorPlanTile) => {
     // A free plan draws a tile turned by what its angle has beyond
@@ -1518,8 +1766,20 @@ export function FloorCanvas({
     // Readable from afar: drawn grown about its centre (its saved geometry
     // untouched), its name left to the names layer, no resize grip - a
     // resize is done zoomed in, at the real size.
-    const rs = readable ? readableShape(tile, pxPerCell) : null
-    // Too thin, or a photo too small to read: its symbol instead.
+    const rs = shapeOf?.(tile) ?? null
+    // Folded into a cluster: the cluster draws it.
+    if (iconLayout.clusterOf.has(tile.id)) return null
+    // An icon spread off its true place: drawn there and moved, so a new
+    // layout eases it across.
+    const iconHome = iconIds.has(tile.id)
+      ? iconTileShape(tile, pxPerCell).box
+      : null
+    const shift =
+      iconHome && rs
+        ? [(rs.box.x - iconHome.x) * CELL, (rs.box.y - iconHome.y) * CELL]
+        : null
+    // Too thin, a photo too small to read, or an icon tile from afar: its
+    // symbol instead.
     if (rs?.symbol)
       return (
         <g
@@ -1529,10 +1789,20 @@ export function FloorCanvas({
           }
           opacity={isLocked(tile.id) ? LOCKED_OPACITY : undefined}
           data-grown=""
+          style={
+            shift
+              ? {
+                  transform: `translate(${shift[0]}px, ${shift[1]}px)`,
+                  transition: iconsSettled
+                    ? "transform 180ms ease-out"
+                    : undefined,
+                }
+              : undefined
+          }
         >
           <ReadableSymbol
             tile={tile}
-            box={rs.box}
+            box={iconHome ?? rs.box}
             k={t.k}
             selected={
               tile.id === selectedId || !!multiSelectedIds?.has(tile.id)
@@ -1540,6 +1810,11 @@ export function FloorCanvas({
             live={liveState?.tiles[tile.id]}
             colorBy={colorBy}
             figures={figures?.get(tile.id)}
+            iconTile={iconIds.has(tile.id)}
+            highlighted={
+              !!highlightTileIds?.has(tile.id) ||
+              !!tilePick?.picked.has(tile.id)
+            }
             onPointerDown={(e) => handleTileDown(tile, e)}
             onDoubleClick={() => {
               if (mode !== "cable") onOpenTile?.(tile)
@@ -1685,6 +1960,10 @@ export function FloorCanvas({
           }
           const start = pickStart.current
           pickStart.current = null
+          const tc = trayClick.current
+          trayClick.current = null
+          if (tc && Math.hypot(e.clientX - tc.x, e.clientY - tc.y) < 5)
+            showTrayCables(tc.id, { x: e.clientX, y: e.clientY })
           if (
             start &&
             onPickPoint &&
@@ -1899,13 +2178,17 @@ export function FloorCanvas({
                   .filter((tl) => !tileIsZone(tl))
                   .sort((a, b) => (a.z ?? 0) - (b.z ?? 0))
               : tiles.filter((tl) => !tileIsZone(tl)),
-            readable ? pxPerCell : null,
-            pinnedNames
-          ).map(renderTile)}
+            shapeOf ? pxPerCell : null,
+            pinnedNames,
+            undefined,
+            shapeOf ?? undefined
+          )
+            .filter((tl) => !iconIds.has(tl.id))
+            .map(renderTile)}
           {/* From afar a placed device, rack or cabinet keeps a marker in
               its colour where it would shrink to a dot - Readable grows
               the whole symbol instead. */}
-          {!readable && (
+          {!readable && !iconTiles && (
             <TileMarkers
               tiles={tiles}
               k={t.k}
@@ -1970,7 +2253,8 @@ export function FloorCanvas({
           })}
 
           {/* Cable trays - drawn above tiles so the run reads on a builder's
-              print. Clickable only in cable mode so layout editing is undisturbed. */}
+              print. Clickable in cable mode so layout editing is undisturbed;
+              in View a click on one that carries cables lists them. */}
           {showTrays &&
             trays.map((tray) => {
               // In edit mode the SELECTED tray shows drag handles + "+" bend
@@ -1991,7 +2275,9 @@ export function FloorCanvas({
                   interactive={
                     trayPick
                       ? !isLocked(tray.id)
-                      : mode === "cable" && !drawing && !isLocked(tray.id)
+                      : trayChooses
+                        ? trayCableIds(tray).length > 0
+                        : mode === "cable" && !drawing && !isLocked(tray.id)
                   }
                   editable={false}
                   editing={isEditing && editable}
@@ -2032,12 +2318,68 @@ export function FloorCanvas({
               interactive={!trayPick}
               onSelect={selectCable}
               onHover={hoverCable}
+              onChoose={chooseCables}
+              soloId={chooser ? chooserSolo : null}
               previews={cablePreviews}
               stubs={shownStubs}
               tiles={tiles}
-              readable={readable}
+              shapeOf={shapeOf}
             />
           )}
+
+          {/* Icons when zoomed out: over the trays and the cables that
+              end on them - their leaders, the icons (the selection last)
+              and the clusters. */}
+          <g data-layer="icon-tiles">
+            {/* Spread icons: a leader back to where each really is. */}
+            {tiles.map((tl) => {
+              if (!iconIds.has(tl.id) || iconLayout.clusterOf.has(tl.id))
+                return null
+              const o = iconLayout.offsets.get(tl.id)
+              if (!o || Math.hypot(o[0], o[1]) < 2) return null
+              const home: Pt = [tl.x + tl.width / 2, tl.y + tl.height / 2]
+              return (
+                <IconLeader
+                  key={`leader-${tl.id}-${Math.round(o[0])}-${Math.round(o[1])}`}
+                  from={drawnCentre(iconLayout, tl.id, home, pxPerCell)}
+                  to={home}
+                  k={t.k}
+                />
+              )
+            })}
+            {readableOrder(
+              tiles.filter((tl) => iconIds.has(tl.id)),
+              pxPerCell,
+              pinnedNames,
+              undefined,
+              shapeOf ?? undefined
+            ).map(renderTile)}
+            {/* Icons folded together: one tile each, the count on it. */}
+            {iconLayout.clusters.map((c) => {
+              const face = clusterFaces.get(c.id)
+              if (!face) return null
+              return (
+                <ClusterTile
+                  key={c.id}
+                  id={c.id}
+                  box={clusterBox(c, pxPerCell)}
+                  k={t.k}
+                  face={face}
+                  onActivate={() => fitCluster(c)}
+                  onPointerEnter={(e) => {
+                    const rect = svgRef.current?.getBoundingClientRect()
+                    if (!rect || drag.current) return
+                    setClusterHint({
+                      id: c.id,
+                      x: e.clientX - rect.left,
+                      y: e.clientY - rect.top,
+                    })
+                  }}
+                  onPointerLeave={() => setClusterHint(null)}
+                />
+              )
+            })}
+          </g>
 
           {/* Every text the label pass places: cable names along their
               runs, trays' names, a focused cable's ends, Readable's tile
@@ -2281,6 +2623,43 @@ export function FloorCanvas({
         )
       })()}
 
+      {/* Hovering a cluster: its members. */}
+      {clusterHint &&
+        (() => {
+          const c = iconLayout.clusters.find((x) => x.id === clusterHint.id)
+          const face = c && clusterFaces.get(c.id)
+          if (!c || !face) return null
+          const names = c.members.map((id) => {
+            const tl = tileById.get(id)
+            return tl ? tileName(tl) || tl.linked?.name || "Tile" : ""
+          })
+          return (
+            <Tooltip open>
+              <TooltipTrigger asChild>
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute"
+                  style={{ left: clusterHint.x, top: clusterHint.y - 10 }}
+                />
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                variant="panel"
+                data-part="cluster-members"
+              >
+                <div className="flex flex-col">
+                  <div className="font-medium">{face.name}</div>
+                  <ul className="mt-0.5 text-xs text-muted-foreground">
+                    {names.slice(0, 12).map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                    {names.length > 12 && <li>+{names.length - 12} more</li>}
+                  </ul>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )
+        })()}
       {opensHint && !editable && (
         <div
           role="status"
@@ -2386,6 +2765,20 @@ export function FloorCanvas({
               : undefined
           return (
             <>
+              {m.part === "tray" &&
+                trays.some(
+                  (tr) => tr.id === m.id && trayCableIds(tr).length > 0
+                ) && (
+                  <>
+                    {item("Show cables", () =>
+                      // After this menu has let the focus go.
+                      window.setTimeout(() =>
+                        showTrayCables(m.id, { x: m.x, y: m.y })
+                      )
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
               {m.part === "wall" &&
                 item(
                   "Add door here",
@@ -2414,6 +2807,53 @@ export function FloorCanvas({
           )
         }}
       </PointerMenu>
+
+      {/* View: a tray's menu. */}
+      <PointerMenu
+        menu={trayMenu}
+        onClose={() => setTrayMenu(null)}
+        label="Tray"
+      >
+        {(m) => {
+          const tray = trays.find((tr) => tr.id === m.id)
+          if (!tray) return null
+          const n = trayCableIds(tray).length
+          return (
+            <>
+              <DropdownMenuLabel className="truncate">
+                {tray.name || "Tray"}
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={n === 0}
+                onSelect={() =>
+                  window.setTimeout(() =>
+                    showTrayCables(m.id, { x: m.x, y: m.y })
+                  )
+                }
+              >
+                Show cables
+                <span className="num ml-auto text-xs text-muted-foreground">
+                  {n}
+                </span>
+              </DropdownMenuItem>
+            </>
+          )
+        }}
+      </PointerMenu>
+
+      {/* Which cable: a bundle's, a cluster's or a tray's. */}
+      <CableChooser
+        menu={chooser}
+        cablePaths={cablePaths}
+        colorBy={cableColorBy}
+        onClose={() => setChooser(null)}
+        onPreview={setChooserSolo}
+        onPick={(id) => {
+          setChooser(null)
+          setChooserSolo(null)
+          selectCable(id)
+        }}
+      />
 
       {/* An area's or label's menu, and a polygon point's. */}
       <PointerMenu

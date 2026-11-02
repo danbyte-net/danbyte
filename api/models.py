@@ -572,6 +572,11 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         help_text="How wide the topology Diagram draws photos of this type. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name (e.g. router, server, cctv) for devices of "
+                  "this type on maps and floor plans. Blank uses the role's.",
+    )
     front_image = models.ImageField(
         upload_to="device-type-images/", blank=True, null=True,
         help_text="Front rack-face image, rendered in rack elevations.",
@@ -2462,6 +2467,11 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         help_text="How wide the topology Diagram draws this device's photo. "
                   "Blank inherits.",
     )
+    icon = models.CharField(
+        max_length=48, blank=True, default="", db_default="",
+        help_text="Lucide icon name for this device on maps and floor plans. "
+                  "Blank uses its type's, then its role's.",
+    )
     # ── Geolocation ──────────────────────────────────────────────────────
     latitude = models.DecimalField(
         max_digits=9, decimal_places=6, null=True, blank=True,
@@ -2537,6 +2547,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
             or (self.device_type.cooling_method if self.device_type else "")
             or COOLING_DEFAULT
         )
+
+    @property
+    def own_icon(self) -> str:
+        """Its own icon, else its type's: what wins over a floor tile's type
+        and the role."""
+        return self.icon or (self.device_type.icon if self.device_type_id else "")
+
+    @property
+    def display_icon(self) -> str:
+        """The icon this device draws with: its own, else its type's, else
+        its role's; "" leaves the default (by kind) to the client."""
+        return self.own_icon or (self.role.icon if self.role_id else "")
 
     def __str__(self) -> str:
         return self.name
@@ -5244,12 +5266,44 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
     #: What PRTG polls instead of the primary address (see Device.prtg_host).
     prtg_host = models.CharField(max_length=255, blank=True, default="", db_default="")
 
+    # ─── Intent: the VM as Danbyte wants it built ────────────────────────
+    #: Danbyte holds the intent for this VM. Virtualization sync then diffs
+    #: the hypervisor against it and queues drift, but never overwrites these
+    #: fields, never deletes the VM and never prunes its NICs or disks - see
+    #: integrations/virt_sync.py. A rebuild script reads it from the API.
+    intended = models.BooleanField(default=False, db_default=False)
+    #: The Device this VM *is* (a virtual router modelled as a Device), as
+    #: opposed to ``device``, the host it runs on. Same tenant, never the
+    #: VM's own host; one VM per device.
+    represents_device = models.OneToOneField(
+        Device, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="backing_vm",
+    )
+    #: The hypervisor id to build it with (Proxmox VMID). Unique per cluster.
+    vmid = models.PositiveIntegerField(null=True, blank=True)
+    #: ``host``, ``x86-64-v2-AES``, … - passed to the runner as written.
+    cpu_type = models.CharField(max_length=64, blank=True, default="", db_default="")
+    #: Optional; ``vcpus`` stays the total.
+    sockets = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: A template VMID or name, or a cloud-image volume. Free text: the
+    #: runner interprets it.
+    image = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: Default storage for disks that name none.
+    storage = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The long tail (machine, bios, agent, onboot). Passed through, never
+    #: diffed.
+    hypervisor_options = models.JSONField(default=dict, blank=True, db_default={})
+
     class Meta:
         ordering = ["name"]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "name"], name="uniq_vm_tenant_name"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["cluster", "vmid"], condition=models.Q(vmid__isnull=False),
+                name="uniq_vm_cluster_vmid",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -5303,6 +5357,20 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     def save(self, *args, **kwargs):
         self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)
+    # ─── Build: how the hypervisor attaches the NIC ──────────────────────
+    MODEL_CHOICES = [
+        ("virtio", "VirtIO"), ("e1000", "E1000"), ("e1000e", "E1000E"),
+        ("vmxnet3", "VMXNET3"), ("rtl8139", "RTL8139"),
+    ]
+    #: Proxmox ``netN``: the NIC's slot. Unique per VM when set.
+    index = models.PositiveSmallIntegerField(null=True, blank=True)
+    model = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=MODEL_CHOICES,
+    )
+    #: The SDN VNet or Linux bridge. Free text: VirtNetwork rows are sync-owned.
+    bridge = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The hypervisor firewall flag; null = not stated.
+    firewall = models.BooleanField(null=True, blank=True)
     #: Created by a hypervisor sync, mirroring VirtualDisk.created_disk. Without
     #: it the sync cannot tell its own rows from the operator's, so it could
     #: never remove a stale NIC without risking one somebody added by hand.
@@ -5340,7 +5408,11 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         constraints = [
             models.UniqueConstraint(
                 fields=["vm", "name"], name="uniq_vminterface_vm_name"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["vm", "index"], condition=models.Q(index__isnull=False),
+                name="uniq_vminterface_vm_index",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -10539,3 +10611,54 @@ class SearchEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.object_type}:{self.title}"
+
+
+class PanelLayout(TimestampedModel):
+    """What a floor plan's detail panel shows for a device, rack or cabinet:
+    an ordered list of sections and fields (``api.panel_layouts``).
+
+    A layout applies to one scope: a device type, device role or device
+    profile; a rack type or rack role; a cabinet type or cabinet role; or
+    ``default`` - the tenant's own default for that kind. The most specific
+    match wins (type, then role, then profile, then the default); with no
+    row at all the panel uses the built-in default in code. ``scope_id``
+    names the scoped object (null for ``default``).
+
+    ``items`` is ``[{"section": "Label"} | {"field": "key"}, ...]`` - a
+    field key is a built-in attribute, a computed block (``monitoring``,
+    ``ports``, ``ips``, ``cables``, ``devices``) or ``cf:<custom field
+    key>``."""
+
+    KIND_CHOICES = [("device", "Device"), ("rack", "Rack"), ("cabinet", "Cabinet")]
+    SCOPE_CHOICES = [
+        ("default", "Default"),
+        ("device_type", "Device type"),
+        ("device_role", "Device role"),
+        ("profile", "Device profile"),
+        ("rack_type", "Rack type"),
+        ("rack_role", "Rack role"),
+        ("cabinet_type", "Cabinet type"),
+        ("cabinet_role", "Cabinet role"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="panel_layouts"
+    )
+    object_kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default="default")
+    scope_id = models.UUIDField(null=True, blank=True)
+    items = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["object_kind", "scope", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "object_kind", "scope", "scope_id"],
+                name="uniq_panellayout_tenant_kind_scope",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_object_kind_display()} panel · {self.get_scope_display()}"

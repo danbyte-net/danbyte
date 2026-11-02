@@ -10,7 +10,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0246_interface_bond_settings'),
+        ('api', '0249_interface_bond_settings'),
         ('core', '0062_tenantsettings_cable_lengths'),
         ('routing', '0014_upgrade_db_defaults'),
     ]

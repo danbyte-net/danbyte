@@ -86,6 +86,14 @@ a sync may change.
     A cluster type or group that's still referenced can't be deleted. Move the
     clusters off it first.
 
+## Rendering a cluster's files
+
+An [export template](export-templates.md#rendering-one-object-of-any-type)
+with object type **cluster** renders for one cluster with its hosts, VMs and
+VM groups: `GET /api/clusters/<id>/render/?template=<id>`, or
+`?object=<id>` on the template's own render. A Kolla `globals.yml` or
+`multinode` per cluster is one template.
+
 ## See also
 
 - [Virtual machines](virtual-machines.md) - what runs on a cluster.

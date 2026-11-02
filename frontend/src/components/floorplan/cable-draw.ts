@@ -612,7 +612,13 @@ export const LANE_MIN_PX = 3
 
 /** The groups drawn as a bundle: shared by two or more, not fanned out,
  * with bundling on, and either below near detail or with lanes closer
- * than `minGapCells`. */
+ * than `minGapCells`.
+ *
+ * From afar a tray's stretches are not bundles - the tray carries its
+ * cables' count and their runs are not drawn - but a direct run's legs
+ * are: the runs that ride no tray still draw from afar, and a stretch
+ * they share draws as their bundle. (Leaving those out of the drawing
+ * while their lanes skipped them once dropped whole legs from afar.) */
 export function bundledGroups(
   layout: CableLayout,
   {
@@ -631,9 +637,85 @@ export function bundledGroups(
   if (!bundle) return out
   for (const g of layout.groups.values()) {
     if (g.members.length < 2 || fanned?.has(g.key)) continue
+    if (lod === "far" && g.key.startsWith("t:")) continue
     if (lod !== "near" || g.gap < minGapCells) out.add(g.key)
   }
   return out
+}
+
+/** Screen px between a bundle's edge and a traced member's own lane. */
+const SPLIT_PX = 3
+
+/**
+ * A traced (or previewed) cable's lanes, split from its bundles: along
+ * every stretch drawn as a bundle its lane moves out beside the bundle, on
+ * its own side of it (the side its lane is on when the lanes are drawn),
+ * so the one cable reads apart from the rest along its whole route.
+ * Stretches drawn as lanes keep their lane. `pxPerCell`: a cell on screen.
+ */
+export function splitLanes(
+  layout: CableLayout,
+  id: string,
+  bundled: ReadonlySet<string>,
+  pxPerCell: number
+): Pt[][] {
+  const segs = layout.cables.get(id)
+  if (!segs) return []
+  const out = segs.map((s) => {
+    if (!s.group || !bundled.has(s.group)) return s
+    const g = layout.groups.get(s.group)!
+    const lane = g.members.indexOf(id)
+    const side = lane < (g.members.length - 1) / 2 ? -1 : 1
+    const px = bundleWidth(g.members.length) / 2 + SPLIT_PX
+    return { ...s, offset: (side * px) / Math.max(pxPerCell, 1e-6) }
+  })
+  return lanePolylines(out)
+}
+
+// ── Picking a cable ─────────────────────────────────────────────────────────
+
+/** One row of the cable chooser (a bundle's, a tray's). */
+export interface CableChoice {
+  id: string
+  label: string
+  /** The cable's colour under the colour mode, or null. */
+  color: string | null
+  /** `A-end → B-end`, each as `device · port`. */
+  ends: string
+  status: StatusMini | null
+}
+
+/** The chooser's rows: the cables of `ids` drawn on this plan, in lane
+ * order (by label, naturally, then id) - the order they lie in a tray. */
+export function cableChoices(
+  ids: readonly string[],
+  cablePaths: readonly FloorPlanCablePath[],
+  colorBy: CableColorBy,
+  palette: ReadonlyMap<string, string>
+): CableChoice[] {
+  const want = new Set(ids)
+  return cablePaths
+    .filter((cp) => want.has(cp.id))
+    .sort((x, y) => naturalCompare(x.label, y.label) || (x.id < y.id ? -1 : 1))
+    .map((cp) => ({
+      id: cp.id,
+      label: cp.label,
+      color: cableColor(cp, colorBy, palette),
+      ends: `${endText(cp.a_points)} → ${endText(cp.b_points)}`,
+      status: cp.status ?? null,
+    }))
+}
+
+/** The rows matching a search: in the label or either end, any case. */
+export function filterChoices(
+  rows: readonly CableChoice[],
+  query: string
+): CableChoice[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return [...rows]
+  return rows.filter(
+    (r) => r.label.toLowerCase().includes(q) || r.ends.toLowerCase().includes(q)
+  )
 }
 
 /** A bundle's stroke (screen px): thicker with more cables, capped. */

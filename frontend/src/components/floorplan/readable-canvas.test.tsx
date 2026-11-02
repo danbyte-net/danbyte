@@ -87,6 +87,8 @@ function draw(objectSize: ObjectSize, onClickTile = vi.fn()) {
       showGrid={false}
       armed={null}
       objectSize={objectSize}
+      // Readable on its own: the icon tiles have their own tests.
+      iconTiles={false}
       onClickTile={onClickTile}
     />
   )

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0246_interface_bond_settings'),
+        ('api', '0249_interface_bond_settings'),
     ]
 
     operations = [

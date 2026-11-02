@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default", "view_config", "view_cost"]
+           "view_credits", "set_default", "view_config", "view_cost", "provision"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -67,7 +67,9 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # holds communities, hashes and keys, so device.view never implies it.
     "device": ["connect", "view_config"],
     # The same for a virtual router modelled as a VM (#384).
-    "virtualmachine": ["view_config"],
+    # Send an intended VM to an automation runner to be built. Danbyte
+    # never calls a hypervisor's write API; the runner does the build.
+    "virtualmachine": ["view_config", "provision"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.

@@ -11,7 +11,7 @@ import {
   Settings2,
 } from "lucide-react"
 
-import type { FloorPlan, FloorPlanTile } from "@/lib/api"
+import type { FloorPlan } from "@/lib/api"
 import {
   BarButton,
   BarIconButton,
@@ -34,7 +34,8 @@ import {
 import { HistoryButtons } from "@/components/topology/history-buttons"
 
 import { DisplayMenu } from "./display-menu"
-import { TileSearch } from "./tile-search"
+import type { PlanHit } from "./plan-search"
+import { PlanSearch } from "./tile-search"
 import type { EditorMode } from "./use-plan-edit-state"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
 
@@ -51,10 +52,10 @@ export function PlanToolbar({
   mode,
   view3d,
   canEdit,
-  tiles,
+  searchIn,
   search,
   onSearchChange,
-  onPickTile,
+  onPickHit,
   onFit,
   showGrid,
   onShowGridChange,
@@ -83,11 +84,11 @@ export function PlanToolbar({
   mode: EditorMode
   view3d: boolean
   canEdit: boolean
-  /** The tiles on the plan (not hidden) - what Find searches. */
-  tiles: FloorPlanTile[]
+  /** What Find searches: the tiles shown, the cables, trays and areas. */
+  searchIn: Parameters<typeof PlanSearch>[0]["searchIn"]
   search: string
   onSearchChange: (v: string) => void
-  onPickTile: (tile: FloorPlanTile) => void
+  onPickHit: (hit: PlanHit) => void
   onFit: () => void
   showGrid: boolean
   onShowGridChange: (v: boolean) => void
@@ -120,11 +121,11 @@ export function PlanToolbar({
     <div className="@container flex h-10 shrink-0 items-center gap-2 border-b border-border px-4 lg:px-6">
       {placeSlot}
       {mode === "layout" && (
-        <TileSearch
-          tiles={tiles}
+        <PlanSearch
+          searchIn={searchIn}
           value={search}
           onChange={onSearchChange}
-          onPick={onPickTile}
+          onPick={onPickHit}
         />
       )}
       <BarIconButton label="Fit to view" onClick={onFit}>

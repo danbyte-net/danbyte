@@ -512,6 +512,7 @@ export type RBACAction =
   | "set_default"
   | "view_config"
   | "view_cost"
+  | "provision"
 
 export interface RBACUser {
   id: number
@@ -1502,6 +1503,8 @@ export interface DeviceType extends LifecycleInfo {
   rack_width: "full" | "half"
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Lucide icon name on maps and floor plans; "" uses the role's. */
+  icon?: string
   description: string
   /** Absolute URL of the front rack-face image, or null. */
   front_image: string | null
@@ -1569,6 +1572,7 @@ export interface DeviceTypeWritePayload {
   u_height?: number
   rack_width?: "full" | "half"
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
   description?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
@@ -1599,6 +1603,8 @@ export interface DeviceTypeMini {
   name: string
   manufacturer: string | null
   manufacturer_id: string | null
+  /** Lucide icon name; "" uses the role's. */
+  icon?: string
   u_height: number
   rack_width: "full" | "half"
   is_full_depth: boolean
@@ -1781,6 +1787,9 @@ export interface Device {
   topology_card?: string[] | null
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** Its own icon on maps and floor plans; "" uses its type's, then its
+   * role's. */
+  icon?: string
   device_type: DeviceTypeMini | null
   site: SiteRegionMini | null
   role: {
@@ -1875,6 +1884,9 @@ export interface Device {
   install_count?: number
   /** Device profiles in order, with their assignment state. */
   device_profiles?: HostDeviceProfile[]
+  /** The VM this device runs as (a virtual router); detail only, null
+   * when there is none or the caller may not view it. */
+  backing_vm?: { id: string; name: string; intended: boolean } | null
   /** Per-tab counts served on the detail payload only. */
   routing_count?: number
   image_count?: number
@@ -1966,6 +1978,7 @@ export interface DeviceWritePayload {
   config_template_id?: string | null
   topology_card?: string[] | null
   topology_photo_size?: "" | TopologyPhotoSize
+  icon?: string
 }
 
 // Admin-controlled visibility for the promoted built-in Device fields.
@@ -6042,6 +6055,22 @@ export interface VirtualMachine {
   memory_mb: number | null
   disk_gb: number | null
   disks: VirtualDisk[]
+  /** Danbyte holds the intent: sync raises drift, never overwrites it,
+   * never deletes the VM or prunes its NICs and disks. */
+  intended?: boolean
+  /** The Device this VM is (a virtual router), not its host. */
+  represents_device?: { id: string; name: string } | null
+  /** The hypervisor id to build it with; unique per cluster. */
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  /** Template or cloud image; the runner interprets it. */
+  image?: string
+  /** Default storage for disks that name none. */
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
+  /** When the hypervisor stopped reporting this VM's guest; null if present. */
+  missing_since?: string | null
   interface_count?: number
   disk_count?: number
   service_count?: number
@@ -6063,6 +6092,7 @@ export interface VirtualMachine {
 
 export interface VirtualDisk {
   id: string
+  vm?: { id: string; name: string; status: StatusMini | null }
   key: string
   name: string
   size_gb: number | null
@@ -6071,6 +6101,17 @@ export interface VirtualDisk {
   disk_format: string
   created_disk: boolean
   description: string
+}
+
+export interface VirtualDiskWritePayload {
+  vm_id: string
+  key: string
+  name?: string
+  size_gb?: number | null
+  storage?: string
+  controller?: string
+  disk_format?: string
+  description?: string
 }
 
 export interface VirtNetwork {
@@ -6142,6 +6183,14 @@ export interface VirtualMachineWritePayload {
   vcpus?: number | null
   memory_mb?: number | null
   disk_gb?: number | null
+  intended?: boolean
+  represents_device_id?: string | null
+  vmid?: number | null
+  cpu_type?: string
+  sockets?: number | null
+  image?: string
+  storage?: string
+  hypervisor_options?: Record<string, unknown>
   /** The software version running (#395). */
   software_version?: string
   description?: string
@@ -6160,6 +6209,12 @@ export interface VMInterface {
   kind: "" | "bridge" | "loopback" | "tunnel"
   /** The interface this one rides on (wg0 over eth0); same-VM, no loops. */
   parent: { id: string; name: string } | null
+  /** Hypervisor slot (Proxmox netN); unique per VM. */
+  index?: number | null
+  model?: VMInterfaceModel
+  /** SDN VNet or Linux bridge name. */
+  bridge?: string
+  firewall?: boolean | null
   enabled: boolean
   /** Sync must not record this NIC's guest-reported IPs (Docker bridge). */
   sync_ignore_ips: boolean
@@ -6188,10 +6243,17 @@ export interface VMInterface {
   updated_at: string
 }
 
+export type VMInterfaceModel =
+  "" | "virtio" | "e1000" | "e1000e" | "vmxnet3" | "rtl8139"
+
 export interface VMInterfaceWritePayload {
   vm_id: string
   name: string
   kind?: string
+  index?: number | null
+  model?: VMInterfaceModel
+  bridge?: string
+  firewall?: boolean | null
   parent_id?: string | null
   enabled?: boolean
   sync_ignore_ips?: boolean
@@ -11728,7 +11790,10 @@ export interface DeployRun {
   id: string
   target_name: string
   event: string
+  /** The dispatched ids; the key keeps its name for compatibility. */
   device_ids: string[]
+  /** What the ids are: "device", or "virtualmachine" for a provision. */
+  object_type?: string
   status: "queued" | "launched" | "failed"
   detail: string
   created_at: string
@@ -12259,6 +12324,7 @@ export interface FloorPlanTile {
     name: string
     slug: string
     color: string
+    icon?: string
     is_patch_panel: boolean
     has_fov: boolean
   } | null
@@ -12283,6 +12349,9 @@ export interface FloorPlanTile {
     /** A device, rack or cabinet: its role as it is now - a tile with no
      * type of its own draws in its colour and icon. */
     role?: { id: string; name: string; color: string; icon: string } | null
+    /** A device's own icon, else its type's ("" for neither, and for a
+     * rack or cabinet) - it wins over the tile's type and the role. */
+    icon?: string
   } | null
   fov_deg: number | null
   fov_distance: number | null
@@ -13390,6 +13459,257 @@ export type FloorPlanCableFar =
       place?: { kind: "device" | "rack" | "cabinet"; id: string } | null
     }
   | { device: null; port: null; hidden: true }
+
+/** A device as a floor plan panel names it: what it is and where it stands. */
+export interface FloorPlanPanelDevice {
+  id: string
+  name: string
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  rack: { id: string; name: string } | null
+  cabinet: { id: string; name: string } | null
+  position: number | null
+  face: string
+  u_height: number | null
+}
+
+/** One end of a cable in the cable panel - Hidden (#453) names nothing. */
+export type FloorPlanCablePanelEnd =
+  | { hidden: true; device?: undefined; port?: undefined }
+  | {
+      hidden?: undefined
+      device: FloorPlanPanelDevice | null
+      port:
+        | ({
+            kind: string
+            id: string
+            name: string
+            label: string
+            type: string
+            type_display: string
+            description: string
+          } & Partial<{
+            speed: string
+            enabled: boolean
+            mode: string
+            mac_address: string
+            vlan: {
+              id: string
+              vlan_id: number
+              name: string
+              color: string
+            } | null
+            ip_addresses: { id: string; ip_address: string }[]
+            tagged_vlan_count: number
+            lag: { id: string; name: string } | null
+            /** From the device's last SNMP poll; null when never polled. */
+            observed: {
+              oper_status: string
+              admin_status: string
+              speed_mbps: string
+            } | null
+          }>)
+        | null
+    }
+
+/** GET /api/floor-plans/{id}/cable-panel/{cable}/ */
+export interface FloorPlanCablePanel {
+  id: string
+  numid: number | null
+  label: string
+  /** The cable's display name ("Cable #12" without a label). */
+  name: string
+  type: string
+  type_display: string
+  color: string
+  status: StatusMini | null
+  length: number | null
+  length_unit: string
+  length_source: "" | "computed"
+  description: string
+  ends: { A: FloorPlanCablePanelEnd[]; B: FloorPlanCablePanelEnd[] }
+}
+
+export interface FloorPlanPanelCheck {
+  id: string
+  name: string
+  kind: string
+  status: CheckStatus
+  ip: string
+  last_checked: string | null
+  since: string | null
+  latency_ms: number | null
+}
+
+/** One entry of a detail panel's layout: a section heading or a field
+ * (a built-in key, a computed block, or `cf:<key>`). */
+export type PanelLayoutItem = { section: string } | { field: string }
+
+export type PanelObjectKind = "device" | "rack" | "cabinet"
+
+export type PanelLayoutScope =
+  | "default"
+  | "device_type"
+  | "device_role"
+  | "profile"
+  | "rack_type"
+  | "rack_role"
+  | "cabinet_type"
+  | "cabinet_role"
+
+/** The layout a panel was drawn with (`id` null: the built-in default). */
+export interface PanelLayoutResolved {
+  id: string | null
+  scope: PanelLayoutScope | "preview"
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+}
+
+/** /api/panel-layouts/ - a tenant's saved layout. */
+export interface PanelLayoutRow {
+  id: string
+  object_kind: PanelObjectKind
+  scope: PanelLayoutScope
+  scope_id: string | null
+  scope_name: string
+  items: PanelLayoutItem[]
+  updated_at: string
+}
+
+/** /api/panel-layouts/catalog/ */
+export type PanelLayoutCatalog = Record<
+  PanelObjectKind,
+  {
+    fields: { key: string; label: string; computed: boolean }[]
+    scopes: PanelLayoutScope[]
+    default: PanelLayoutItem[]
+    cf_model: string
+  }
+>
+
+export interface PanelCustomFieldValue {
+  key: string
+  label: string
+  type: string
+  value: string
+}
+
+type PanelRef = { id: string; name: string }
+type PanelTag = { id: number; name: string; color: string }
+
+/** A rack's or cabinet's device, as its panel lists it. */
+export type PanelContentDevice = Omit<
+  FloorPlanPanelDevice,
+  "site" | "location" | "rack" | "cabinet"
+> & {
+  device_type: string
+  rail: string
+  rail_offset_mm: number | null
+  check: CheckStatus | null
+}
+
+interface PanelCommon {
+  hidden?: undefined
+  layout: PanelLayoutResolved
+  custom_fields: PanelCustomFieldValue[]
+}
+
+export interface DeviceTilePanel extends PanelCommon {
+  kind: "device"
+  device: FloorPlanPanelDevice & {
+    numid: number | null
+    device_type: { id: string; model: string; manufacturer: string } | null
+    platform: PanelRef | null
+    serial_number: string
+    asset_tag: string
+    primary_ip: { id: string; ip_address: string; dns_name: string } | null
+    secondary_ip: { id: string; ip_address: string; dns_name: string } | null
+    oob_ip: { id: string; ip_address: string; dns_name: string } | null
+    tenant: PanelRef | null
+    description: string
+    software_version: string
+    tags: PanelTag[]
+    profiles: { id: string; name: string; color: string }[]
+  }
+  /** Present only when the layout asks for it. */
+  monitoring?: {
+    status: CheckStatus | null
+    counts: Partial<Record<CheckStatus, number>>
+    checks: FloorPlanPanelCheck[]
+  }
+  ports?: {
+    total: number
+    connected: number
+    free: number
+    disabled: number
+    observed: boolean
+    up: number | null
+    down: number | null
+  }
+  ips?: {
+    id: string
+    ip_address: string
+    dns_name: string
+    interface: string
+  }[]
+}
+
+export interface RackTilePanel extends PanelCommon {
+  kind: "rack"
+  rack: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    rack_type: PanelRef | null
+    u_height: number
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  used_units: number
+  hidden_count: number
+}
+
+export interface CabinetTilePanel extends PanelCommon {
+  kind: "cabinet"
+  cabinet: {
+    id: string
+    numid: number | null
+    name: string
+    facility_id: string
+    role: { id: string; name: string; color: string } | null
+    status: StatusMini | null
+    site: PanelRef | null
+    location: PanelRef | null
+    cabinet_type: PanelRef | null
+    /** Outer width × height × depth (mm), when all are known. */
+    size_mm: [number, number, number] | null
+    tenant: PanelRef | null
+    description: string
+    tags: PanelTag[]
+  }
+  monitoring: { status: CheckStatus | null }
+  devices: PanelContentDevice[]
+  hidden_count: number
+}
+
+/** GET /api/floor-plans/{id}/tile-panel/{tile}/ (and the settings
+ * preview). */
+export type FloorPlanTilePanel =
+  | { kind: PanelObjectKind; hidden: true; empty?: undefined }
+  | DeviceTilePanel
+  | RackTilePanel
+  | CabinetTilePanel
 
 /** Where one leg of a stored route starts or ends: the tile it was routed
  * from and that tile's centre then (cells). */
