@@ -30,7 +30,7 @@ import type {
   LabelSpot,
 } from "./plan-labels"
 import { clipName, namePriority } from "./readable"
-import type { ReadableShape } from "./readable"
+import type { ShapeOf } from "./readable"
 import { areaIcon, areaName, polygonCentroid, shapeBounds } from "./shapes"
 import type { AreaShape, LabelShape } from "./shapes"
 
@@ -109,7 +109,7 @@ export interface PlanLabelInput {
   view?: Box | null
   tiles: readonly FloorPlanTile[]
   /** How Readable draws a tile, or null under Real. */
-  shapeOf?: ((t: FloorPlanTile) => ReadableShape) | null
+  shapeOf?: ShapeOf | null
   /** A zone's name grown by this much (Readable from afar). */
   zoneGrow?: number
   /** Tile names scaled to fill their tile (Display > Fit labels). */
@@ -335,7 +335,7 @@ export function layoutPlanLabels(input: PlanLabelInput): PlanLabels {
           const t = input.tiles.find((x) => x.id === tid)
           if (!t) return null
           return (
-            input.shapeOf?.(t).box ?? {
+            input.shapeOf?.(t)?.box ?? {
               x: t.x,
               y: t.y,
               w: t.width,

@@ -2,6 +2,7 @@ import { ArrowUpDown, Server } from "lucide-react"
 
 import type { FloorPlanLiveState, FloorPlanTile } from "@/lib/api"
 import { getLucideIcon } from "@/components/dynamic-icon"
+import { tileIcon } from "@/components/object-icon"
 
 import { tileMarkerCells } from "./cable-draw"
 import { CELL, GUTTER, tileIsZone, tileName } from "./canvas-geometry"
@@ -743,15 +744,18 @@ export function createHoverStore(): HoverStore {
   }
 }
 
-/**
- * Readable, a tile too thin or a photo too small to read as itself: its
- * symbol instead - a rounded box in its colour at the drawn size (`box`,
- * cells), with its type's or role's icon, and its outline for selection
- * and monitoring. Back to the tile itself once it is big enough on screen.
- */
 /** The soft ring round an alarming tile, plan px. */
 const ALARM_RING_PX = 5
 
+/**
+ * A tile drawn as its symbol: a rounded box in its colour at the drawn
+ * size (`box`, cells) with its icon in white (object-icon.ts: the device,
+ * its type, the tile's type, the role, the kind's default), and its
+ * outline for selection and monitoring. Readable draws it for a tile too
+ * thin or a photo too small to read; Icons when zoomed out draws it, a
+ * square, for a device, rack or cabinet too small on screen. Back to the
+ * tile itself once it is big enough.
+ */
 export function ReadableSymbol({
   tile,
   box,
@@ -760,6 +764,8 @@ export function ReadableSymbol({
   live,
   colorBy = "type",
   figures,
+  iconTile = false,
+  highlighted = false,
   onPointerDown,
   onDoubleClick,
   onPointerEnter,
@@ -773,6 +779,10 @@ export function ReadableSymbol({
   live?: FloorPlanLiveState["tiles"][string]
   colorBy?: ColorBy
   figures?: RackFigures
+  /** Drawn as its icon from afar (Display > Icons when zoomed out). */
+  iconTile?: boolean
+  /** Pointed at from outside the canvas - a rack table row. */
+  highlighted?: boolean
   onPointerDown: (e: React.PointerEvent) => void
   onDoubleClick: () => void
   onPointerEnter?: (e: React.PointerEvent) => void
@@ -790,13 +800,18 @@ export function ReadableSymbol({
   const y = box.y * CELL
   const w = box.w * CELL
   const h = box.h * CELL
-  const iconName = tile.tile_type?.icon || tileRoleIcon(tile)
+  const iconName = tileIcon(tile)
   const Icon = iconName ? getLucideIcon(iconName) : null
-  const icon = Math.min(w, h) * 0.7
+  // An icon tile is a square: the icon a little smaller, so it reads.
+  const icon = Math.min(w, h) * (iconTile ? 0.6 : 0.7)
   return (
     <g
       data-tile={tile.id}
       data-part="symbol"
+      data-icon-tile={iconTile || undefined}
+      data-highlighted={highlighted || undefined}
+      // Fades in as it takes the tile's place, so the swap reads as one.
+      className={iconTile ? "animate-in duration-150 fade-in" : undefined}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
       onPointerEnter={onPointerEnter}
@@ -836,6 +851,22 @@ export function ReadableSymbol({
         stroke={paint.alarm || selected ? paint.stroke : "var(--background)"}
         strokeWidth={(selected || paint.alarm ? 2 : 1.25) / k}
       />
+      {/* Pointed at from outside the canvas (a rack table row): the same
+          accent ring a full tile wears. */}
+      {highlighted && (
+        <rect
+          data-part="highlight"
+          x={x - 2.5 / k}
+          y={y - 2.5 / k}
+          width={w + 5 / k}
+          height={h + 5 / k}
+          rx={Math.min(w, h) * 0.2 + 2.5 / k}
+          fill="none"
+          className="stroke-primary"
+          strokeWidth={2.5 / k}
+          pointerEvents="none"
+        />
+      )}
       {Icon && (
         <Icon
           data-part="symbol-icon"

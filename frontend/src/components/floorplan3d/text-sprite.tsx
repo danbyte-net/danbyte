@@ -27,13 +27,17 @@ export function textTexture(
      * a steep angle, where an undersampled canvas is exactly what makes a rack
      * name plate mushy - draw it at 2x and let mipmaps take it down. */
     scale = 2,
+    /** Room left of the text (texture px before `scale`) for a glyph the
+     * caller draws there - the readable names' icon. */
+    lead = 0,
   } = {}
 ): { texture: THREE.CanvasTexture; w: number; h: number } {
   const font = `600 ${fontPx * scale}px ${fontFamily}`
   const canvas = document.createElement("canvas")
   const ctx = canvas.getContext("2d")!
   ctx.font = font
-  const w = Math.ceil(ctx.measureText(text).width) + pad * scale * 2
+  const w =
+    Math.ceil(ctx.measureText(text).width) + pad * scale * 2 + lead * scale
   const h = (fontPx + pad * 2) * scale
   canvas.width = w
   canvas.height = h
@@ -55,7 +59,7 @@ export function textTexture(
   ctx.textAlign = align
   ctx.fillText(
     text,
-    align === "center" ? w / 2 : pad * scale,
+    align === "center" ? (w + lead * scale) / 2 : (pad + lead) * scale,
     h / 2 + 2 * scale
   )
   const texture = new THREE.CanvasTexture(canvas)

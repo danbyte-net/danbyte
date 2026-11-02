@@ -34,6 +34,7 @@ import type { Pt } from "./cable-route"
 import { routeEnds } from "./plan-label-pass"
 import type { Box } from "./plan-labels"
 import { readableShape } from "./readable"
+import type { ShapeOf } from "./readable"
 
 /** floor-canvas.tsx's CELL. */
 const CELL = 40
@@ -94,6 +95,7 @@ export const CableLayer = memo(function CableLayer({
   stubs = NO_STUBS,
   tiles = NO_TILES,
   readable = false,
+  shapeOf,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -115,6 +117,9 @@ export const CableLayer = memo(function CableLayer({
   tiles?: readonly FloorPlanTile[]
   /** Readable: an end's tile as its grown symbol. */
   readable?: boolean
+  /** How a tile draws when not as itself (Readable, icon tiles); wins over
+   * `readable`. */
+  shapeOf?: ShapeOf | null
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -162,9 +167,9 @@ export const CableLayer = memo(function CableLayer({
   const rectOf = (id: string): Box | null => {
     const t = tileById.get(id)
     if (!t) return null
-    return readable
-      ? readableShape(t, pxPerCell).box
-      : { x: t.x, y: t.y, w: t.width, h: t.height }
+    const real = { x: t.x, y: t.y, w: t.width, h: t.height }
+    if (shapeOf !== undefined) return shapeOf?.(t)?.box ?? real
+    return readable ? readableShape(t, pxPerCell).box : real
   }
 
   const colorOf = (id: string) => {

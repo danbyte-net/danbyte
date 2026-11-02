@@ -525,6 +525,24 @@ export function cableRunPoints(
 /** Whether each end of ``cp`` anchored on a port marker (A, B). An end that
  * did not is drawn at its panel's centre; the cable card says so. An end on
  * a cabinet's tile lands on the cabinet, where it belongs. */
+/** The box round a cable's 3D run, for the camera to frame (Find, the
+ * cable panel); null when the run cannot be drawn here. */
+export function cableRunBox(
+  scene: ScenePayload,
+  cp: FloorPlanCablePath
+): { min: Vec3; max: Vec3 } | null {
+  const pts = cableRunPoints(scene, deviceSites(scene), cp)
+  if (!pts?.length) return null
+  const min: Vec3 = [Infinity, Infinity, Infinity]
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (const p of pts)
+    for (let i = 0; i < 3; i++) {
+      min[i] = Math.min(min[i], p[i])
+      max[i] = Math.max(max[i], p[i])
+    }
+  return { min, max }
+}
+
 export function cableEndsAnchored(
   scene: ScenePayload,
   cp: FloorPlanCablePath

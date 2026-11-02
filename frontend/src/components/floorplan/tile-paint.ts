@@ -93,13 +93,13 @@ export function tileFill(
   )
 }
 
-/** The icon a tile with no type of its own takes from its linked object's
- * role (a device role's icon), or "". */
+/** The icon a tile with no type of its own takes from its linked object:
+ * the device's own or its type's, else its role's, or "". */
 export function tileRoleIcon(
   t: Pick<FloorPlanTile, "tile_type" | "role_type" | "linked">
 ): string {
   if (t.tile_type || t.role_type) return ""
-  return t.linked?.role?.icon ?? ""
+  return t.linked?.icon || t.linked?.role?.icon || ""
 }
 
 /** Monitoring worst-status → the tile's stroke. */

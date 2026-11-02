@@ -8,6 +8,7 @@ import { api, type DeviceRole } from "@/lib/api"
 import { cssColor } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
+import { NamedIcon } from "@/components/dynamic-icon"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
@@ -83,7 +84,13 @@ function Body({ role: r }: { role: DeviceRole }) {
       hero={
         <>
           <DetailHero
-            title={<ColorBadge name={r.name} color={r.color || undefined} />}
+            title={
+              <ColorBadge
+                name={r.name}
+                color={r.color || undefined}
+                icon={<NamedIcon name={r.icon} />}
+              />
+            }
             description={r.description}
           />
 

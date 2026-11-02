@@ -183,6 +183,7 @@ from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import mac_detail_view, mac_list_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
+from .panel_layouts_api import PanelLayoutViewSet
 from .platforms_api import PlatformViewSet
 from .presence_views import (
     presence_heartbeat,
@@ -498,6 +499,8 @@ router.register(r"topology-views", TopologyViewViewSet, basename="topology-view"
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")
 router.register(r"floor-plan-stacks", FloorPlanStackViewSet, basename="floor-plan-stack")
+# The floor plan detail panels' layouts (tenant admins; api.panel_layouts).
+router.register(r"panel-layouts", PanelLayoutViewSet, basename="panel-layout")
 router.register(r"floor-plan-tiles", FloorPlanTileViewSet, basename="floor-plan-tile")
 router.register(r"floor-plan-trays", FloorPlanTrayViewSet, basename="floor-plan-tray")
 router.register(

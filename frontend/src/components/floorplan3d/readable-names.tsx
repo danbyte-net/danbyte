@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef } from "react"
+import { createElement, useEffect, useMemo, useRef } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
+
+import { getLucideIcon } from "@/components/dynamic-icon"
+import { sceneTileIcon } from "@/components/object-icon"
 
 import { clipName, nameBox, thinNames } from "@/components/floorplan/readable"
 import type { NameCandidate } from "@/components/floorplan/readable"
@@ -66,22 +70,33 @@ function nameAnchor(plan: ScenePayload["plan"], t: SceneTile): THREE.Vector3 {
 interface NameEntry {
   id: string
   name: string
+  /** The plate's icon (object-icon.ts) and its square's colour. */
+  icon: string
+  color: string
   at: THREE.Vector3
   rank: number
 }
 
 interface MadeSprite {
-  name: string
+  /** What it was made from: a new name or icon makes it anew. */
+  key: string
   sprite: THREE.Sprite
   aspect: number
 }
+
+const entryKey = (e: Pick<NameEntry, "name" | "icon" | "color">) =>
+  `${e.name}\u0000${e.icon}\u0000${e.color}`
 
 export function ReadableNames3D({
   plan,
   tiles,
   pinned,
+  icons = true,
 }: {
   plan: ScenePayload["plan"]
+  /** Each plate carries its object's icon (Display > Icons when zoomed
+   * out). */
+  icons?: boolean
   /** The tiles shown in the room, zones left out. */
   tiles: readonly SceneTile[]
   /** The tile whose name always shows - the selected and the hovered. */
@@ -102,18 +117,20 @@ export function ReadableNames3D({
         .map((t) => ({
           id: t.id,
           name: clipName(sceneTileName(t)),
+          icon: icons && !t.hidden ? sceneTileIcon(t) : "",
+          color: t.color || "#71717a",
           at: nameAnchor(plan, t),
           rank: t.kind === "other" ? 0 : 1,
         }))
         .filter((e) => e.name),
-    [tiles, plan]
+    [tiles, plan, icons]
   )
 
   // A name gone or renamed: its sprite goes too.
   useEffect(() => {
-    const live = new Map(entries.map((e) => [e.id, e.name]))
+    const live = new Map(entries.map((e) => [e.id, entryKey(e)]))
     for (const [id, m] of made.current)
-      if (live.get(id) !== m.name) {
+      if (live.get(id) !== m.key) {
         free(m)
         made.current.delete(id)
       }
@@ -178,7 +195,31 @@ export function ReadableNames3D({
   return <group ref={group} />
 }
 
+/** The plate's icon square: its side and the gap after it (texture px). */
+const ICON_PX = 26
+const ICON_GAP = 6
+
+/** An icon as an SVG data URL, white strokes - drawn onto a plate. */
+export function iconDataUrl(name: string, px: number): string | null {
+  const Icon = name ? getLucideIcon(name) : null
+  if (!Icon) return null
+  const svg = renderToStaticMarkup(
+    createElement(Icon, {
+      width: px,
+      height: px,
+      color: "#ffffff",
+      strokeWidth: 2.25,
+    })
+  ).replace(/\sclass="[^"]*"/g, "")
+  // The namespace makes it an image the canvas can draw.
+  const withNs = svg.includes("xmlns=")
+    ? svg
+    : svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"')
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(withNs)}`
+}
+
 function make(e: NameEntry, look: RoomLook): MadeSprite {
+  const url = iconDataUrl(e.icon, ICON_PX)
   const { texture, w, h } = textTexture(e.name, {
     fontPx: 24,
     pad: 6,
@@ -187,7 +228,28 @@ function make(e: NameEntry, look: RoomLook): MadeSprite {
     color: look.plateText,
     background: look.plate,
     border: look.plateBorder,
+    lead: url ? ICON_PX + ICON_GAP : 0,
   })
+  // The icon: a square in the object's colour at the plate's left, the
+  // icon in white over it - the 2D plan's icon tile, small. Drawn once the
+  // image has loaded; the plate shows its name meanwhile.
+  const canvas = texture.image as HTMLCanvasElement | undefined
+  const ctx = url ? canvas?.getContext("2d") : null
+  if (url && ctx) {
+    const x = 6
+    const y = (h - ICON_PX) / 2
+    ctx.fillStyle = e.color
+    ctx.beginPath()
+    ctx.roundRect(x, y, ICON_PX, ICON_PX, 5)
+    ctx.fill()
+    const img = new Image()
+    img.onload = () => {
+      const pad = 4
+      ctx.drawImage(img, x + pad, y + pad, ICON_PX - pad * 2, ICON_PX - pad * 2)
+      texture.needsUpdate = true
+    }
+    img.src = url
+  }
   const material = new THREE.SpriteMaterial({
     map: texture,
     sizeAttenuation: false,
@@ -201,7 +263,7 @@ function make(e: NameEntry, look: RoomLook): MadeSprite {
   sprite.renderOrder = 10
   // Names never take a click from what is under them.
   sprite.raycast = () => {}
-  return { name: e.name, sprite, aspect: w / h }
+  return { key: entryKey(e), sprite, aspect: w / h }
 }
 
 function free(m: MadeSprite) {
