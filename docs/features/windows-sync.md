@@ -64,6 +64,13 @@ Rules:
   longer. The lease or reservation keeps whatever the server reported, but the
   IP address's **MAC** field is left blank for those clients, because the value
   isn't a MAC. One such client no longer stops its whole scope from syncing.
+- **Long values fit.** Reservation descriptions have no length limit, and a
+  ClientId is kept up to 765 characters - the full 255-byte client identifier
+  in the console's dashed-hex form. Names and lease hostnames are kept to 255
+  characters; anything longer is cut there rather than failing the sync.
+- **One bad row never stops the sync.** A scope, reservation, or lease the
+  database refuses is skipped and named on the connection's sync badge
+  (*ok · N skipped*); everything else still syncs.
 - **Leases are opt-in per scope** (the *Lease sync* switch on the server's
   Overview tab) - they churn constantly and would flood the database
   otherwise. IPs the lease sync created disappear again with their lease;
