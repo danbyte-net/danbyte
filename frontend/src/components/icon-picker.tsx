@@ -3,6 +3,7 @@ import { X } from "lucide-react"
 
 import { DynamicIcon, ICON_NAMES } from "@/components/dynamic-icon"
 import { Input } from "@/components/ui/input"
+import { NoFieldControl, useFieldControl } from "@/components/ui/field-control"
 import {
   Popover,
   PopoverContent,
@@ -84,6 +85,8 @@ export function IconPicker({
 }: IconPickerProps) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState("")
+  // Inside a form Field the trigger is the control its label names (#428).
+  const fc = useFieldControl()
   // The icon under the pointer, named in the footer - no native title.
   const [hover, setHover] = useState<string | null>(null)
 
@@ -133,7 +136,10 @@ export function IconPicker({
             "inline-flex h-9 items-center gap-2 rounded-md border border-border bg-transparent px-3 text-sm transition-colors hover:border-foreground/40",
             className
           )}
-          aria-label="Open icon picker"
+          id={fc?.id}
+          aria-labelledby={fc?.labelId}
+          aria-describedby={fc?.describedBy}
+          aria-label={fc ? undefined : "Open icon picker"}
         >
           {value ? (
             <>
@@ -146,61 +152,63 @@ export function IconPicker({
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 gap-2 p-3">
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search icons…"
-          className="h-8 text-xs"
-          autoFocus
-        />
-        <div className="grid max-h-64 gap-2 overflow-y-auto">
-          {network.length > 0 && (
-            <div className="grid gap-1" data-group="network">
-              {heading("Network")}
-              <div className="grid grid-cols-8 gap-1">
-                {network.map((i) => cell(i.name, `${i.label}: ${i.name}`))}
+        <NoFieldControl>
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search icons…"
+            className="h-8 text-xs"
+            autoFocus
+          />
+          <div className="grid max-h-64 gap-2 overflow-y-auto">
+            {network.length > 0 && (
+              <div className="grid gap-1" data-group="network">
+                {heading("Network")}
+                <div className="grid grid-cols-8 gap-1">
+                  {network.map((i) => cell(i.name, `${i.label}: ${i.name}`))}
+                </div>
               </div>
-            </div>
-          )}
-          {shown.length > 0 && (
-            <div className="grid gap-1" data-group="all">
-              {network.length > 0 && heading("All icons")}
-              <div className="grid grid-cols-8 gap-1">
-                {shown.map((name) => cell(name, name))}
+            )}
+            {shown.length > 0 && (
+              <div className="grid gap-1" data-group="all">
+                {network.length > 0 && heading("All icons")}
+                <div className="grid grid-cols-8 gap-1">
+                  {shown.map((name) => cell(name, name))}
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+          {network.length + rest.length === 0 && (
+            <p className="py-2 text-center text-xs text-muted-foreground">
+              No icons match “{q}”.
+            </p>
           )}
-        </div>
-        {network.length + rest.length === 0 && (
-          <p className="py-2 text-center text-xs text-muted-foreground">
-            No icons match “{q}”.
-          </p>
-        )}
-        <div className="flex min-h-4 items-center gap-2 text-[11px] text-muted-foreground">
-          {shownHover && (
-            <span className="truncate font-mono">
-              {shownHover}
-              {label(shownHover) && (
-                <span className="font-sans"> · {label(shownHover)}</span>
-              )}
-            </span>
-          )}
-          {rest.length > SHOWN && !shownHover && (
-            <span>{rest.length - SHOWN} more - keep typing</span>
-          )}
-          {allowEmpty && value && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange("")
-                setOpen(false)
-              }}
-              className="ml-auto inline-flex items-center gap-1 hover:text-foreground"
-            >
-              <X className="h-3 w-3" /> Clear
-            </button>
-          )}
-        </div>
+          <div className="flex min-h-4 items-center gap-2 text-[11px] text-muted-foreground">
+            {shownHover && (
+              <span className="truncate font-mono">
+                {shownHover}
+                {label(shownHover) && (
+                  <span className="font-sans"> · {label(shownHover)}</span>
+                )}
+              </span>
+            )}
+            {rest.length > SHOWN && !shownHover && (
+              <span>{rest.length - SHOWN} more - keep typing</span>
+            )}
+            {allowEmpty && value && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange("")
+                  setOpen(false)
+                }}
+                className="ml-auto inline-flex items-center gap-1 hover:text-foreground"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            )}
+          </div>
+        </NoFieldControl>
       </PopoverContent>
     </Popover>
   )
