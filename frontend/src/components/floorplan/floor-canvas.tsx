@@ -815,13 +815,29 @@ export function FloorCanvas({
   /** Several cables under one click: ask which (the chooser), no hover
    * popover over it. */
   const chooseCables = useCallback(
-    (ids: string[], at: CablePickAt, title?: string) => {
+    (ids: string[], at: CablePickAt, title?: string, ordered?: boolean) => {
       cableProps.current.onHoverCable?.(null, null)
       setChooserSolo(null)
-      setChooser({ x: at.x, y: at.y, ids, title })
+      setChooser({ x: at.x, y: at.y, ids, title, ordered })
     },
     []
   )
+  /** The cables under a click on the plan, nearest first (cable-pick.ts). */
+  const choosePicked = useCallback(
+    (ids: string[], at: CablePickAt) => chooseCables(ids, at, undefined, true),
+    [chooseCables]
+  )
+  /** A client point on the plan, in cells - for the cable layer's pick. */
+  const clientToCell = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    const tt = tNow.current
+    return [
+      (clientX - rect.left - tt.x) / tt.k / CELL,
+      (clientY - rect.top - tt.y) / tt.k / CELL,
+    ] as Pt
+  }, [])
   // The hovered run's ids, for the label pass: its name and its ends.
   const [hoveredCables, setHoveredCables] = useState<readonly string[]>(NO_IDS)
   const hoverCable = useCallback(
@@ -2318,8 +2334,9 @@ export function FloorCanvas({
               interactive={!trayPick}
               onSelect={selectCable}
               onHover={hoverCable}
-              onChoose={chooseCables}
+              onChoose={choosePicked}
               soloId={chooser ? chooserSolo : null}
+              toPlan={clientToCell}
               previews={cablePreviews}
               stubs={shownStubs}
               tiles={tiles}

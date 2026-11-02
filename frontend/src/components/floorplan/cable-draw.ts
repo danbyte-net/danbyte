@@ -685,18 +685,28 @@ export interface CableChoice {
   status: StatusMini | null
 }
 
-/** The chooser's rows: the cables of `ids` drawn on this plan, in lane
- * order (by label, naturally, then id) - the order they lie in a tray. */
+/** The chooser's rows: the cables of `ids` drawn on this plan, each once,
+ * in lane order (by label, naturally, then id) - the order they lie in a
+ * tray - or, with `keepOrder`, in the order of `ids` (a click's: nearest
+ * first). */
 export function cableChoices(
   ids: readonly string[],
   cablePaths: readonly FloorPlanCablePath[],
   colorBy: CableColorBy,
-  palette: ReadonlyMap<string, string>
+  palette: ReadonlyMap<string, string>,
+  { keepOrder = false }: { keepOrder?: boolean } = {}
 ): CableChoice[] {
-  const want = new Set(ids)
-  return cablePaths
-    .filter((cp) => want.has(cp.id))
-    .sort((x, y) => naturalCompare(x.label, y.label) || (x.id < y.id ? -1 : 1))
+  const rank = new Map<string, number>()
+  for (const id of ids) if (!rank.has(id)) rank.set(id, rank.size)
+  const byId = new Map(cablePaths.map((cp) => [cp.id, cp]))
+  return [...rank.keys()]
+    .map((id) => byId.get(id))
+    .filter((cp): cp is FloorPlanCablePath => !!cp)
+    .sort((x, y) =>
+      keepOrder
+        ? rank.get(x.id)! - rank.get(y.id)!
+        : naturalCompare(x.label, y.label) || (x.id < y.id ? -1 : 1)
+    )
     .map((cp) => ({
       id: cp.id,
       label: cp.label,

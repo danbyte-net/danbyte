@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react"
+import { memo, useCallback, useId, useMemo, useRef, useState } from "react"
 
 import type { FloorPlanCablePath, FloorPlanTile } from "@/lib/api"
 
@@ -31,6 +31,8 @@ import type {
   CableStub,
   LaneGroup,
 } from "./cable-draw"
+import { CablePickIndex, orderHits, PICK_PX, PICK_TOUCH_PX } from "./cable-pick"
+import type { PickHit, PickShape } from "./cable-pick"
 import type { Pt } from "./cable-route"
 import { routeEnds } from "./plan-label-pass"
 import type { Box } from "./plan-labels"
@@ -39,8 +41,8 @@ import type { ShapeOf } from "./readable"
 
 /** floor-canvas.tsx's CELL. */
 const CELL = 40
-/** The hit band around a run, screen px. */
-const HIT_PX = 14
+/** An end's dot on a traced run, screen px (its radius). */
+const DOT_PX = 4.5
 /** Rounded corners, plan px. */
 const FILLET = 6
 /** A run's casing: this much wider than its line, screen px. */
@@ -82,9 +84,13 @@ const px = (pts: readonly Pt[]): Pt[] =>
  * draws every lane that fits, with labels when they are on. Nothing is
  * culled to the view: every leg of every drawn run is in the drawing.
  *
- * A click on a bundle (or a cluster of short runs) asks which cable
- * (`onChoose`, the cable chooser); a traced cable, or the chooser's row
- * under the pointer (`soloId`), runs in its own lane beside its bundles.
+ * The pointer has one hit-test (cable-pick.ts): every cable whose drawn
+ * geometry - lanes, bundles, stubs, short-run markers, end dots, a traced
+ * run's own lane - lies within a few screen px of it. One opens at once;
+ * several ask which (`onChoose`, the cable chooser), nearest first. A
+ * lane over a tile leaves the tile its click; an end dot on its edge does
+ * not. A traced cable, or the chooser's row under the pointer (`soloId`),
+ * runs in its own lane beside its bundles.
  *
  * From afar a run too short to see draws as a marker between its ends (a
  * count beside it where several meet), and a cable with one end here as
@@ -111,6 +117,7 @@ export const CableLayer = memo(function CableLayer({
   shapeOf,
   onChoose,
   soloId = null,
+  toPlan,
 }: {
   cablePaths: readonly FloorPlanCablePath[]
   routes: ReadonlyMap<string, CableRoute>
@@ -142,6 +149,8 @@ export const CableLayer = memo(function CableLayer({
   /** The one cable the chooser's row under the pointer shows: drawn
    * apart from its bundles, above the rest, the others dimmed. */
   soloId?: string | null
+  /** A client point on the plan (cells); else the layer's screen matrix. */
+  toPlan?: (clientX: number, clientY: number) => Pt | null
 }) {
   const byId = useMemo(
     () => new Map(cablePaths.map((cp) => [cp.id, cp])),
@@ -186,13 +195,20 @@ export const CableLayer = memo(function CableLayer({
 
   const tileById = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles])
   /** An end's tile as drawn (cells): grown under Readable. */
-  const rectOf = (id: string): Box | null => {
-    const t = tileById.get(id)
-    if (!t) return null
-    const real = { x: t.x, y: t.y, w: t.width, h: t.height }
-    if (shapeOf !== undefined) return shapeOf?.(t)?.box ?? real
-    return readable ? readableShape(t, pxPerCell).box : real
-  }
+  const rectOf = useCallback(
+    (id: string): Box | null => {
+      const t = tileById.get(id)
+      if (!t) return null
+      const real = { x: t.x, y: t.y, w: t.width, h: t.height }
+      if (shapeOf !== undefined) return shapeOf?.(t)?.box ?? real
+      return readable ? readableShape(t, pxPerCell).box : real
+    },
+    [tileById, shapeOf, readable, pxPerCell]
+  )
+  const shorts = useMemo(
+    () => shortRuns(routes, pxPerCell),
+    [routes, pxPerCell]
+  )
 
   const colorOf = (id: string) => {
     const cp = byId.get(id)
@@ -200,8 +216,8 @@ export const CableLayer = memo(function CableLayer({
   }
   const hi = new Set(highlightIds)
   const hov = new Set(hover?.ids ?? [])
-  // A run hovered on its own (not through its bundle) swaps its hit band
-  // for its whole route; a bundle's members stay under the bundle's.
+  // A run hovered on its own (not through its bundle) draws its whole
+  // route; a bundle's members stay under the bundle's.
   const hovOne = new Set(hover && !hover.bundle ? hover.ids : [])
   const solo = soloId && byId.has(soloId) ? soloId : null
   const dim = hi.size > 0 || !!solo
@@ -218,24 +234,254 @@ export const CableLayer = memo(function CableLayer({
   }
   const fan = (key: string) => setFanned((prev) => new Set(prev).add(key))
 
-  /** Pointer, focus and keys for one hit target. */
+  // ── The pick: one hit-test over everything drawn ─────────────────────────
+  const tileBoxes = useMemo(
+    () => tiles.map((t) => rectOf(t.id)).filter((b): b is Box => !!b),
+    [tiles, rectOf]
+  )
+  /** Every drawn piece of every cable, as the layer draws it now. */
+  const pickShapes = useMemo(() => {
+    const out: PickShape[] = []
+    if (!interactive) return out
+    const traced = new Set(highlightIds)
+    const isLit = (id: string) => traced.has(id) || id === solo
+    for (const id of layout.order) {
+      const route = routes.get(id)
+      if (!route) continue
+      if (lod === "far" && !isLit(id) && route.trayIds.length) continue
+      const lines = isLit(id)
+        ? splitLanes(layout, id, bundled, pxPerCell)
+        : pieces.get(id)
+      for (const pts of lines ?? []) out.push({ id, pts, r: 1.5 })
+      const cp = byId.get(id)
+      if (cp)
+        for (const e of routeEnds(cp, route, rectOf))
+          out.push({ id, pts: [e.at], r: DOT_PX, overTiles: true, dot: true })
+    }
+    for (const key of bundled) {
+      const g = layout.groups.get(key)!
+      const r = bundleWidth(g.members.length) / 2
+      for (const id of g.members)
+        out.push({ id, pts: [g.a, g.b], r, group: key })
+    }
+    for (const s of stubs) {
+      // The dashed run and its arrow, out of the tile's edge.
+      const len = (STUB_PX + 5) / pxPerCell
+      const tip: Pt = [s.from[0] + s.dir[0] * len, s.from[1] + s.dir[1] * len]
+      out.push({ id: s.id, pts: [s.from, tip], r: 1.5 })
+    }
+    for (const g of shorts) {
+      const half = 6 / pxPerCell
+      const pts: Pt[] = [
+        [g.at[0] - g.dir[0] * half, g.at[1] - g.dir[1] * half],
+        [g.at[0] + g.dir[0] * half, g.at[1] + g.dir[1] * half],
+      ]
+      for (const id of g.ids)
+        out.push({
+          id,
+          pts,
+          r: 4,
+          overTiles: true,
+          group: g.ids.length > 1 ? `short:${g.key}` : undefined,
+        })
+    }
+    return out
+  }, [
+    interactive,
+    highlightIds,
+    solo,
+    layout,
+    routes,
+    lod,
+    bundled,
+    pxPerCell,
+    pieces,
+    byId,
+    rectOf,
+    stubs,
+    shorts,
+  ])
+  // Built on the first query after the drawing or the zoom changes - so a
+  // zoom in flight builds nothing, and the view once settled builds once.
+  const pickIndex = useMemo(() => {
+    let index: CablePickIndex | null = null
+    return () =>
+      (index ??= new CablePickIndex(pickShapes, tileBoxes, pxPerCell))
+  }, [pickShapes, tileBoxes, pxPerCell])
+
+  const pickAt = (e: React.PointerEvent): PickHit[] => {
+    let p: Pt | null = null
+    if (toPlan) p = toPlan(e.clientX, e.clientY)
+    else {
+      const el = e.currentTarget as SVGGraphicsElement
+      const m = "getScreenCTM" in el ? el.getScreenCTM() : null
+      if (m) {
+        const q = new DOMPoint(e.clientX, e.clientY).matrixTransform(
+          m.inverse()
+        )
+        p = [q.x / CELL, q.y / CELL]
+      }
+    }
+    if (!p) return []
+    const r = e.pointerType === "touch" ? PICK_TOUCH_PX : PICK_PX
+    const lifted = new Set([...hi, ...hov, ...(solo ? [solo] : [])])
+    return orderHits(
+      pickIndex().query(p, r, lifted),
+      (id) => byId.get(id)?.label
+    )
+  }
+  /** One cable opens (a traced one closes); several ask which. */
+  const pick = (hits: PickHit[], at: CablePickAt) => {
+    const ids = hits.map((h) => h.id)
+    if (ids.length === 1) {
+      onSelect(hi.has(ids[0]) ? null : ids[0])
+      return
+    }
+    if (onChoose) {
+      onChoose(ids, at)
+      return
+    }
+    // No chooser: the bundles under the pointer fan out into lanes.
+    const groups = new Set(hits.flatMap((h) => h.groups))
+    const bundles = [...groups].filter((g) => bundled.has(g))
+    if (bundles.length) bundles.forEach(fan)
+    else onSelect(ids[0])
+  }
+  const hoverKey = useRef("")
+  const pickHover = (e: React.PointerEvent) => {
+    const hits = pickAt(e)
+    const key = hits.map((h) => h.id).join(" ")
+    if (key === hoverKey.current) return
+    hoverKey.current = key
+    if (!hits.length) {
+      leave()
+      return
+    }
+    const ids = hits.map((h) => h.id)
+    // Exactly one bundle's members: that bundle, for its popover and edge.
+    const g = hits[0].groups.find(
+      (gk) =>
+        bundled.has(gk) &&
+        layout.groups.get(gk)!.members.length === ids.length &&
+        hits.every((h) => h.groups.includes(gk))
+    )
+    enter(ids.length === 1 ? { ids } : { ids, bundle: g ?? "pick" }, {
+      clientX: e.clientX,
+      clientY: e.clientY,
+    })
+  }
+  const clipId = `cable-pick-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
+  // A coarse pointer reaches further: the band is a finger's pick wide,
+  // so a tap beside a cable lands on the layer.
+  const [coarse] = useState(() => {
+    if (typeof window === "undefined") return false
+    // Not in every host (jsdom has none).
+    const mm = (window as { matchMedia?: Window["matchMedia"] }).matchMedia
+    return (
+      typeof mm === "function" && mm.call(window, "(pointer: coarse)").matches
+    )
+  })
+  const bandPx = coarse ? PICK_TOUCH_PX : PICK_PX
+
+  /** The pick layer: a transparent band round every piece - the lanes
+   * clipped out of the tiles, the dots and markers not - and one handler
+   * for all of it, so no drawn element races another for a click. */
+  const pickLayer = () => {
+    const lines: string[] = []
+    const over: string[] = []
+    const dots: Pt[] = []
+    for (const sh of pickShapes) {
+      if (sh.group && bundled.has(sh.group)) continue
+      if (sh.dot) {
+        if (lit(sh.id) || hov.has(sh.id)) dots.push(sh.pts[0])
+        continue
+      }
+      const d = sh.pts
+        .map(([x, y], i) => `${i ? "L" : "M"}${x * CELL},${y * CELL}`)
+        .join("")
+      if (sh.overTiles) over.push(d)
+      else lines.push(d)
+    }
+    const holes = tileBoxes
+      .map(
+        (b) =>
+          `M${b.x * CELL},${b.y * CELL}h${b.w * CELL}v${b.h * CELL}h${-b.w * CELL}Z`
+      )
+      .join("")
+    const band = (key: string, d: string, width: number, clip: boolean) => (
+      <path
+        key={key}
+        d={d}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={width}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+        clipPath={clip ? `url(#${clipId})` : undefined}
+      />
+    )
+    return (
+      <g
+        data-part="pick"
+        style={{ cursor: "pointer" }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return
+          const hits = pickAt(e)
+          // Nothing near after all: the press is the plan's.
+          if (!hits.length) return
+          e.stopPropagation()
+          pick(hits, { x: e.clientX, y: e.clientY })
+        }}
+        onPointerMove={pickHover}
+        onPointerLeave={() => {
+          hoverKey.current = ""
+          leave()
+        }}
+      >
+        <clipPath id={clipId}>
+          <path d={`M-1e7,-1e7H1e7V1e7H-1e7Z${holes}`} clipRule="evenodd" />
+        </clipPath>
+        {lines.length > 0 &&
+          band("lines", lines.join(""), bandPx * 2 + 3, true)}
+        {[...bundled].map((key) => {
+          const g = layout.groups.get(key)!
+          return band(
+            key,
+            `M${g.a[0] * CELL},${g.a[1] * CELL}L${g.b[0] * CELL},${g.b[1] * CELL}`,
+            bandPx * 2 + bundleWidth(g.members.length),
+            true
+          )
+        })}
+        {/* Short runs' markers: a band round them off the tiles, the
+            marker itself over them. */}
+        {over.length > 0 && band("over", over.join(""), bandPx * 2 + 8, true)}
+        {over.length > 0 && band("over-tile", over.join(""), 8, false)}
+        {/* A lifted run's end dots, over the tile edges they sit on. */}
+        {dots.map((p, i) => (
+          <circle
+            key={i}
+            cx={p[0] * CELL}
+            cy={p[1] * CELL}
+            r={DOT_PX / k}
+            fill="transparent"
+          />
+        ))}
+      </g>
+    )
+  }
+
+  /** Focus and keys for one drawn element. The pointer is the pick
+   * layer's (one hit-test for all of them); the elements take none. */
   const handlers = (
     hit: CableHoverHit,
     mid: Pt,
-    activate: (at: CablePickAt) => void,
-    focusable = true
+    activate: (at: CablePickAt) => void
   ) =>
     interactive
       ? {
-          tabIndex: focusable ? 0 : undefined,
-          role: focusable ? "button" : undefined,
-          onPointerDown: (e: React.PointerEvent) => {
-            e.stopPropagation()
-            activate({ x: e.clientX, y: e.clientY })
-          },
-          onPointerEnter: (e: React.PointerEvent) =>
-            enter(hit, { clientX: e.clientX, clientY: e.clientY }),
-          onPointerLeave: leave,
+          tabIndex: 0,
+          role: "button",
           onFocus: () => enter(hit, { cell: mid }),
           onBlur: leave,
           onKeyDown: (e: React.KeyboardEvent) => {
@@ -245,9 +491,9 @@ export const CableLayer = memo(function CableLayer({
               activate({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
             } else if (e.key === "Escape") onSelect(null)
           },
-          style: { cursor: "pointer", outline: "none" },
+          style: { outline: "none" },
         }
-      : { style: { cursor: "default" } }
+      : {}
 
   const ariaFor = (cp: FloorPlanCablePath | undefined) =>
     cp
@@ -295,19 +541,6 @@ export const CableLayer = memo(function CableLayer({
       )
     })
   }
-
-  const hitPaths = (lines: Pt[][]) =>
-    interactive &&
-    lines.map((line, i) => (
-      <path
-        key={`h${i}`}
-        d={roundedPath(px(line), FILLET)}
-        fill="none"
-        stroke="transparent"
-        strokeWidth={HIT_PX}
-        vectorEffect="non-scaling-stroke"
-      />
-    ))
 
   /** A chip of text at a plan point, the same size at every zoom. */
   const chip = (key: string, at: Pt, text: string, color?: string) => {
@@ -362,11 +595,11 @@ export const CableLayer = memo(function CableLayer({
         aria-label={`${n} cables`}
         aria-haspopup={onChoose ? "menu" : undefined}
         opacity={dim ? (holds ? 0.45 : 0.2) : 1}
+        pointerEvents="none"
         {...handlers({ ids: g.members, bundle: g.key }, mid, (at) =>
           onChoose ? onChoose(g.members, at) : fan(g.key)
         )}
       >
-        {hitPaths([line])}
         <path
           d={roundedPath(px(line), 0)}
           fill="none"
@@ -393,9 +626,8 @@ export const CableLayer = memo(function CableLayer({
   }
 
   /** A run lifted above the rest - traced or under the pointer - with its
-   * ends, its length and, up close, its ports. A traced run keeps a hit
-   * band on top, so a click on it lands on it where others share its tray;
-   * the keyboard stays on the run's own element below. */
+   * ends, its length and, up close, its ports. The keyboard stays on the
+   * run's own element below. */
   const lifted = (id: string, traced: boolean) => {
     const cp = byId.get(id)
     const route = routes.get(id)
@@ -407,18 +639,13 @@ export const CableLayer = memo(function CableLayer({
     const color = colorOf(id)
     // The ends' dots where the run leaves each tile, not mid-tile.
     const ends = routeEnds(cp, route, rectOf).map((e) => e.at)
-    const mid = longestLegMid(route.points)
     return (
       <g
         key={`lift-${id}`}
         data-lifted={id}
         data-solo={id === solo && !traced ? id : undefined}
-        pointerEvents={traced ? undefined : "none"}
-        {...(traced
-          ? handlers({ ids: [id] }, mid.at, () => onSelect(null), false)
-          : {})}
+        pointerEvents="none"
       >
-        {traced && hitPaths(lines)}
         {strokes(id, lines, {
           extra: traced || id === solo ? 1.5 : 1,
           halo: traced || id === solo,
@@ -428,7 +655,7 @@ export const CableLayer = memo(function CableLayer({
             key={i}
             cx={p[0] * CELL}
             cy={p[1] * CELL}
-            r={(traced ? 4.5 : 3.5) / k}
+            r={(traced ? DOT_PX : 3.5) / k}
             fill={color}
             stroke="var(--background)"
             strokeWidth={1.5}
@@ -512,7 +739,7 @@ export const CableLayer = memo(function CableLayer({
   /** Runs too short to see: a short bar between their ends in their
    * colour, with a count where several meet. */
   const shortView = () =>
-    shortRuns(routes, pxPerCell).map((g) => {
+    shorts.map((g) => {
       const colors = g.ids.map((id) => {
         const cp = byId.get(id)
         return cp ? cableColor(cp, colorBy, palette) : null
@@ -532,6 +759,7 @@ export const CableLayer = memo(function CableLayer({
               : ariaFor(byId.get(g.ids[0]))
           }
           opacity={dim && !holds ? 0.2 : 1}
+          pointerEvents="none"
           {...handlers(
             g.ids.length > 1 ? { ids: g.ids, bundle: g.key } : { ids: g.ids },
             g.at,
@@ -543,16 +771,12 @@ export const CableLayer = memo(function CableLayer({
                 : onSelect(hi.has(g.ids[0]) ? null : g.ids[0])
           )}
         >
-          {interactive && (
-            <circle cx={x} cy={y} r={10 / k} fill="transparent" />
-          )}
           <path
             d={`M${x - dx},${y - dy}L${x + dx},${y + dy}`}
             stroke="var(--background)"
             strokeWidth={6}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
-            pointerEvents="none"
           />
           <path
             d={`M${x - dx},${y - dy}L${x + dx},${y + dy}`}
@@ -560,7 +784,6 @@ export const CableLayer = memo(function CableLayer({
             strokeWidth={3.5}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
-            pointerEvents="none"
           />
           {g.ids.length > 1 &&
             chip(
@@ -597,18 +820,11 @@ export const CableLayer = memo(function CableLayer({
         aria-label={`${ariaFor(cp)} - far end not on this plan`}
         aria-pressed={interactive ? traced : undefined}
         opacity={dim && !traced && s.id !== solo ? 0.2 : 1}
+        pointerEvents="none"
         {...handlers({ ids: [s.id] }, mid, () =>
           onSelect(traced ? null : s.id)
         )}
       >
-        {interactive && (
-          <path
-            d={`M${x0},${y0}L${x1},${y1}`}
-            stroke="transparent"
-            strokeWidth={HIT_PX}
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
         <path
           d={`M${x0},${y0}L${x1},${y1}`}
           fill="none"
@@ -679,11 +895,11 @@ export const CableLayer = memo(function CableLayer({
             aria-label={ariaFor(cp)}
             aria-pressed={interactive ? hi.has(id) : undefined}
             opacity={dim && !lit(id) ? 0.2 : 1}
+            pointerEvents="none"
             {...handlers({ ids: [id] }, mid, () =>
               onSelect(hi.has(id) ? null : id)
             )}
           >
-            {hitPaths(lines)}
             {!(up || hov.has(id) || id === solo) && strokes(id, lines)}
           </g>
         )
@@ -703,6 +919,7 @@ export const CableLayer = memo(function CableLayer({
       {highlightIds.map((id) => lifted(id, true))}
       {solo && !hi.has(solo) && lifted(solo, false)}
       {previews && [...previews].map(([id, route]) => previewView(id, route))}
+      {interactive && pickLayer()}
     </g>
   )
 })
