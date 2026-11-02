@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0244_model_ports'),
+        ('api', '0246_panel_layouts'),
         ('core', '0062_tenantsettings_cable_lengths'),
     ]
 
