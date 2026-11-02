@@ -903,7 +903,8 @@ device there flies to it. **Explode** pulls the levels apart vertically,
 for seeing the runs between them. With cables on, a cable routed between
 two shown levels through a riser draws as one continuous run - this
 level's part, the climb in the shaft, the other level's part - and each
-riser's shaft shows as a faint column.
+riser's shaft shows as a faint column. With cables on, the walls of the
+levels below are drawn see-through, so the runs in the shafts read.
 
 The 3D room's payload, `GET /api/floor-plans/{id}/scene/`, carries the
 level's `elevation_mm` (as above, or null), `slab_mm` and `align_dx` /

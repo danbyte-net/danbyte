@@ -908,7 +908,11 @@ export default function FloorScene3D({
         {building && levels.length > 1 && building.mode !== "only" && (
           <>
             <Slab scene={data} sink />
-            <BuildingLevels levels={levels} onGo={building.onGoLevel} />
+            <BuildingLevels
+              levels={levels}
+              onGo={building.onGoLevel}
+              ghostWalls={showCables}
+            />
             {roofLevel && roofLevel !== activeLevel && (
               <Roofline placement={roofLevel} />
             )}
