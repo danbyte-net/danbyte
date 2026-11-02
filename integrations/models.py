@@ -729,6 +729,12 @@ class VirtPlacementRule(TimestampedModel):
 # ─── Windows DHCP sync state ──────────────────────────────────────────────────
 
 
+#: A Windows ClientId is the DHCP client identifier (option 61) printed as
+#: dash-separated hex. The option carries up to 255 octets - a MAC, an RFC 4361
+#: IAID+DUID, an Infiniband GUID - so "xx-" per octet needs 765 characters.
+DHCP_CLIENT_ID_MAX_LENGTH = 255 * 3
+
+
 class DhcpScope(TimestampedModel):
     """Mirror of one Windows DHCP scope, linked to the Prefix it syncs into.
 
@@ -839,7 +845,7 @@ class DhcpReservation(TimestampedModel):
         DhcpScope, on_delete=models.CASCADE, related_name="reservations"
     )
     ip = models.GenericIPAddressField()
-    mac = models.CharField(max_length=64, blank=True, default="")
+    mac = models.CharField(max_length=DHCP_CLIENT_ID_MAX_LENGTH, blank=True, default="")
     name = models.CharField(max_length=255, blank=True, default="")
     description = models.TextField(blank=True, default="")
     ip_address = models.ForeignKey(
@@ -874,7 +880,7 @@ class DhcpLease(TimestampedModel):
         DhcpScope, on_delete=models.CASCADE, related_name="leases"
     )
     ip = models.GenericIPAddressField()
-    mac = models.CharField(max_length=64, blank=True, default="")
+    mac = models.CharField(max_length=DHCP_CLIENT_ID_MAX_LENGTH, blank=True, default="")
     hostname = models.CharField(max_length=255, blank=True, default="")
     address_state = models.CharField(max_length=32, blank=True, default="")
     expires_at = models.DateTimeField(null=True, blank=True)
