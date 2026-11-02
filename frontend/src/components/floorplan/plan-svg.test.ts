@@ -12,6 +12,8 @@ import { CableRouteCache } from "./cable-draw"
 import { PAPER_INK, planPaperScale, planSvg } from "./plan-svg"
 import type { PlanSvgCables } from "./plan-svg"
 import type { AreaShape } from "./shapes"
+import { AREA_INK_SHARE } from "./shapes"
+import { mix } from "@/lib/diagram/theme"
 
 // The plan as the PDF export posts it: plan pixels, light colours written
 // out (no theme classes, no currentColor), and only what the PDF sanitiser
@@ -381,9 +383,12 @@ describe("planSvg area types", () => {
     expect(strokes.getAttribute("stroke")).toBe("#2563eb")
     expect(strokes.querySelectorAll(":scope > g")).toHaveLength(2)
     expect(strokes.querySelectorAll("line").length).toBeGreaterThan(4)
-    // The icon before the name, in the name's ink, without theme classes.
+    // The icon before the name, in the name's ink - the area's colour
+    // toward the paper's ink - without theme classes.
     const icon = doc.querySelector("svg svg")!
-    expect(icon.getAttribute("stroke")).toBe("#2563eb")
+    expect(icon.getAttribute("stroke")).toBe(
+      mix("#2563eb", PAPER_INK, AREA_INK_SHARE)
+    )
     expect(svg).not.toContain("class=")
     // The name on a white halo over the pattern.
     const names = [...doc.querySelectorAll("text")].filter(
@@ -418,7 +423,8 @@ describe("planSvg area types", () => {
       ],
     })
     expect(solid).not.toContain("clipPath")
-    expect(parse(solid).querySelectorAll("text")).toHaveLength(1)
+    // The name on its halo, as over any light fill.
+    expect(parse(solid).querySelectorAll("text")).toHaveLength(2)
   })
 
   it("ignores a type on a linked area", () => {

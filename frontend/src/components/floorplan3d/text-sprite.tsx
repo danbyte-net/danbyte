@@ -1,6 +1,9 @@
 import { useEffect, useMemo } from "react"
 import * as THREE from "three"
 
+import { useTheme } from "@/components/theme-provider"
+
+import { roomLook } from "./room-look"
 import { useMaxAnisotropy } from "./texture-quality"
 
 /** Render text to a canvas texture (system font - no network fetch, so it's
@@ -11,6 +14,8 @@ export function textTexture(
   {
     color = "#e4e4e7",
     background = "rgba(24,24,27,0.9)",
+    /** A hairline round the plate, as the 2D plan's chips have. */
+    border = "",
     fontPx = 44,
     /** The face; the room's plates use the system stack, port labels use
      * the app's own so they match the 2D faceplate. */
@@ -37,6 +42,14 @@ export function textTexture(
   ctx.beginPath()
   ctx.roundRect(0, 0, w, h, 8 * scale)
   ctx.fill()
+  if (border) {
+    const lw = 2 * scale
+    ctx.strokeStyle = border
+    ctx.lineWidth = lw
+    ctx.beginPath()
+    ctx.roundRect(lw / 2, lw / 2, w - lw, h - lw, 8 * scale - lw / 2)
+    ctx.stroke()
+  }
   ctx.fillStyle = color
   ctx.textBaseline = "middle"
   ctx.textAlign = align
@@ -131,8 +144,8 @@ export function TextSprite({
   text,
   position,
   heightM = 0.22,
-  color = "#e4e4e7",
-  background = "rgba(24,24,27,0.85)",
+  color: colorProp,
+  background: backgroundProp,
 }: {
   text: string
   position: [number, number, number]
@@ -144,10 +157,15 @@ export function TextSprite({
   // Same canvas painter as FaceLabel - one place that decides how crisp text
   // in the room is.
   const anisotropy = useMaxAnisotropy()
+  // The room's plate in this theme unless the caller picks its own.
+  const look = roomLook(useTheme().theme === "dark")
+  const color = colorProp ?? look.plateText
+  const background = backgroundProp ?? look.plate
+  const border = backgroundProp ? "" : look.plateBorder
   const { texture, aspect } = useMemo(() => {
-    const t = textTexture(text, { color, background, anisotropy })
+    const t = textTexture(text, { color, background, border, anisotropy })
     return { texture: t.texture, aspect: t.w / t.h }
-  }, [text, color, background, anisotropy])
+  }, [text, color, background, border, anisotropy])
   useEffect(() => () => texture.dispose(), [texture])
 
   return (

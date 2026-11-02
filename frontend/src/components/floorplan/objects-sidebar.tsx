@@ -30,7 +30,11 @@ import {
 import type { CheckFilter } from "@/components/objects-panel"
 import { TruncatedText } from "@/components/ui/truncated-text"
 import { naturalCompare } from "@/lib/natural-sort"
-import { areaColor, areaName } from "@/components/floorplan/shapes"
+import {
+  areaColor,
+  areaFallbackName,
+  areaName,
+} from "@/components/floorplan/shapes"
 import type { PlanShape } from "@/components/floorplan/shapes"
 
 /** A placed object with no role: grouped by its kind. */
@@ -99,7 +103,10 @@ export function ObjectsSidebar({
   selectedShapeId = null,
   onPickShape,
   unplaced,
+  cellMm,
 }: {
+  /** The plan's cell size, mm: an area with no name is listed by its size. */
+  cellMm?: number
   /** Edit: the floor's objects not placed anywhere (drag onto the plan). */
   unplaced?: React.ReactNode
   /** The plan's areas and labels (hidden ones included, dimmed). */
@@ -177,15 +184,18 @@ export function ObjectsSidebar({
     const needle = q.trim().toLowerCase()
     const match = (s: string) => !needle || s.toLowerCase().includes(needle)
     const named = (s: PlanShape) =>
-      s.kind === "area" ? areaName(s) || "Area" : s.text
+      s.kind === "area" ? areaName(s) || areaFallbackName(s, cellMm) : s.text
     const rows = status ? [] : shapes.filter((s) => match(named(s)))
+    // Named areas first, the outlines with no name after them.
+    const unnamed = (s: PlanShape) =>
+      s.kind === "area" && !areaName(s) ? 1 : 0
     const sort = (a: PlanShape, b: PlanShape) =>
-      naturalCompare(named(a), named(b))
+      unnamed(a) - unnamed(b) || naturalCompare(named(a), named(b))
     return {
       areaRows: rows.filter((s) => s.kind === "area").sort(sort),
       labelRows: rows.filter((s) => s.kind === "label").sort(sort),
     }
-  }, [shapes, q, status])
+  }, [shapes, q, status, cellMm])
 
   const shapeRow = (s: PlanShape) => {
     const key = s.kind === "area" ? "areas" : "labels"
@@ -215,7 +225,9 @@ export function ObjectsSidebar({
           ) : name ? (
             <TruncatedText className="block">{name}</TruncatedText>
           ) : (
-            <span className="text-muted-foreground">Unnamed</span>
+            <TruncatedText className="block text-muted-foreground">
+              {s.kind === "area" ? areaFallbackName(s, cellMm) : "Unnamed"}
+            </TruncatedText>
           )}
         </button>
         {eyes && (

@@ -19,7 +19,11 @@ import {
   wallSegmentsWithOpenings,
 } from "@/components/floorplan3d/world"
 
+import { mix } from "@/lib/diagram/theme"
+
 import {
+  AREA_INK_SHARE,
+  AREA_STROKE_OPACITY,
   PATTERN_GAP,
   PATTERN_STROKE,
   labelColor,
@@ -62,6 +66,7 @@ import {
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
 import { layoutPlanLabels } from "./plan-label-pass"
+import { TRAY_BED_OPACITY, TRAY_EDGE_OPACITY, TRAY_EDGE_PX } from "./tray-layer"
 import type { AlongLabel, PlanLabels } from "./plan-label-pass"
 import {
   CHIP_FONT_MM,
@@ -490,7 +495,7 @@ function areaNameMarkup(
           ...font,
           fill: "#ffffff",
           stroke: "#ffffff",
-          "stroke-width": 3 * grow,
+          "stroke-width": 3.5 * grow,
           "stroke-linejoin": "round",
         })
       : "") +
@@ -516,14 +521,17 @@ function areaMarkup(
   nameAt?: Pt | null
 ): string {
   const color = areaColor(a)
-  const ink = areaLabelColor(a)
+  // In the area's own colour, a name keeps some of the page's ink (as
+  // shape-layer.tsx draws it on screen).
+  const own = areaLabelColor(a)
+  const ink = own === color ? mix(color, PAPER_INK, AREA_INK_SHARE) : own
   const name = a.show_name && nameAt !== null ? areaName(a) : ""
   const style = {
     fill: color,
     "fill-opacity": a.fill_opacity / 100,
     stroke: color,
-    "stroke-opacity": a.border === "none" ? 0 : 0.6,
-    "stroke-width": 1.5,
+    "stroke-opacity": a.border === "none" ? 0 : AREA_STROKE_OPACITY,
+    "stroke-width": 1.25,
     "stroke-dasharray": a.border === "dashed" ? "8 5" : undefined,
   }
   if (a.shape === "polygon") {
@@ -938,14 +946,37 @@ function trayMarkup(
       "stroke-linecap": "round",
       "data-part": "casing",
     }) +
+    // The channel's sides, then its bed, as the canvas draws a tray.
     el("polyline", {
       points: pts,
       fill: "none",
       stroke: color,
-      "stroke-opacity": 0.4,
+      "stroke-opacity": TRAY_EDGE_OPACITY,
+      "stroke-width": +(
+        width + (mmPerPx == null ? TRAY_EDGE_PX : 0.2 / mmPerPx)
+      ).toFixed(2),
+      "stroke-linejoin": "round",
+      "stroke-linecap": "round",
+      "data-part": "edge",
+    }) +
+    el("polyline", {
+      points: pts,
+      fill: "none",
+      stroke: "#ffffff",
       "stroke-width": +width.toFixed(2),
       "stroke-linejoin": "round",
       "stroke-linecap": "round",
+      "data-part": "bed",
+    }) +
+    el("polyline", {
+      points: pts,
+      fill: "none",
+      stroke: color,
+      "stroke-opacity": TRAY_BED_OPACITY,
+      "stroke-width": +width.toFixed(2),
+      "stroke-linejoin": "round",
+      "stroke-linecap": "round",
+      "data-part": "channel",
     }) +
     (tray.name && !hideName
       ? (grow > 1

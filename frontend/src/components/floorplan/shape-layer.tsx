@@ -5,6 +5,8 @@ import { getLucideIcon } from "@/components/dynamic-icon"
 import { CELL } from "./canvas-geometry"
 import { fontGrow } from "./readable"
 import {
+  AREA_INK_SHARE,
+  AREA_STROKE_OPACITY,
   HANDLES,
   PATTERN_GAP,
   PATTERN_STROKE,
@@ -120,6 +122,12 @@ function AreaName({
   const mid = anchor === "middle" ? y : y - namePx * 0.35
   // Grown, it spills over tiles and lines: always on its halo.
   const halo = areaNameHalo(area) || grow > 1
+  // In the area's own colour, a name keeps some of the page's ink, so a
+  // pale colour still reads; over a strong fill it is black or white.
+  const fill =
+    ink === areaColor(area)
+      ? `color-mix(in oklab, ${ink} ${AREA_INK_SHARE * 100}%, var(--foreground))`
+      : ink
   return (
     <g pointerEvents="none" data-part="area-name">
       {Icon && (
@@ -129,7 +137,7 @@ function AreaName({
           y={mid - iconPx / 2}
           width={iconPx}
           height={iconPx}
-          color={ink}
+          color={fill}
           strokeWidth={2.25}
         />
       )}
@@ -140,9 +148,10 @@ function AreaName({
         dominantBaseline={anchor === "middle" ? "middle" : undefined}
         fontSize={namePx}
         fontWeight={600}
-        fill={ink}
+        fill={fill}
         className={halo ? "stroke-background" : undefined}
-        strokeWidth={halo ? 3 * grow : undefined}
+        strokeWidth={halo ? 3.5 * grow : undefined}
+        strokeOpacity={halo ? 0.9 : undefined}
         strokeLinejoin={halo ? "round" : undefined}
         paintOrder={halo ? "stroke" : undefined}
       >
@@ -206,7 +215,8 @@ export function AreaShapeView({
   const name = area.show_name && nameAt !== null ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
   const on = selected || multiSelected
-  const strokeOpacity = area.border === "none" && !on ? 0 : on ? 0.95 : 0.6
+  const strokeOpacity =
+    area.border === "none" && !on ? 0 : on ? 1 : AREA_STROKE_OPACITY
   const clipId = `area-pattern-${area.id}`
   const grow = minNamePx ? fontGrow(NAME_PX, zoom, minNamePx) : 1
   const common = {
@@ -214,7 +224,7 @@ export function AreaShapeView({
     fillOpacity: area.fill_opacity / 100,
     stroke: color,
     strokeOpacity,
-    strokeWidth: (on ? 2.5 : 1.5) / zoom,
+    strokeWidth: (on ? 2.5 : 1.25) / zoom,
     strokeDasharray: dash,
   }
   const style: React.CSSProperties = {

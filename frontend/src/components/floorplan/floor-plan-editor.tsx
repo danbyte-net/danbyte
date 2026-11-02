@@ -40,6 +40,7 @@ import {
 } from "./cable-draw"
 import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
+import { PlanLegend } from "./plan-legend"
 import { CableScheduleDialog } from "./cable-schedule"
 import {
   applyNewCables,
@@ -873,6 +874,9 @@ export function FloorPlanEditor({
     const url = await toPng(exportRef.current, {
       backgroundColor: theme === "dark" ? "#09090b" : "#ffffff",
       pixelRatio: 2,
+      // The legend's Hide button and a folded legend's chip stay on screen.
+      filter: (node) =>
+        !(node instanceof HTMLElement && node.dataset.exportSkip !== undefined),
     })
     const a = document.createElement("a")
     a.href = url
@@ -940,24 +944,36 @@ export function FloorPlanEditor({
     </div>
   )
   const farIds = stubPlaceIds(stubs)
+  // The 2D plan's keys - Color by, cables, area types - as one card that
+  // folds to a chip (plan-legend.tsx), never three boxes stacked.
   const planLegend = (rackLegend || cableKey || areaTypes.length > 0) && (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
-      {rackLegend}
-      {cableKey && (
-        <CableLegend
-          legend={cableKey}
-          counts={cableTally}
-          onPlaceFar={
-            editing && !view3d && farIds.length
-              ? () => {
-                  setPlaceOnly(farIds)
-                  openPlace()
-                }
-              : undefined
-          }
-        />
-      )}
-      <AreaLegend types={areaTypes} />
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <PlanLegend>
+        {rackLegend && (
+          <ColorByLegend
+            bare
+            colorBy={colorBy}
+            figures={capacity.legend.figures}
+            alarm={capacity.legend.alarm}
+          />
+        )}
+        {cableKey && (
+          <CableLegend
+            bare
+            legend={cableKey}
+            counts={cableTally}
+            onPlaceFar={
+              editing && !view3d && farIds.length
+                ? () => {
+                    setPlaceOnly(farIds)
+                    openPlace()
+                  }
+                : undefined
+            }
+          />
+        )}
+        {areaTypes.length > 0 && <AreaLegend bare types={areaTypes} />}
+      </PlanLegend>
     </div>
   )
 
@@ -1520,6 +1536,7 @@ export function FloorPlanEditor({
               ) : undefined
             }
             shapes={ed.shapes}
+            cellMm={plan.cell_mm}
             selectedShapeId={editing ? ed.selectedShapeId : openArea}
             onPickShape={(s) => {
               const off =

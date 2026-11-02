@@ -302,6 +302,38 @@ export function TileShape({
           heavier than unlinked planning tiles - same read as the 3D room's
           solid cabinets vs ghost massing - which replaces the old link dot.
           Coloured by a rack measure, the fill is the rack's level. */}
+      {/* A linked tile stands on the page's own colour, so it reads as a
+          solid block over a map or a photo instead of letting it through. */}
+      {tile.linked && (
+        <rect
+          data-part="base"
+          x={GUTTER}
+          y={GUTTER}
+          width={w - GUTTER * 2}
+          height={h - GUTTER * 2}
+          rx={5}
+          fill="var(--background)"
+          pointerEvents="none"
+        />
+      )}
+      {/* Monitoring down or degraded: a soft ring in its colour round the
+          tile's own outline, so the alarm reads from afar without a heavy
+          stroke on the tile. */}
+      {paint.alarm && (
+        <rect
+          data-part="alarm"
+          x={GUTTER - ALARM_RING_PX / 2}
+          y={GUTTER - ALARM_RING_PX / 2}
+          width={w - GUTTER * 2 + ALARM_RING_PX}
+          height={h - GUTTER * 2 + ALARM_RING_PX}
+          rx={5 + ALARM_RING_PX / 2}
+          fill="none"
+          stroke={paint.stroke}
+          strokeOpacity={0.3}
+          strokeWidth={ALARM_RING_PX}
+          pointerEvents="none"
+        />
+      )}
       <rect
         data-part="fill"
         x={GUTTER}
@@ -378,6 +410,7 @@ export function TileShape({
           y={labelY}
           textAnchor="middle"
           fontSize={label.fontSize}
+          fontWeight={500}
           fill="currentColor"
           opacity={paint.muted ? 0.6 : 1}
           pointerEvents="none"
@@ -716,6 +749,9 @@ export function createHoverStore(): HoverStore {
  * cells), with its type's or role's icon, and its outline for selection
  * and monitoring. Back to the tile itself once it is big enough on screen.
  */
+/** The soft ring round an alarming tile, plan px. */
+const ALARM_RING_PX = 5
+
 export function ReadableSymbol({
   tile,
   box,
@@ -770,6 +806,23 @@ export function ReadableSymbol({
       aria-label={tileTooltip(tile, live)}
       opacity={paint.opacity}
     >
+      {/* Alarming: a soft ring in the alarm's colour outside the symbol,
+          as on a full tile. */}
+      {paint.alarm && (
+        <rect
+          data-part="alarm"
+          x={x - 3 / k}
+          y={y - 3 / k}
+          width={w + 6 / k}
+          height={h + 6 / k}
+          rx={Math.min(w, h) * 0.2 + 3 / k}
+          fill="none"
+          stroke={paint.stroke}
+          strokeOpacity={0.35}
+          strokeWidth={4 / k}
+          pointerEvents="none"
+        />
+      )}
       <rect
         x={x}
         y={y}
@@ -778,8 +831,10 @@ export function ReadableSymbol({
         rx={Math.min(w, h) * 0.2}
         fill={tileFill(tile)}
         fillOpacity={0.9}
-        stroke={paint.stroke}
-        strokeWidth={(selected || paint.alarm ? 2 : 1) / k}
+        // A hairline of the page round it, so the symbol stands off a map
+        // or a busy floor; the alarm or selection colour when it has one.
+        stroke={paint.alarm || selected ? paint.stroke : "var(--background)"}
+        strokeWidth={(selected || paint.alarm ? 2 : 1.25) / k}
       />
       {Icon && (
         <Icon

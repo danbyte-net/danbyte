@@ -52,6 +52,7 @@ export function DisplayMenu({
     showCableLabels,
     bundleCables,
     objectSize,
+    muteBackground,
     showPhotos,
     showPhotoOutlines,
     show3dU,
@@ -114,6 +115,12 @@ export function DisplayMenu({
             />
           </div>
           <div className="my-1 h-px bg-border" />
+          <FormCheckbox
+            label="Muted background"
+            checked={muteBackground}
+            onChange={(v) => setViewPref("mute_background", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
           <FormCheckbox
             label="Fit labels to tiles"
             checked={labelFit}

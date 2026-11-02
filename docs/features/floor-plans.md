@@ -80,7 +80,12 @@ page, or **Add floor plan** on a site's **Floor plans** tab). Pick the
 with one floor, both named as you named it; add more floors from the editor
 (see [Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
 512×512), and can carry an uploaded **background image** - a blueprint or
-photo scaled under the grid with adjustable opacity.
+photo scaled under the grid with adjustable opacity. **Display → Muted
+background** (on by default) drains most of its colour and pulls it toward
+the page - pale in the light theme, inverted to a dark map in the dark
+theme - so the plan's own rooms, racks, trays and cables read first. Turn it
+off to see the picture as uploaded. The 3D room's floor wears the same
+muted picture; the PNG carries what the screen shows.
 
 ### Site-wide floor plans
 
@@ -470,12 +475,17 @@ The **2D / 3D** toggle in the plan header (or `?viz=3d` in the URL) turns the
 plan into a navigable room: rack tiles become cabinets at their grid
 positions - sized from the rack's rail width, outer dimensions and U height -
 with their racked devices drawn at true U positions when you move close.
-A site-sized plan keeps its floor layers (slab, map background, area tints)
-apart at any distance, and its grid draws every n-th line - about 120 a side
-- so it reads as a grid rather than a hatch.
+The room reads as a clean architectural model in either theme: a pale (or,
+in the dark theme, deep zinc) slab with a fine edge, light walls with a
+hairline on their edges, rooms and areas as flat tints in their own colour
+with a crisp outline, and name plates in the page's colours, as the 2D
+plan's chips. The uploaded blueprint, map or CAD drawing textures the floor
+- muted like the 2D plan while **Display → Muted background** is on. The
+grid is a soft guide near the camera: its cell lines fade out a few tens of
+cells away, so a campus seen whole shows no hatch. A site-sized plan keeps
+its floor layers (slab, map background, area tints) apart at any distance.
 Trays render at their recorded level/elevation (overhead runs hang below the
-ceiling, underfloor runs sit beneath the slab), zones tint the floor, and the
-uploaded blueprint or CAD drawing textures it.
+ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 
 - **Navigate**: every gesture works on what is under the pointer, so a
   site-wide plan is as quick to get around as a single room:
@@ -935,6 +945,8 @@ Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
 change rather than an exit, so neither is guarded.
 
 Under **Display**: **Color by** heads the menu - see [below](#color-by);
+**Muted background** greys the background image so the plan reads over it
+(on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
 **Camera FOV cones** shows/hides the camera wedges; **Photos** draws
@@ -1226,11 +1238,12 @@ readable zoomed out.
 - **How a typed area is drawn.** Its colour is its own when you set one,
   else its type's. The fill pattern runs over the area's fill in the same
   colour, clipped to its outline, in both themes; the type's icon sits
-  before the name, and an unnamed area is called by its type. Over a
-  pattern the name has a halo of the background so it reads; from 50 %
-  fill up it turns black or white as on any area.
-- **Legend.** The plan's legend, in its corner and inside the export area,
-  gains an **Areas** section: each type a shown area wears, as a swatch of
+  before the name, and an unnamed area is called by its type. Under 50 %
+  fill the name is drawn in the area's colour mixed toward the text colour,
+  on a halo of the background, so it reads over a pattern, a map or a
+  tray; from 50 % fill up it turns black or white as on any area.
+- **Legend.** The plan's legend card, in its corner and inside the export
+  area, gains an **Areas** section: each type a shown area wears, as a swatch of
   its colour and pattern, its icon and its name.
 - **Paper and 3D.** The PDF draws the patterns as lines clipped to each area
   and prints the Areas legend in its footer; the PNG is the screen. The 3D
@@ -1309,7 +1322,9 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 **Objects** lists the plan's areas under **Rooms and areas** (as their colour
 badges) and its labels under **Labels**, each with an eye; a hidden one is
 left off the plan, the 3D room and the exports, and counts in the hidden
-chip like a hidden tile.
+chip like a hidden tile. An area with no name, room, location or type (an
+outline traced off a map, say) is listed muted as **Area** and its size -
+*Area · 430 m²* - after the named ones.
 
 ### On paper and in 3D
 
@@ -1631,8 +1646,13 @@ what they are - in 2D and in the 3D room alike:
   tint.
 - A **legend** in the plan's corner keys the colours: the levels with how
   many racks sit in each, or the roles and statuses as their pills, and what
-  the outline means while a rack is alarming. It is part of the picture,
-  with no Hide button, so the [PNG](#export) carries it.
+  the outline means while a rack is alarming. It is the first section of
+  the plan's one legend card, with the cables' key and the area types under
+  it. **Hide legend** folds the card to a **Legend** chip, remembered per
+  browser; the [PNG](#export) carries the open card without its button.
+- A rack that monitoring has down or degraded keeps its fill and wears its
+  outline in red or amber, with a soft ring of the same colour round it so
+  it stands out from afar.
 - The choice is saved with the plan, like its other view settings: an
   editor's choice is the plan's, a viewer's lasts the visit.
 - Units, power and cooling refresh with the 30-second [live state](#live-state-on-tiles);
@@ -1895,6 +1915,10 @@ through each one. Hand the PNG to whoever's pulling cable.
   Esc cancels. Trays snap to a **half-cell lattice** (twice as fine as the
   tile grid), so you can lay two runs a half-cell apart and they read as
   distinct parallel trays.
+- **How a tray reads**: a channel - its two sides a fine line in the tray's
+  colour, its bed a light tint between them, on a casing of the page so it
+  stands off a map or a photo. Cables draw inside it in their own colours,
+  the strongest lines on the plan.
 - **Trays may overlap and cross** - unlike tiles, there's no no-stacking
   rule; one run can pass over another (route them on the fine lattice to
   keep both visible).
@@ -2126,10 +2150,11 @@ moved and a dashed line to where the tile is now; it reads out of date even
 in a planned status. Previews draw only while
 [Document routes](#document-routes) is open, over the plan's own runs.
 
-The cables' **legend** sits in the plan's corner, under the
-[Color by](#color-by) legend and inside the export area: the colours in use
+The cables' **legend** is a section of the plan's legend card, under the
+[Color by](#color-by) key and inside the export area: the colours in use
 (statuses as their pills, types and jacket colours as short lines), the
-line styles in use, and the bundle. Under them it counts the plan's cables:
+line styles in use - each at the strength it draws, *Out of date* with its
+amber end mark - and the bundle. Under them it counts the plan's cables:
 **N drawn · M with one end here · K not placed**. *Drawn* have both ends
 placed on this plan; *with one end here* draw as a
 [stub](#cables-with-one-end-here); *not placed* have no end here (they ride
@@ -2766,9 +2791,10 @@ the same. Needs the floor-plan add permission.
 
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
-so the export doubles as the builder's pull sheet. The [Color by](#color-by)
-legend and the cables' legend are part of the picture too, so a coloured plan
-explains itself on paper. The cables come out as the screen draws them at
+so the export doubles as the builder's pull sheet. The plan's legend card
+(the [Color by](#color-by) key, the cables' and the area types) is part of
+the picture too, so a coloured plan explains itself on paper; a folded
+legend is left out. The cables come out as the screen draws them at
 that zoom - lanes, bundles, colours and styles.
 
 **PDF…** asks for the paper - **A4**, **A3**, **Letter** or **Tabloid**,

@@ -7,6 +7,14 @@ import { READABLE_FONT_PX, READABLE_TRAY_PX, fontGrow } from "./readable"
 const TRAY_DEFAULT = "#71717a"
 /** A tray channel never thinner than this on screen (px), Real or not. */
 const TRAY_MIN_PX = 4
+/** The background casing round a tray, wider than its channel (screen px). */
+const TRAY_CASING_PX = 4
+/** The channel's sides: this much wider than its bed (screen px), drawn in
+ * the tray's colour at this opacity. */
+export const TRAY_EDGE_PX = 1.5
+export const TRAY_EDGE_OPACITY = 0.75
+/** The tint of the channel's bed. */
+export const TRAY_BED_OPACITY = 0.18
 
 /** A tray run: a subtle hollow channel (no bright core - cables show *inside*
  * it when traced). Selected shows vertex dots; editing shows drag handles plus
@@ -83,7 +91,30 @@ export function TrayShape({
         fill="none"
         stroke="var(--background)"
         strokeOpacity={0.9}
-        strokeWidth={stroke + 3 / zoom}
+        strokeWidth={stroke + TRAY_CASING_PX / zoom}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        pointerEvents="none"
+      />
+      {/* The channel's two sides in the tray's colour, a hairline either
+          side of its bed - a tray reads as a channel, not a grey band. */}
+      <polyline
+        data-part="edge"
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeOpacity={editing || selected ? 0.95 : TRAY_EDGE_OPACITY}
+        strokeWidth={stroke + TRAY_EDGE_PX / zoom}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        pointerEvents="none"
+      />
+      <polyline
+        data-part="bed"
+        points={pts}
+        fill="none"
+        stroke="var(--background)"
+        strokeWidth={stroke}
         strokeLinejoin="round"
         strokeLinecap="round"
         pointerEvents="none"
@@ -95,7 +126,7 @@ export function TrayShape({
         points={pts}
         fill="none"
         stroke={color}
-        strokeOpacity={editing ? 0.6 : selected ? 0.55 : 0.4}
+        strokeOpacity={editing ? 0.4 : selected ? 0.32 : TRAY_BED_OPACITY}
         strokeWidth={stroke}
         strokeLinejoin="round"
         strokeLinecap="round"

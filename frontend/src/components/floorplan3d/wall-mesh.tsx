@@ -1,4 +1,7 @@
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
+import * as THREE from "three"
+
+import { useTheme } from "@/components/theme-provider"
 
 import {
   WALL_THICKNESS_M,
@@ -8,8 +11,8 @@ import {
 } from "./world"
 import type { ScenePayload, SceneWall } from "./world"
 
-/** Neutral zinc, the rack-frame family - walls are structure, not signal. */
-const WALL_COLOR = "#27272a"
+import { roomLook } from "./room-look"
+
 /** X-ray default: lighter than the floor slab. A 0.15-alpha ghost of the
  * floor's own hex composites to the floor's own color - literally invisible
  * on the dark theme - so the ghost gets a tint the ground doesn't have. */
@@ -51,9 +54,28 @@ export function WallMesh({
     () => wallSegmentsWithOpenings(wall.points, wall.openings, heightM),
     [wall.points, wall.openings, heightM]
   )
-  const tint = wall.color || WALL_COLOR
+  // Walls are structure, not signal: light in an architectural model, with
+  // a fine edge line so a corner reads without heavy shading.
+  const look = roomLook(useTheme().theme === "dark")
+  const tint = wall.color || look.wall
   const thick = wall.thickness_mm ? wall.thickness_mm / 1000 : WALL_THICKNESS_M
   const ghost = mode === "ghost"
+  // One edge outline per span, built once per wall shape.
+  const edges = useMemo(
+    () =>
+      boxes.map((b) => {
+        const [x0, z0] = cellToWorld(plan, b.x0, b.z0)
+        const [x1, z1] = cellToWorld(plan, b.x1, b.z1)
+        const len = Math.hypot(x1 - x0, z1 - z0)
+        if (len < 1e-6) return null
+        const box = new THREE.BoxGeometry(len + thick, b.y1 - b.y0, thick)
+        const g = new THREE.EdgesGeometry(box)
+        box.dispose()
+        return g
+      }),
+    [boxes, plan, thick]
+  )
+  useEffect(() => () => edges.forEach((g) => g?.dispose()), [edges])
   const pickable = !ghost && !!onPick
   return (
     <group
@@ -115,6 +137,15 @@ export function WallMesh({
               opacity={ghost ? 0.3 : 1}
               depthWrite={!ghost}
             />
+            {!ghost && edges[i] && (
+              <lineSegments geometry={edges[i]!} raycast={() => null}>
+                <lineBasicMaterial
+                  color={selected ? SELECTED_COLOR : look.wallEdge}
+                  transparent
+                  opacity={0.7}
+                />
+              </lineSegments>
+            )}
           </mesh>
         )
       })}

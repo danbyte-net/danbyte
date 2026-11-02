@@ -120,13 +120,18 @@ describe("a cabinet tile", () => {
 
   it("turns its border red when a device is down", () => {
     const up = draw(tile(), live("up"))
-    const calm = tileGroup(up.container).querySelector("rect")!
+    const calm = tileGroup(up.container).querySelector("rect[data-part=fill]")!
     expect(calm.getAttribute("stroke")).toBe("#64748b")
     cleanup()
     const down = draw(tile(), live("down"))
-    const red = tileGroup(down.container).querySelector("rect")!
+    const red = tileGroup(down.container).querySelector("rect[data-part=fill]")!
     expect(red.getAttribute("stroke")).toBe("#ef4444")
     expect(red.getAttribute("stroke-width")).toBe("2")
+    // And a soft ring round it in the same red.
+    const ring = tileGroup(down.container).querySelector(
+      "rect[data-part=alarm]"
+    )!
+    expect(ring.getAttribute("stroke")).toBe("#ef4444")
   })
 
   it("draws no utilization bar - a cabinet has no units", () => {

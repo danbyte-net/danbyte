@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react"
 import * as THREE from "three"
 
+import { useTheme } from "@/components/theme-provider"
+import { muteRgb } from "@/components/floorplan/background-look"
+
+import { gridFade, roomLook } from "./room-look"
+
 import {
   cellToWorld,
   cellM,
@@ -41,8 +46,54 @@ function grateTexture(): THREE.CanvasTexture {
  * deselecting - isolation lives on the rack HUD now. */
 /** How many cells apart the 3D grid's lines are: one per cell up to 120
  * cells a side, then the smallest step that keeps it near 120 lines. */
-export function gridStep(cellsWide: number, cellsDeep: number): number {
-  return Math.max(1, Math.ceil(Math.max(cellsWide, cellsDeep) / 120))
+export function gridStep(
+  cellsWide: number,
+  cellsDeep: number,
+  maxLines = 120
+): number {
+  return Math.max(1, Math.ceil(Math.max(cellsWide, cellsDeep) / maxLines))
+}
+
+/** Grid lines that fade out with their distance from the camera (`near`
+ * whole, `far` gone), so the grid is a soft guide where you look and never
+ * a dense hatch across the whole slab. One draw, no per-frame work: the
+ * shader reads the camera's position itself. */
+function gridMaterial(
+  color: string,
+  opacity: number,
+  near: number,
+  far: number
+) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      color: { value: new THREE.Color(color) },
+      opacity: { value: opacity },
+      near: { value: near },
+      far: { value: far },
+    },
+    vertexShader: `
+      varying vec3 vWorld;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: `
+      uniform vec3 color;
+      uniform float opacity;
+      uniform float near;
+      uniform float far;
+      varying vec3 vWorld;
+      void main() {
+        float d = distance(vWorld, cameraPosition);
+        float a = opacity * (1.0 - smoothstep(near, far, d));
+        if (a < 0.004) discard;
+        gl_FragColor = vec4(color, a);
+        #include <colorspace_fragment>
+      }`,
+  })
 }
 
 export function Room({
@@ -50,8 +101,12 @@ export function Room({
   xray = false,
   ceiling = false,
   drawingFloor = null,
+  muted = true,
 }: {
   scene: ScenePayload
+  /** The background image muted, as Display > Muted background draws it
+   * on the 2D plan. */
+  muted?: boolean
   xray?: boolean
   /** The plan's CAD drawing rasterised for the floor (cad-layer.tsx
    * `useCadFloorImage`), with its placement. Takes the blueprint's place:
@@ -64,13 +119,21 @@ export function Room({
 }) {
   const { plan } = scene
   const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
+  const dark = useTheme().theme === "dark"
+  const look = roomLook(dark)
+  const fade = gridFade(cellM(plan))
+  const gridMat = useMemo(
+    () => gridMaterial(look.grid, look.gridOpacity, fade.near, fade.far),
+    [look.grid, look.gridOpacity, fade.near, fade.far]
+  )
+  useEffect(() => () => gridMat.dispose(), [gridMat])
 
   const grid = useMemo(() => {
     const pts: number[] = []
     const c = cellM(plan)
-    // A large plan draws every n-th line, so the grid reads as a grid and
-    // not as a hatch of lines a pixel apart.
-    const step = gridStep(plan.grid_width, plan.grid_height)
+    // Every cell near the camera (the lines fade out with distance); a
+    // huge plan still skips some, to keep the line count sane.
+    const step = gridStep(plan.grid_width, plan.grid_height, 1000)
     for (let x = 0; x <= plan.grid_width; x += step)
       pts.push(x * c, 0, 0, x * c, 0, d)
     for (let y = 0; y <= plan.grid_height; y += step)
@@ -81,8 +144,25 @@ export function Room({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan.grid_width, plan.grid_height, plan.cell_mm])
 
+  // The slab's edge: a fine line round the floor, so the model reads as a
+  // plate on the page rather than fading into it.
+  const rim = useMemo(
+    () =>
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(w, 0, 0),
+        new THREE.Vector3(w, 0, d),
+        new THREE.Vector3(0, 0, d),
+      ]),
+    [w, d]
+  )
+  useEffect(() => () => rim.dispose(), [rim])
+
   return (
     <group>
+      <lineLoop geometry={rim} position={[0, 0.003, 0]} raycast={() => null}>
+        <lineBasicMaterial color={look.wallEdge} transparent opacity={0.8} />
+      </lineLoop>
       {/* Floor slab - ghosted in x-ray so the plenum reads from above. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -96,7 +176,7 @@ export function Room({
             WallMesh). */}
         <meshStandardMaterial
           key={xray ? "ghost" : "solid"}
-          color="#27272a"
+          color={look.slab}
           roughness={0.95}
           transparent={xray}
           opacity={xray ? 0.35 : 1}
@@ -110,12 +190,17 @@ export function Room({
           w={w}
           d={d}
           opacity={plan.background_opacity / 100}
+          muted={muted}
+          dark={dark}
         />
       )}
-      {/* Grid lines a hair above the slab */}
-      <lineSegments geometry={grid} position={[0, 0.002, 0]}>
-        <lineBasicMaterial color="#3f3f46" transparent opacity={0.5} />
-      </lineSegments>
+      {/* Grid lines a hair above the slab, fading with distance */}
+      <lineSegments
+        geometry={grid}
+        material={gridMat}
+        position={[0, 0.002, 0]}
+        raycast={() => null}
+      />
       {/* Zone tiles → translucent floor patches */}
       {scene.tiles
         .filter((t) => t.is_zone)
@@ -253,11 +338,15 @@ function Blueprint({
   w,
   d,
   opacity,
+  muted,
+  dark,
 }: {
   url: string
   w: number
   d: number
   opacity: number
+  muted: boolean
+  dark: boolean
 }) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   useEffect(() => {
@@ -268,13 +357,21 @@ function Blueprint({
         t.dispose()
         return
       }
-      t.colorSpace = THREE.SRGBColorSpace
-      setTexture(t)
+      const img = t.image as HTMLImageElement | undefined
+      const canvas = muted && img ? mutedCanvas(img, dark) : null
+      let out: THREE.Texture = t
+      if (canvas) {
+        t.dispose()
+        out = new THREE.CanvasTexture(canvas)
+      }
+      out.colorSpace = THREE.SRGBColorSpace
+      out.anisotropy = 8
+      setTexture(out)
     })
     return () => {
       disposed = true
     }
-  }, [url])
+  }, [url, muted, dark])
   useEffect(() => () => texture?.dispose(), [texture])
   if (!texture) return null
   return (
@@ -284,6 +381,8 @@ function Blueprint({
         map={texture}
         transparent
         opacity={opacity}
+        // The picture's own colours, not tone-mapped into a grey wash.
+        toneMapped={false}
         // A picture on the floor: it never hides what lies on it.
         depthWrite={false}
         polygonOffset
@@ -292,4 +391,34 @@ function Blueprint({
       />
     </mesh>
   )
+}
+
+/** The longest side a muted floor picture keeps (px): a site map can be
+ * huge, and the floor never needs more. */
+const MUTED_MAX_PX = 4096
+
+/** The picture through the 2D plan's muted look, pixel by pixel
+ * (background-look.tsx `muteRgb`), on a canvas. Null where a canvas has
+ * no 2D context (a test's DOM). */
+function mutedCanvas(
+  img: HTMLImageElement | ImageBitmap,
+  dark: boolean
+): HTMLCanvasElement | null {
+  const scale = Math.min(1, MUTED_MAX_PX / Math.max(img.width, img.height))
+  const c = document.createElement("canvas")
+  c.width = Math.max(1, Math.round(img.width * scale))
+  c.height = Math.max(1, Math.round(img.height * scale))
+  const ctx = c.getContext("2d", { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(img, 0, 0, c.width, c.height)
+  const data = ctx.getImageData(0, 0, c.width, c.height)
+  const px = data.data
+  for (let i = 0; i < px.length; i += 4) {
+    const [r, g, b] = muteRgb(px[i], px[i + 1], px[i + 2], dark)
+    px[i] = r
+    px[i + 1] = g
+    px[i + 2] = b
+  }
+  ctx.putImageData(data, 0, 0)
+  return c
 }

@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
+import { BareFrame } from "./plan-legend"
 import { CABLE_LINE, CABLE_NONE, bundleWidth } from "./cable-draw"
 import type { CableCounts, CableLegend as CableLegendData } from "./cable-draw"
 
@@ -28,11 +29,15 @@ export function CableLegend({
   legend,
   counts,
   onPlaceFar,
+  bare = false,
 }: {
   legend: CableLegendData
   counts?: CableCounts
   onPlaceFar?: () => void
+  /** Its rows only, for the plan's one legend card (plan-legend.tsx). */
+  bare?: boolean
 }) {
+  const Frame = bare ? BareFrame : LegendFrame
   const statuses = legend.colors.map((c) =>
     c.status
       ? c.status
@@ -45,7 +50,7 @@ export function CableLegend({
   )
   const byStatus = legend.mode === "status"
   return (
-    <LegendFrame hideable={false} className="w-fit max-w-80">
+    <Frame hideable={false} className="w-fit max-w-80">
       <p className="pb-1 font-medium whitespace-nowrap">{legend.title}</p>
       {legend.colors.length === 0 ? null : byStatus ? (
         <LegendStatuses className="pb-0" statuses={statuses} />
@@ -65,12 +70,27 @@ export function CableLegend({
             <LegendRow
               key={s}
               swatch={
-                <LegendLine
-                  color={CABLE_NONE}
-                  width={CABLE_LINE[s].width}
-                  dash={CABLE_LINE[s].dash}
-                  cap={CABLE_LINE[s].cap}
-                />
+                // At the line's own strength, so Inferred keys as the
+                // fainter line it is; Out of date with the amber mark its
+                // moved end wears on the plan.
+                <span
+                  className="relative flex shrink-0"
+                  style={{ opacity: CABLE_LINE[s].opacity }}
+                >
+                  <LegendLine
+                    color={CABLE_NONE}
+                    width={CABLE_LINE[s].width}
+                    dash={CABLE_LINE[s].dash}
+                    cap={CABLE_LINE[s].cap}
+                  />
+                  {s === "stale" && (
+                    <span
+                      aria-hidden
+                      data-part="stale-mark"
+                      className="absolute top-1/2 right-0 size-2 -translate-y-1/2 rounded-full bg-amber-500 ring-2 ring-background"
+                    />
+                  )}
+                </span>
               }
               label={
                 <span className="whitespace-nowrap">{CABLE_LINE[s].label}</span>
@@ -86,7 +106,7 @@ export function CableLegend({
         </div>
       )}
       {counts && <CableCountsRow counts={counts} onPlaceFar={onPlaceFar} />}
-    </LegendFrame>
+    </Frame>
   )
 }
 
