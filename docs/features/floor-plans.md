@@ -2240,14 +2240,41 @@ Cables that share a tray no longer draw on top of each other:
   in lanes the same way.
 - **Bundles.** Where the lanes would sit closer than a few pixels on
   screen, the stretch draws as **one thicker stroke**, named **N cables**
-  along it. Hover it to list its cables; **click it to fan them
-  out** into lanes. **Display → Bundle parallel runs** (on by default)
-  turns bundling off.
+  along it. Hover it to list its cables; click it to
+  [pick one](#picking-a-cable-in-a-bundle). Every leg of a bundled run
+  draws at every zoom and wherever the view is, legs crossing the view with
+  both ends outside it included. **Display → Bundle parallel runs** (on by
+  default) turns bundling off.
 - **Casing.** Every run, bundle and tray draws on a thin edge in the
   background's colour, as a road is drawn on a map, so it reads over a
   photo, a map or a CAD drawing. A run is at least 2 px wide on screen
   (2.5 px documented), and a tray's channel at least 4 px (6 px under
   Readable).
+
+#### Picking a cable in a bundle
+
+A click on a **bundle** (or its **N cables** name), on a cluster of short
+runs, or in View on a **tray** that carries several cables opens a small
+chooser at the pointer. It lists each cable in lane order (by label):
+
+- the cable's colour as a short line, its label and its status pill;
+- its ends, **A-end → B-end**, each as `device · port`;
+- a search box once there are more than 8, matching the label or an end.
+
+Hovering a row (or reaching it with the arrows) shows that cable alone: its
+route drawn above the bundle in its own lane, the other cables dimmed.
+Click a row, or **Enter**, to trace it and open its cable panel; **Esc**
+closes the chooser. A click on a single cable opens its panel at once, as
+before.
+
+A traced cable **leaves its bundles**: along every bundled stretch its own
+lane runs just beside the bundle, highlighted, and the bundle steps back,
+so the one cable reads apart from the rest along its whole route.
+
+**Show cables** lists a tray's cables the same way: right-click the tray
+in View, or use **Show cables** by *Cables in this tray* in the tray's panel
+in Cables mode (its right-click menu has it too). Only the cables drawn on
+this plan are listed; a tray with one opens it straight away.
 
 #### Cable names
 
@@ -2328,7 +2355,8 @@ Strokes keep **the same width on screen at every zoom**; what is drawn
 follows how large a cell is on screen:
 
 - **Far** (zoomed out): the trays with their cable counts, the runs that
-  ride no tray (the trays do not count those), and a traced run.
+  ride no tray (the trays do not count those) - as a bundle where several
+  share a stretch - and a traced run.
 - **Mid**: shared stretches as bundles named with their counts, single
   runs as lines with their names.
 - **Near** (zoomed in): every lane that fits apart, bundles only where the

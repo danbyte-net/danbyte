@@ -109,7 +109,9 @@ import type { PlanShape } from "./shapes"
 import { snapshotAreaLabel } from "./snapshot"
 import { TrayShape } from "./tray-layer"
 import { CableLayer } from "./cable-layer"
-import type { CableAnchor, CableHoverHit } from "./cable-layer"
+import type { CableAnchor, CableHoverHit, CablePickAt } from "./cable-layer"
+import { CableChooser } from "./cable-chooser"
+import type { CableChooserAt } from "./cable-chooser"
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import { usePanZoom } from "./use-pan-zoom"
 import { useShapeGestures } from "./use-shape-gestures"
@@ -171,6 +173,9 @@ export interface FloorCanvasApi {
    * pointer while it is over the plan (the Place picker's "near"). */
   centerCell?: () => Pt
   pointerCell?: () => Pt | null
+  /** A tray's cables in the cable chooser, opened at a client point (a
+   * panel's Show cables). */
+  showTrayCables?: (trayId: string, at: CablePickAt) => void
 }
 
 export interface FloorCanvasProps {
@@ -605,6 +610,16 @@ export function FloorCanvas({
   } | null>(null)
   // A right-click on a wall, door, tray or raised floor.
   const [structMenu, setStructMenu] = useState<StructMenu | null>(null)
+  // Which cable? A bundle's, a cluster's or a tray's (cable-chooser.tsx),
+  // and the row under the pointer, drawn alone on the plan.
+  const [chooser, setChooser] = useState<CableChooserAt | null>(null)
+  const [chooserSolo, setChooserSolo] = useState<string | null>(null)
+  // View: a tray pressed - a click on it (no drag) lists its cables.
+  const trayClick = useRef<{ id: string; x: number; y: number } | null>(null)
+  // View: a tray right-clicked - its menu (Show cables).
+  const [trayMenu, setTrayMenu] = useState<
+    (CablePickAt & { id: string }) | null
+  >(null)
   // Right-click menu: screen-relative position + what's under the cursor.
   const [ctxMenu, setCtxMenu] = useState<{
     x: number
@@ -795,6 +810,16 @@ export function FloorCanvas({
   cableProps.current = { onSelectCable, onHoverCable }
   const selectCable = useCallback(
     (id: string | null) => cableProps.current.onSelectCable?.(id),
+    []
+  )
+  /** Several cables under one click: ask which (the chooser), no hover
+   * popover over it. */
+  const chooseCables = useCallback(
+    (ids: string[], at: CablePickAt, title?: string) => {
+      cableProps.current.onHoverCable?.(null, null)
+      setChooserSolo(null)
+      setChooser({ x: at.x, y: at.y, ids, title })
+    },
     []
   )
   // The hovered run's ids, for the label pass: its name and its ends.
@@ -1065,6 +1090,24 @@ export function FloorCanvas({
       },
     }
   }, [apiRef, fitTo, setT, gw, gh])
+  /** A tray's cables drawn on this plan (the reader's; hidden ones are
+   * only counted). */
+  const trayCableIds = (tray: FloorPlanTray) => {
+    const drawn = new Set(cablePaths.map((cp) => cp.id))
+    return tray.cables.map((c) => c.id).filter((id) => drawn.has(id))
+  }
+  /** Show cables: one opens at once, several ask which. */
+  const showTrayCables = (trayId: string, at: CablePickAt) => {
+    const tray = trays.find((tr) => tr.id === trayId)
+    if (!tray) return
+    const ids = trayCableIds(tray)
+    if (ids.length === 1) selectCable(ids[0])
+    else if (ids.length > 1) chooseCables(ids, at, tray.name || "Tray")
+  }
+  /** View: a tray click lists its cables - not while picking trays for a
+   * route, nor while editing, where a click selects or drags it. */
+  const trayChooses = !editable && !trayPick && showCableLinks
+
   // The polygon tool's keys (Enter, Backspace, Esc) reach it through the
   // same handle; refreshed each render, as the drawing is state.
   useEffect(() => {
@@ -1081,6 +1124,7 @@ export function FloorCanvas({
       return [w.x / CELL, w.y / CELL]
     }
     apiRef.current.pointerCell = () => pointerAt.current
+    apiRef.current.showTrayCables = showTrayCables
   })
   // Putting the tool down drops a drawing it left open.
   useEffect(() => {
@@ -1289,6 +1333,13 @@ export function FloorCanvas({
   // Grab a tray body → select it (Shift or Ctrl/⌘: pick it to join) and
   // drag it whole.
   const handleTrayDown = (tray: FloorPlanTray, e: React.PointerEvent) => {
+    if (trayChooses) {
+      // Not stopped: a drag from a tray still pans the plan; the release
+      // in place opens its cables (the svg's pointerup).
+      if (e.button === 0)
+        trayClick.current = { id: tray.id, x: e.clientX, y: e.clientY }
+      return
+    }
     if (e.button !== 0 || isLocked(tray.id)) return
     e.stopPropagation()
     if (trayPick) {
@@ -1486,6 +1537,22 @@ export function FloorCanvas({
     const rect = svg.getBoundingClientRect()
     const wx = (e.clientX - rect.left - t.x) / t.k / CELL
     const wy = (e.clientY - rect.top - t.y) / t.k / CELL
+    // View: a tray that carries cables gets its menu (Show cables).
+    if (trayChooses && showTrays) {
+      const slack = 6 / (CELL * t.k)
+      let best: { id: string; d: number } | null = null
+      for (const tray of trays) {
+        if (tray.points.length < 2 || !trayCableIds(tray).length) continue
+        const n = nearestSegment(tray.points, [wx, wy])
+        const half = Math.max(5, 2 / t.k) / CELL
+        if (n && n.dist <= half + slack && (!best || n.dist < best.d))
+          best = { id: tray.id, d: n.dist }
+      }
+      if (best) {
+        setTrayMenu({ x: e.clientX, y: e.clientY, id: best.id })
+        return
+      }
+    }
     // Editing: a door, a wall or a tray under the pointer (they draw over
     // the rest), then a raised floor in Structure mode, get their own menu.
     if (editable && structureActions) {
@@ -1893,6 +1960,10 @@ export function FloorCanvas({
           }
           const start = pickStart.current
           pickStart.current = null
+          const tc = trayClick.current
+          trayClick.current = null
+          if (tc && Math.hypot(e.clientX - tc.x, e.clientY - tc.y) < 5)
+            showTrayCables(tc.id, { x: e.clientX, y: e.clientY })
           if (
             start &&
             onPickPoint &&
@@ -2182,7 +2253,8 @@ export function FloorCanvas({
           })}
 
           {/* Cable trays - drawn above tiles so the run reads on a builder's
-              print. Clickable only in cable mode so layout editing is undisturbed. */}
+              print. Clickable in cable mode so layout editing is undisturbed;
+              in View a click on one that carries cables lists them. */}
           {showTrays &&
             trays.map((tray) => {
               // In edit mode the SELECTED tray shows drag handles + "+" bend
@@ -2203,7 +2275,9 @@ export function FloorCanvas({
                   interactive={
                     trayPick
                       ? !isLocked(tray.id)
-                      : mode === "cable" && !drawing && !isLocked(tray.id)
+                      : trayChooses
+                        ? trayCableIds(tray).length > 0
+                        : mode === "cable" && !drawing && !isLocked(tray.id)
                   }
                   editable={false}
                   editing={isEditing && editable}
@@ -2244,6 +2318,8 @@ export function FloorCanvas({
               interactive={!trayPick}
               onSelect={selectCable}
               onHover={hoverCable}
+              onChoose={chooseCables}
+              soloId={chooser ? chooserSolo : null}
               previews={cablePreviews}
               stubs={shownStubs}
               tiles={tiles}
@@ -2689,6 +2765,20 @@ export function FloorCanvas({
               : undefined
           return (
             <>
+              {m.part === "tray" &&
+                trays.some(
+                  (tr) => tr.id === m.id && trayCableIds(tr).length > 0
+                ) && (
+                  <>
+                    {item("Show cables", () =>
+                      // After this menu has let the focus go.
+                      window.setTimeout(() =>
+                        showTrayCables(m.id, { x: m.x, y: m.y })
+                      )
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
               {m.part === "wall" &&
                 item(
                   "Add door here",
@@ -2717,6 +2807,53 @@ export function FloorCanvas({
           )
         }}
       </PointerMenu>
+
+      {/* View: a tray's menu. */}
+      <PointerMenu
+        menu={trayMenu}
+        onClose={() => setTrayMenu(null)}
+        label="Tray"
+      >
+        {(m) => {
+          const tray = trays.find((tr) => tr.id === m.id)
+          if (!tray) return null
+          const n = trayCableIds(tray).length
+          return (
+            <>
+              <DropdownMenuLabel className="truncate">
+                {tray.name || "Tray"}
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                disabled={n === 0}
+                onSelect={() =>
+                  window.setTimeout(() =>
+                    showTrayCables(m.id, { x: m.x, y: m.y })
+                  )
+                }
+              >
+                Show cables
+                <span className="num ml-auto text-xs text-muted-foreground">
+                  {n}
+                </span>
+              </DropdownMenuItem>
+            </>
+          )
+        }}
+      </PointerMenu>
+
+      {/* Which cable: a bundle's, a cluster's or a tray's. */}
+      <CableChooser
+        menu={chooser}
+        cablePaths={cablePaths}
+        colorBy={cableColorBy}
+        onClose={() => setChooser(null)}
+        onPreview={setChooserSolo}
+        onPick={(id) => {
+          setChooser(null)
+          setChooserSolo(null)
+          selectCable(id)
+        }}
+      />
 
       {/* An area's or label's menu, and a polygon point's. */}
       <PointerMenu

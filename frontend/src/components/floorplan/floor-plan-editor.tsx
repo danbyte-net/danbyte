@@ -1710,6 +1710,9 @@ export function FloorPlanEditor({
             tileTypes={tileTypes.data?.results ?? []}
             roles={roles.data?.results ?? []}
             openTile={openTile}
+            onShowTrayCables={(tid, at) =>
+              canvasApi.current?.showTrayCables?.(tid, at)
+            }
             onSelectWalls={(ids) => {
               selectTool("structure")
               ed.setSelectedWallId(ids[0] ?? null)
