@@ -1254,10 +1254,13 @@ a box with the name, set off in free space near the tile, with a
 
 - **Which tiles.** A device, rack or cabinet drawn as an icon or grown
   symbol whose name has no free place by it, or whose name would sit as
-  near another tile as its own. Tiles close together form a **cluster**:
-  when any name in a cluster needs a callout, every name in it gets one,
-  so a cluster never mixes boxes and plain names. A tile apart from the
-  rest keeps its plain name when it fits.
+  near another tile as its own. With **Icons when zoomed out** off, a
+  tile whose own name is too small to read on screen is treated the same
+  way: its name goes beside it, or in a callout. Tiles close together
+  form a **cluster**: when any name in a cluster needs a callout, every
+  name in it gets one, so a cluster reads one way. Only a tile whose box
+  finds no place even with a longer leader keeps a plain name instead.
+  A tile apart from the rest keeps its plain name when it fits.
 - **The leader.** A thin muted line on a casing of the background, so it
   reads on a light map, a satellite photo or a dark plan. It leaves from
   the middle of the box's edge that faces the tile and runs straight to

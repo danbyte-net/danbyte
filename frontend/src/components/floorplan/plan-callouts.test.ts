@@ -409,6 +409,31 @@ describe("layoutPlanLabels with callouts", () => {
     expect(got.tiles.map((t) => t.id).sort()).toEqual(["R-A01", "R-A02"])
   })
 
+  it("names tiles in callouts with icons off, when their own name is too small", () => {
+    // Icons when zoomed out disabled: racks drawn at true size, far out,
+    // their in-tile names a few px tall - placed and called out instead.
+    const k = 0.25
+    const base = serverRoom(k, {
+      unitsPerPx: k,
+      shapeOf: null,
+      iconIds: new Set(),
+    })
+    const got = layoutPlanLabels(base)
+    // Every rack of the row named, each in its own box.
+    expect(got.callouts.map((c) => c.id).sort()).toEqual([
+      "R-A01",
+      "R-A02",
+      "R-A03",
+      "R-A04",
+    ])
+    for (const c of got.callouts) expect(got.tileNamesHere.has(c.id)).toBe(true)
+    // Close in, the in-tile names read: nothing called out.
+    const near = layoutPlanLabels(
+      serverRoom(2, { unitsPerPx: 2, shapeOf: null, iconIds: new Set() })
+    )
+    expect(near.callouts).toEqual([])
+  })
+
   it("off: no callouts", () => {
     const got = layoutPlanLabels(serverRoom(0.75, { callouts: null }))
     expect(got.callouts).toEqual([])
