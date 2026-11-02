@@ -26,6 +26,7 @@ import {
   useCustomFieldMeta,
 } from "@/components/settings/field-list-editor"
 import type { FieldMeta } from "@/components/settings/field-list-editor"
+import { PanelLayoutsCard } from "@/components/settings/panel-layouts-card"
 import {
   SettingsCard,
   SettingsHeader,
@@ -440,6 +441,8 @@ function FloorplanSettingsPage() {
           </div>
         </div>
       </SettingsCard>
+
+      <PanelLayoutsCard />
 
       <CableLengthsCard />
     </div>

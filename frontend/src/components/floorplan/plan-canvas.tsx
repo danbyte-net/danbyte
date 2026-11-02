@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from "react"
-import { PanelRight, Waypoints } from "lucide-react"
+import { PanelRight } from "lucide-react"
 
 import type {
   FloorPlan,
@@ -111,8 +111,11 @@ export function PlanCanvas({
   emptyActions,
   structureToolbar,
   onRerouteCable,
+  onOpenCable,
   outline,
 }: {
+  /** A cable clicked: its panel opens and it is traced; null clears. */
+  onOpenCable: (cableId: string | null) => void
   /** Edit, the Detect outline tool in hand: its picks, preview and card. */
   outline?: OutlineDetect
   /** Edit: "Re-route" on an out-of-date route's popover. */
@@ -377,12 +380,10 @@ export function PlanCanvas({
           })
         }
         onOpenTile={openTile}
-        // A click on a device or rack pins its popover (Trace there, or a
-        // double-click, opens the deep view); without a hover to pin - a
-        // touch - it opens straight away. Other tiles open on a click.
+        // A click on a device or rack opens its detail panel; other tiles
+        // open as they always have.
         onClickTile={(tile) => {
-          const k = tile.linked?.kind
-          if ((k === "device" || k === "rack") && popover.pinCurrent()) return
+          popover.close()
           openTile(tile)
         }}
         exportRef={exportRef}
@@ -419,8 +420,10 @@ export function PlanCanvas({
         showCableLinks={showCableLinks}
         highlightCableIds={highlightCableIds}
         onSelectCable={(cid) => {
-          setHighlightCableIds(cid ? [cid] : [])
-          if (!cid || !cablePopover.pinCurrent()) cablePopover.close()
+          // A click traces the cable and opens its panel; the popover
+          // stays a hover preview.
+          cablePopover.close()
+          onOpenCable(cid)
         }}
         cableRoutes={cableRoutes}
         cablePreviews={cablePreviews}
@@ -574,12 +577,8 @@ export function PlanCanvas({
                 openTile(tile)
               }}
             >
-              {tile.linked.kind === "device" ? (
-                <Waypoints className="h-3.5 w-3.5" />
-              ) : (
-                <PanelRight className="h-3.5 w-3.5" />
-              )}
-              {tile.linked.kind === "device" ? "Trace" : "Contents & trace"}
+              <PanelRight className="h-3.5 w-3.5" />
+              {tile.linked.kind === "cabinet" ? "Contents & trace" : "Details"}
             </Button>
           ) : null
         }

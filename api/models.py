@@ -10454,3 +10454,54 @@ class SearchEntry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.object_type}:{self.title}"
+
+
+class PanelLayout(TimestampedModel):
+    """What a floor plan's detail panel shows for a device, rack or cabinet:
+    an ordered list of sections and fields (``api.panel_layouts``).
+
+    A layout applies to one scope: a device type, device role or device
+    profile; a rack type or rack role; a cabinet type or cabinet role; or
+    ``default`` - the tenant's own default for that kind. The most specific
+    match wins (type, then role, then profile, then the default); with no
+    row at all the panel uses the built-in default in code. ``scope_id``
+    names the scoped object (null for ``default``).
+
+    ``items`` is ``[{"section": "Label"} | {"field": "key"}, ...]`` - a
+    field key is a built-in attribute, a computed block (``monitoring``,
+    ``ports``, ``ips``, ``cables``, ``devices``) or ``cf:<custom field
+    key>``."""
+
+    KIND_CHOICES = [("device", "Device"), ("rack", "Rack"), ("cabinet", "Cabinet")]
+    SCOPE_CHOICES = [
+        ("default", "Default"),
+        ("device_type", "Device type"),
+        ("device_role", "Device role"),
+        ("profile", "Device profile"),
+        ("rack_type", "Rack type"),
+        ("rack_role", "Rack role"),
+        ("cabinet_type", "Cabinet type"),
+        ("cabinet_role", "Cabinet role"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="panel_layouts"
+    )
+    object_kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default="default")
+    scope_id = models.UUIDField(null=True, blank=True)
+    items = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["object_kind", "scope", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "object_kind", "scope", "scope_id"],
+                name="uniq_panellayout_tenant_kind_scope",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_object_kind_display()} panel · {self.get_scope_display()}"

@@ -13536,6 +13536,77 @@ class FloorPlanViewSet(TenantScopedViewSet):
             )
         return Response({"cables": result, "hidden_count": len(candidates - visible)})
 
+    @action(detail=True, methods=["get"], url_path=r"cable-panel/(?P<cable_id>[0-9a-f-]{36})")
+    def cable_panel(self, request, pk=None, cable_id=None):
+        """The cable panel (``api.floor_plan_panels``): a cable the reader may
+        view, with each end's device and port in full. An end on a device
+        the reader may not view reads only ``{"hidden": true}`` (#453); a
+        cable they may not view is a 404."""
+        from . import floor_plan_panels
+        from .cable_scope import viewable_cable_ids
+        from .models import Cable
+
+        plan = self.get_object()
+        self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        cable = Cable.objects.filter(tenant=tenant, pk=cable_id).select_related(
+            "status"
+        ).first()
+        if cable is None or not viewable_cable_ids(request.user, tenant, {cable.pk}):
+            raise NotFound("No such cable.")
+        return Response(floor_plan_panels.cable_panel(request, tenant, cable))
+
+    @action(detail=True, methods=["get"], url_path=r"tile-panel/(?P<tile_id>[0-9a-f-]{36})")
+    def tile_panel(self, request, pk=None, tile_id=None):
+        """A device or rack tile's panel (``api.floor_plan_panels``): the
+        object's facts, monitoring, a device's port summary or a rack's
+        devices. A tile whose object the reader may not view reads only
+        ``{"kind": …, "hidden": true}``; another tile kind is a 400."""
+        from auth_api import rbac
+
+        from . import floor_plan_panels
+        from . import floor_plan_snapshots as snaps
+        from .floor_plan_placement import TileLinks, tile_link
+
+        plan = self.get_object()
+        src, crop = self._resolved(plan)
+        tenant = _get_active_tenant(request)
+        tile = rbac.restrict_queryset(
+            src.tiles.filter(pk=tile_id).select_related("device", "rack", "cabinet"),
+            request.user, tenant, "floorplantile", "view",
+        ).first()
+        if tile is None or (crop is not None and not snaps.in_crop("tiles", [tile], crop)):
+            raise NotFound("No such tile on this plan.")
+        kind, _pk = tile_link(tile)
+        if kind not in ("device", "rack", "cabinet"):
+            raise ValidationError(
+                {"detail": "Only device, rack and cabinet tiles have a panel."}
+            )
+        links = TileLinks(request.user, tenant)
+        if links.hidden(tile):
+            return Response({"kind": kind, "hidden": True})
+        if kind == "device":
+            return Response(floor_plan_panels.device_panel(request, tenant, tile.device))
+        # ?device=<id>: one of the rack's or cabinet's devices (a device
+        # clicked in the 3D room), when the reader may view it.
+        from .topology_views import _uuid_param
+
+        device_id = _uuid_param(request.query_params, "device")
+        if device_id:
+            home = {"rack_id": tile.rack_id} if kind == "rack" else {
+                "cabinet_id": tile.cabinet_id
+            }
+            device = rbac.restrict_queryset(
+                Device.objects.filter(tenant=tenant, pk=device_id, **home),
+                request.user, tenant, "device", "view",
+            ).first()
+            if device is None:
+                return Response({"kind": "device", "hidden": True})
+            return Response(floor_plan_panels.device_panel(request, tenant, device))
+        if kind == "cabinet":
+            return Response(floor_plan_panels.cabinet_panel(request, tenant, tile.cabinet))
+        return Response(floor_plan_panels.rack_panel(request, tenant, tile.rack))
+
     @action(detail=True, methods=["get"], url_path="cable-schedule")
     def cable_schedule(self, request, pk=None):
         """The plan's cable schedule (``api/cable_schedule.py``): every cable
