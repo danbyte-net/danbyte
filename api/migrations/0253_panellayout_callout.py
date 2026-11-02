@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("api", "0251_interface_type_vxlan"),
+        ("api", "0252_device_size_mm"),
     ]
 
     operations = [
