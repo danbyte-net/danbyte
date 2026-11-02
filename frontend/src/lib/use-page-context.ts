@@ -31,6 +31,7 @@ const ROUTE_TYPES: Record<string, string> = {
   platforms: "platform",
   scripts: "script",
   "static-routes": "static route",
+  "policy-rules": "policy rule",
   "routing-policies": "routing policy",
   "prefix-lists": "prefix list",
   "community-lists": "community list",

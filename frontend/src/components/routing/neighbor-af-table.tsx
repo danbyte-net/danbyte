@@ -352,7 +352,7 @@ export function NeighborAFTable({
         <DataTable
           data={rows}
           columns={columns}
-          tableId={`neighbor-afs-${parent.kind}`}
+          tableId="neighbor-afs"
           enableExport={false}
         />
       )}
