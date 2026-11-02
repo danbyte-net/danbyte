@@ -781,14 +781,38 @@ guard that covers every other way out of the editor, described under
 [the editor](#the-editor). For click-through navigation *between* floors
 (e.g. a stairwell tile), link a tile to another floor.
 
-With the floor-plan add permission, **+** beside the switcher adds a floor:
-a name, its position (on top, or below a chosen floor), and **Same grid and
-scale as** the floor on screen. Nothing else is asked; the floor's settings
-are the usual plan settings once it exists.
+With the floor-plan add permission, **+** beside the switcher adds a floor.
+**Above** adds a floor (on top, or below a chosen floor above ground);
+**Below** adds a **basement** (at the bottom, or above a chosen basement),
+named B1, B2… by default, with a negative order. Then:
+
+- **Same footprint as** the floor on screen (on by default when the floor
+  plan's floors are already aligned, or for its first added floor) makes
+  the new floor a **level** of one building - see
+  [Building levels](#building-levels). It takes the floor's grid size,
+  scale, ceiling, slab, layout, geo anchor and align offset, its elevation
+  is worked out from the floors below it, and the floor plan becomes
+  *aligned*. Two sub-options, both on by default (Copy background off for a
+  basement):
+    - **Copy outer walls** - the walls ticked **Exterior wall**, with their
+      doors and openings cleared. With none ticked, the walls that run
+      along the building's outline: every point and every segment's middle
+      within half a cell of the convex hull of all the walls. A partition
+      that only meets the outline at its ends is left out, and so is a wall
+      set back from the hull (the inside corner of an L-shaped building) -
+      tick such walls **Exterior wall** to have them copied. Copied walls
+      are marked exterior.
+    - **Copy background** - the same picture and CAD drawing.
+- Unticked, **Same grid and scale as** the floor on screen is offered as
+  before, and the floor is an independent canvas.
+
+The copy is one transaction, logged like any other change; copying walls
+needs the floor-plan wall add permission as well.
 
 The floor plan's name is a menu (floor-plan change permission):
 
-- **Manage floors…** - drag floors into order, rename them in place, and
+- **Manage floors…** - drag floors into order, rename them in place (each
+  level of an aligned floor plan shows its elevation), and
   per floor **Move to floor plan…** (another floor plan at the same site),
   **Make its own floor plan**, or **Delete…**. Deleting a floor removes
   everything drawn on it; deleting the last floor removes the floor plan.
@@ -813,6 +837,23 @@ outside it. Moving a floor changes
 only which floor plan it is in, its order and that location; its tiles,
 drawing and links stay as they are.
 
+### Building levels
+
+A floor plan's floors can be **aligned**: they share one footprint and
+coordinate frame, sit at real heights, and render together as one building
+in 3D. Each level is still its own floor - its own address, canvas,
+permissions, snapshots and exports - so a floor plan that is not aligned
+works exactly as before. A floor plan becomes aligned when a floor is added
+with **Same footprint**, or with **Aligned floors** in **Align floors…**.
+
+**Elevations.** A level's elevation is its **Elevation** when set. Left
+blank on an aligned floor plan it is worked out: the lowest floor with an
+order of 0 or more is the ground at 0 m, each storey up is the floor
+below's ceiling plus this floor's **slab** (300 mm unless set), and a
+basement sits its own ceiling plus the slab above it below the floor over
+it. A set elevation anchors the floors around it. Risers between levels
+climb these heights.
+
 !!! note "Upgrading to 0.19"
     Before 0.19 the floors of a building were the plans that shared a
     location. The upgrade makes one floor plan per location holding that
@@ -830,9 +871,9 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 
 | Call | Purpose |
 |---|---|
-| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `floors` (id, name, `floor_order`, location id or null; the floors you may view, in order), `floor_count` and `last_edited`. |
-| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
-| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?}`. `position` is its place in the order (0 = lowest; default on top); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. Answers the new floor (201). |
+| `GET /api/floor-plan-stacks/` | Floor plans; `?location=`, `?site=` (its site-wide floor plans and those of its locations), `?site_wide=1`, `?tag=<slug>`, `?search=` (also matches floor names). Each row has `site`, `location` (null when site-wide), `aligned`, `floors` (id, name, `floor_order`, location id or null, `elevation_mm`, `elevation` - set, else computed on an aligned floor plan, else null - `ceiling_mm`, `slab_mm`, grid size, `cell_mm` and `align_dx`/`align_dy`/`align_rot`; the floors you may view, in order), `floor_count` and `last_edited`. |
+| `POST/PATCH/DELETE /api/floor-plan-stacks/<id>/` | `name`, `description`, `site_id`, `location_id` (null: the whole site), `aligned`, `tag_ids`. `site_id` is required on create unless `location_id` gives it, and a location must be at that site; the site cannot change afterwards. A delete takes every floor with it and needs delete on each. |
+| `POST /api/floor-plan-stacks/<id>/floors/` | Add a floor: `{"name", "position"?, "copy_from"?, "below"?, "same_footprint"?, "copy_walls"?, "copy_background"?}`. `position` is its place in the order (0 = lowest; default on top, or with `below` at the bottom, a basement with a negative order; floors put in by position keep the ground at 0); `copy_from`, a floor of this floor plan, lends its grid size, scale and layout (grid or free) - not what is drawn on it. `same_footprint` (needs `copy_from`) makes the floor plan aligned and the floor a level sharing the footprint, with `copy_walls` (the outer walls, openings cleared; needs wall add) and `copy_background`. Answers the new floor (201). |
 | `POST /api/floor-plan-stacks/<id>/reorder/` | `{"order": [every floor id, lowest first]}`. |
 | `POST /api/floor-plan-stacks/<id>/merge/` | `{"stacks": [ids]}` - floor plans at the same site. A name clash is a 400 with the clashes listed under `clashes`. |
 | `GET /api/floor-plans/?stack=<id>` | One floor plan's floors, in order. |
@@ -840,9 +881,12 @@ Floor plans are `/api/floor-plan-stacks/`; their floors stay
 | `POST /api/floor-plans/<id>/move/` | `{"stack_id"}` - to another floor plan at the same site, on top of its floors. |
 | `POST /api/floor-plans/<id>/split/` | `{"name"?}` - make the floor a floor plan of its own (default: the floor's name). Answers the new floor plan (201). |
 
-A floor (`/api/floor-plans/`) gains `stack` (`{id, name}`), `stack_id`
-(write), `floor_order` (lowest first; negative is fine) and `elevation_mm`
-(optional, reserved for a stacked 3D building). A `POST` without
+A floor (`/api/floor-plans/`) gains `stack` (`{id, name, aligned}`), `stack_id`
+(write), `floor_order` (lowest first; negative is fine), `elevation_mm`
+(optional; blank on an aligned floor plan is computed), `elevation` (read:
+the elevation in use, or null), `slab_mm` (default 300) and `align_dx`,
+`align_dy` (cells) and `align_rot` (degrees, about the grid's centre): the
+level's offset in an aligned floor plan. A `POST` without
 `stack_id` creates a floor plan of its own named after the plan, as the
 **Add** form does, and needs no other change from a script written before
 0.19; with `stack_id`, `location_id` may be left out (the floor plan's
@@ -2047,6 +2091,9 @@ A selected wall's inspector holds its numbers:
 - **Thickness (mm)** - blank is the standard 100 mm. It draws true to
   scale on the plan, the PDF and in 3D. A new wall takes the thickness you
   last gave a wall in this browser.
+- **Exterior wall** - an outer wall of the building: what **Copy outer
+  walls** takes to a new level and what outlines the slab of the
+  [3D building](#building-levels). Walls read and write `exterior`.
 - **Doors** - each door's width, height (blank is the standard 2100 mm)
   and **Swing**. Doors live *on* the wall (spans of a segment), so a wall
   and its doors always move - and save - together.

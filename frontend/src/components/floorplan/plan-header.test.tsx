@@ -191,7 +191,7 @@ describe("the floor switcher", () => {
     apiMock.mockResolvedValue(plan("f9", "Roof"))
     const router = mount("/floorplans/f1")
     fireEvent.click(await screen.findByRole("button", { name: "Add floor" }))
-    fireEvent.change(await screen.findByPlaceholderText("2, Ground, B1…"), {
+    fireEvent.change(await screen.findByPlaceholderText("2, Ground, Roof…"), {
       target: { value: "Roof" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Add floor" }))
@@ -205,6 +205,25 @@ describe("the floor switcher", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe("/floorplans/f9")
     )
+  })
+  it("adds a basement sharing the footprint of the only floor", async () => {
+    apiMock.mockResolvedValue(plan("f9", "B1"))
+    mount("/floorplans/f1", [floor("f1", "Ground", 0)])
+    fireEvent.click(await screen.findByRole("button", { name: "Add floor" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Below" }))
+    expect((screen.getByPlaceholderText("B1") as HTMLInputElement).value).toBe(
+      "B1"
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Add basement" }))
+    await waitFor(() => expect(apiMock).toHaveBeenCalled())
+    expect(JSON.parse(String(apiMock.mock.calls[0][1]?.body))).toEqual({
+      name: "B1",
+      below: true,
+      copy_from: "f1",
+      same_footprint: true,
+      copy_walls: true,
+      copy_background: false,
+    })
   })
 })
 

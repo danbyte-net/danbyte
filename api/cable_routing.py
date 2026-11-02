@@ -908,7 +908,8 @@ def riser_vertical_mm(a, b) -> int:
     height set on either (``a``'s first); else the difference of their
     floors' elevations when both are set; else, on floors of one floor plan,
     the ceiling heights of the floors from the lower up to the upper; else
-    the lower floor's ceiling height."""
+    the lower floor's ceiling height. On an aligned floor plan the floors'
+    elevations are worked out when not set (floor_stacks.stack_elevations)."""
     from .models import FloorPlan
 
     for t in (a, b):
@@ -917,6 +918,12 @@ def riser_vertical_mm(a, b) -> int:
     pa, pb = a.floor_plan, b.floor_plan
     if pa.elevation_mm is not None and pb.elevation_mm is not None:
         return abs(int(pa.elevation_mm) - int(pb.elevation_mm))
+    if pa.stack_id and pa.stack_id == pb.stack_id and pa.stack.aligned:
+        from .floor_stacks import ordered_floors, stack_elevations
+
+        elev = stack_elevations(ordered_floors(pa.stack))
+        if pa.pk in elev and pb.pk in elev:
+            return abs(elev[pa.pk] - elev[pb.pk])
     if pa.stack_id and pa.stack_id == pb.stack_id:
         floors = list(
             FloorPlan.objects.filter(stack_id=pa.stack_id)

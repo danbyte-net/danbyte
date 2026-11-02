@@ -14878,10 +14878,15 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
 
     @action(detail=True, methods=["post"], url_path="floors")
     def floors(self, request, pk=None):
-        """Add a floor: ``{"name", "position"?, "copy_from"?}``. ``position``
-        is its place in the floor order (0 = lowest; default on top);
-        ``copy_from`` (a floor of this floor plan) lends its grid size and
-        scale. Answers the new floor."""
+        """Add a floor: ``{"name", "position"?, "copy_from"?, "below"?,
+        "same_footprint"?, "copy_walls"?, "copy_background"?}``.
+        ``position`` is its place in the floor order (0 = lowest; default on
+        top, or with ``below`` at the bottom: a basement); ``copy_from`` (a
+        floor of this floor plan) lends its grid size and scale.
+        ``same_footprint`` makes the floor plan aligned and the floor a level
+        sharing ``copy_from``'s footprint, with its outer walls and
+        background copied on request (``floor_stacks.add_floor``). Answers
+        the new floor."""
         from auth_api import rbac
 
         from .floor_stacks import add_floor
@@ -14910,9 +14915,23 @@ class FloorPlanStackViewSet(TenantScopedViewSet):
             if copy_from is None:
                 raise ValidationError({"copy_from": ["Pick a floor of this floor plan."]})
         name = body.get("name")
+
+        def flag(key) -> bool:
+            v = body.get(key)
+            return v is True or (isinstance(v, str) and v.lower() in ("1", "true"))
+
+        same = flag("same_footprint")
         with transaction.atomic():
             plan = add_floor(stack, name if isinstance(name, str) else "",
-                             position=position, copy_from=copy_from)
+                             position=position, copy_from=copy_from,
+                             below=flag("below"), same_footprint=same,
+                             copy_walls=same and flag("copy_walls"),
+                             copy_background=same and flag("copy_background"))
+            walls = FloorPlanWall.objects.filter(floor_plan=plan)
+            if walls.exists() and rbac.restrict_queryset(
+                walls, request.user, tenant, "floorplanwall", "add",
+            ).count() != walls.count():
+                raise PermissionDenied("You may not add walls to this floor.")
             if not rbac.restrict_queryset(
                 FloorPlan.objects.filter(pk=plan.pk), request.user, tenant,
                 "floorplan", "add",
