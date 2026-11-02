@@ -2,11 +2,12 @@
 
 A layout is an ordered list of sections and fields for one kind of object -
 device, rack or cabinet. The fields are the built-in attributes, computed
-blocks (``monitoring``, ``ports``, ``ips``, ``cables``, ``devices``) and the
-tenant's custom fields as ``cf:<key>``. A tenant's layouts are scoped: a
-device takes the layout of its device type, else of its role, else of the
-first of its profiles that has one, else the tenant's default; a rack or
-cabinet its type's, else its role's, else the default. With no layout at
+blocks (``preview``, ``monitoring``, ``ports``, ``ips``, ``cables``,
+``devices``) and the tenant's custom fields as ``cf:<key>``. A tenant's
+layouts are scoped: a device takes the layout of its device type, else
+of its role, else of the first of its profiles that has one, else the
+tenant's default; a rack or cabinet its type's, else its role's, else the
+default. With no layout at
 all the built-in default here applies, so nothing is seeded.
 
 ``resolve`` finds the layout for an object, ``validate`` checks one sent
@@ -42,6 +43,7 @@ FIELDS: dict[str, dict[str, str]] = {
         "profiles": "Profiles",
         "tags": "Tags",
         "description": "Description",
+        "preview": "Preview",
         "monitoring": "Monitoring",
         "ports": "Port summary",
         "ips": "IP addresses",
@@ -82,7 +84,7 @@ FIELDS: dict[str, dict[str, str]] = {
 }
 
 #: The computed blocks (the rest are attributes).
-COMPUTED = frozenset({"monitoring", "ports", "ips", "cables", "devices"})
+COMPUTED = frozenset({"preview", "monitoring", "ports", "ips", "cables", "devices"})
 
 
 def _items(*parts):
@@ -98,6 +100,8 @@ def _items(*parts):
 #: The built-in layouts: what a panel shows until a tenant saves its own.
 DEFAULTS: dict[str, list[dict]] = {
     "device": _items(
+        # The photo, else the 3D model: above the first heading.
+        "preview",
         "#Device", "role", "status", "device_type", "platform", "serial_number",
         "asset_tag", "site", "location", "position", "primary_ip", "secondary_ip",
         "oob_ip", "tenant", "profiles", "tags",

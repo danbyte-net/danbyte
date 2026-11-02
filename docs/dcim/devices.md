@@ -291,11 +291,30 @@ each scoped to its object and gated by that object's change permission.
 
 ### 3D model {#3d-model}
 
-The **3D model** card on the Overview shows what the
-[3D room view](../features/floor-plans.md#the-3d-room-view) draws for the
-device when it stands on the floor: its own model, else its type's (*From
-device type*). **Upload** gives the device its own model, which overrides
-the type's for this device only; **Remove** takes it away again, so the
+A device with a model - its own, else its type's - shows it on the
+Overview:
+
+- **No rack-face photo on its type**: a **3D model** viewer takes a column
+  on the right that stays in view while the cards scroll (on narrower
+  screens it sits above the cards). Its header says whose model it is:
+  **From type** or **Own model**.
+- **A rack-face photo**: the model is the **3D** view of the **Panel** card,
+  beside Photo / Rendered / Bare. The photo leads; once you pick **3D** it
+  leads for you on every device until you pick a photo view again (kept in
+  this browser).
+
+The viewer turns with the mouse (drag to orbit, scroll to zoom). Its
+toolbar has **Front**, **Rear** and **Top** views, **Fit** (back to the
+three-quarter view), **Ports** to show or hide the
+[mapped ports](device-catalog.md#model-ports) and **Fullscreen**. The
+ports are coloured by state as in the 3D room - live SNMP where the device
+was polled, else cabled by speed, free and disabled grey; hovering one names
+it, its far end and VLAN, and clicking an interface opens it.
+
+The **3D model** card manages the model; it says whether the device draws
+its own or its type's (*From device type*). **Upload** gives the device its
+own model, which overrides the type's for this device only; **Remove**
+takes it away again, so the
 device goes back to its type's. Uploading takes the same files - GLB, glTF,
 STEP, IGES, STL, OBJ - and follows the same rules as a
 [device type's model](device-catalog.md#3d-models); the **Size**, **Up

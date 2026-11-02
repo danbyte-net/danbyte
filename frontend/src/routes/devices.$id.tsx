@@ -29,6 +29,7 @@ import { api, DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
 import { PROFILE_LABELS, fmtMm } from "@/lib/din-geometry"
 import type {
   Device,
+  Model3DEffective,
   DeviceType,
   DeviceFieldVisibility,
   Interface,
@@ -69,6 +70,13 @@ import {
 import type { UplinkMode } from "@/lib/mac-tracking"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import { Model3DCard } from "@/components/model-3d-card"
+import {
+  ModelViewerCard,
+  ModelViewerFrame,
+  OverviewWithAside,
+} from "@/components/model-viewer-card"
+import { modelPlacement, usePreviewKind } from "@/lib/preview-kind"
+import { cn } from "@/lib/utils"
 import { DeviceProfilesCard } from "@/components/device-profiles-card"
 import {
   SoftwareSummaryCard,
@@ -1295,9 +1303,19 @@ function DeviceOverview({
   // photo. When it does, the overview is two explicit columns so the Panel can
   // sit at the top of the second column (half-width - readable) rather than
   // wherever a balanced masonry would drop it.
-  const showPanel =
-    d.interface_count > 0 ||
-    !!(d.device_type?.front_image || d.device_type?.rear_image)
+  const photo = !!(d.device_type?.front_image || d.device_type?.rear_image)
+  const showPanel = d.interface_count > 0 || photo
+  // The 3D model: beside a photo it is the Panel's "3D" view; with no photo
+  // it gets the sticky right column of its own.
+  const model = d.model_3d_effective ?? null
+  const placement = modelPlacement({ photo, model })
+  const modelAside =
+    model && placement === "aside" ? (
+      <ModelViewerCard
+        source={{ model, sizeMm: d.device_type, deviceId: d.id }}
+        sourceLabel={model.source === "type" ? "From type" : "Own model"}
+      />
+    ) : null
 
   const locationMap = d.latitude !== null && d.longitude !== null && (
     <div className="rounded-lg border border-border bg-card">
@@ -1386,14 +1404,47 @@ function DeviceOverview({
         )}
       />
 
-      {showPanel ? (
-        // Two columns: attributes left, the Panel at the top of the right
-        // column (then the map / topology / rack under it).
-        <div className="grid items-start gap-6 lg:grid-cols-2">
-          <div className="min-w-0 space-y-6">{attributeCards}</div>
-          <div className="min-w-0 space-y-6">
+      <OverviewWithAside aside={modelAside}>
+        {showPanel ? (
+          // Two columns: attributes left, the Panel at the top of the right
+          // column (then the map / topology / rack under it).
+          <div
+            className={cn(
+              "grid items-start gap-6 lg:grid-cols-2",
+              modelAside && "xl:grid-cols-1 2xl:grid-cols-2"
+            )}
+          >
+            <div className="min-w-0 space-y-6">{attributeCards}</div>
+            <div className="min-w-0 space-y-6">
+              {monitoringCompact}
+              <DeviceFrontPanel
+                device={d}
+                glow={portGlow}
+                model={placement === "panel" ? model : null}
+              />
+              <PortUtilizationCard
+                deviceId={d.id}
+                onHoverState={setPortGlow}
+                onPick={openPorts}
+                expected={d.interface_count > 0}
+              />
+              {locationMap}
+              <DeviceMiniTopology deviceId={d.id} />
+              <DeviceTunnelsCard deviceId={d.id} />
+              <DeviceRackCard device={d} />
+              <DeviceCabinetCard device={d} />
+            </div>
+          </div>
+        ) : (
+          // No panel - the original auto-balanced masonry.
+          <div
+            className={cn(
+              "columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid",
+              modelAside && "xl:columns-1 2xl:columns-2"
+            )}
+          >
             {monitoringCompact}
-            <DeviceFrontPanel device={d} glow={portGlow} />
+            {attributeCards}
             <PortUtilizationCard
               deviceId={d.id}
               onHoverState={setPortGlow}
@@ -1406,25 +1457,8 @@ function DeviceOverview({
             <DeviceRackCard device={d} />
             <DeviceCabinetCard device={d} />
           </div>
-        </div>
-      ) : (
-        // No panel - the original auto-balanced masonry.
-        <div className="columns-1 gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
-          {monitoringCompact}
-          {attributeCards}
-          <PortUtilizationCard
-            deviceId={d.id}
-            onHoverState={setPortGlow}
-            onPick={openPorts}
-            expected={d.interface_count > 0}
-          />
-          {locationMap}
-          <DeviceMiniTopology deviceId={d.id} />
-          <DeviceTunnelsCard deviceId={d.id} />
-          <DeviceRackCard device={d} />
-          <DeviceCabinetCard device={d} />
-        </div>
-      )}
+        )}
+      </OverviewWithAside>
     </div>
   )
 }
@@ -1558,15 +1592,20 @@ function DeviceRackCard({ device }: { device: Device }) {
 /** The device drawn as hardware - its ports laid out at mm-true scale,
  * colored by state/speed. Uses the device type's saved faceplate layout when
  * one exists (with a Front/Rear toggle when the layout has a rear side);
- * hidden when the device has no physical interfaces. */
-type PanelView = "photo" | "rendered" | "bare"
+ * hidden when the device has no physical interfaces. Beside a photo, the
+ * device's 3D model is its "3D" view; which leads follows `previewKind`
+ * (the photo, unless the reader last picked 3D). */
+type PanelView = "photo" | "rendered" | "bare" | "model"
 
 function DeviceFrontPanel({
   device,
   glow,
+  model = null,
 }: {
   device: Device
   glow?: CableState | null
+  /** The model to offer as the "3D" view; null: none. */
+  model?: Model3DEffective | null
 }) {
   const deviceId = device.id
   const dt = device.device_type
@@ -1574,7 +1613,15 @@ function DeviceFrontPanel({
   const rearImg = dt?.rear_image ?? ""
   const hasTypeImage = !!frontImg || !!rearImg
   const [side, setSide] = useState<"front" | "rear">("front")
-  const [view, setView] = useState<PanelView>("photo")
+  const [view, setFaceView] = useState<PanelView>("photo")
+  const [lead, setLead] = usePreviewKind("device", {
+    photo: hasTypeImage,
+    model,
+  })
+  const setView = (v: PanelView) => {
+    setLead(v === "model" ? "model" : "photo")
+    if (v !== "model") setFaceView(v)
+  }
   const { faceplatePortLabels } = useMe()
   const portLabelsShown = usePortLabelsShown()
   const q = useQuery({
@@ -1616,11 +1663,20 @@ function DeviceFrontPanel({
       ? [{ value: "rendered" as const, label: "Rendered" }]
       : []),
     ...(hasTypeImage ? [{ value: "bare" as const, label: "Bare" }] : []),
+    ...(model ? [{ value: "model" as const, label: "3D" }] : []),
   ]
   const effView: PanelView =
-    views.find((v) => v.value === view)?.value ?? views[0]?.value ?? "rendered"
+    model && lead === "model"
+      ? "model"
+      : (views.find((v) => v.value === view && v.value !== "model")?.value ??
+        views[0]?.value ??
+        "rendered")
   const hasRear =
-    effView === "rendered" ? (savedDoc?.rear?.length ?? 0) > 0 : !!rearImg
+    effView === "model"
+      ? false
+      : effView === "rendered"
+        ? (savedDoc?.rear?.length ?? 0) > 0
+        : !!rearImg
   const showRear = side === "rear"
   const bareSrc = showRear ? rearImg : frontImg
 
@@ -1646,7 +1702,7 @@ function DeviceFrontPanel({
               ]}
             />
           )}
-          {faceplatePortLabels && (
+          {faceplatePortLabels && effView !== "model" && (
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               Labels
               <Switch
@@ -1659,50 +1715,59 @@ function DeviceFrontPanel({
         </div>
       }
     >
-      <div
-        className="fp-glow rounded-lg border border-border bg-card p-4 lg:p-5"
-        data-glow={glow ?? undefined}
-      >
-        {showRear && !hasRear ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No rear panel defined for this device type.
-          </p>
-        ) : effView === "bare" ? (
-          bareSrc ? (
-            <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-              <img
-                src={bareSrc}
-                alt={`${side} of ${dt?.name ?? "device"}`}
-                className="h-full w-full object-contain"
-              />
-            </div>
-          ) : (
+      {effView === "model" && model ? (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <ModelViewerFrame
+            source={{ model, sizeMm: dt, deviceId }}
+            note={model.source === "type" ? "From type" : "Own model"}
+          />
+        </div>
+      ) : (
+        <div
+          className="fp-glow rounded-lg border border-border bg-card p-4 lg:p-5"
+          data-glow={glow ?? undefined}
+        >
+          {showRear && !hasRear ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No {side} image for this device type.
+              No rear panel defined for this device type.
             </p>
-          )
-        ) : (
-          <>
-            <FaceplateView
-              mode={effView === "photo" ? "image" : "rendered"}
-              deviceTypeId={dt?.id}
-              deviceId={deviceId}
-              interfaces={physical}
-              vcPosition={device.vc_position}
-              side={side}
-              fit="container"
-              observed={observed}
-              onLegend={onLegend}
-              portLabels={device.port_labels}
-            />
-            <FaceplateLegend
-              className="mt-2"
-              observed={!!observed}
-              content={legend}
-            />
-          </>
-        )}
-      </div>
+          ) : effView === "bare" ? (
+            bareSrc ? (
+              <div className="flex aspect-[6/1] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+                <img
+                  src={bareSrc}
+                  alt={`${side} of ${dt?.name ?? "device"}`}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No {side} image for this device type.
+              </p>
+            )
+          ) : (
+            <>
+              <FaceplateView
+                mode={effView === "photo" ? "image" : "rendered"}
+                deviceTypeId={dt?.id}
+                deviceId={deviceId}
+                interfaces={physical}
+                vcPosition={device.vc_position}
+                side={side}
+                fit="container"
+                observed={observed}
+                onLegend={onLegend}
+                portLabels={device.port_labels}
+              />
+              <FaceplateLegend
+                className="mt-2"
+                observed={!!observed}
+                content={legend}
+              />
+            </>
+          )}
+        </div>
+      )}
     </Section>
   )
 }

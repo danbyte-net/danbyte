@@ -13456,6 +13456,17 @@ export interface DeviceTilePanel extends PanelCommon {
     dns_name: string
     interface: string
   }[]
+  /** The preview block: the type's photos, else the model the room draws.
+   * Present only when the layout asks for it. */
+  preview?: {
+    front_image: string | null
+    rear_image: string | null
+    model: Model3DEffective | null
+    model_ports: ModelPortsDoc | null
+    width_mm: number | null
+    height_mm: number | null
+    depth_mm: number | null
+  }
 }
 
 export interface RackTilePanel extends PanelCommon {

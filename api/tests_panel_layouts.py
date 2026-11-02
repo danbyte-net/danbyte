@@ -78,6 +78,17 @@ class ResolutionTests(_Base):
         self.assertEqual(body["layout"]["items"], panel_layouts.DEFAULTS["device"])
         self.assertIn("monitoring", body)
         self.assertIn("ports", body)
+        # The photo-or-model preview leads a device's built-in layout.
+        self.assertEqual(body["layout"]["items"][0], {"field": "preview"})
+        self.assertIsNone(body["preview"]["model"])
+
+    def test_preview_is_a_device_block(self):
+        self.assertIn("preview", panel_layouts.FIELDS["device"])
+        self.assertIn("preview", panel_layouts.COMPUTED)
+        self.assertNotIn("preview", panel_layouts.FIELDS["rack"])
+        cat = self.client.get(f"{URL}catalog/").json()
+        fields = {f["key"]: f for f in cat["device"]["fields"]}
+        self.assertTrue(fields["preview"]["computed"])
 
     def test_most_specific_wins(self):
         self.layout("default", None, "status")
@@ -97,6 +108,7 @@ class ResolutionTests(_Base):
         self.assertNotIn("monitoring", body)
         self.assertNotIn("ports", body)
         self.assertNotIn("ips", body)
+        self.assertNotIn("preview", body)
 
     def test_another_tenants_layout_never_applies(self):
         self.layout("default", None, "status", tenant=self.other)

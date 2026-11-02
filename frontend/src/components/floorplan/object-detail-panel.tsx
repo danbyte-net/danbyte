@@ -1,5 +1,6 @@
+import { Suspense } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
+import { Link, useNavigate } from "@tanstack/react-router"
 import { Box, PanelRight, Waypoints } from "lucide-react"
 
 import { api } from "@/lib/api"
@@ -23,6 +24,9 @@ import { BarButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { Badge } from "@/components/ui/badge"
+import { LazyModelViewer } from "@/components/model-viewer-card"
+import { SegmentedTabs } from "@/components/segmented-tabs"
+import { usePreviewKind } from "@/lib/preview-kind"
 
 import { endText } from "./cable-draw"
 import { tileName } from "./floor-canvas"
@@ -93,6 +97,7 @@ export function ObjectDetailPanel({
   onPickCable,
   onOpen3d,
   onContents,
+  roomIn3d = false,
 }: {
   planId: string
   tile: FloorPlanTile
@@ -105,6 +110,9 @@ export function ObjectDetailPanel({
   onOpen3d?: () => void
   /** The contents and end-to-end paths. */
   onContents?: () => void
+  /** The room is drawing in 3D: the preview never opens a second live
+   * canvas beside it - the photo, or nothing. */
+  roomIn3d?: boolean
 }) {
   const linkKind = tile.linked?.kind
   const kind =
@@ -170,6 +178,7 @@ export function ObjectDetailPanel({
           cables={cables}
           onPickCable={onPickCable}
           onContents={onContents}
+          liveModel={!roomIn3d}
         />
       )}
     </PanelShell>
@@ -212,13 +221,16 @@ export function PanelLayoutBody({
   cables,
   onPickCable,
   onContents,
+  liveModel = true,
 }: {
   p: ShownPanel
   cables?: TileCable[]
   onPickCable?: (cableId: string) => void
   onContents?: () => void
+  /** The preview may draw a live 3D model (not while the room is in 3D). */
+  liveModel?: boolean
 }) {
-  const ctx: FieldCtx = { p, cables, onPickCable, onContents }
+  const ctx: FieldCtx = { p, cables, onPickCable, onContents, liveModel }
   const sections = layoutSections(p.layout.items)
     .map((s) => ({
       label: s.label,
@@ -250,6 +262,7 @@ interface FieldCtx {
   cables?: TileCable[]
   onPickCable?: (cableId: string) => void
   onContents?: () => void
+  liveModel?: boolean
 }
 
 const pill = "h-4 px-1.5 text-[10px]"
@@ -374,6 +387,15 @@ function deviceField(
       return d.profiles.length
         ? row("Profiles", <Pills items={d.profiles} />)
         : null
+    case "preview":
+      return p.preview ? (
+        <DevicePreview
+          preview={p.preview}
+          deviceId={d.id}
+          name={d.name}
+          live={ctx.liveModel !== false}
+        />
+      ) : null
     case "monitoring":
       return p.monitoring ? <DeviceMonitoring m={p.monitoring} /> : null
     case "ports":
@@ -462,6 +484,72 @@ function cabinetField(
       )
   }
   return null
+}
+
+/**
+ * The preview block: the type's rack-face photo, else the device's 3D model
+ * (small, interactive, its ports coloured by state), else nothing; a
+ * Photo / 3D choice when it has both, remembered (`previewKind`). With the
+ * room in 3D (`live` false) it never opens a second canvas: the photo or
+ * nothing, since the room is drawing the model already.
+ */
+function DevicePreview({
+  preview,
+  deviceId,
+  name,
+  live,
+}: {
+  preview: NonNullable<DeviceTilePanel["preview"]>
+  deviceId: string
+  name: string
+  live: boolean
+}) {
+  const navigate = useNavigate()
+  const photo = preview.front_image || preview.rear_image
+  const model = live ? preview.model : null
+  const [kind, setKind] = usePreviewKind("panel", { photo, model })
+  if (kind === "icon") return null
+  return (
+    <div className="grid gap-1.5" data-panel-preview={kind}>
+      {photo && model && (
+        <SegmentedTabs
+          value={kind}
+          onValueChange={setKind}
+          items={[
+            { value: "photo", label: "Photo" },
+            { value: "model", label: "3D" },
+          ]}
+        />
+      )}
+      {kind === "photo" && photo ? (
+        <div className="flex h-28 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
+          <img
+            src={photo}
+            alt={name}
+            className="h-full w-full object-contain"
+          />
+        </div>
+      ) : model ? (
+        <div className="overflow-hidden rounded-md border border-border bg-muted/30">
+          <Suspense fallback={<Loading className="h-44" />}>
+            <LazyModelViewer
+              model={model}
+              sizeMm={preview}
+              deviceId={deviceId}
+              className="h-44"
+              onPort={(pk) => {
+                if (pk.port.kind === "interface" && pk.port.id)
+                  void navigate({
+                    to: "/interfaces/$id",
+                    params: { id: pk.port.id },
+                  })
+              }}
+            />
+          </Suspense>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function DeviceMonitoring({
