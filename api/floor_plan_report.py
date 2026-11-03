@@ -875,7 +875,7 @@ def report_html(*, title, kind, subtitle, parts, sheets, data, generated, includ
         "border:0.15mm solid #a1a1aa;margin-right:1mm;vertical-align:-0.3mm}"
         ".pill,.tag{display:inline-block;padding:0.15mm 1.4mm;font-size:6.3pt;font-weight:500;"
         "white-space:nowrap;line-height:1.35}"
-        ".pill{border-radius:2mm}"
+        ".pill{border-radius:0.6mm}"
         ".tag{border-radius:0.6mm}"
         ".plain{background:#f4f4f5;color:#3f3f46}"
         ".totals{width:auto;min-width:90mm}"

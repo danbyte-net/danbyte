@@ -3476,8 +3476,8 @@ The PDF has, in order:
    level and room for a building), with the totals per type;
 4. the **inventory** - the racks, cabinets and devices in scope: each rack
    or cabinet, then the devices in it (top unit first), then devices on
-   their own, with the role (its badge colour), type, status (its pill),
-   rack or cabinet and position, serial and asset tag where they exist;
+   their own, with the role and status as square badges in their
+   colours, the type, rack or cabinet and position, serial and asset tag where they exist;
    grouped by room (by level and room for a building);
 5. the **ports summary** - per device listed, its cabled ports, the cable
    and the far end (`device · port`; at most 5,000 rows).
