@@ -1028,3 +1028,10 @@ Each routing object is its own RBAC type under the **Routing** group; a
 site-scoped grant on static routes covers the routes of that site's devices.
 Every create, edit and delete - rule rows included - is in the
 [change log](change-log.md).
+
+RPKI caches and ROAs are their own types (`rpkicache`, `roa`); new types are
+closed until a role grants them, and the built-in roles reach them through
+their wildcard. A site viewer, and a site editor through its catalog view,
+read RPKI caches - the catalog their BGP instances point at; upgrading to
+0.19 adds the type to existing site roles. ROAs are tenant-wide and no site
+role covers them.

@@ -403,7 +403,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + PRTG_OVERRIDES.NEW_CATALOGS
                 + PROFILES.NEW_CATALOGS + REQUIREMENTS.NEW_CATALOGS
                 + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
-                + ROUTING_ROWS.NEW_CATALOGS
+                + ROUTING_ROWS.NEW_CATALOGS + RPKI.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -826,5 +826,35 @@ class SiteRoleRoutingRowsUpgradeTests(SiteRoleUpgradeTests):
             self.assertIn(slug, view.object_types)
             self.assertNotIn(slug, edit.object_types)
             self.assertIn(slug, catalog.object_types)
+        self.assertEqual(len(view.object_types), len(set(view.object_types)))
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+RPKI = importlib.import_module("auth_api.migrations.0050_site_roles_rpki_caches")
+
+
+class SiteRoleRPKIUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
+    """0050 gives the viewers and the editors' catalog view RPKI caches, the
+    catalog BGP instances point at; editors do not write them."""
+
+    def test_roles_gain_rpki_caches(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + OUTLINES.NEW_CATALOGS
+                                + AREA_TYPES.NEW_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        ROUTING_ROWS.forwards(django_apps, None)
+        RPKI.forwards(django_apps, None)
+        RPKI.forwards(django_apps, None)
+        for perm in (view, edit, catalog, custom):
+            perm.refresh_from_db()
+        self.assertIn("rpkicache", view.object_types)
+        self.assertNotIn("rpkicache", edit.object_types)
+        self.assertIn("rpkicache", catalog.object_types)
+        self.assertNotIn("roa", view.object_types)
         self.assertEqual(len(view.object_types), len(set(view.object_types)))
         self.assertEqual(custom.object_types, ["device", "prefix"])
