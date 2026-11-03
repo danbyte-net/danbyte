@@ -236,7 +236,11 @@ To pull it in:
 
 - **Add to IPAM** on the record creates the IP address, links the record, and
   sets the IP's DNS name from it. On a zone page, **Add all unmatched to IPAM**
-  does the whole zone at once.
+  does the whole zone at once. On **DNS records**, tick records and use
+  **Add N to IPAM** in the bar at the bottom, or **Add all to IPAM** for every
+  record the search and filters show that IPAM lacks (it asks first). The API
+  takes either `{"zone": id}` or `{"ids": [...]}` (at most 5000) on
+  `POST /api/dns-records/import_unmatched/`.
 - Import needs a **containing prefix** - an IP must belong to one, in the
   connection's **Address VRF**. If no prefix covers the address (common for a
   public IPv6 record), the import is refused with a message naming the VRF

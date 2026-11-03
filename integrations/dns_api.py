@@ -367,15 +367,32 @@ class DnsRecordViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     @action(detail=False, methods=["post"])
     def import_unmatched(self, request, pk=None):
-        """Import every unlinked record in a zone (``{"zone": "<id>"}``).
-        Returns how many were created and how many were skipped (no prefix)."""
+        """Import unlinked records: every one in a zone (``{"zone": "<id>"}``)
+        or the ones listed (``{"ids": [...]}``, at most 5000; ids outside the
+        tenant or already linked are left out). Returns how many were created
+        and how many were skipped (no prefix)."""
         from .dns_sync import DnsImportError, import_record
 
         self._require_ip_add(request)
-        zone_id = (request.data or {}).get("zone")
-        if not zone_id:
-            return Response({"detail": "zone is required."}, status=400)
-        qs = self.get_queryset().filter(zone_id=zone_id, ip_address__isnull=True)
+        data = request.data or {}
+        zone_id, ids = data.get("zone"), data.get("ids")
+        if ids is not None:
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                return Response({"ids": "A list of record ids."}, status=400)
+            if len(ids) > 5000:
+                return Response({"ids": "At most 5000 at a time."}, status=400)
+            import uuid
+
+            try:
+                ids = [uuid.UUID(i) for i in ids]
+            except ValueError:
+                return Response({"ids": "A list of record ids."}, status=400)
+            qs = self.get_queryset().filter(id__in=ids)
+        elif zone_id:
+            qs = self.get_queryset().filter(zone_id=zone_id)
+        else:
+            return Response({"detail": "zone or ids is required."}, status=400)
+        qs = qs.filter(ip_address__isnull=True)
         created, skipped = 0, 0
         for record in qs:
             try:
