@@ -77,13 +77,20 @@ def _metres(mm: float | None) -> float | None:
 
 
 def build(plan, crop, user, tenant, *, group: str = "room",
-          geometry: dict | None = None) -> dict:
+          geometry: dict | None = None, keep_tile=None, strict: bool = False,
+          hidden_out: set | None = None) -> dict:
     """The schedule of ``plan`` (the source of a view, ``crop`` its part)
     as ``user`` may see it. See the module docstring. ``geometry``, when
     given, is filled with each listed cable's place on the plan, in cells
     of the plan drawn (the view's for a live view): ``lines`` (its stored
     route's legs, else its trays) and ``boxes`` (the tiles of its ends
-    here) - what the PDF's close-ups are cut by."""
+    here) - what the PDF's close-ups are cut by.
+
+    For a part of a plan (the floor-plan report, ``api/floor_plan_report.py``):
+    ``keep_tile`` keeps only the tiles it accepts (a room's), ``strict``
+    lists only the cables with an end on a kept tile or a route or tray
+    reaching ``crop``, and ``hidden_out`` collects the ids of the cables
+    the reader may not view."""
     from auth_api import rbac
 
     from . import floor_plan_snapshots as snaps
@@ -100,6 +107,8 @@ def build(plan, crop, user, tenant, *, group: str = "room",
     if crop is not None:
         tiles = [t for t, _e in snaps.in_crop("tiles", tiles, crop)]
         trays = [t for t, _e in snaps.in_crop("trays", trays, crop)]
+    if keep_tile is not None:
+        tiles = [t for t in tiles if keep_tile(t)]
     tray_name = {t.pk: t.name for t in trays}
     tray_by_id = {t.pk: t for t in trays}
     device_tile, rack_tile, cabinet_tile = {}, {}, {}
@@ -237,6 +246,10 @@ def build(plan, crop, user, tenant, *, group: str = "room",
                 "floor": pair.floor_plan.name if pair is not None else "",
                 "vertical_m": _metres(p.riser_mm),
             }
+        if strict and crop is not None and not trays_in and not any(
+            e["on_floor"] for e in ends["A"] + ends["B"]
+        ) and not _route_reaches(p, crop):
+            continue
         if geometry is not None:
             geometry[str(c.pk)] = _geometry(
                 p, [tray_by_id[t] for t in _uuids(p.tray_order) if t in tray_by_id]
@@ -314,6 +327,8 @@ def build(plan, crop, user, tenant, *, group: str = "room",
     total_rows = sorted(totals.values(), key=lambda t: (t["label"] == NO_TYPE, t["label"].lower()))
     for t in total_rows:
         t["metres"] = round(t["metres"], 2)
+    if hidden_out is not None:
+        hidden_out.update(candidates - visible)
     return {
         "group": group,
         "rows": out_rows,
@@ -326,6 +341,25 @@ def build(plan, crop, user, tenant, *, group: str = "room",
         },
         "hidden_count": len(candidates - visible),
     }
+
+
+def _route_reaches(path, crop) -> bool:
+    """Whether a stored route's legs reach ``crop`` (source cells)."""
+    from . import floor_plan_snapshots as snaps
+
+    if path is None or not isinstance(path.legs, list):
+        return False
+    for leg in path.legs:
+        if not isinstance(leg, dict):
+            continue
+        raw = [(leg.get("from") or {}).get("at"), *(leg.get("points") or []),
+               (leg.get("to") or {}).get("at")]
+        pts = [p for p in (_point(v) for v in raw) if p is not None]
+        if len(pts) == 1:
+            pts = pts * 2
+        if pts and snaps.classify_line(pts, crop) is not None:
+            return True
+    return False
 
 
 def _point(v) -> tuple[float, float] | None:

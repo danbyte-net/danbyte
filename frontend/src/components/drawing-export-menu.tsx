@@ -86,7 +86,7 @@ const SMALLEST_TEXT_PX = 9
 const isPaper = (v: unknown): v is Paper =>
   typeof v === "string" && Object.hasOwn(PAPERS, v)
 
-function readPaper(key: string, fallback: PaperChoice): PaperChoice {
+export function readPaper(key: string, fallback: PaperChoice): PaperChoice {
   try {
     const raw = JSON.parse(
       localStorage.getItem(key) ?? "{}"
@@ -103,7 +103,7 @@ function readPaper(key: string, fallback: PaperChoice): PaperChoice {
   }
 }
 
-function writePaper(key: string, p: PaperChoice) {
+export function writePaper(key: string, p: PaperChoice) {
   try {
     localStorage.setItem(key, JSON.stringify(p))
   } catch {
@@ -137,6 +137,7 @@ export function DrawingExportMenu({
   svg = true,
   pdfExtra,
   extraItems,
+  pdfItem,
   disabled,
   className,
 }: {
@@ -162,6 +163,9 @@ export function DrawingExportMenu({
   pdfExtra?: () => Record<string, unknown>
   /** More files this drawing offers, under the drawing's own. */
   extraItems?: React.ReactNode
+  /** In place of PDF…: the drawing's own dialog (a floor plan's Export…,
+   * which makes a report). Print still makes the one-sheet PDF. */
+  pdfItem?: { label: string; onSelect: () => void }
   disabled?: boolean
   className?: string
 }) {
@@ -288,11 +292,15 @@ export function DrawingExportMenu({
           )}
           <DropdownMenuItem
             onSelect={() => {
+              if (pdfItem) {
+                pdfItem.onSelect()
+                return
+              }
               setDraft(paper)
               setAsking(true)
             }}
           >
-            <FileText /> PDF…
+            <FileText /> {pdfItem?.label ?? "PDF…"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void run("print")}>
             <Printer /> Print

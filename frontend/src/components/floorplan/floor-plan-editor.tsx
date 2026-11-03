@@ -42,6 +42,18 @@ import type { CableRoute } from "./cable-draw"
 import { CableLegend } from "./cable-legend"
 import { PlanLegend } from "./plan-legend"
 import { CableScheduleDialog } from "./cable-schedule"
+import { ReportDialog } from "./report-dialog"
+import type { DrawSheet } from "./report-dialog"
+import {
+  areaBox,
+  calloutsMarkup,
+  clampBox,
+  drawLevel,
+  gridBox,
+  reportAreas,
+  reportScale,
+  withOverlay,
+} from "./report"
 import {
   applyNewCables,
   applyRoutes,
@@ -298,6 +310,7 @@ export function FloorPlanEditor({
   // Document routes: the panel, and the routes it previews on the plan.
   const [docRoutesOpen, setDocRoutesOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const [cablePreviews, setCablePreviews] = useState<
     ReadonlyMap<string, CableRoute> | undefined
   >(undefined)
@@ -896,7 +909,9 @@ export function FloorPlanEditor({
     paper?: PaperChoice,
     withCables: boolean = prefs.showCableLinks,
     fitContent = false,
-    closeup?: { box: PlanBox; mmPerPx: number }
+    closeup?: { box: PlanBox; mmPerPx: number },
+    /** A report sheet framed to `closeup`: its cables' stubs drawn too. */
+    sheet = false
   ) =>
     plan
       ? planSvg({
@@ -925,12 +940,64 @@ export function FloorPlanEditor({
                 highlight: ed.highlightCableIds,
                 mmPerPx: planPaperScale(plan, paper),
                 // The overview only: a close-up frames its own runs.
-                stubs: closeup ? undefined : stubs,
+                stubs: closeup && !sheet ? undefined : stubs,
               }
             : undefined,
           fitContent: fitContent && paper ? { paper, ...closeup } : undefined,
         })
       : ""
+
+  /** The legends of a sheet of this floor, as the PDF's footer reads them. */
+  const sheetLegends = () => ({
+    legend: capacity.hasRacks
+      ? colorByLegendEntries(
+          colorBy,
+          capacity.legend.figures,
+          capacity.legend.alarm
+        )
+      : null,
+    cable_legend:
+      cableKey && shownCables.length ? cableLegendEntries(cableKey) : null,
+    area_legend: areaLegendEntries(shownShapes),
+  })
+
+  /** A report sheet (report-dialog.tsx): this floor framed to the scope's
+   * box at the sheet's scale - the view with the screen's callouts - or
+   * another level of the building, drawn from its own rows. */
+  const drawReportSheet: DrawSheet = async ({ scope, paper, floor, area }) => {
+    if (!plan) return null
+    if (floor && floor !== plan.id)
+      return drawLevel(floor, paper, {
+        showCableLinks: prefs.showCableLinks,
+        cableColorBy: prefs.cableColorBy,
+        bundleCables: prefs.bundleCables,
+        showCableLabels: prefs.showCableLabels,
+        showZoneLabels: prefs.showZoneLabels,
+        showTrays: prefs.showTrays,
+        objectSize: prefs.objectSize,
+        iconTiles: prefs.iconTiles,
+      })
+    let box = gridBox(plan)
+    let overlay = ""
+    if (scope === "view") {
+      const screen = canvasApi.current?.screen?.()
+      const shown = screen ? clampBox(screen.box, plan) : null
+      if (!screen || !shown) return null
+      box = shown
+      overlay = calloutsMarkup(screen.callouts, screen.k)
+    } else if (scope === "area") {
+      const s = ed.shapes.find((x) => x.id === area)
+      if (s?.kind === "area") box = areaBox(s, plan)
+    }
+    const svg = exportSvg(
+      paper,
+      prefs.showCableLinks,
+      true,
+      { box, mmPerPx: reportScale(box, paper) },
+      true
+    )
+    return { floor: plan.id, svg: withOverlay(svg, overlay), ...sheetLegends() }
+  }
 
   const exportPng = async () => {
     if (!exportRef.current || !plan) return
@@ -1199,20 +1266,11 @@ export function FloorPlanEditor({
             defaultPaper={{ size: "a3", orientation: "landscape" }}
             snapshot={view3d ? undefined : exportPng}
             svg={false}
-            pdfExtra={() => ({
-              legend: capacity.hasRacks
-                ? colorByLegendEntries(
-                    colorBy,
-                    capacity.legend.figures,
-                    capacity.legend.alarm
-                  )
-                : null,
-              cable_legend:
-                cableKey && shownCables.length
-                  ? cableLegendEntries(cableKey)
-                  : null,
-              area_legend: areaLegendEntries(shownShapes),
-            })}
+            pdfExtra={sheetLegends}
+            pdfItem={{
+              label: "Export…",
+              onSelect: () => setReportOpen(true),
+            }}
           />
         }
         onOpenSettings={() => ed.setSettingsOpen(true)}
@@ -1923,6 +1981,28 @@ export function FloorPlanEditor({
         shape={backDelete}
         onClose={() => setBackDelete(null)}
         onDelete={rawShapeEdits.deleteShape}
+      />
+      <ReportDialog
+        planId={plan.id}
+        name={plan.stack ? `${plan.stack.name} ${plan.name}` : plan.name}
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        areas={reportAreas(ed.shapes, isTemp)}
+        levels={
+          stackData && plan.stack
+            ? stackData.floors.map((f) => ({ id: f.id, name: f.name }))
+            : null
+        }
+        screenBox={
+          view3d
+            ? undefined
+            : () => {
+                const s = canvasApi.current?.screen?.()
+                return s ? clampBox(s.box, plan) : null
+              }
+        }
+        hiddenTiles={[...hiddenTileIds].filter((t) => !isTemp(t))}
+        draw={drawReportSheet}
       />
       <CableScheduleDialog
         planId={plan.id}

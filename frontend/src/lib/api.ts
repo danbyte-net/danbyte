@@ -12455,6 +12455,57 @@ export interface CableSchedule {
   hidden_count: number
 }
 
+/** A role or status in a floor-plan report's inventory. */
+export interface ReportBadge {
+  name: string
+  color: string
+  text_color: string
+}
+
+/** A rack, cabinet or device in a floor-plan report's inventory. */
+export interface ReportInventoryRow {
+  kind: "rack" | "cabinet" | "device"
+  id: string
+  name: string
+  /** The rack or cabinet a device is listed under. */
+  parent: string | null
+  role: ReportBadge | null
+  type: string
+  status: ReportBadge | null
+  /** A device's rack or cabinet (Hidden when the reader may not view it). */
+  holder: string
+  position: string
+  serial: string
+  asset_tag: string
+  room: string
+  level: string
+}
+
+/** `POST /api/floor-plans/{id}/export/report/tables/`. */
+export interface FloorPlanReportTables {
+  title: string
+  scope: string
+  levels: string[]
+  cables?: CableSchedule
+  inventory?: {
+    groups: { name: string; rows: ReportInventoryRow[] }[]
+    count: { racks: number; cabinets: number; devices: number }
+    hidden_count: number
+  }
+  ports?: {
+    rows: {
+      device: string
+      device_id: string
+      port: string
+      cable: string
+      cable_color: string
+      far: string
+    }[]
+    hidden_count: number
+    truncated: boolean
+  }
+}
+
 export type FloorTileDisplay = "icon" | "photo"
 
 export interface FloorTilePhoto {

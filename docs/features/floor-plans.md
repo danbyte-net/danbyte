@@ -3377,8 +3377,8 @@ the same. Needs the floor-plan add permission.
 
 ## Export
 
-**Export** in the bar under the header has **PNG**, **PDF…**, **Print** and
-[**Cable schedule…**](#cable-schedule).
+**Export** in the bar under the header has **PNG**, **Export…**, **Print**
+and [**Cable schedule…**](#cable-schedule).
 
 **PNG** exports the current view, theme-aware, at 2× resolution - same as the
 topology map and rack elevation exports. Trays and their labels are included,
@@ -3388,9 +3388,89 @@ the picture too, so a coloured plan explains itself on paper; a folded
 legend is left out. The cables come out as the screen draws them at
 that zoom - lanes, bundles, colours and styles.
 
-**PDF…** asks for the paper - **A4**, **A3**, **Letter** or **Tabloid**,
-portrait or landscape (A3 landscape until you choose) - and makes one sheet
-on the server:
+**Print** makes the one-sheet PDF of the whole plan (below) on the paper last
+chosen (the menu shows it) and opens it in the browser's viewer to print.
+
+### The report
+
+**Export…** makes one PDF report. It asks:
+
+- **What** - **This view** (what the screen shows: the box on screen fitted
+  to the page, with the callouts the screen placed at its zoom; cables and
+  names take their detail from the paper's scale, as on every sheet), **Whole
+  floor**, **Room / area** (a room or location linked to an area on this
+  floor, picked from the list: its bounds plus two cells round it, fitted to
+  the page) or **Building** (every level of the floor plan, in floor order -
+  basements first - one sheet each, fitted to the page; on an
+  [aligned](#building-levels) floor plan these are its levels, else its
+  floors). This view is not offered in the 3D room; Room / area only when
+  an area on the floor is linked to a room or location, Building only on a
+  floor of a floor plan.
+- **Format** - **PDF**, or **CSV** / **XLSX** of the tables (the table
+  export's files: the inventory, the cables and the ports one under
+  another, each under its own heading row).
+- **Paper** - **A4**, **A3**, **Letter** or **Tabloid**, portrait or
+  landscape (A3 landscape until you choose; kept for next time).
+- **Include** - **Plan drawing** (on by default), **Cable schedule**,
+  **Inventory** and **Ports summary**.
+
+The PDF has, in order:
+
+1. a **title page**: the scope, the floor plan with its location, site and
+   tenant, the floor or levels, the date and the Danbyte version, and what
+   the report holds (the sheets, the cables and their metres, the racks,
+   cabinets and devices, the connected ports);
+2. the **plan sheets** - one per level for a building - each headed with its
+   floor (and room) and scale (`1:200`), drawn as the one-sheet PDF draws the
+   plan (below: tiles, rooms, walls, trays, cables at the paper's scale,
+   stubs, the background image and the CAD drawing in vector), with a strip
+   under it: the scale bar, the Color by, cables' and Areas legends and the
+   drawing's source file. The other levels of a building are drawn from
+   their saved rows with this floor's Display settings; this floor includes
+   its unsaved edits;
+3. the **cable schedule** - the [pull sheet](#cable-schedule), limited to
+   the scope: the cables with an end on a device placed in it, or a stored
+   route or tray reaching it (for a room, the tiles inside the room's
+   outline). For a building a cable is listed once, under the first level
+   that has it, its route and computed length joined across the levels
+   (`B1: OH-1 → R1 to Ground | Ground: R1 → CT-1`); grouped by room (by
+   level and room for a building), with the totals per type;
+4. the **inventory** - the racks, cabinets and devices in scope: each rack
+   or cabinet, then the devices in it (top unit first), then devices on
+   their own, with the role (its badge colour), type, status (its pill),
+   rack or cabinet and position, serial and asset tag where they exist;
+   grouped by room (by level and room for a building);
+5. the **ports summary** - per device listed, its cabled ports, the cable
+   and the far end (`device · port`; at most 5,000 rows).
+
+Every page carries the report's title, the date and the Danbyte version at
+the foot, and the page number (`Page 3 / 7`).
+
+**Who sees what.** Anyone who can view the plan can export it. The tables
+follow the reader's object permissions as the cable schedule does: a cable,
+rack, cabinet or device you may not view is counted (*3 objects hidden -
+not listed*), not listed; a cable end or a far end on a device you may not
+view reads **Hidden**; a device in a rack you may not view names its rack
+Hidden. A level of a building you may not view is left out. Tiles hidden on
+screen (++h++, or the **Objects** list) are left out of the plan and,
+for this floor, the inventory.
+
+The server works out the scope itself: the room or area must be one of this
+floor's (one of another floor or tenant is refused), the view's box is cut
+to the plan, a building's levels are the floors of the plan's floor plan the
+reader may view, and a drawing posted for a floor outside the scope is
+refused. The report obeys the PDF limits below; a building of more than 24
+levels is refused.
+
+| Endpoint | |
+|---|---|
+| `POST /api/floor-plans/{id}/export/report/` | The report as a PDF. Body: `scope` (`view`, `floor`, `area` or `building`), `box` (`scope=view`: `[x, y, w, h]` in plan px), `area` (`scope=area`: the area's id), `include` (`plan`, `cables`, `inventory`, `ports`), `paper` (`{size, orientation}`; A3 landscape by default), `hidden_tiles` (tile ids left out of this floor's inventory) and `sheets` (with `plan`: per sheet `{floor, svg, legend, cable_legend, area_legend}`, the drawing as `plan-svg.ts` draws it for the sheet's box and scale; at most 24). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/export/report/tables/` | The same scope's tables as JSON: `cables` (the cable schedule's shape), `inventory` (`groups` of `{name, rows}`, each row `{kind, id, name, parent, role, type, status, holder, position, serial, asset_tag, room, level}`; `count`; `hidden_count`), `ports` (`rows` of `{device, port, cable, far}`; `hidden_count`; `truncated`), with `title`, `scope` and `levels`. |
+
+### The one-sheet PDF
+
+**Print** (and `POST /api/floor-plans/{id}/export/pdf/`) makes one sheet on
+the server, on A4, A3, Letter or Tabloid, portrait or landscape:
 
 - the whole plan **fitted to the page** - tiles, zones, raised floors, walls,
   trays, rooms, areas and labels as the plan shows them, unsaved edits and hidden tiles included
@@ -3417,11 +3497,10 @@ on the server:
   and a **title block**: the plan, its location, site and tenant, the date,
   the Danbyte version and the page.
 
-**Print** makes the same PDF on the paper last chosen (the menu shows it) and
-opens it in the browser's viewer to print. The PDF obeys the same limits as
-the [topology PDF](topology.md): one at a time per user, a few at a time on
-the server, and 30 seconds of rendering. Anyone who can view the plan can
-export it: `POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
+The PDFs obey the same limits as the [topology PDF](topology.md): one at a
+time per user, a few at a time on the server, a 10 MB request and 30
+seconds of rendering. Anyone who can view the plan can export it:
+`POST /api/floor-plans/{id}/export/pdf/` with the plan's SVG, the
 paper, the legend, `cable_legend` and `area_legend` (rows of `label` and
 `color`, a line row adding `line`: `solid`, `dashed`, `thin` or `bundle`, an
 area row `pattern`: `solid`, `hatched`, `crosshatched` or `dotted`;
