@@ -64,6 +64,7 @@ from . import (
     detail_counts,
     elevation_pdf,
     floor_plan_pdf,
+    floor_plan_report,
     ip_usage,
     scene_geo,
     software_target,
@@ -12127,6 +12128,30 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """The PDF an ``export/pdf/?print=1`` kept, behind its print link."""
         return floor_plan_pdf.export_pdf_file(request, self.get_object(), token)
 
+    @floor_plan_report.report_schema
+    @action(detail=True, methods=["post"], url_path="export/report")
+    def export_report(self, request, pk=None):
+        """The view, floor, room or building as one PDF report: plan sheets,
+        cable schedule, inventory and ports (api.floor_plan_report)."""
+        return floor_plan_report.export_report(
+            request, self.get_object(), self._tenant_or_403(), self._resolved
+        )
+
+    @floor_plan_report.tables_schema
+    @action(detail=True, methods=["post"], url_path="export/report/tables")
+    def export_report_tables(self, request, pk=None):
+        """The report's tables as JSON, for its CSV and XLSX."""
+        return floor_plan_report.export_tables(
+            request, self.get_object(), self._tenant_or_403(), self._resolved
+        )
+
+    @floor_plan_report.report_file_schema
+    @action(detail=True, methods=["get"],
+            url_path=r"export/report/(?P<token>[A-Za-z0-9_-]{24,64})")
+    def export_report_file(self, request, pk=None, token=None):
+        """The report a ``export/report/?print=1`` kept, behind its link."""
+        return floor_plan_report.export_report_file(request, self.get_object(), token)
+
     @action(detail=False, methods=["get"], url_path="drawing-support")
     def drawing_support(self, request):
         """What uploads the server takes: DXF always, DWG when a converter is
@@ -12402,6 +12427,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         "export_pdf": "view",
         "export_pdf_file": "view",
         "cable_schedule_pdf": "view",
+        "export_report": "view",
+        "export_report_tables": "view",
+        "export_report_file": "view",
         "bulk": "change",
         "snap_all": "change",
         # Reads of the site's objects (each by its own view grant), and room
