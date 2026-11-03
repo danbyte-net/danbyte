@@ -27,6 +27,7 @@ from core.tags import tags_of
 from customization.models import (
     CustomField, CustomFieldGroup, customizable_model_values,
 )
+from routing.models import RoutingKeychain
 from .rooms import reconcile_room
 from .models import (
     Antenna, AntennaTemplate, Application,
@@ -1759,7 +1760,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "site", "vlan", "vlan_vrf_mismatch", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
-            "allocate_from_ranges", "allocation",
+            "allocate_from_ranges", "allocation", "auto_gateway",
             "monitoring_engine",
             "tags",
             "custom_fields",
@@ -4204,6 +4205,20 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # The keychain by id and name only - the key never passes through here.
+    macsec_keychain = serializers.SerializerMethodField()
+    macsec_keychain_id = TenantScopedPrimaryKeyRelatedField(
+        source="macsec_keychain", queryset=RoutingKeychain.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    macsec_cipher_display = ChoiceLabelField("macsec_cipher")
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_macsec_keychain(self, obj):
+        k = obj.macsec_keychain
+        if k is None:
+            return None
+        return {"id": str(k.id), "name": k.name, "algorithm": k.algorithm}
 
     ip_addresses = serializers.SerializerMethodField()
     tunnel_terminations = serializers.SerializerMethodField()
@@ -4423,6 +4438,22 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
             raise serializers.ValidationError(
                 {"never_uplink": "A port can't be both always and never an uplink."}
             )
+        # MACsec: the cipher, keychain and replay window only mean something
+        # while it is on. Setting one on a port with MACsec off is refused;
+        # turning it off clears them (Interface.save does the same).
+        if not attrs.get(
+            "macsec_enabled", getattr(self.instance, "macsec_enabled", False)
+        ):
+            for f, key in (("macsec_cipher", "macsec_cipher"),
+                           ("macsec_keychain", "macsec_keychain_id"),
+                           ("macsec_replay_window", "macsec_replay_window")):
+                if attrs.get(f) not in (None, ""):
+                    raise serializers.ValidationError(
+                        {key: "Turn MACsec on to set this."}
+                    )
+            attrs["macsec_cipher"] = ""
+            attrs["macsec_keychain"] = None
+            attrs["macsec_replay_window"] = None
         return attrs
 
     class Meta:
@@ -4446,6 +4477,8 @@ class InterfaceSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Ta
                   "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
                   "lag_min_links", "lag_mode", "lag_mode_display", "lag_hash_policy",
                   "lag_hash_policy_display", "lag_miimon",
+                  "macsec_enabled", "macsec_cipher", "macsec_cipher_display",
+                  "macsec_keychain", "macsec_keychain_id", "macsec_replay_window",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "tunnel_terminations", "created_at", "updated_at"]
 

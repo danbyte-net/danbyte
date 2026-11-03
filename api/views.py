@@ -993,9 +993,13 @@ def _autospawn_gateway(prefix, *, request=None):
     role='gateway' at that address and copy it onto ``prefix.gateway``.
 
     No-op for IPv6 (we don't want to register specific /64 gateways from
-    policy alone) or when policy is 'none'.
+    policy alone), when policy is 'none', for a container (it holds other
+    prefixes, not hosts) and when the prefix has ``auto_gateway`` off
+    (loopback blocks, /31 links).
     """
-    if prefix.site is None:
+    if prefix.site is None or not prefix.auto_gateway:
+        return None
+    if prefix.status_id and prefix.status.slug == "container":
         return None
     policy = prefix.site.gateway_policy
     if policy in (None, "", "none"):

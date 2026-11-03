@@ -736,6 +736,42 @@ function InterfaceOverview({
         ]
       : null
 
+  // The keychain by name only - its key is never on the interface.
+  const macsec: KvRow[] = [
+    { label: "MACsec", value: i.macsec_enabled ? "On" : "Off" },
+    ...(i.macsec_enabled
+      ? [
+          {
+            label: "Cipher",
+            value: i.macsec_cipher_display || "Device default",
+          },
+          {
+            label: "Keychain",
+            value: i.macsec_keychain ? (
+              <Link
+                to="/routing-keychains/$id"
+                params={{ id: i.macsec_keychain.id }}
+                className="link"
+              >
+                {i.macsec_keychain.name}
+              </Link>
+            ) : (
+              dash
+            ),
+          },
+          {
+            label: "Replay window",
+            value:
+              i.macsec_replay_window != null ? (
+                <span className="num">{i.macsec_replay_window}</span>
+              ) : (
+                "Device default"
+              ),
+          },
+        ]
+      : []),
+  ]
+
   return (
     <div className="space-y-6">
       <InterfaceDriftAlert deviceId={i.device.id} interfaceId={i.id} />
@@ -744,6 +780,7 @@ function InterfaceOverview({
           <KvCard title="Interface" rows={attributes} />
           {bundle && <KvCard title="Bundle" rows={bundle} />}
           <KvCard title="Switching" rows={switching} />
+          <KvCard title="MACsec" rows={macsec} />
           <KvCard title="Relationships" rows={relationships} />
           <InterfaceRoutingCard
             interfaceId={i.id}

@@ -128,6 +128,11 @@ export function rackPortInterfaces(
     lag_hash_policy: "",
     lag_hash_policy_display: "",
     lag_miimon: null,
+    macsec_enabled: false,
+    macsec_cipher: "",
+    macsec_cipher_display: "",
+    macsec_keychain: null,
+    macsec_replay_window: null,
     created_at: "",
     updated_at: "",
   }))

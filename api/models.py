@@ -3036,6 +3036,12 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "address outside every range is refused. For a provider handing out a "
         "slice of a subnet that isn't yours.",
     )
+    auto_gateway = models.BooleanField(
+        default=True, db_default=True,
+        help_text="Let the site's gateway policy create a gateway address in "
+        "this prefix when it is created. Off for loopback blocks, point-to-point "
+        "links and other prefixes that have no gateway.",
+    )
     auto_discover = models.BooleanField(
         default=False,
         help_text="Opt in to periodic ICMP discovery - responders not yet "
@@ -3972,6 +3978,37 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     lag_miimon = models.PositiveIntegerField(
         null=True, blank=True, help_text="MII link-monitor interval, in ms.",
     )
+    # ─── MACsec (802.1AE, keyed by MKA) ──────────────────────────────────
+    # The CKN/CAK live in a routing keychain's secret, never on the row: the
+    # same contract as the BGP / OSPF / IS-IS keychain references. The
+    # cipher, keychain and replay window only mean something while enabled
+    # and are cleared on save otherwise.
+    MACSEC_CIPHER_CHOICES = [
+        ("gcm-aes-128", "GCM-AES-128"),
+        ("gcm-aes-256", "GCM-AES-256"),
+        ("gcm-aes-xpn-128", "GCM-AES-XPN-128"),
+        ("gcm-aes-xpn-256", "GCM-AES-XPN-256"),
+    ]
+    macsec_enabled = models.BooleanField(
+        default=False, db_default=False, verbose_name="MACsec",
+        help_text="802.1AE link encryption on this port, keyed by MKA.",
+    )
+    macsec_cipher = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=MACSEC_CIPHER_CHOICES, verbose_name="MACsec cipher",
+        help_text="Cipher suite; blank uses the device's default.",
+    )
+    macsec_keychain = models.ForeignKey(
+        "routing.RoutingKeychain", on_delete=models.SET_NULL, null=True,
+        blank=True, related_name="macsec_interfaces",
+        verbose_name="MACsec keychain",
+        help_text="Keychain holding the MKA CAK. The key never passes through "
+        "the interface.",
+    )
+    macsec_replay_window = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="MACsec replay window",
+        help_text="Replay protection window, in packets; 0 is strict ordering.",
+    )
 
     class Meta:
         unique_together = ("device", "name")
@@ -3994,6 +4031,10 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         if self.lag_protocol != "lacp":
             self.lacp_mode = ""
             self.lacp_rate = ""
+        if not self.macsec_enabled:
+            self.macsec_cipher = ""
+            self.macsec_keychain = None
+            self.macsec_replay_window = None
         # A bare kbps number (what a switch scraper sends) reads as "1G".
         self.speed = normalize_speed(self.speed)
         super().save(*args, **kwargs)

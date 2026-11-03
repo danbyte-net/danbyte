@@ -37,6 +37,7 @@ from core.errors import NETWORK_ERRORS, public_error
 from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
+from routing.models import RoutingKeychain
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 # Re-exported: these lived here before api.bulk_update.
@@ -1116,6 +1117,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # api.editable_fields can describe prefixes without a second list. The
     # bespoke action stays the enforcer; a test asserts the two agree.
     editable_str_fields = ("description",)
+    editable_bool_fields = ("auto_gateway",)
     editable_fk_fields = {
         "status_id": Status, "vrf_id": VRF, "site_id": Site, "vlan_id": VLAN,
     }
@@ -1131,7 +1133,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # identifier and is left blank for the user to fill.
     clone_fields = (
         "status", "site", "vlan", "vrf", "location", "description",
-        "auto_discover", "auto_assign_site", "monitoring_engine",
+        "auto_discover", "auto_assign_site", "auto_gateway", "monitoring_engine",
     )
 
     def perform_destroy(self, instance):
@@ -1665,7 +1667,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Bulk patch ──────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id}} → 200.
+        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id,
+        description, auto_gateway}} → 200.
 
         Only the keys present in ``fields`` are touched. Tags are handled
         as add/remove sets rather than overwriting so a bulk edit can't
@@ -1678,8 +1681,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         updates = _bulk_field_updates(
-            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+            fields,
+            ("status_id", "vrf_id", "site_id", "vlan_id", "description", "auto_gateway"),
         )
+        if "auto_gateway" in updates and not isinstance(updates["auto_gateway"], bool):
+            raise ValidationError({"auto_gateway": "Must be true or false."})
         # The serializer's field rules (#350). Its object-level rules are the
         # CIDR's own - duplicates and overlaps - which a bulk edit never sets;
         # a VRF move onto a taken CIDR is the database's 409.
@@ -4853,18 +4859,26 @@ class NameRangeCreateMixin:
         super().perform_create(serializer)
 
 
+_MACSEC_DETAIL_KEYS = ("macsec_cipher", "macsec_keychain_id", "macsec_replay_window")
+
+
 class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
     bulk_str_fields = (
         "type", "mode", "speed", "duplex", "description",
         "lag_protocol", "lacp_mode", "lacp_rate", "lag_mode", "lag_hash_policy",
+        "macsec_cipher",
     )
     bulk_bool_fields = (
         "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
+        "macsec_enabled",
     )
-    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon")
-    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
+    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon", "macsec_replay_window")
+    bulk_fk_fields = {
+        "vlan_id": VLAN, "vrf_id": VRF, "status_id": Status,
+        "macsec_keychain_id": RoutingKeychain,
+    }
     bulk_name_scope_field = "device_id"
 
     def normalize_bulk_updates(self, updates):
@@ -4900,11 +4914,35 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             from .speed import normalize_speed
 
             updates["speed"] = normalize_speed(updates["speed"] or "")
+        # MACsec off clears its settings, as Interface.save does; setting
+        # them while turning it off is refused, as the form does.
+        if updates.get("macsec_enabled") is False:
+            for key in _MACSEC_DETAIL_KEYS:
+                if updates.get(key) not in (None, ""):
+                    raise ValidationError({key: "Turn MACsec on to set this."})
+            updates["macsec_cipher"] = ""
+            updates["macsec_keychain_id"] = None
+            updates["macsec_replay_window"] = None
         return updates
+
+    def check_bulk_rows(self, rows, updates):
+        # Setting a MACsec detail without turning MACsec on in the same edit
+        # only works where it is already on.
+        if updates.get("macsec_enabled") is not None:
+            return
+        for key in _MACSEC_DETAIL_KEYS:
+            if updates.get(key) in (None, ""):
+                continue
+            off = [r.name for r in rows if not r.macsec_enabled]
+            if off:
+                raise ValidationError({
+                    key: "Turn MACsec on to set this. Off on: "
+                         + ", ".join(off[:5]) + ("…" if len(off) > 5 else "")
+                })
     bulk_tags = True
 
     queryset = (
-        Interface.objects.select_related("device", "vlan", "vrf", "status")
+        Interface.objects.select_related("device", "vlan", "vrf", "status", "macsec_keychain")
         # The parent, LAG and bridge (with their devices) are prefetched, not
         # joined: joined, Postgres joined every interface in the tenant to
         # them before it could sort and take one page (#298). Most rows have

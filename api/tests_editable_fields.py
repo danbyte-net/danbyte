@@ -208,7 +208,10 @@ class BulkAgreementTests(_Base):
         dev = self._device()
         # A LAG: bundle settings on anything else are refused, by PATCH and
         # bulk update alike (#350).
-        iface = Interface.objects.create(device=dev, name="Po1", type="lag")
+        # MACsec on: its settings are refused on a port with it off.
+        iface = Interface.objects.create(
+            device=dev, name="Po1", type="lag", macsec_enabled=True
+        )
         samples = {
             "enabled": False,
             "mgmt_only": True,
@@ -228,6 +231,10 @@ class BulkAgreementTests(_Base):
             "lag_mode": "802.3ad",
             "lag_hash_policy": "layer3+4",
             "lag_miimon": 100,
+            "macsec_enabled": True,
+            "macsec_cipher": "gcm-aes-256",
+            "macsec_keychain_id": None,
+            "macsec_replay_window": 64,
             "vlan_id": None,
             "vrf_id": None,
             "status_id": None,
@@ -250,7 +257,9 @@ class BulkAgreementTests(_Base):
         """Prefix/IP/VLAN hand-roll their own bulk_update. The registry mirrors
         them by declaration, so assert the mirror is honest."""
         expected = {
-            "prefix": {"status_id", "vrf_id", "site_id", "vlan_id", "description"},
+            "prefix": {
+                "status_id", "vrf_id", "site_id", "vlan_id", "description", "auto_gateway",
+            },
             "ipaddress": {"status_id", "role_id", "description"},
             "vlan": {"status_id", "site_id", "zone_id", "vrf_id", "description"},
         }

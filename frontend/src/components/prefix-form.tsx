@@ -87,6 +87,9 @@ export function PrefixForm({
   const [allocateFromRanges, setAllocateFromRanges] = useState<boolean>(
     seed?.allocate_from_ranges ?? false
   )
+  const [autoGateway, setAutoGateway] = useState<boolean>(
+    seed?.auto_gateway ?? true
+  )
   const [vlanId, setVlanId] = useState<string | null>(
     seed?.vlan?.id ?? initial?.vlanId ?? null
   )
@@ -109,6 +112,7 @@ export function PrefixForm({
     setLocationId(prefix.location?.id ?? null)
     setAutoAssignSite(prefix.auto_assign_site)
     setAllocateFromRanges(prefix.allocate_from_ranges)
+    setAutoGateway(prefix.auto_gateway)
     setVlanId(prefix.vlan?.id ?? null)
     setGateway(prefix.gateway ?? "")
     setDescription(prefix.description)
@@ -159,6 +163,7 @@ export function PrefixForm({
         description: description.trim(),
         auto_assign_site: autoAssignSite,
         allocate_from_ranges: allocateFromRanges,
+        auto_gateway: autoGateway,
         tag_ids: tagIds,
         custom_fields: customFields,
       }
@@ -308,6 +313,12 @@ export function PrefixForm({
               hint="Next available, free rows, pools and utilisation come from the IP ranges inside this prefix; an address outside them is refused. For a provider's slice of a subnet that isn't yours."
               checked={allocateFromRanges}
               onChange={setAllocateFromRanges}
+            />
+            <FormCheckbox
+              label="Automatic gateway"
+              hint="The site's gateway policy adds a gateway when the prefix is created. Off for loopback blocks and point-to-point links."
+              checked={autoGateway}
+              onChange={setAutoGateway}
             />
           </FormSection>
 
