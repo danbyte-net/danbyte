@@ -7,6 +7,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 
+import type { SyncOffer } from "./structure"
+
 /** The cards' shared frame: over the plan, top centre, never in the way of
  * a click elsewhere. */
 const CARD =
@@ -64,23 +66,35 @@ export function WallLinkCard({
   )
 }
 
+const RING_NOTE = {
+  open: "Walls don't close",
+  crossed: "Walls cross",
+  "too-many": "Over 200 corners",
+} as const
+
 /**
- * A linked area reshaped or turned (or one of its walls edited by hand):
- * **Update walls** rebuilds them along the outline. Doors that would no
- * longer fit are listed first and go only on a second yes.
+ * A linked area reshaped or turned, or one of its walls edited by hand:
+ * **Update walls** rebuilds the walls along the outline, **Update area**
+ * redraws the outline along the walls. Doors that would no longer fit are
+ * listed first and go only on a second yes.
  */
 export function UpdateWallsCard({
   name,
+  offer = { walls: true, area: null, lead: "walls" },
   drops,
   onUpdate,
+  onUpdateArea,
   onConfirmDrops,
   onCancelDrops,
   onDismiss,
 }: {
   name: string
+  /** Which updates are on offer, and the one the card leads with. */
+  offer?: SyncOffer
   /** The doors an update would drop, waiting for a yes; null = not asked. */
   drops: string[] | null
   onUpdate: () => void
+  onUpdateArea?: () => void
   onConfirmDrops: () => void
   onCancelDrops: () => void
   onDismiss: () => void
@@ -116,14 +130,44 @@ export function UpdateWallsCard({
         </Button>
       </div>
     )
+  const walls = offer.walls && (
+    <Button
+      key="walls"
+      size="sm"
+      variant={offer.lead === "walls" ? "default" : "outline"}
+      className="h-7"
+      onClick={onUpdate}
+    >
+      Update walls
+    </Button>
+  )
+  const area = offer.area === "update" && onUpdateArea && (
+    <Button
+      key="area"
+      size="sm"
+      variant={offer.lead === "area" ? "default" : "outline"}
+      className="h-7"
+      onClick={onUpdateArea}
+    >
+      Update area
+    </Button>
+  )
   return (
     <div role="status" data-part="update-walls" className={CARD}>
       <span className="whitespace-nowrap">
-        {name} walls are off its outline
+        {offer.walls
+          ? `${name} walls are off its outline`
+          : `${name} is off its walls`}
       </span>
-      <Button size="sm" className="h-7" onClick={onUpdate}>
-        Update walls
-      </Button>
+      {offer.area && offer.area !== "update" && (
+        <span
+          data-part="ring-note"
+          className="text-xs whitespace-nowrap text-muted-foreground"
+        >
+          {RING_NOTE[offer.area]}
+        </span>
+      )}
+      {offer.lead === "area" ? [area, walls] : [walls, area]}
       <Dismiss onClick={onDismiss} />
     </div>
   )

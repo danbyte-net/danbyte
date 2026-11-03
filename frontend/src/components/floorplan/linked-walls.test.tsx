@@ -13,7 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { FloorPlan, FloorPlanBulkPayload } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 
-import { AreaWallsDeleteDialog, WallLinkCard } from "./linked-walls"
+import {
+  AreaWallsDeleteDialog,
+  UpdateWallsCard,
+  WallLinkCard,
+} from "./linked-walls"
 import type { AreaShape, PlanShape } from "./shapes"
 import { StructureRail } from "./structure-panels"
 import { areaOutline, structureOf } from "./structure"
@@ -282,6 +286,153 @@ describe("walls named after their area and linked", () => {
       label: "Cage walls",
       source_area_id: "new-900",
     })
+  })
+})
+
+describe("an area following its walls", () => {
+  it("a wall edited by hand offers Update area, one undo step, doors kept", async () => {
+    const { result } = setup([area()])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    await act(async () => result.current.s.placeDoor(id, 0, 2))
+    // The east side pushed out to x = 9, a corner added on the way.
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: [
+          [2, 2],
+          [6, 2],
+          [9, 2],
+          [9, 5],
+          [2, 5],
+          [2, 2],
+        ],
+      })
+    )
+    const edited = wallsOf(result.current.ed)[0]
+    expect(result.current.s.wallsOffOutline("a1")).toBe(true)
+    expect(result.current.s.areaFromWalls("a1")).toMatchObject({
+      ring: [
+        [2, 2],
+        [9, 2],
+        [9, 5],
+        [2, 5],
+      ],
+    })
+    await act(async () => result.current.s.updateAreaFromWalls("a1"))
+    expect(result.current.ed.shapes[0]).toMatchObject({
+      shape: "rect",
+      x: 2,
+      y: 2,
+      width: 7,
+      height: 3,
+      rotation: 0,
+    })
+    expect(result.current.ed.dirtyIds.has("a1")).toBe(true)
+    // The wall and its door as they were; the two agree now.
+    expect(wallsOf(result.current.ed)[0]).toEqual(edited)
+    expect(result.current.s.wallsOffOutline("a1")).toBe(false)
+    expect(result.current.s.areaFromWalls("a1")).toBeNull()
+    act(() => {
+      result.current.ed.draft.undo()
+    })
+    expect(result.current.ed.shapes[0]).toMatchObject({ width: 4 })
+    expect(wallsOf(result.current.ed)[0]).toEqual(edited)
+  })
+
+  it("an outline no rectangle can draw makes the area a polygon", async () => {
+    const { result } = setup([area()])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: [
+          [2, 2],
+          [6, 2],
+          [6, 4],
+          [4, 5],
+          [2, 5],
+          [2, 2],
+        ],
+      })
+    )
+    await act(async () => result.current.s.updateAreaFromWalls("a1"))
+    expect(result.current.ed.shapes[0]).toMatchObject({
+      shape: "polygon",
+      points: [
+        [2, 2],
+        [6, 2],
+        [6, 4],
+        [4, 5],
+        [2, 5],
+      ],
+    })
+  })
+
+  it("walls that don't close offer no Update area", async () => {
+    const { result } = setup([area()])
+    await act(async () => result.current.s.wallsAroundAreas(["a1"]))
+    const id = wallsOf(result.current.ed)[0].id
+    await act(async () =>
+      result.current.s.patchWall(id, {
+        points: [
+          [2, 2],
+          [6, 2],
+          [6, 5],
+          [2, 5],
+        ],
+      })
+    )
+    expect(result.current.s.areaFromWalls("a1")).toEqual({ error: "open" })
+    await act(async () => result.current.s.updateAreaFromWalls("a1"))
+    expect(result.current.ed.shapes[0]).toMatchObject({ width: 4, height: 3 })
+  })
+})
+
+describe("the update card", () => {
+  const noop = () => {}
+
+  it("leads with Update area from a wall, with Update walls beside it", () => {
+    const onUpdate = vi.fn()
+    const onUpdateArea = vi.fn()
+    render(
+      <UpdateWallsCard
+        name="Cage"
+        offer={{ walls: true, area: "update", lead: "area" }}
+        drops={null}
+        onUpdate={onUpdate}
+        onUpdateArea={onUpdateArea}
+        onConfirmDrops={noop}
+        onCancelDrops={noop}
+        onDismiss={noop}
+      />
+    )
+    const buttons = screen
+      .getAllByRole("button")
+      .map((b) => b.textContent)
+      .filter((t) => t?.startsWith("Update"))
+    expect(buttons).toEqual(["Update area", "Update walls"])
+    fireEvent.click(screen.getByRole("button", { name: "Update area" }))
+    expect(onUpdateArea).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Update walls" }))
+    expect(onUpdate).toHaveBeenCalled()
+  })
+
+  it("says why there is no Update area", () => {
+    render(
+      <UpdateWallsCard
+        name="Cage"
+        offer={{ walls: true, area: "open", lead: "walls" }}
+        drops={null}
+        onUpdate={noop}
+        onUpdateArea={noop}
+        onConfirmDrops={noop}
+        onCancelDrops={noop}
+        onDismiss={noop}
+      />
+    )
+    expect(screen.getByText("Walls don't close")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Update area" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Update walls" })).toBeTruthy()
   })
 })
 

@@ -15,12 +15,14 @@ import { viaQuery } from "./snapshot"
 import { areaName } from "./shapes"
 import type { AreaShape, PlanShape, Pt } from "./shapes"
 import {
+  areaFromRing,
   areaOutline,
   doorFromDrag,
   fitOpenings,
   flipDoor,
   joinRuns,
   linkedWallLabel,
+  outlineIsRing,
   outlineShift,
   outlineWalls,
   rebuildWalls,
@@ -29,12 +31,14 @@ import {
   splitRun,
   structureLists,
   translatePoints,
+  wallRing,
 } from "./structure"
 import type {
   RaisedRow,
   RunRow,
   StructShape,
   TrayRow,
+  WallRing,
   WallRow,
 } from "./structure"
 import { floorPlanContentsKey } from "./use-floor-plan-data"
@@ -517,6 +521,36 @@ export function useStructureEdits({
     })
   }
 
+  /** The outline an area's linked walls draw, or why they draw none; null
+   * when it has no linked walls or already follows them. */
+  const areaFromWalls = (areaId: string): WallRing | null => {
+    const area = ed.shapes.find((s) => s.id === areaId)
+    const linked = linkedTo(areaId)
+    if (!isArea(area) || !linked.length) return null
+    const r = wallRing(linked)
+    if ("ring" in r && outlineIsRing(areaOutline(area), r.ring)) return null
+    return r
+  }
+
+  /**
+   * "Update area": the area's outline rebuilt from its linked walls, joined
+   * end to end into one ring - one undo step. The walls and their doors
+   * stay as they are.
+   */
+  const updateAreaFromWalls = (areaId: string) => {
+    const r = areaFromWalls(areaId)
+    const area = ed.shapes.find((s) => s.id === areaId)
+    if (!r || !("ring" in r) || !isArea(area)) return
+    const patch = areaFromRing(area, r.ring)
+    ed.draft.apply((d) => ({
+      ...d,
+      shapes: d.shapes.map((s) =>
+        s.id === areaId ? ({ ...s, ...patch } as PlanShape) : s
+      ),
+      dirty: new Set(d.dirty).add(areaId),
+    }))
+  }
+
   /** An area being deleted: its linked walls deleted with it, or kept and
    * unlinked - in the same step as the area's delete the caller makes. */
   const settleAreaWalls = (areaId: string, walls: "delete" | "keep") => {
@@ -747,6 +781,8 @@ export function useStructureEdits({
     followArea,
     wallsOffOutline,
     updateLinkedWalls,
+    areaFromWalls,
+    updateAreaFromWalls,
     updateDrops,
     setUpdateDrops,
     settleAreaWalls,

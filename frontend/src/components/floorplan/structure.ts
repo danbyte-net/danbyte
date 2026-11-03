@@ -5,7 +5,12 @@ import type {
   RaisedFloorArea,
 } from "@/lib/api"
 
-import { boxCorners } from "./shapes"
+import {
+  boxCorners,
+  normAngle,
+  polygonCrossesItself,
+  polygonPatch,
+} from "./shapes"
 import type { AreaShape, Pt } from "./shapes"
 
 // Walls, raised floors and trays in the editor's draft, and the geometry the
@@ -334,26 +339,263 @@ export function outlineShift(before: Pt[], after: Pt[]): Pt | null {
   return [dx, dy]
 }
 
-const samePolyline = (a: readonly Pt[], b: readonly Pt[], tol = 2e-3) => {
-  if (a.length !== b.length) return false
-  const fwd = a.every((p, i) => same(p, b[i], tol))
-  return fwd || a.every((p, i) => same(p, b[b.length - 1 - i], tol))
+/** Whether a polyline closes on itself: three corners at least, its last
+ * point on its first. */
+export const isClosedRun = (p: readonly Pt[], tol = 2e-3) =>
+  p.length >= 4 && same(p[0], p[p.length - 1], tol)
+
+/** A polyline's corners alone: repeats and points on a straight stretch
+ * go. `closed`: the points are a ring (no repeated first point), and its
+ * seam is a corner like any other. */
+export function dropCollinear(
+  points: readonly Pt[],
+  closed = false,
+  tol = 2e-3
+): Pt[] {
+  let pts = points.map((p) => [p[0], p[1]] as Pt)
+  for (let changed = true; changed;) {
+    changed = false
+    const n = pts.length
+    if (n < (closed ? 4 : 3)) break
+    for (let i = closed ? 0 : 1; i < (closed ? n : n - 1); i++) {
+      const a = pts[(i - 1 + n) % n]
+      const b = pts[i]
+      const c = pts[(i + 1) % n]
+      const ab = Math.hypot(b[0] - a[0], b[1] - a[1])
+      const bc = Math.hypot(c[0] - b[0], c[1] - b[1])
+      // A repeat, or b on the straight line a→c (not a turn back).
+      const cross =
+        (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+      const dot = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])
+      const straight =
+        ab > tol && bc > tol && Math.abs(cross) / (ab + bc) <= tol && dot > 0
+      if (ab <= tol || straight) {
+        pts = pts.filter((_, k) => k !== i)
+        changed = true
+        break
+      }
+    }
+  }
+  return pts
 }
 
-/** Whether walls already run where `runs` would put them: the same
- * polylines, in any order, either way round. */
+/** Two rings with the same corners in the same cyclic order, from any
+ * start, either way round. */
+function sameRing(a: readonly Pt[], b: readonly Pt[], tol: number) {
+  const n = a.length
+  if (n !== b.length || !n) return false
+  for (let k = 0; k < n; k++) {
+    if (!same(a[0], b[k], tol)) continue
+    if (a.every((p, i) => same(p, b[(k + i) % n], tol))) return true
+    if (a.every((p, i) => same(p, b[(k - i + n) % n], tol))) return true
+  }
+  return false
+}
+
+/** The same line on the floor: open polylines with the same corners, either
+ * way round; closed ones the same ring from any start. */
+const samePolyline = (a: readonly Pt[], b: readonly Pt[], tol = 2e-3) => {
+  const ca = isClosedRun(a, tol)
+  if (ca !== isClosedRun(b, tol)) return false
+  if (ca)
+    return sameRing(
+      dropCollinear(a.slice(0, -1), true, tol),
+      dropCollinear(b.slice(0, -1), true, tol),
+      tol
+    )
+  const x = dropCollinear(a, false, tol)
+  const y = dropCollinear(b, false, tol)
+  if (x.length !== y.length) return false
+  return (
+    x.every((p, i) => same(p, y[i], tol)) ||
+    x.every((p, i) => same(p, y[y.length - 1 - i], tol))
+  )
+}
+
+/** Polylines joined end to end wherever one ends where another starts
+ * (either way round); a chain that closes takes nothing more. */
+export function joinChains(
+  runs: readonly { points: readonly Pt[] }[],
+  tol = 2e-3
+): Pt[][] {
+  const left = runs
+    .filter((r) => r.points.length >= 2)
+    .map((r) => r.points.map((p) => [p[0], p[1]] as Pt))
+  const out: Pt[][] = []
+  while (left.length) {
+    let cur = left.shift()!
+    for (let grown = true; grown && !isClosedRun(cur, tol);) {
+      grown = false
+      for (let i = 0; i < left.length; i++) {
+        const p = left[i]
+        const start = cur[0]
+        const end = cur[cur.length - 1]
+        const rev = [...p].reverse()
+        if (same(end, p[0], tol)) cur = [...cur, ...p.slice(1)]
+        else if (same(end, p[p.length - 1], tol))
+          cur = [...cur, ...rev.slice(1)]
+        else if (same(start, p[p.length - 1], tol))
+          cur = [...p, ...cur.slice(1)]
+        else if (same(start, p[0], tol)) cur = [...rev, ...cur.slice(1)]
+        else continue
+        left.splice(i, 1)
+        grown = true
+        break
+      }
+    }
+    out.push(cur)
+  }
+  return out
+}
+
+/** Whether walls already run where `runs` would put them: the same lines,
+ * in any order, either way round - walls that meet end to end read as one,
+ * and a point on a straight stretch is no corner. */
 export function runsMatch(
   walls: readonly { points: readonly Pt[] }[],
   runs: readonly Pt[][]
 ): boolean {
-  if (walls.length !== runs.length) return false
+  const chains = joinChains(walls)
+  if (chains.length !== runs.length) return false
   const left = [...runs]
-  for (const w of walls) {
-    const i = left.findIndex((r) => samePolyline(w.points, r))
+  for (const c of chains) {
+    const i = left.findIndex((r) => samePolyline(c, r))
     if (i < 0) return false
     left.splice(i, 1)
   }
   return true
+}
+
+/** The outline an area's linked walls draw, or why they draw none: joined
+ * end to end they must close into one ring of 3 to 200 corners that has an
+ * area and does not cross itself. */
+export type WallRing =
+  { ring: Pt[] } | { error: "open" | "crossed" | "too-many" }
+
+export function wallRing(
+  walls: readonly { points: readonly Pt[] }[]
+): WallRing {
+  const chains = joinChains(walls)
+  if (chains.length !== 1 || !isClosedRun(chains[0])) return { error: "open" }
+  const ring = dropCollinear(chains[0].slice(0, -1), true).map(
+    ([x, y]) => [r3(x), r3(y)] as Pt
+  )
+  if (ring.length < 3) return { error: "open" }
+  if (ring.length > 200) return { error: "too-many" }
+  let twice = 0
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+    twice += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1]
+  if (Math.abs(twice) < 1e-6 || polygonCrossesItself(ring))
+    return { error: "crossed" }
+  return { ring }
+}
+
+/** What the linked-walls card offers for an area: **Update walls** while
+ * its walls are off its outline, **Update area** while the walls draw
+ * another closed outline (or, asked from a wall, why they draw none). */
+export interface SyncOffer {
+  walls: boolean
+  area: "update" | "open" | "crossed" | "too-many" | null
+  /** The button the card leads with: the side not edited by hand. */
+  lead: "walls" | "area"
+}
+
+export function syncOffer({
+  wallsOff,
+  fromWalls,
+  from,
+  locked,
+}: {
+  /** The walls are off the area's outline. */
+  wallsOff: boolean
+  /** The outline the walls draw; null when the area follows them. */
+  fromWalls: WallRing | null
+  /** What is selected: the area, or one of its walls. */
+  from: "area" | "wall"
+  /** A locked area keeps its outline. */
+  locked: boolean
+}): SyncOffer | null {
+  let area: SyncOffer["area"] = null
+  if (fromWalls && "ring" in fromWalls) area = locked ? null : "update"
+  else if (fromWalls && from === "wall" && !locked) area = fromWalls.error
+  if (!wallsOff && area !== "update") return null
+  return {
+    walls: wallsOff,
+    area,
+    lead: from === "wall" && area === "update" ? "area" : "walls",
+  }
+}
+
+/** Whether an outline already is `ring`: the same corners, in order. */
+export function outlineIsRing(outline: readonly Pt[], ring: readonly Pt[]) {
+  return sameRing(dropCollinear(outline, true), dropCollinear(ring, true), 2e-3)
+}
+
+/**
+ * The area patch that makes its outline `ring`. A rectangle stays one when
+ * the ring is a rectangle - turned as near its old turn as the ring allows -
+ * else the area becomes a polygon of the ring's corners.
+ */
+export function areaFromRing(
+  area: AreaShape,
+  ring: readonly Pt[]
+): Partial<AreaShape> {
+  if (area.shape !== "polygon" && ring.length === 4) {
+    const box = ringRect(ring, area.rotation)
+    if (box) return { ...box, points: [] }
+  }
+  return { shape: "polygon", rotation: 0, ...polygonPatch([...ring]) }
+}
+
+/** A four-corner ring as a box turned about its centre (clockwise degrees,
+ * y down), at the turn nearest `near`; null when it is no rectangle. */
+function ringRect(ring: readonly Pt[], near: number) {
+  const e = ring.map((p, i) => {
+    const q = ring[(i + 1) % 4]
+    return [q[0] - p[0], q[1] - p[1]] as Pt
+  })
+  const len = e.map((v) => Math.hypot(v[0], v[1]))
+  const tol = 1e-3 * Math.max(...len)
+  for (let i = 0; i < 4; i++) {
+    const v = e[i]
+    const w = e[(i + 1) % 4]
+    if (Math.abs(v[0] * w[0] + v[1] * w[1]) / len[(i + 1) % 4] > tol)
+      return null
+  }
+  if (Math.abs(len[0] - len[2]) > tol || Math.abs(len[1] - len[3]) > tol)
+    return null
+  // Clockwise on screen (y down): each edge turns right into the next.
+  const cw = e[0][0] * e[1][1] - e[0][1] * e[1][0] > 0
+  const pts = cw ? [...ring] : [...ring].reverse()
+  const cx = pts.reduce((s, p) => s + p[0], 0) / 4
+  const cy = pts.reduce((s, p) => s + p[1], 0) / 4
+  let best = { rotation: 0, width: 0, height: 0 }
+  let bestOff = Infinity
+  for (let k = 0; k < 4; k++) {
+    const a = pts[k]
+    const b = pts[(k + 1) % 4]
+    const c = pts[(k + 2) % 4]
+    const turn = r3(
+      normAngle((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI)
+    )
+    const rotation = turn >= 360 ? 0 : turn
+    const d = Math.abs(rotation - normAngle(near))
+    const off = Math.min(d, 360 - d)
+    if (off < bestOff) {
+      bestOff = off
+      best = {
+        rotation,
+        width: r3(Math.hypot(b[0] - a[0], b[1] - a[1])),
+        height: r3(Math.hypot(c[0] - b[0], c[1] - b[1])),
+      }
+    }
+  }
+  return {
+    shape: "rect" as const,
+    ...best,
+    x: r3(cx - best.width / 2),
+    y: r3(cy - best.height / 2),
+  }
 }
 
 /** A door that does not fit the rebuilt walls: its old wall and index. */

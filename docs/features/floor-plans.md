@@ -2409,10 +2409,29 @@ A wall linked to an area (its room's shell, say) keeps up with it:
   first and go only on **Update and drop**. Dismiss the card to leave the
   walls as they are.
 - **Editing a linked wall by hand** keeps the link. A move of the area
-  still carries the wall as edited; the next **Update walls** (offered
-  because the wall is off the outline) rebuilds it along the outline again.
+  still carries the wall as edited. With the wall (or the area) selected,
+  the card offers **Update area**: it redraws the area's outline along its
+  linked walls, joined end to end into one closed ring - a corner for each
+  turn, points on a straight stretch left out. A rectangle stays a
+  rectangle (at the nearest turn) when the walls draw one, else the area
+  becomes a polygon. The walls and their doors are left as they are, and
+  it is one undo step. Walls that don't close into one ring (or cross, or
+  have over 200 corners) offer no **Update area**; with a wall selected the
+  card says why. A locked area keeps its outline.
+- **When both changed** - the area reshaped and a wall edited - the card
+  offers both: **Update area** first with a wall selected, **Update walls**
+  first with the area selected. Dismiss leaves both as they are, until the
+  area or its walls change again.
+- Walls split, joined or given an extra point on a straight stretch still
+  count as on the outline while together they run along it.
 - **Deleting the area** asks whether to delete its linked walls too
   (checked by default); kept walls are unlinked.
+
+A building on a site plan (an [outline as an area](#plans-made-from-the-site-map))
+is an area like any other: its linked walls update it the same way. Its
+outline on the Site map itself is not changed. The
+[3D building](#building-levels)'s slab needs no update: it is drawn from
+the walls ticked **Exterior wall** each time, so it follows them as saved.
 
 The area's inspector shows **Walls: N linked** with **Select** (picks them
 with the walls tool) and **Unlink**; a wall's inspector shows **Linked to**
