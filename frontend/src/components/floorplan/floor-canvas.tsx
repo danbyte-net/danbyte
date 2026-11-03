@@ -35,7 +35,13 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/components/theme-provider"
 
 import type { Pt } from "./cable-route"
-import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
+import {
+  CELL,
+  gridLineStep,
+  tileHasFov,
+  tileIsZone,
+  tileName,
+} from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
   ClusterTile,
@@ -690,6 +696,11 @@ export function FloorCanvas({
   const muteMap = muteBackground && mutesBasemap(plan.base_map?.basemap)
   const floorShown = plan.background_shown !== false
   const pxPerCell = CELL * t.k
+  // The grid's lines every cell up close, every 10 or 100 cells when the
+  // cells get smaller on screen than a few pixels: a site-sized plan
+  // fitted whole draws a light grid, not a grey wash of lines.
+  const gridEvery = gridLineStep(pxPerCell)
+
   const [hoverStore] = useState(createHoverStore)
   const hoveredTile = useSyncExternalStore(
     hoverStore.subscribe,
@@ -2136,12 +2147,12 @@ export function FloorCanvas({
         <defs>
           <pattern
             id="fp-grid"
-            width={CELL}
-            height={CELL}
+            width={CELL * gridEvery}
+            height={CELL * gridEvery}
             patternUnits="userSpaceOnUse"
           >
             <path
-              d={`M ${CELL} 0 L 0 0 0 ${CELL}`}
+              d={`M ${CELL * gridEvery} 0 L 0 0 0 ${CELL * gridEvery}`}
               fill="none"
               className="stroke-border"
               strokeWidth={1}

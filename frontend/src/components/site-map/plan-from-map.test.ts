@@ -73,8 +73,8 @@ describe("planFrame", () => {
     expect(Math.abs(h / 2 - f.gridHeight)).toBeLessThan(0.01)
   })
 
-  it("raises the cell size to fit 512 cells", () => {
-    const f = frameOf({ south: 56, west: 10, north: 56.005, east: 10.02 })
+  it("raises the cell size to fit the grid limit", () => {
+    const f = frameOf({ south: 56, west: 10, north: 56.005, east: 10.05 })
     expect(f.cellMm).toBeGreaterThan(1000)
     expect(f.gridWidth).toBeLessThanOrEqual(MAX_GRID)
   })

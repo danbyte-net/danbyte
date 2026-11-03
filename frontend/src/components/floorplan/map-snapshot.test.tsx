@@ -81,7 +81,7 @@ function FakeMap(p: FrameMapProps) {
       </button>
       <button
         type="button"
-        onClick={() => p.onFrame(resizeFrame(f, "e", to(600, 0)), "resize")}
+        onClick={() => p.onFrame(resizeFrame(f, "e", to(2100, 0)), "resize")}
       >
         drag e far
       </button>
@@ -171,11 +171,11 @@ describe("From site map", () => {
     expect(JSON.parse(String(fd.get("bbox")))).toHaveLength(4)
   })
 
-  it("disables Capture past 512 cells a side", () => {
+  it("disables Capture past 2048 cells a side", () => {
     wrap(<SnapshotForm plan={HALL} onClose={vi.fn()} renderMap={FakeMap} />)
     fireEvent.click(screen.getByText("drag e far"))
-    expect(size()).toContain("600 × 20 cells")
-    expect(size()).toContain("At most 512 cells a side")
+    expect(size()).toContain("2100 × 20 cells")
+    expect(size()).toContain("At most 2048 cells a side")
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Capture" })
         .disabled

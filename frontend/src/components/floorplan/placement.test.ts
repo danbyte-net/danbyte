@@ -9,6 +9,7 @@ import type {
 
 import {
   asPhotos,
+  DROP_SCAN_CELLS,
   droppedRect,
   fitToSizeRect,
   linkedTile,
@@ -145,6 +146,18 @@ describe("where placed objects go", () => {
       [4, 1],
       [5, 1],
     ])
+  })
+
+  it("scans a bounded number of cells on a site-sized plan", () => {
+    // A 2048-cell plan with the drop row fully taken: the scan stops after
+    // DROP_SCAN_CELLS cells instead of walking millions.
+    const big = { ...grid, grid_width: 2048, grid_height: 2048 }
+    const wall = tile({ id: "w", x: 0, y: 0, width: 2048, height: 12 })
+    const t0 = performance.now()
+    const rects = placementRects([row()], [3.5, 0.5], big, [wall])
+    expect(rects).toEqual([])
+    expect(performance.now() - t0).toBeLessThan(2000)
+    expect(DROP_SCAN_CELLS).toBeLessThan(2048 * 12)
   })
 
   it("wraps to the next row at the edge", () => {

@@ -1,7 +1,7 @@
 // "New floor plan from this view": the map box as a plan grid at true
 // scale, and the view rendered into one image from the tile server.
 //
-// The map is Web Mercator. Across one view (a campus, at most 512 cells of
+// The map is Web Mercator. Across one view (a site, at most MAX_GRID cells of
 // at most 5 m) the projection's scale is taken as constant at the box's
 // middle latitude: a metre on the map is cos(latitude) of one at the
 // equator. The server (api/floor_plan_from_map.py) does the same sums and
@@ -11,7 +11,8 @@
 import type { SiteMapOutline, SiteMapSite } from "@/lib/api"
 
 export const EARTH_CIRCUMFERENCE_M = 40_075_016.686
-export const MAX_GRID = 512
+/** The most cells a floor plan has a side (api/models.py FLOOR_PLAN_MAX_GRID). */
+export const MAX_GRID = 2048
 export const MIN_CELL_MM = 50
 export const MAX_CELL_MM = 5000
 const MAX_LAT = 85.05112878
@@ -59,7 +60,7 @@ export interface PlanFrame {
   bbox: Bbox
   widthM: number
   heightM: number
-  /** The cell size asked for, raised when the box needs more than 512
+  /** The cell size asked for, raised when the box needs more than MAX_GRID
    * cells across. */
   cellMm: number
   gridWidth: number

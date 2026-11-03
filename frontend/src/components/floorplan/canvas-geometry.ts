@@ -13,6 +13,14 @@ export const CELL = 40
  * tiles show a seam instead of touching strokes. */
 export const GUTTER = 2
 
+/** Cells between the 2D grid's lines at `pxPerCell` screen pixels a cell:
+ * 1 while a cell is at least 6 px, then 10, then 100 - so the grid of a
+ * site-sized plan seen whole stays a light guide. */
+export function gridLineStep(pxPerCell: number): number {
+  for (const step of [1, 10, 100]) if (step * pxPerCell >= 6) return step
+  return 1000
+}
+
 /** A normalized palette entry - a FloorTileType or a DeviceRole. */
 export interface PaletteEntry {
   key: string // "tt:<id>" | "role:<id>"

@@ -422,11 +422,11 @@ class ExpandTests(_Base):
     def test_shrinking_and_too_large_are_refused(self):
         gw = self.plan.grid_width
         for bbox in (_grown(self.plan, left=-3), _grown(self.plan, top=2, bottom=-4),
-                     _grown(self.plan, left=513 - gw), BBOX, [1, 2, 3]):
+                     _grown(self.plan, left=fm.MAX_GRID + 1 - gw), BBOX, [1, 2, 3]):
             r = self.expand(bbox)
             self.assertEqual(r.status_code, 400, bbox)
-        r = self.expand(_grown(self.plan, left=513 - gw))
-        self.assertIn("at most 512", str(r.json()))
+        r = self.expand(_grown(self.plan, left=fm.MAX_GRID + 1 - gw))
+        self.assertIn(f"at most {fm.MAX_GRID}", str(r.json()))
         self.tile.refresh_from_db()
         self.assertEqual(self.tile.x, 2)
         self.plan.refresh_from_db()

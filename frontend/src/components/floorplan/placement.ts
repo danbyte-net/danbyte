@@ -137,6 +137,9 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000
 const TRUE_MIN = 0.05
 const TRUE_MAX = 512
 
+/** The most cells a drop scans for a free one, row by row from the drop. */
+export const DROP_SCAN_CELLS = 20_000
+
 /** A device's top view on a free plan: its measured width × depth in the
  * plan's cells. Null unless both are known. */
 export function trueFootprint(
@@ -284,7 +287,9 @@ export function placementRects(
   const taken = [...tiles]
   let cx = Math.max(0, Math.min(plan.grid_width - 1, Math.floor(at[0])))
   let cy = Math.max(0, Math.min(plan.grid_height - 1, Math.floor(at[1])))
-  const cells = plan.grid_width * plan.grid_height
+  // Row by row from the drop, at most a few thousand cells: a 2048-cell
+  // plan has millions, and a crowded drop spot never scans them all.
+  const cells = Math.min(plan.grid_width * plan.grid_height, DROP_SCAN_CELLS)
   for (const row of rows) {
     let found = false
     for (let n = 0; n < cells; n++) {

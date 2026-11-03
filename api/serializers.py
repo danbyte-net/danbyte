@@ -31,7 +31,7 @@ from .rooms import reconcile_room
 from .models import (
     Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
-    CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, Cabinet, CabinetRole, CabinetType, DinRail,
+    CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, FLOOR_PLAN_MAX_GRID, Cabinet, CabinetRole, CabinetType, DinRail,
     DinRailTemplate,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
@@ -11945,7 +11945,7 @@ def validate_lattice_points(v):
             not isinstance(p, (list, tuple))
             or len(p) != 2
             or not all(isinstance(n, (int, float)) for n in p)
-            or not all(0 <= n <= 512 for n in p)
+            or not all(0 <= n <= FLOOR_PLAN_MAX_GRID for n in p)
         ):
             raise serializers.ValidationError(
                 "each point must be an [x, y] pair within the grid"
@@ -11971,7 +11971,7 @@ def validate_plan_points(v):
                 isinstance(n, (int, float)) and not isinstance(n, bool)
                 and math.isfinite(n) for n in p
             )
-            or not all(0 <= n <= 512 for n in p)
+            or not all(0 <= n <= FLOOR_PLAN_MAX_GRID for n in p)
         ):
             raise serializers.ValidationError(
                 "each point must be an [x, y] pair within the grid"

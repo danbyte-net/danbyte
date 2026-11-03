@@ -8,7 +8,7 @@ under it as the background, and copies the site's building outlines inside
 the box onto it as areas linked to the same locations.
 
 Scale: the map is Web Mercator. Across one view (a campus, at most
-``MAX_GRID`` cells of at most ``MAX_CELL_MM``, ~2.5 km) the projection's
+``MAX_GRID`` cells of at most ``MAX_CELL_MM``, ~10 km) the projection's
 scale is taken as constant at the box's middle latitude; a metre on the map
 is ``cos(latitude)`` of a metre at the equator. Positions inside the box are
 mapped linearly in Mercator units onto the grid, exactly as the image is
@@ -32,11 +32,11 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from auth_api import rbac
 
-from .models import FloorPlan, Location, Site, SiteMapOutline
+from .models import FLOOR_PLAN_MAX_GRID, FloorPlan, Location, Site, SiteMapOutline
 
 EARTH_CIRCUMFERENCE_M = 40_075_016.686
 MAX_LAT = 85.05112878
-MAX_GRID = 512
+MAX_GRID = FLOOR_PLAN_MAX_GRID
 MIN_CELL_MM = 50
 MAX_CELL_MM = 5000
 DEFAULT_CELL_MM = 1000

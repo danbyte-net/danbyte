@@ -575,11 +575,14 @@ def suggest_run(
 
     on_wall, slanted = _wall_nodes(walls, step)
     count = cols * rows
-    # Per node: 0 not looked at yet, 1 free, 2 blocked.
-    node_state = bytearray(count)
+    # Per node: 0 (absent) not looked at yet, 1 free, 2 blocked. Kept for
+    # the nodes the search reaches only (at most ``max_states`` and their
+    # neighbours), never for the whole plan: a 2048-cell plan is 16.8M
+    # lattice nodes.
+    node_state: dict[int, int] = {}
 
     def blocked(i: int) -> bool:
-        v = node_state[i]
+        v = node_state.get(i, 0)
         if not v:
             ix, iy = i % cols, i // cols
             p = (ix * step, iy * step)
@@ -639,11 +642,11 @@ def suggest_run(
     # (-1: the start). A turn is priced against that direction - close to
     # exact, and a quarter of the states of tracking every direction.
     inf = math.inf
-    best = [inf] * count
-    came = [-1] * count
-    prev = [-1] * count
-    # Per (node, direction): 0 not looked at, 1 a step there is fine, 2 not.
-    steps = bytearray(count * 4)
+    best: dict[int, float] = {}
+    came: dict[int, int] = {}
+    prev: dict[int, int] = {}
+    # Per (node, direction): 0 (absent) not looked at, 1 fine, 2 not.
+    steps: dict[int, int] = {}
     best[start] = 0.0
     # Ties go to the state further along (-g), so the many equal-cost
     # staircases of an open floor are not all explored.
@@ -653,7 +656,7 @@ def suggest_run(
     while heap:
         _f, neg_g, i = heapq.heappop(heap)
         g = -neg_g
-        if g > best[i] + _E:
+        if g > best.get(i, inf) + _E:
             continue
         if i == goal:
             found = True
@@ -661,7 +664,7 @@ def suggest_run(
         settled += 1
         if settled > max_states:
             return None
-        d = came[i]
+        d = came.get(i, -1)
         ix = i % cols
         for k in range(4):
             if k == 0 and ix == cols - 1 or k == 1 and ix == 0:
@@ -670,7 +673,7 @@ def suggest_run(
             if j < 0 or j >= count or blocked(j):
                 continue
             sk = i * 4 + k
-            ok = steps[sk]
+            ok = steps.get(sk, 0)
             if not ok:
                 ok = 1 if step_ok(i, j) else 2
                 steps[sk] = ok
@@ -678,7 +681,7 @@ def suggest_run(
             if ok == 2:
                 continue
             ng = g + (along if sk in cheap else plain) + (turn if d >= 0 and d != k else 0)
-            if ng < best[j] - _E:
+            if ng < best.get(j, inf) - _E:
                 best[j] = ng
                 came[j] = k
                 prev[j] = i
@@ -689,6 +692,7 @@ def suggest_run(
     i = goal
     while i >= 0:
         nodes.append(((i % cols) * step, (i // cols) * step))
-        i = prev[i]
+        i = prev.get(i, -1)
+
     nodes.reverse()
     return compress_polyline([(float(a[0]), float(a[1])), *nodes, (float(b[0]), float(b[1]))])

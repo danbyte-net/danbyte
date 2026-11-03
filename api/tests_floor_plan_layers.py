@@ -453,7 +453,7 @@ class GrowTests(_Base):
         # The tile is at (3, 4), the area spans (1, 1)-(6, 6): 5 × 5 cells.
         cases = [
             (4, 4, -1, -1, "grid"),       # smaller than what is drawn
-            (513, 20, 0, 0, "grid"),      # over the limit
+            (fm.MAX_GRID + 1, 20, 0, 0, "grid"),  # over the limit
             (0, 20, 0, 0, "grid"),
             (40, 20, 35, 0, "offset"),    # the area would stick out east
             (40, 20, -2, 0, "offset"),    # ... or west

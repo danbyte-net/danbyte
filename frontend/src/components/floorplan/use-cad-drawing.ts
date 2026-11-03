@@ -212,7 +212,7 @@ export function useCadDrawing(plan: FloorPlan | undefined, canEdit: boolean) {
     onError: (err) => apiErrorToast(err),
   })
 
-  /** Fit the grid to the drawing. A drawing that needs more than 512 cells
+  /** Fit the grid to the drawing. A drawing that needs more than MAX_GRID cells
    * comes back as `{ minCellMm }` for the caller to offer. */
   const fitGrid = useMutation({
     mutationFn: async (

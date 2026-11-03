@@ -88,9 +88,9 @@ describe("a frame in whole cells", () => {
     expect((mercX(b.east) - mercX(b.west)) * per).toBeCloseTo(18, 1)
   })
 
-  it("refuses more than 512 cells a side", () => {
+  it("refuses more than 2048 cells a side", () => {
     expect(frameError(f0)).toBeUndefined()
-    expect(frameError({ ...f0, w: 513 })).toMatch(/512/)
+    expect(frameError({ ...f0, w: 2049 })).toMatch(/2048/)
   })
 
   it("is Expand's box on an anchored plan", () => {

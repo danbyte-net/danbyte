@@ -11977,10 +11977,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Size the grid to the drawing: the drawing moves to the plan's
         origin and the grid becomes the cells that cover it. Optional
         ``cell_mm`` sets the cell size first. 400 with ``min_cell_mm`` when
-        the drawing needs more than 512 cells a side."""
+        the drawing needs more than ``FLOOR_PLAN_MAX_GRID`` cells a side."""
         from django.db import transaction
 
         from . import cad_render
+        from .models import FLOOR_PLAN_MAX_GRID
 
         plan = self.get_object()
         self._not_on_view(plan, "The drawing")
@@ -11999,7 +12000,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not f["fits"]:
             return Response(
                 {"detail": f"The drawing needs cells of at least {f['min_cell_mm']} mm "
-                           "to fit 512 cells.",
+                           f"to fit {FLOOR_PLAN_MAX_GRID} cells.",
                  "min_cell_mm": f["min_cell_mm"]},
                 status=400,
             )

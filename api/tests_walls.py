@@ -2,12 +2,18 @@
 opening validation, and the scene payload. v1 walls are documentation
 geometry, linked to the area they were made from."""
 from django.contrib.auth import get_user_model
-
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
 
-from .models import FloorPlan, FloorPlanArea, FloorPlanWall, Location, Site
+from .models import (
+    FLOOR_PLAN_MAX_GRID,
+    FloorPlan,
+    FloorPlanArea,
+    FloorPlanWall,
+    Location,
+    Site,
+)
 
 
 class _Base(APITestCase):
@@ -312,7 +318,7 @@ class DoorTests(_Base):
 
 class WallPointTests(_Base):
     def test_points_outside_the_grid_or_not_numbers_are_refused(self):
-        for pts in ([[0, 0], [600, 0]], [[0, 0], [True, 1]], [[0, 0]], [[0, "a"], [1, 1]]):
+        for pts in ([[0, 0], [FLOOR_PLAN_MAX_GRID + 1, 0]], [[0, 0], [True, 1]], [[0, 0]], [[0, "a"], [1, 1]]):
             r = self._mk(points=pts)
             self.assertEqual(r.status_code, 400, pts)
 

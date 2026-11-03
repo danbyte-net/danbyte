@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { WHOLE_SITE } from "@/lib/floor-plan-scope"
+import { MAX_GRID } from "@/components/site-map/plan-from-map"
 import { useSiteOptions } from "@/lib/use-site-options"
 import type {
   FloorPlan,
@@ -83,8 +84,14 @@ export function FloorPlanForm({
         name: name.trim(),
         site_id: siteId ?? undefined,
         location_id: locationId,
-        grid_width: Math.min(512, Math.max(1, parseInt(gridWidth, 10) || 24)),
-        grid_height: Math.min(512, Math.max(1, parseInt(gridHeight, 10) || 16)),
+        grid_width: Math.min(
+          MAX_GRID,
+          Math.max(1, parseInt(gridWidth, 10) || 24)
+        ),
+        grid_height: Math.min(
+          MAX_GRID,
+          Math.max(1, parseInt(gridHeight, 10) || 16)
+        ),
         cell_mm: Math.min(5000, Math.max(50, parseInt(cellMm, 10) || 600)),
         ceiling_mm: Math.min(
           20000,
@@ -177,20 +184,20 @@ export function FloorPlanForm({
         <div className="grid gap-3 @md:grid-cols-2">
           <FormText
             label="Grid width"
-            hint="Cells (1–512)"
+            hint={`Cells (1–${MAX_GRID})`}
             type="number"
             min={1}
-            max={512}
+            max={MAX_GRID}
             value={gridWidth}
             onChange={setGridWidth}
             error={fieldErrors.grid_width}
           />
           <FormText
             label="Grid height"
-            hint="Cells (1–512)"
+            hint={`Cells (1–${MAX_GRID})`}
             type="number"
             min={1}
-            max={512}
+            max={MAX_GRID}
             value={gridHeight}
             onChange={setGridHeight}
             error={fieldErrors.grid_height}

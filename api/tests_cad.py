@@ -658,7 +658,8 @@ class DrawingApiTests(_Base):
         self.ready(fx.floor_dxf(units=6))  # now 10 km wide
         r = self.client.post(self.url(tail="fit-grid/"), {}, format="json")
         self.assertEqual(r.status_code, 400)
-        self.assertEqual(r.data["min_cell_mm"], 19532)
+        # 10 km over 2,048 cells.
+        self.assertEqual(r.data["min_cell_mm"], 4883)
 
     def test_a_server_render_with_layers_hidden_is_cached(self):
         d = self.ready()

@@ -78,16 +78,16 @@ describe("growing a plan's box", () => {
     expect(cellsFromMetres(PLAN, Number.NaN)).toBe(0)
   })
 
-  it("previews the grid and refuses more than 512 cells a side", () => {
+  it("previews the grid and refuses more than 2048 cells a side", () => {
     const ok = expandFrame(PLAN, { north: 10, east: 0, south: 0, west: 20 })
     expect(ok.error).toBeUndefined()
     expect([ok.gridWidth, ok.gridHeight]).toEqual([144, 121])
     expect([ok.widthM, ok.heightM]).toEqual([144, 121])
     expect(expandFrame(PLAN, NO_GROWTH).error).toMatch(/Move an edge out/)
-    const big = expandFrame(PLAN, { ...NO_GROWTH, east: 512 - 124 + 1 })
-    expect(big.error).toMatch(/513 × 111 cells/)
-    expect(big.error).toMatch(/at most 512/)
-    expect(roomOn(PLAN, { ...NO_GROWTH, west: 8 }, "east")).toBe(512 - 132)
-    expect(roomOn(PLAN, NO_GROWTH, "north")).toBe(512 - 111)
+    const big = expandFrame(PLAN, { ...NO_GROWTH, east: 2048 - 124 + 1 })
+    expect(big.error).toMatch(/2049 × 111 cells/)
+    expect(big.error).toMatch(/at most 2048/)
+    expect(roomOn(PLAN, { ...NO_GROWTH, west: 8 }, "east")).toBe(2048 - 132)
+    expect(roomOn(PLAN, NO_GROWTH, "north")).toBe(2048 - 111)
   })
 })

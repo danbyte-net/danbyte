@@ -474,7 +474,7 @@ the area - drag a rectangle over it, or press ++enter++ for the whole view
 |---|---|
 | **Name** | The floor plan's name; it must be unique among the site's site-wide floor plans. |
 | **Site** | The site whose outlines and pins are in the framed area, else pick one. |
-| **Cell size** | 1 m by default. Raised when the area would need more than 512 cells across; the line under the fields shows the grid and its size in metres. |
+| **Cell size** | 1 m by default. Raised when the area would need more than 2,048 cells across; the line under the fields shows the grid and its size in metres. |
 | **Background** | **Map** or **Satellite**, from the tile servers set under [Map tiles](#map-tiles-read-this-before-heavy-use). |
 
 **Create** draws the framed area from the tiles into one image, in your
