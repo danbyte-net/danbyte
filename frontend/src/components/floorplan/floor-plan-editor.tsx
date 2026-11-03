@@ -138,7 +138,7 @@ import { usePlanViewPrefs } from "./use-plan-view-prefs"
 import { useShapeEdits } from "./use-shape-edits"
 import { useOutlineDetect } from "./outline-tool"
 import { useStructureEdits } from "./use-structure-edits"
-import { structureLists } from "./structure"
+import { structureLists, syncOffer } from "./structure"
 import { StructureToolbar } from "./structure-toolbar"
 import { isTemp, tempId, useTileEdits } from "./use-tile-edits"
 import { shownLink } from "./shown-link"
@@ -381,14 +381,30 @@ export function FloorPlanEditor({
       else deleteShapeNow(s)
     },
   }
-  // "Update walls": offered while a linked area is selected whose walls
-  // are off its outline, until dismissed for that outline.
+  // "Update walls" / "Update area": offered while a linked area, or one of
+  // its walls, is selected and the two no longer agree - until dismissed
+  // for that outline and those walls.
   const [fitDismissed, setFitDismissed] = useState<string | null>(null)
   const fitArea = (() => {
-    const s = ed.shapes.find((x) => x.id === ed.selectedShapeId)
-    if (s?.kind !== "area" || !structure.wallsOffOutline(s.id)) return null
-    const key = `${s.id}:${s.x},${s.y},${s.width},${s.height},${s.rotation},${JSON.stringify(s.points)}`
-    return key === fitDismissed ? null : { area: s, key }
+    const wall = ed.structure.find(
+      (r) => r.id === ed.selectedWallId && r.part === "wall"
+    )
+    const areaId =
+      wall?.part === "wall" && wall.source_area
+        ? wall.source_area
+        : ed.selectedShapeId
+    const s = ed.shapes.find((x) => x.id === areaId)
+    if (s?.kind !== "area") return null
+    const offer = syncOffer({
+      wallsOff: structure.wallsOffOutline(s.id),
+      fromWalls: structure.areaFromWalls(s.id),
+      from: areaId === ed.selectedShapeId ? "area" : "wall",
+      locked: s.locked,
+    })
+    if (!offer) return null
+    const walls = structure.linkedTo(s.id).map((w) => w.points)
+    const key = `${s.id}:${s.x},${s.y},${s.width},${s.height},${s.rotation},${JSON.stringify(s.points)}:${JSON.stringify(walls)}`
+    return key === fitDismissed ? null : { area: s, key, offer }
   })()
   // "Place device here…": where the picker's next pick lands.
   const placePoint = useRef<Pt | null>(null)
@@ -1616,6 +1632,10 @@ export function FloorPlanEditor({
                     {!structure.linkChoice && fitArea && (
                       <UpdateWallsCard
                         name={areaName(fitArea.area) || "Area"}
+                        offer={fitArea.offer}
+                        onUpdateArea={() =>
+                          structure.updateAreaFromWalls(fitArea.area.id)
+                        }
                         drops={
                           structure.updateDrops?.areaId === fitArea.area.id
                             ? structure.updateDrops.doors
