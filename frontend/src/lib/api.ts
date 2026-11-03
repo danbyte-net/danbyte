@@ -8275,6 +8275,8 @@ export interface SystemInfo {
   /** Migrations this code ships that the database has not run - new code on
    * an old schema (the DB is behind; run migrate). */
   pending_migrations: string[]
+  /** Danbyte's own SBOM ships with this install: GET /api/system/sbom/. */
+  sbom_available: boolean
 }
 
 /** GET /api/system/updates - current version + the release repo's versions. */

@@ -1157,6 +1157,50 @@ def system_info(request):
 
 
 @extend_schema(
+    summary="Download Danbyte's own SBOM (CycloneDX 1.6 JSON)",
+    tags=["deployment"],
+    request=None,
+    responses={
+        (200, "application/vnd.cyclonedx+json"): OpenApiResponse(
+            response=OpenApiTypes.BINARY,
+            description="The SBOM this release shipped with, as an attachment.",
+        ),
+        404: OpenApiResponse(description="This install has no SBOM (a source checkout)."),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def system_sbom(request):
+    """Danbyte's own software bill of materials: every Python and npm package
+    this release runs on, with version, licence and supplier. The release
+    bundle and the container image ship it; it is served as shipped, never
+    generated here, so it describes the build rather than a modified tree.
+    Same gate as ``system_info``: exact versions are useful reconnaissance."""
+    if not _require_manage(request):
+        return Response({"detail": "users.manage required."}, status=403)
+    from django.http import FileResponse
+
+    from danbyte import __version__
+
+    from .version import sbom_path
+
+    path = sbom_path()
+    try:
+        fh = path.open("rb")
+    except OSError:
+        return Response(
+            {"detail": "This install has no SBOM. Release bundles and container "
+             "images ship one; on a source checkout run `make sbom`."},
+            status=404,
+        )
+    resp = FileResponse(fh, as_attachment=True, filename=f"danbyte-{__version__}.cdx.json",
+                        content_type="application/vnd.cyclonedx+json")
+    resp["Cache-Control"] = "no-store"
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp
+
+
+@extend_schema(
     summary="Available release versions and whether an update exists",
     tags=["deployment"],
     request=None,

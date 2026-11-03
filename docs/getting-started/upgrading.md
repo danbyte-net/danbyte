@@ -30,8 +30,10 @@ current `/opt` layout.
     release source, the bundle upload, and at the bottom the releases with
     their notes - rendered as GitHub Markdown, `#123` linking to the issue
     in the release repo - and the upgrade button. **This install** holds the host it runs on: the
-    environment table (Python, Django, PostgreSQL, Redis, platform), the
-    services and their restart buttons, and the site certificate. The
+    environment table (Python, Django, PostgreSQL, Redis, platform) with
+    **Download SBOM** when the release shipped one ([Danbyte's
+    SBOM](sbom.md)), the services and their restart buttons, and the site
+    certificate. The
     running version and the environment come from a local, network-free
     check - so the page renders immediately even on an airgapped or offline
     box. The release-repo check (the list of available versions) runs
