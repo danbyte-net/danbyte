@@ -1282,6 +1282,36 @@ export interface SiteMapConnection {
   capacity?: SiteMapCapacity | null
   links?: SiteMapLink[]
   link_count?: number
+  /** A circuit to a provider network (#466): `site_z` is the network's
+   * marker (`pn:<id>`, at its placed point), not a site. */
+  provider_network?: { id: string; name: string }
+}
+
+/** A provider network on the site map (#466): placed at the centroid of
+ * the sites it serves (off them), with the circuits that reach it. */
+export interface SiteMapProviderNetwork {
+  id: string
+  name: string
+  service_id: string
+  provider: { id: string; name: string }
+  latitude: number
+  longitude: number
+  site_ids: string[]
+  circuits: {
+    id: string
+    cid: string
+    site: { id: string; name: string }
+    type: string | null
+    status: { name: string; color: string } | null
+    color: string
+    commit_rate_kbps: number | null
+  }[]
+}
+
+/** `GET /api/site-map/connections/`. */
+export interface SiteMapConnections {
+  connections: SiteMapConnection[]
+  provider_networks?: SiteMapProviderNetwork[]
 }
 
 /** Where a site map line's speed comes from (#246): a circuit's `commit`
@@ -4404,8 +4434,16 @@ export interface TopoPort {
 
 export interface TopoNode {
   id: string
-  /** "group" = a group_by=site|location aggregate (data is TopoGroupData). */
-  type: "device" | "interface" | "front_port" | "rear_port" | "group"
+  /** "group" = a group_by=site|location aggregate (data is TopoGroupData);
+   * "provider_network" = the node a set of circuits meets at (data is
+   * TopoProviderNetworkData, #466). */
+  type:
+    | "device"
+    | "interface"
+    | "front_port"
+    | "rear_port"
+    | "group"
+    | "provider_network"
   data: {
     name: string
     device_id?: string
@@ -4439,7 +4477,38 @@ export interface TopoNode {
     card?: TopoCard
     /** `include=photo` only. */
     photo?: TopoPhoto
+    /** Provider network nodes (#466) - see TopoProviderNetworkData. */
+    kind?: string
+    provider_network_id?: string
+    provider?: { id: string; name: string }
+    service_id?: string
+    circuit_count?: number
+    circuits?: TopoCircuitRef[]
   }
+}
+
+/** A circuit as the topology's provider network nodes and lines name it. */
+export interface TopoCircuitRef {
+  id: string
+  cid: string
+  provider: { id: string; name: string }
+  type: { id: string; name: string; color: string } | null
+  status: (StatusMini & { is_default?: boolean }) | null
+  commit_rate_kbps: number | null
+  /** On a node's list: the site its site-side end lands on. */
+  site?: { id: string; name: string }
+}
+
+/** A provider network node's data (#466): the hub its circuits meet at. */
+export interface TopoProviderNetworkData {
+  kind: "provider_network"
+  provider_network_id: string
+  name: string
+  service_id: string
+  provider: { id: string; name: string }
+  circuit_count: number
+  circuits: TopoCircuitRef[]
+  dimmed?: boolean
 }
 
 /** Where a device's card lines came from, most specific first. `view` =
@@ -4583,6 +4652,25 @@ export interface TopoEdge {
     cable_label?: string
     /** A tunnel map's link (tunnels/tunnel-graph.ts): the tunnel it is. */
     tunnel?: { id: string; name: string }
+    /** A line to a provider network (`type: "circuit"`, #466): the circuit,
+     * its network, its site-side termination and site, and - when cabled -
+     * the device port it lands on. */
+    circuit?: TopoCircuitRef
+    provider_network?: {
+      id: string
+      name: string
+      service_id?: string
+      provider?: { id: string; name: string }
+    }
+    termination?: {
+      id: string
+      side: string
+      port_speed_kbps: number | null
+      upstream_speed_kbps: number | null
+    }
+    site?: { id: string; name: string }
+    device?: { id: string; name: string }
+    port?: { id: string; name: string; kind: string }
     length?: string | null
     length_unit?: string
     /** Link speed from an endpoint interface (free-form, e.g. "10G"). */

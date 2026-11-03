@@ -55,6 +55,7 @@ import {
   NO_ROLE,
   NO_SITE,
   NO_TOPO_HIDDEN,
+  PROVIDER_NETWORKS,
   UNTYPED,
   edgeHidden,
   familyLabel,
@@ -207,6 +208,11 @@ export function TopologyObjectsSidebar({
   // the search and status filters are render-time inputs anyway.
   const groupRows = graph.nodes
     .filter((n) => n.type === "group")
+    .filter((n) => matchNode(n.data))
+    .sort((a, b) => byName(a.data, b.data))
+  // The provider networks the map's circuits meet at (#466).
+  const networkRows = graph.nodes
+    .filter((n) => n.type === "provider_network")
     .filter((n) => matchNode(n.data))
     .sort((a, b) => byName(a.data, b.data))
 
@@ -582,6 +588,50 @@ export function TopologyObjectsSidebar({
               />
             </FoldableGroup>
           ))}
+        </ObjectsSection>
+      )}
+
+      {networkRows.length > 0 && !status && (
+        <ObjectsSection heading="Provider networks">
+          <FoldableGroup
+            name={PROVIDER_NETWORKS}
+            count={networkRows.length}
+            storageId={FOLDS}
+            visibility={{
+              shown: !hidden.kinds.includes(PROVIDER_NETWORKS),
+              onChange: (v) => toggle("kinds", PROVIDER_NETWORKS, v),
+              what: PROVIDER_NETWORKS,
+            }}
+          >
+            {networkRows.map((n) => (
+              <ObjectRow
+                key={n.id}
+                onClick={() => onPickNode(n)}
+                className={cn("pl-6", !shown(n) && "text-muted-foreground/60")}
+                trailing={
+                  <>
+                    <VisibilityToggle
+                      vis={{
+                        shown: !hidden.devices.includes(n.id),
+                        onChange: (v) => toggle("devices", n.id, v),
+                        what: n.data.name,
+                      }}
+                    />
+                    <span className="num text-[11px] text-muted-foreground/70">
+                      {n.data.circuit_count ?? 0}
+                    </span>
+                  </>
+                }
+              >
+                <span className="min-w-0 truncate">{n.data.name}</span>
+                {n.data.provider && (
+                  <span className="min-w-0 truncate text-[10px] text-muted-foreground/70">
+                    {n.data.provider.name}
+                  </span>
+                )}
+              </ObjectRow>
+            ))}
+          </FoldableGroup>
         </ObjectsSection>
       )}
 

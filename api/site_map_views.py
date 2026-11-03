@@ -22,6 +22,7 @@ from core.tags import TAGS, TAGS_ATTR, tags_of
 
 from .models import CableRoute, Device, Site, SiteMarker
 from .site_map_links import LinkFigures, include_capacity
+from .topology_provider import provider_circuits
 from .views import _get_active_tenant
 
 # ``?include=capacity`` on the two line endpoints (#246) - api.site_map_links.
@@ -405,7 +406,9 @@ def _termination_site_id(term):
 def site_map_connections(request):
     """Site-to-site connection edges for the map - derived, never modeled:
 
-    - **circuits**: both A/Z terminations at placed sites;
+    - **circuits**: both A/Z terminations at placed sites - or one at a
+      placed site and the other on a provider network, drawn to that
+      network's marker (``provider_networks``, #466);
     - **tunnels**: terminations resolved to a site through their device
       interface, or through a VM interface's VM (its own site, else its
       cluster's, else its host's). Two distinct placed sites → one edge; a
@@ -434,10 +437,17 @@ def site_map_connections(request):
             request.user, tenant, "site", "view",
         ).filter(latitude__isnull=False, longitude__isnull=False)
     }
-    # Every edge joins two placed sites the caller can see - with fewer there
-    # is nothing to draw, and no reason to load a cable (#417).
-    if len(visible_sites) < 2:
-        return Response({"connections": []})
+    # Circuits from a placed site to a provider network (#466): a line from
+    # each site to the network's own marker. Every other edge joins two
+    # placed sites the caller can see - with fewer there is nothing else to
+    # draw, and no reason to load a cable (#417).
+    pn_rows = (
+        provider_circuits(request.user, tenant, sites=visible_sites)
+        if visible_sites else []
+    )
+    two_sites = len(visible_sites) >= 2
+    if not two_sites and not pn_rows:
+        return Response({"connections": [], "provider_networks": []})
 
     # The cable hops, loaded once: the cable lines below, and with
     # ?include=capacity what each circuit is cabled to and where each trunk's
@@ -449,6 +459,8 @@ def site_map_connections(request):
         links = []
     elif capacity:
         links = _physical_links(tenant)
+    elif not two_sites:
+        links = []
     else:
         links = _links_around(
             tenant,
@@ -512,6 +524,11 @@ def site_map_connections(request):
         if figures is not None:
             edge.update(figures.circuit(c, a, z))
         edges.append(edge)
+
+    # ── circuits to a provider network ──────────────────────────────────
+    networks = _provider_network_lines(
+        pn_rows, visible_sites, site_ref, status_ref, figures, edges
+    )
 
     # ── tunnels ──────────────────────────────────────────────────────────
     tunnels = (
@@ -612,7 +629,98 @@ def site_map_connections(request):
                 edge.update(figures.cables(entry["hops"], site_a_id=entry["a"]))
             edges.append(edge)
 
-    return Response({"connections": edges})
+    return Response({"connections": edges, "provider_networks": networks})
+
+
+#: How far (degrees) a provider network's marker sits off the one site it
+#: serves, at the least - and how far apart two networks' markers step.
+PN_OFFSET_DEG = 0.05
+
+
+def _place_networks(rows, visible_sites) -> dict:
+    """``{network id: (lat, lng)}``: each provider network at the centroid
+    of the placed sites it serves, moved north when that lands on (or next
+    to) one of them - a network serving one site, say - and east of any
+    network already there. Deterministic: networks in name order."""
+    import math
+
+    served: dict = {}
+    for r in rows:
+        served.setdefault(r.network.id, (r.network, set()))[1].add(r.site_term.site_id)
+    out: dict = {}
+    taken: list = []
+    for pn, sids in sorted(
+        served.values(), key=lambda v: (v[0].name.lower(), str(v[0].id))
+    ):
+        pts = [
+            (float(visible_sites[s].latitude), float(visible_sites[s].longitude))
+            for s in sids
+        ]
+        lat = sum(p[0] for p in pts) / len(pts)
+        lng = sum(p[1] for p in pts) / len(pts)
+        dist = [math.hypot(lat - p[0], lng - p[1]) for p in pts]
+        step = max(max(dist) * 0.25, PN_OFFSET_DEG)
+        if min(dist) < step:
+            lat = min(lat + step, 85.0)
+        while any(math.hypot(lat - a, lng - b) < step / 2 for a, b in taken):
+            lng += step
+        taken.append((lat, lng))
+        out[pn.id] = (round(lat, 6), round(lng, 6))
+    return out
+
+
+def _provider_network_lines(rows, visible_sites, site_ref, status_ref, figures,
+                            edges) -> list:
+    """Append a line per circuit from its site to its provider network's
+    marker to ``edges``; return the markers - each network with its place,
+    the sites it serves and its circuits."""
+    from .topology_provider import circuit_color, network_ref
+
+    if not rows:
+        return []
+    places = _place_networks(rows, visible_sites)
+    networks: dict = {}
+    for r in rows:
+        c, pn, site = r.circuit, r.network, visible_sites[r.site_term.site_id]
+        lat, lng = places[pn.id]
+        entry = networks.setdefault(pn.id, {
+            **network_ref(pn), "latitude": lat, "longitude": lng,
+            "site_ids": [], "circuits": [],
+        })
+        if str(site.id) not in entry["site_ids"]:
+            entry["site_ids"].append(str(site.id))
+        status = status_ref(c.status if c.status_id else None)
+        entry["circuits"].append({
+            "id": str(c.id),
+            "cid": c.cid,
+            "site": {"id": str(site.id), "name": site.name},
+            "type": c.type.name if c.type_id else None,
+            "status": status,
+            "color": circuit_color(c),
+            "commit_rate_kbps": c.commit_rate_kbps,
+        })
+        edge = {
+            "id": f"circuit:{c.id}",
+            "kind": "circuit",
+            "name": c.cid,
+            "site_a": site_ref(site),
+            # The network's marker stands in for the far site.
+            "site_z": {"id": f"pn:{pn.id}", "name": pn.name,
+                       "latitude": lat, "longitude": lng},
+            "provider_network": {"id": str(pn.id), "name": pn.name},
+            "color": circuit_color(c),
+            "status": status,
+            "meta": {
+                "provider": c.provider.name if c.provider_id else None,
+                "type": c.type.name if c.type_id else None,
+                "commit_rate_kbps": c.commit_rate_kbps,
+                "provider_network": pn.name,
+            },
+        }
+        if figures is not None:
+            edge.update(figures.circuit(c, r.site_term, r.pn_term))
+        edges.append(edge)
+    return sorted(networks.values(), key=lambda n: (n["name"].lower(), n["id"]))
 
 
 def _routes_by_cable(tenant) -> dict:

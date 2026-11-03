@@ -46,6 +46,10 @@ export const BGP_SESSIONS = "BGP sessions"
 /** The link family of cables with no cable type. A stored key, like
  * DISCOVERED. */
 export const UNTYPED = "Untyped"
+/** The provider networks and the circuits to them (#466): one eye takes
+ * the nodes and their lines off together. A stored key in `kinds`, like
+ * DISCOVERED. */
+export const PROVIDER_NETWORKS = "Provider networks"
 
 /** A link family as the page names it: LLDP neighbours are "LLDP" and
  * untyped cables "No type", while the stored keys stay as saved views and
@@ -74,6 +78,8 @@ export function nodeHidden(
   h: TopoHidden
 ): boolean {
   if (h.devices.includes(n.id)) return true
+  // A provider network has no site, location or role of its own.
+  if (n.type === "provider_network") return h.kinds.includes(PROVIDER_NETWORKS)
   if (n.type === "group") {
     const kind = (n.data as { kind?: string }).kind
     return kind === "site"
@@ -92,6 +98,7 @@ export function nodeHidden(
 /** Whether a line is off the map: hidden on its own, or its family is. */
 export function edgeHidden(e: TopoEdge, h: TopoHidden): boolean {
   if (h.edges.includes(e.id)) return true
+  if (e.type === "circuit") return h.kinds.includes(PROVIDER_NETWORKS)
   const fam = linkFamily(e)
   return fam !== null && h.kinds.includes(fam)
 }

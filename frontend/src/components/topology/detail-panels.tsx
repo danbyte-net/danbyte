@@ -8,7 +8,9 @@ import type {
   CheckStatus,
   TopoEdge,
   TopoNode,
+  TopoProviderNetworkData,
 } from "@/lib/api"
+import { fmtKbps } from "@/lib/speed"
 import { useCableTypeLabel } from "@/lib/use-dcim-choices"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { StatusBadge } from "@/components/status-badge"
@@ -21,10 +23,12 @@ import { Button } from "@/components/ui/button"
 import type { BundleMember } from "./edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import { sharedLag } from "./lag-bundles"
+import { isProviderNetwork } from "./provider-network-node"
 
 // The panels the topology map opens over its canvas: one for a device, a
-// cable, a bundle of parallel cables, a site or location card, and the line
-// between two such cards. All five are the shared map PanelShell.
+// cable, a bundle of parallel cables, a site or location card, the line
+// between two such cards, and a provider network and a circuit to it
+// (#466). All are the shared map PanelShell.
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`
 
@@ -48,19 +52,23 @@ function useDeviceCheck(
   return (deviceId && q.data?.statuses[deviceId]?.status) || null
 }
 
-export function NodePanel({
-  data: d,
-  monitor,
-  onClose,
-  onFocus,
-}: {
+interface NodePanelProps {
   data: TopoNode["data"]
   /** The device's check roll-up when the map already has it (`null` = no
    * checks); left out, the panel asks for it. */
   monitor?: CheckStatus | null
   onClose: () => void
   onFocus: (deviceId: string) => void
-}) {
+}
+
+/** A card's panel: a device's, or a provider network's (#466). */
+export function NodePanel(props: NodePanelProps) {
+  if (isProviderNetwork(props.data))
+    return <ProviderNetworkPanel data={props.data} onClose={props.onClose} />
+  return <DevicePanel {...props} />
+}
+
+function DevicePanel({ data: d, monitor, onClose, onFocus }: NodePanelProps) {
   const check = useDeviceCheck(d.device_id, monitor)
   return (
     <PanelShell
@@ -156,16 +164,132 @@ function cableName(c: { cable_label?: string; cable_numid?: number | null }) {
   return c.cable_label || (c.cable_numid ? `Cable #${c.cable_numid}` : "Cable")
 }
 
-export function EdgePanel({
-  data: d,
-  onClose,
-  line,
-}: {
+interface EdgePanelProps {
   data: NonNullable<TopoEdge["data"]>
   onClose: () => void
   /** The Diagram link's Line row. */
   line?: React.ReactNode
+}
+
+/** A line's panel: a cable's, or a circuit's to a provider network
+ * (#466). */
+export function EdgePanel(props: EdgePanelProps) {
+  if (props.data.circuit) return <CircuitPanel {...props} />
+  return <CablePanel {...props} />
+}
+
+/** A circuit to a provider network: the circuit, its provider and commit
+ * rate, and the port its site end is cabled to. */
+export function CircuitPanel({ data: d, onClose, line }: EdgePanelProps) {
+  const c = d.circuit!
+  const rate = fmtKbps(c.commit_rate_kbps, { long: true })
+  return (
+    <PanelShell
+      label="Circuit"
+      title={<span className="font-mono">{c.cid}</span>}
+      titleText={c.cid}
+      onClose={onClose}
+      footer={
+        <OpenLink to="/circuits/$id" params={{ id: c.id }}>
+          Open circuit
+        </OpenLink>
+      }
+    >
+      <PanelRow label="Provider">{c.provider.name}</PanelRow>
+      {c.type && (
+        <PanelRow label="Type">
+          <ColorBadge name={c.type.name} color={c.type.color || undefined} />
+        </PanelRow>
+      )}
+      {c.status && (
+        <PanelRow label="Status">
+          <StatusBadge status={c.status} />
+        </PanelRow>
+      )}
+      {rate && (
+        <PanelRow label="Commit rate">
+          <span className="num">{rate}</span>
+        </PanelRow>
+      )}
+      {d.provider_network && (
+        <PanelRow label="Network">
+          <Link
+            to="/provider-networks/$id"
+            params={{ id: d.provider_network.id }}
+            className="link"
+          >
+            {d.provider_network.name}
+          </Link>
+        </PanelRow>
+      )}
+      {d.site && <PanelRow label="Site">{d.site.name}</PanelRow>}
+      <PanelRow label="Port">
+        {d.device && d.port ? (
+          <span className="font-mono">
+            {d.device.name}:{d.port.name}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Not cabled</span>
+        )}
+      </PanelRow>
+      {!!d.via?.length && <PanelRow label="Via">{d.via.join(", ")}</PanelRow>}
+      {line && <PanelSection label="Line">{line}</PanelSection>}
+    </PanelShell>
+  )
+}
+
+/** A provider network: its provider and the circuits that meet at it. */
+export function ProviderNetworkPanel({
+  data: d,
+  onClose,
+}: {
+  data: TopoProviderNetworkData
+  onClose: () => void
 }) {
+  return (
+    <PanelShell
+      label="Provider network"
+      title={d.name}
+      onClose={onClose}
+      footer={
+        <OpenLink
+          to="/provider-networks/$id"
+          params={{ id: d.provider_network_id }}
+        >
+          Open provider network
+        </OpenLink>
+      }
+    >
+      <PanelRow label="Provider">{d.provider.name}</PanelRow>
+      {d.service_id && (
+        <PanelRow label="Service ID">
+          <span className="font-mono">{d.service_id}</span>
+        </PanelRow>
+      )}
+      <PanelSection label={`Circuits · ${d.circuits.length}`}>
+        <div className="divide-y divide-border">
+          {d.circuits.map((c) => (
+            <div key={c.id} className="flex items-center gap-2 py-1">
+              <Link
+                to="/circuits/$id"
+                params={{ id: c.id }}
+                className="link min-w-0 truncate font-mono"
+              >
+                {c.cid}
+              </Link>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {c.site?.name}
+              </span>
+              {c.status && <StatusBadge status={c.status} />}
+            </div>
+          ))}
+        </div>
+      </PanelSection>
+    </PanelShell>
+  )
+}
+
+function CablePanel({ data: d, onClose, line }: EdgePanelProps) {
   const typeLabel = useCableTypeLabel()
   return (
     <PanelShell

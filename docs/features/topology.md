@@ -727,6 +727,8 @@ stays on the map.
 | A bundle | Titled by its aggregates (`Po1 ⇄ Po10 · 2 cables`) or by its two devices. **Line** (Diagram), then **Cables**: each member with its type, speed and ports, and its own *Open*. |
 | A site or location card | **Grouped by**, **Devices**, and **Roles** with the number of each. *Open group* drills in on the same map. |
 | The line between two cards | The number of cables and their **Cable types**. |
+| A provider network | **Provider**, **Service ID**, and **Circuits**: each circuit id with its site and status. *Open provider network*. |
+| A line to a provider network | The circuit id as the title, **Provider**, **Type**, **Status**, **Commit rate**, **Network**, **Site**, **Port** (the device port the site end is cabled to, or *Not cabled*), **Via**. *Open circuit*. |
 
 A status left unset has no row, rather than a dash.
 
@@ -766,6 +768,38 @@ isn't a device level.
 server-to-switch run through two patch panels is **one edge**, annotated
 `via panel-a, panel-b`. Untick it to see the raw physical hops with the
 panels as nodes - the truth on the wall vs the truth in the racks.
+
+## Provider networks
+
+A circuit that runs from one of your sites to a
+[provider network](circuits.md#provider-networks) - an MPLS cloud, a
+carrier's fabric - is drawn to a card of its own for that network: a neutral
+card with a cloud, its name, how many circuits meet there and its provider.
+Every circuit to the same network meets at the one card, so several sites on
+one MPLS service read as hub and spoke, the network in the middle.
+
+- **The line** runs from the device the circuit's site end is cabled to -
+  through patch panels, like any collapsed run, with **Collapse panels** off
+  from the device the cable lands on - to the network's card. It wears the
+  circuit's colour (its type's, else its status's) whatever the colour mode,
+  and is named by its circuit id.
+- **Grouped by site or location**, the line runs from the cabled device's
+  site or location card. An end that is **not cabled** still draws when the
+  map is grouped by site: from its own site's card. On the device map, and
+  grouped by location (a termination names a site, never a location), an
+  uncabled end draws nothing - there is no card to start it from.
+- A device left off the map by a filter, the focus or a hand-picked set
+  takes its circuits with it; a network with no circuit left is not drawn.
+- **Click** the card for the network's panel, the line for the circuit's
+  (see [Detail panels](#detail-panels)).
+- **Hide** them in the Objects sidebar: the **Provider networks** group's eye
+  takes every network card and its lines off the map, a row's eye one
+  network. Both save with the view like the other eyes.
+
+You see a network and its circuits only with view on circuits and on
+provider networks, and only the circuits whose site end is at a site you may
+view - a reader scoped to some sites never sees a card built from circuits
+at the others.
 
 ## Hand-picked maps {#building-a-diagram}
 
@@ -882,8 +916,9 @@ The map has the same eyes as the [site map](site-map.md) and the
 [floor plans](floor-plans.md). In the **Objects** sidebar, every group
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
-for cables without one, **LLDP** for discovered links, or **BGP sessions**)
-- and so does every device row and every cable row. Right-click a card →
+for cables without one, **LLDP** for discovered links, or **BGP sessions**,
+and **Provider networks**) - and so does every device row, every cable row
+and every provider network row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas, and right-click a
 line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
 breakout (the whole cable), an LLDP neighbour or a BGP session.
@@ -1580,6 +1615,11 @@ Every export is light-themed whatever theme the app is in: white paper,
 zinc greys, and color only where it means something - role fills, status
 pills, cable colors.
 
+A [provider network](#provider-networks) is drawn as a neutral card like a
+site card - its name, then its provider - linking back to the network, and
+each circuit to it is its own line in its circuit's colour, linking back to
+the circuit; a Simple export never folds two circuits into one line.
+
 - **SVG** is plain vector drawing: shapes, lines and text, no embedded HTML.
   It opens in a browser, Inkscape or Illustrator and stays editable. Text is
   set in Inter, falling back to the usual sans-serif fonts where Inter is not
@@ -1753,6 +1793,44 @@ the map was saved is on it and one removed is not. Only chassis the caller
 may view count (others, another tenant's and unknown ids are ignored), and
 the members still follow the caller's `device.view` scope. Without `devices`
 the parameter changes nothing. A malformed id is a 400.
+
+**Provider networks.** A circuit with one end on a site and the other on a
+[provider network](circuits.md#provider-networks) adds a node of its own and
+a line to it (see [Provider networks](#provider-networks)) - on the device
+graph, the grouped graph and a hand-picked map alike:
+
+```json
+{"id": "pn:<uuid>", "type": "provider_network", "data": {
+  "kind": "provider_network", "provider_network_id": "<uuid>",
+  "name": "MPLS", "service_id": "", "provider": {"id": "…", "name": "Telco"},
+  "circuit_count": 2,
+  "circuits": [{"id": "…", "cid": "C-1", "provider": {…}, "type": {…},
+                "status": {…}, "commit_rate_kbps": 100000,
+                "site": {"id": "…", "name": "Aarhus"}}]}}
+
+{"id": "ce:<circuit uuid>", "source": "dev:<uuid>", "target": "pn:<uuid>",
+ "type": "circuit", "data": {
+  "circuit": {"id", "cid", "provider", "type", "status", "commit_rate_kbps"},
+  "provider_network": {"id", "name", "service_id", "provider"},
+  "termination": {"id", "side", "port_speed_kbps", "upstream_speed_kbps"},
+  "site": {"id", "name"}, "device": {"id", "name"},
+  "port": {"id", "name", "kind"}, "via": ["pp-1"],
+  "color": "aa00ff", "status": "active", "status_mini": {…},
+  "pairs": [{"a": "sw1:Gi0/48", "b": "MPLS:C-1", "a_port": "Gi0/48",
+             "b_port": "C-1", "a_kind": "interface",
+             "b_kind": "circuit_termination", …}]}}
+```
+
+`circuit.type` and `status` are `null` when unset; `color` is the circuit
+type's colour, else its status's. On the grouped graph the `source` is the
+group (`grp:<id>`), and an edge drawn from an uncabled end's site has no
+`device`, `port` or `pairs`. One node per network, listing only the circuits
+that drew; a network none of whose circuits drew is left out. The node and
+its lines need `circuit.view` and `providernetwork.view`, and the circuit's
+site end must be at a site the caller may view (`site.view`); on the device
+graph the device follows `device.view`, and a patch panel outside it is not
+walked. Every map costs the same few queries whatever the number of
+circuits. `include` enrichment never touches these nodes and lines.
 
 `GET /api/topology/chassis/` lists the virtual chassis the Diagram's device
 list offers: `{results: [{id, name, master_id, members: [{id, name,

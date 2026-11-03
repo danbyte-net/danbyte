@@ -67,6 +67,24 @@ when it doesn't terminate at your own facility.
    transit"). Optionally record the provider's **service ID** for it.
 3. Save.
 
+### Provider networks on the maps {#provider-networks}
+
+A WAN of several sites on one carrier service - each site's circuit with its
+A side at the site and its Z side on the carrier's MPLS network - draws on
+the maps as hub and spoke, the provider network in the middle:
+
+- the [topology](topology.md#provider-networks) draws the network as a card
+  of its own and a line to it from the device each circuit's site end is
+  cabled to (through patch panels), or - grouped by site or location - from
+  that device's card; grouped by site, an end that is not cabled still draws
+  from its own site's card;
+- the [site map](site-map.md#provider-networks) draws it as a marker at the
+  centre of the sites it serves, with a line from each.
+
+Every circuit to the same network meets at the one node. Both maps can hide
+the networks and their lines, and show them only to someone who may view
+circuits and provider networks, and only for circuits at sites they may view.
+
 ## Add a circuit
 
 1. Open **Circuits → Circuits** and click **Add circuit**.
@@ -189,7 +207,8 @@ and `?type=<id>`.
 ## Link speed on the site map
 
 The [site map](site-map.md#link-speed) works out how fast
-each line between two sites is from what you have already recorded. The
+each line between two sites - or from a site to a provider network - is
+from what you have already recorded. The
 first figure it finds wins, and it says which one it used:
 
 1. **Commit rate** - the circuit's committed rate, when it is set.

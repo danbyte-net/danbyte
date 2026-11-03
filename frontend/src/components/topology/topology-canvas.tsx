@@ -581,9 +581,13 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
       if (via.length) labelBits.push(`via ${via.join(", ")}`)
       if (r?.cable_label) labelBits.push(r.cable_label)
       if (colorMode === "speed" && r?.speed) labelBits.push(r.speed)
+      // A circuit to a provider network (#466): named by its circuit id,
+      // and the network card meets it on its own sides.
+      if (r?.circuit) labelBits.unshift(r.circuit.cid)
       return {
         ...ends,
         ...portHandles(first),
+        ...(r?.circuit ? { targetHandle: "n" } : {}),
         ...smoothstep(),
         label: labelBits.length ? labelBits.join(" · ") : undefined,
         animated: r?.marked,
@@ -1173,10 +1177,17 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // browser has one, so a big map never holds the page while it is built;
   // the server, tests and a worker that fails build it here instead.
   const [workerFailed, setWorkerFailed] = useState(false)
-  // The worker sizes devices and site/location cards (the kinds the
-  // topology API sends); anything else is sized by the node registry here.
+  // The worker sizes devices, site/location cards and provider networks
+  // (the kinds the topology API sends, the last two a site card's box);
+  // anything else is sized by the node registry here.
   const plainGraph = useMemo(
-    () => graph.nodes.every((n) => n.type === "device" || n.type === "group"),
+    () =>
+      graph.nodes.every(
+        (n) =>
+          n.type === "device" ||
+          n.type === "group" ||
+          n.type === "provider_network"
+      ),
     [graph]
   )
   const offThread =

@@ -77,11 +77,14 @@ export function statusColor(data?: CableLook | null): string | undefined {
 }
 
 /** The stroke one cable gets under a colour mode; undefined = the default
- * edge colour. */
+ * edge colour. A line to a provider network (#466) wears its circuit's
+ * colour - its type's, else its status's - under every mode, as the site
+ * map's circuit lines do. */
 export function edgeStroke(
-  data: CableLook | undefined,
+  data: (CableLook & { circuit?: unknown }) | undefined,
   mode: EdgeColorMode
 ): string | undefined {
+  if (data?.circuit) return cssColor(data.color) ?? statusColor(data)
   if (mode === "type" && data?.cable_type) return typeColor(data.cable_type)
   if (mode === "status") return statusColor(data)
   if (mode === "speed") return speedColor(data?.speed)

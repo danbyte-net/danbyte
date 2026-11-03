@@ -36,6 +36,7 @@ import type { Rect } from "../diagram/types"
 import type { BundleMember } from "../edge-semantics"
 import type { GroupEdgeInfo, TopoGroupData } from "../group-node"
 import { sizeOf } from "../node-registry"
+import { isProviderNetwork } from "../provider-network-node"
 
 // The Hierarchy tab as an export document, in the Diagram's Simple look:
 // each device a compact role-coloured card centred where its card sits on
@@ -111,7 +112,8 @@ export function fromFlow(
   for (const n of flowNodes) {
     if (n.hidden) continue
     const device = DEVICE_KINDS.has(n.type ?? "")
-    if (!device && n.type !== "sitegroup") continue
+    if (!device && n.type !== "sitegroup" && n.type !== "provider_network")
+      continue
     // Hierarchy cards are placed by their top-left corner; each export card is
     // centred on the card it stands for.
     const s = sizeOf(n)
@@ -144,19 +146,31 @@ export function fromFlow(
         h: s.height,
       }
       if (area && !overlaps(area, r)) continue
+      // A provider network (#466): its name, then its provider.
+      const pn = isProviderNetwork(n.data) ? n.data : null
       const input: CardLayoutInput = {
         name: g.name,
-        lines: [
-          {
-            key: "count",
-            text: `${g.device_count} device${g.device_count === 1 ? "" : "s"}`,
-          },
-        ],
+        lines: pn
+          ? [{ key: "provider", text: pn.provider.name }]
+          : [
+              {
+                key: "count",
+                text: `${g.device_count} device${g.device_count === 1 ? "" : "s"}`,
+              },
+            ],
       }
       rects.set(n.id, r)
       nodes.push(
         cardNode(n.id, c, fitBox(input, { w: r.w, h: r.h }, measure), input, {
           measure,
+          ...(pn
+            ? {
+                link: danbyteUrl(
+                  opts.origin,
+                  `/provider-networks/${pn.provider_network_id}`
+                ),
+              }
+            : {}),
         })
       )
     }

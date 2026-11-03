@@ -33,7 +33,9 @@ for a popup with counts and a jump-off to the site or device page.
     - *tunnels*, resolved termination → interface → device → site - two
       sites make an edge, a hub termination makes a star to its spokes;
     - *cross-site cables* (dark fiber), aggregated per site pair - a bundle
-      is one arc with a count.
+      is one arc with a count;
+    - *circuits to a provider network* - each to that network's own marker
+      (see [Provider networks](#provider-networks)).
   Hover thickens an arc and names it with its speed; click opens its popover
   and the inspector, both showing its [link facts](#link-facts) - speed,
   provider, encapsulation, the ports at each end - with jump-offs to both
@@ -248,13 +250,40 @@ sites that are both placed on the map:
 
 | Line | What has to be true |
 |---|---|
-| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site (not a provider network), and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. A side on a [VM interface](circuits.md#terminate-on-a-virtual-machine) names that VM at its end. |
+| **Circuit** | Both the A and Z [termination](circuits.md#terminate-a-circuit) land on a site, and the two sites differ. Cabling a side to a port is not required for the line - it ties the circuit to the port. A side on a [VM interface](circuits.md#terminate-on-a-virtual-machine) names that VM at its end. |
+| **Circuit to a provider network** | One end lands on a placed site, the other on a [provider network](circuits.md#provider-networks): the line runs from the site to the network's marker (see [Provider networks](#provider-networks)). Cabling is not required here either. |
 | **Tunnel** | Each [tunnel](vpn.md) termination resolves to a site: a device interface through its device, a VM interface through its VM (its own site, else its cluster's, else its host's). Two sites draw one line; a `hub` termination draws one line per spoke. A peer mesh of more than two sites is not drawn. |
 | **Cable** | Its two ends sit on devices at different sites. Cables between sites are aggregated per site pair, so a bundle is one line. |
 
 A site is **placed** once it has a latitude and longitude - an unplaced site
 drops every line that would touch it. If a link you expect is missing, check
 that end's site first.
+
+### Provider networks
+
+A provider network - the MPLS cloud or carrier fabric your circuits' far
+ends land on - has no place of its own, so the map gives it one: a marker (a
+neutral rounded square with a cloud, its name and how many circuits reach
+it) at the centre of the placed sites it serves. When that point lands on or
+next to one of them - a network serving one site, or sites in a ring round
+it - it moves north, by a quarter of the spread of its sites and at least
+0.05°; two networks serving the same sites step apart eastwards. Each
+circuit from a site to the network is its own line, styled like the other
+circuit lines (its circuit type's colour, then its status's), so several
+sites on one MPLS service draw as hub and spoke.
+
+Click the marker for its panel: the provider, the service ID, and every
+circuit with its site, type, commit rate and status - a circuit jumps to its
+line. **Display → Layers → Provider networks** (on by default, remembered per
+browser) turns the markers and their lines off together; in the Objects
+sidebar each network has its own eye, and the *n hidden* chip counts the ones
+you hid. A network goes when every site it serves is hidden, and a line with
+its site. The dashboard and site-page mini maps leave these lines out.
+
+You see a network and its lines only with view on circuits and on provider
+networks, and only for the circuits whose site end is at a site you may view:
+a reader scoped to some sites never sees a marker built from circuits at the
+others, and its place is worked out from their sites alone.
 
 ## Link speed on the map
 
@@ -629,6 +658,18 @@ tunnels and each site pair's cables, as
 [What draws a line between two sites](#what-draws-a-line-between-two-sites)
 describes. Each kind needs its own view permission, and both sites must be
 ones you can view.
+
+It also returns `provider_networks`: each
+[provider network](#provider-networks) a placed site's circuit reaches,
+`{id, name, service_id, provider: {id, name}, latitude, longitude,
+site_ids, circuits: [{id, cid, site: {id, name}, type, status, color,
+commit_rate_kbps}]}`, `latitude`/`longitude` being where the map places it.
+The line of each such circuit is in `connections` as a `circuit` whose
+`site_z` is the network's marker - `{id: "pn:<network id>", name, latitude,
+longitude}` - and which carries `provider_network: {id, name}`; with
+`?include=capacity` its network end has `site_id: null`. A circuit needs
+`circuit.view`, its network `providernetwork.view` and its site `site.view`.
+The query count does not grow with the number of circuits.
 
 ### Permissions
 

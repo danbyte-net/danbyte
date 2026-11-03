@@ -403,3 +403,84 @@ describe("GroupEdgePanel", () => {
     expect(within(aside).getByText("No cable types")).toBeTruthy()
   })
 })
+
+// A provider network and the circuits to it (#466).
+const circuit = {
+  id: "c1",
+  cid: "MPLS-0001",
+  provider: { id: "p1", name: "Telco" },
+  type: { id: "t1", name: "MPLS", color: "aa00ff" },
+  status: ok,
+  commit_rate_kbps: 100_000,
+}
+
+describe("Provider networks", () => {
+  it("opens the network's panel from its card", async () => {
+    const data = {
+      kind: "provider_network",
+      provider_network_id: "pn1",
+      name: "MPLS cloud",
+      service_id: "SVC-9",
+      provider: { id: "p1", name: "Telco" },
+      circuit_count: 1,
+      circuits: [{ ...circuit, site: { id: "s1", name: "Aarhus" } }],
+    } as unknown as TopoNode["data"]
+    const { aside, router } = await show(
+      <NodePanel data={data} onClose={() => {}} onFocus={() => {}} />
+    )
+    expect(aside.getAttribute("aria-label")).toBe("Provider network")
+    expect(within(aside).getByText("MPLS cloud")).toBeTruthy()
+    expect(within(aside).getByText("Telco")).toBeTruthy()
+    expect(within(aside).getByText("SVC-9")).toBeTruthy()
+    const list = within(aside).getByRole("region", { name: "Circuits · 1" })
+    expect(within(list).getByText("Aarhus")).toBeTruthy()
+    // A device's monitoring is never asked for.
+    expect(apiMock).not.toHaveBeenCalledWith(
+      "/api/monitoring/status/",
+      expect.anything()
+    )
+    fireEvent.click(
+      within(aside).getByRole("link", { name: /Open provider network/ })
+    )
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/provider-networks/pn1")
+    )
+    expectNoDots(aside)
+  })
+
+  it("opens the circuit's panel from its line", async () => {
+    const data: NonNullable<TopoEdge["data"]> = {
+      circuit,
+      provider_network: { id: "pn1", name: "MPLS cloud" },
+      site: { id: "s1", name: "Aarhus" },
+      device: { id: "d1", name: "core-sw-01" },
+      port: { id: "i1", name: "Gi0/48", kind: "interface" },
+      via: ["pp-1"],
+    }
+    const { aside, router } = await show(
+      <EdgePanel data={data} onClose={() => {}} />
+    )
+    expect(aside.getAttribute("aria-label")).toBe("Circuit")
+    expect(within(aside).getByText("MPLS-0001")).toBeTruthy()
+    expect(within(aside).getByText("100 Mbps")).toBeTruthy()
+    expect(within(aside).getByText("core-sw-01:Gi0/48")).toBeTruthy()
+    expect(within(aside).getByText("pp-1")).toBeTruthy()
+    expect(within(aside).getByText("MPLS")).toBeTruthy()
+    fireEvent.click(within(aside).getByRole("link", { name: /Open circuit/ }))
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/circuits/c1")
+    )
+    expectNoDots(aside)
+  })
+
+  it("says when the site end is not cabled", async () => {
+    const { aside } = await show(
+      <EdgePanel
+        data={{ circuit: { ...circuit, type: null, commit_rate_kbps: null } }}
+        onClose={() => {}}
+      />
+    )
+    expect(within(aside).getByText("Not cabled")).toBeTruthy()
+    expect(within(aside).queryByText("Commit rate")).toBeNull()
+  })
+})

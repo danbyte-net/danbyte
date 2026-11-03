@@ -5,6 +5,7 @@ import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
 import { HierarchyNode } from "./hierarchy-node"
 import { hierHead, hierHeight, hierarchyWidth } from "./layout"
 import { PortNode, portSize } from "./port-node"
+import { ProviderNetworkNode } from "./provider-network-node"
 import type { PortData } from "./port-node"
 import { ZoneNode } from "./zone-node"
 import { AnnotationNode } from "./diagram/annotation-node"
@@ -41,6 +42,11 @@ export const NODE_KINDS = {
   // grey stock box behind it.
   sitegroup: {
     component: GroupNode,
+    size: () => ({ width: GROUP_W, height: GROUP_H }),
+  },
+  // A provider network a set of circuits meets at (#466): a site card's box.
+  provider_network: {
+    component: ProviderNetworkNode,
     size: () => ({ width: GROUP_W, height: GROUP_H }),
   },
   hier: {
