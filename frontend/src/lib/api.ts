@@ -2158,6 +2158,8 @@ export interface Platform extends LifecycleInfo, EffectiveOsDates {
   target_version?: string
   /** Regex that reads the version out of SNMP sysDescr (#451). */
   version_pattern?: string
+  /** The OS's SPDX licence expression, for the SBOM; "" = unknown. */
+  license?: string
   description: string
   tags: Tag[]
   /** End-of-life data (#8); null while the feature is off. */
@@ -2257,6 +2259,8 @@ export interface Application extends ApplicationMini {
   eol_source: string
   eol_product: string
   eol: ApplicationEol | null
+  /** SPDX licence expression the installs inherit; "" = unknown. */
+  license?: string
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2292,6 +2296,10 @@ export interface InstalledSoftware extends EffectiveOsDates {
   last_seen: string | null
   /** The application group that made the install, while it is its. */
   group: { id: string; name: string; slug: string } | null
+  /** This install's own SPDX licence expression; "" = the application's. */
+  license?: string
+  /** The install's licence, else the application's; "" = unknown. */
+  effective_license?: string
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2717,6 +2725,7 @@ export interface PlatformWritePayload {
   /** The version operators want running (#395). */
   target_version?: string
   version_pattern?: string
+  license?: string
   description?: string
   release_date?: string | null
   end_of_sale?: string | null
@@ -11786,6 +11795,45 @@ export async function ioExportFile(
     blob: await res.blob(),
     filename: named?.[1] ?? `${slug}.${opts.fmt}`,
   }
+}
+
+/** Filters for the CycloneDX SBOM (`/api/sbom/`): ids per filter. */
+export interface SbomFilter {
+  site?: string[]
+  tag?: string[]
+  role?: string[]
+  device?: string[]
+  virtual_machine?: string[]
+}
+
+/** The CycloneDX SBOM URL for a GET download (a site's, a few hosts'). */
+export function sbomUrl(filter: SbomFilter = {}): string {
+  const p = new URLSearchParams()
+  for (const [k, ids] of Object.entries(filter)) {
+    if (ids?.length) p.set(k, ids.join(","))
+  }
+  const q = p.toString()
+  return q ? `/api/sbom/?${q}` : "/api/sbom/"
+}
+
+/** The CycloneDX SBOM as a file to save. POSTed: a list's filtered rows can
+ * run to more ids than a URL holds. */
+export async function sbomFile(
+  filter: SbomFilter
+): Promise<{ blob: Blob; filename: string }> {
+  const path = "/api/sbom/"
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-CSRFToken": getCsrf() },
+    body: JSON.stringify(filter),
+  })
+  if (res.status === 401) onUnauthorized?.()
+  if (!res.ok) throw await apiErrorOf(res, path)
+  const named = /filename="([^"]+)"/.exec(
+    res.headers.get("Content-Disposition") ?? ""
+  )
+  return { blob: await res.blob(), filename: named?.[1] ?? "sbom.cdx.json" }
 }
 
 export const ioFields = (slug: string) =>

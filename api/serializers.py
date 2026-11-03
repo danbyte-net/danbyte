@@ -8088,7 +8088,7 @@ class PlatformSerializer(TaggableSerializerMixin, NumIdModelSerializer):
         fields = ["id", "name", "slug", "group", "group_id",
                   "manufacturer", "manufacturer_id",
                   "config_template", "config_template_id", "target_version",
-                  "version_pattern",
+                  "version_pattern", "license",
                   "description", "tags", "tag_ids", *LIFECYCLE_FIELDS,
                   "eol", "effective_release", "effective_end", "effective_source",
                   "device_count", "vm_count", "created_at", "updated_at"]

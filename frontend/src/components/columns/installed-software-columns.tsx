@@ -22,6 +22,7 @@ export type InstalledSoftwareColumnId =
   | "cycle"
   | "service"
   | "group"
+  | "license"
   | "eol"
   | "lifetime"
   | "source"
@@ -35,6 +36,7 @@ const CANONICAL_ORDER: InstalledSoftwareColumnId[] = [
   "cycle",
   "service",
   "group",
+  "license",
   "eol",
   "lifetime",
   "source",
@@ -207,6 +209,37 @@ export function buildInstalledSoftwareColumns<
           label: "Group",
           get: (r: T) => r.group?.id ?? "__none__",
           formatValue: (_v, r) => ({ label: r.group?.name ?? "No group" }),
+        },
+      },
+    }),
+    // The licence the SBOM reports: the install's own, else the
+    // application's.
+    license: () => ({
+      id: "license",
+      accessorKey: "effective_license",
+      header: ({ column }) => <SortHeader column={column} label="License" />,
+      cell: ({ row }) =>
+        row.original.effective_license ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-mono text-xs">
+              {row.original.effective_license}
+            </span>
+            {row.original.license && (
+              <Badge variant="secondary">override</Badge>
+            )}
+          </span>
+        ) : (
+          dash
+        ),
+      meta: {
+        label: "License",
+        facet: {
+          kind: "enum",
+          label: "License",
+          get: (r: T) => r.effective_license || "__none__",
+          formatValue: (v) => ({
+            label: v === "__none__" ? "No license" : String(v),
+          }),
         },
       },
     }),

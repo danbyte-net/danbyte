@@ -29,6 +29,15 @@ import {
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 
+/** A further export in the menu, under the round-trip formats - e.g. the
+ * device list's SBOM. */
+export interface ExtraExport {
+  key: string
+  label: string
+  disabled?: boolean
+  onSelect: () => void
+}
+
 /**
  * The round-trip *data* export/import control - distinct from the pretty
  * `Export` dropdown (share with a colleague). Exports include ids + stable keys
@@ -40,6 +49,7 @@ export function TableIO({
   name,
   selectedIds = [],
   exportFilter,
+  extraExports = [],
   prominent = false,
 }: {
   slug: string
@@ -48,6 +58,8 @@ export function TableIO({
   /** Narrow the export by model field, e.g. `{ prefix: id }` to export only a
    * prefix's IPs. */
   exportFilter?: Record<string, string>
+  /** Further exports listed under the formats. */
+  extraExports?: ExtraExport[]
   /** Render as a full-size header button ("Import / Export") rather than the
    * compact toolbar control. Use in page headers next to "Add …". */
   prominent?: boolean
@@ -113,6 +125,16 @@ export function TableIO({
                   >
                     {label}
                   </a>
+                </DropdownMenuItem>
+              ))}
+              {extraExports.length > 0 && <DropdownMenuSeparator />}
+              {extraExports.map((x) => (
+                <DropdownMenuItem
+                  key={x.key}
+                  disabled={x.disabled}
+                  onSelect={x.onSelect}
+                >
+                  {x.label}
                 </DropdownMenuItem>
               ))}
             </>

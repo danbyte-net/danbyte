@@ -58,6 +58,7 @@ nav = [
     { "Lifecycle overview" = "features/lifecycle-overview.md" },
     { "Support & warranty coverage" = "features/support-coverage.md" },
     { "Applications & installed software" = "features/applications.md" },
+    { "Software bill of materials (SBOM)" = "features/sbom.md" },
     { "Application flows" = "features/application-flows.md" },
     { "Device profiles"   = "features/device-profiles.md" },
     { "Racks"             = "dcim/racks.md" },

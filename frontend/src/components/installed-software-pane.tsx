@@ -268,6 +268,7 @@ export function InstalledSoftwareDialog({
   const [serviceId, setServiceId] = useState<string | null>(null)
   const [releaseDate, setReleaseDate] = useState("")
   const [endOfSupport, setEndOfSupport] = useState("")
+  const [license, setLicense] = useState("")
   const [description, setDescription] = useState("")
 
   useEffect(() => {
@@ -281,6 +282,7 @@ export function InstalledSoftwareDialog({
     setServiceId(install?.service?.id ?? null)
     setReleaseDate(install?.release_date ?? "")
     setEndOfSupport(install?.end_of_support ?? "")
+    setLicense(install?.license ?? "")
     setDescription(install?.description ?? "")
     reset()
   }, [open, install, application?.id, reset])
@@ -317,6 +319,7 @@ export function InstalledSoftwareDialog({
           service_id: serviceId,
           release_date: releaseDate || null,
           end_of_support: endOfSupport || null,
+          license: license.trim(),
           description: description.trim(),
         },
       }),
@@ -436,6 +439,20 @@ export function InstalledSoftwareDialog({
               error={fieldErrors.end_of_support}
             />
           </div>
+          <FormText
+            label="License"
+            info={
+              <>
+                An SPDX licence expression for this install only. Blank uses the
+                application&apos;s.
+              </>
+            }
+            value={license}
+            onChange={setLicense}
+            mono
+            placeholder="From application"
+            error={fieldErrors.license}
+          />
           <FormTextarea
             label="Description"
             value={description}
