@@ -27,6 +27,7 @@ import { VmBulkBar } from "@/components/vm-bulk-bar"
 import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
+import { useSbomExport } from "@/components/sbom-export"
 
 export const Route = createFileRoute("/virtual-machines/")({
   component: VirtualMachinesPage,
@@ -138,6 +139,12 @@ function VirtualMachinesPage() {
     activeCount,
     columns: wiredColumns,
   } = useUrlTableFilters(columns, allRows)
+  // The SBOM covers the VMs the list shows now.
+  const sbomFilter = useCallback(
+    () => ({ virtual_machine: filteredRows.map((vm) => vm.id) }),
+    [filteredRows]
+  )
+  const sbom = useSbomExport(sbomFilter, filteredRows.length === 0)
 
   return (
     <ListPageShell
@@ -156,7 +163,7 @@ function VirtualMachinesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="virtualmachine" />
+          <TableActions ioType="virtualmachine" extraExports={[sbom]} />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/virtual-machines/new">Add VM</Link>

@@ -83,6 +83,10 @@ function Body({ platform: p }: { platform: Platform }) {
         dash
       ),
     },
+    {
+      label: "License",
+      value: p.license ? <span className="font-mono">{p.license}</span> : dash,
+    },
   ]
 
   return (

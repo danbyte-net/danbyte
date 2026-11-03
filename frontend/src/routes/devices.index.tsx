@@ -29,6 +29,7 @@ import { DeviceBulkBar } from "@/components/device-bulk-bar"
 import { useCanApplyProfiles } from "@/components/device-profile-bulk"
 import { useMe, objCan } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
+import { useSbomExport } from "@/components/sbom-export"
 
 export const Route = createFileRoute("/devices/")({
   // Typed deep-link params, e.g. the "Devices by status / type / site /
@@ -185,6 +186,12 @@ function DevicesPage() {
     activeCount,
     columns: wiredColumns,
   } = useUrlTableFilters(columns, allRows)
+  // The SBOM covers the devices the list shows now.
+  const sbomFilter = useCallback(
+    () => ({ device: filteredRows.map((d) => d.id) }),
+    [filteredRows]
+  )
+  const sbom = useSbomExport(sbomFilter, filteredRows.length === 0)
 
   return (
     <ListPageShell
@@ -203,7 +210,7 @@ function DevicesPage() {
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
-          <TableActions ioType="device" />
+          <TableActions ioType="device" extraExports={[sbom]} />
           {canAdd && (
             <Button size="sm" asChild>
               <Link to="/devices/new">Add device</Link>

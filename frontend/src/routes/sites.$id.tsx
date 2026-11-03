@@ -3,11 +3,12 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Network, Pencil, Plus, Trash2 } from "lucide-react"
+import { Download, Network, Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import {
   api,
+  sbomUrl,
   type Location,
   type ObjectPermission,
   type Paginated,
@@ -130,6 +131,13 @@ function SiteDetailBody({ site: s }: { site: Site }) {
               <Network className="h-3.5 w-3.5" /> Topology
             </Link>
           </Button>
+          {(canDo("device", "view") || canDo("virtualmachine", "view")) && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={sbomUrl({ site: [s.id] })} download>
+                <Download className="h-3.5 w-3.5" /> Export SBOM
+              </a>
+            </Button>
+          )}
           {canDo("site", "change") && (
             <Button variant="outline" size="sm" asChild>
               <Link to="/sites/$id/edit" params={{ id: s.id }}>

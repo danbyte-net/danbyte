@@ -53,6 +53,7 @@ export function ApplicationForm({
   const [manufacturerId, setManufacturerId] = useState<string | null>(
     app?.manufacturer?.id ?? null
   )
+  const [license, setLicense] = useState(app?.license ?? "")
   const [description, setDescription] = useState(app?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     app?.tags?.map((t) => t.id) ?? []
@@ -68,6 +69,7 @@ export function ApplicationForm({
     setSlugDirty(true)
     setParentId(app.parent?.id ?? null)
     setManufacturerId(app.manufacturer?.id ?? null)
+    setLicense(app.license ?? "")
     setDescription(app.description)
     setTagIds(app.tags?.map((t) => t.id) ?? [])
     setCustomFields(app.custom_fields ?? {})
@@ -91,6 +93,7 @@ export function ApplicationForm({
           slug: slug.trim() || slugify(name),
           parent_id: parentId,
           manufacturer_id: manufacturerId,
+          license: license.trim(),
           description: description.trim(),
           tag_ids: tagIds,
           custom_fields: customFields,
@@ -170,6 +173,20 @@ export function ApplicationForm({
             error={fieldErrors.manufacturer_id}
           />
         </div>
+        <FormText
+          label="License"
+          info={
+            <>
+              An SPDX licence expression, such as <code>MIT</code> or{" "}
+              <code>MIT OR Apache-2.0</code>. The SBOM reports it.
+            </>
+          }
+          value={license}
+          onChange={setLicense}
+          mono
+          placeholder="PostgreSQL"
+          error={fieldErrors.license}
+        />
         <FormTextarea
           label="Description"
           value={description}

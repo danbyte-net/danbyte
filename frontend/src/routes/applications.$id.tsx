@@ -100,6 +100,14 @@ function Body({ app }: { app: Application }) {
     },
     { label: "Slug", value: <span className="font-mono">{app.slug}</span> },
     {
+      label: "License",
+      value: app.license ? (
+        <span className="font-mono">{app.license}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Installs",
       value:
         app.install_count > 0 ? (

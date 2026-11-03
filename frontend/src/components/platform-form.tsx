@@ -69,6 +69,7 @@ export function PlatformForm({
   const [versionPattern, setVersionPattern] = useState(
     platform?.version_pattern ?? ""
   )
+  const [license, setLicense] = useState(platform?.license ?? "")
   const [description, setDescription] = useState(platform?.description ?? "")
   const [lifecycle, setLifecycle] = useState(lifecycleFormValue(platform))
   const [tagIds, setTagIds] = useState<number[]>(
@@ -85,6 +86,7 @@ export function PlatformForm({
     setConfigTemplateId(platform.config_template?.id ?? null)
     setTargetVersion(platform.target_version ?? "")
     setVersionPattern(platform.version_pattern ?? "")
+    setLicense(platform.license ?? "")
     setDescription(platform.description)
     setLifecycle(lifecycleFormValue(platform))
     setTagIds(platform.tags?.map((t) => t.id) ?? [])
@@ -124,6 +126,7 @@ export function PlatformForm({
         config_template_id: configTemplateId,
         target_version: targetVersion.trim(),
         version_pattern: versionPattern.trim(),
+        license: license.trim(),
         description: description.trim(),
         tag_ids: tagIds,
         ...lifecyclePayload(lifecycle),
@@ -276,6 +279,20 @@ export function PlatformForm({
             error={fieldErrors.version_pattern}
           />
         </div>
+        <FormText
+          label="License"
+          info={
+            <>
+              An SPDX licence expression, such as <code>MIT</code> or{" "}
+              <code>MIT OR Apache-2.0</code>. The SBOM reports it.
+            </>
+          }
+          value={license}
+          onChange={setLicense}
+          mono
+          placeholder="GPL-2.0-only"
+          error={fieldErrors.license}
+        />
         <FormTextarea
           label="Description"
           value={description}
