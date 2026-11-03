@@ -208,7 +208,10 @@ class BulkAgreementTests(_Base):
         dev = self._device()
         # A LAG: bundle settings on anything else are refused, by PATCH and
         # bulk update alike (#350).
-        iface = Interface.objects.create(device=dev, name="Po1", type="lag")
+        # MACsec on: its settings are refused on a port with it off.
+        iface = Interface.objects.create(
+            device=dev, name="Po1", type="lag", macsec_enabled=True
+        )
         samples = {
             "enabled": False,
             "mgmt_only": True,
@@ -228,6 +231,10 @@ class BulkAgreementTests(_Base):
             "lag_mode": "802.3ad",
             "lag_hash_policy": "layer3+4",
             "lag_miimon": 100,
+            "macsec_enabled": True,
+            "macsec_cipher": "gcm-aes-256",
+            "macsec_keychain_id": None,
+            "macsec_replay_window": 64,
             "vlan_id": None,
             "vrf_id": None,
             "status_id": None,

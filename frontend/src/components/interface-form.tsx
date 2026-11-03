@@ -45,6 +45,8 @@ import { QuickAddDialog } from "@/components/forms/quick-add"
 import { naturalCompare } from "@/lib/natural-sort"
 import { UPLINK_OPTIONS, uplinkFields, uplinkModeOf } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
+import { MACSEC_CIPHER_OPTIONS } from "@/lib/macsec"
+import { usePickList } from "@/components/routing/form-bits"
 
 type LagProtocol = Interface["lag_protocol"]
 type LacpMode = Interface["lacp_mode"]
@@ -144,6 +146,26 @@ export function InterfaceForm({
   const [lagMiimon, setLagMiimon] = useState(
     iface?.lag_miimon != null ? String(iface.lag_miimon) : ""
   )
+  // MACsec: the cipher, keychain and replay window only travel while on.
+  const [macsecEnabled, setMacsecEnabled] = useState(
+    iface?.macsec_enabled ?? false
+  )
+  const [macsecCipher, setMacsecCipher] = useState<string>(
+    iface?.macsec_cipher ?? ""
+  )
+  const [macsecKeychainId, setMacsecKeychainId] = useState<string | null>(
+    iface?.macsec_keychain?.id ?? null
+  )
+  const [macsecReplay, setMacsecReplay] = useState(
+    iface?.macsec_replay_window != null
+      ? String(iface.macsec_replay_window)
+      : ""
+  )
+  const keychains = usePickList<{ id: string; name: string }>(
+    "routing-keychains",
+    "/api/routing/keychains/",
+    (k) => k.name
+  )
   const isLag = type === "lag"
   // Virtual, bridge and aggregate types have no physical port - the server
   // flags them virtual whatever the box says.
@@ -195,6 +217,14 @@ export function InterfaceForm({
     setLagMode(iface.lag_mode ?? "")
     setLagHash(iface.lag_hash_policy ?? "")
     setLagMiimon(iface.lag_miimon != null ? String(iface.lag_miimon) : "")
+    setMacsecEnabled(iface.macsec_enabled)
+    setMacsecCipher(iface.macsec_cipher)
+    setMacsecKeychainId(iface.macsec_keychain?.id ?? null)
+    setMacsecReplay(
+      iface.macsec_replay_window != null
+        ? String(iface.macsec_replay_window)
+        : ""
+    )
     setTagIds(iface.tags.map((t) => t.id))
     reset()
   }, [iface, reset])
@@ -331,6 +361,13 @@ export function InterfaceForm({
         lag_mode: isLag ? lagMode : "",
         lag_hash_policy: isLag ? lagHash : "",
         lag_miimon: isLag && lagMiimon.trim() ? Number(lagMiimon) : null,
+        macsec_enabled: macsecEnabled,
+        macsec_cipher: macsecEnabled
+          ? (macsecCipher as InterfaceWritePayload["macsec_cipher"])
+          : "",
+        macsec_keychain_id: macsecEnabled ? macsecKeychainId : null,
+        macsec_replay_window:
+          macsecEnabled && macsecReplay.trim() ? Number(macsecReplay) : null,
       }
       if (isEdit)
         return saveObject<Interface>({
@@ -842,6 +879,54 @@ export function InterfaceForm({
               </div>
             </FormSection>
           )}
+
+          <FormSection title="MACsec" card>
+            <FormCheckbox
+              label="MACsec"
+              checked={macsecEnabled}
+              onChange={setMacsecEnabled}
+              info="802.1AE link encryption, keyed by MKA."
+            />
+            {macsecEnabled && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormSelect
+                    label="Cipher"
+                    value={macsecCipher || null}
+                    onChange={(v) => setMacsecCipher(v ?? "")}
+                    noneLabel="Device default"
+                    options={MACSEC_CIPHER_OPTIONS}
+                    error={fieldErrors.macsec_cipher}
+                  />
+                  <FormText
+                    label="Replay window"
+                    type="number"
+                    min={0}
+                    value={macsecReplay}
+                    onChange={setMacsecReplay}
+                    placeholder="Device default"
+                    info="Packets; 0 is strict ordering."
+                    error={fieldErrors.macsec_replay_window}
+                  />
+                </div>
+                <FormCombobox
+                  label="Keychain"
+                  value={macsecKeychainId}
+                  onChange={setMacsecKeychainId}
+                  options={keychains.map((k) => ({
+                    value: k.id,
+                    label: k.label,
+                  }))}
+                  noneLabel="None"
+                  placeholder="None"
+                  searchPlaceholder="Search keychains…"
+                  emptyText="No keychains."
+                  info="Holds the MKA CAK. The key stays in the keychain."
+                  error={fieldErrors.macsec_keychain_id}
+                />
+              </>
+            )}
+          </FormSection>
 
           <FormSection title="Nesting" card>
             <FormCheckbox

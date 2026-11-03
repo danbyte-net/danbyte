@@ -37,6 +37,7 @@ from core.errors import NETWORK_ERRORS, public_error
 from core.models import Organization, Tag, Tenant, TenantGroup
 from core.tags import TAGS, tags_of
 from customization.models import CustomField, CustomFieldGroup
+from routing.models import RoutingKeychain
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_edit import BulkEditMixin, BulkEditSpec
 # Re-exported: these lived here before api.bulk_update.
@@ -4858,18 +4859,26 @@ class NameRangeCreateMixin:
         super().perform_create(serializer)
 
 
+_MACSEC_DETAIL_KEYS = ("macsec_cipher", "macsec_keychain_id", "macsec_replay_window")
+
+
 class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedViewSet):
     """Interfaces have no direct tenant FK - scope via device.tenant."""
 
     bulk_str_fields = (
         "type", "mode", "speed", "duplex", "description",
         "lag_protocol", "lacp_mode", "lacp_rate", "lag_mode", "lag_hash_policy",
+        "macsec_cipher",
     )
     bulk_bool_fields = (
         "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
+        "macsec_enabled",
     )
-    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon")
-    bulk_fk_fields = {"vlan_id": VLAN, "vrf_id": VRF, "status_id": Status}
+    bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon", "macsec_replay_window")
+    bulk_fk_fields = {
+        "vlan_id": VLAN, "vrf_id": VRF, "status_id": Status,
+        "macsec_keychain_id": RoutingKeychain,
+    }
     bulk_name_scope_field = "device_id"
 
     def normalize_bulk_updates(self, updates):
@@ -4905,11 +4914,35 @@ class InterfaceViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedVie
             from .speed import normalize_speed
 
             updates["speed"] = normalize_speed(updates["speed"] or "")
+        # MACsec off clears its settings, as Interface.save does; setting
+        # them while turning it off is refused, as the form does.
+        if updates.get("macsec_enabled") is False:
+            for key in _MACSEC_DETAIL_KEYS:
+                if updates.get(key) not in (None, ""):
+                    raise ValidationError({key: "Turn MACsec on to set this."})
+            updates["macsec_cipher"] = ""
+            updates["macsec_keychain_id"] = None
+            updates["macsec_replay_window"] = None
         return updates
+
+    def check_bulk_rows(self, rows, updates):
+        # Setting a MACsec detail without turning MACsec on in the same edit
+        # only works where it is already on.
+        if updates.get("macsec_enabled") is not None:
+            return
+        for key in _MACSEC_DETAIL_KEYS:
+            if updates.get(key) in (None, ""):
+                continue
+            off = [r.name for r in rows if not r.macsec_enabled]
+            if off:
+                raise ValidationError({
+                    key: "Turn MACsec on to set this. Off on: "
+                         + ", ".join(off[:5]) + ("…" if len(off) > 5 else "")
+                })
     bulk_tags = True
 
     queryset = (
-        Interface.objects.select_related("device", "vlan", "vrf", "status")
+        Interface.objects.select_related("device", "vlan", "vrf", "status", "macsec_keychain")
         # The parent, LAG and bridge (with their devices) are prefetched, not
         # joined: joined, Postgres joined every interface in the tenant to
         # them before it could sort and take one page (#298). Most rows have

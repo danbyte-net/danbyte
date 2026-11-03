@@ -68,6 +68,7 @@ import {
   useDeviceMacs,
 } from "@/lib/mac-tracking"
 import type { UplinkMode } from "@/lib/mac-tracking"
+import { MACSEC_CIPHER_OPTIONS } from "@/lib/macsec"
 import { KvCard, mono, dash } from "@/components/kv-card"
 import { Model3DCard } from "@/components/model-3d-card"
 import { ModelViewerFrame } from "@/components/model-viewer-card"
@@ -2154,6 +2155,25 @@ function DeviceInterfacesPane({
             kind: "options",
             options: UPLINK_OPTIONS,
             expand: (v) => uplinkFields(v as UplinkMode),
+          },
+          { key: "macsec_enabled", label: "MACsec", kind: "bool" },
+          {
+            key: "macsec_cipher",
+            label: "MACsec cipher",
+            kind: "options",
+            options: MACSEC_CIPHER_OPTIONS,
+          },
+          {
+            key: "macsec_keychain_id",
+            label: "MACsec keychain",
+            kind: "object",
+            object_model: "routingkeychain",
+            endpoint: "/api/routing/keychains/",
+          },
+          {
+            key: "macsec_replay_window",
+            label: "MACsec replay window",
+            kind: "int",
           },
           { key: "description", label: "Description", kind: "text" },
         ]}

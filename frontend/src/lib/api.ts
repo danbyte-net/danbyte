@@ -3734,9 +3734,19 @@ export interface Interface {
   lag_hash_policy: string
   lag_hash_policy_display: string
   lag_miimon: number | null
+  /** MACsec (802.1AE, keyed by MKA). The cipher, keychain and replay
+   * window are blank unless enabled. The keychain carries no key. */
+  macsec_enabled: boolean
+  macsec_cipher: MacsecCipher
+  macsec_cipher_display: string
+  macsec_keychain: { id: string; name: string; algorithm: string } | null
+  macsec_replay_window: number | null
   created_at: string
   updated_at: string
 }
+
+export type MacsecCipher =
+  "" | "gcm-aes-128" | "gcm-aes-256" | "gcm-aes-xpn-128" | "gcm-aes-xpn-256"
 
 export interface InterfaceWritePayload {
   status_id?: string | null
@@ -3780,6 +3790,10 @@ export interface InterfaceWritePayload {
   lag_mode?: string
   lag_hash_policy?: string
   lag_miimon?: number | null
+  macsec_enabled?: boolean
+  macsec_cipher?: MacsecCipher
+  macsec_keychain_id?: string | null
+  macsec_replay_window?: number | null
 }
 
 // ─── Patch-panel ports ──────────────────────────────────────────────────────
