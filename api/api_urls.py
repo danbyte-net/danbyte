@@ -806,6 +806,7 @@ urlpatterns = [
     # In-app updates - current version + available releases (users.manage).
     path("health/", deployment.health, name="health"),
     path("system/info/", deployment.system_info, name="system-info"),
+    path("system/sbom/", deployment.system_sbom, name="system-sbom"),
     path("system/updates/", deployment.system_updates, name="system-updates"),
     path("system/upgrade-notes/", deployment.upgrade_notes, name="system-upgrade-notes"),
     path("system/upgrade-notes/ack/", deployment.upgrade_notes_ack,

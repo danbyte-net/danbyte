@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, Download } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type {
@@ -645,7 +645,19 @@ docker compose -f docker-compose.prod.yml up -d`}
             This install
           </p>
           {/* System info - Postgres/Django/etc, loads instantly. */}
-          <SettingsCard title="This install" layout="plain">
+          <SettingsCard
+            title="This install"
+            layout="plain"
+            footer={
+              sys?.sbom_available && (
+                <Button size="sm" variant="outline" asChild>
+                  <a href="/api/system/sbom/" download>
+                    <Download className="size-3.5" /> Download SBOM
+                  </a>
+                </Button>
+              )
+            }
+          >
             <dl className="grid max-w-2xl grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-[13px]">
               {(
                 [
