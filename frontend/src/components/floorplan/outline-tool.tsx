@@ -107,7 +107,11 @@ export function useOutlineDetect({
   structure: StructureEdits
 }) {
   const active = ed.tool === "outline"
-  const picture = plan?.background_image ?? null
+  // The floor's own picture, else the base map (a Site map snapshot) - it
+  // lies on the same frame.
+  const picture =
+    plan?.background_image ??
+    ((plan?.map_visible && plan.base_map?.image) || null)
   const hasCad = !!plan && !isLiveView(plan) && cad.drawing?.status === "ready"
   const modes = useMemo<OutlineMode[]>(
     () => [
@@ -223,7 +227,7 @@ export function useOutlineDetect({
   const pickAt = useCallback(
     async (at: Pt, add = false, as: OutlineMode | null = mode) => {
       if (!as) {
-        setMessage("Needs a background picture or a drawing")
+        setMessage("Needs a map, picture or drawing")
         return
       }
       setBusy(true)
@@ -655,7 +659,7 @@ export function OutlinePanel({ od }: { od: OutlineDetect }) {
             : (od.message ??
               (od.modes.length
                 ? "Click a building or room · Shift adds more"
-                : "Needs a background picture or a drawing"))}
+                : "Needs a map, picture or drawing"))}
         </span>
       )}
       {!has && od.modes.length > 0 && !od.message && !od.busy && (

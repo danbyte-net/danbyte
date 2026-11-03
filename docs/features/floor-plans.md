@@ -1529,8 +1529,9 @@ floating toolbar takes a [snapshot](#of-a-room-location-or-area) of it.
 right-click menu) draws an area by finding it: click a building on a map
 background, a room in a scanned plan or a closed shape in a CAD drawing,
 and its outline is proposed over the plan, dashed, a handle on each corner
-to drag. It works best on maps, CAD drawings and line drawings; satellite
-pictures have no clean edges to follow.
+to drag. It reads the floor's own picture, else its base map (a
+[Site map snapshot](#backgrounds)). It works best on maps, CAD drawings
+and line drawings; satellite pictures have no clean edges to follow.
 
 The card over the plan picks how it looks:
 
@@ -1700,7 +1701,7 @@ In Edit, a right-click on empty plan space offers **Place device here…**
 (the [Place picker](#the-place-picker); what you pick lands at the point,
 on the grid on a grid plan), **Draw room/area here** (what a click with the
 Room tool draws: a 3 × 3 area at the point, selected to resize and link),
-**Detect outline here** (on a plan with a background picture or a drawing:
+**Detect outline here** (on a plan with a map, a background picture or a drawing:
 [Detect outline](#detect-outline) at the point),
 **Add label here** (a label at the
 point, its text ready to type) and **Fit to view**. In View, those who may

@@ -289,6 +289,20 @@ describe("on a CAD drawing", () => {
     ])
   })
 
+  it("reads the base map when the floor has no picture of its own", () => {
+    const cad = { drawing: null } as unknown as CadDrawingState
+    const h = setup(
+      {
+        ...plan,
+        background_image: null,
+        map_visible: true,
+        base_map: { id: "m1", image: "/media/map.png" },
+      } as unknown as FloorPlan,
+      cad
+    )
+    expect(h.current.od.modes).toEqual(["colour", "room"])
+  })
+
   it("says so when no closed shape holds the click", async () => {
     const { ApiError } = await import("@/lib/api")
     apiMock.mockRejectedValue(
