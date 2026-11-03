@@ -635,7 +635,11 @@ their eye is off. On an aligned floor plan the map lies on the ground
 level's floor only, never on a basement's or an upper level's slab. The
 grid is a soft guide near the camera: its cell lines fade out a few tens of
 cells away, so a campus seen whole shows no hatch. A site-sized plan keeps
-its floor layers (slab, map background, area tints) apart at any distance.
+its floor layers (slab, map background, area tints) apart at any distance,
+and orbiting low over it keeps the floor in front of the camera. On a
+building's levels the active level stands on its own outline (its exterior
+walls) rather than a slab the size of its grid, so a level framed on a
+site-sized map never hides the ground and its map.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 

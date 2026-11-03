@@ -904,6 +904,7 @@ export default function FloorScene3D({
           ceiling={showCeiling}
           drawingFloor={drawingFloor}
           muted={muteBackground}
+          slab={!(building && levels.length > 1 && building.mode !== "only")}
         />
         {building && levels.length > 1 && building.mode !== "only" && (
           <>
