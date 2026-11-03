@@ -307,6 +307,8 @@ export interface Prefix {
   /** The allocation ranges' accounting when `allocate_from_ranges` is on;
    * null when the prefix allocates from its whole network. */
   allocation: PrefixAllocation | null
+  /** The site's gateway policy may create a gateway in this prefix. */
+  auto_gateway: boolean
   monitoring_engine?: { id: string; name: string; is_local: boolean } | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -780,6 +782,7 @@ export interface PrefixWritePayload {
   description?: string
   auto_assign_site?: boolean
   allocate_from_ranges?: boolean
+  auto_gateway?: boolean
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>
 }
@@ -5285,6 +5288,7 @@ export interface BulkUpdateFields {
   site_id?: string | null
   vlan_id?: string | null
   description?: string
+  auto_gateway?: boolean
   add_tag_ids?: number[]
   remove_tag_ids?: number[]
 }

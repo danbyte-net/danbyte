@@ -1116,6 +1116,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # api.editable_fields can describe prefixes without a second list. The
     # bespoke action stays the enforcer; a test asserts the two agree.
     editable_str_fields = ("description",)
+    editable_bool_fields = ("auto_gateway",)
     editable_fk_fields = {
         "status_id": Status, "vrf_id": VRF, "site_id": Site, "vlan_id": VLAN,
     }
@@ -1131,7 +1132,7 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # identifier and is left blank for the user to fill.
     clone_fields = (
         "status", "site", "vlan", "vrf", "location", "description",
-        "auto_discover", "auto_assign_site", "monitoring_engine",
+        "auto_discover", "auto_assign_site", "auto_gateway", "monitoring_engine",
     )
 
     def perform_destroy(self, instance):
@@ -1665,7 +1666,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # ── Bulk patch ──────────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-update")
     def bulk_update(self, request):
-        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id}} → 200.
+        """POST {ids: [...], fields: {status_id, vrf_id, site_id, vlan_id,
+        description, auto_gateway}} → 200.
 
         Only the keys present in ``fields`` are touched. Tags are handled
         as add/remove sets rather than overwriting so a bulk edit can't
@@ -1678,8 +1680,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"fields": "Provide at least one field to update."})
 
         updates = _bulk_field_updates(
-            fields, ("status_id", "vrf_id", "site_id", "vlan_id", "description")
+            fields,
+            ("status_id", "vrf_id", "site_id", "vlan_id", "description", "auto_gateway"),
         )
+        if "auto_gateway" in updates and not isinstance(updates["auto_gateway"], bool):
+            raise ValidationError({"auto_gateway": "Must be true or false."})
         # The serializer's field rules (#350). Its object-level rules are the
         # CIDR's own - duplicates and overlaps - which a bulk edit never sets;
         # a VRF move onto a taken CIDR is the database's 409.

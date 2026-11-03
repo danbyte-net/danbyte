@@ -1759,7 +1759,7 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "site", "vlan", "vlan_vrf_mismatch", "vrf", "location",
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
-            "allocate_from_ranges", "allocation",
+            "allocate_from_ranges", "allocation", "auto_gateway",
             "monitoring_engine",
             "tags",
             "custom_fields",

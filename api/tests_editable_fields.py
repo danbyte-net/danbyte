@@ -250,7 +250,9 @@ class BulkAgreementTests(_Base):
         """Prefix/IP/VLAN hand-roll their own bulk_update. The registry mirrors
         them by declaration, so assert the mirror is honest."""
         expected = {
-            "prefix": {"status_id", "vrf_id", "site_id", "vlan_id", "description"},
+            "prefix": {
+                "status_id", "vrf_id", "site_id", "vlan_id", "description", "auto_gateway",
+            },
             "ipaddress": {"status_id", "role_id", "description"},
             "vlan": {"status_id", "site_id", "zone_id", "vrf_id", "description"},
         }

@@ -3035,6 +3035,12 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "address outside every range is refused. For a provider handing out a "
         "slice of a subnet that isn't yours.",
     )
+    auto_gateway = models.BooleanField(
+        default=True, db_default=True,
+        help_text="Let the site's gateway policy create a gateway address in "
+        "this prefix when it is created. Off for loopback blocks, point-to-point "
+        "links and other prefixes that have no gateway.",
+    )
     auto_discover = models.BooleanField(
         default=False,
         help_text="Opt in to periodic ICMP discovery - responders not yet "

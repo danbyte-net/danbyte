@@ -19,6 +19,7 @@ An IP prefix (CIDR), scoped to a `(tenant, VRF)` pair.
 | `vlan` | FK → `VLAN` | NULL | Optional |
 | `site` | FK → `Site` | NULL | Optional |
 | `description` | text | `""` | |
+| `auto_gateway` | bool | `true` | The site's gateway policy may create a gateway in this prefix when it is created. Off: nothing is created. Turning it off later keeps an existing gateway (see [Gateway autospawn](../features/gateway-autospawn.md)) |
 | `allocate_from_ranges` | bool | `false` | Only the IP ranges inside the prefix are allocatable: next available, free rows, pools and utilisation come from them; a new address outside every range is refused (see [IPAM objects](../features/ipam-objects.md#ip-ranges)) |
 | `custom_fields` | JSONB | `{}` | User-defined attributes |
 | `tags` | M2M Tag | empty | Via `TaggedItem` |
@@ -85,7 +86,7 @@ they never block a change - the tree re-nests them.
 
 | Hook | Trigger | Action |
 |---|---|---|
-| `prefix_create` view | POST | Save → if `gateway` is empty and site has a `gateway_policy`, autospawn an `IPAddress(role=gateway)` |
+| `prefix_create` view | POST | Save → if `gateway` is empty, the site has a `gateway_policy`, `auto_gateway` is on and the status is not `container`, autospawn an `IPAddress(role=gateway)` |
 | `prefix_edit` view | POST | Save → tags updated; gateway/site/vlan can be changed |
 | `prefix_detail` view | GET | Render IPs / Children / Map tabs |
 

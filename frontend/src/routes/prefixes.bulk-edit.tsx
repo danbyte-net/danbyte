@@ -40,6 +40,7 @@ function BulkEditPrefixesPage() {
   const [vrfId, setVrfId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
   const [vlanId, setVlanId] = useState<string>(KEEP)
+  const [autoGateway, setAutoGateway] = useState<string>(KEEP)
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
 
@@ -79,6 +80,7 @@ function BulkEditPrefixesPage() {
       if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
       if (vlanId !== KEEP) fields.vlan_id = vlanId === NONE ? null : vlanId
+      if (autoGateway !== KEEP) fields.auto_gateway = autoGateway === "on"
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
       if (Object.keys(fields).length === 0) {
@@ -201,6 +203,20 @@ function BulkEditPrefixesPage() {
               })),
             ]}
             searchPlaceholder="Search VLANs…"
+            emptyText="No matches."
+          />
+        </Field>
+
+        <Field label="Automatic gateway">
+          <Combobox
+            value={autoGateway}
+            onChange={(v) => setAutoGateway(v ?? KEEP)}
+            options={[
+              { value: KEEP, label: "(keep)" },
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            searchPlaceholder="Search…"
             emptyText="No matches."
           />
         </Field>

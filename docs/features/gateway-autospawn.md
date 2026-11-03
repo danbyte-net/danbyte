@@ -28,7 +28,8 @@ which role to mark the new address with. See
 When you create a prefix and leave the gateway blank, Danbyte:
 
 1. Checks the prefix's site for a gateway policy. No site, or policy set to
-   **None** → nothing happens.
+   **None** → nothing happens. A prefix with **Automatic gateway** off, or
+   with the **Container** status, is skipped as well.
 2. Works out the gateway address from the policy (first or last host).
 3. Creates an IP at that address, marked **assigned** with the **gateway** role,
    and notes it was auto-created by the site policy. If an IP already exists at
@@ -52,9 +53,20 @@ logged.
 |---|---|
 | The prefix has no site | There's no policy to look up. |
 | The site's policy is **None** | You've opted out for that site. |
+| The prefix has **Automatic gateway** off | You've opted out for that prefix: a loopback block, a `/31` link, anything with no gateway. |
+| The prefix's status is **Container** | A container holds other prefixes, not hosts. |
 | You filled in the gateway yourself | Your value wins - no automatic address. |
 | The prefix is IPv6 | An IPv6 `/64` has no obvious "first host" to use as a default gateway. |
 | The prefix allocates only from its ranges and the address falls outside them | That first/last usable address is the provider's gateway, not one you allocate. |
+
+## Opting a prefix out
+
+Every prefix has an **Automatic gateway** setting, on by default. Turn it off
+in the prefix form, in a prefix bulk edit, through the API (`auto_gateway`) or
+in an import file (an `auto_gateway` column) and the site policy leaves that
+prefix alone. The policy only runs when a prefix is created, so turning the
+setting off later never removes a gateway that is already there: clear it by
+hand if you no longer want it.
 
 ## Setting or changing the gateway by hand
 

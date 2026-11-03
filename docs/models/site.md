@@ -16,7 +16,7 @@ A physical location - DC, office, POP, edge.
 | `location` | char(255) | `""` | Free-form postal address (city, street, …). Labelled **Address** in the UI (to avoid clashing with the `Location` object), where the site page's Overview has a copy button for it. The API also exposes it read+write as `address`, an alias of this field - either name works; `location` is kept for backward compatibility. |
 | `time_zone` | char(63) | `""` | IANA name (e.g. `Europe/Copenhagen`); validated against the zoneinfo set. The detail page shows the current local time so you can read the offset between sites. |
 | `description` | text | `""` | |
-| `gateway_policy` | choice | `first` | `first` · `last` · `none` |
+| `gateway_policy` | choice | `first` | `first` · `last` · `none`. Skips container prefixes and prefixes with `auto_gateway` off |
 | `vrfs` | M2M → `VRF` | empty | Documentation only - "VRFs operating at this site" |
 | `tags` | M2M Tag | empty | |
 | `custom_fields` | JSONB | `{}` | |
