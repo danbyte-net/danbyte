@@ -551,6 +551,7 @@ interface PolicyRuleDraft {
   matchCommunityListIds: string[]
   matchAsPathListIds: string[]
   matchNextHopId: string | null
+  matchRpki: string
   setLocalPref: string
   setMed: string
   setWeight: string
@@ -567,6 +568,11 @@ const ORIGINS = [
   { value: "igp", label: "IGP" },
   { value: "egp", label: "EGP" },
   { value: "incomplete", label: "Incomplete" },
+]
+const RPKI_STATES = [
+  { value: "valid", label: "Valid" },
+  { value: "invalid", label: "Invalid" },
+  { value: "notfound", label: "Not found" },
 ]
 const METRIC_TYPES = [
   { value: "1", label: "Type 1" },
@@ -593,6 +599,7 @@ export function RoutingPolicyForm({
       matchCommunityListIds: r.match_community_lists.map((x) => x.id),
       matchAsPathListIds: r.match_as_path_lists.map((x) => x.id),
       matchNextHopId: r.match_next_hop?.id ?? null,
+      matchRpki: r.match_rpki,
       setLocalPref: numText(r.set_local_pref),
       setMed: numText(r.set_med),
       setWeight: numText(r.set_weight),
@@ -650,6 +657,7 @@ export function RoutingPolicyForm({
         matchCommunityListIds: [],
         matchAsPathListIds: [],
         matchNextHopId: null,
+        matchRpki: "",
         setLocalPref: "",
         setMed: "",
         setWeight: "",
@@ -678,6 +686,7 @@ export function RoutingPolicyForm({
             match_community_list_ids: r.matchCommunityListIds,
             match_as_path_list_ids: r.matchAsPathListIds,
             match_next_hop_id: r.matchNextHopId,
+            match_rpki: r.matchRpki,
             set_local_pref: numOrNull(r.setLocalPref),
             set_med: numOrNull(r.setMed),
             set_weight: numOrNull(r.setWeight),
@@ -784,6 +793,14 @@ export function RoutingPolicyForm({
                 }))}
                 noneLabel="Any"
                 placeholder="Any"
+              />
+              <FormSelect
+                label="RPKI state"
+                value={r.matchRpki || null}
+                onChange={(v) => update(i, { matchRpki: v ?? "" })}
+                options={RPKI_STATES}
+                noneLabel="Any"
+                info="match rpki - the origin validation state the router's RPKI caches give the route."
               />
             </div>
             <div className="grid gap-3 rounded-md border border-border p-3">

@@ -39,6 +39,8 @@ const ROUTE_TYPES: Record<string, string> = {
   communities: "BGP community",
   "routing-keychains": "routing keychain",
   "bfd-profiles": "BFD profile",
+  "rpki-caches": "RPKI cache",
+  roas: "ROA",
   "bgp-sessions": "BGP session",
   "bgp-peer-groups": "BGP peer group",
   "ospf-areas": "OSPF area",

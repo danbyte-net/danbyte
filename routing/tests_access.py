@@ -25,6 +25,7 @@ from auth_api.models import ObjectPermission, UserProfile
 from core.models import DeploymentSettings, Organization, Tenant
 
 from .models import (
+    ROA,
     VTEP,
     BFDProfile,
     BGPInstance,
@@ -37,6 +38,7 @@ from .models import (
     PrefixList,
     RoutingKeychain,
     RoutingPolicy,
+    RPKICache,
     StaticRoute,
 )
 
@@ -49,6 +51,8 @@ LISTS = {
     "/api/routing/policies/": RoutingPolicy,
     "/api/routing/keychains/": RoutingKeychain,
     "/api/routing/bfd-profiles/": BFDProfile,
+    "/api/routing/rpki-caches/": RPKICache,
+    "/api/routing/roas/": ROA,
     "/api/routing/bgp-peer-groups/": BGPPeerGroup,
     "/api/routing/ospf-areas/": OSPFArea,
     "/api/routing/static-routes/": StaticRoute,
@@ -81,6 +85,8 @@ def _fill(tenant, device, tag):
     pol = RoutingPolicy.objects.create(tenant=tenant, name=f"POL-{tag}")
     kc = RoutingKeychain.objects.create(tenant=tenant, name=f"KC-{tag}")
     bfd = BFDProfile.objects.create(tenant=tenant, name=f"BFD-{tag}")
+    rpki = RPKICache.objects.create(tenant=tenant, name=f"RPKI-{tag}", address="10.0.0.65")
+    roa = ROA.objects.create(tenant=tenant, prefix="10.16.0.0/12", max_length=24, origin_asn=asn)
     pg = BGPPeerGroup.objects.create(tenant=tenant, name=f"PG-{tag}")
     area = OSPFArea.objects.create(tenant=tenant, name=f"AREA-{tag}", area_id="0")
     sr = StaticRoute.objects.create(
@@ -98,6 +104,7 @@ def _fill(tenant, device, tag):
     vtep = VTEP.objects.create(tenant=tenant, device=device)
     return {
         PrefixList: pl, RoutingPolicy: pol, RoutingKeychain: kc, BFDProfile: bfd, BGPPeerGroup: pg,
+        RPKICache: rpki, ROA: roa,
         OSPFArea: area, StaticRoute: sr, BGPInstance: inst, BGPSession: sess,
         OSPFInstance: ospf, ISISInstance: isis, EIGRPInstance: eigrp, VTEP: vtep,
     }
@@ -210,7 +217,8 @@ class SiteScopeTests(APITestCase):
 
     def test_device_bound_rows_narrow_to_the_site_catalogs_do_not(self):
         for url, model in LISTS.items():
-            if model in (RoutingPolicy, RoutingKeychain, OSPFArea, BFDProfile):
+            if model in (RoutingPolicy, RoutingKeychain, OSPFArea, BFDProfile, RPKICache,
+                         ROA):
                 continue  # no grant at all - 403 is the right answer, tested below
             with self.subTest(url=url):
                 r = self.client.get(url)

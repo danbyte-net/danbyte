@@ -10,11 +10,17 @@ import type {
   OSPFArea,
   PrefixList,
   PrefixListRule,
+  ROA,
   RoutingKeychain,
   RoutingPolicy,
   RoutingPolicyRule,
+  RPKICache,
 } from "@/lib/api"
+import { Link } from "@tanstack/react-router"
+import { Download } from "lucide-react"
+
 import { useMe } from "@/lib/use-me"
+import { Button } from "@/components/ui/button"
 import { RevealPskButton } from "@/components/reveal-psk-button"
 import {
   buildBFDProfileColumns,
@@ -28,6 +34,9 @@ import {
   buildPrefixListColumns,
   buildRoutingKeychainColumns,
   buildRoutingPolicyColumns,
+  buildROAColumns,
+  buildRPKICacheColumns,
+  rpkiCacheEndpoint,
   segmentIdentity,
 } from "@/components/columns/routing-columns"
 
@@ -664,6 +673,194 @@ export const ospfAreaDetail: RoutingDetailSpec<OSPFArea> = {
     {
       label: "Interfaces",
       value: <span className="num">{r.interface_count}</span>,
+    },
+  ],
+}
+
+// ─── RPKI ────────────────────────────────────────────────────────────────────
+
+export const rpkiCacheList: RoutingListSpec<RPKICache> = {
+  title: "RPKI caches",
+  noun: ["cache", "caches"],
+  objectType: "rpkicache",
+  endpoint: "/api/routing/rpki-caches/",
+  queryKey: "rpki-caches",
+  tableId: "rpki-caches",
+  newTo: "/rpki-caches/new",
+  addLabel: "Add cache",
+  searchPlaceholder: "Filter caches…",
+  searchText: (r) => `${r.name} ${r.address} ${r.description}`,
+  flexColumn: "description",
+  label: (r) => r.name,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildRPKICacheColumns({
+      humanIds,
+      actions: {
+        editTo: "/rpki-caches/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+/** "Stored" plus a reveal button, or "Not set" - as a keychain's key. */
+function SSHKeyRow({ cache: c }: { cache: RPKICache }) {
+  const { canDo } = useMe()
+  if (!c.ssh_private_key_set)
+    return <span className="text-muted-foreground">Not set</span>
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="font-mono text-[13px]">••••••••</span>
+      {canDo("rpkicache", "reveal") && (
+        <RevealPskButton
+          id={c.id}
+          endpoint="/api/routing/rpki-caches"
+          label="SSH private key"
+        />
+      )}
+    </span>
+  )
+}
+
+export const rpkiCacheDetail: RoutingDetailSpec<RPKICache> = {
+  objectType: "rpkicache",
+  appLabel: "routing.rpkicache",
+  endpoint: "/api/routing/rpki-caches/",
+  queryKey: "rpki-cache",
+  backTo: "/rpki-caches",
+  backLabel: "RPKI caches",
+  editTo: "/rpki-caches/$id/edit",
+  title: (r) => r.name,
+  subtitle: (r) =>
+    `${r.transport.toUpperCase()} ${rpkiCacheEndpoint(r)} · preference ${r.preference}`,
+  overview: (r) => [
+    {
+      label: "Address",
+      value: <span className="font-mono">{r.address}</span>,
+      copy: r.address,
+    },
+    { label: "Port", value: <span className="num">{r.port}</span> },
+    {
+      label: "Transport",
+      value: <span className="font-mono">{r.transport.toUpperCase()}</span>,
+    },
+    { label: "Preference", value: <span className="num">{r.preference}</span> },
+    ...(r.transport === "ssh"
+      ? [
+          {
+            label: "SSH username",
+            value: <span className="font-mono">{r.ssh_username}</span>,
+          },
+          {
+            label: "Host key",
+            value: r.ssh_host_key ? (
+              <span className="font-mono text-xs break-all">
+                {r.ssh_host_key}
+              </span>
+            ) : (
+              dash
+            ),
+          },
+          { label: "Private key", value: <SSHKeyRow cache={r} /> },
+        ]
+      : []),
+    {
+      label: "BGP instances",
+      value: <span className="num">{r.bgp_instance_count}</span>,
+    },
+  ],
+}
+
+/** Download the SLURM file the list's ROAs make (RFC 8416). */
+function SlurmExportButton() {
+  return (
+    <Button size="sm" variant="outline" asChild>
+      <a href="/api/routing/roas/slurm/" download>
+        <Download className="h-3.5 w-3.5" /> Export SLURM
+      </a>
+    </Button>
+  )
+}
+
+const roaLabel = (r: ROA) => `${r.prefix}-${r.max_length} AS${r.origin_asn.asn}`
+
+export const roaList: RoutingListSpec<ROA> = {
+  title: "ROAs",
+  noun: ["ROA", "ROAs"],
+  objectType: "roa",
+  endpoint: "/api/routing/roas/",
+  queryKey: "roas",
+  tableId: "roas",
+  newTo: "/roas/new",
+  addLabel: "Add ROA",
+  searchPlaceholder: "Filter ROAs…",
+  searchText: (r) =>
+    `${r.prefix} AS${r.origin_asn.asn} ${r.aggregate?.prefix ?? ""} ${r.description}`,
+  flexColumn: "description",
+  label: roaLabel,
+  actions: () => <SlurmExportButton />,
+  columns: ({ onDelete, humanIds, canEdit, canDelete }) =>
+    buildROAColumns({
+      humanIds,
+      actions: {
+        editTo: "/roas/$id/edit",
+        editParams: (r) => ({ id: r.id }),
+        canEdit: () => canEdit,
+        onDelete,
+        canDelete: () => canDelete,
+      },
+    }),
+}
+
+export const roaDetail: RoutingDetailSpec<ROA> = {
+  objectType: "roa",
+  appLabel: "routing.roa",
+  endpoint: "/api/routing/roas/",
+  queryKey: "roa",
+  backTo: "/roas",
+  backLabel: "ROAs",
+  editTo: "/roas/$id/edit",
+  title: (r) => r.prefix,
+  subtitle: (r) => `max /${r.max_length} · AS${r.origin_asn.asn}`,
+  identity: (r) => [
+    {
+      label: "Prefix",
+      value: <span className="font-mono">{r.prefix}</span>,
+      copy: r.prefix,
+    },
+  ],
+  overview: (r) => [
+    {
+      label: "Max length",
+      value: <span className="num">/{r.max_length}</span>,
+    },
+    {
+      label: "Origin",
+      value: (
+        <Link
+          to="/asns/$id"
+          params={{ id: r.origin_asn.id }}
+          className="link font-mono"
+        >
+          AS{r.origin_asn.asn}
+        </Link>
+      ),
+    },
+    {
+      label: "Aggregate",
+      value: r.aggregate ? (
+        <Link
+          to="/aggregates/$id"
+          params={{ id: r.aggregate.id }}
+          className="link font-mono"
+        >
+          {r.aggregate.prefix}
+        </Link>
+      ) : (
+        dash
+      ),
     },
   ],
 }

@@ -199,6 +199,7 @@ def policy_dict(p: RoutingPolicy) -> dict:
                     "community_lists": sorted(x.name for x in r.match_community_lists.all()),
                     "as_path_lists": sorted(x.name for x in r.match_as_path_lists.all()),
                     "next_hop": r.match_next_hop.name if r.match_next_hop_id else None,
+                    "rpki": r.match_rpki or None,
                     **(r.match_extra or {}),
                 },
                 "set": {
@@ -263,6 +264,27 @@ def keychain_dict(k: RoutingKeychain) -> dict:
         # Never the key. This is what a template prints in its place.
         "placeholder": keychain_placeholder(k.name),
     }
+
+
+def rpki_cache_dict(c) -> dict:
+    """An RPKI cache as ``rpki cache`` prints it. Never the SSH private key:
+    ``key_set`` says whether one is stored."""
+    return {
+        "id": str(c.id),
+        "name": c.name,
+        "address": c.address,
+        "port": c.port,
+        "transport": c.transport,
+        "preference": c.preference,
+        "ssh_username": c.ssh_username or None,
+        "ssh_host_key": c.ssh_host_key or None,
+        "key_set": c.psk_set,
+        "description": c.description or "",
+    }
+
+
+def _rpki_order(caches) -> list:
+    return sorted(caches, key=lambda c: (c.preference, natural_key(c.name)))
 
 
 def _name(obj) -> str | None:
@@ -479,6 +501,8 @@ def bgp_dict(inst: BGPInstance, policies: set[str],
               or inst.vpn_nexthop_export) else None,
         "bfd": inst.bfd,
         "bfd_profile": _name(inst.bfd_profile) if inst.bfd_profile_id else None,
+        # Names, by preference; the details are the block's `rpki_caches`.
+        "rpki_caches": [c.name for c in _rpki_order(inst.rpki_caches.all())],
         "address_families": afs,
         "sessions": sessions,
         "peer_groups": [groups[k] for k in sorted(groups)],
@@ -796,10 +820,13 @@ def routing_context(device) -> dict:
             "sessions__peer_group__afs__prefix_list_in",
             "sessions__peer_group__afs__prefix_list_out",
             "sessions__peer_group__afs__default_originate_policy",
+            "rpki_caches",
         )
         .order_by(F("vrf__name").asc(nulls_first=True))
     )
     bgp = [bgp_dict(i, referenced_policies, referenced_prefix_lists) for i in instances]
+    # bgpd validates once for the whole box: every cache any instance names.
+    rpki_caches = _rpki_order({c.id: c for i in instances for c in i.rpki_caches.all()}.values())
     ospf_instances = (
         OSPFInstance.objects.filter(**own)
         .select_related("vrf", "bfd_profile")
@@ -986,6 +1013,7 @@ def routing_context(device) -> dict:
             bfd_profile_dict(p)
             for p in BFDProfile.objects.filter(tenant_id=device.tenant_id).order_by("name")
         ],
+        "rpki_caches": [rpki_cache_dict(c) for c in rpki_caches],
     }
     # Every row names its keychain and BFD profile; the details sit here,
     # by that name, so a template does not search the lists.

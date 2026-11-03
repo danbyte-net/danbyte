@@ -158,9 +158,11 @@ from routing.viewsets import (
     PrefixListRuleViewSet,
     PrefixListViewSet,
     RedistributionViewSet,
+    ROAViewSet,
     RoutingKeychainViewSet,
     RoutingPolicyRuleViewSet,
     RoutingPolicyViewSet,
+    RPKICacheViewSet,
     StaticRouteViewSet,
     VTEPMembershipViewSet,
     VTEPViewSet,
@@ -446,6 +448,8 @@ router.register(r"routing/policy-rules", RoutingPolicyRuleViewSet,
 router.register(r"routing/keychains", RoutingKeychainViewSet,
                 basename="routingkeychain")
 router.register(r"routing/bfd-profiles", BFDProfileViewSet, basename="bfdprofile")
+router.register(r"routing/rpki-caches", RPKICacheViewSet, basename="rpkicache")
+router.register(r"routing/roas", ROAViewSet, basename="roa")
 router.register(r"routing/static-routes", StaticRouteViewSet, basename="staticroute")
 # `ip rule` rows; `routing/policy-rules` is the route-map rule endpoint.
 router.register(r"routing/ip-rules", PolicyRuleViewSet, basename="policyrule")

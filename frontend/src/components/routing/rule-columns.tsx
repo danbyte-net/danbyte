@@ -205,6 +205,12 @@ export function policyRuleColumns(): ColumnDef<RoutingPolicyRule, unknown>[] {
               </Link>
             </span>
           )
+        if (r.match_rpki)
+          parts.push(
+            <span key="rpki" className="font-mono">
+              rpki {r.match_rpki}
+            </span>
+          )
         for (const [k, v] of Object.entries(r.match_extra))
           parts.push(
             <span key={k} className="font-mono">

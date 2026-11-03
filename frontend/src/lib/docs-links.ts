@@ -113,6 +113,8 @@ export const DOCS_LINKS: Record<string, string> = {
   "/communities": "features/routing/",
   "/routing-keychains": "features/routing/",
   "/bfd-profiles": "features/routing/",
+  "/rpki-caches": "features/routing/#rpki",
+  "/roas": "features/routing/#rpki",
   "/bgp-sessions": "features/routing/",
   "/bgp-peer-groups": "features/routing/",
   "/ospf-areas": "features/routing/",

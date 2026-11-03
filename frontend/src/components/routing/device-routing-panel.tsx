@@ -330,6 +330,11 @@ function BGPSection({ owner }: { owner: RoutingOwner }) {
                   router-id {inst.router_id}
                 </span>
               )}
+              {inst.rpki_caches.length > 0 && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  rpki {inst.rpki_caches.map((c) => c.name).join(", ")}
+                </span>
+              )}
               {inst.address_families.length > 0 && (
                 <span className="flex flex-wrap gap-1">
                   {inst.address_families.map((af) => (

@@ -4,15 +4,19 @@ types with no extra wiring."""
 from __future__ import annotations
 
 import dataclasses
+import json
+import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.cf_search import cf_text_q
+from api.filters import apply_tag_filter
 from api.natural import natural
 from api.views import _get_active_tenant
 from api.viewsets import (
@@ -27,6 +31,7 @@ from auth_api.site_paths import SITE_PATHS, site_in_q
 from core.tags import TAGS
 
 from .models import (
+    ROA,
     VTEP,
     ASPathList,
     ASPathListRule,
@@ -56,6 +61,7 @@ from .models import (
     RoutingKeychain,
     RoutingPolicy,
     RoutingPolicyRule,
+    RPKICache,
     StaticRoute,
     VTEPMembership,
     normalize_address,
@@ -93,11 +99,14 @@ from .serializers import (
     PrefixListRuleSerializer,
     PrefixListSerializer,
     RedistributionSerializer,
+    ROASerializer,
     RoutingKeychainMiniSerializer,
     RoutingKeychainSerializer,
     RoutingPolicyMiniSerializer,
     RoutingPolicyRuleSerializer,
     RoutingPolicySerializer,
+    RPKICacheMiniSerializer,
+    RPKICacheSerializer,
     StaticRouteSerializer,
     VTEPMembershipSerializer,
     VTEPSerializer,
@@ -214,6 +223,109 @@ class RoutingKeychainViewSet(SecretPSKViewSetMixin, _CatalogViewSet):
         **SecretPSKViewSetMixin.rbac_action_map,
         **BulkEditMixin.rbac_action_map,
     }
+
+
+# ─── RPKI ────────────────────────────────────────────────────────────────────
+
+class RPKICacheViewSet(SecretPSKViewSetMixin, _CatalogViewSet):
+    """RPKI caches. An SSH cache's private key is write-only and lives in the
+    secret store; the mixin moves it and reveals it under audit."""
+
+    psk_object_label = "RPKI cache"
+    psk_field = "ssh_private_key"
+    queryset = RPKICache.objects.all().order_by("preference", NATURAL_NAME)
+    serializer_class = RPKICacheSerializer
+    mini_serializer_class = RPKICacheMiniSerializer
+    clone_fields = ("address", "port", "transport", "preference", "ssh_username",
+                    "ssh_host_key", "description")
+    rbac_action_map = {
+        **SecretPSKViewSetMixin.rbac_action_map,
+        **BulkEditMixin.rbac_action_map,
+    }
+
+    def _search(self, qs, s):
+        return super()._search(qs, s) | qs.filter(address__icontains=s)
+
+    def get_queryset(self):
+        return super().get_queryset().annotate(
+            bgp_instance_count_annotated=Count("bgp_instances", distinct=True)
+        )
+
+
+def slurm_document(roas) -> dict:
+    """RFC 8416 SLURM: the ROAs as locally added prefix assertions, no
+    filters. Sorted so the same set gives the same file."""
+    assertions = []
+    for r in sorted(roas, key=lambda r: (":" in r.prefix, r.prefix, r.max_length,
+                                         r.origin_asn.asn)):
+        row = {"prefix": r.prefix, "maxPrefixLength": r.max_length, "asn": r.origin_asn.asn}
+        if r.description:
+            row["comment"] = r.description
+        assertions.append(row)
+    return {
+        "slurmVersion": 1,
+        "validationOutputFilters": {"prefixFilters": [], "bgpsecFilters": []},
+        "locallyAddedAssertions": {
+            "prefixAssertions": assertions,
+            "bgpsecAssertions": [],
+        },
+    }
+
+
+class ROAViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
+    """Locally kept ROAs. Filter with ``?aggregate=``, ``?origin_asn=``,
+    ``?family=4|6`` and ``?tag=<slug>``; ``slurm/`` returns the same
+    selection as an RFC 8416 SLURM file."""
+
+    queryset = ROA.objects.all()
+    serializer_class = ROASerializer
+    pagination_class = StandardPagination
+    editable_str_fields = ("description",)
+    bulk_edit = BulkEditSpec(fields=("description",))
+    clone_fields = ("max_length", "origin_asn", "aggregate", "description")
+
+    def get_queryset(self):
+        qs = (
+            super().get_queryset()
+            .select_related("origin_asn", "aggregate")
+            .prefetch_related(TAGS)
+        )
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            q = (Q(prefix__icontains=s) | Q(description__icontains=s)
+                 | cf_text_q(qs.model, s))
+            digits = s.upper().removeprefix("AS")
+            if digits.isdigit():
+                q |= Q(origin_asn__asn=int(digits))
+            qs = qs.filter(q)
+        for key, field in (("aggregate", "aggregate_id"), ("origin_asn", "origin_asn_id")):
+            v = p.get(key)
+            if v:
+                try:
+                    uuid.UUID(v)
+                except ValueError as exc:
+                    raise ValidationError({key: "Not a valid id."}) from exc
+                qs = qs.filter(**{field: v})
+        fam = p.get("family")
+        if fam == "4":
+            qs = qs.exclude(prefix__contains=":")
+        elif fam == "6":
+            qs = qs.filter(prefix__contains=":")
+        return apply_tag_filter(qs, self.request)
+
+    @action(detail=False, methods=["get"], url_path="slurm")
+    def slurm(self, request):
+        """The tenant's ROAs - or those of ``?aggregate=`` / ``?tag=`` - as a
+        SLURM file download. Needs ``roa.view``, like the list."""
+        doc = slurm_document(self.filter_queryset(self.get_queryset()))
+        resp = HttpResponse(
+            json.dumps(doc, indent=2) + "\n", content_type="application/json"
+        )
+        resp["Content-Disposition"] = 'attachment; filename="danbyte-slurm.json"'
+        return resp
 
 
 # ─── Rule rows ───────────────────────────────────────────────────────────────
@@ -439,6 +551,7 @@ class BGPInstanceViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
                 TAGS, "address_families__import_policy",
                 "address_families__export_policy",
                 "address_families__redistributions__policy",
+                "rpki_caches",
             )
             .annotate(session_count_annotated=Count("sessions", distinct=True))
         )

@@ -1056,6 +1056,23 @@ export const sections: NavSection[] = [
         ],
       },
       {
+        label: "RPKI",
+        items: [
+          {
+            title: "RPKI caches",
+            url: "/rpki-caches",
+            icon: Server,
+            objectType: "rpkicache",
+          },
+          {
+            title: "ROAs",
+            url: "/roas",
+            icon: ShieldCheck,
+            objectType: "roa",
+          },
+        ],
+      },
+      {
         label: "Profiles",
         items: [
           {

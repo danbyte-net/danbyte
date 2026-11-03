@@ -87,6 +87,8 @@ const ROWS: Row[] = [
   ["communities", "Communities", "Routing", "/api/routing/communities/", { ioType: "community" }],
   ["routing-keychains", "Routing keychains", "Routing", "/api/routing/keychains/", { ioType: "routingkeychain" }],
   ["bfd-profiles", "BFD profiles", "Routing", "/api/routing/bfd-profiles/", { ioType: "bfdprofile" }],
+  ["rpki-caches", "RPKI caches", "Routing", "/api/routing/rpki-caches/", { ioType: "rpkicache" }],
+  ["roas", "ROAs", "Routing", "/api/routing/roas/", { ioType: "roa" }],
   ["ethernet-segments", "Ethernet segments", "Routing", "/api/routing/ethernet-segments/", { ioType: "ethernetsegment" }],
   ["bgp-sessions", "BGP sessions", "Routing", "/api/routing/bgp-sessions/", { ioType: "bgpsession" }],
   ["bgp-peer-groups", "BGP peer groups", "Routing", "/api/routing/bgp-peer-groups/", { ioType: "bgppeergroup" }],

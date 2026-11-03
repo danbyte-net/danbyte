@@ -21,9 +21,18 @@ Shared shape: `tenant` FK, `name` char(128), `description` text, unique
 | `Community` | `value` (unique per tenant), `kind` (`standard`/`large`/`extended`) | - |
 | `CommunityList` | `kind` (`standard`/`expanded`/`large`/`extended`) | `CommunityListRule`: `sequence`, `action`, `communities` M2M, `regex`, `description` |
 | `ASPathList` | - | `ASPathListRule`: `sequence`, `action`, `regex`, `description` |
-| `RoutingPolicy` | - | `RoutingPolicyRule`: `sequence`, `action`, `description`; match: `match_prefix_lists`, `match_community_lists`, `match_as_path_lists` M2M, `match_next_hop` FK → `PrefixList`, `match_extra` JSON; set: `set_local_pref`, `set_med`, `set_weight`, `set_origin`, `set_next_hop`, `set_as_path_prepend`, `set_communities` M2M, `set_communities_additive`, `set_metric_type`, `set_extra` JSON; `continue_seq` |
+| `RoutingPolicy` | - | `RoutingPolicyRule`: `sequence`, `action`, `description`; match: `match_prefix_lists`, `match_community_lists`, `match_as_path_lists` M2M, `match_next_hop` FK → `PrefixList`, `match_rpki` (`valid`/`invalid`/`notfound`, blank = not matched; `db_default=""`), `match_extra` JSON; set: `set_local_pref`, `set_med`, `set_weight`, `set_origin`, `set_next_hop`, `set_as_path_prepend`, `set_communities` M2M, `set_communities_additive`, `set_metric_type`, `set_extra` JSON; `continue_seq` |
 | `BFDProfile` | catalog; `min_tx`, `min_rx` (ms, ≥ 1), `multiplier` (≥ 1), `echo` | `(tenant, name)` |
 | `RoutingKeychain` | `algorithm` (`md5`/`sha1`/`sha256`/`hmac-sha-256`); `SecretBackedPSK` - `psk_secret_provider`, `psk_secret_path` reference the key in the secret store. Also holds the MKA CAK for an interface's MACsec (`Interface.macsec_keychain`, see [Interface](interface.md#macsec)) | - |
+| `RPKICache` | `address` (IP or hostname), `port` (default 3323, 1-65535), `transport` (`tcp`/`ssh`), `preference` (1-255), `ssh_username` (required for SSH), `ssh_host_key`; `SecretBackedPSK` under `routing-rpki-caches/<id>` holds the SSH private key (API `ssh_private_key`, write-only). TCP refuses the SSH fields | `(tenant, name)` |
+
+`ROA` is not a named catalog: `tenant`, `prefix` (normalised CIDR, v4 or v6),
+`max_length` (prefix length to 32/128), `origin_asn` FK → `ASN` (PROTECT),
+`aggregate` FK → `Aggregate` (optional, SET_NULL; the prefix must sit inside
+it), `description`, tags, custom fields, `numid`. Unique
+`(tenant, prefix, max_length, origin_asn)`. `routing.viewsets.slurm_document`
+turns a queryset into RFC 8416 SLURM (`GET /api/routing/roas/slurm/`).
+Migration `routing/0020`.
 
 ## Static routes
 
@@ -76,7 +85,7 @@ Site-scoped as `device__site|virtual_machine__site`; audited; RBAC type
 
 | Model | Fields | Unique |
 |---|---|---|
-| `BGPInstance` | `device`, `vrf` (null = global), `asn` FK → `ASN`, `router_id`, `cluster_id`, `graceful_restart`, `distance_ebgp`/`distance_ibgp`/`distance_local` (all three or none), `bestpath_multipath_relax`, MPLS L3VPN on a per-VRF instance: `vpn_export`, `vpn_import`, `vpn_label_export` (`auto` or a number), `vpn_nexthop_export`; `bfd`, `status` (scope `routinginstance`), `description`, `extra` JSON | `(device, vrf)`, nulls not distinct |
+| `BGPInstance` | `device`, `vrf` (null = global), `asn` FK → `ASN`, `router_id`, `cluster_id`, `graceful_restart`, `distance_ebgp`/`distance_ibgp`/`distance_local` (all three or none), `bestpath_multipath_relax`, MPLS L3VPN on a per-VRF instance: `vpn_export`, `vpn_import`, `vpn_label_export` (`auto` or a number), `vpn_nexthop_export`; `rpki_caches` M2M → `RPKICache`; `bfd`, `status` (scope `routinginstance`), `description`, `extra` JSON | `(device, vrf)`, nulls not distinct |
 | `BGPAddressFamily` | `instance`, `afi_safi`, `networks` JSON [CIDR], `maximum_paths`, `maximum_paths_ibgp`, `import_policy`, `export_policy`, `extra` | `(instance, afi_safi)` |
 | `Redistribution` | one parent (`bgp_af`; OSPF/IS-IS instances follow), `source`, `policy`, `metric`, `level` + `family` (IS-IS only; blank = the instance's level, IPv4), `extra` | - |
 | `BGPPeerGroup` | catalog + the shared knobs; `remote_asn` int, `remote_asn_mode` (`asn`/`external`/`internal`), `local_asn` FK, `update_source` text | `(tenant, name)` |
@@ -177,7 +186,10 @@ names; `bfd_profiles` stays the whole catalog). Multihoming and MPLS:
 on every device; `df_preference` there is the port's effective value and
 `segment_df_preference` the segment's), `by_interface[<port>].evpn_mh_uplink`,
 `ethernet_segments` (with `local_df_preference`) + `es_count` per device, `ldp` (one block or `None`),
-and a per-VRF BGP instance's `vpn` object or `None`. `keychains[].placeholder`
+and a per-VRF BGP instance's `vpn` object or `None`. RPKI: `rpki_caches`
+at the top (every cache the box's instances name, by preference, with
+`key_set` and never the key), each instance's `rpki_caches` as names, and
+`match.rpki` on a policy rule. `keychains[].placeholder`
 is `<keychain:NAME>`, the contract form a push tool substitutes
 (`routing.render.KEYCHAIN_PLACEHOLDER_RE`). It is registered through
 `api.export_templates.register_context_provider("routing", …)` from the app's
@@ -185,7 +197,7 @@ is `<keychain:NAME>`, the contract form a push tool substitutes
 
 ## Registries
 
-`auth_api/object_types.py` (group *Routing*; `routingkeychain` honours
+`auth_api/object_types.py` (group *Routing*; `routingkeychain` and `rpkicache` honour
 `reveal`), `audit/apps.py`, `api/search_index.py`, `api/status_registry.py`
 (`staticroute`, `bgpsession`, `routinginstance`, `l2vpn`, `vtep`),
 `auth_api/site_paths.py` (device-bound rows → `device__site`, instance rows

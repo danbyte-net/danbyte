@@ -6754,6 +6754,8 @@ export interface RoutingPolicyRule {
   match_community_lists: { id: string; name: string; kind: string }[]
   match_as_path_lists: { id: string; name: string }[]
   match_next_hop: PrefixListMini | null
+  /** `match rpki <state>`; blank = not matched. */
+  match_rpki: RPKIState
   match_extra: Record<string, unknown>
   set_local_pref: number | null
   set_med: number | null
@@ -6771,6 +6773,44 @@ export interface RoutingPolicyRule {
 export interface RoutingPolicy extends RoutingCatalogBase {
   rules: RoutingPolicyRule[]
   rule_count: number
+}
+
+export type RPKIState = "" | "valid" | "invalid" | "notfound"
+
+export interface RPKICacheMini {
+  id: string
+  name: string
+  address: string
+  port: number
+  transport: "tcp" | "ssh"
+  preference: number
+}
+
+export interface RPKICache extends RoutingCatalogBase {
+  address: string
+  port: number
+  transport: "tcp" | "ssh"
+  preference: number
+  ssh_username: string
+  ssh_host_key: string
+  /** The SSH private key lives in the secret store; only whether one
+   * exists is read. */
+  ssh_private_key_set: boolean
+  bgp_instance_count: number
+}
+
+export interface ROA {
+  id: string
+  numid: number | null
+  prefix: string
+  max_length: number
+  origin_asn: ASNMini
+  aggregate: { id: string; prefix: string } | null
+  description: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
 export interface RoutingKeychain extends RoutingCatalogBase {
@@ -6958,6 +6998,7 @@ export interface BGPInstance {
   vpn_nexthop_export: string
   bfd: boolean
   bfd_profile: BFDProfileMini | null
+  rpki_caches: RPKICacheMini[]
   address_families: BGPAddressFamily[]
   session_count: number
   status: StatusMini | null

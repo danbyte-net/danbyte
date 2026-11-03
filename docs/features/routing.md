@@ -70,6 +70,7 @@ and **sets**.
 | Community lists | The route carries a community any of them permits. |
 | AS-path lists | The route's AS path matches any of them. |
 | Next hop in | The next hop is in the named prefix list. |
+| RPKI state | The route's origin validation state is `valid`, `invalid` or `notfound` - see [RPKI](#rpki). |
 
 | Set | What it changes |
 |---|---|
@@ -112,6 +113,191 @@ means the platform's default timers. Resolution runs down the chain the
 way the other settings do: an interface row's profile, else its
 instance's; a session's, else its peer group's, else its instance's.
 Deleting a profile leaves BFD on and the timers at the default.
+
+## RPKI
+
+Route origin validation checks that the AS originating a route is allowed to
+announce that prefix. A router learns the allowed pairs from an **RPKI
+cache** (an RTR server such as Routinator or rpki-client, RFC 8210) and a
+route map acts on each route's state - typically dropping `invalid` routes
+on eBGP sessions. Danbyte models the three parts; it does not render the
+config itself, the template you write does (see the example below).
+
+### RPKI caches
+
+**Routing → RPKI → RPKI caches.** A cache is a tenant-wide catalog row:
+
+| Field | What it records |
+|---|---|
+| **Name** | What the cache is called; unique per tenant. |
+| **Address** | The RTR server's IP address or hostname. |
+| **Port** | Default `3323`, the usual RTR port. |
+| **Transport** | `tcp` or `ssh`. |
+| **Preference** | 1-255; the router uses the lowest-numbered cache it can reach. |
+| **Username**, **Host key**, **Private key** | SSH only. The private key is written to the deployment's [secret store](../architecture/tenant-settings.md), never to the row, and is never in a read: the API says only `ssh_private_key_set`. As for a keychain, revealing it is an audited action behind the `reveal` grant on RPKI caches, for a push tool that has to place the key file. Switching a cache back to TCP drops the stored key. |
+
+A BGP instance names the caches it validates against: **RPKI caches** on the
+instance form (on its device's Routing tab), `rpki_cache_ids` in the API.
+The device's BGP card lists them next to the router ID.
+
+### Matching the validation state
+
+A routing policy rule matches **RPKI state** - `valid`, `invalid` or
+`notfound` (the prefix is covered by no ROA). Leave it at **Any** to not
+match on it. A deny rule early in an eBGP import policy is the usual shape:
+
+| Seq | Action | Match |
+|---|---|---|
+| 5 | deny | RPKI state `invalid` |
+| 10 | permit | … |
+
+### ROAs and SLURM
+
+Public RPKI only covers address space a regional registry publishes ROAs
+for. For private space (RFC 1918, ULA) or space you announce internally,
+keep the ROAs in Danbyte: **Routing → RPKI → ROAs**, each a prefix
+(IPv4 or IPv6), a **max length** (from the prefix's own length to 32 or 128;
+blank on the form means the prefix's own length), the **origin AS** (an
+[ASN](ipam-objects.md#asns) of the tenant) and, optionally, the **aggregate** it is
+carved from - the prefix has to sit inside it. Description and tags are as
+everywhere.
+
+**Export SLURM** on the ROA list downloads the ROAs as an RFC 8416 SLURM
+file - local assertions a relying party serves to its routers as if an RIR
+had published them:
+
+```json
+{
+  "slurmVersion": 1,
+  "validationOutputFilters": {"prefixFilters": [], "bgpsecFilters": []},
+  "locallyAddedAssertions": {
+    "prefixAssertions": [
+      {"prefix": "10.16.0.0/12", "maxPrefixLength": 24, "asn": 65050,
+       "comment": "NSP1 space"}
+    ],
+    "bgpsecAssertions": []
+  }
+}
+```
+
+`comment` is the ROA's description and is left out when that is empty. The
+endpoint is `GET /api/routing/roas/slurm/`; it takes the list's filters, so
+`?aggregate=<id>` exports one aggregate's ROAs and `?tag=<slug>` (repeatable,
+all must match) one tagged set. It needs `view` on ROAs and only ever
+returns the active tenant's.
+
+#### Feeding Routinator
+
+Routinator reads SLURM files as *local exceptions*. Fetch the file on a
+timer with an [API token](../reference/api.md#authenticating) that has `view` on ROAs, and point
+Routinator at it:
+
+```sh
+#!/bin/sh
+# /usr/local/bin/danbyte-slurm
+set -e
+out=/var/lib/routinator/danbyte-slurm.json
+curl -fsS -H "Authorization: Token $(cat /etc/routinator/danbyte.token)" \
+  -o "$out.tmp" https://danbyte.example.net/api/routing/roas/slurm/
+mv "$out.tmp" "$out"
+```
+
+```
+# /etc/cron.d/danbyte-slurm - every 5 minutes
+*/5 * * * * routinator /usr/local/bin/danbyte-slurm
+```
+
+```sh
+routinator --exceptions /var/lib/routinator/danbyte-slurm.json \
+  server --rtr 0.0.0.0:3323
+```
+
+or `exceptions = ["/var/lib/routinator/danbyte-slurm.json"]` in
+`routinator.conf`. Routinator reads the exceptions again on each validation
+run, so a new file is picked up without a restart. `curl -f` and `set -e` keep a failed fetch
+from replacing the last good file with an error page.
+
+### Rendering the rpki block
+
+The FRR config this produces - one cache, and a route map that drops
+invalid routes before anything else:
+
+```
+rpki
+ rpki cache tcp 10.0.0.65 3323 preference 1
+exit
+!
+route-map NSP1-IN deny 5
+ match rpki invalid
+exit
+```
+
+bgpd has to be started with the RPKI module (`bgpd_options=" -A 127.0.0.1 -M rpki"`
+in `/etc/frr/daemons`).
+
+From a device's [config template](export-templates.md#rendering-one-device),
+the `routing` block carries it ready to loop: `routing.rpki_caches` is every
+cache the box's BGP instances name, by preference, and each policy rule's
+`match.rpki` the state it matches.
+
+```jinja
+{% if routing.rpki_caches %}
+rpki
+{% for c in routing.rpki_caches %}
+{% if c.transport == "ssh" %}
+ rpki cache ssh {{ c.address }} {{ c.port }} {{ c.ssh_username }} /etc/frr/rpki/{{ c.name }}.key preference {{ c.preference }}
+{% else %}
+ rpki cache tcp {{ c.address }} {{ c.port }} preference {{ c.preference }}
+{% endif %}
+{% endfor %}
+exit
+!
+{% endif %}
+{% for name, p in routing.policies.items() %}
+{% for r in p.rules %}
+route-map {{ name }} {{ r.action }} {{ r.sequence }}
+{% if r.match.rpki %}
+ match rpki {{ r.match.rpki }}
+{% endif %}
+{% for pl in r.match.prefix_lists %}
+ match ip address prefix-list {{ pl }}
+{% endfor %}
+exit
+{% endfor %}
+{% endfor %}
+```
+
+Rendering outside Danbyte from the REST API, the same data is on two reads -
+`GET /api/routing/bgp-instances/?device=<id>` (each instance's
+`rpki_caches`: `name`, `address`, `port`, `transport`, `preference`) and
+`GET /api/routing/policies/<id>/` (each rule's `match_rpki`):
+
+```jinja
+{# bgp = one instance from /api/routing/bgp-instances/,
+   policies = the /api/routing/policies/<id>/ reads it uses #}
+{% if bgp.rpki_caches %}
+rpki
+{% for c in bgp.rpki_caches | sort(attribute="preference") %}
+ rpki cache {{ c.transport }} {{ c.address }} {{ c.port }} preference {{ c.preference }}
+{% endfor %}
+exit
+!
+{% endif %}
+{% for p in policies %}
+{% for r in p.rules %}
+route-map {{ p.name }} {{ r.action }} {{ r.sequence }}
+{% if r.match_rpki %}
+ match rpki {{ r.match_rpki }}
+{% endif %}
+exit
+{% endfor %}
+{% endfor %}
+```
+
+An SSH cache also needs its username and the path you deploy the private
+key to; read the cache itself (`GET /api/routing/rpki-caches/<id>/`) for
+`ssh_username` and `ssh_host_key`. The key never appears in either form of
+the render.
 
 ## Static routes
 
@@ -488,7 +674,7 @@ routing:
                    table, distance, metric, tag, bfd, description}]
   policy_rules:  [{family, priority, action, table, vrf, from, to, iif, oif,
                    fwmark, invert, description}]     # sorted by family, then priority
-  bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd,
+  bgp:           [{vrf, asn, router_id, cluster_id, graceful_restart, bfd, rpki_caches,
                    address_families: [{afi_safi, networks, maximum_paths, maximum_paths_ibgp,
                                        import_policy, export_policy, redistribute: [{source, policy, metric}]}],
                    sessions: [{name, peer_group, remote_asn, remote_asn_mode, kind, local_asn,
@@ -536,6 +722,8 @@ routing:
   communities:   [{value, kind, name}]
   keychains:     [{name, algorithm, key_set}]
   bfd_profiles:  [{name, min_tx, min_rx, multiplier, echo}]
+  rpki_caches:   [{name, address, port, transport, preference, ssh_username,
+                   ssh_host_key, key_set}]   # the caches this box's BGP instances name, by preference
   keychain_by_name, bfd_profile_by_name: the same two, keyed by name
 ```
 
@@ -756,6 +944,8 @@ delete's words (`In use: 2 BGP sessions.`).
 | `/api/routing/communities/` | Communities. |
 | `/api/routing/keychains/` | Keychains; `psk` is write-only, `reveal-psk` is the audited read. |
 | `/api/routing/bfd-profiles/` | BFD profiles; every instance, enrolled interface, session and peer group takes `bfd_profile_id`. |
+| `/api/routing/rpki-caches/` | RPKI caches; `ssh_private_key` is write-only (`ssh_private_key_set` on read), `reveal-psk` is the audited read. A BGP instance takes `rpki_cache_ids` and reads `rpki_caches`. |
+| `/api/routing/roas/` | ROAs; write `origin_asn_id` and `aggregate_id`; filter by `aggregate`, `origin_asn`, `family` (`4`/`6`) and `tag`. `GET …/slurm/` is the same selection as an RFC 8416 SLURM download. |
 | `/api/routing/static-routes/` | Static routes; filter by `device`, `virtual_machine`, `vrf` (`global` for the global table), `table`, `kind`, `status`, `site`, `prefix_obj`. |
 | `/api/routing/ip-rules/` | Policy rules (`ip rule`); filter by `device`, `virtual_machine`, `family`, `action`, `table`, `vrf`, `status`, `site`. Ports are `iif_id` / `oif_id`, or `vm_iif_id` / `vm_oif_id` on a VM. (`…/policy-rules/` is the routing-policy rule endpoint.) |
 | `/api/routing/bgp-instances/` | Instances with their address families nested; filter by `device`, `virtual_machine`, `vrf`, `asn`, `site`, `status`. |
@@ -825,8 +1015,8 @@ their destination), an L2VPN's **VTEPs** tab and a VLAN's **L2VPNs** tab.
 The **Routing** menu is grouped by protocol: **BGP** (instances, sessions,
 peer groups), **OSPF** (instances, areas), **IS-IS**, **EIGRP**, **EVPN /
 VXLAN** (VTEPs), **Static** (static routes, policy rules), **Policy** (routing policies,
-prefix lists, communities, community lists, AS-path lists) and
-**Profiles** (keychains, BFD profiles). An instance
+prefix lists, communities, community lists, AS-path lists), **RPKI**
+(RPKI caches, ROAs) and **Profiles** (keychains, BFD profiles). An instance
 or a VTEP is added and edited on its device's Routing tab - the fleet list
 is where you find which boxes run what, and its pencil takes you there.
 A list's rules (prefix lists, community lists, AS-path lists, policies) are
@@ -838,3 +1028,10 @@ Each routing object is its own RBAC type under the **Routing** group; a
 site-scoped grant on static routes covers the routes of that site's devices.
 Every create, edit and delete - rule rows included - is in the
 [change log](change-log.md).
+
+RPKI caches and ROAs are their own types (`rpkicache`, `roa`); new types are
+closed until a role grants them, and the built-in roles reach them through
+their wildcard. A site viewer, and a site editor through its catalog view,
+read RPKI caches - the catalog their BGP instances point at; upgrading to
+0.19 adds the type to existing site roles. ROAs are tenant-wide and no site
+role covers them.

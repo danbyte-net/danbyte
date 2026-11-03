@@ -17,8 +17,10 @@ import type {
   OSPFInstance,
   PolicyRule,
   PrefixList,
+  ROA,
   RoutingKeychain,
   RoutingPolicy,
+  RPKICache,
   StaticRoute,
   StatusMini,
   VTEP,
@@ -2171,6 +2173,216 @@ export function buildEthernetSegmentColumns<
             )
           return <span className="font-mono text-xs">{members.join(", ")}</span>
         },
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── RPKI caches ─────────────────────────────────────────────────────────────
+
+export type RPKICacheColumnId =
+  | "numid"
+  | "name"
+  | "address"
+  | "transport"
+  | "preference"
+  | "key"
+  | "bgp_instance_count"
+  | "description"
+  | "tags"
+const RPKI_CACHE_ORDER: RPKICacheColumnId[] = [
+  "numid",
+  "name",
+  "address",
+  "transport",
+  "preference",
+  "key",
+  "bgp_instance_count",
+  "description",
+  "tags",
+]
+
+/** `10.0.0.65:3323` - the host and port a cache answers on. */
+export function rpkiCacheEndpoint(r: { address: string; port: number }) {
+  return r.address.includes(":")
+    ? `[${r.address}]:${r.port}`
+    : `${r.address}:${r.port}`
+}
+
+export function buildRPKICacheColumns<T extends RPKICache = RPKICache>(
+  opts: CommonOpts<T, RPKICacheColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, RPKICacheColumnId>(
+    RPKI_CACHE_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      name: () => nameColumn<T>("/rpki-caches/$id", "routing.rpkicache"),
+      address: () => ({
+        id: "address",
+        accessorFn: (r) => rpkiCacheEndpoint(r),
+        header: ({ column }) => <SortHeader column={column} label="Address" />,
+        cell: ({ row }) => (
+          <span className="font-mono text-xs">
+            {rpkiCacheEndpoint(row.original)}
+          </span>
+        ),
+      }),
+      transport: () => ({
+        id: "transport",
+        accessorKey: "transport",
+        header: "Transport",
+        cell: ({ row }) => (
+          <span className="font-mono text-[11px] text-muted-foreground uppercase">
+            {row.original.transport}
+          </span>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Transport",
+            get: (r: T) => r.transport,
+            formatValue: (v) => ({ label: String(v).toUpperCase() }),
+          },
+        },
+      }),
+      preference: () => ({
+        id: "preference",
+        accessorKey: "preference",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Preference" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.preference}</span>
+        ),
+      }),
+      key: () => ({
+        id: "key",
+        accessorFn: (r) =>
+          r.transport !== "ssh" ? "" : r.ssh_private_key_set ? "set" : "unset",
+        header: "SSH key",
+        cell: ({ row }) =>
+          row.original.transport !== "ssh" ? (
+            dash
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {row.original.ssh_private_key_set ? "Stored" : "Not set"}
+            </span>
+          ),
+      }),
+      bgp_instance_count: () => ({
+        id: "bgp_instance_count",
+        accessorKey: "bgp_instance_count",
+        header: ({ column }) => (
+          <SortHeader column={column} label="BGP instances" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">{row.original.bgp_instance_count}</span>
+        ),
+      }),
+      description: () => descriptionColumn<T>(),
+      tags: tags<T>(opts),
+    },
+    opts
+  )
+}
+
+// ─── ROAs ────────────────────────────────────────────────────────────────────
+
+export type ROAColumnId =
+  | "numid"
+  | "prefix"
+  | "max_length"
+  | "origin_asn"
+  | "aggregate"
+  | "description"
+  | "tags"
+const ROA_ORDER: ROAColumnId[] = [
+  "numid",
+  "prefix",
+  "max_length",
+  "origin_asn",
+  "aggregate",
+  "description",
+  "tags",
+]
+
+export function buildROAColumns<T extends ROA = ROA>(
+  opts: CommonOpts<T, ROAColumnId> = {}
+): ColumnDef<T, unknown>[] {
+  return assemble<T, ROAColumnId>(
+    ROA_ORDER,
+    {
+      numid: () => numidColumn<T>({ get: (r) => r.numid }),
+      prefix: () => ({
+        id: "prefix",
+        accessorKey: "prefix",
+        header: ({ column }) => <SortHeader column={column} label="Prefix" />,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            <Link
+              to="/roas/$id"
+              params={{ id: row.original.id }}
+              className="link font-mono font-medium"
+            >
+              {row.original.prefix}
+            </Link>
+            <PlannedChangeMarker
+              objectType="routing.roa"
+              objectId={row.original.id}
+            />
+          </span>
+        ),
+      }),
+      max_length: () => ({
+        id: "max_length",
+        accessorKey: "max_length",
+        header: ({ column }) => (
+          <SortHeader column={column} label="Max length" />
+        ),
+        cell: ({ row }) => (
+          <span className="num text-xs">/{row.original.max_length}</span>
+        ),
+      }),
+      origin_asn: () => ({
+        id: "origin_asn",
+        accessorFn: (r) => r.origin_asn.asn,
+        header: ({ column }) => <SortHeader column={column} label="Origin" />,
+        cell: ({ row }) => (
+          <Link
+            to="/asns/$id"
+            params={{ id: row.original.origin_asn.id }}
+            className="link font-mono text-xs"
+          >
+            AS{row.original.origin_asn.asn}
+          </Link>
+        ),
+        meta: {
+          facet: {
+            kind: "enum",
+            label: "Origin",
+            get: (r: T) => `AS${r.origin_asn.asn}`,
+          },
+        },
+      }),
+      aggregate: () => ({
+        id: "aggregate",
+        accessorFn: (r) => r.aggregate?.prefix ?? "",
+        header: "Aggregate",
+        cell: ({ row }) =>
+          row.original.aggregate ? (
+            <Link
+              to="/aggregates/$id"
+              params={{ id: row.original.aggregate.id }}
+              className="link font-mono text-xs"
+            >
+              {row.original.aggregate.prefix}
+            </Link>
+          ) : (
+            dash
+          ),
       }),
       description: () => descriptionColumn<T>(),
       tags: tags<T>(opts),

@@ -51,6 +51,8 @@ export const ROUTING_OBJECT_TYPES = {
   vtepmembership: "routing.vtepmembership",
   ethernetsegment: "routing.ethernetsegment",
   ldpinstance: "routing.ldpinstance",
+  rpkicache: "routing.rpkicache",
+  roa: "routing.roa",
 } as const
 
 /** Save a routing object through the plan-aware helper; invalidates the
