@@ -11286,7 +11286,16 @@ class FloorPlanViewSet(TenantScopedViewSet):
             if source:
                 qs = qs.filter(source_id=source)
         if self.get_serializer_class() is FloorPlanSerializer:
-            qs = qs.annotate(tile_count_annotated=_visible_n(self, "tiles"))
+            from django.db.models import Count, IntegerField, OuterRef, Subquery
+
+            floors = (
+                FloorPlan.objects.filter(base_map_id=OuterRef("base_map_id"))
+                .order_by().values("base_map_id").annotate(n=Count("pk")).values("n")
+            )
+            qs = qs.annotate(
+                tile_count_annotated=_visible_n(self, "tiles"),
+                base_map_floors=Subquery(floors, output_field=IntegerField()),
+            )
         return qs
 
     def perform_create(self, serializer):

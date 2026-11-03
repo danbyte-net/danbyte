@@ -32,9 +32,11 @@ AFTER = ("api", "0205_fhrpgroup_auth_key_secret_store")
 
 
 def _store(provider: str) -> None:
-    ds = DeploymentSettings.load()
-    ds.secrets_provider = provider
-    ds.save(update_fields=["secrets_provider"])
+    # A queryset write, no signals: rolled back to BEFORE, the audit app is
+    # behind the live ChangeLogEntry model, so a logged save would fail.
+    if not DeploymentSettings.objects.filter(pk=1).exists():
+        DeploymentSettings.objects.bulk_create([DeploymentSettings(pk=1)])
+    DeploymentSettings.objects.filter(pk=1).update(secrets_provider=provider)
 
 
 def _tenant(slug="acme"):

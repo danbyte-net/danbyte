@@ -10784,7 +10784,9 @@ class PanelLayout(TimestampedModel):
     scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default="default")
     scope_id = models.UUIDField(null=True, blank=True)
     items = models.JSONField(default=list, blank=True)
-    callout = models.JSONField(default=list, blank=True)
+    callout = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField())
+    )
 
     class Meta:
         ordering = ["object_kind", "scope", "created_at"]

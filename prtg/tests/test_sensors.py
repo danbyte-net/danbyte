@@ -380,7 +380,16 @@ class ChannelReadTests(_Lab):
         self.assertEqual(len(out["series"]["0"]["points"]), 10)
 
     def test_history_endpoint_filters_a_channel(self):
-        resp = self.client.get(f"/api/prtg/sensors/{self.ping.id}/history/?range=7d&channel=4")
+        # The fixture's history is from 2026-10-26: read it on that day, or
+        # the 7-day window leaves it behind.
+        real = ch.read_history
+        on_the_day = datetime(2026, 10, 26, 8, 6, tzinfo=UTC)
+        with mock.patch.object(
+            ch, "read_history",
+            lambda sensor, rng, **kw: real(sensor, rng, now=on_the_day, **kw),
+        ):
+            resp = self.client.get(
+                f"/api/prtg/sensors/{self.ping.id}/history/?range=7d&channel=4")
         self.assertEqual(resp.status_code, 200, resp.content)
         body = resp.json()
         self.assertEqual([c["id"] for c in body["channels"]], ["4"])

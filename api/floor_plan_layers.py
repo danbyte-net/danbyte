@@ -90,9 +90,10 @@ def _url(f) -> str | None:
         return None
 
 
-def map_data(plan, source=None, *, count: bool = True) -> dict | None:
+def map_data(plan, source=None, *, floors: int | None = None) -> dict | None:
     """The base map as the plan reads it, or None. ``source`` is the plan
-    whose map a live view shows."""
+    whose map a live view shows; ``floors`` the floor count when the read
+    annotated it (counted here otherwise)."""
     owner = source or plan
     if not owner.base_map_id:
         return None
@@ -106,7 +107,7 @@ def map_data(plan, source=None, *, count: bool = True) -> dict | None:
         "attribution": m.attribution,
         "captured_at": m.captured_at.isoformat() if m.captured_at else None,
         # Floors drawing it: more than one on a building's levels.
-        "floors": m.floors.count() if count else None,
+        "floors": floors if floors is not None and source is None else m.floors.count(),
     }
 
 

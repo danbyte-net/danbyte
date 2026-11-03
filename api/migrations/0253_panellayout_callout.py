@@ -11,6 +11,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="panellayout",
             name="callout",
-            field=models.JSONField(blank=True, default=list),
+            field=models.JSONField(blank=True, db_default=models.Value([], models.JSONField()), default=list),
         ),
     ]

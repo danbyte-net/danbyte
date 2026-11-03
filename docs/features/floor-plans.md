@@ -381,7 +381,7 @@ A floor (`/api/floor-plans/<id>/`) reads and writes its two
 
 - `base_map` (read): `{id, image, bbox, zoom, basemap, attribution,
   captured_at, floors}` - the map, its picture's URL, the box rendered
-  (`[south, west, north, east]`), how many floors draw it (null in lists) -
+  (`[south, west, north, east]`), how many floors draw it -
   or `null`.
 - `map_opacity` (0-100, default 60), `map_shown` (`true`/`false` set by
   hand, `null` for the default: shown, except on a basement of an aligned

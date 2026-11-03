@@ -11085,8 +11085,8 @@ class FloorPlanSerializer(
         basemap, attribution, captured_at, floors}`` - or null."""
         from .floor_plan_layers import map_data
 
-        view = self.context.get("view")
-        return map_data(obj, count=getattr(view, "action", None) != "list")
+        # The viewset annotates the floor count, one subquery for a list.
+        return map_data(obj, floors=getattr(obj, "base_map_floors", None))
 
     def get_map_visible(self, obj) -> bool:
         """Whether the base map is drawn: ``map_shown`` when set, else on
@@ -11098,14 +11098,14 @@ class FloorPlanSerializer(
     def _frame_levels(self, obj):
         from .floor_plan_geo import grow_levels
 
-        view = self.context.get("view")
-        if getattr(view, "action", None) == "list" or getattr(obj, "kind", "plan") == "view":
+        if getattr(obj, "kind", "plan") == "view":
             return None
         cache = self.context.setdefault("_frame_levels", {})
         if obj.pk not in cache:
             cache[obj.pk] = grow_levels(obj)
         return cache[obj.pk]
 
+    @detail_only(None)
     def get_map_levels(self, obj) -> int | None:
         """The floors a new frame in From site map grows, shrinks or moves
         together: this one and, on an aligned floor plan, the levels of the
@@ -11115,6 +11115,7 @@ class FloorPlanSerializer(
         return None if levels is None else len(levels)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
     def get_frame_extent(self, obj):
         """``{x, y, w, h}``: the whole cells everything drawn on those
         levels covers - the smallest frame From site map may shrink to.
