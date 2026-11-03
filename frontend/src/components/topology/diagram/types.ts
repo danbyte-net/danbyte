@@ -103,7 +103,8 @@ export interface End {
 
 /** One line of text placed on a card, card-relative. */
 export interface PlacedText {
-  /** Already cut to fit, with an ellipsis. */
+  /** As drawn: a card line already cut to fit, with an ellipsis; a name
+   * row whole (names wrap, never cut). */
   text: string
   size: number
   weight: Weight

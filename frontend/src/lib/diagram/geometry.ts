@@ -1,4 +1,4 @@
-import { baselineAt, fit, measureText } from "./measure"
+import { baselineAt, fit, measureText, wrapText } from "./measure"
 import type { Measure, Weight } from "./measure"
 import { BAND, CARD, ELBOW_RADIUS, LABEL, PILL } from "./theme"
 import type {
@@ -540,7 +540,10 @@ export interface PlacedText {
 
 export interface CardText {
   pill?: Rect & { text: string }
+  /** The name's first row… */
   title: PlacedText
+  /** …and every row of it: one unless the name wraps. */
+  titleRows: PlacedText[]
   lines: PlacedText[]
   /** A photo's card lines after its name (`place.tail`): start-anchored,
    * muted, at card-line size. */
@@ -566,11 +569,15 @@ export function cardText(
 ): CardText {
   const pillText = node.pill?.text
   const place = node.place
-  if (place)
+  if (place) {
+    const titleRows = place.titleRows?.length
+      ? place.titleRows.map((r) => ({ text: r.text, x: r.x, y: r.y }))
+      : [{ text: node.title, x: place.title.x, y: place.title.y }]
     return {
       pill:
         place.pill && pillText ? { ...place.pill, text: pillText } : undefined,
-      title: { text: node.title, x: place.title.x, y: place.title.y },
+      title: titleRows[0],
+      titleRows,
       lines: node.lines.flatMap((text, i) =>
         place.lines[i]
           ? [{ text, x: place.lines[i].x, y: place.lines[i].y }]
@@ -586,6 +593,7 @@ export function cardText(
           }
         : {}),
     }
+  }
 
   const photo = node.kind === "photo" ? node.photo : undefined
   const cx = node.x + node.w / 2
@@ -627,22 +635,30 @@ export function cardText(
     top = node.y + CARD.PAD_Y + (stacked ? PILL.H + PILL.ROW_GAP : 0)
   }
 
-  const title = {
-    text: fit(
-      node.title,
-      Math.max(0, node.w - 2 * inset),
-      CARD.TITLE_SIZE,
-      CARD.TITLE_WEIGHT,
-      measure
-    ),
+  // The name whole, wrapped when the node is tall enough for its rows (a
+  // photo drawn as its card, grown for its caption's rows); else on one
+  // row, cut to fit.
+  const room = Math.max(0, node.w - 2 * inset)
+  const wrapped = photo
+    ? []
+    : wrapText(node.title, room, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT, measure)
+  const tall =
+    wrapped.length > 1 &&
+    top + wrapped.length * CARD.TITLE_LH <= node.y + node.h - CARD.PAD_Y + 0.5
+  const names = tall
+    ? wrapped
+    : [fit(node.title, room, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT, measure)]
+  const titleRows = names.map((text, i) => ({
+    text,
     x: cx,
-    y: baselineAt(top, CARD.TITLE_SIZE, CARD.TITLE_LH),
-  }
-  const linesTop = top + CARD.TITLE_LH + CARD.LINES_GAP
-  const room = photo
+    y: baselineAt(top + i * CARD.TITLE_LH, CARD.TITLE_SIZE, CARD.TITLE_LH),
+  }))
+  const title = titleRows[0]
+  const linesTop = top + names.length * CARD.TITLE_LH + CARD.LINES_GAP
+  const fitsLines = photo
     ? node.lines.length
     : Math.floor((node.y + node.h - CARD.PAD_Y - linesTop + 0.5) / CARD.LINE_LH)
-  const lines = node.lines.slice(0, Math.max(0, room)).map((line, i) => ({
+  const lines = node.lines.slice(0, Math.max(0, fitsLines)).map((line, i) => ({
     text: fit(
       line,
       Math.max(0, node.w - 2 * CARD.PAD_X),
@@ -653,7 +669,7 @@ export function cardText(
     x: cx,
     y: baselineAt(linesTop + i * CARD.LINE_LH, CARD.LINE_SIZE, CARD.LINE_LH),
   }))
-  return { pill, title, lines }
+  return { pill, title, titleRows, lines }
 }
 
 // ── Notes ────────────────────────────────────────────────────────────────

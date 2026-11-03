@@ -262,9 +262,41 @@ describe("cardText", () => {
     expect(cardText(n)).toEqual({
       pill: { x: 306, y: 206, w: 38, h: 16, text: "Down" },
       title: { text: "leaf-02-cut…", x: 380, y: 219 },
+      titleRows: [{ text: "leaf-02-cut…", x: 380, y: 219 }],
       // A line without a position is not drawn.
       lines: [{ text: "10.0.1.2", x: 375, y: 234 }],
     })
+  })
+
+  it("draws a wrapped name's rows where the builder put them", () => {
+    const rows = [
+      { text: "Sede Ceas de Medicina", x: 380, y: 219 },
+      { text: "Interna Bloco Norte", x: 380, y: 235 },
+    ]
+    const n = {
+      ...node("dev:leaf-02"),
+      title: "Sede Ceas de Medicina Interna Bloco Norte",
+      place: { title: { x: 380, y: 219 }, titleRows: rows, lines: [] },
+    }
+    const t = cardText(n)
+    expect(t.titleRows).toEqual(rows)
+    expect(t.title).toEqual(rows[0])
+  })
+
+  it("wraps a name on a node tall enough for its rows instead of cutting", () => {
+    const n = {
+      ...node("dev:leaf-02"),
+      title: "Sede Ceas de Medicina Interna Bloco Norte",
+      lines: [],
+      pill: undefined,
+      w: 120,
+      h: 80,
+      place: undefined,
+    }
+    const t = cardText(n)
+    expect(t.titleRows.length).toBeGreaterThan(1)
+    expect(t.titleRows.map((r) => r.text).join(" ")).toBe(n.title)
+    expect(t.titleRows.some((r) => r.text.includes("…"))).toBe(false)
   })
 
   it("puts a photo's caption under the image", () => {

@@ -103,6 +103,20 @@ something.
   [Card lines](#card-lines)). The text is black or white, whichever reads on
   that color. A device whose role has no color gets a plain grey card.
   Patch panels keep a dashed edge.
+- **Names are never cut** - a card grows to fit its whole name, measured in
+  the card's own font: from 88 px up to 480 px wide (twice the 240 px the
+  card lines stop at). A longer name wraps onto a second row, or more, at
+  its spaces and after `-` `_` `.` `/`, and the card grows taller; the card
+  lines and the pill keep their places under and beside it. A card line
+  wider than the card is still cut with `…`. The same rule sizes the
+  Hierarchy's card headers, the site, location and
+  [provider network](#provider-networks) cards on a grouped map (212 px,
+  growing to 424 px, then wrapping), a photo's caption, and a
+  [virtual chassis](#virtual-chassis-stacks) frame's name strip; the
+  layout, bands, levels and lines all use the grown size, and every
+  export prints the name whole, in the same rows. A saved view keeps each
+  card's centre on the Diagram (its top-left corner on the Hierarchy), so a
+  card that grows spreads round where it stood.
 - **The pill** - at most one, inside the card's top-left corner: the
   monitoring pill (your tenant's name for *down* or *degraded*) while the
   device is down or degraded, else the lifecycle status pill when the card
@@ -443,8 +457,12 @@ greyed out (it would change nothing).
   shown whole or not at all - never an address cut in two; only a value
   too long to fit whole beside the name, with no lead in the way, is cut.
   `· …` at the end says some lines were left off; hover a cut caption for
-  all of it. The caption never makes the photo taller, so nothing moves
-  when a line changes. It sits at the left under the photo, or steps
+  all of it. The name itself is never cut: one wider than the photo wraps
+  onto more rows from the photo's left edge, the lines and pill after its
+  last row, and the node is that much taller; one no gap between the leads
+  holds starts in the widest gap and runs on over the leads. Lines never
+  make the photo taller, so nothing moves when a line changes. The caption
+  sits at the left under the photo, or steps
   right past the leads running down through it to the first gap that
   holds:
     1. the name, the pill and every line;
@@ -490,7 +508,9 @@ A switch stack is drawn as one thing. The members of a
 frame, packed a few pixels apart, with a slim strip carrying the chassis'
 name along the frame's side - by default down its left side when the
 members stand top to bottom, across its top when they stand left to right,
-or on whichever side you pick for it. Click the
+or on whichever side you pick for it. The strip is at least as long as the
+chassis' whole name: a frame whose members are shorter grows along the
+strip, the members kept in its middle. Click the
 name to open the chassis; drag the strip (or any member) to move the stack,
 members and all. Hover the strip for its member count and the cables
 between members.
@@ -1614,6 +1634,14 @@ same way.
 Every export is light-themed whatever theme the app is in: white paper,
 zinc greys, and color only where it means something - role fills, status
 pills, cable colors.
+
+Names print whole: each card, header, caption and site card is laid out
+by the same sizing rule as the canvas (see **Names are never cut** under
+[Diagram view](#diagram-view)), so a long name is in the file in the rows
+the screen wraps it into - separate text rows in the SVG, PNG and PDF,
+`<br>`-joined in the draw.io label - and never ends in `…`. The PDF is the
+browser's SVG laid out by the server, which draws the text as given and
+measures nothing itself.
 
 A [provider network](#provider-networks) is drawn as a neutral card like a
 site card - its name, then its provider - linking back to the network, and

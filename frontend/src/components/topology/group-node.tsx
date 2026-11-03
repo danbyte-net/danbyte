@@ -2,12 +2,12 @@ import { Handle, Position, type NodeProps } from "@xyflow/react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
 
-import { GROUP_H, GROUP_W } from "./group-size"
+import { GROUP_H, GROUP_TEXT, GROUP_W, groupBox } from "./group-size"
 import { handleId } from "./port-handles"
 
 // Aggregated topology node: one card per site (or location) with its device
 // count and its biggest roles as their badges. Double-click drills into the
-// group.
+// group. The card grows to fit its whole name (group-size.ts).
 
 export { GROUP_H, GROUP_W }
 
@@ -33,8 +33,29 @@ const SIDES = [
   { side: "B", pos: Position.Bottom },
 ] as const
 
+/** A site, location or provider network card's name, whole: one row, or
+ * the rows `groupBox` wrapped it onto. */
+export function GroupName({ rows }: { rows: readonly string[] }) {
+  return (
+    <span
+      className="min-w-0 flex-1 font-semibold whitespace-nowrap"
+      style={{
+        fontSize: GROUP_TEXT.NAME_SIZE,
+        lineHeight: `${GROUP_TEXT.NAME_LH}px`,
+      }}
+    >
+      {rows.map((r, i) => (
+        <span key={i} className="block">
+          {r}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export function GroupNode({ data, selected }: NodeProps) {
   const d = data as unknown as TopoGroupData
+  const box = groupBox(d)
   // Two badges fit the card whole; more would all end in an ellipsis.
   const shown = d.roles.slice(0, 2)
   const extra = d.roles.length - shown.length
@@ -43,7 +64,7 @@ export function GroupNode({ data, selected }: NodeProps) {
       className={`flex flex-col justify-center gap-1 overflow-hidden rounded-lg border-2 bg-card px-3 transition-opacity ${
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: GROUP_W, height: GROUP_H }}
+      style={{ width: box.width, height: box.height }}
     >
       {SIDES.map(({ side, pos }) => (
         <span key={side}>
@@ -62,9 +83,7 @@ export function GroupNode({ data, selected }: NodeProps) {
         </span>
       ))}
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-          {d.name}
-        </span>
+        <GroupName rows={box.rows} />
         <span className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground">
           <span className="num">{d.device_count}</span>{" "}
           {d.device_count === 1 ? "device" : "devices"}

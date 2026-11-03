@@ -89,6 +89,20 @@ class SanitizerTests(SimpleTestCase):
         self.assertEqual(path.get("stroke-dasharray"), "4 3")
         self.assertEqual(root.find(f"{{{SVG_NS}}}title").text, "DC1 fabric")
 
+    def test_keeps_a_wrapped_name_whole(self):
+        # A long card name comes as one text per row (svg.ts); the PDF path
+        # measures nothing and cuts nothing, so every row reaches the sheet.
+        rows = ["Sede Ceas de Medicina Interna e Cirurgia", "Geral Bloco Norte Piso 3"]
+        body = "".join(
+            f'<text x="240" y="{20 + 16 * i}" text-anchor="middle" font-size="12" '
+            f'font-weight="700">{row}</text>'
+            for i, row in enumerate(rows)
+        )
+        out = sanitize_svg(_svg(body, 'width="480" height="60"'))
+        texts = [t.text for t in _tree(out).iter(f"{{{SVG_NS}}}text")]
+        self.assertEqual(texts, rows)
+        self.assertFalse(any("…" in t for t in texts))
+
     def test_refuses_doctype_and_entities(self):
         laughs = (
             '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaaaaaaaa">'

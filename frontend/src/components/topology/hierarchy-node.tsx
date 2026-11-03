@@ -5,7 +5,7 @@ import { CARD as INK, mix } from "@/lib/diagram/theme"
 import { cn } from "@/lib/utils"
 import { cardContent, withCardLines } from "./diagram/card-fields"
 import { CARD, PILL, pillTop } from "./diagram/card-layout"
-import { CardPillBadge } from "./diagram/card-node"
+import { CardPillBadge, CardTitle } from "./diagram/card-node"
 import { hierCardBox } from "./hier-card"
 import type { HierCardData } from "./hier-card"
 import { hierHeight, hierarchyWidth, type HierPortPos } from "./layout"
@@ -99,19 +99,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
             <CardPillBadge pill={pill} onFill={!!fill} />
           </span>
         )}
-        <div
-          className="absolute inset-x-0 truncate text-center font-bold"
-          style={{
-            top: box.title.top,
-            height: box.title.lh,
-            lineHeight: `${box.title.lh}px`,
-            fontSize: CARD.TITLE_SIZE,
-            paddingInline: CARD.PAD_X,
-          }}
-          data-tip={box.title.text !== d.name ? d.name : undefined}
-        >
-          {box.title.text}
-        </div>
+        <CardTitle box={box} />
         {box.lines.map((l) => (
           <div
             key={l.key}

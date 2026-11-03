@@ -51,7 +51,11 @@ export interface DiagramPhoto extends Rect {
 
 /** A card's resolved text positions (`cardLayout` on the canvas). */
 export interface DiagramPlace {
+  /** The name's first row. */
   title: Pt
+  /** Every row of a name wrapped onto several, top to bottom (the first
+   * is `title`): a name is never cut, it wraps past the card's widest. */
+  titleRows?: (Pt & { text: string })[]
   lines: Pt[]
   pill?: Rect
   /** A photo's caption: its card lines after the name, as drawn - cut to
@@ -71,7 +75,7 @@ export interface DiagramNode extends Rect {
   fill: string
   /** Text colour on the fill - `readableText(fill)`. */
   ink: string
-  /** The device name. */
+  /** The device name, whole. */
   title: string
   /** Card lines, values only, in order (IP, loopback, serial…). A photo
    * carries them whole (its card, when drawn as one, shows those that fit);
@@ -83,8 +87,9 @@ export interface DiagramNode extends Rect {
   /** `kind: "photo"`: the image box inside the node box. */
   photo?: DiagramPhoto
   /** Where the canvas card layout put the text: baselines (centre x) and
-   * the pill box, absolute, with `title`, `lines` and the pill text already
-   * cut to fit. Absent = the writer lays the card out by the same rule. */
+   * the pill box, absolute, with `lines` and the pill text already cut to
+   * fit and the name in rows (`titleRows`) when it wraps. Absent = the
+   * writer lays the card out by the same rule. */
   place?: DiagramPlace
   /** Absolute link back to the object in Danbyte. */
   link?: string

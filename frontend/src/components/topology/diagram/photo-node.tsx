@@ -172,6 +172,21 @@ export const PhotoNode = memo(function PhotoNode({
           />
         )
       })}
+      {cap.lead?.map((row, i, all) => (
+        <div
+          key={i}
+          className="absolute font-bold whitespace-nowrap text-foreground"
+          style={{
+            left: cap.x,
+            top: cap.top - (all.length - i) * PHOTO.CAPTION_LH,
+            height: PHOTO.CAPTION_LH,
+            fontSize: CARD.TITLE_SIZE,
+            lineHeight: `${PHOTO.CAPTION_LH}px`,
+          }}
+        >
+          {row}
+        </div>
+      ))}
       <div
         className="absolute flex items-center whitespace-nowrap"
         style={{ left: cap.x, top: cap.top, height: PHOTO.CAPTION_LH }}

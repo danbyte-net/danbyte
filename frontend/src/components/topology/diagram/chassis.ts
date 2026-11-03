@@ -1,4 +1,6 @@
 import type { TopoNode } from "@/lib/api"
+import { measureText } from "@/lib/diagram/measure"
+import type { Measure } from "@/lib/diagram/measure"
 import { BAND as PRINT_BAND } from "@/lib/diagram/theme"
 import type { Pt, Rect, Side } from "./types"
 
@@ -198,28 +200,55 @@ export interface ChassisGeometry extends Size {
   strip: Rect
 }
 
-/** The room round a stack's members: the pad, and the strip on its side. */
-function margins(side: Side) {
+/** The room round a stack's members: the pad, and the strip on its side.
+ * `extra` lengthens the strip, half at each end, so the whole name fits. */
+function margins(side: Side, extra = 0) {
   const { PAD, STRIP } = CHASSIS
+  const upright = side === "L" || side === "R"
+  const ends = extra > 0 ? extra / 2 : 0
   return {
-    left: PAD + (side === "L" ? STRIP : 0),
-    top: PAD + (side === "T" ? STRIP : 0),
-    right: PAD + (side === "R" ? STRIP : 0),
-    bottom: PAD + (side === "B" ? STRIP : 0),
+    left: PAD + (side === "L" ? STRIP : 0) + (upright ? 0 : ends),
+    top: PAD + (side === "T" ? STRIP : 0) + (upright ? ends : 0),
+    right: PAD + (side === "R" ? STRIP : 0) + (upright ? 0 : ends),
+    bottom: PAD + (side === "B" ? STRIP : 0) + (upright ? ends : 0),
   }
+}
+
+/** Room either end of the name on its strip (the exports keep the same). */
+const STRIP_END = 6
+
+/** The least length of a chassis' name strip: its whole name. A frame
+ * whose members are shorter along the strip grows to it. */
+export function stripLeast(
+  name: string,
+  measure: Measure = measureText
+): number {
+  if (!name) return 0
+  return (
+    Math.ceil(measure(name, CHASSIS.TITLE_SIZE, CHASSIS.TITLE_WEIGHT)) +
+    2 * STRIP_END
+  )
+}
+
+/** How much a frame `w` x `h` falls short of `least` along its strip. */
+function shortBy(side: Side, w: number, h: number, least: number): number {
+  return Math.max(0, least - (side === "L" || side === "R" ? h : w))
 }
 
 /**
  * A frame round members of `sizes`, in stack order: top to bottom with
  * their left edges lined up (`v`), or left to right with their tops lined
  * up (`h`), the name strip along `side`. `gaps` is the room between member
- * i and i + 1 (`CHASSIS.GAP` by default).
+ * i and i + 1 (`CHASSIS.GAP` by default). `least` is the strip's least
+ * length (`stripLeast`): a shorter frame grows to it, its members kept in
+ * the middle.
  */
 export function chassisGeometry(
   orient: ChassisOrient,
   sizes: readonly Size[],
   gaps: readonly number[] = [],
-  side: Side = stripSide(orient)
+  side: Side = stripSide(orient),
+  least = 0
 ): ChassisGeometry {
   const gap = (i: number) => gaps[i] ?? CHASSIS.GAP
   const along = sizes.reduce(
@@ -227,7 +256,14 @@ export function chassisGeometry(
     0
   )
   const across = Math.max(0, ...sizes.map((b) => (orient === "v" ? b.w : b.h)))
-  const m = margins(side)
+  const base = margins(side)
+  const short = shortBy(
+    side,
+    base.left + base.right + (orient === "v" ? across : along),
+    base.top + base.bottom + (orient === "v" ? along : across),
+    least
+  )
+  const m = margins(side, short)
   const w = m.left + m.right + (orient === "v" ? across : along)
   const h = m.top + m.bottom + (orient === "v" ? along : across)
   const offsets: Pt[] = []
@@ -245,14 +281,27 @@ export function chassisGeometry(
 }
 
 /** The frame round members standing at `rects` (in stack order), its
- * name strip along `side`. */
-export function chassisFrame(side: Side, rects: readonly Rect[]): Rect {
+ * name strip along `side`, at least `least` long. */
+export function chassisFrame(
+  side: Side,
+  rects: readonly Rect[],
+  least = 0
+): Rect {
   if (!rects.length) return { x: 0, y: 0, w: 0, h: 0 }
   const x0 = Math.min(...rects.map((r) => r.x))
   const y0 = Math.min(...rects.map((r) => r.y))
   const x1 = Math.max(...rects.map((r) => r.x + r.w))
   const y1 = Math.max(...rects.map((r) => r.y + r.h))
-  const m = margins(side)
+  const base = margins(side)
+  const m = margins(
+    side,
+    shortBy(
+      side,
+      x1 - x0 + base.left + base.right,
+      y1 - y0 + base.top + base.bottom,
+      least
+    )
+  )
   return {
     x: x0 - m.left,
     y: y0 - m.top,
@@ -298,7 +347,13 @@ export function collapseChassis(
   boxes: Readonly<Record<string, Rect>>,
   frames: ReadonlyMap<
     string,
-    { orient: ChassisOrient; side?: Side; members: readonly string[] }
+    {
+      orient: ChassisOrient
+      side?: Side
+      members: readonly string[]
+      /** The strip's least length (`stripLeast`). */
+      least?: number
+    }
   >
 ): Record<string, Rect> {
   if (!frames.size) return { ...boxes }
@@ -310,7 +365,7 @@ export function collapseChassis(
     })
     for (const m of f.members) delete out[m]
     if (rects.length)
-      out[id] = chassisFrame(f.side ?? stripSide(f.orient), rects)
+      out[id] = chassisFrame(f.side ?? stripSide(f.orient), rects, f.least)
   }
   return out
 }
