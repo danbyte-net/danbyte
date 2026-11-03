@@ -25,6 +25,9 @@ A device in a virtual chassis the caller may view carries ``vc`` (its
 chassis, member number and whether it is the master), and a hand-picked map
 (``devices=``) takes ``chassis=``: those chassis' members as they are now.
 ``GET /api/topology/chassis/`` lists the chassis the Diagram can place.
+
+A circuit from a site to a provider network adds that network as a node of
+its own and a ``circuit`` edge to it (#466) - ``api/topology_provider.py``.
 """
 from __future__ import annotations
 
@@ -57,6 +60,7 @@ from .models import (
     RearPort,
     VirtualChassis,
 )
+from . import topology_provider
 from .natural import natural, natural_key
 from .views import _get_active_tenant
 from auth_api import rbac
@@ -1836,12 +1840,19 @@ def topology_view(request):
     # doesn't apply here, nor does enrichment (there are no device cards).
     group_by = p.get("group_by")
     if group_by in ("site", "location"):
-        return Response(_grouped_graph(
+        grouped = _grouped_graph(
             tenant, group_by,
             device_filter_q=filter_q,
             collapse=collapse,
             scope_q=scope_q,
-        ))
+        )
+        # The provider networks the groups' circuits meet at (#466).
+        topology_provider.add_to_grouped_graph(
+            grouped, request.user, tenant, group_by,
+            _scoped_devices(tenant, filter_q, scope_q),
+            scope_q=scope_q, collapse=collapse,
+        )
+        return Response(grouped)
     include = _include_param(p)
     card_fields = _card_fields_param(p)
 
@@ -1881,6 +1892,11 @@ def topology_view(request):
             request=request, user=request.user, tenant=tenant,
             card_fields=card_fields,
         )
+    # The provider networks the cards' circuits meet at (#466) - after the
+    # enrichers, which speak device cards and cables only.
+    topology_provider.add_to_device_graph(
+        graph, request.user, tenant, scope_q=scope_q, collapse=collapse
+    )
     return Response(graph)
 
 

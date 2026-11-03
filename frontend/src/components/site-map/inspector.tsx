@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { useQueries } from "@tanstack/react-query"
 import {
   Building2,
+  Cloud,
   MapPinOff,
   Plus,
   RotateCcw,
@@ -21,8 +22,11 @@ import type {
   SiteMapConnection,
   SiteMapDevice,
   SiteMapMarker,
+  SiteMapProviderNetwork,
   SiteMapSite,
 } from "@/lib/api"
+import { fmtKbps } from "@/lib/speed"
+import { PanelRow, PanelSection } from "@/components/map-panel"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
@@ -605,6 +609,112 @@ function MarkerFields({
   )
 }
 
+/** A line's two ends as links: two sites, or - a circuit to a provider
+ * network (#466) - its site and the network. */
+export function LineEnds({ edge: e }: { edge: SiteMapConnection }) {
+  return (
+    <>
+      <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
+        {e.site_a.name}
+      </Link>
+      {" ↔ "}
+      {e.provider_network ? (
+        <Link
+          to="/provider-networks/$id"
+          params={{ id: e.provider_network.id }}
+          className="link"
+        >
+          {e.provider_network.name}
+        </Link>
+      ) : (
+        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
+          {e.site_z.name}
+        </Link>
+      )}
+    </>
+  )
+}
+
+/** A provider network picked on the map (#466): its provider and the
+ * circuits that meet at it, each to its line. */
+export function ProviderNetworkInspector({
+  network: pn,
+  onFocusConnection,
+  onClose,
+}: {
+  network: SiteMapProviderNetwork
+  /** Select a circuit's line on the map. */
+  onFocusConnection: (id: string) => void
+  onClose: () => void
+}) {
+  return (
+    <InspectorShell kind="Provider network" onClose={onClose}>
+      <div className="flex items-center gap-2 text-sm">
+        <Cloud className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 truncate font-medium">{pn.name}</span>
+      </div>
+      <div>
+        <PanelRow label="Provider">
+          <Link
+            to="/providers/$id"
+            params={{ id: pn.provider.id }}
+            className="link"
+          >
+            {pn.provider.name}
+          </Link>
+        </PanelRow>
+        {pn.service_id && (
+          <PanelRow label="Service ID">
+            <span className="font-mono">{pn.service_id}</span>
+          </PanelRow>
+        )}
+        <PanelRow label="Sites">
+          <span className="num">{pn.site_ids.length}</span>
+        </PanelRow>
+      </div>
+      <PanelSection label={`Circuits · ${pn.circuits.length}`}>
+        <div className="divide-y divide-border">
+          {pn.circuits.map((c) => {
+            const rate = fmtKbps(c.commit_rate_kbps)
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onFocusConnection(`circuit:${c.id}`)}
+                className="grid w-full gap-0.5 rounded px-1 py-1.5 text-left text-[12px] hover:bg-muted/60"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate font-mono font-medium">
+                    {c.cid}
+                  </span>
+                  {c.status && (
+                    <ColorBadge
+                      name={c.status.name}
+                      color={c.status.color || undefined}
+                    />
+                  )}
+                </span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {[c.site.name, c.type, rate].filter(Boolean).join(" · ")}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </PanelSection>
+      <div className="mt-auto grid gap-2 border-t border-border pt-3">
+        <OpenLink
+          to="/provider-networks/$id"
+          params={{ id: pn.id }}
+          className="w-full"
+        >
+          Open provider network
+        </OpenLink>
+      </div>
+    </InspectorShell>
+  )
+}
+
 export function ConnectionInspector({
   edge: e,
   onClose,
@@ -637,13 +747,7 @@ export function ConnectionInspector({
         )}
       </div>
       <div className="text-[12px] text-muted-foreground">
-        <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
-          {e.site_a.name}
-        </Link>
-        {" ↔ "}
-        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
-          {e.site_z.name}
-        </Link>
+        <LineEnds edge={e} />
       </div>
       <LinkFacts line={e} />
       {(e.kind === "circuit" || e.kind === "tunnel") && (

@@ -436,6 +436,27 @@ function diagramEdge(
     case "cable": {
       // One cable, however many port pairs it carries: never a count.
       const r = c.raw
+      // A circuit to a provider network (#466): one line from the card's
+      // side to the network's, named by its circuit id. The network card
+      // has no ports, so its line anchors as a Simple one in either mode.
+      if (r?.circuit)
+        return {
+          ...ends,
+          type: "link",
+          label: r.circuit.cid,
+          data: {
+            ...base("cable", lineOf()),
+            raw: r,
+            simple: true,
+            labels: { mid: [r.circuit.cid] },
+          },
+          ...flowEdgeStyle(
+            edgeLook("cable", {
+              stroke: edgeStroke(r, opts.colorMode),
+              via: !!r.via?.length,
+            })
+          ),
+        }
       return {
         ...ends,
         type: "link",

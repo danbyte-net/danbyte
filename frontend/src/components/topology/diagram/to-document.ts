@@ -664,6 +664,9 @@ const isWiring = (e: Pick<Edge, "type"> & { data?: unknown }) => {
   const d = e.data as DiagramEdgeData | undefined
   return (
     e.type === "link" &&
+    // A circuit to a provider network (#466) is its own line, never a
+    // pair's folded cables.
+    !d?.raw?.circuit &&
     (d?.sem === "cable" || d?.sem === "lagbundle" || d?.sem === "bundle")
   )
 }
@@ -778,6 +781,7 @@ function edgeUrl(
   origin: string | undefined
 ): string | undefined {
   if (d.raw?.tunnel) return danbyteUrl(origin, `/tunnels/${d.raw.tunnel.id}`)
+  if (d.raw?.circuit) return danbyteUrl(origin, `/circuits/${d.raw.circuit.id}`)
   if (d.sem === "cable" && d.raw?.cable_id)
     return danbyteUrl(origin, `/cables/${d.raw.cable_id}`)
   const session = d.bgp?.sessions?.[0]
@@ -919,22 +923,44 @@ export function toDocument(
       continue
     }
     // A site or location card on a grouped map: a neutral card at the
-    // group card's size, its name and device count at the top.
-    const size = model.fixed.get(n.id)!
+    // group card's size, its name and device count at the top. A provider
+    // network (#466) is one too: its name, then its provider.
+    const size = model.fixed.get(n.id)
+    if (!size) continue
     const r = rectAt(c, size)
     if (area && !overlaps(area, r)) continue
-    const group = data as { name?: string; device_count?: number }
+    const group = data as {
+      name?: string
+      device_count?: number
+      kind?: string
+      provider?: { name: string }
+      provider_network_id?: string
+    }
     const count = group.device_count
+    const network = group.kind === "provider_network"
     const groupCard: CardLayoutInput = {
       name: group.name ?? "",
-      lines:
-        count !== undefined
+      lines: network
+        ? group.provider
+          ? [{ key: "provider", text: group.provider.name }]
+          : []
+        : count !== undefined
           ? [{ key: "count", text: `${count} device${count === 1 ? "" : "s"}` }]
           : [],
     }
     rects.set(n.id, r)
     nodes.push(
-      cardNode(n.id, c, fitBox(groupCard, r, measure), groupCard, { measure })
+      cardNode(n.id, c, fitBox(groupCard, r, measure), groupCard, {
+        measure,
+        ...(network && group.provider_network_id
+          ? {
+              link: danbyteUrl(
+                opts.origin,
+                `/provider-networks/${group.provider_network_id}`
+              ),
+            }
+          : {}),
+      })
     )
   }
 

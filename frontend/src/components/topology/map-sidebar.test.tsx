@@ -55,13 +55,14 @@ const graph: TopologyGraph = {
   ],
 }
 
-function sidebar(hidden: TopoHidden = NO_TOPO_HIDDEN) {
+function sidebar(hidden: TopoHidden = NO_TOPO_HIDDEN, g = graph) {
   const onHiddenChange = vi.fn()
+  const onPickNode = vi.fn()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
       <TopologyObjectsSidebar
-        graph={graph}
+        graph={g}
         checks={{}}
         zones={undefined}
         hidden={hidden}
@@ -69,7 +70,7 @@ function sidebar(hidden: TopoHidden = NO_TOPO_HIDDEN) {
         selectedDeviceId={null}
         selectedGroupId={null}
         selectedEdgeId={null}
-        onPickNode={vi.fn()}
+        onPickNode={onPickNode}
         onPickGroup={vi.fn()}
         onDrillGroup={vi.fn()}
         onPickEdge={vi.fn()}
@@ -78,8 +79,67 @@ function sidebar(hidden: TopoHidden = NO_TOPO_HIDDEN) {
       />
     </QueryClientProvider>
   )
-  return { onHiddenChange }
+  return { onHiddenChange, onPickNode }
 }
+
+// The provider networks a map's circuits meet at (#466).
+const network: TopoNode = {
+  id: "pn:pn1",
+  type: "provider_network",
+  data: {
+    kind: "provider_network",
+    provider_network_id: "pn1",
+    name: "MPLS cloud",
+    provider: { id: "p1", name: "Telco" },
+    circuit_count: 2,
+    circuits: [],
+  },
+}
+const withNetwork: TopologyGraph = {
+  nodes: [...graph.nodes, network],
+  edges: [
+    ...graph.edges,
+    {
+      id: "ce:c9",
+      source: "dev:core",
+      target: "pn:pn1",
+      type: "circuit",
+      data: { circuit: { id: "c9", cid: "C-9" } as never },
+    },
+  ],
+}
+
+describe("the Objects sidebar's provider networks", () => {
+  it("are listed with their provider, never as a device or a cable", () => {
+    sidebar(NO_TOPO_HIDDEN, withNetwork)
+    expect(
+      screen.getByText("Provider networks", { selector: "h3, div, span" })
+    ).toBeTruthy()
+    expect(screen.getByText("MPLS cloud")).toBeTruthy()
+    expect(screen.getByText("Telco")).toBeTruthy()
+    // One family under Cables: the circuit is not a cable.
+    fireEvent.click(screen.getByText("cat6"))
+    expect(screen.queryByText("core ↔ MPLS cloud")).toBeNull()
+  })
+
+  it("hide all with the group's eye, one with its row's", () => {
+    const { onHiddenChange, onPickNode } = sidebar(NO_TOPO_HIDDEN, withNetwork)
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hide Provider networks" })
+    )
+    expect(onHiddenChange).toHaveBeenLastCalledWith({
+      ...NO_TOPO_HIDDEN,
+      kinds: ["Provider networks"],
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Hide MPLS cloud" }))
+    expect(onHiddenChange).toHaveBeenLastCalledWith({
+      ...NO_TOPO_HIDDEN,
+      devices: ["pn:pn1"],
+    })
+    fireEvent.click(screen.getByText("MPLS cloud"))
+    expect(onPickNode).toHaveBeenCalledWith(network)
+  })
+})
 
 describe("the Objects sidebar's cables", () => {
   it("are listed under Cables", () => {

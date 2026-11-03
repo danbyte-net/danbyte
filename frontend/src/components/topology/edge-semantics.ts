@@ -95,6 +95,12 @@ export function classifyEdges(
       out.push({ ...ends, sem: e.type, raw: e.data })
       continue
     }
+    // A circuit to a provider network (#466): its own line, never folded
+    // into a pair's bundle of cables.
+    if (e.type === "circuit") {
+      out.push({ ...ends, sem: "cable", raw: e.data })
+      continue
+    }
 
     if (opts.fold === "pair") {
       const key = [e.source, e.target].sort().join(">")

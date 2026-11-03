@@ -97,7 +97,9 @@ import {
   CableInspector,
   ConnectionInspector,
   DeviceInspector,
+  LineEnds,
   MarkerInspector,
+  ProviderNetworkInspector,
   SiteInspector,
 } from "@/components/site-map/inspector"
 import { SiteMapDisplayMenu } from "@/components/site-map/display-menu"
@@ -158,6 +160,7 @@ import {
 import {
   deviceIcon,
   freeMarkerIcon,
+  providerNetworkIcon,
   siteIcon,
 } from "@/components/site-map/map-icons"
 import { MapPaletteRail } from "@/components/site-map/palette-rail"
@@ -267,6 +270,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
       regions: true,
       outlines: true,
       plans: true,
+      providers: true,
     }
     try {
       const stored = JSON.parse(
@@ -606,6 +610,14 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     () => connQuery.data?.connections ?? [],
     [connQuery.data]
   )
+  // The provider networks the circuits meet at (#466), and the ones on the
+  // map: their layer on, not hidden by their eye, and serving a site that
+  // is not hidden.
+  const providerNetworks = useMemo(
+    () => connQuery.data?.provider_networks ?? [],
+    [connQuery.data]
+  )
+  const pnRef = useRef<L.LayerGroup | null>(null)
   const connRef = useRef<L.LayerGroup | null>(null)
   const midpointsRef = useRef<Map<string, [number, number]>>(new Map())
 
@@ -675,14 +687,30 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   // connections layer only draws circuits + tunnels.
   // An arc with a hidden end has nothing to land on, so it goes with the
   // site rather than hanging in the sea.
+  // A line to a provider network goes with the network's layer and eye.
   const linked = useCallback(
     (c: SiteMapConnection) =>
-      !hiddenSiteIds.has(c.site_a.id) && !hiddenSiteIds.has(c.site_z.id),
-    [hiddenSiteIds]
+      !hiddenSiteIds.has(c.site_a.id) &&
+      !hiddenSiteIds.has(c.site_z.id) &&
+      (!c.provider_network ||
+        (layers.providers &&
+          !hidden.providers.includes(c.provider_network.id))),
+    [hiddenSiteIds, layers.providers, hidden.providers]
   )
   const shownConnections = useMemo(
     () => connections.filter((c) => c.kind !== "cable" && linked(c)),
     [connections, linked]
+  )
+  const shownNetworks = useMemo(
+    () =>
+      layers.providers
+        ? providerNetworks.filter(
+            (pn) =>
+              !hidden.providers.includes(pn.id) &&
+              pn.site_ids.some((id) => !hiddenSiteIds.has(id))
+          )
+        : [],
+    [providerNetworks, layers.providers, hidden.providers, hiddenSiteIds]
   )
   // The lines on the map right now, for the legend's Status and Speed keys
   // and the Speed labels.
@@ -1112,6 +1140,32 @@ function MapBody({ data }: { data: SiteMapPayload }) {
     midpointsRef.current = built.midpoints
   }, [shownConnections, layers.links, colorBy, util])
 
+  // Provider network markers (#466): where the circuits to a network meet.
+  // A layer of their own, over the lines; never stacked with the sites.
+  const selPnId = selected?.kind === "provider_network" ? selected.id : null
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    pnRef.current?.remove()
+    pnRef.current = null
+    if (shownNetworks.length === 0) return
+    const group = L.layerGroup()
+    for (const pn of shownNetworks) {
+      const isSel = selPnId === pn.id
+      const m = L.marker([pn.latitude, pn.longitude], {
+        icon: providerNetworkIcon(pn, { selected: isSel }),
+        zIndexOffset: isSel ? 1000 : 0,
+      })
+      m.on("click", (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e)
+        setSelected({ kind: "provider_network", id: pn.id })
+      })
+      group.addLayer(m)
+    }
+    group.addTo(map)
+    pnRef.current = group
+  }, [shownNetworks, selPnId, mapReady])
+
   // Route channels (view + edit); rebuilt on selection so the selected one
   // reads heavier, exactly like tray selection on the floor plan.
   useEffect(() => {
@@ -1433,6 +1487,10 @@ function MapBody({ data }: { data: SiteMapPayload }) {
   const selCable =
     selected?.kind === "cable"
       ? (shownCables.find((c) => c.id === selected.id) ?? null)
+      : null
+  const selNetwork =
+    selected?.kind === "provider_network"
+      ? (shownNetworks.find((pn) => pn.id === selected.id) ?? null)
       : null
 
   // Keyboard: Escape disarms/deselects; Delete removes a selected marker in
@@ -2080,6 +2138,13 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             onClose={() => setSelected(null)}
           />
         )}
+        {selNetwork && (
+          <ProviderNetworkInspector
+            network={selNetwork}
+            onFocusConnection={(id) => setSelected({ kind: "connection", id })}
+            onClose={() => setSelected(null)}
+          />
+        )}
         {!selectedRoute && selCable && (
           <CableInspector
             cable={selCable}
@@ -2135,6 +2200,7 @@ function MapBody({ data }: { data: SiteMapPayload }) {
             // What the map draws, so the list and the map agree: a link to a
             // hidden site is gone from both.
             connections={connections.filter(linked)}
+            providerNetworks={layers.providers ? providerNetworks : []}
             routes={shownRoutes}
             regions={data.regions ?? []}
             hidden={hidden}
@@ -2743,13 +2809,7 @@ function ConnectionPopover({
         )}
       </div>
       <div className="text-[12px] text-muted-foreground">
-        <Link to="/sites/$id" params={{ id: e.site_a.id }} className="link">
-          {e.site_a.name}
-        </Link>
-        {" ↔ "}
-        <Link to="/sites/$id" params={{ id: e.site_z.id }} className="link">
-          {e.site_z.name}
-        </Link>
+        <LineEnds edge={e} />
       </div>
       <LinkFacts line={e} compact />
       {e.kind === "circuit" && (

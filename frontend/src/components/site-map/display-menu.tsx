@@ -25,6 +25,8 @@ export interface SiteMapLayers {
   outlines: boolean
   /** The boxes of the floor plans made from the map. */
   plans: boolean
+  /** Provider networks and the circuits to them (#466). */
+  providers: boolean
 }
 
 const ROW =
@@ -86,6 +88,7 @@ export function SiteMapDisplayMenu({
           {layer("sites", "Sites")}
           {layer("devices", "Devices")}
           {layer("links", "Links (circuits · tunnels)")}
+          {layer("providers", "Provider networks")}
           {layer("cables", "Cables")}
           {layer("routes", "Cable routes")}
           {layer("regions", "Region boundaries")}

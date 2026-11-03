@@ -1,9 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import L from "leaflet"
+import { Cloud } from "lucide-react"
 
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { DynamicIcon } from "@/components/dynamic-icon"
-import type { SiteMapDevice, SiteMapMarker, SiteMapSite } from "@/lib/api"
+import type {
+  SiteMapDevice,
+  SiteMapMarker,
+  SiteMapProviderNetwork,
+  SiteMapSite,
+} from "@/lib/api"
 
 import { CHECK_COLOR } from "./status-colors"
 
@@ -84,6 +90,28 @@ export function deviceIcon(d: SiteMapDevice, opts: IconOpts = {}): L.DivIcon {
     className: "sm-marker" + (selected ? " sm-sel" : ""),
     html: `<span class="sm-badge"${badgeStyle}>${badge}</span>` + label,
     iconAnchor: [12, 12],
+  })
+}
+
+/** A provider network's marker (#466): a neutral rounded square with a
+ * cloud, so it never reads as a site; its name and circuit count in the
+ * site label chip. */
+export function providerNetworkIcon(
+  pn: Pick<SiteMapProviderNetwork, "name" | "circuits">,
+  opts: IconOpts = {}
+): L.DivIcon {
+  const { selected = false, mini = false } = opts
+  const glyph = renderToStaticMarkup(<Cloud className="sm-pin-icon" />)
+  const label = mini
+    ? ""
+    : `<span class="sm-label">${escapeHtml(pn.name)}<span class="sm-count">${pn.circuits.length}</span></span>`
+  return L.divIcon({
+    className: "sm-marker sm-pn" + (selected ? " sm-sel" : ""),
+    html:
+      `<span class="sm-pin" style="border-radius:6px;background:var(--card);color:var(--foreground);border-color:var(--border)">${glyph}</span>` +
+      label,
+    iconSize: undefined as unknown as L.PointExpression,
+    iconAnchor: [14, 14],
   })
 }
 

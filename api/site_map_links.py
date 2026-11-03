@@ -280,7 +280,8 @@ class LinkFigures:
         ends, speeds, hidden = [], [], False
         for term in (term_a, term_z):
             ref = {
-                "site_id": str(term.site_id),
+                # A provider network end (#466) sits at no site.
+                "site_id": str(term.site_id) if term.site_id else None,
                 "termination": {
                     "id": str(term.id),
                     "side": term.term_side,
@@ -291,7 +292,7 @@ class LinkFigures:
             if term.vm_interface_id is not None:
                 # Bound to a VM interface (#432): no cable to walk.
                 ref.update(self._vm_end(term.vm_interface, term.site_id))
-                ref["site_id"] = str(term.site_id)
+                ref["site_id"] = str(term.site_id) if term.site_id else None
             elif self.walker is None:
                 ref.update(device=None, port=None, restricted=True)
             else:

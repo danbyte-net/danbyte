@@ -39,6 +39,7 @@ const LAYERS: SiteMapLayers = {
   regions: true,
   outlines: true,
   plans: true,
+  providers: true,
 }
 
 function mount(over: Partial<Parameters<typeof SiteMapDisplayMenu>[0]> = {}) {

@@ -159,7 +159,11 @@ export function MiniMap({
     // with no circuit of its own showed cable lines but no arcs at all).
     // `onlyConnectionsOf` scopes only the initial FRAMING to the site + its
     // direct connection peers.
-    const conns = connQ.data?.connections ?? []
+    // A circuit to a provider network ends at the network's marker, which
+    // only the full map draws (#466): leave those lines out here.
+    const conns = (connQ.data?.connections ?? []).filter(
+      (c) => !c.provider_network
+    )
     const own = onlyConnectionsOf
       ? conns.filter(
           (c) =>
