@@ -78,34 +78,33 @@ export function FloorPlanForm({
     enabled: !!siteId,
   })
 
+  // Built at submit time and handed to mutate, so a click right after the
+  // site fills in never saves the previous render's values.
+  const buildPayload = (): FloorPlanWritePayload => ({
+    name: name.trim(),
+    site_id: siteId ?? undefined,
+    location_id: locationId,
+    grid_width: Math.min(MAX_GRID, Math.max(1, parseInt(gridWidth, 10) || 24)),
+    grid_height: Math.min(
+      MAX_GRID,
+      Math.max(1, parseInt(gridHeight, 10) || 16)
+    ),
+    cell_mm: Math.min(5000, Math.max(50, parseInt(cellMm, 10) || 600)),
+    ceiling_mm: Math.min(
+      20000,
+      Math.max(1000, parseInt(ceilingMm, 10) || 3000)
+    ),
+    description,
+  })
+
   const mutation = useMutation({
-    mutationFn: async () => {
-      const payload: FloorPlanWritePayload = {
-        name: name.trim(),
-        site_id: siteId ?? undefined,
-        location_id: locationId,
-        grid_width: Math.min(
-          MAX_GRID,
-          Math.max(1, parseInt(gridWidth, 10) || 24)
-        ),
-        grid_height: Math.min(
-          MAX_GRID,
-          Math.max(1, parseInt(gridHeight, 10) || 16)
-        ),
-        cell_mm: Math.min(5000, Math.max(50, parseInt(cellMm, 10) || 600)),
-        ceiling_mm: Math.min(
-          20000,
-          Math.max(1000, parseInt(ceilingMm, 10) || 3000)
-        ),
-        description,
-      }
-      return saveObject<FloorPlan>({
+    mutationFn: (payload: FloorPlanWritePayload) =>
+      saveObject<FloorPlan>({
         objectType: "api.floorplan",
         endpoint: "/api/floor-plans/",
         id: isEdit ? plan!.id : undefined,
         payload,
-      })
-    },
+      }),
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["floor-plans"] })
       qc.invalidateQueries({ queryKey: ["floor-plan", saved.id] })
@@ -122,7 +121,7 @@ export function FloorPlanForm({
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        mutation.mutate()
+        mutation.mutate(buildPayload())
       }}
       className="@container grid gap-4"
     >
