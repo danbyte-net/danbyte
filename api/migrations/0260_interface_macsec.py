@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0258_prefix_auto_gateway'),
+        ('api', '0259_prefix_auto_gateway'),
         ('routing', '0019_vtepmembership_interface'),
     ]
 

@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0257_floor_plan_max_grid'),
+        ('api', '0258_sbom_licenses'),
     ]
 
     operations = [
