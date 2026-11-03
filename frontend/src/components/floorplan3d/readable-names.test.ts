@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { NAME_PX_3D, sceneTileName, screenScale } from "./readable-names"
-import type { SceneTile } from "./world"
+import {
+  MAX_NAME_M,
+  NAME_PX_3D,
+  nameReach,
+  sceneTileName,
+  screenScale,
+} from "./readable-names"
+import type { ScenePayload, SceneTile } from "./world"
 
 // Readable in the room: a name's sprite is one size on screen whatever its
 // distance (sizeAttenuation off), so its scale depends on the camera's
@@ -46,5 +52,16 @@ describe("sceneTileName", () => {
     ).toBe("R1")
     expect(sceneTileName({ ...base, device_name: "sw1" })).toBe("sw1")
     expect(sceneTileName({ ...base, type_name: "Cooling" })).toBe("Cooling")
+  })
+})
+
+describe("nameReach", () => {
+  const plan = (w: number, h: number) =>
+    ({ grid_width: w, grid_height: h, cell_mm: 600 }) as ScenePayload["plan"]
+  it("keeps the fixed reach on a room-sized plan", () => {
+    expect(nameReach(plan(60, 40))).toBe(MAX_NAME_M)
+  })
+  it("reaches twice the longer side on a campus-sized plan", () => {
+    expect(nameReach(plan(1818, 1485))).toBeCloseTo(2 * 1818 * 0.6)
   })
 })

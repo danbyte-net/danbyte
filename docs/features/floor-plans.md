@@ -1320,7 +1320,8 @@ what is in view. The **PDF** runs the same pass at the paper's scale.
 
 In the **3D** view, Readable draws every object's name as a label that
 faces the camera at one size on screen, whatever the distance. Names past
-400 m, behind the camera or off screen are left out. Overlapping names thin
+400 m (or twice the plan's longer side on a bigger plan), behind the
+camera or off screen are left out. Overlapping names thin
 out the same way as in 2D, with the nearer one winning among equals. The
 objects themselves stay their real size in 3D.
 

@@ -19,7 +19,7 @@ import type { ScenePayload, SceneTile } from "./world"
 
 // Readable (Display > Object size) in the room: every placed object's name
 // as a billboard of one size on screen, whatever its distance - the objects
-// themselves stay their real size. Names past MAX_NAME_M, behind the camera
+// themselves stay their real size. Names past nameReach, behind the camera
 // or off screen are left out, and where two would overlap on screen the
 // lower ranked hides (the selected and hovered one always shows, then the
 // racks, cabinets and devices, then the nearer). Sprites are made only for
@@ -29,8 +29,15 @@ import type { ScenePayload, SceneTile } from "./world"
 export const NAME_PX_3D = 18
 /** The name text inside it (px): what thinning measures. */
 const NAME_FONT_3D = 12
-/** Farther than this a name is not drawn (m). */
+/** Farther than this a name is not drawn (m), on a plan smaller than it. */
 export const MAX_NAME_M = 400
+
+/** How far a name still draws: MAX_NAME_M, or twice the plan's longer side
+ * on a bigger plan, so zooming out over a campus keeps its names. */
+export function nameReach(plan: ScenePayload["plan"]): number {
+  const [w, d] = cellToWorld(plan, plan.grid_width, plan.grid_height)
+  return Math.max(MAX_NAME_M, 2 * Math.max(w, d))
+}
 /** Made sprites kept beyond what shows, before the unseen are freed. */
 const SPRITE_CACHE = 600
 
@@ -144,6 +151,7 @@ export function ReadableNames3D({
   }, [])
 
   const v = useMemo(() => new THREE.Vector3(), [])
+  const reach = nameReach(plan)
   useFrame(({ camera, size }) => {
     const g = group.current
     if (!g) return
@@ -155,7 +163,7 @@ export function ReadableNames3D({
     const cands: NameCandidate[] = []
     for (const e of entries) {
       const d = camera.position.distanceTo(e.at)
-      if (d > MAX_NAME_M && !always.has(e.id)) continue
+      if (d > reach && !always.has(e.id)) continue
       v.copy(e.at).project(camera)
       if (v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue
       const sx = ((v.x + 1) / 2) * size.width
