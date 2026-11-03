@@ -352,11 +352,92 @@ def shift_contents(plan, dx: int, dy: int) -> dict:
     return moved
 
 
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def content_bounds(plan) -> tuple[float, float, float, float] | None:
+    """``(min_x, min_y, max_x, max_y)`` in cells of everything drawn on
+    ``plan`` - what a smaller frame may not cut: tiles, raised floors,
+    areas (a turned one by its corners), labels, walls, trays, a CAD
+    drawing's origin and the rectangles of its live views. None when the
+    plan is empty."""
+    from .models import FloorPlanDrawing
+
+    xs: list[float] = []
+    ys: list[float] = []
+
+    def box(x, y, w=0, h=0, rot=0):
+        if not (_num(x) and _num(y)):
+            return
+        w = w if _num(w) else 0
+        h = h if _num(h) else 0
+        if rot and _num(rot) and (w or h):
+            cx, cy = x + w / 2, y + h / 2
+            c, s = math.cos(math.radians(rot)), math.sin(math.radians(rot))
+            for px, py in ((-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)):
+                xs.append(cx + px * c - py * s)
+                ys.append(cy + px * s + py * c)
+            return
+        xs.extend((x, x + w))
+        ys.extend((y, y + h))
+
+    def pts(points):
+        for p in points or []:
+            if isinstance(p, (list, tuple)) and len(p) >= 2 and _num(p[0]) and _num(p[1]):
+                xs.append(p[0])
+                ys.append(p[1])
+
+    for x, y, w, h in plan.tiles.values_list("x", "y", "width", "height"):
+        box(x, y, w, h)
+    for x, y, w, h in plan.raised_floor_areas.values_list("x", "y", "width", "height"):
+        box(x, y, w, h)
+    for x, y, w, h, rot, points in plan.areas.values_list(
+        "x", "y", "width", "height", "rotation", "points"
+    ):
+        if points:
+            pts(points)
+        else:
+            box(x, y, w, h, rot)
+    for x, y in plan.labels.values_list("x", "y"):
+        box(x, y)
+    for (points,) in plan.walls.values_list("points"):
+        pts(points)
+    for (points,) in plan.trays.values_list("points"):
+        pts(points)
+    d = FloorPlanDrawing.objects.filter(floor_plan=plan).only("placement").first()
+    if d is not None and isinstance(d.placement, dict) and plan.cell_mm:
+        x, y = d.placement.get("x_mm"), d.placement.get("y_mm")
+        if _num(x) and _num(y):
+            box(x / plan.cell_mm, y / plan.cell_mm)
+    for (c,) in FloorPlan.objects.filter(source=plan, kind="view").values_list("crop"):
+        if isinstance(c, dict):
+            box(c.get("x"), c.get("y"), c.get("w"), c.get("h"))
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def frame_extent(levels) -> dict | None:
+    """The whole cells everything on ``levels`` covers, together - the
+    dashed box of From site map, which the frame may shrink to but not
+    cut. None when they are all empty."""
+    boxes = [b for b in (content_bounds(f) for f in levels) if b is not None]
+    if not boxes:
+        return None
+    x0 = math.floor(min(b[0] for b in boxes) + 1e-6)
+    y0 = math.floor(min(b[1] for b in boxes) + 1e-6)
+    x1 = math.ceil(max(b[2] for b in boxes) - 1e-6)
+    y1 = math.ceil(max(b[3] for b in boxes) - 1e-6)
+    return {"x": x0, "y": y0, "w": max(0, x1 - x0), "h": max(0, y1 - y0)}
+
+
 def _pad_file(field, name: str, plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
     """The picture in ``field`` (stretched over the old grid) on a canvas
-    covering the grown grid, at the place its box now has in it - nothing
-    fetched, the new margins left empty. False when there is none or it
-    can't be read."""
+    covering the new grid, at the place its box now has in it - nothing
+    fetched, new margins left empty and cells trimmed off cut away (a
+    negative ``dx``/``dy``). False when there is none or it can't be
+    read."""
     from PIL import Image
 
     if not field:
@@ -398,6 +479,30 @@ def pad_background(plan, old_w: int, old_h: int, dx: int, dy: int) -> bool:
         padded = True
     _pad_file(plan.background_image, f"floor-{plan.pk.hex[:8]}", plan, old_w, old_h, dx, dy)
     return padded
+
+
+def resize_anchor(plan, old_w: int, old_h: int) -> None:
+    """``plan``'s grid was resized in the editor (cells added or taken off
+    east and south): its anchor follows, the north-west corner where it is
+    and each cell its size, so the map keeps its scale. A map shared with
+    other levels is copied first; the map is padded or cut to the new grid.
+    Call inside a transaction, before saving ``plan``."""
+    from .floor_plan_layers import detach_map
+
+    if not has_anchor(plan) or (plan.grid_width, plan.grid_height) == (old_w, old_h):
+        return
+    s, w, n, e = (float(v) for v in plan.geo_bbox)
+    x0, x1, y0, y1 = merc_x(w), merc_x(e), merc_y(n), merc_y(s)
+    cx = (x1 - x0) / max(1, old_w)
+    cy = (y1 - y0) / max(1, old_h)
+    box = [lat_of(y0 + plan.grid_height * cy), w, n, lng_of(x0 + plan.grid_width * cx)]
+    set_anchor(plan, box, basemap=plan.geo_basemap)
+    detach_map(plan)
+    row = plan.base_map if plan.base_map_id else None
+    if row is not None:
+        _pad_file(row.image, "site-map", plan, old_w, old_h, 0, 0)
+        row.bbox = list(box)
+        row.save()
 
 
 def expand(view, request, plan):
@@ -483,29 +588,18 @@ def expand(view, request, plan):
 
 
 def grow_levels(plan) -> list:
-    """The floors a larger frame grows together: ``plan`` and, on an
-    aligned floor plan, every other level of the same grid and cell size
-    that draws the same map (or none) and is tied to the same box (or to
-    none) - so the building's levels stay aligned under one map."""
-    from django.db.models import Q
-
-    from .floor_plan_layers import _key
-
+    """The floors a new frame in From site map grows, shrinks or moves
+    together: ``plan`` and, on an aligned floor plan, every other level of
+    the same grid and cell size - whatever anchor or map each has now (a
+    stale anchor, or none after Remove), as the building's levels share one
+    footprint. They all end with the same anchor and one map."""
     if not (plan.stack_id and plan.stack.aligned) or getattr(plan, "kind", "plan") != "plan":
         return [plan]
     qs = FloorPlan.objects.filter(
         stack_id=plan.stack_id, kind="plan", grid_width=plan.grid_width,
         grid_height=plan.grid_height, cell_mm=plan.cell_mm,
     ).exclude(pk=plan.pk)
-    if plan.base_map_id:
-        qs = qs.filter(Q(base_map__isnull=True) | Q(base_map_id=plan.base_map_id))
-    else:
-        qs = qs.filter(base_map__isnull=True)
-    key = _key(plan.geo_bbox) if has_anchor(plan) else None
-    return [plan, *(
-        f for f in qs.order_by("floor_order", "pk")
-        if _key(f.geo_bbox) is None or _key(f.geo_bbox) == key
-    )]
+    return [plan, *qs.order_by("floor_order", "pk")]
 
 
 def _parse_pair(raw, field: str) -> tuple[int, int]:
@@ -523,21 +617,50 @@ def _parse_pair(raw, field: str) -> tuple[int, int]:
     return int(raw[0]), int(raw[1])
 
 
-def grow_and_map(view, request, plan):
-    """``POST map/`` with a frame larger than the grid: ``bbox`` (the whole
-    frame), ``grid`` [width, height] (its size in cells), ``offset`` [x, y]
-    (where the grid as it is sits in it, in cells), ``image`` (the render
-    of the frame), ``basemap``, ``zoom`` and optionally ``version``.
+#: Slack, in cells, when contents are checked against a new frame.
+_EPS = 1e-6
 
-    In one transaction the plan - with the levels that grow with it
-    (:func:`grow_levels`) - grows to ``grid``, everything on each moves by
-    ``offset`` (as Expand moves it), each takes ``bbox`` as its anchor and
-    the render becomes their map. On a plan with an anchor the frame must
-    hold its box where it is: ``offset`` is the cells added west and north.
+
+def _check_holds(levels, gw: int, gh: int, ox: int, oy: int) -> None:
+    """ValidationError unless everything on each level, moved by
+    (``ox``, ``oy``), lies inside a ``gw`` × ``gh`` grid."""
+    ext = frame_extent(levels)
+    if ext is None:
+        return
+    if ext["w"] > gw or ext["h"] > gh:
+        raise ValidationError({"grid": [
+            f"At least {ext['w']} × {ext['h']} cells: what is drawn on the plan."
+        ]})
+    for f in levels:
+        b = content_bounds(f)
+        if b is None:
+            continue
+        if b[0] + ox < -_EPS or b[1] + oy < -_EPS or b[2] + ox > gw + _EPS \
+                or b[3] + oy > gh + _EPS:
+            raise ValidationError({"offset": [
+                "The frame must hold everything drawn on the plan"
+                + (f" ({f.name})." if len(levels) > 1 else ".")
+            ]})
+
+
+def grow_and_map(view, request, plan):
+    """``POST map/`` with a frame: ``bbox`` (the whole frame), ``grid``
+    [width, height] (its size in cells), ``offset`` [x, y] (the cells
+    everything on the plan moves by - negative when cells are trimmed off
+    the west or north), ``image`` (the render of the frame), ``basemap``,
+    ``zoom`` and optionally ``version``.
+
+    The frame is free: larger or smaller than the grid, and anywhere on the
+    map - the plan is re-anchored there. ``bbox`` must be ``grid`` cells of
+    ``cell_mm``, and the frame must hold everything drawn on the plan once
+    moved (it never cuts an object). In one transaction the plan - with
+    the levels that go with it (:func:`grow_levels`) - takes ``grid``,
+    everything on each moves by ``offset`` (as Expand moves it), each takes
+    ``bbox`` as its anchor and the render becomes their one map.
     """
     from audit.context import cause
 
-    from .floor_plan_layers import _key, check_frame
+    from .floor_plan_layers import _key, check_frame, drop_orphan
     from .floor_plan_placement import changed_by, parse_version
     from .serializers import FloorPlanSerializer
 
@@ -552,14 +675,13 @@ def grow_and_map(view, request, plan):
         raise ValidationError({"bbox": ["Frame the plan on the map."]})
     bbox = list(_clean_bbox(raw))
     stamp = parse_version(body.get("version"))
-    if gw < plan.grid_width or gh < plan.grid_height:
-        raise ValidationError({"grid": [
-            f"At least {plan.grid_width} × {plan.grid_height} cells: the grid as it is."
-        ]})
+    if gw < 1 or gh < 1:
+        raise ValidationError({"grid": ["At least one cell a side."]})
     if gw > MAX_GRID or gh > MAX_GRID:
         raise ValidationError({"grid": [f"At most {MAX_GRID} cells a side."]})
-    if not (0 <= ox <= gw - plan.grid_width and 0 <= oy <= gh - plan.grid_height):
-        raise ValidationError({"offset": ["The grid must lie inside the frame."]})
+    if abs(ox) > MAX_GRID * 2 or abs(oy) > MAX_GRID * 2:
+        raise ValidationError({"offset": ["The plan must lie inside the frame."]})
+    check_frame(plan, bbox, (gw, gh))
     ext = check_image(upload)
     basemap = _parse_basemap(body.get("basemap"))
     zoom = _parse_zoom(body.get("zoom"))
@@ -580,18 +702,6 @@ def grow_and_map(view, request, plan):
                  }]},
                 status=drf_status.HTTP_409_CONFLICT,
             )
-        if has_anchor(plan):
-            left, top, right, bottom, snapped = growth(plan, bbox)
-            if (left, top) != (ox, oy) or (
-                plan.grid_width + left + right, plan.grid_height + top + bottom
-            ) != (gw, gh):
-                raise ValidationError({"bbox": [
-                    "The frame must hold the plan's box where it is: "
-                    f"{gw} × {gh} cells with the plan {ox} in and {oy} down."
-                ]})
-            bbox = snapped
-        else:
-            check_frame(plan, bbox, (gw, gh))
         levels = grow_levels(plan)
         ids = [f.pk for f in levels]
         list(FloorPlan.objects.select_for_update().filter(pk__in=ids)
@@ -600,16 +710,24 @@ def grow_and_map(view, request, plan):
             FloorPlan.objects.filter(pk__in=ids), request.user, tenant, "floorplan", "change",
         ).count()
         if allowed != len(ids):
-            raise PermissionDenied("You may not change every level that grows with this one.")
+            raise PermissionDenied("You may not change every level that goes with this one.")
+        _check_holds(levels, gw, gh, ox, oy)
         old_w, old_h = plan.grid_width, plan.grid_height
-        grown = (gw, gh) != (old_w, old_h)
-        why = (f"Grew {plan.name} to {gw} × {gh} cells from the Site map" if grown
-               else "Map captured from the Site map")
+        resized = (gw, gh) != (old_w, old_h)
+        if gw * gh > old_w * old_h or (resized and gw >= old_w and gh >= old_h):
+            why = f"Grew {plan.name} to {gw} × {gh} cells from the Site map"
+        elif resized:
+            why = f"Shrank {plan.name} to {gw} × {gh} cells from the Site map"
+        elif ox or oy or _key(plan.geo_bbox) != _key(bbox):
+            why = f"Moved {plan.name} on the Site map"
+        else:
+            why = "Map captured from the Site map"
         moved = {}
+        old_maps = {f.base_map_id for f in levels if f.base_map_id}
         with cause(why[:255]):
             row = plan.base_map if plan.base_map_id else None
-            # A map shared with floors that do not grow stays theirs; the
-            # grown levels get a new one.
+            # A map shared with floors that do not go with this one stays
+            # theirs; the levels get a new one.
             own = row is not None and not row.floors.exclude(pk__in=ids).exists()
             for f in levels:
                 f = plan if f.pk == plan.pk else f
@@ -617,28 +735,26 @@ def grow_and_map(view, request, plan):
                 if f.pk == plan.pk:
                     moved = n
                 f.grid_width, f.grid_height = gw, gh
-                if grown:
+                if resized or ox or oy:
                     # The floor's own picture keeps its place on the grid.
                     _pad_file(f.background_image, f"floor-{f.pk.hex[:8]}", f,
                               old_w, old_h, ox, oy)
                 set_anchor(f, bbox, basemap=f.geo_basemap)
-                if not own:
-                    f.base_map = None
-                elif row is not None:
-                    f.base_map = row
+                f.base_map = row if own else None
                 if f.pk != plan.pk:
                     f.save()
             plan.save()
             _store_background(plan, upload, ext, basemap, zoom)
             plan.save()
-            # Levels that took the box but not the map (store_map shares a
-            # new map only with levels that had none): the same map.
+            # Every level draws the same map, whatever it drew before.
             for f in FloorPlan.objects.filter(pk__in=ids).exclude(pk=plan.pk).order_by("pk"):
-                if f.base_map_id != plan.base_map_id and _key(f.geo_bbox) == _key(plan.geo_bbox):
+                if f.base_map_id != plan.base_map_id:
                     f.base_map_id = plan.base_map_id
                     f.geo_captured_at, f.geo_basemap, f.geo_zoom = (
                         plan.geo_captured_at, plan.geo_basemap, plan.geo_zoom)
                     f.save()
+            for mid in old_maps - {plan.base_map_id}:
+                drop_orphan(mid)
     plan = FloorPlan.objects.select_related("site", "location", "stack", "base_map") \
         .get(pk=plan.pk)
     data = FloorPlanSerializer(plan, context=view.get_serializer_context()).data

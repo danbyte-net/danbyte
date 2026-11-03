@@ -13959,9 +13959,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         anchor yet - the box must be the grid's real size. On an anchored
         plan the box is the anchor's and the render replaces the map
         (Update snapshot). With ``grid`` [w, h] and ``offset`` [x, y] the
-        frame may be larger than the grid: the grid grows to it and
-        everything moves by ``offset``, on every level that grows with it
-        (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
+        frame is free - larger, smaller or elsewhere: the grid takes its
+        size, everything moves by ``offset`` and the plan is anchored to it,
+        on every level that goes with it (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
         from every floor it lies under (api/floor_plan_layers.py)."""
         from audit.context import cause
 
@@ -13979,8 +13979,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if "image" not in request.FILES:
             raise ValidationError({"image": ["The rendered map."]})
         if request.data.get("grid") not in (None, ""):
-            # A frame larger than the grid: grow it (and the levels that
-            # share it) and map the whole frame (api/floor_plan_geo.py).
+            # A new frame: resize and re-anchor the grid (and the levels
+            # that go with it) and map the frame (api/floor_plan_geo.py).
             from .floor_plan_geo import grow_and_map
 
             return grow_and_map(self, request, plan)

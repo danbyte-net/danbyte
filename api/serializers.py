@@ -11060,6 +11060,7 @@ class FloorPlanSerializer(
     base_map = serializers.SerializerMethodField()
     map_visible = serializers.SerializerMethodField()
     map_levels = serializers.SerializerMethodField()
+    frame_extent = serializers.SerializerMethodField()
     state = serializers.JSONField(required=False)
     tags = TagSerializer(many=True, read_only=True)
     tag_ids = TenantScopedPrimaryKeyRelatedField(
@@ -11094,16 +11095,34 @@ class FloorPlanSerializer(
 
         return map_visible(obj)
 
-    def get_map_levels(self, obj) -> int | None:
-        """The floors a larger frame in From site map grows together: this
-        one and, on an aligned floor plan, the levels of the same grid and
-        map (api/floor_plan_geo.py ``grow_levels``). Null on a list."""
+    def _frame_levels(self, obj):
         from .floor_plan_geo import grow_levels
 
         view = self.context.get("view")
         if getattr(view, "action", None) == "list" or getattr(obj, "kind", "plan") == "view":
             return None
-        return len(grow_levels(obj))
+        cache = self.context.setdefault("_frame_levels", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = grow_levels(obj)
+        return cache[obj.pk]
+
+    def get_map_levels(self, obj) -> int | None:
+        """The floors a new frame in From site map grows, shrinks or moves
+        together: this one and, on an aligned floor plan, the levels of the
+        same grid and cell size (api/floor_plan_geo.py ``grow_levels``).
+        Null on a list."""
+        levels = self._frame_levels(obj)
+        return None if levels is None else len(levels)
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_frame_extent(self, obj):
+        """``{x, y, w, h}``: the whole cells everything drawn on those
+        levels covers - the smallest frame From site map may shrink to.
+        Null when they are empty, and on a list."""
+        from .floor_plan_geo import frame_extent
+
+        levels = self._frame_levels(obj)
+        return None if levels is None else frame_extent(levels)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
@@ -11350,7 +11369,21 @@ class FloorPlanSerializer(
         moved = new is not None and (old is None or new.pk != old.pk)
         if moved and "floor_order" not in validated_data:
             validated_data["floor_order"] = next_order(new, exclude=instance.pk)
-        instance = super().update(instance, validated_data)
+        old_w, old_h = instance.grid_width, instance.grid_height
+        new_w = validated_data.get("grid_width", old_w)
+        new_h = validated_data.get("grid_height", old_h)
+        if (new_w, new_h) != (old_w, old_h) and instance.kind == "plan" \
+                and instance.geo_bbox:
+            # The geo anchor follows the grid, so the map keeps its scale
+            # (api/floor_plan_geo.py resize_anchor).
+            from .floor_plan_geo import resize_anchor
+
+            with transaction.atomic():
+                instance.grid_width, instance.grid_height = new_w, new_h
+                resize_anchor(instance, old_w, old_h)
+                instance = super().update(instance, validated_data)
+        else:
+            instance = super().update(instance, validated_data)
         if moved:
             drop_if_empty(old)
         return instance
@@ -11363,12 +11396,12 @@ class FloorPlanSerializer(
                   "grid_width", "grid_height", "cell_mm", "ceiling_mm",
                   "layout_mode", "background_image",
                   "background_opacity", "background_shown", "base_map", "map_opacity",
-                  "map_shown", "map_visible", "map_levels", "state", "description",
+                  "map_shown", "map_visible", "map_levels", "frame_extent", "state", "description",
                   "tile_count", "drawing", "kind", "snapshot", "geo",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "site", "elevation", "background_image",
-                            "base_map", "map_visible", "map_levels",
+                            "base_map", "map_visible", "map_levels", "frame_extent",
                             "tile_count", "drawing", "kind", "snapshot", "geo",
                             "created_at", "updated_at"]
         # The floor-name constraints are checked in validate(); DRF's own

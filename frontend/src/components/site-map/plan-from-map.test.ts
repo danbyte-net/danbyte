@@ -16,10 +16,13 @@ import {
   plainAttribution,
   planFrame,
   renderMapImage,
+  MAX_IMAGE_PIXELS,
+  metresPerPixel,
   renderZoom,
   tileUrl,
   tilesFor,
 } from "./plan-from-map"
+
 import type { Bbox, PlanFrame } from "./plan-from-map"
 
 // "New floor plan from this view": a map box becomes a grid at true scale
@@ -90,15 +93,29 @@ describe("planFrame", () => {
 describe("tiles", () => {
   const b = { south: 56, west: 10, north: 56.002, east: 10.003 }
 
-  it("renders at the map's zoom, lowered to fit 4096 px", () => {
+  it("renders at the map's zoom, lowered to fit 8192 px", () => {
     expect(renderZoom(b, 18)).toBe(18)
     const p = pixelBox(b, 18)
-    expect(p.x1 - p.x0).toBeLessThan(4096)
+    expect(p.x1 - p.x0).toBeLessThan(8192)
     const wide = { south: 56, west: 10, north: 56.02, east: 10.04 }
     const z = renderZoom(wide, 19)
     const q = pixelBox(wide, z)
-    expect(Math.max(q.x1 - q.x0, q.y1 - q.y0)).toBeLessThanOrEqual(4096)
+    expect(Math.max(q.x1 - q.x0, q.y1 - q.y0)).toBeLessThanOrEqual(8192)
     expect(z).toBeLessThan(19)
+  })
+
+  it("keeps the tiles' own detail on a large frame, under the pixel cap", () => {
+    // About 300 × 200 m at 57° N: zoom 19 still fits, about 0.16 m a pixel.
+    const site = { south: 57.05, west: 9.9094, north: 57.0518, east: 9.9144 }
+    expect(renderZoom(site, 19)).toBe(19)
+    expect(metresPerPixel(site, 19)).toBeGreaterThan(0.15)
+    expect(metresPerPixel(site, 19)).toBeLessThan(0.18)
+    // Each side fits 8192 px at zoom 19, the pixel count does not.
+    const strip = { south: 56, west: 10, north: 56.009, east: 10.0188 }
+    const z = renderZoom(strip, 19)
+    const p = pixelBox(strip, z)
+    expect((p.x1 - p.x0) * (p.y1 - p.y0)).toBeLessThanOrEqual(MAX_IMAGE_PIXELS)
+    expect(z).toBe(18)
   })
 
   it("covers the box with tiles placed at their offsets", () => {

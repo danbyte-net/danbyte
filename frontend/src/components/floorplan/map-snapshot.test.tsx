@@ -18,7 +18,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 
 import { frameReadout, SnapshotForm } from "./map-snapshot"
 import type { FrameMapProps } from "./map-snapshot"
-import { moveInner, resizeFrame } from "./plan-geo"
+import { moveFrame, moveInner, resizeFrame } from "./plan-geo"
 
 // From site map: the frame's handles grow it in whole cells, the readout
 // follows, and Capture with a larger frame sends its size and where the
@@ -91,6 +91,24 @@ function FakeMap(p: FrameMapProps) {
       >
         drag grid
       </button>
+      <button
+        type="button"
+        onClick={() => p.onFrame(resizeFrame(f, "w", to(9, 0)), "resize")}
+      >
+        drag w in
+      </button>
+      <button
+        type="button"
+        onClick={() => p.onFrame(resizeFrame(f, "e", to(5, 0)), "resize")}
+      >
+        drag e in
+      </button>
+      <button
+        type="button"
+        onClick={() => p.onFrame(moveFrame(f, 40 * f.cx, 0), "move")}
+      >
+        move frame
+      </button>
     </div>
   )
 }
@@ -162,6 +180,70 @@ describe("From site map", () => {
       screen.getByRole<HTMLButtonElement>("button", { name: "Capture" })
         .disabled
     ).toBe(true)
+  })
+
+  it("reads the map's detail", () => {
+    wrap(<SnapshotForm plan={HALL} onClose={vi.fn()} renderMap={FakeMap} />)
+    // Zoom 19 at 56° N: about 0.17 m a pixel.
+    expect(size()).toMatch(/≈ 0\.1\d m\/px/)
+  })
+
+  describe("on a plan tied to the map", () => {
+    const geo = {
+      bbox: [56, 10, 56.000108, 10.000291] as [number, number, number, number],
+      mpc: 0.6,
+      zoom: 19,
+      basemap: "sat" as const,
+      captured_at: null,
+      attribution: "",
+    }
+    const anchored = {
+      ...HALL,
+      geo,
+      frame_extent: { x: 2, y: 3, w: 10, h: 8 },
+    } as unknown as FloorPlan
+
+    it("moves the frame anywhere and re-anchors there", async () => {
+      wrap(
+        <SnapshotForm plan={anchored} onClose={vi.fn()} renderMap={FakeMap} />
+      )
+      const before = props!.frame.x
+      fireEvent.click(screen.getByText("move frame"))
+      expect(props!.frame.x).toBeGreaterThan(before)
+      expect(size()).toContain("Moves all 3 levels")
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }))
+      await waitFor(() => expect(apiMock).toHaveBeenCalled())
+      const fd = apiMock.mock.calls[0][1]!.body as FormData
+      expect(fd.get("grid")).toBe("[30,20]")
+      expect(fd.get("offset")).toBe("[0,0]")
+      expect(JSON.parse(String(fd.get("bbox")))[1]).toBeGreaterThan(10)
+    })
+
+    it("shrinks to what is drawn and moves it with the trimmed cells", async () => {
+      wrap(
+        <SnapshotForm plan={anchored} onClose={vi.fn()} renderMap={FakeMap} />
+      )
+      fireEvent.click(screen.getByText("drag e in"))
+      fireEvent.click(screen.getByText("drag w in"))
+      expect(size()).toContain("10 × 20 cells · 6 × 12 m")
+      expect(size()).toContain("Shrinks all 3 levels")
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }))
+      await waitFor(() => expect(apiMock).toHaveBeenCalled())
+      const fd = apiMock.mock.calls[0][1]!.body as FormData
+      expect(fd.get("grid")).toBe("[10,20]")
+      expect(fd.get("offset")).toBe("[-2,0]")
+    })
+
+    it("refreshes its own box when the frame is left as it is", async () => {
+      wrap(
+        <SnapshotForm plan={anchored} onClose={vi.fn()} renderMap={FakeMap} />
+      )
+      fireEvent.click(screen.getByRole("button", { name: "Capture" }))
+      await waitFor(() => expect(apiMock).toHaveBeenCalled())
+      const fd = apiMock.mock.calls[0][1]!.body as FormData
+      expect(fd.get("grid")).toBeNull()
+      expect(fd.get("bbox")).toBeNull()
+    })
   })
 
   it("captures the grid's own frame without growing it", async () => {

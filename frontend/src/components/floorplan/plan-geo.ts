@@ -158,9 +158,11 @@ export function roomOn(plan: AnchoredPlan, s: Sides, side: keyof Sides) {
 }
 
 // ── a frame in whole cells ──────────────────────────────────────────────────
-// The frame both Expand and From site map draw: the grid as it is (dashed)
-// inside a frame that grows from it in whole cells. Corner and edge handles
-// resize the frame; it never gets smaller than the grid it holds.
+// The frame both Expand and From site map draw: a dashed box inside a frame
+// of whole cells. Corner and edge handles resize the frame; it never gets
+// smaller than the dashed box. In Expand the dashed box is the grid as it
+// is; in From site map it is what is drawn on the plan (its levels too), so
+// the frame may shrink to it, and the frame goes anywhere on the map.
 
 /** A frame on the map in whole cells, with the grid as it is inside it. */
 export interface CellFrame {
@@ -173,11 +175,15 @@ export interface CellFrame {
   /** The frame's size, cells. */
   w: number
   h: number
-  /** The grid as it is: its place in the frame and its size, cells. */
+  /** The dashed box: its place in the frame and its size, cells. */
   ix: number
   iy: number
   iw: number
   ih: number
+  /** Where the dashed box is on the plan's grid now, cells (none: at its
+   * corner). Everything on the plan moves by `ix - ex`, `iy - ey`. */
+  ex?: number
+  ey?: number
   /** A cell in metres, when the frame is placed by hand (no anchor): its
    * Mercator size is worked out again where it is moved to. */
   cellM?: number
@@ -223,6 +229,56 @@ export function frameAround(
     cellM,
   }
 }
+
+/** What is drawn on a plan (and the levels that go with it), in whole
+ * cells: the read's `frame_extent`. */
+export interface Extent {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * The frame From site map opens with: the grid's own size at true scale -
+ * on a plan tied to the map from its box's north-west corner, else centred
+ * on `center` - with `extent` (what is drawn on it; null for an empty
+ * plan, undefined for the whole grid) as the dashed box, where it is.
+ */
+export function snapshotFrame(
+  plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm"> & {
+    geo?: Pick<FloorPlanGeo, "bbox"> | null
+  },
+  center: { lat: number; lng: number },
+  extent: Extent | null | undefined
+): CellFrame {
+  const base = frameAround(
+    center,
+    plan.grid_width,
+    plan.grid_height,
+    plan.cell_mm
+  )
+  if (plan.geo) {
+    const b = bboxOf(plan.geo)
+    // The cells at their real size from the box's corner: an anchor gone
+    // stale (a grid resized before it followed) is put right here.
+    const c = unitsAt((b.north + b.south) / 2, plan.cell_mm / 1000)
+    base.x = mercX(b.west)
+    base.y = mercY(b.north)
+    base.cx = base.cy = c
+  }
+  const e =
+    extent === undefined
+      ? { x: 0, y: 0, w: plan.grid_width, h: plan.grid_height }
+      : (extent ?? { x: 0, y: 0, w: 0, h: 0 })
+  return { ...base, ix: e.x, iy: e.y, iw: e.w, ih: e.h, ex: e.x, ey: e.y }
+}
+
+/** The cells everything on the plan moves by in frame `f`. */
+export const frameOffset = (f: CellFrame): [number, number] => [
+  f.ix - (f.ex ?? 0),
+  f.iy - (f.ey ?? 0),
+]
 
 /** An anchored plan's box grown by `s`, as a frame. */
 export function frameOfPlan(
@@ -286,7 +342,7 @@ export function handleAt(f: CellFrame, h: FrameHandle) {
 }
 
 /** `f` with handle `h` dragged to `at`: its sides on whole cells, never
- * inside the grid as it is. */
+ * inside the dashed box and never under one cell. */
 export function resizeFrame(
   f: CellFrame,
   h: FrameHandle,
@@ -296,20 +352,20 @@ export function resizeFrame(
   const py = mercY(at.lat)
   const out = { ...f }
   if (h.includes("w")) {
-    const k = Math.min(f.ix, Math.round((px - f.x) / f.cx))
+    const k = Math.min(f.ix, f.w - 1, Math.round((px - f.x) / f.cx))
     out.x = f.x + k * f.cx
     out.w = f.w - k
     out.ix = f.ix - k
   } else if (h.includes("e")) {
-    out.w = Math.max(f.ix + f.iw, Math.round((px - f.x) / f.cx))
+    out.w = Math.max(f.ix + f.iw, 1, Math.round((px - f.x) / f.cx))
   }
   if (h.includes("n")) {
-    const k = Math.min(f.iy, Math.round((py - f.y) / f.cy))
+    const k = Math.min(f.iy, f.h - 1, Math.round((py - f.y) / f.cy))
     out.y = f.y + k * f.cy
     out.h = f.h - k
     out.iy = f.iy - k
   } else if (h.includes("s")) {
-    out.h = Math.max(f.iy + f.ih, Math.round((py - f.y) / f.cy))
+    out.h = Math.max(f.iy + f.ih, 1, Math.round((py - f.y) / f.cy))
   }
   return out
 }
