@@ -1069,7 +1069,9 @@ A platform also carries a **Target version** and a **Version pattern** - the
 regular expression that reads the running version out of SNMP `sysDescr`
 for devices and VMs on it; see [Software
 target](../features/lifecycle.md#software-target) and [Version
-pattern](../features/lifecycle.md#version-pattern).
+pattern](../features/lifecycle.md#version-pattern). Its **License** is
+the OS's SPDX licence expression (`license` in the API and import), reported
+by the [SBOM](../features/sbom.md).
 
 A platform's page has a **Devices** tab and a **Virtual machines** tab, each
 listing what runs it; the API gives both counts (`device_count`, `vm_count`).

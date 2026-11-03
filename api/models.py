@@ -34,6 +34,7 @@ from .dcim_choices import (
 from .fields import HostAddressField, split_host_mask
 from .natural import natural
 from .software_versions import validate_version_pattern
+from .spdx import validate_license_expression
 from .speed import normalize_speed
 from core.models import (
     CustomFieldsMixin,
@@ -6285,6 +6286,11 @@ class Platform(NumIdMixin, TimestampedModel, LifecycleMixin, TaggableMixin):
         max_length=255, blank=True, default="", db_default="",
         validators=[validate_version_pattern],
     )
+    #: The OS's SPDX licence expression, for the SBOM (``api.sbom``).
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -6326,6 +6332,12 @@ class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     #: blank = not mapped. The cycles come from the installs' versions.
     eol_source = models.CharField(max_length=32, blank=True, default="", db_default="")
     eol_product = models.CharField(max_length=128, blank=True, default="", db_default="")
+    #: The SPDX licence expression every install inherits unless it sets its
+    #: own (``InstalledSoftware.license``); blank = unknown.
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
     description = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
@@ -6404,6 +6416,12 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
         "ApplicationGroup", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="installs",
     )
+    #: An SPDX licence expression for this install only (a dual-licensed
+    #: product under its commercial licence); blank = the application's.
+    license = models.CharField(
+        max_length=255, blank=True, default="", db_default="",
+        validators=[validate_license_expression],
+    )
     description = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
@@ -6430,6 +6448,11 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
     @property
     def parent(self):
         return self.device if self.device_id else self.virtual_machine
+
+    @property
+    def effective_license(self) -> str:
+        """The install's own licence, else its application's."""
+        return self.license or self.application.license
 
     def save(self, *args, **kwargs):
         """Derive the cycle and point at the (application, cycle) mapping;

@@ -193,6 +193,7 @@ from .presence_views import (
     presence_leave,
     presence_list,
 )
+from .sbom import sbom
 from .schema_view import CachedSpectacularAPIView
 from .search_views import search as search_view
 from .site_map_outlines import SiteMapOutlineViewSet
@@ -615,6 +616,7 @@ urlpatterns = [
          name="people-group-detail"),
     path("people/<int:pk>/", PersonDetail.as_view(), name="people-detail"),
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
+    path("sbom/", sbom, name="sbom"),
     # The Lifecycle page (#436): end dates per device and VM, soonest first.
     path("lifecycle/", lifecycle_overview, name="lifecycle-overview"),
     path("lifecycle/versions/", software_versions_summary, name="lifecycle-versions"),
