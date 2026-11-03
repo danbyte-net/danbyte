@@ -33,7 +33,7 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
-        linger service-user cad-tools
+        linger service-user cad-tools sbom
 
 help:
 	@echo "Danbyte dev shortcuts"
@@ -59,6 +59,7 @@ help:
 	@echo "  Django"
 	@echo "    make migrate / makemigrations / superuser / shell / test / check"
 	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
+	@echo "    make sbom       Write Danbyte's own CycloneDX SBOM to sbom.cdx.json"
 	@echo ""
 	@echo "  Reverse proxy (everything on https/443)"
 	@echo "    make proxy-install     One-time: nginx + self-signed cert + config"
@@ -442,6 +443,12 @@ check:
 # Needs a C toolchain, pkg-config, curl, xz and file; restart the workers after.
 cad-tools:
 	@sh deploy/cad/build-dwg2dxf.sh vendor/cad
+
+# Danbyte's own SBOM (CycloneDX 1.6): the venv's packages for requirements.txt
+# plus the SPA's runtime npm packages, to sbom.cdx.json where
+# /api/system/sbom/ serves it. Release bundles and images ship one already.
+sbom:
+	@$(PY) scripts/release/sbom.py --output sbom.cdx.json
 
 # Gather Django static (admin + DRF assets) into STATIC_ROOT so nginx serves
 # them from disk in production (gunicorn doesn't serve static with DEBUG off).

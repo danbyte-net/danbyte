@@ -116,6 +116,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Danbyte's own SBOM (CycloneDX) at /app/sbom.cdx.json, served by
+# /api/system/sbom/: the packages pip just installed, plus the SPA's runtime
+# npm packages, whose licences and authors are read from the frontend
+# stage's node_modules (mounted for this step only, not copied in).
+RUN --mount=type=bind,from=frontend,source=/app/frontend/node_modules,target=/app/frontend/node_modules \
+    python scripts/release/sbom.py --output /app/sbom.cdx.json
+
 # Non-root: run as an unprivileged user owning the app + the static/media dirs
 # collectstatic and uploads write to (shared volumes in compose).
 RUN useradd -m -u 10001 danbyte \

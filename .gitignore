@@ -94,3 +94,6 @@ plugins_local/
 
 # Marketing shots taken with ~/danbyte-lab/shot
 shots/
+
+# Danbyte's own SBOM, written by `make sbom` (release bundles ship one).
+/sbom.cdx.json
