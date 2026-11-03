@@ -140,6 +140,8 @@ AUDITED_MODELS = [
     "routing.RoutingPolicyRule",
     "routing.RoutingKeychain",
     "routing.BFDProfile",
+    "routing.RPKICache",
+    "routing.ROA",
     "routing.StaticRoute",
     "routing.PolicyRule",
     "routing.BGPInstance",

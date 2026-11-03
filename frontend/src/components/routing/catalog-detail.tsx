@@ -30,7 +30,8 @@ import { RoutingDeleteDialog } from "./catalog-page"
 interface CatalogRow {
   id: string
   numid: number | null
-  name: string
+  /** Absent on a row named by its prefix (a ROA) - `identity` draws it. */
+  name?: string
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -52,6 +53,8 @@ export interface RoutingDetailSpec<T extends CatalogRow, TRule = never> {
   subtitle?: (row: T) => ReactNode
   /** Rows for the first KvCard, after Number / Name. */
   overview: (row: T) => KvRow[]
+  /** In place of the Name row, for a row without a name. */
+  identity?: (row: T) => KvRow[]
   /** The rules tab - what the object carries. */
   rules?: {
     label: string
@@ -115,11 +118,15 @@ function Body<T extends CatalogRow, TRule>({
           },
         ]
       : []),
-    {
-      label: "Name",
-      value: <span className="font-mono">{row.name}</span>,
-      copy: row.name,
-    },
+    ...(spec.identity
+      ? spec.identity(row)
+      : [
+          {
+            label: "Name",
+            value: <span className="font-mono">{row.name}</span>,
+            copy: row.name,
+          },
+        ]),
     ...spec.overview(row),
     { label: "Description", value: row.description || dash },
   ]

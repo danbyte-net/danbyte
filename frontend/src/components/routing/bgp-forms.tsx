@@ -12,6 +12,7 @@ import type {
   BGPPeerGroupMini,
   BGPSession,
   Paginated,
+  RPKICacheMini,
   Status,
   VRFOption,
 } from "@/lib/api"
@@ -591,6 +592,9 @@ export function BGPInstanceForm({
   const [bfdProfileId, setBfdProfileId] = useState<string | null>(
     item?.bfd_profile?.id ?? null
   )
+  const [rpkiCacheIds, setRpkiCacheIds] = useState<string[]>(
+    item?.rpki_caches.map((c) => c.id) ?? []
+  )
   const [statusId, setStatusId] = useState<string | null>(
     item?.status?.id ?? null
   )
@@ -602,6 +606,11 @@ export function BGPInstanceForm({
     item?.custom_fields ?? {}
   )
   const asns = useAsns()
+  const rpkiCaches = usePickList<RPKICacheMini>(
+    "rpki-caches",
+    "/api/routing/rpki-caches/",
+    (c) => `${c.name} · ${c.address}`
+  )
   const vrfs = useQuery({
     queryKey: ["vrfs-picker"],
     queryFn: () => apiAll<VRFOption>("/api/vrfs/"),
@@ -643,6 +652,7 @@ export function BGPInstanceForm({
           distance_local: numOrNull(distL),
           bfd: bfd === "on",
           bfd_profile_id: bfd === "on" ? bfdProfileId : null,
+          rpki_cache_ids: rpkiCacheIds,
           status_id: statusId,
           description: description.trim(),
           tag_ids: tagIds,
@@ -761,6 +771,21 @@ export function BGPInstanceForm({
           onProfileChange={setBfdProfileId}
           errors={fieldErrors}
         />
+        <div className="grid gap-1">
+          <span className="text-xs font-medium">RPKI caches</span>
+          <MultiPick
+            options={rpkiCaches}
+            value={rpkiCacheIds}
+            onChange={setRpkiCacheIds}
+            placeholder="Add cache"
+            emptyText="No caches - add one under Routing → RPKI caches."
+          />
+          {fieldErrors.rpki_cache_ids && (
+            <p className="text-[11px] text-destructive">
+              {fieldErrors.rpki_cache_ids}
+            </p>
+          )}
+        </div>
         <FormTextarea
           label="Description"
           value={description}

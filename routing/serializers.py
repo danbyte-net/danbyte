@@ -17,6 +17,7 @@ from api.models import (
     L2VPN,
     VLAN,
     VRF,
+    Aggregate,
     Device,
     Interface,
     IPAddress,
@@ -40,11 +41,13 @@ from api.serializers import (
     VLANMiniSerializer,
     VRFMiniSerializer,
     detail_only,
+    require_store_for_key,
 )
 from core.models import Tag
 
 from .models import (
     AFI_SAFI_CHOICES,
+    ROA,
     VTEP,
     ASPathList,
     ASPathListRule,
@@ -74,6 +77,7 @@ from .models import (
     RoutingKeychain,
     RoutingPolicy,
     RoutingPolicyRule,
+    RPKICache,
     StaticRoute,
     VTEPMembership,
     effective_afs,
@@ -325,6 +329,74 @@ class BFDProfileSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSe
         read_only_fields = ["id", "numid", "created_at", "updated_at"]
 
 
+def _probe_clean(model, serializer, attrs):
+    """Build the row the write would leave and run its ``clean()``; hand
+    back the probe so normalised values can be copied onto ``attrs``."""
+    concrete = {f.name for f in model._meta.concrete_fields}
+    probe = model(**{k: v for k, v in attrs.items() if k in concrete})
+    if serializer.instance is not None:
+        for f in model._meta.concrete_fields:
+            if f.name not in attrs:
+                setattr(probe, f.name, getattr(serializer.instance, f.name))
+    _run_clean(probe)
+    return probe
+
+
+# ─── RPKI ────────────────────────────────────────────────────────────────────
+
+class RPKICacheMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = RPKICache
+        fields = ["id", "name", "address", "port", "transport", "preference"]
+
+
+class RPKICacheSerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """An RPKI cache. Over SSH the private key is write-only and lives in the
+    secret store: blank on edit keeps it, null clears it, and the read side
+    says only ``ssh_private_key_set``."""
+
+    cf_model = "rpkicache"
+
+    ssh_private_key = serializers.CharField(
+        source="psk", write_only=True, required=False, allow_blank=True,
+        allow_null=True, style={"input_type": "password"}, trim_whitespace=False,
+        help_text="Stored in the deployment's secret store, never in this row.",
+    )
+    ssh_private_key_set = serializers.BooleanField(source="psk_set", read_only=True)
+    bgp_instance_count = serializers.SerializerMethodField()
+
+    def get_bgp_instance_count(self, obj) -> int:
+        annotated = getattr(obj, "bgp_instance_count_annotated", None)
+        return annotated if annotated is not None else obj.bgp_instances.count()
+
+    def validate_ssh_private_key(self, value):
+        return require_store_for_key(value, "an SSH private key")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = _probe_clean(RPKICache, self, attrs)
+        for f in ("address", "ssh_username", "ssh_host_key"):
+            if f in attrs:
+                attrs[f] = getattr(probe, f)
+        if probe.transport != "ssh":
+            if attrs.get("psk"):
+                raise serializers.ValidationError(
+                    {"ssh_private_key": "A private key is for SSH; this cache is TCP."}
+                )
+            # Back to TCP: the key has no use any more, so it goes.
+            if self.instance is not None and self.instance.psk_set:
+                attrs["psk"] = None
+        return attrs
+
+    class Meta:
+        model = RPKICache
+        fields = ["id", "numid", "name", "address", "port", "transport", "preference",
+                  "ssh_username", "ssh_host_key", "ssh_private_key", "ssh_private_key_set",
+                  "bgp_instance_count", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "ssh_private_key_set", "created_at", "updated_at"]
+
+
 class _BFDProfileFields(serializers.Serializer):
     """``bfd_profile`` read nested, ``bfd_profile_id`` on write."""
 
@@ -377,7 +449,7 @@ class RoutingPolicyRuleSerializer(_RuleSerializer):
                   "match_prefix_lists", "match_prefix_list_ids",
                   "match_community_lists", "match_community_list_ids",
                   "match_as_path_lists", "match_as_path_list_ids",
-                  "match_next_hop", "match_next_hop_id", "match_extra",
+                  "match_next_hop", "match_next_hop_id", "match_rpki", "match_extra",
                   "set_local_pref", "set_med", "set_weight", "set_origin",
                   "set_next_hop", "set_as_path_prepend",
                   "set_communities", "set_community_ids",
@@ -698,6 +770,46 @@ class ASNMiniSerializer(NumIdModelSerializer):
         fields = ["id", "asn"]
 
 
+class _AggregateMiniSerializer(NumIdModelSerializer):
+    class Meta:
+        model = Aggregate
+        fields = ["id", "prefix"]
+
+
+class ROASerializer(CustomFieldsSerializerMixin, _TagsMixin, NumIdModelSerializer):
+    """A locally kept ROA: prefix, max length, origin AS and, optionally, the
+    aggregate it is carved from."""
+
+    cf_model = "roa"
+
+    origin_asn = ASNMiniSerializer(read_only=True)
+    origin_asn_id = TenantScopedPrimaryKeyRelatedField(
+        source="origin_asn", queryset=ASN.objects.all(), write_only=True,
+    )
+    aggregate = _AggregateMiniSerializer(read_only=True)
+    aggregate_id = TenantScopedPrimaryKeyRelatedField(
+        source="aggregate", queryset=Aggregate.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        probe = _probe_clean(ROA, self, attrs)
+        if "prefix" in attrs:
+            attrs["prefix"] = probe.prefix
+        return attrs
+
+    class Meta:
+        model = ROA
+        fields = ["id", "numid", "prefix", "max_length", "origin_asn", "origin_asn_id",
+                  "aggregate", "aggregate_id", "description",
+                  "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
+        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        # The unique set is answered by the database (a 409), with the
+        # tenant the server sets.
+        validators = []
+
+
 class _ChildRowSerializer(NumIdModelSerializer):
     """A row written nested under its parent (the parent FK is set by the
     parent's serializer) or on its own (the ``*_id`` field)."""
@@ -877,6 +989,11 @@ class BGPInstanceSerializer(
         source="asn", queryset=ASN.objects.all(), write_only=True,
     )
     address_families = BGPAddressFamilySerializer(many=True, read_only=True)
+    rpki_caches = RPKICacheMiniSerializer(many=True, read_only=True)
+    rpki_cache_ids = TenantScopedPrimaryKeyRelatedField(
+        source="rpki_caches", queryset=RPKICache.objects.all(),
+        write_only=True, required=False, many=True,
+    )
     session_count = serializers.SerializerMethodField()
 
     def get_session_count(self, obj) -> int:
@@ -915,7 +1032,8 @@ class BGPInstanceSerializer(
                   "bestpath_multipath_relax",
                   "vpn_export", "vpn_import", "vpn_label_export", "vpn_nexthop_export",
                   "bfd",
-                  "bfd_profile", "bfd_profile_id", "address_families", "session_count",
+                  "bfd_profile", "bfd_profile_id", "rpki_caches", "rpki_cache_ids",
+                  "address_families", "session_count",
                   "status", "status_id", "description", "extra",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "created_at", "updated_at"]

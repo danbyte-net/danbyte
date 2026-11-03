@@ -4,12 +4,15 @@ import { Plus, X } from "lucide-react"
 
 import { apiAll } from "@/lib/api-all"
 import type {
+  ASNMini,
   BFDProfile,
   Community,
   EthernetSegment,
   InterfaceOption,
   PolicyRule,
+  ROA,
   RoutingKeychain,
+  RPKICache,
   StaticRoute,
   Status,
   VRFOption,
@@ -1214,6 +1217,317 @@ export function PolicyRuleForm({
         onCancel={onCancel}
         submitting={mutation.isPending}
         submitLabel={isEdit ? "Save changes" : "Create rule"}
+      />
+    </form>
+  )
+}
+
+// ─── RPKI cache ──────────────────────────────────────────────────────────────
+
+export function RPKICacheForm({
+  item,
+  onSaved,
+  onCancel,
+}: {
+  item?: RPKICache
+  onSaved: (v: RPKICache) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [name, setName] = useState(item?.name ?? "")
+  const [address, setAddress] = useState(item?.address ?? "")
+  const [port, setPort] = useState(numText(item?.port ?? 3323))
+  const [transport, setTransport] = useState<string | null>(
+    item?.transport ?? "tcp"
+  )
+  const [preference, setPreference] = useState(numText(item?.preference ?? 1))
+  const [username, setUsername] = useState(item?.ssh_username ?? "")
+  const [hostKey, setHostKey] = useState(item?.ssh_host_key ?? "")
+  // Write-only: never pre-filled, blank leaves the stored key alone.
+  const [privateKey, setPrivateKey] = useState("")
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const ssh = transport === "ssh"
+  const { mutation, fieldErrors } = useRoutingSave<RPKICache>({
+    objectType: ROUTING_OBJECT_TYPES.rpkicache,
+    endpoint: "/api/routing/rpki-caches/",
+    queryKey: "rpki-caches",
+    id: item?.id,
+    label: (v) => v.name,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate({
+          name: name.trim(),
+          address: address.trim(),
+          port: numOrNull(port),
+          transport,
+          preference: numOrNull(preference),
+          ssh_username: ssh ? username.trim() : "",
+          ssh_host_key: ssh ? hostKey.trim() : "",
+          ...(ssh && privateKey ? { ssh_private_key: privateKey } : {}),
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="Cache" card>
+        <FormText
+          label="Name"
+          required
+          mono
+          autoFocus={!isEdit}
+          value={name}
+          onChange={setName}
+          placeholder="routinator"
+          error={fieldErrors.name}
+        />
+        <div className="grid gap-3 @md:grid-cols-4">
+          <div className="@md:col-span-2">
+            <FormText
+              label="Address"
+              required
+              mono
+              value={address}
+              onChange={setAddress}
+              placeholder="10.0.0.65"
+              info="IP address or hostname of the RTR server."
+              error={fieldErrors.address}
+            />
+          </div>
+          <FormText
+            label="Port"
+            required
+            type="number"
+            value={port}
+            onChange={setPort}
+            error={fieldErrors.port}
+          />
+          <FormText
+            label="Preference"
+            required
+            type="number"
+            value={preference}
+            onChange={setPreference}
+            info="1-255; the router uses the lowest it can reach."
+            error={fieldErrors.preference}
+          />
+        </div>
+        <FormSelect
+          label="Transport"
+          value={transport}
+          onChange={setTransport}
+          options={[
+            { value: "tcp", label: "TCP" },
+            { value: "ssh", label: "SSH" },
+          ]}
+          error={fieldErrors.transport}
+        />
+      </FormSection>
+      {ssh && (
+        <FormSection title="SSH" card>
+          <FormText
+            label="Username"
+            required
+            mono
+            value={username}
+            onChange={setUsername}
+            error={fieldErrors.ssh_username}
+          />
+          <FormTextarea
+            label="Host key"
+            value={hostKey}
+            onChange={setHostKey}
+            placeholder="ssh-ed25519 AAAA…"
+            info="The server's public key the router expects."
+            error={fieldErrors.ssh_host_key}
+          />
+          <FormTextarea
+            label="Private key"
+            value={privateKey}
+            onChange={setPrivateKey}
+            placeholder={
+              item?.ssh_private_key_set
+                ? "Stored - paste to replace"
+                : "Not set"
+            }
+            info="Written to the deployment's secret store, never to this record. An administrator must enable a store under Settings → Security first."
+            error={fieldErrors.ssh_private_key}
+          />
+        </FormSection>
+      )}
+      <FormSection title="Details" card>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="rpkicache"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create cache"}
+      />
+    </form>
+  )
+}
+
+// ─── ROA ─────────────────────────────────────────────────────────────────────
+
+/** The length a prefix carries, or null while it is still being typed. */
+function prefixLength(prefix: string): number | null {
+  const m = /\/(\d{1,3})\s*$/.exec(prefix)
+  return m ? Number(m[1]) : null
+}
+
+export function ROAForm({
+  item,
+  onSaved,
+  onCancel,
+}: {
+  item?: ROA
+  onSaved: (v: ROA) => void
+  onCancel: () => void
+}) {
+  const isEdit = !!item
+  const [prefix, setPrefix] = useState(item?.prefix ?? "")
+  const [maxLength, setMaxLength] = useState(numText(item?.max_length))
+  const [asnId, setAsnId] = useState<string | null>(item?.origin_asn.id ?? null)
+  const [aggregateId, setAggregateId] = useState<string | null>(
+    item?.aggregate?.id ?? null
+  )
+  const [description, setDescription] = useState(item?.description ?? "")
+  const [tagIds, setTagIds] = useState<number[]>(
+    item?.tags.map((t) => t.id) ?? []
+  )
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(
+    item?.custom_fields ?? {}
+  )
+  const asns = useQuery({
+    queryKey: ["asns-picker"],
+    queryFn: () => apiAll<ASNMini>("/api/asns/"),
+    staleTime: 60_000,
+  })
+  const aggregates = useQuery({
+    queryKey: ["aggregates-picker"],
+    queryFn: () => apiAll<{ id: string; prefix: string }>("/api/aggregates/"),
+    staleTime: 60_000,
+  })
+  const { mutation, fieldErrors } = useRoutingSave<ROA>({
+    objectType: ROUTING_OBJECT_TYPES.roa,
+    endpoint: "/api/routing/roas/",
+    queryKey: "roas",
+    id: item?.id,
+    label: (v) => `${v.prefix}-${v.max_length}`,
+    onSaved,
+  })
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        const p = prefix.trim()
+        mutation.mutate({
+          prefix: p,
+          // Blank means exactly the prefix - no more-specifics.
+          max_length: numOrNull(maxLength) ?? prefixLength(p),
+          origin_asn_id: asnId,
+          aggregate_id: aggregateId,
+          description: description.trim(),
+          tag_ids: tagIds,
+          custom_fields: customFields,
+        })
+      }}
+      className="@container grid gap-4"
+    >
+      <FormSection title="ROA" card>
+        <div className="grid gap-3 @md:grid-cols-3">
+          <div className="@md:col-span-2">
+            <FormText
+              label="Prefix"
+              required
+              mono
+              autoFocus={!isEdit}
+              value={prefix}
+              onChange={setPrefix}
+              placeholder="10.16.0.0/12"
+              error={fieldErrors.prefix}
+            />
+          </div>
+          <FormText
+            label="Max length"
+            type="number"
+            value={maxLength}
+            onChange={setMaxLength}
+            placeholder={String(prefixLength(prefix.trim()) ?? "")}
+            info="The longest prefix the origin may announce from this block; blank is the prefix's own length."
+            error={fieldErrors.max_length}
+          />
+        </div>
+        <div className="grid gap-3 @md:grid-cols-2">
+          <FormCombobox
+            label="Origin AS"
+            required
+            value={asnId}
+            onChange={setAsnId}
+            options={(asns.data?.results ?? []).map((a) => ({
+              value: a.id,
+              label: `AS${a.asn}`,
+            }))}
+            placeholder="Pick an AS"
+            searchPlaceholder="Search ASNs…"
+            emptyText="No ASNs - add one under IPAM → ASNs."
+            error={fieldErrors.origin_asn_id}
+          />
+          <FormCombobox
+            label="Aggregate"
+            value={aggregateId}
+            onChange={setAggregateId}
+            options={(aggregates.data?.results ?? []).map((a) => ({
+              value: a.id,
+              label: a.prefix,
+            }))}
+            noneLabel="None"
+            placeholder="None"
+            searchPlaceholder="Search aggregates…"
+            emptyText="No aggregates."
+            error={fieldErrors.aggregate_id}
+          />
+        </div>
+        <FormTextarea
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          info="Exported as the SLURM assertion's comment."
+          error={fieldErrors.description}
+        />
+        <FormTags value={tagIds} onChange={setTagIds} label="Tags" />
+        <CustomFieldInputs
+          model="roa"
+          value={customFields}
+          onChange={setCustomFields}
+        />
+      </FormSection>
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={isEdit ? "Save changes" : "Create ROA"}
       />
     </form>
   )

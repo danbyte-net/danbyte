@@ -61,6 +61,8 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     "ipsecprofile": ["reveal"],
     # A routing keychain holds the BGP / OSPF / IS-IS key.
     "routingkeychain": ["reveal"],
+    # An SSH RPKI cache's private key.
+    "rpkicache": ["reveal"],
     # An FHRP group's authentication key (#383).
     "fhrpgroup": ["reveal"],
     # Read the device's running configuration from Oxidized (#35). A config
@@ -153,6 +155,8 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("routing.RoutingPolicyRule", "Routing policy rules", "Routing"),
     ("routing.RoutingKeychain", "Routing keychains", "Routing"),
     ("routing.BFDProfile", "BFD profiles", "Routing"),
+    ("routing.RPKICache", "RPKI caches", "Routing"),
+    ("routing.ROA", "ROAs", "Routing"),
     ("routing.StaticRoute", "Static routes", "Routing"),
     ("routing.PolicyRule", "Policy rules", "Routing"),
     ("routing.BGPInstance", "BGP instances", "Routing"),

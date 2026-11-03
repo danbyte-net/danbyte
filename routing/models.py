@@ -263,6 +263,9 @@ class ASPathListRule(models.Model):
 
 # ─── Routing policies (route maps) ──────────────────────────────────────────
 
+#: The origin validation states a route map matches (RFC 6811).
+RPKI_STATE_CHOICES = [("valid", "Valid"), ("invalid", "Invalid"), ("notfound", "Not found")]
+
 class RoutingPolicy(_Catalog):
     """A route map: ordered rules that match and set."""
 
@@ -300,6 +303,11 @@ class RoutingPolicyRule(models.Model):
     match_next_hop = models.ForeignKey(
         PrefixList, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="matched_as_next_hop_by",
+    )
+    #: ``match rpki <state>`` - the route's origin validation state, as the
+    #: router's RPKI caches report it. Blank = not matched.
+    match_rpki = models.CharField(
+        max_length=8, choices=RPKI_STATE_CHOICES, blank=True, default="", db_default=""
     )
     #: Vendor matches Danbyte does not model, e.g. {"tag": 100}.
     match_extra = models.JSONField(default=dict, blank=True)
@@ -368,6 +376,122 @@ class RoutingKeychain(SecretBackedPSK, _Catalog):
                 fields=["tenant", "name"], name="uniq_routingkeychain_tenant_name"
             )
         ]
+
+
+# ─── RPKI ────────────────────────────────────────────────────────────────────
+
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)"
+    r"(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$"
+)
+
+
+def normalize_host(value: str, field: str = "address") -> str:
+    """An IP address as the box prints it, or a DNS name."""
+    value = (value or "").strip()
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        pass
+    if not _HOSTNAME_RE.match(value):
+        raise ValidationError({field: "An IP address or a hostname."})
+    return value.lower()
+
+
+class RPKICache(SecretBackedPSK, _Catalog):
+    """An RPKI-to-Router cache (RFC 8210) a BGP speaker validates route
+    origins against - FRR's ``rpki cache``. Over SSH the private key lives
+    in the secret store, never in the row, as a keychain's key does."""
+
+    psk_secret_prefix = "routing-rpki-caches"
+
+    TRANSPORT_CHOICES = [("tcp", "TCP"), ("ssh", "SSH")]
+
+    address = models.CharField(max_length=255, help_text="IP address or hostname.")
+    port = models.PositiveIntegerField(default=3323)
+    transport = models.CharField(max_length=3, choices=TRANSPORT_CHOICES, default="tcp")
+    #: Lower is preferred; FRR takes 1-255.
+    preference = models.PositiveSmallIntegerField(default=1)
+    ssh_username = models.CharField(max_length=64, blank=True, default="")
+    #: The server's public key the router expects. Public, so it sits in
+    #: the row.
+    ssh_host_key = models.TextField(blank=True, default="")
+
+    class Meta(_Catalog.Meta):
+        verbose_name = "RPKI cache"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_rpkicache_tenant_name"
+            )
+        ]
+
+    def clean(self):
+        self.address = normalize_host(self.address)
+        if not (1 <= (self.port or 0) <= 65535):
+            raise ValidationError({"port": "A port is 1-65535."})
+        if not (1 <= (self.preference or 0) <= 255):
+            raise ValidationError({"preference": "Preference is 1-255."})
+        self.ssh_username = (self.ssh_username or "").strip()
+        self.ssh_host_key = (self.ssh_host_key or "").strip()
+        if self.transport == "ssh":
+            if not self.ssh_username:
+                raise ValidationError({"ssh_username": "SSH needs a username."})
+        elif self.ssh_username or self.ssh_host_key:
+            raise ValidationError(
+                {"transport": "A username and host key are for SSH; this cache is TCP."}
+            )
+
+
+def validate_max_length(prefix: str, max_length) -> None:
+    net = ipaddress.ip_network(prefix)
+    top = 32 if net.version == 4 else 128
+    if max_length is None or not (net.prefixlen <= max_length <= top):
+        raise ValidationError(
+            {"max_length": f"Must be between {net.prefixlen} and {top}."}
+        )
+
+
+class ROA(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """A Route Origin Authorization kept locally: this prefix, up to this
+    length, may be originated by this AS. Exported as SLURM (RFC 8416)
+    locally added assertions for a relying party (Routinator, rpki-client)
+    to serve - for space no RIR publishes ROAs for."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="routing_roas")
+    prefix = models.CharField(max_length=43, help_text="e.g. 10.16.0.0/12")
+    max_length = models.PositiveSmallIntegerField()
+    origin_asn = models.ForeignKey("api.ASN", on_delete=models.PROTECT, related_name="roas")
+    aggregate = models.ForeignKey(
+        "api.Aggregate", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="roas",
+    )
+    description = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "ROA"
+        ordering = ["prefix", "max_length"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "prefix", "max_length", "origin_asn"],
+                name="uniq_roa_tenant_prefix_maxlen_asn",
+            )
+        ]
+
+    def __str__(self) -> str:
+        asn = self.origin_asn.asn if self.origin_asn_id else "?"
+        return f"{self.prefix}-{self.max_length} AS{asn}"
+
+    def clean(self):
+        self.prefix = normalize_network(self.prefix)
+        validate_max_length(self.prefix, self.max_length)
+        if self.aggregate_id:
+            net = ipaddress.ip_network(self.prefix)
+            agg = ipaddress.ip_network(self.aggregate.prefix, strict=False)
+            if net.version != agg.version or not net.subnet_of(agg):
+                raise ValidationError(
+                    {"aggregate_id": f"{self.prefix} is not inside {self.aggregate.prefix}."}
+                )
 
 
 # ─── Static routes ───────────────────────────────────────────────────────────
@@ -825,6 +949,8 @@ class BGPInstance(_DeviceInstance):
     vpn_nexthop_export = models.CharField(
         max_length=45, blank=True, default="", db_default=""
     )
+    #: The RPKI caches this speaker validates route origins against.
+    rpki_caches = models.ManyToManyField(RPKICache, blank=True, related_name="bgp_instances")
 
     class Meta:
         ordering = ["device__name", "vrf__name"]
