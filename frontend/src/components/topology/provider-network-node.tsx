@@ -4,16 +4,15 @@ import type { NodeProps } from "@xyflow/react"
 import { Cloud } from "lucide-react"
 
 import type { TopoProviderNetworkData } from "@/lib/api"
-import { GROUP_H, GROUP_W } from "./group-size"
+import { GroupName } from "./group-node"
+import { GROUP_TEXT, groupBox } from "./group-size"
 import { handleId } from "./port-handles"
 
 // A provider network on the topology (#466): the hub a set of circuits
-// meets at - an MPLS cloud, a carrier's fabric. One card per network, the
-// size of a site card, its circuits drawn to it from the devices (or the
-// site cards) at their site ends. Neutral like a site card: it has no role
-// colour of its own.
-
-export { GROUP_H as PN_H, GROUP_W as PN_W }
+// meets at - an MPLS cloud, a carrier's fabric. One card per network, sized
+// as a site card (group-size.ts: it grows to fit its whole name), its
+// circuits drawn to it from the devices (or the site cards) at their site
+// ends. Neutral like a site card: it has no role colour of its own.
 
 export const PROVIDER_NETWORK = "provider_network"
 
@@ -39,12 +38,13 @@ export const ProviderNetworkNode = memo(function ProviderNetworkNode({
 }: NodeProps) {
   const d = data as unknown as TopoProviderNetworkData
   const n = d.circuit_count
+  const box = groupBox(d)
   return (
     <div
       className={`flex flex-col justify-center gap-1 overflow-hidden rounded-lg border-2 bg-card px-3 transition-opacity ${
         selected ? "border-primary ring-2 ring-primary/30" : "border-border"
       } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: GROUP_W, height: GROUP_H }}
+      style={{ width: box.width, height: box.height }}
       data-provider-network={d.provider_network_id}
     >
       {SIDES.map(({ side, pos }) => (
@@ -65,11 +65,13 @@ export const ProviderNetworkNode = memo(function ProviderNetworkNode({
           />
         </span>
       ))}
-      <div className="flex items-center gap-2">
-        <Cloud className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-          {d.name}
-        </span>
+      <div className="flex items-baseline gap-2">
+        <Cloud
+          className="size-4 shrink-0 self-start text-muted-foreground"
+          style={{ marginTop: (GROUP_TEXT.NAME_LH - GROUP_TEXT.ICON) / 2 }}
+          aria-hidden
+        />
+        <GroupName rows={box.rows} />
         <span className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground">
           <span className="num">{n}</span> {n === 1 ? "circuit" : "circuits"}
         </span>

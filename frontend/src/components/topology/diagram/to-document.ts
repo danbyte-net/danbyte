@@ -31,6 +31,7 @@ import type {
   DiagramNote,
   DiagramNub,
   DiagramPill,
+  DiagramPlace,
   LegendRow,
   LinkSem,
   Side as DocSide,
@@ -241,12 +242,22 @@ export function cardNode(
     h: box.h,
     fill,
     ink,
-    title: box.title.text,
+    // The whole name: a card never cuts it.
+    title: input.name,
     lines: box.lines.map((l) => l.text),
     ...(pill ? { pill } : {}),
     ...(nubs.length ? { nubs } : {}),
     place: {
       title: { x: x + box.title.x, y: y + box.title.y },
+      ...(box.titleRows.length > 1
+        ? {
+            titleRows: box.titleRows.map((r) => ({
+              text: r.text,
+              x: x + r.x,
+              y: y + r.y,
+            })),
+          }
+        : {}),
       lines: box.lines.map((l) => ({ x: x + l.x, y: y + l.y })),
       ...(pillRect ? { pill: pillRect } : {}),
     },
@@ -333,12 +344,11 @@ export function photoDocNode(
     const r = captionPill(cap, pillWidth(text, opts.measure))
     pillRect = { ...r, x: x + r.x, y: y + r.y }
   }
-  if (!photo)
-    return { ...common, kind: "card", title: p.name, ...(pill ? { pill } : {}) }
+  if (!photo) return faceplateCard(common, p, pill, opts)
   return {
     ...common,
     kind: "photo",
-    title: cap.text,
+    title: p.name,
     ...(pill ? { pill } : {}),
     photo: {
       href: shown.url!,
@@ -355,10 +365,7 @@ export function photoDocNode(
       })),
     },
     place: {
-      title: {
-        x: x + cap.x + cap.w / 2,
-        y: y + baselineAt(cap.top, CARD.TITLE_SIZE, PHOTO.CAPTION_LH),
-      },
+      ...captionPlace(cap, x, y, opts.measure ?? measureText),
       lines: [],
       ...(pillRect ? { pill: pillRect } : {}),
       ...(cap.tail
@@ -375,20 +382,107 @@ export function photoDocNode(
   }
 }
 
+/** Where a photo caption's name goes, absolute: its first row's centre
+ * and baseline, and every row when it wraps - left-aligned at the
+ * caption's start, the last on the caption's row. */
+function captionPlace(
+  cap: PhotoShown["caption"],
+  x: number,
+  y: number,
+  measure: Measure
+): Pick<DiagramPlace, "title" | "titleRows"> {
+  const texts = [...(cap.lead ?? []), cap.text]
+  const rows = texts.map((text, i) => {
+    const w =
+      i === texts.length - 1
+        ? cap.w
+        : Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+    const top = cap.top - (texts.length - 1 - i) * PHOTO.CAPTION_LH
+    return {
+      text,
+      x: x + cap.x + w / 2,
+      y: y + baselineAt(top, CARD.TITLE_SIZE, PHOTO.CAPTION_LH),
+    }
+  })
+  return {
+    title: { x: rows[0].x, y: rows[0].y },
+    ...(rows.length > 1 ? { titleRows: rows } : {}),
+  }
+}
+
+/** A faceplate node as a card of its box: laid out by the card rule with
+ * its whole name (wrapped to the box's width when it is wider), the card
+ * lines its height holds under it, and the pill in its corner. */
+function faceplateCard(
+  common: Omit<DiagramNode, "kind" | "title">,
+  p: PhotoModel,
+  pill: DiagramPill | undefined,
+  opts: { pill?: CardPill | null; measure?: Measure }
+): DiagramNode {
+  const { x, y, w, h } = common
+  const box = cardLayout(
+    {
+      name: p.name,
+      lines: p.lines.map((text, i) => ({ key: String(i), text })),
+      ...(opts.pill
+        ? { pill: { kind: opts.pill.kind, text: opts.pill.text } }
+        : {}),
+    },
+    null,
+    opts.measure,
+    { w, h },
+    w
+  )
+  const dx = (w - box.w) / 2
+  const lines = box.lines.filter((l) => l.top + l.lh <= h - CARD.PAD_Y + 0.5)
+  return {
+    ...common,
+    kind: "card",
+    title: p.name,
+    lines: lines.map((l) => l.text),
+    ...(pill ? { pill } : {}),
+    place: {
+      title: { x: x + dx + box.title.x, y: y + box.title.y },
+      ...(box.titleRows.length > 1
+        ? {
+            titleRows: box.titleRows.map((r) => ({
+              text: r.text,
+              x: x + dx + r.x,
+              y: y + r.y,
+            })),
+          }
+        : {}),
+      lines: lines.map((l) => ({ x: x + dx + l.x, y: y + l.y })),
+      ...(pill && box.pill
+        ? {
+            pill: {
+              ...box.pill.rect,
+              x: x + box.pill.rect.x,
+              y: y + box.pill.rect.y,
+            },
+          }
+        : {}),
+    },
+  }
+}
+
 /** A neutral card laid out for `input`, stretched to a fixed box with its
- * text kept centred. */
+ * text kept centred: its whole name, wrapped to the box's width when it
+ * is wider. */
 export function fitBox(
   input: CardLayoutInput,
   size: { w: number; h: number },
   measure?: Measure
 ): CardBox {
-  const box = cardLayout({ ...input, color: null }, null, measure)
+  const box = cardLayout({ ...input, color: null }, null, measure, {}, size.w)
   const dx = (size.w - box.w) / 2
+  const titleRows = box.titleRows.map((r) => ({ ...r, x: r.x + dx }))
   return {
     ...box,
     w: size.w,
     h: Math.max(box.h, size.h),
-    title: { ...box.title, x: box.title.x + dx },
+    title: titleRows[0],
+    titleRows,
     lines: box.lines.map((l) => ({ ...l, x: l.x + dx })),
   }
 }
@@ -541,7 +635,7 @@ export function chassisBands(
       return r ? [r] : []
     })
     if (!own.length) continue
-    const f = chassisFrame(ch.side, own)
+    const f = chassisFrame(ch.side, own, ch.least)
     out.push({
       id,
       kind: "chassis",

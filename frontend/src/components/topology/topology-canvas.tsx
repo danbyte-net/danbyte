@@ -45,7 +45,6 @@ import { CanvasTip } from "./canvas-tip"
 import { PartialMapChip } from "./partial-map-chip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { handleId } from "./port-handles"
-import { hierarchyWidth } from "./hierarchy-node"
 import { hierCardBox } from "./hier-card"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
@@ -704,7 +703,8 @@ export function build(
         }
       : n
   )
-  const widthOf = (n: Node) => hierarchyWidth(n.data as { name?: string })
+  // Each card's own width: a Hierarchy card's header, a site card's name.
+  const widthOf = (n: Node) => sizeOf(n).width
   const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
   const laid = res.nodes.map((n) => ({
     ...n,
@@ -905,7 +905,9 @@ export interface TopologyCanvasProps {
 /** Where to aim the camera for a node: diagram nodes are placed by their
  * centre, Hierarchy and site cards by their corner. */
 function nodeCentre(n: Node): { x: number; y: number } {
-  return n.origin ? n.position : { x: n.position.x + 110, y: n.position.y + 40 }
+  if (n.origin) return n.position
+  const s = sizeOf(n)
+  return { x: n.position.x + s.width / 2, y: n.position.y + s.height / 2 }
 }
 
 /** A built map: React Flow's nodes and edges, and the Diagram's model

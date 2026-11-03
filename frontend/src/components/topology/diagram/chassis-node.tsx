@@ -177,7 +177,7 @@ export function ChassisNode({ data, selected }: NodeProps) {
             <Link
               to="/virtual-chassis/$id"
               params={{ id: d.vc.id }}
-              className="nodrag truncate text-[11px] leading-none font-semibold whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
+              className="nodrag text-[11px] leading-none font-semibold whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
             >
               {d.vc.name}
             </Link>

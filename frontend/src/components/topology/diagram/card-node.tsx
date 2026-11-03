@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { cardContent } from "./card-fields"
 import type { CardPill } from "./card-fields"
 import { CARD, PILL, nubRect, pillTop } from "./card-layout"
+import type { CardBox } from "./card-layout"
 import { PhotoNode } from "./photo-node"
 import type { DiagramCardData } from "./types"
 
@@ -59,6 +60,25 @@ export function CardPillBadge({
       className={cn(STATUS_PILL, onFill && PILL_ON_FILL)}
     />
   )
+}
+
+/** A card's name, whole: one row, or the rows `cardLayout` wrapped it
+ * onto, each centred where the layout put it. Never cut. */
+export function CardTitle({ box }: { box: CardBox }) {
+  return box.titleRows.map((r, i) => (
+    <div
+      key={i}
+      className="absolute inset-x-0 text-center font-bold whitespace-nowrap"
+      style={{
+        top: r.top,
+        height: r.lh,
+        lineHeight: `${r.lh}px`,
+        fontSize: CARD.TITLE_SIZE,
+      }}
+    >
+      {r.text}
+    </div>
+  ))
 }
 
 export const CardNode = memo(function CardNode(props: NodeProps) {
@@ -118,19 +138,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
           <CardPillBadge pill={pill} onFill={!!fill} />
         </span>
       )}
-      <div
-        className="absolute inset-x-0 truncate text-center font-bold"
-        style={{
-          top: box.title.top,
-          height: box.title.lh,
-          lineHeight: `${box.title.lh}px`,
-          fontSize: CARD.TITLE_SIZE,
-          paddingInline: CARD.PAD_X,
-        }}
-        data-tip={box.title.text !== d.name ? d.name : undefined}
-      >
-        {box.title.text}
-      </div>
+      <CardTitle box={box} />
       {box.lines.map((l) => (
         <div
           key={l.key}

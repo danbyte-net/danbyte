@@ -1,7 +1,7 @@
 import type { TopoNode, TopologyGraph, TopologyPhotoAnchor } from "@/lib/api"
 import { fit } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
-import { CARD, NUB, PILL, pillWidth } from "./card-layout"
+import { CARD, NUB, PILL, nameRows, pillWidth } from "./card-layout"
 import type { Anchor, PortRef, Rect } from "./types"
 
 // Photo nodes: a device drawn as its type's front photo, to scale, with
@@ -21,7 +21,8 @@ import type { Anchor, PortRef, Rect } from "./types"
 //   4. neither - the normal card.
 // The name is a caption under the image, placed clear of the leads that
 // run down through it, with the device's card lines after it on the same
-// line (muted, `· `-separated) as far as they fit.
+// line (muted, `· `-separated) as far as they fit. The name is never cut:
+// one wider than the photo wraps onto more rows, and the node is taller.
 //
 // A photo can instead take its cables at its edge (the view's
 // `photo_anchor`, or the device's own `anchor`): it is anchored like a
@@ -504,9 +505,15 @@ export interface CaptionTail {
 
 export interface PhotoCaption {
   x: number
+  /** The top of the caption's last row: the one its lines and pill
+   * follow the name on. */
   top: number
+  /** The name's last row (its only one unless it wraps), and its width. */
   text: string
   w: number
+  /** A name wider than the photo: its rows before `text`, each a line box
+   * above the last, left-aligned at `x`. */
+  lead?: string[]
   /** The card lines after the name while no pill shows. */
   tail?: CaptionTail
   /** The whole caption - the name and every line - when the drawn one is
@@ -530,6 +537,7 @@ export function captionWith(
     top: caption.top,
     text: caption.text,
     w: caption.w,
+    ...(caption.lead ? { lead: caption.lead } : {}),
     ...(p.tail ? { tail: p.tail } : {}),
     ...(p.full ? { full: p.full } : {}),
   }
@@ -631,6 +639,34 @@ export function captionTail(
 export const captionCap = (face: Pick<PhotoFace, "h" | "imgH">) =>
   face.h - face.imgH
 
+/** The rows a photo's name takes in its caption: one while the name and
+ * the widest pill the card fields can show (`slot`) fit across the photo,
+ * else the name wrapped to the photo's width less the pill's room. */
+export function captionRows(
+  face: Pick<PhotoFace, "w">,
+  name: string,
+  slot: readonly string[],
+  measure: Measure
+): string[] {
+  const slotW = Math.max(0, ...slot.map((t) => pillWidth(t, measure)))
+  const extra = slotW ? PILL.GAP + slotW : 0
+  return nameRows(name, Math.max(1, face.w - extra), measure)
+}
+
+/** A photo face with room under its image for its whole name: one more
+ * caption row for each row the name wraps onto past the first. */
+export function withCaptionRows(
+  face: PhotoFace,
+  name: string,
+  slot: readonly string[],
+  measure: Measure
+): PhotoFace {
+  const rows = captionRows(face, name, slot, measure).length
+  return rows > 1
+    ? { ...face, h: face.h + (rows - 1) * PHOTO.CAPTION_LH }
+    : face
+}
+
 /**
  * A photo node as drawn for its anchored ends (`ends`: the anchors of
  * every line landing on it). The caption - the name, its card lines
@@ -702,15 +738,21 @@ export function photoShown(
   const spot =
     kept ??
     (borrow ? place((k) => nameW + Math.max(tailNeed(k), extra)) : undefined)
-  const { x, room, to } = spot ?? captionRoom(face.w, blocked, nameW + extra)
-  const text = fit(
-    name,
-    Math.max(0, room - extra),
-    CARD.TITLE_SIZE,
-    CARD.TITLE_WEIGHT,
-    measure
-  )
+  // The name is never cut. Wider than the photo, it wraps from the left
+  // edge (`withCaptionRows` made the room under the image); else, when no
+  // gap between the leads holds it, it starts in the widest gap and runs
+  // on over the leads, kept on the photo.
+  const rows = captionRows(face, name, slot, measure)
+  const lead = rows.slice(0, -1)
+  const text = rows[rows.length - 1]
   const w = Math.ceil(measure(text, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+  let { x, to } = lead.length
+    ? { x: 0, to: face.w }
+    : (spot ?? captionRoom(face.w, blocked, nameW + extra))
+  if (!lead.length && x + w + extra > face.w) {
+    x = Math.max(0, face.w - w - extra)
+    to = Math.max(to, Math.min(face.w, x + w + extra))
+  }
   const tailX = x + w + PHOTO.TAIL_GAP
   // The lines in `pill` px less: a value is cut only when it could never
   // fit whole beside the whole name.
@@ -718,10 +760,10 @@ export function photoShown(
     const t = captionTail(
       values,
       to - tailX - pill,
-      face.w - nameW - PHOTO.TAIL_GAP - pill,
+      face.w - w - PHOTO.TAIL_GAP - pill,
       measure
     )
-    const cut = text !== name || !!t?.cut || (values.length > 0 && !t)
+    const cut = !!t?.cut || (values.length > 0 && !t)
     return {
       ...(t ? { tail: { text: t.text, x: tailX, w: t.w } } : {}),
       ...(cut ? { full: [name, ...values].join(SEP) } : {}),
@@ -742,9 +784,10 @@ export function photoShown(
     stubs,
     caption: {
       x,
-      top: face.imgH + PHOTO.CAPTION_GAP,
+      top: face.imgH + PHOTO.CAPTION_GAP + lead.length * PHOTO.CAPTION_LH,
       text,
       w,
+      ...(lead.length ? { lead } : {}),
       ...free,
       ...(same ? {} : { pilled }),
     },

@@ -11,7 +11,7 @@ import {
   noteLayout,
   NOTE,
 } from "./geometry"
-import type { LabelBlock } from "./geometry"
+import type { CardText, LabelBlock } from "./geometry"
 import { baselineAt, measureText } from "./measure"
 import type { Measure } from "./measure"
 import { toSvg } from "./svg"
@@ -141,6 +141,16 @@ function style(names: string[], kv: Record<string, Val>): string {
 /** User text in an HTML label: escaped for HTML here, and again for XML by
  * `attrs`, so `a<b` reaches the file as `a&amp;lt;b`. */
 const h = (s: string) => htmlEscape(s).replace(/\r?\n/g, "<br>")
+
+/** A card's name as label HTML: its rows as the card wraps them, so
+ * draw.io breaks it where the card does. */
+const nameLabel = (t: CardText) =>
+  t.titleRows.map((r) => h(r.text)).join("<br>")
+
+/** The whole name, when the drawn one was cut (a card without a placed
+ * layout): the tooltip. */
+const cutName = (t: CardText, n: DiagramNode) =>
+  t.titleRows.length === 1 && t.title.text !== n.title ? n.title : undefined
 
 /** A fraction for a constraint or a relative position: 0.0001 steps. */
 function frac(n: number): string {
@@ -638,18 +648,18 @@ function page(
       fontStyle: t.tail ? 0 : 1,
       fontColor: PRINT.text,
     })
+    const name = nameLabel(t)
     const label = t.tail
-      ? `<b>${h(t.title.text)}</b> <span style="font-weight:normal;` +
+      ? `<b>${name}</b> <span style="font-weight:normal;` +
         `font-size:${CARD.LINE_SIZE}px;color:${PRINT.muted}">` +
         `${h(t.tail.text)}</span>`
-      : h(t.title.text)
+      : name
     out.push(
       `<object${attrs({
         label,
         danbyte_id: n.id,
         link: safeLink(n.link),
-        tooltip:
-          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
+        tooltip: n.place?.full ?? cutName(t, n),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(img, parent))}</mxCell></object>`
@@ -765,7 +775,7 @@ function page(
     // the lines under it; a card grown for its nubs keeps the space below.
     const titleTop = t.title.y - baselineAt(0, CARD.TITLE_SIZE, CARD.TITLE_LH)
     const label =
-      `<b>${h(t.title.text)}</b>` +
+      `<b>${nameLabel(t)}</b>` +
       (t.lines.length
         ? `<br><span style="font-size:${CARD.LINE_SIZE}px">` +
           `${t.lines.map((l) => h(l.text)).join("<br>")}</span>`
@@ -793,8 +803,7 @@ function page(
         danbyte_id: n.id,
         link: safeLink(n.link),
         // A photo drawn as its card: its caption, when that was cut.
-        tooltip:
-          n.place?.full ?? (t.title.text !== n.title ? n.title : undefined),
+        tooltip: n.place?.full ?? cutName(t, n),
         id,
       })}><mxCell${attrs({ style: st, vertex: "1", parent: pid })}>` +
         `${geometry(rel(n, parent))}</mxCell></object>`

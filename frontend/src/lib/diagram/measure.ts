@@ -252,3 +252,49 @@ export function fit(
 export function measureOf(kind: MeasureKind): Measure {
   return kind === "canvas" ? measureText : approxMeasure
 }
+
+/** Where a name may break: after a space or a separator. */
+const BREAK_AFTER = /(?<=[\s\-_./,:;])/
+
+/**
+ * `text` broken into rows no wider than `maxW`, never cut: at spaces and
+ * after separators (`-`, `_`, `.`, `/`…), and inside a part only when the
+ * part alone is wider than `maxW`. One row when it fits; [] for no text.
+ */
+export function wrapText(
+  text: string,
+  maxW: number,
+  size: number,
+  weight: Weight,
+  measure: Measure
+): string[] {
+  const whole = text.trim()
+  if (!whole) return []
+  const fits = (t: string) => measure(t.trimEnd(), size, weight) <= maxW
+  if (fits(whole)) return [whole]
+  const rows: string[] = []
+  let row = ""
+  const push = () => {
+    const t = row.trim()
+    if (t) rows.push(t)
+    row = ""
+  }
+  for (const part of whole.split(BREAK_AFTER)) {
+    if (fits(row + part)) {
+      row += part
+      continue
+    }
+    push()
+    if (fits(part)) {
+      row = part
+      continue
+    }
+    // A part wider than a row on its own: as many letters a row as fit.
+    for (const ch of Array.from(part)) {
+      if (row && !fits(row + ch)) push()
+      row += ch
+    }
+  }
+  push()
+  return rows
+}

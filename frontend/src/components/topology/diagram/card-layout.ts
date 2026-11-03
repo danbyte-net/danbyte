@@ -1,5 +1,5 @@
 import { readableText } from "@/lib/color"
-import { baselineAt, fit, measureText } from "@/lib/diagram/measure"
+import { baselineAt, fit, measureText, wrapText } from "@/lib/diagram/measure"
 import type { Measure, Weight } from "@/lib/diagram/measure"
 import type { PlacedText, Rect, Side, SideCount } from "./types"
 
@@ -26,9 +26,12 @@ export const CARD = {
   /** Between the name and the first line. */
   LINES_GAP: 1,
   MIN_W: 88,
-  /** Wider names and lines are cut with an ellipsis. Detailed cards grow
-   * past it to fit their nubs. */
+  /** The card lines' widest: a wider line is cut with an ellipsis. Detailed
+   * cards grow past it to fit their nubs. */
   MAX_W: 240,
+  /** The name's widest: a card grows to fit its whole name up to this, and
+   * a longer name wraps onto more rows. A name is never cut. */
+  NAME_MAX_W: 480,
   /** `rounded-lg`. */
   RADIUS: 10,
 } as const
@@ -90,7 +93,11 @@ export interface CardBox {
   fill: string | null
   /** Text colour on `fill` (`readableText`); null on the neutral card. */
   ink: string | null
+  /** The name's first row… */
   title: PlacedText
+  /** …and every row of it, top to bottom: one unless the name is wider
+   * than `CARD.NAME_MAX_W` allows. */
+  titleRows: PlacedText[]
   lines: (PlacedText & { key: string })[]
   pill: { kind: "check" | "status"; text: string; rect: Rect } | null
   /** The pill slot sits on its own row above the name: the name is too
@@ -183,12 +190,18 @@ function placed(
  * `least` makes the box at least that wide or tall (a virtual chassis'
  * members are as wide, or as tall, as each other): the text stays centred
  * across it, at the top.
+ *
+ * The card grows to fit its whole name, up to `CARD.NAME_MAX_W` (or
+ * `most`: a fixed box's width); a longer name wraps onto more rows and the
+ * card grows taller. The name is never cut; the card lines are cut to the
+ * card's width.
  */
 export function cardLayout(
   input: CardLayoutInput,
   demand?: Partial<SideCount> | null,
   measure: Measure = measureText,
-  least?: { w?: number; h?: number }
+  least?: { w?: number; h?: number },
+  most: number = CARD.NAME_MAX_W
 ): CardBox {
   const fill = normalizeHex(input.color)
   const slotTexts = [...(input.pillSlot ?? [])]
@@ -202,14 +215,19 @@ export function cardLayout(
   )
   const stacked = slotW > 0 && nameW + 2 * beside > CARD.MAX_W
   const inset = stacked ? CARD.PAD_X : beside
+  const names = nameRows(input.name, Math.max(1, most - 2 * inset), measure)
+  const namesW = Math.max(
+    ...names.map((t) =>
+      Math.ceil(measure(t, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT))
+    )
+  )
   const lineW = Math.max(
     0,
     ...input.lines.map((l) =>
       Math.ceil(measure(l.text, CARD.LINE_SIZE, CARD.LINE_WEIGHT))
     )
   )
-  const content = Math.max(
-    nameW + 2 * inset,
+  const rest = Math.max(
     lineW ? lineW + 2 * CARD.PAD_X : 0,
     stacked ? PILL.X + slotW + CARD.PAD_X : 0
   )
@@ -220,9 +238,13 @@ export function cardLayout(
 
   const titleTop = CARD.PAD_Y + (stacked ? PILL.H + PILL.ROW_GAP : 0)
   const linesTop =
-    titleTop + CARD.TITLE_LH + (input.lines.length ? CARD.LINES_GAP : 0)
+    titleTop +
+    names.length * CARD.TITLE_LH +
+    (input.lines.length ? CARD.LINES_GAP : 0)
   const w = Math.max(
-    clamp(content, CARD.MIN_W, CARD.MAX_W),
+    clamp(rest, CARD.MIN_W, CARD.MAX_W),
+    // The whole name, past `CARD.MAX_W` when it needs to.
+    namesW + 2 * inset,
     nubSpan(Math.max(nubs.T, nubs.B)),
     least?.w ?? 0
   )
@@ -232,16 +254,20 @@ export function cardLayout(
     least?.h ?? 0
   )
 
-  const title = placed(
-    input.name,
-    CARD.TITLE_SIZE,
-    CARD.TITLE_WEIGHT,
-    CARD.TITLE_LH,
-    w / 2,
-    titleTop,
-    w - 2 * inset,
-    measure
-  )
+  const titleRows: PlacedText[] = names.map((t, i) => {
+    const top = titleTop + i * CARD.TITLE_LH
+    return {
+      text: t,
+      size: CARD.TITLE_SIZE,
+      weight: CARD.TITLE_WEIGHT,
+      x: w / 2,
+      y: baselineAt(top, CARD.TITLE_SIZE, CARD.TITLE_LH),
+      top,
+      lh: CARD.TITLE_LH,
+      anchor: "middle",
+      w: measure(t, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT),
+    }
+  })
   const lines = input.lines.map((l, i) => ({
     key: l.key,
     ...placed(
@@ -282,10 +308,23 @@ export function cardLayout(
     h,
     fill,
     ink: fill ? readableText(fill) : null,
-    title,
+    title: titleRows[0],
+    titleRows,
     lines,
     pill,
     stacked,
     nubs,
   }
+}
+
+/** A card name's rows within `room` px: the whole name on one row when it
+ * fits, else wrapped (`wrapText`) - never cut. One empty row for no name,
+ * so a card always has its name row. */
+export function nameRows(
+  name: string,
+  room: number,
+  measure: Measure = measureText
+): string[] {
+  const rows = wrapText(name, room, CARD.TITLE_SIZE, CARD.TITLE_WEIGHT, measure)
+  return rows.length ? rows : [""]
 }

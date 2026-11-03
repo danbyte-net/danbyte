@@ -17,7 +17,7 @@ import {
 import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
-import { GROUP_H, GROUP_W } from "../group-size"
+import { groupSize } from "../group-size"
 import type { BandExits } from "../view-positions"
 import { layoutNodes } from "../layout"
 import type { SizeOf } from "../layout"
@@ -46,6 +46,7 @@ import {
   chassisStrip,
   innerSides,
   memberFrames,
+  stripLeast,
   stripUpright,
   vcOf,
 } from "./chassis"
@@ -79,6 +80,7 @@ import {
 import type { LabelToken, LinkLabelSet } from "./link-labels"
 import { ELBOW_RADIUS, leaves, portStub, routeThrough } from "./link-geometry"
 import {
+  withCaptionRows,
   captionCap,
   PHOTO,
   photoFace,
@@ -191,9 +193,6 @@ export interface DiagramOptions {
   sizeOf?: SizeOf
 }
 
-/** A node the Diagram does not size itself, without the node registry. */
-const plainSize: SizeOf = () => ({ width: GROUP_W, height: GROUP_H })
-
 /** What a drag needs to re-anchor the links without a new layout. */
 export interface DiagramModel {
   mode: DiagramMode
@@ -254,6 +253,8 @@ export interface ChassisModel {
   /** Cables between two of its members: not drawn - the frame stands for
    * them. */
   inner: number
+  /** Its name strip's least length: the whole name (`stripLeast`). */
+  least?: number
 }
 
 /** A photo node as the anchoring sees it. */
@@ -1371,22 +1372,24 @@ function nextShown(
 function photoBox(p: PhotoModel, color?: string | null): CardBox {
   const fill = normalizeHex(color)
   const top = p.face.imgH + PHOTO.CAPTION_GAP
+  const title = {
+    text: p.name,
+    size: CARD.TITLE_SIZE,
+    weight: CARD.TITLE_WEIGHT,
+    x: 0,
+    y: top + CARD.TITLE_LH,
+    top,
+    lh: CARD.TITLE_LH,
+    anchor: "start" as const,
+    w: 0,
+  }
   return {
     w: p.face.w,
     h: p.face.h,
     fill,
     ink: fill ? readableText(fill) : null,
-    title: {
-      text: p.name,
-      size: CARD.TITLE_SIZE,
-      weight: CARD.TITLE_WEIGHT,
-      x: 0,
-      y: top + CARD.TITLE_LH,
-      top,
-      lh: CARD.TITLE_LH,
-      anchor: "start",
-      w: 0,
-    },
+    title,
+    titleRows: [title],
     lines: [],
     pill: null,
     stacked: false,
@@ -1637,7 +1640,13 @@ function chassisSize(
 ): Size | null {
   const sizes = ch.members.map(sizeOf)
   if (sizes.some((b) => !b)) return null
-  const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
+  const g = chassisGeometry(
+    ch.orient,
+    sizes as Size[],
+    ch.gaps,
+    ch.side,
+    ch.least
+  )
   return { w: g.w, h: g.h }
 }
 
@@ -1662,10 +1671,16 @@ function placeChassis(
         return at ? [rectAt(at, sizes[i]!)] : []
       })
       if (!rects.length) continue
-      const f = chassisFrame(ch.side, rects)
+      const f = chassisFrame(ch.side, rects, ch.least)
       c = { x: f.x + f.w / 2, y: f.y + f.h / 2 }
     }
-    const g = chassisGeometry(ch.orient, sizes as Size[], ch.gaps, ch.side)
+    const g = chassisGeometry(
+      ch.orient,
+      sizes as Size[],
+      ch.gaps,
+      ch.side,
+      ch.least
+    )
     ch.members.forEach((m, i) =>
       centres.set(m, { x: c.x + g.offsets[i].x, y: c.y + g.offsets[i].y })
     )
@@ -1975,6 +1990,8 @@ export interface ChassisNodeData {
   members: string[]
   /** Cables between its members, not drawn. */
   inner: number
+  /** Its name strip's least length (`stripLeast`). */
+  least?: number
   [key: string]: unknown
 }
 
@@ -1987,6 +2004,7 @@ function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
     side: ch.side,
     members: ch.members,
     inner: ch.inner,
+    ...(ch.least ? { least: ch.least } : {}),
   }
   return {
     id,
@@ -2010,7 +2028,8 @@ export function buildDiagram(
   opts: DiagramOptions
 ): DiagramBuild {
   const measure = opts.measure ?? measureText
-  const sizeOf = opts.sizeOf ?? plainSize
+  const sizeOf: SizeOf =
+    opts.sizeOf ?? ((n) => groupSize(n.data, measure))
   const direction = opts.direction ?? "LR"
   const grouped = graph.nodes.some((n) => n.type === "group")
   // A grouped map is always the Simple picture: one line per group pair.
@@ -2033,10 +2052,11 @@ export function buildDiagram(
     }
     const face = type === "card" ? photoFace(n.data) : null
     if (face) {
-      // Drawn as its photo: a fixed box, not a card that grows.
+      // Drawn as its photo: a fixed box, not a card that grows - but tall
+      // enough for its whole name under the image.
       const content = cardContent(n.data, { checkLabels: opts.checkLabels })
       const p: PhotoModel = {
-        face,
+        face: withCaptionRows(face, content.name, content.pillSlot, measure),
         name: content.name,
         lines: content.lines.map((l) => l.text),
         slot: content.pillSlot,
@@ -2086,6 +2106,7 @@ export function buildDiagram(
       members,
       gaps: [],
       inner: 0,
+      least: stripLeast(spec.vc.name, measure),
     })
     leadOf.set(
       spec.id,

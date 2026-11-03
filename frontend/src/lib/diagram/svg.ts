@@ -478,16 +478,17 @@ function nodeSvg(
   const titleInk = n.kind === "photo" ? PRINT.text : ink
   const lineInk =
     n.kind === "photo" ? PRINT.muted : mix(ink, fill, CARD.LINE_INK)
-  out.push(
-    text(t.title.text, {
-      x: t.title.x,
-      y: t.title.y,
-      "text-anchor": "middle",
-      "font-size": CARD.TITLE_SIZE,
-      "font-weight": CARD.TITLE_WEIGHT,
-      fill: titleInk,
-    })
-  )
+  for (const row of t.titleRows)
+    out.push(
+      text(row.text, {
+        x: row.x,
+        y: row.y,
+        "text-anchor": "middle",
+        "font-size": CARD.TITLE_SIZE,
+        "font-weight": CARD.TITLE_WEIGHT,
+        fill: titleInk,
+      })
+    )
   for (const line of t.lines)
     out.push(
       text(line.text, {

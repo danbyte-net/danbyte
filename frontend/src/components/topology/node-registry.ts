@@ -1,7 +1,8 @@
 import type { ComponentType } from "react"
 import type { Node, NodeProps, NodeTypes } from "@xyflow/react"
 
-import { GROUP_H, GROUP_W, GroupNode } from "./group-node"
+import { GroupNode } from "./group-node"
+import { groupSize } from "./group-size"
 import { HierarchyNode } from "./hierarchy-node"
 import { hierHead, hierHeight, hierarchyWidth } from "./layout"
 import { PortNode, portSize } from "./port-node"
@@ -42,12 +43,13 @@ export const NODE_KINDS = {
   // grey stock box behind it.
   sitegroup: {
     component: GroupNode,
-    size: () => ({ width: GROUP_W, height: GROUP_H }),
+    size: (n: Node) => groupSize(n.data),
   },
-  // A provider network a set of circuits meets at (#466): a site card's box.
+  // A provider network a set of circuits meets at (#466): sized as a site
+  // card.
   provider_network: {
     component: ProviderNetworkNode,
-    size: () => ({ width: GROUP_W, height: GROUP_H }),
+    size: (n: Node) => groupSize(n.data),
   },
   hier: {
     component: HierarchyNode,
