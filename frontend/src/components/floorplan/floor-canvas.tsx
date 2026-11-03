@@ -79,6 +79,7 @@ import { OnionLayer } from "./onion-layer"
 import type { OnionSkin } from "./onion-layer"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
 import { layoutPlanLabels } from "./plan-label-pass"
+import type { CalloutLabel } from "./plan-label-pass"
 import { PlanCalloutsLayer } from "./plan-callouts-layer"
 import type { CalloutLine } from "./plan-callouts"
 import { LABEL_FONT_PX, LABEL_REPEAT_PX, CHIP_FONT_PX } from "./plan-labels"
@@ -182,9 +183,19 @@ export interface FloorCanvasApi {
    * pointer while it is over the plan (the Place picker's "near"). */
   centerCell?: () => Pt
   pointerCell?: () => Pt | null
+  /** What the screen shows: its box (plan px), the zoom and the callouts
+   * placed at it - the report's "This view". */
+  screen?: () => ScreenView | null
   /** A tray's cables in the cable chooser, opened at a client point (a
    * panel's Show cables). */
   showTrayCables?: (trayId: string, at: CablePickAt) => void
+}
+
+/** The plan as the screen shows it now (FloorCanvasApi.screen). */
+export interface ScreenView {
+  box: { x: number; y: number; w: number; h: number }
+  k: number
+  callouts: readonly CalloutLabel[]
 }
 
 export interface FloorCanvasProps {
@@ -1196,6 +1207,19 @@ export function FloorCanvas({
       return [w.x / CELL, w.y / CELL]
     }
     apiRef.current.pointerCell = () => pointerAt.current
+    apiRef.current.screen = () => {
+      const svg = svgRef.current
+      if (!svg) return null
+      const r = svg.getBoundingClientRect()
+      if (!r.width || !r.height) return null
+      const a = toWorld(svg, r.left, r.top)
+      const b = toWorld(svg, r.right, r.bottom)
+      return {
+        box: { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y },
+        k: t.k,
+        callouts: planLabels.callouts,
+      }
+    }
     apiRef.current.showTrayCables = showTrayCables
   })
   // Putting the tool down drops a drawing it left open.
