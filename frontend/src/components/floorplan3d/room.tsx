@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import * as THREE from "three"
 
 import { useTheme } from "@/components/theme-provider"
-import { muteRgb } from "@/components/floorplan/background-look"
+import { mutesBasemap, muteRgb } from "@/components/floorplan/background-look"
 
 import { gridFade, roomLook } from "./room-look"
 
@@ -102,11 +102,17 @@ export function Room({
   ceiling = false,
   drawingFloor = null,
   muted = true,
+  slab = true,
 }: {
   scene: ScenePayload
   /** The background image muted, as Display > Muted background draws it
    * on the 2D plan. */
   muted?: boolean
+  /** Draw the slab over the whole grid. Off on a building's level, where
+   * the level's own outline (building.tsx `Slab`) is its floor: a level
+   * framed on a site-sized map would otherwise float a slab the size of
+   * the map over the ground. */
+  slab?: boolean
   xray?: boolean
   /** The plan's CAD drawing rasterised for the floor (cad-layer.tsx
    * `useCadFloorImage`), with its placement. Takes the blueprint's place:
@@ -164,26 +170,29 @@ export function Room({
         <lineBasicMaterial color={look.wallEdge} transparent opacity={0.8} />
       </lineLoop>
       {/* Floor slab - ghosted in x-ray so the plenum reads from above. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[w / 2, -0.01, d / 2]}
-        receiveShadow
-      >
-        <planeGeometry args={[w, d]} />
-        {/* Keyed single material with explicit mode props - a same-type
+      {slab && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[w / 2, -0.01, d / 2]}
+          receiveShadow
+        >
+          <planeGeometry args={[w, d]} />
+          {/* Keyed single material with explicit mode props - a same-type
             solid/ghost ternary is diffed in place and r3f resets removed
             props to 0 (transparent=0 breaks three's strict checks; see
             WallMesh). */}
-        <meshStandardMaterial
-          key={xray ? "ghost" : "solid"}
-          color={look.slab}
-          roughness={0.95}
-          transparent={xray}
-          opacity={xray ? 0.35 : 1}
-          depthWrite={!xray}
-        />
-      </mesh>
-      {/* Two layers: the base map (on the ground level only - the server
+          <meshStandardMaterial
+            key={xray ? "ghost" : "solid"}
+            color={look.slab}
+            roughness={0.95}
+            transparent={xray}
+            opacity={xray ? 0.35 : 1}
+            depthWrite={!xray}
+          />
+        </mesh>
+      )}
+      {/* Two layers
+: the base map (on the ground level only - the server
           leaves it out elsewhere), then the floor drawing over it. */}
       {plan.base_map && (
         <Blueprint
@@ -191,7 +200,7 @@ export function Room({
           w={w}
           d={d}
           opacity={(plan.map_opacity ?? 60) / 100}
-          muted={muted}
+          muted={muted && mutesBasemap(plan.basemap)}
           dark={dark}
           under
         />

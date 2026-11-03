@@ -1,7 +1,7 @@
 // "New floor plan from this view": the map box as a plan grid at true
 // scale, and the view rendered into one image from the tile server.
 //
-// The map is Web Mercator. Across one view (a campus, at most 512 cells of
+// The map is Web Mercator. Across one view (a site, at most MAX_GRID cells of
 // at most 5 m) the projection's scale is taken as constant at the box's
 // middle latitude: a metre on the map is cos(latitude) of one at the
 // equator. The server (api/floor_plan_from_map.py) does the same sums and
@@ -11,17 +11,25 @@
 import type { SiteMapOutline, SiteMapSite } from "@/lib/api"
 
 export const EARTH_CIRCUMFERENCE_M = 40_075_016.686
-export const MAX_GRID = 512
+/** The most cells a floor plan has a side (api/models.py FLOOR_PLAN_MAX_GRID). */
+export const MAX_GRID = 2048
 export const MIN_CELL_MM = 50
 export const MAX_CELL_MM = 5000
 const MAX_LAT = 85.05112878
-/** The longest side of the rendered background, in pixels. */
-export const MAX_IMAGE_EDGE = 4096
+/** The longest side of the rendered background, in pixels: the server's
+ * limit, so a large frame keeps the tiles' own detail. */
+export const MAX_IMAGE_EDGE = 8192
+/** The most pixels a render has: under the server's 40 megapixels and the
+ * canvas size browsers allow. */
+export const MAX_IMAGE_PIXELS = 8192 * 4096
+/** The most bytes the server takes for a map (20 MB), with some room. */
+export const MAX_IMAGE_BYTES = 19.5 * 1024 * 1024
 /** A render smaller than this on its longest side is drawn up to it (at
  * most 16×), so the attribution in its corner stays small. */
 export const MIN_IMAGE_EDGE = 1600
-/** Tiles fetched for one render, at most. */
-export const MAX_TILES = 400
+/** Tiles fetched for one render, at most (an 8192 × 4096 render is about
+ * 33 × 17 of them). */
+export const MAX_TILES = 640
 const TILE = 256
 
 export interface Bbox {
@@ -52,7 +60,7 @@ export interface PlanFrame {
   bbox: Bbox
   widthM: number
   heightM: number
-  /** The cell size asked for, raised when the box needs more than 512
+  /** The cell size asked for, raised when the box needs more than MAX_GRID
    * cells across. */
   cellMm: number
   gridWidth: number
@@ -110,20 +118,32 @@ export function pixelBox(b: Bbox, z: number) {
 }
 
 /** The tile zoom to render at: the map's (whole) zoom, lowered until the
- * image fits `maxEdge` pixels a side. */
+ * image fits `maxEdge` pixels a side and `maxPixels` in all - so a frame
+ * keeps the tiles' own detail up to that size. */
 export function renderZoom(
   b: Bbox,
   mapZoom: number,
   maxZoom = 19,
-  maxEdge = MAX_IMAGE_EDGE
+  maxEdge = MAX_IMAGE_EDGE,
+  maxPixels = MAX_IMAGE_PIXELS
 ): number {
   let z = Math.max(0, Math.min(maxZoom, Math.round(mapZoom)))
   while (z > 0) {
     const p = pixelBox(b, z)
-    if (Math.max(p.x1 - p.x0, p.y1 - p.y0) <= maxEdge) break
+    const w = p.x1 - p.x0
+    const h = p.y1 - p.y0
+    if (Math.max(w, h) <= maxEdge && w * h <= maxPixels) break
     z--
   }
   return z
+}
+
+/** Metres a pixel of the map rendered for `b` from `mapZoom` covers, at
+ * the tiles' own detail (the render's zoom), across the box's middle. */
+export function metresPerPixel(b: Bbox, mapZoom: number, maxZoom = 19) {
+  const z = renderZoom(b, mapZoom, maxZoom)
+  const p = pixelBox(b, z)
+  return ((mercX(b.east) - mercX(b.west)) * metresPerUnit(b)) / (p.x1 - p.x0)
 }
 
 /** The tiles covering the box at `z`, each with where it lands in the
@@ -270,7 +290,9 @@ export async function renderMapImage({
   // drawn larger, so the attribution stays a small corner of it.
   const scale = Math.min(
     16,
-    Math.max(1, MIN_IMAGE_EDGE / Math.max(box.width, box.height))
+    Math.max(1, MIN_IMAGE_EDGE / Math.max(box.width, box.height)),
+    // Never past the largest render.
+    Math.max(1, MAX_IMAGE_EDGE / Math.max(box.width, box.height))
   )
   const width = Math.round(box.width * scale)
   const height = Math.round(box.height * scale)
@@ -317,15 +339,32 @@ export async function renderMapImage({
     ctx.textBaseline = "bottom"
     ctx.fillText(text, width - w + pad, height - pad)
   }
-  let blob: Blob | null
-  try {
-    blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, jpeg ? "image/jpeg" : "image/png", 0.9)
-    )
-  } catch {
-    // A tainted canvas: a tile that came without CORS after all.
-    throw new TileReadError()
+  const encode = async (c: HTMLCanvasElement, quality: number) => {
+    try {
+      return await new Promise<Blob | null>((resolve) =>
+        c.toBlob(resolve, jpeg ? "image/jpeg" : "image/png", quality)
+      )
+    } catch {
+      // A tainted canvas: a tile that came without CORS after all.
+      throw new TileReadError()
+    }
+  }
+  let blob = await encode(canvas, 0.9)
+  let out = { width, height }
+  // A large render over the server's 20 MB: less JPEG quality, then fewer
+  // pixels, until it fits.
+  if (blob && blob.size > MAX_IMAGE_BYTES && jpeg)
+    blob = await encode(canvas, 0.75)
+  for (let k = 0.75; blob && blob.size > MAX_IMAGE_BYTES && k > 0.2; k -= 0.2) {
+    const small = document.createElement("canvas")
+    small.width = Math.max(1, Math.round(width * k))
+    small.height = Math.max(1, Math.round(height * k))
+    const sctx = small.getContext("2d")
+    if (!sctx) break
+    sctx.drawImage(canvas, 0, 0, small.width, small.height)
+    blob = await encode(small, 0.8)
+    out = { width: small.width, height: small.height }
   }
   if (!blob) throw new TileReadError()
-  return { blob, zoom, width, height }
+  return { blob, zoom, ...out }
 }

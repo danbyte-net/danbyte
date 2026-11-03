@@ -780,15 +780,18 @@ def transform_mm(d) -> str:
 
 def fit(d, cell_mm: int) -> dict:
     """The grid that covers the drawing placed at the origin, in ``cell_mm``
-    cells; ``fits`` is False when that needs more than 512 cells a side,
-    and ``min_cell_mm`` is the smallest cell that would fit."""
+    cells; ``fits`` is False when that needs more than ``FLOOR_PLAN_MAX_GRID``
+    cells a side, and ``min_cell_mm`` is the smallest cell that would fit."""
+    from .models import FLOOR_PLAN_MAX_GRID
+
     box = placed_box_mm(d)
+
     longest = max(box["width"], box["height"])
     gw = max(1, math.ceil(box["width"] / cell_mm - 1e-9)) if box["width"] else 1
     gh = max(1, math.ceil(box["height"] / cell_mm - 1e-9)) if box["height"] else 1
     return {
         "grid_width": gw,
         "grid_height": gh,
-        "fits": gw <= 512 and gh <= 512,
-        "min_cell_mm": max(50, math.ceil(longest / 512)) if longest else 50,
+        "fits": gw <= FLOOR_PLAN_MAX_GRID and gh <= FLOOR_PLAN_MAX_GRID,
+        "min_cell_mm": max(50, math.ceil(longest / FLOOR_PLAN_MAX_GRID)) if longest else 50,
     }

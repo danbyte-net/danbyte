@@ -11978,10 +11978,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
         """Size the grid to the drawing: the drawing moves to the plan's
         origin and the grid becomes the cells that cover it. Optional
         ``cell_mm`` sets the cell size first. 400 with ``min_cell_mm`` when
-        the drawing needs more than 512 cells a side."""
+        the drawing needs more than ``FLOOR_PLAN_MAX_GRID`` cells a side."""
         from django.db import transaction
 
         from . import cad_render
+        from .models import FLOOR_PLAN_MAX_GRID
 
         plan = self.get_object()
         self._not_on_view(plan, "The drawing")
@@ -12000,7 +12001,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if not f["fits"]:
             return Response(
                 {"detail": f"The drawing needs cells of at least {f['min_cell_mm']} mm "
-                           "to fit 512 cells.",
+                           f"to fit {FLOOR_PLAN_MAX_GRID} cells.",
                  "min_cell_mm": f["min_cell_mm"]},
                 status=400,
             )
@@ -13471,6 +13472,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "background_shown": plan.background_shown,
                 "base_map": base_map,
                 "map_opacity": plan.map_opacity,
+                # "map" (street) or "sat": only the street map is muted.
+                "basemap": (plan.base_map.basemap or "map") if base_map else None,
                 # Building levels: where this floor sits in its aligned
                 # floor plan (floor_stacks.floor_elevation), its slab and
                 # its offset in the stack's frame.
@@ -13985,9 +13988,9 @@ class FloorPlanViewSet(TenantScopedViewSet):
         anchor yet - the box must be the grid's real size. On an anchored
         plan the box is the anchor's and the render replaces the map
         (Update snapshot). With ``grid`` [w, h] and ``offset`` [x, y] the
-        frame may be larger than the grid: the grid grows to it and
-        everything moves by ``offset``, on every level that grows with it
-        (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
+        frame is free - larger, smaller or elsewhere: the grid takes its
+        size, everything moves by ``offset`` and the plan is anchored to it,
+        on every level that goes with it (``grow_and_map``). ``DELETE`` removes the map - and the geo anchor -
         from every floor it lies under (api/floor_plan_layers.py)."""
         from audit.context import cause
 
@@ -14005,8 +14008,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
         if "image" not in request.FILES:
             raise ValidationError({"image": ["The rendered map."]})
         if request.data.get("grid") not in (None, ""):
-            # A frame larger than the grid: grow it (and the levels that
-            # share it) and map the whole frame (api/floor_plan_geo.py).
+            # A new frame: resize and re-anchor the grid (and the levels
+            # that go with it) and map the frame (api/floor_plan_geo.py).
             from .floor_plan_geo import grow_and_map
 
             return grow_and_map(self, request, plan)

@@ -60,8 +60,8 @@ class ProjectionTests(SimpleTestCase):
         # 0.004° of longitude at the equator is 445 m.
         self.assertAlmostEqual(eq.width_m, 445.28, delta=0.05)
 
-    def test_cell_is_raised_to_fit_512_cells(self):
-        fr = fm.frame([56.0, 10.0, 56.005, 10.02], 1000)  # ~1.25 km wide
+    def test_cell_is_raised_to_fit_the_grid_limit(self):
+        fr = fm.frame([56.0, 10.0, 56.005, 10.05], 1000)  # ~3.1 km wide
         self.assertGreater(fr.cell_mm, 1000)
         self.assertLessEqual(fr.grid_width, fm.MAX_GRID)
         self.assertAlmostEqual(fr.grid_width * fr.cell_mm / 1000, fr.width_m,

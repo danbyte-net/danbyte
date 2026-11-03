@@ -236,13 +236,13 @@ describe("Expand", () => {
     )
   })
 
-  it("refuses more than 512 cells with the reason", () => {
+  it("refuses more than 2048 cells with the reason", () => {
     wrap(<ExpandPlanDialog plan={PLAN} open onOpenChange={vi.fn()} />)
     fireEvent.change(screen.getByLabelText("East (m)"), {
-      target: { value: "400" },
+      target: { value: "2000" },
     })
     expect(screen.getByTestId("expand-frame").textContent).toMatch(
-      /524 × 111 cells; a plan has at most 512/
+      /2124 × 111 cells; a plan has at most 2048/
     )
     expect(
       (screen.getByRole("button", { name: "Expand" }) as HTMLButtonElement)

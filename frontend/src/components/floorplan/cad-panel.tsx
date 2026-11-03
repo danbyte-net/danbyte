@@ -14,6 +14,7 @@ import { Loading } from "@/components/loading"
 import { BarIconButton } from "@/components/map-toolbar"
 import { PanelRow, PanelSection, PanelShell } from "@/components/map-panel"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { MAX_GRID } from "@/components/site-map/plan-from-map"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -291,7 +292,7 @@ export function CadPanel({
         title="Use larger cells?"
         description={
           minCell != null
-            ? `At ${plan.cell_mm} mm cells the drawing needs more than 512 cells a side. Cells of ${minCell} mm fit it.`
+            ? `At ${plan.cell_mm} mm cells the drawing needs more than ${MAX_GRID} cells a side. Cells of ${minCell} mm fit it.`
             : undefined
         }
         confirmLabel={minCell != null ? `Use ${minCell} mm` : "Use"}

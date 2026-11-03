@@ -478,6 +478,15 @@ describe("nearForDistance", () => {
     expect(nearForDistance(500)).toBeCloseTo(10)
     expect(nearForDistance(5000)).toBe(25)
   })
+
+  it("stays under half the camera's height, so a low orbit keeps the floor", () => {
+    // 400 m from the target but 4 m over a site-sized floor: 2 m, not 8.
+    expect(nearForDistance(400, 4)).toBeCloseTo(2)
+    expect(nearForDistance(400, -4)).toBeCloseTo(2)
+    // High above, the distance rules as before.
+    expect(nearForDistance(400, 300)).toBeCloseTo(8)
+    expect(nearForDistance(400, 0)).toBeCloseTo(0.01)
+  })
 })
 
 describe("gridStep", () => {

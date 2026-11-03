@@ -96,6 +96,23 @@ class SuggestRunTests(SimpleTestCase):
             self.assertTrue(p[0] == q[0] or p[1] == q[1], pts)
         self.assertLessEqual(len(pts), 4)
 
+    def test_a_site_sized_plan_costs_what_the_search_reaches(self):
+        """A 2048-cell plan is 16.8M lattice nodes: nothing is kept per node
+        of the plan, only for those the search reaches."""
+        import time
+        import tracemalloc
+
+        tracemalloc.start()
+        t0 = time.perf_counter()
+        pts = suggest_run((1000.5, 1000.5), (1040.5, 1012.5), width=2048, height=2048,
+                          obstacles=[(1010, 990, 2, 20)])
+        took = time.perf_counter() - t0
+        _cur, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        self.assertIsNotNone(pts)
+        self.assertLess(peak, 50 * 1024 * 1024)
+        self.assertLess(took, 5)
+
     def test_within_keeps_it_inside(self):
         raised = [(0, 0, 10, 10), (10, 6, 10, 4)]
         pts = suggest_run((2.5, 2.5), (18.5, 8.5), width=20, height=20, within=raised)

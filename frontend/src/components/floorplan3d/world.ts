@@ -211,6 +211,9 @@ export interface ScenePayload {
      * only; null elsewhere. */
     base_map?: string | null
     map_opacity?: number
+    /** The base map's kind: "map" (street, muted with the background) or
+     * "sat" (satellite, never muted). */
+    basemap?: string | null
     /** Building levels: the floor's elevation (set, else computed on an
      * aligned floor plan; null otherwise), slab and align offset. */
     elevation_mm?: number | null

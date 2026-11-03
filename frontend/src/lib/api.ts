@@ -12688,10 +12688,13 @@ export interface FloorPlan {
   map_shown?: boolean | null
   /** Whether the base map is drawn. */
   map_visible?: boolean
-  /** The floors a larger frame in From site map grows together: this one
-   * and the levels of an aligned floor plan of the same grid and map. Null
-   * on a list. */
+  /** The floors a new frame in From site map grows, shrinks or moves
+   * together: this one and the levels of an aligned floor plan of the same
+   * grid and cell size. Null on a list. */
   map_levels?: number | null
+  /** What is drawn on those floors, in whole cells: the smallest frame
+   * From site map may shrink to. Null when they are empty, and on a list. */
+  frame_extent?: { x: number; y: number; w: number; h: number } | null
   /** View prefs (overlay mode, grid on/off…) - free schema. */
   state: Record<string, unknown>
   description: string

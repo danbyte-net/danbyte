@@ -13,6 +13,7 @@ from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from PIL import Image
 
 from audit.models import ChangeLogEntry
 from core.models import Organization, Tenant
@@ -449,14 +450,16 @@ class GrowTests(_Base):
                 cause="Grew Hall to 50 × 30 cells from the Site map").exists(), model)
 
     def test_refusals_leave_everything_as_it_was(self):
+        # The tile is at (3, 4), the area spans (1, 1)-(6, 6): 5 × 5 cells.
         cases = [
-            (20, 20, 0, 0, "grid"),       # smaller than the grid
-            (513, 20, 0, 0, "grid"),      # over the limit
-            (40, 20, 11, 0, "offset"),    # the grid sticks out
-            (40, 20, -1, 0, "offset"),
+            (4, 4, -1, -1, "grid"),       # smaller than what is drawn
+            (fm.MAX_GRID + 1, 20, 0, 0, "grid"),  # over the limit
+            (0, 20, 0, 0, "grid"),
+            (40, 20, 35, 0, "offset"),    # the area would stick out east
+            (40, 20, -2, 0, "offset"),    # ... or west
         ]
         for gw, gh, ox, oy, field in cases:
-            box = frame_box(56.0, 10.0, max(gw, 30) * 0.6, max(gh, 20) * 0.6)
+            box = frame_box(56.0, 10.0, max(gw, 1) * 0.6, max(gh, 1) * 0.6)
             r = self.post(self.hall, gw, gh, ox, oy, box=box)
             self.assertEqual(r.status_code, 400, (gw, gh, ox, oy))
             self.assertIn(field, r.json())
@@ -469,6 +472,50 @@ class GrowTests(_Base):
         self.assertEqual((self.hall.grid_width, self.hall.grid_height), (30, 20))
         self.assertIsNone(self.hall.geo_bbox)
         self.assertEqual((self.tile.x, self.tile.y), (3, 4))
+
+    def test_the_read_gives_the_extent_a_frame_may_shrink_to(self):
+        d = self.client.get(f"/api/floor-plans/{self.hall.id}/").json()
+        self.assertEqual(d["frame_extent"], {"x": 1, "y": 1, "w": 5, "h": 5})
+        empty = FloorPlan.objects.create(tenant=self.tenant, site=self.site, name="Empty")
+        d = self.client.get(f"/api/floor-plans/{empty.id}/").json()
+        self.assertIsNone(d["frame_extent"])
+
+    def test_shrink_trims_empty_cells_and_shifts_contents(self):
+        self.hall.background_image.save("floor.png", ContentFile(_png(300, 200).read()),
+                                        save=True)
+        r = self.post(self.hall, 8, 7, -1, -1)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hall.refresh_from_db()
+        self.tile.refresh_from_db()
+        self.area.refresh_from_db()
+        self.assertEqual((self.hall.grid_width, self.hall.grid_height), (8, 7))
+        self.assertEqual((self.tile.x, self.tile.y), (2, 3))
+        self.assertEqual((self.area.x, self.area.y), (0, 0))
+        self.assertAlmostEqual(self.hall.geo_mpc, 0.6, delta=0.01)
+        # The floor's picture is cut to the cells kept: 10 px a cell.
+        with self.hall.background_image.open("rb") as fh:
+            self.assertEqual(Image.open(fh).size, (80, 70))
+        self.assertTrue(ChangeLogEntry.objects.filter(
+            object_type="api.floorplantile", object_id=str(self.tile.pk),
+            cause="Shrank Hall to 8 × 7 cells from the Site map").exists())
+
+    def test_a_frame_moved_elsewhere_re_anchors_the_plan(self):
+        r = self.post(self.hall, 30, 20, 0, 0)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hall.refresh_from_db()
+        first = self.hall.geo_bbox
+        box = frame_box(56.01, 10.02, 30 * 0.6, 20 * 0.6)
+        r = self.post(self.hall, 30, 20, 2, 3, box=box)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.hall.refresh_from_db()
+        self.tile.refresh_from_db()
+        self.assertNotEqual(self.hall.geo_bbox, first)
+        self.assertEqual(self.hall.geo_bbox, list(box))
+        self.assertEqual(self.hall.base_map.bbox, list(box))
+        self.assertEqual((self.tile.x, self.tile.y), (5, 7))
+        self.assertTrue(ChangeLogEntry.objects.filter(
+            object_type="api.floorplan", object_id=str(self.hall.pk),
+            cause="Moved Hall on the Site map").exists())
 
     def test_aligned_levels_grow_together(self):
         tower = FloorPlanStack.objects.create(
@@ -507,10 +554,102 @@ class GrowTests(_Base):
         if old_area is not None:
             moved = FloorPlanArea.objects.get(pk=old_area.pk)
             self.assertEqual((moved.x, moved.y), (old_area.x + 2, old_area.y + 1))
-        # An offset that does not match where the box is: refused.
-        r = self.post(p, p.grid_width + 2, p.grid_height, 0, 0,
-                      box=_grown(p, left=1, right=1))
+
+    def test_levels_with_a_stale_or_cleared_anchor_grow_with_ground(self):
+        """A building whose map was removed by an older release (a level
+        kept a stale anchor and no map, another has none) and the ground
+        level re-captured on its own since: every level of the same grid
+        and cell size grows with the level framed larger, and they all
+        share its anchor and map."""
+        tower = FloorPlanStack.objects.create(
+            tenant=self.tenant, site=self.site, name="Tower", aligned=True)
+        self.hall.stack = tower
+        self.hall.floor_order = 0
+        self.hall.save()
+        stale = [56.1, 10.1, 56.1001, 10.1003]
+        b1 = FloorPlan.objects.create(tenant=self.tenant, site=self.site, stack=tower,
+                                      name="B1", floor_order=-10, grid_width=30,
+                                      grid_height=20, cell_mm=600, geo_bbox=stale)
+        up = FloorPlan.objects.create(tenant=self.tenant, site=self.site, stack=tower,
+                                      name="1", floor_order=10, grid_width=30,
+                                      grid_height=20, cell_mm=600)
+        lab = FloorPlanLabel.objects.create(floor_plan=up, x=2, y=2, text="Up")
+        d = self.client.get(f"/api/floor-plans/{self.hall.id}/").json()
+        self.assertEqual(d["map_levels"], 3)
+        r = self.post(self.hall, 500, 337, 0, 0)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["grown"]["levels"], 3)
+        for p in (self.hall, b1, up):
+            p.refresh_from_db()
+        lab.refresh_from_db()
+        for p in (b1, up):
+            self.assertEqual((p.grid_width, p.grid_height), (500, 337))
+            self.assertEqual(p.geo_bbox, self.hall.geo_bbox)
+            self.assertEqual(p.base_map_id, self.hall.base_map_id)
+        self.assertEqual((lab.x, lab.y), (2, 2))
+        self.assertEqual(
+            FloorPlanMap.objects.filter(floors__stack=tower).distinct().count(), 1)
+        # The basement still hides the map by default.
+        self.assertFalse(map_visible(b1))
+        self.assertTrue(map_visible(up))
+
+    def test_levels_that_drew_another_map_take_the_new_one(self):
+        tower = FloorPlanStack.objects.create(
+            tenant=self.tenant, site=self.site, name="Tower", aligned=True)
+        self.hall.stack = tower
+        self.hall.save()
+        up = FloorPlan.objects.create(tenant=self.tenant, site=self.site, stack=tower,
+                                      name="1", floor_order=10, grid_width=30,
+                                      grid_height=20, cell_mm=600)
+        # A map of its own, elsewhere (captured before the levels shared one).
+        box = frame_box(56.2, 10.2, 18, 12)
+        m = FloorPlanMap(tenant=self.tenant, site=self.site, bbox=box, basemap="sat")
+        m.image.save("site-map.png", ContentFile(_png().read()), save=False)
+        m.save()
+        up.base_map, up.geo_bbox = m, box
+        up.save()
+        mine = m.pk
+
+        r = self.post(self.hall, 40, 24, 5, 2)
+        self.assertEqual(r.status_code, 200, r.content)
+        up.refresh_from_db()
+        self.hall.refresh_from_db()
+        self.assertEqual(up.base_map_id, self.hall.base_map_id)
+        self.assertEqual(up.geo_bbox, self.hall.geo_bbox)
+        self.assertFalse(FloorPlanMap.objects.filter(pk=mine).exists())
+
+    def test_shrink_never_cuts_what_another_level_holds(self):
+        tower = FloorPlanStack.objects.create(
+            tenant=self.tenant, site=self.site, name="Tower", aligned=True)
+        self.hall.stack = tower
+        self.hall.save()
+        up = FloorPlan.objects.create(tenant=self.tenant, site=self.site, stack=tower,
+                                      name="1", floor_order=10, grid_width=30,
+                                      grid_height=20, cell_mm=600)
+        FloorPlanLabel.objects.create(floor_plan=up, x=20, y=15, text="Far")
+        d = self.client.get(f"/api/floor-plans/{self.hall.id}/").json()
+        self.assertEqual(d["frame_extent"], {"x": 1, "y": 1, "w": 19, "h": 14})
+        r = self.post(self.hall, 8, 7, -1, -1)
         self.assertEqual(r.status_code, 400)
+        self.assertIn("grid", r.json())
+        r = self.post(self.hall, 19, 14, -1, -1)
+        self.assertEqual(r.status_code, 200, r.content)
+        up.refresh_from_db()
+        self.assertEqual((up.grid_width, up.grid_height), (19, 14))
+
+    def test_an_editor_resize_keeps_the_anchor_to_scale(self):
+        p = self.plan
+        gw, gh = p.grid_width, p.grid_height
+        mpc = p.geo_mpc
+        s, w, n, _e = p.geo_bbox
+        r = self.client.patch(f"/api/floor-plans/{p.id}/",
+                              {"grid_width": gw + 20, "grid_height": gh + 5}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        p.refresh_from_db()
+        self.assertAlmostEqual(p.geo_mpc, mpc, delta=mpc * 0.001)
+        self.assertEqual((p.geo_bbox[1], p.geo_bbox[2]), (w, n))
+        self.assertLess(p.geo_bbox[0], s)
+        self.assertEqual(p.base_map.bbox, p.geo_bbox)
 
     def test_change_on_every_level_is_needed(self):
         viewer = self._user("viewer", [(["floorplan"], ["view"], [])])

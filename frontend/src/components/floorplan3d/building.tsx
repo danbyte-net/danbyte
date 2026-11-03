@@ -4,6 +4,7 @@ import * as THREE from "three"
 
 import type { FloorPlanCablePath } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
+import { mutesBasemap } from "@/components/floorplan/background-look"
 
 import { slabOutline } from "./building-math"
 import type { LevelPlacement } from "./building-math"
@@ -37,10 +38,14 @@ export function BuildingLevels({
   levels,
   onGo,
   ghostWalls = false,
+  muted = true,
 }: {
   levels: LevelPlacement[]
   onGo: (floorId: string, tileId?: string) => void
   ghostWalls?: boolean
+  /** Display > Muted background, as the active level draws it (a
+   * satellite map is never muted). */
+  muted?: boolean
 }) {
   return (
     <>
@@ -51,7 +56,12 @@ export function BuildingLevels({
             position={[lv.x, lv.y, lv.z]}
             rotation={[0, lv.rotY, 0]}
           >
-            <OtherLevel placement={lv} onGo={onGo} ghostWalls={ghostWalls} />
+            <OtherLevel
+              placement={lv}
+              onGo={onGo}
+              ghostWalls={ghostWalls}
+              muted={muted}
+            />
           </group>
         ) : null
       )}
@@ -63,10 +73,12 @@ function OtherLevel({
   placement,
   onGo,
   ghostWalls,
+  muted,
 }: {
   placement: LevelPlacement
   onGo: (floorId: string, tileId?: string) => void
   ghostWalls: boolean
+  muted: boolean
 }) {
   const scene = useScene(placement.floor.id)
   if (!scene.data) return null
@@ -76,6 +88,7 @@ function OtherLevel({
     <SimpleLevel
       scene={scene.data}
       ghostWalls={ghostWalls}
+      muted={muted}
       onClick={(tileId) => onGo(placement.floor.id, tileId)}
     />
   )
@@ -162,10 +175,12 @@ function tileBox(
 function SimpleLevel({
   scene,
   ghostWalls,
+  muted,
   onClick,
 }: {
   scene: ScenePayload
   ghostWalls: boolean
+  muted: boolean
   onClick: (tileId?: string) => void
 }) {
   const { plan } = scene
@@ -189,7 +204,7 @@ function SimpleLevel({
           w={mapW}
           d={mapD}
           opacity={(plan.map_opacity ?? 60) / 100}
-          muted
+          muted={muted && mutesBasemap(plan.basemap)}
           dark={dark}
           under
         />

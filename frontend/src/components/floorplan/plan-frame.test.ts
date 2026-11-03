@@ -17,9 +17,11 @@ import {
   handleAt,
   innerBbox,
   moveFrame,
+  frameOffset,
   moveInner,
   resizeFrame,
   sidesOfFrame,
+  snapshotFrame,
 } from "./plan-geo"
 import type { AnchoredPlan, CellFrame } from "./plan-geo"
 
@@ -86,9 +88,9 @@ describe("a frame in whole cells", () => {
     expect((mercX(b.east) - mercX(b.west)) * per).toBeCloseTo(18, 1)
   })
 
-  it("refuses more than 512 cells a side", () => {
+  it("refuses more than 2048 cells a side", () => {
     expect(frameError(f0)).toBeUndefined()
-    expect(frameError({ ...f0, w: 513 })).toMatch(/512/)
+    expect(frameError({ ...f0, w: 2049 })).toMatch(/2048/)
   })
 
   it("is Expand's box on an anchored plan", () => {
@@ -110,5 +112,47 @@ describe("a frame in whole cells", () => {
     expect(sidesOfFrame(f)).toEqual(s)
     expect(innerBbox(f).west).toBeCloseTo(10, 12)
     expect(innerBbox(f).north).toBeCloseTo(56.001, 12)
+  })
+})
+
+describe("From site map's free frame", () => {
+  const plan = { grid_width: 30, grid_height: 20, cell_mm: 600 }
+  const extent = { x: 2, y: 3, w: 10, h: 8 }
+
+  it("puts the dashed box on what is drawn, where it is", () => {
+    const f = snapshotFrame(plan, { lat: 56, lng: 10 }, extent)
+    expect([f.w, f.h, f.ix, f.iy, f.iw, f.ih]).toEqual([30, 20, 2, 3, 10, 8])
+    expect(frameOffset(f)).toEqual([0, 0])
+    // Unknown: the whole grid; an empty plan: nothing to hold.
+    expect(snapshotFrame(plan, { lat: 56, lng: 10 }, undefined).iw).toBe(30)
+    expect(snapshotFrame(plan, { lat: 56, lng: 10 }, null).iw).toBe(0)
+  })
+
+  it("shrinks to what is drawn, never past it, and trims the west", () => {
+    const f = snapshotFrame(plan, { lat: 56, lng: 10 }, extent)
+    const e = resizeFrame(f, "e", at(f, 5, 0))
+    expect(e.w).toBe(12)
+    const w = resizeFrame(e, "w", at(e, 9, 0))
+    expect([w.w, w.ix]).toEqual([10, 0])
+    // Everything moves two cells west with the trimmed cells.
+    expect(frameOffset(w)).toEqual([-2, 0])
+    const empty = snapshotFrame(plan, { lat: 56, lng: 10 }, null)
+    expect(resizeFrame(empty, "e", at(empty, -9, 0)).w).toBe(1)
+  })
+
+  it("starts on an anchored plan's corner at the cells' real size", () => {
+    // A stale anchor: 30 cells over a 9 m box. The frame is the grid's
+    // real size, 18 m, from the same corner.
+    const s = 56
+    const per = EARTH_CIRCUMFERENCE_M * Math.cos((s * Math.PI) / 180)
+    const east = lngOf(mercX(10) + 9 / per)
+    const geo = {
+      bbox: [s, 10, s + 0.0001, east] as [number, number, number, number],
+    }
+    const f = snapshotFrame({ ...plan, geo }, { lat: 0, lng: 0 }, extent)
+    const b = frameBbox(f)
+    expect(b.west).toBeCloseTo(10, 9)
+    expect(b.north).toBeCloseTo(s + 0.0001, 9)
+    expect((mercX(b.east) - mercX(b.west)) * per).toBeCloseTo(18, 1)
   })
 })

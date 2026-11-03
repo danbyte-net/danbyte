@@ -644,7 +644,7 @@ export function CameraRig({
     // a distance (depth precision). Re-fit only past 20% drift so the
     // projection isn't rebuilt every frame; runs only on frames something
     // else already rendered, so it adds no invalidation source of its own.
-    const near = nearForDistance(cam.position.distanceTo(tgt))
+    const near = nearForDistance(cam.position.distanceTo(tgt), cam.position.y)
     if (Math.abs(near - cam.near) / cam.near > 0.2) {
       cam.near = near
       cam.updateProjectionMatrix()

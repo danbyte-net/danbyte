@@ -22,6 +22,7 @@ import { observeMapSize, setBaseLayer } from "@/components/site-map/map-core"
 import {
   mercX,
   mercY,
+  metresPerPixel,
   TileReadError,
 } from "@/components/site-map/plan-from-map"
 import type { Bbox } from "@/components/site-map/plan-from-map"
@@ -30,11 +31,11 @@ import { frameLayer } from "./frame-layer"
 import {
   bboxOf,
   centreInner,
-  frameAround,
   frameBbox,
   frameError,
-  frameOfPlan,
+  frameOffset,
   moveFrame,
+  snapshotFrame,
 } from "./plan-geo"
 import type { CellFrame } from "./plan-geo"
 import { renderPlanMap } from "./plan-map-dialogs"
@@ -79,8 +80,8 @@ export function useRefetchBackgrounds() {
   }
 }
 
-/** A frame larger than the grid: its size and where the grid sits in it,
- * in cells (the server grows the grid to it). */
+/** A new frame: its size and the cells everything on the plan moves by
+ * (the server resizes and re-anchors the grid to it). */
 export interface GrowTo {
   grid: [number, number]
   offset: [number, number]
@@ -88,8 +89,9 @@ export interface GrowTo {
 }
 
 /** Render `bbox` and send it as the plan's map. `frame` sends the box (a
- * plan with no anchor yet); `grow` a frame larger than the grid. Throws
- * TileReadError when the tiles can't be read from this browser. */
+ * plan with no anchor yet); `grow` a new frame for the grid - larger,
+ * smaller or elsewhere. Throws TileReadError when the tiles can't be read
+ * from this browser. */
 export async function captureMap(
   plan: Pick<FloorPlan, "id">,
   tiles: SiteMapPayload["tiles"] | undefined,
@@ -130,6 +132,25 @@ export function frameReadout(w: number, h: number, cellMm: number) {
   return `${w} × ${h} cells · ${m(w)} × ${m(h)} m`
 }
 
+/** "≈ 0.16 m/px": the detail of the map rendered for `bbox`. */
+export function detailReadout(mpp: number) {
+  const v = mpp < 1 ? mpp.toFixed(2) : mpp.toFixed(1)
+  return `≈ ${v} m/px`
+}
+
+/** What a new frame does to the grid, as the readout's verb. */
+export function frameVerb(
+  w: number,
+  h: number,
+  gw: number,
+  gh: number
+): "Grows" | "Shrinks" | "Resizes" | "Moves" {
+  if (w === gw && h === gh) return "Moves"
+  if (w >= gw && h >= gh) return "Grows"
+  if (w <= gw && h <= gh) return "Shrinks"
+  return "Resizes"
+}
+
 /** The old box's middle, kept after the map was removed: where the dialog
  * opens, never a lock. */
 function lastCentre(plan: FloorPlan) {
@@ -145,11 +166,12 @@ function lastCentre(plan: FloorPlan) {
 /**
  * **From site map…**: pick Map or Satellite and frame the floor on a small
  * map. The frame starts at the grid's real size - its cells at their cell
- * size - and its corner and edge handles grow it in whole cells; the grid
- * as it is shows dashed inside it. A plan tied to the map already (a geo
- * anchor) keeps its box where it is; on any other the frame and the dashed
- * grid are dragged where they belong. A larger frame grows the grid on
- * Capture, everything on it moving with the dashed box.
+ * size - on the plan's box when it has one; what is drawn on the plan (and
+ * the levels that go with it) shows dashed inside it. The frame is free:
+ * its handles grow or shrink it in whole cells (never cutting the dashed
+ * box), dragging it moves it - the plan is anchored where it is dropped -
+ * and dragging the dashed box places the contents in it. Capture resizes
+ * and re-anchors the grid, everything on it moving with the dashed box.
  */
 export function MapSnapshotDialog({
   plan,
@@ -208,19 +230,31 @@ export function SnapshotForm({
     return null
   }, [plan.geo, plan.state, site?.latitude, site?.longitude])
   const initial = useMemo(() => {
-    if (plan.geo) return frameOfPlan({ ...plan, geo: plan.geo })
     if (!start) return null
-    return frameAround(start, plan.grid_width, plan.grid_height, plan.cell_mm)
+    return snapshotFrame(plan, start, plan.frame_extent)
   }, [plan, start])
   const [edited, setEdited] = useState<CellFrame | null>(null)
-  // The dashed grid stays in the middle until it is dragged.
+  // On a plan with no anchor the dashed box stays in the middle of a
+  // resized frame until it is dragged.
   const [placed, setPlaced] = useState(false)
   const [zoom, setZoom] = useState(plan.geo?.zoom ?? 18)
   const frame = edited ?? initial
-  const grown =
+  const [ox, oy] = frame ? frameOffset(frame) : [0, 0]
+  const moved =
+    !!edited && !!initial && (edited.x !== initial.x || edited.y !== initial.y)
+  const resized =
     !!frame && (frame.w !== plan.grid_width || frame.h !== plan.grid_height)
+  // Anything but the plan's own box as it is: the grid is re-framed.
+  const changed = resized || ox !== 0 || oy !== 0 || (anchored && moved)
+  const verb = frame
+    ? frameVerb(frame.w, frame.h, plan.grid_width, plan.grid_height)
+    : "Moves"
   const error = frame ? frameError(frame) : undefined
   const levels = plan.map_levels ?? 1
+  const detail = useMemo(
+    () => (frame ? metresPerPixel(frameBbox(frame), Math.max(zoom, 19)) : null),
+    [frame, zoom]
+  )
 
   const onFrame = (f: CellFrame, what: "resize" | "move" | "inner") => {
     if (what === "inner") setPlaced(true)
@@ -240,17 +274,21 @@ export function SnapshotForm({
         frameBbox(frame),
         Math.max(zoom, 19),
         !anchored,
-        grown
+        changed
           ? {
               grid: [frame.w, frame.h],
-              offset: [frame.ix, frame.iy],
+              offset: [ox, oy],
               version: plan.updated_at,
             }
           : undefined
       )
       refetch()
       toast.success(
-        grown ? `Grown to ${frame.w} × ${frame.h} cells` : "Map captured"
+        !changed
+          ? "Map captured"
+          : verb === "Moves"
+            ? "Moved on the map"
+            : `${verb === "Grows" ? "Grown" : verb === "Shrinks" ? "Shrunk" : "Resized"} to ${frame.w} × ${frame.h} cells`
       )
       onClose()
     } catch (e) {
@@ -301,10 +339,15 @@ export function SnapshotForm({
             <span className="num">
               {frameReadout(frame.w, frame.h, plan.cell_mm)}
             </span>
+            {detail != null && Number.isFinite(detail) && (
+              <span className="num">{detailReadout(detail)}</span>
+            )}
             {error ? (
               <span className="text-destructive">{error}</span>
-            ) : grown && levels > 1 ? (
-              <span>Grows all {levels} levels</span>
+            ) : changed && levels > 1 ? (
+              <span>
+                {verb} all {levels} levels
+              </span>
             ) : null}
           </p>
         )}
@@ -345,13 +388,12 @@ export interface FrameMapProps {
 }
 
 /** The small framing map with the shared frame (frame-layer.ts) on it: its
- * handles resize it; on a plan with no anchor the frame and the dashed
- * grid are dragged too, and a double-click brings the frame there. */
+ * handles resize it, the frame and the dashed box are dragged, and a
+ * double-click brings the frame there. */
 function FrameMap({
   start,
   startZoom,
   frame,
-  anchored,
   tiles,
   basemap,
   onFrame,
@@ -373,7 +415,7 @@ function FrameMap({
     const map = L.map(el.current, {
       zoomControl: true,
       attributionControl: true,
-      doubleClickZoom: anchored,
+      doubleClickZoom: false,
     })
     map.setView([start.lat, start.lng], Math.min(19, startZoom))
     const b = frameBbox(frame)
@@ -386,22 +428,22 @@ function FrameMap({
     )
     map.on("zoomend", () => zoomed.current(Math.round(map.getZoom())))
     zoomed.current(Math.round(map.getZoom()))
-    if (!anchored)
-      map.on("dblclick", (e: L.LeafletMouseEvent) => {
-        // The frame's middle to where it was double-clicked.
-        const f = frameRef.current
-        const fb = frameBbox(f)
-        const mx = (mercX(fb.west) + mercX(fb.east)) / 2
-        const my = (mercY(fb.north) + mercY(fb.south)) / 2
-        change.current(
-          moveFrame(f, mercX(e.latlng.lng) - mx, mercY(e.latlng.lat) - my),
-          "move"
-        )
-      })
+    map.on("dblclick", (e: L.LeafletMouseEvent) => {
+      // The frame's middle to where it was double-clicked.
+      const f = frameRef.current
+      const fb = frameBbox(f)
+      const mx = (mercX(fb.west) + mercX(fb.east)) / 2
+      const my = (mercY(fb.north) + mercY(fb.south)) / 2
+      change.current(
+        moveFrame(f, mercX(e.latlng.lng) - mx, mercY(e.latlng.lat) - my),
+        "move"
+      )
+    })
     mapRef.current = map
     layerRef.current = frameLayer(map, frame, {
-      movable: !anchored,
-      innerMovable: !anchored,
+      movable: true,
+      innerMovable: true,
+
       onChange: (f, what) => change.current(f, what),
     })
     const unobserve = observeMapSize(map, el.current)

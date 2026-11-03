@@ -9448,6 +9448,12 @@ class FloorTileType(NumIdMixin, TimestampedModel):
         return self.name
 
 
+#: The most cells a floor plan's grid has a side: 1.2 km at the default
+#: 600 mm cell, a site at 1 m cells. Drawing and routing scale with what is
+#: on a plan, not with its cells (docs/features/floor-plans.md).
+FLOOR_PLAN_MAX_GRID = 2048
+
+
 class FloorPlanStack(TimestampedModel, TaggableMixin):
     """A floor plan as an operator sees it: one building or hall and its
     floors, in order. Each floor is a ``FloorPlan`` (the canvas); the stack
@@ -9565,11 +9571,14 @@ class FloorPlan(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     )
     name = models.CharField(max_length=128)
     grid_width = models.PositiveSmallIntegerField(
-        default=24, validators=[MinValueValidator(1), MaxValueValidator(512)]
+        default=24,
+        validators=[MinValueValidator(1), MaxValueValidator(FLOOR_PLAN_MAX_GRID)],
     )
     grid_height = models.PositiveSmallIntegerField(
-        default=16, validators=[MinValueValidator(1), MaxValueValidator(512)]
+        default=16,
+        validators=[MinValueValidator(1), MaxValueValidator(FLOOR_PLAN_MAX_GRID)],
     )
+
     background_image = models.ImageField(
         upload_to="floor-plans/",
         blank=True,

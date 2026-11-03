@@ -79,7 +79,7 @@ page, or **Add floor plan** on a site's **Floor plans** tab). Pick the
 [Site-wide floor plans](#site-wide-floor-plans)). A new floor plan starts
 with one floor, both named as you named it; add more floors from the editor
 (see [Floors](#floors)). Each floor has a grid (default 24×16 cells, up to
-512×512), and two [background layers](#backgrounds) under it: a **map** (a
+2048×2048 - 1.2 km a side at 600 mm cells), and two [background layers](#backgrounds) under it: a **map** (a
 Site map snapshot at true scale) and a **floor drawing** over it (an
 uploaded blueprint or photo, or a [CAD drawing](#cad-drawings)), each with
 its own opacity. **Display → Muted
@@ -89,6 +89,14 @@ theme - so the plan's own rooms, racks, trays and cables read first. Turn it
 off to see the pictures as uploaded. The 3D room's floor wears the same
 muted pictures; the PNG carries what the screen shows.
 
+A large grid costs what is drawn on it, not its cells: the 2D grid draws a
+line every cell up close and every 10 or 100 cells once a cell is smaller
+than a few pixels on screen, the 3D grid keeps to about a thousand lines a
+side, a suggested cable run searches only as far as it reaches, and objects
+dropped on a crowded plan look a few thousand cells from the drop for a
+free one. The map and floor pictures keep their own size limits (8,192
+pixels a side), so a site-sized grid has fewer pixels a cell.
+
 ### Backgrounds
 
 **Background** in the plan's toolbar (**More → Background…** on a narrow
@@ -97,7 +105,7 @@ order:
 
 | Layer | What | Controls |
 |---|---|---|
-| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
+| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). **Display → Muted background** greys the street map; satellite imagery keeps its colours, with its opacity only. | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
 | **Floor drawing** | The floor's own picture (PNG, JPEG…) or [CAD drawing](#cad-drawings), over the map. One or the other: a drawing replaces the picture and a picture the drawing, each after a confirm. | **Upload image…** / **Replace image…**, **Remove**; **Upload drawing…** / **Replace drawing…**, **Remove**; the eye; **Opacity** (the picture's, or the drawing's placement opacity). |
 
 The eye hides or shows a layer on this floor and is saved with it, like the
@@ -105,33 +113,56 @@ opacity; the 3D room follows both.
 
 **From site map…** opens a small map with the frame of the floor on it.
 The frame starts at the grid's real size - its cells at the plan's cell
-size - and the grid as it is shows as a dashed box inside it:
+size - on the plan's box when it has a [geo anchor](#the-geo-anchor), else
+on the box it had before its map was removed, else centred on its site.
+The dashed box inside it is what is drawn on the plan - and on the levels
+that go with it, below - in whole cells. The frame is free, anchored or
+not:
 
-- On a plan tied to the map (a [geo anchor](#the-geo-anchor)) the dashed
-  box is the plan's box and stays where it is.
-- On any other plan the frame opens on the box the plan had before its
-  map was removed, else on its site. Drag the frame by its inside, or
-  double-click the map to bring it there; drag the dashed box to say where
-  the plan's contents sit in a larger frame (it stays in the middle until
-  you do). **Capture** gives the plan that geo anchor, so GPS placement,
-  the plan's footprint on the Site map, **Refresh map** and **Expand** work
-  for it from then on.
+- **Drag the frame** by its inside, or double-click the map to bring it
+  there: the dashed box moves with it, and **Capture** anchors the plan
+  where it is dropped. Everything keeps its cells; the building is now
+  *here* on the map.
+- **Drag a handle** on a corner or edge to grow or shrink the frame in
+  whole cells of the plan's cell size. It shrinks down to the dashed box,
+  never cutting an object; cells trimmed off the west or north move
+  everything on the plan with them.
+- **Drag the dashed box** to place the contents in the frame. On a plan
+  with no anchor it stays in the middle of a resized frame until you do.
 
-The handles on the frame's corners and edges grow it in whole cells of the
-plan's cell size; it never gets smaller than the grid. The line under the
-map reads the frame as *W* × *H* cells · *w* × *h* m. A grid has at most
-512 cells a side: past that, **Capture** is disabled and the line says
-why.
+The line under the map reads the frame as *W* × *H* cells · *w* × *h* m
+and the detail of the map it renders (*≈ 0.16 m/px*: the tiles' own, see
+below). A grid has at most 2,048 cells a side: past that, **Capture** is
+disabled and the line says why.
 
-**Capture** with a frame larger than the grid grows the grid to the frame
-and moves everything on it by the dashed box's place - as
-[Expand](#expand) moves it - then stores the map of the whole frame, in
-one transaction (the change log cause is *Grew <plan> to W × H cells from
-the Site map*). On a plan with a geo anchor that is Expand and **Update
-snapshot** in one step. On an [aligned floor plan](#building-levels) every
-level of the same grid and cell size that draws the same map (or none)
-grows with it, by the same cells, so the levels stay aligned under one
-map; the line under the map says **Grows all N levels**.
+**Capture** with the frame as the plan's own box renders the map again
+(**Update snapshot**). With any other frame it resizes the grid to the
+frame, moves everything on it by the dashed box's move - as
+[Expand](#expand) moves it - anchors the plan to the frame and stores the
+map of the whole frame, in one transaction. The change log cause is *Grew
+<plan> to W × H cells from the Site map*, *Shrank <plan> to W × H cells
+from the Site map* or *Moved <plan> on the Site map*. A floor picture is
+padded or cut to the new grid, keeping its place. Capture gives a plan its
+geo anchor, so GPS placement, the plan's footprint on the Site map,
+**Refresh map** and **Expand** work for it from then on.
+
+On an [aligned floor plan](#building-levels) every level of the same grid
+and cell size goes with it - whatever anchor or map each had (a stale one,
+or none after **Remove**) - by the same cells, and they all end with the
+same anchor and one map, so the levels stay aligned under it (a basement
+still hides it unless its eye is on). The dashed box covers what is drawn
+on all of them, and the line under the map says **Grows**, **Shrinks**,
+**Resizes** or **Moves all N levels**. Resizing one level's grid in the
+editor keeps its anchor to scale: the box grows or shrinks east and south
+with it and the level takes a copy of the map, padded or cut, so the other
+levels keep theirs. That level then no longer goes with the others in From
+site map; frame it back to their size first.
+
+The render keeps the tiles' own detail: at the deepest zoom (19) up to
+8,192 pixels a side and about 33 megapixels, so a 300 m frame is still
+about 0.16 m a pixel at 57° N. A larger frame steps the zoom down to fit,
+and a render over the server's 20 MB is sent at less quality or fewer
+pixels. The 3D room hands the GPU a picture no larger than it can hold.
 
 Pick **Map** or **Satellite** and **Capture**. The browser renders the box
 from the deployment's tile server (the Site map's own, or the self-hosted
@@ -192,8 +223,8 @@ makes a site-wide floor plan from an area of the map:
   degree of longitude is shorter the further from the equator); across a
   campus the difference from one edge to the other is negligible. The grid
   is that many cells of the chosen cell size, the area grown east and south
-  to whole cells. A grid has at most 512 cells a side, so a larger area
-  gets a larger cell; an area over 2.56 km across is refused - zoom in.
+  to whole cells. A grid has at most 2,048 cells a side, so a larger area
+  gets a larger cell; an area over 10.24 km across is refused - zoom in.
 - **Map** - the area as the map showed it (street map or satellite),
   stretched exactly over the grid as the plan's [map layer](#backgrounds),
   so a 40 m building is 40 cells of 1 m. The floor-drawing layer stays
@@ -274,7 +305,7 @@ refused on a plan with no geo anchor and on a live view.
 drag out (the same frame as **From site map…**);
 or type the metres to add on each side. Each side grows in whole cells of
 the plan's own size, so nothing already drawn is resampled; the line under
-the fields shows the new grid. A grid has at most 512 cells a side: a
+the fields shows the new grid. A grid has at most 2,048 cells a side: a
 larger box is refused with the size it would make - expand less, or make a
 new plan from the Site map with larger cells. Expand only grows; a side
 dragged inwards stays where it is. It is not offered while the editor holds
@@ -315,7 +346,7 @@ checked as above), `basemap` and `zoom`. It answers the plan with
 many of each kind moved) and `background` (`rendered`, `padded` or
 `none`). Needs `floorplan · change` on the plan; refused (400) on a plan
 with no geo anchor, a live view, a box that does not grow it or a grid over
-512 cells.
+2,048 cells.
 
 #### Re-import outlines
 
@@ -363,7 +394,8 @@ A floor (`/api/floor-plans/<id>/`) reads and writes its two
 | Call | What it does |
 |---|---|
 | `POST /api/floor-plans/<id>/background/` | Multipart `background_image` sets the floor's picture; `clear=1` removes it. The map is not touched. |
-| `POST /api/floor-plans/<id>/map/` | Multipart `image` (the browser's render: PNG, JPEG or WebP, at most 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` (`map`/`sat`), `zoom`. On a plan with a geo anchor it renders the anchor's box: the map's picture is replaced (Update snapshot), or a new map is made. On a plan with none, `bbox` (`[south, west, north, east]`, JSON text) is required and must be the grid's real size - `grid_width` × `grid_height` cells of `cell_mm` - within 2%, else 400; it becomes the plan's anchor. With `grid` (`[width, height]`, JSON text) and `offset` (`[x, y]`) the frame may be larger than the grid: `bbox` must be `grid` cells of `cell_mm` (on an anchored plan, the plan's box grown by whole cells, `offset` being the cells added west and north), `grid` at least the grid and at most 512 a side, and `offset` keeps the grid inside it, else 400. The grid grows to `grid`, everything on it moves by `offset`, and the frame becomes the anchor and the map - on the plan and the levels that grow with it (`map_levels` on the floor's read counts them). `floorplan · change` is needed on each of them (else 403); `version` (the floor's `updated_at`) answers 409 when it changed since. Answers the floor with `grown`: `{left, top, right, bottom, levels, moved}`. A new map on a level of an aligned floor plan lies under the other levels of the same grid and cell size that have none (they take the anchor too, when they have none). Answers the floor. 400 on a live view. |
+| `POST /api/floor-plans/<id>/map/` | Multipart `image` (the browser's render: PNG, JPEG or WebP, at most 20 MB, 8,192 pixels a side and 40 megapixels), `basemap` (`map`/`sat`), `zoom`. On a plan with a geo anchor it renders the anchor's box: the map's picture is replaced (Update snapshot), or a new map is made. On a plan with none, `bbox` (`[south, west, north, east]`, JSON text) is required and must be the grid's real size - `grid_width` × `grid_height` cells of `cell_mm` - within 2%, else 400; it becomes the plan's anchor. With `grid` (`[width, height]`, JSON text) and `offset` (`[x, y]`, the cells everything moves by; negative trims cells off the west or north) the frame is free, anchored plan or not: larger, smaller or elsewhere. `bbox` must be `grid` cells of `cell_mm` within 2%, `grid` 1 to 2,048 a side, and everything drawn on each level that goes with it, moved by `offset`, must lie inside `grid` (else 400 on `grid` or `offset`; the read's `frame_extent` `{x, y, w, h}` gives the whole cells it covers, null when empty). The grid takes `grid`, everything on it moves by `offset`, a floor picture is padded or cut, and the frame becomes the anchor and the one map - on the plan and the levels of the same grid and cell size (`map_levels` on the floor's read counts them).
+ `floorplan · change` is needed on each of them (else 403); `version` (the floor's `updated_at`) answers 409 when it changed since. Answers the floor with `grown`: `{left, top, right, bottom, levels, moved}`. A new map on a level of an aligned floor plan lies under the other levels of the same grid and cell size that have none (they take the anchor too, when they have none). Answers the floor. 400 on a live view. |
 | `DELETE /api/floor-plans/<id>/map/` | Removes the map from every floor drawing it and deletes its picture, and clears those floors' geo anchor (`state.from_map.bbox` keeps the old box, where From site map opens next). 204. |
 
 Both need `floorplan · change` on the floor (site-scoped grants apply);
@@ -422,7 +454,7 @@ shown at **true scale**: its units and the grid's cell size line up, so a
     When that size is no plausible floor plan, a warning says so and offers
     the unit that fixes it - see [Units and calibration](#units-and-calibration).
     **Reset calibration** goes back to the units.
-  - **Fit grid to drawing**; when the drawing needs more than 512 cells a
+  - **Fit grid to drawing**; when the drawing needs more than 2,048 cells a
     side, it offers the cell size that fits.
   - **Calibrate**: click two points on the drawing, type the distance between
     them in mm, **Save**. A drag still pans while you pick.
@@ -535,7 +567,7 @@ hidden, and whether text is hidden, is saved with the plan.
 Offset (in mm from the plan's top-left corner), rotation (0, 90, 180, 270)
 and opacity, as for a background image. **Fit grid to drawing** moves the
 drawing to the plan's corner and sets the grid to the cells that cover it,
-optionally at a new cell size; when that would take more than 512 cells a side
+optionally at a new cell size; when that would take more than 2,048 cells a side
 it says which cell size would fit.
 
 ### API
@@ -553,7 +585,7 @@ floor plan, changing needs **change**.
 | `POST /api/floor-plans/{id}/drawing/reprocess/` | Queues processing again. 202; 200 with the drawing unchanged while a run is already queued. |
 | `POST /api/floor-plans/{id}/drawing/calibrate/` | `{"a": [x, y], "b": [x, y], "distance_mm": n}`, points in the SVG's viewBox units, distance 1-1,000,000 mm. 409 until the drawing is ready. `DELETE` clears it. |
 | `POST /api/floor-plans/{id}/drawing/units/` | `{"units": "m"}` (`mm`, `cm`, `m`, `in`, `ft`): the units the drawing is really in, over the file's; drops any calibration. `{"units": null}` or `DELETE` trusts the file again. Returns the drawing. |
-| `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 512 cells. |
+| `POST /api/floor-plans/{id}/drawing/fit-grid/` | Optional `cell_mm` (50-5000). Returns `{floor_plan, drawing}`; 400 with `min_cell_mm` when the drawing needs more than 2,048 cells. |
 | `GET /api/floor-plans/{id}/drawing/loops/?x=&y=` | [Detect outline](#detect-outline)'s pick: the smallest closed shape of a shown layer round the plan point (`x`, `y` in cells) - `{"points": [[x, y], ...], "layer"}` in cells, at most 200 corners. Needs only **view**. 404 when no closed shape holds the point, 409 until the drawing is ready, 400 on a live view. |
 | `POST /api/floor-plans/{id}/drawing/render/` | `{"hidden_layers": [...], "hide_text": bool}`: a server render with those layers left out, for drawings too large to toggle in the browser. Needs only **view**. 200 with the cached render, or 202 when queued; `GET …/render/?key=` reports on it (`status`, `url`, `error`). The same request while one is queued returns that one. At most 3 renders of a drawing queue at once; past that, 429 until one finishes. The last 12 are kept. |
 
@@ -604,12 +636,18 @@ hairline on their edges, rooms and areas as flat tints in their own colour
 with a crisp outline, and name plates in the page's colours, as the 2D
 plan's chips. The [background layers](#backgrounds) texture the floor - the
 map first, then the uploaded blueprint or CAD drawing over it - muted like
-the 2D plan while **Display → Muted background** is on, and left out while
+the 2D plan while **Display → Muted background** is on (the street map and
+the floor picture; a satellite map keeps its colours), on the active level
+and the levels drawn around it alike, and left out while
 their eye is off. On an aligned floor plan the map lies on the ground
 level's floor only, never on a basement's or an upper level's slab. The
 grid is a soft guide near the camera: its cell lines fade out a few tens of
 cells away, so a campus seen whole shows no hatch. A site-sized plan keeps
-its floor layers (slab, map background, area tints) apart at any distance.
+its floor layers (slab, map background, area tints) apart at any distance,
+and orbiting low over it keeps the floor in front of the camera. On a
+building's levels the active level stands on its own outline (its exterior
+walls) rather than a slab the size of its grid, so a level framed on a
+site-sized map never hides the ground and its map.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 
@@ -1210,7 +1248,8 @@ Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
 change rather than an exit, so neither is guarded.
 
 Under **Display**: **Color by** heads the menu - see [below](#color-by);
-**Muted background** greys the background image so the plan reads over it
+**Muted background** greys the background image and a street base map so
+the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;

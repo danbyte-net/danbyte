@@ -35,7 +35,13 @@ import { cn } from "@/lib/utils"
 import { useTheme } from "@/components/theme-provider"
 
 import type { Pt } from "./cable-route"
-import { CELL, tileHasFov, tileIsZone, tileName } from "./canvas-geometry"
+import {
+  CELL,
+  gridLineStep,
+  tileHasFov,
+  tileIsZone,
+  tileName,
+} from "./canvas-geometry"
 import type { CellPoint, PaletteEntry } from "./canvas-geometry"
 import {
   ClusterTile,
@@ -74,7 +80,7 @@ import {
   readableShape,
   splitGrown,
 } from "./readable"
-import { MuteFilter, muteFilterId } from "./background-look"
+import { MuteFilter, muteFilterId, mutesBasemap } from "./background-look"
 import { OnionLayer } from "./onion-layer"
 import type { OnionSkin } from "./onion-layer"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
@@ -697,8 +703,15 @@ export function FloorCanvas({
   // The base map, when this floor draws it, and whether the floor layer
   // (picture or CAD drawing) is shown.
   const mapImage = (plan.map_visible && plan.base_map?.image) || null
+  // Satellite imagery keeps its colours: only the street map is muted.
+  const muteMap = muteBackground && mutesBasemap(plan.base_map?.basemap)
   const floorShown = plan.background_shown !== false
   const pxPerCell = CELL * t.k
+  // The grid's lines every cell up close, every 10 or 100 cells when the
+  // cells get smaller on screen than a few pixels: a site-sized plan
+  // fitted whole draws a light grid, not a grey wash of lines.
+  const gridEvery = gridLineStep(pxPerCell)
+
   const [hoverStore] = useState(createHoverStore)
   const hoveredTile = useSyncExternalStore(
     hoverStore.subscribe,
@@ -2158,18 +2171,19 @@ export function FloorCanvas({
         <defs>
           <pattern
             id="fp-grid"
-            width={CELL}
-            height={CELL}
+            width={CELL * gridEvery}
+            height={CELL * gridEvery}
             patternUnits="userSpaceOnUse"
           >
             <path
-              d={`M ${CELL} 0 L 0 0 0 ${CELL}`}
+              d={`M ${CELL * gridEvery} 0 L 0 0 0 ${CELL * gridEvery}`}
               fill="none"
               className="stroke-border"
               strokeWidth={1}
             />
           </pattern>
-          {muteBackground && (plan.background_image || mapImage) && (
+          {((muteBackground && plan.background_image) ||
+            (muteMap && mapImage)) && (
             <MuteFilter id={muteId} dark={theme === "dark"} />
           )}
         </defs>
@@ -2198,8 +2212,8 @@ export function FloorCanvas({
               height={backgroundFrame ? backgroundFrame.height * CELL : gh}
               opacity={(plan.map_opacity ?? 60) / 100}
               preserveAspectRatio="none"
-              filter={muteBackground ? `url(#${muteId})` : undefined}
-              data-muted={muteBackground || undefined}
+              filter={muteMap ? `url(#${muteId})` : undefined}
+              data-muted={muteMap || undefined}
             />
           )}
           {plan.background_image && floorShown && (
