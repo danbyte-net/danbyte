@@ -13443,6 +13443,8 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 "background_shown": plan.background_shown,
                 "base_map": base_map,
                 "map_opacity": plan.map_opacity,
+                # "map" (street) or "sat": only the street map is muted.
+                "basemap": (plan.base_map.basemap or "map") if base_map else None,
                 # Building levels: where this floor sits in its aligned
                 # floor plan (floor_stacks.floor_elevation), its slab and
                 # its offset in the stack's frame.

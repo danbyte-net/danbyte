@@ -74,7 +74,7 @@ import {
   readableShape,
   splitGrown,
 } from "./readable"
-import { MuteFilter, muteFilterId } from "./background-look"
+import { MuteFilter, muteFilterId, mutesBasemap } from "./background-look"
 import { OnionLayer } from "./onion-layer"
 import type { OnionSkin } from "./onion-layer"
 import { PlanLabelsLayer, useSettled } from "./plan-labels-layer"
@@ -686,6 +686,8 @@ export function FloorCanvas({
   // The base map, when this floor draws it, and whether the floor layer
   // (picture or CAD drawing) is shown.
   const mapImage = (plan.map_visible && plan.base_map?.image) || null
+  // Satellite imagery keeps its colours: only the street map is muted.
+  const muteMap = muteBackground && mutesBasemap(plan.base_map?.basemap)
   const floorShown = plan.background_shown !== false
   const pxPerCell = CELL * t.k
   const [hoverStore] = useState(createHoverStore)
@@ -2145,7 +2147,8 @@ export function FloorCanvas({
               strokeWidth={1}
             />
           </pattern>
-          {muteBackground && (plan.background_image || mapImage) && (
+          {((muteBackground && plan.background_image) ||
+            (muteMap && mapImage)) && (
             <MuteFilter id={muteId} dark={theme === "dark"} />
           )}
         </defs>
@@ -2174,8 +2177,8 @@ export function FloorCanvas({
               height={backgroundFrame ? backgroundFrame.height * CELL : gh}
               opacity={(plan.map_opacity ?? 60) / 100}
               preserveAspectRatio="none"
-              filter={muteBackground ? `url(#${muteId})` : undefined}
-              data-muted={muteBackground || undefined}
+              filter={muteMap ? `url(#${muteId})` : undefined}
+              data-muted={muteMap || undefined}
             />
           )}
           {plan.background_image && floorShown && (

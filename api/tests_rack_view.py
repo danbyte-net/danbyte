@@ -291,6 +291,7 @@ class FloorPlanSceneParityTests(_PinnedScene):
                 "background_image": None, "background_opacity": 60,
                 # Background layers and building levels, added since.
                 "background_shown": True, "base_map": None, "map_opacity": 60,
+                "basemap": None,
                 "elevation_mm": None, "slab_mm": 300, "align_dx": 0.0,
                 "align_dy": 0.0, "align_rot": 0.0,
             },

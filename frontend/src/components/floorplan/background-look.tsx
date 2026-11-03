@@ -6,7 +6,17 @@
  * (where it is also inverted, as a dark map is drawn). One SVG filter on
  * the plan (the PNG export carries it), and the same sums per pixel for the
  * 3D floor's texture (`muteRgb`).
+ *
+ * Only the street map and the floor's own picture are muted: satellite
+ * imagery greyed and squeezed turns into a grey mush, so a satellite base
+ * map keeps its colours and only its opacity (`mutesBasemap`).
  */
+
+/** Whether a base map of `basemap` ("map" street, "sat" satellite) takes
+ * the muted look. A map of unknown kind is taken as the street map. */
+export function mutesBasemap(basemap: string | null | undefined): boolean {
+  return basemap !== "sat"
+}
 
 /** How much colour the muted picture keeps (0 grey, 1 as it is). */
 export const MUTE_SATURATION = 0.15

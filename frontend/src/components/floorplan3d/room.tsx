@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import * as THREE from "three"
 
 import { useTheme } from "@/components/theme-provider"
-import { muteRgb } from "@/components/floorplan/background-look"
+import { mutesBasemap, muteRgb } from "@/components/floorplan/background-look"
 
 import { gridFade, roomLook } from "./room-look"
 
@@ -191,7 +191,7 @@ export function Room({
           w={w}
           d={d}
           opacity={(plan.map_opacity ?? 60) / 100}
-          muted={muted}
+          muted={muted && mutesBasemap(plan.basemap)}
           dark={dark}
           under
         />

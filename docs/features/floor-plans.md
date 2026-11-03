@@ -97,7 +97,7 @@ order:
 
 | Layer | What | Controls |
 |---|---|---|
-| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
+| **Map** | A snapshot of the [Site map](site-map.md) at true scale: street map or satellite, stretched over the grid. On a building's levels it is one map, shared - see [Building levels](#building-levels). **Display → Muted background** greys the street map; satellite imagery keeps its colours, with its opacity only. | **From site map…**, or with a map: **Map captured** *date*, **Map** / **Satellite**, **Update snapshot**, **Remove**; the eye; **Opacity**. |
 | **Floor drawing** | The floor's own picture (PNG, JPEG…) or [CAD drawing](#cad-drawings), over the map. One or the other: a drawing replaces the picture and a picture the drawing, each after a confirm. | **Upload image…** / **Replace image…**, **Remove**; **Upload drawing…** / **Replace drawing…**, **Remove**; the eye; **Opacity** (the picture's, or the drawing's placement opacity). |
 
 The eye hides or shows a layer on this floor and is saved with it, like the
@@ -604,7 +604,9 @@ hairline on their edges, rooms and areas as flat tints in their own colour
 with a crisp outline, and name plates in the page's colours, as the 2D
 plan's chips. The [background layers](#backgrounds) texture the floor - the
 map first, then the uploaded blueprint or CAD drawing over it - muted like
-the 2D plan while **Display → Muted background** is on, and left out while
+the 2D plan while **Display → Muted background** is on (the street map and
+the floor picture; a satellite map keeps its colours), on the active level
+and the levels drawn around it alike, and left out while
 their eye is off. On an aligned floor plan the map lies on the ground
 level's floor only, never on a basement's or an upper level's slab. The
 grid is a soft guide near the camera: its cell lines fade out a few tens of
@@ -1210,7 +1212,8 @@ Switching the same plan between 2D and 3D, or clearing a cable trace, is a view
 change rather than an exit, so neither is guarded.
 
 Under **Display**: **Color by** heads the menu - see [below](#color-by);
-**Muted background** greys the background image so the plan reads over it
+**Muted background** greys the background image and a street base map so
+the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;

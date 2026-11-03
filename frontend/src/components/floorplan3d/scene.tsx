@@ -912,6 +912,7 @@ export default function FloorScene3D({
               levels={levels}
               onGo={building.onGoLevel}
               ghostWalls={showCables}
+              muted={muteBackground}
             />
             {roofLevel && roofLevel !== activeLevel && (
               <Roofline placement={roofLevel} />
