@@ -55,9 +55,14 @@ class RunMigrateTests(SimpleTestCase):
                 if outcome is not None:
                     raise outcome
 
+        def fake_discard(alias):
+            self.discarded.append(alias)
+
         self.outcomes = []
+        self.discarded = []
         for target, value in (("core.upgrade_migrate.transaction.atomic", fake_atomic),
-                              ("core.upgrade_migrate._migrate", fake_migrate)):
+                              ("core.upgrade_migrate._migrate", fake_migrate),
+                              ("core.upgrade_migrate.discard_transaction", fake_discard)):
             p = patch(target, value)
             p.start()
             self.addCleanup(p.stop)
@@ -103,6 +108,13 @@ class RunMigrateTests(SimpleTestCase):
                 r = self._run([_mig("0184")])
                 self.assertEqual((r.code, r.mode), (0, "retried"))
                 self.assertEqual([c["atomic"] for c in self.calls], [True, False])
+
+    def test_the_failed_transaction_is_discarded_before_the_retry(self):
+        self.outcomes = [_db_error("55006"), None]
+        r = self._run([_mig("0184")])
+        self.assertEqual((r.code, r.mode), (0, "retried"))
+        self.assertEqual(self.discarded, ["default"])
+        self.assertEqual([c["atomic"] for c in self.calls], [True, False])
 
     def test_a_failed_retry_may_be_partial(self):
         self.outcomes = [_db_error("53200"), _db_error("42P07")]
@@ -180,6 +192,97 @@ class BoundaryFlushTests(TestCase):
             cmd.verbosity = 0
             cmd.migration_progress_callback("apply_success", _mig("0184"))
         flush.assert_not_called()
+
+
+class DataStepFlushTests(TestCase):
+    """A data step that updates rows inserted earlier in the same transaction
+    leaves foreign-key checks pending, and the index Django creates at the end
+    of the migration is refused (55006, as 0231 met on 0.18.1 installs with a
+    floor plan). Each RunPython is followed by a check in one-transaction
+    mode, as a plain migrate's commits would have done."""
+
+    def _pending_then_index(self, flush):
+        with connection.cursor() as cur:
+            cur.execute("CREATE TABLE zz_parent (id int PRIMARY KEY)")
+            cur.execute(
+                "CREATE TABLE zz_child (id int PRIMARY KEY, parent_id int "
+                "REFERENCES zz_parent(id) DEFERRABLE INITIALLY DEFERRED)"
+            )
+            cur.execute("SET CONSTRAINTS ALL DEFERRED")
+            cur.execute("INSERT INTO zz_parent VALUES (1)")
+            cur.execute("INSERT INTO zz_child VALUES (1, 1)")
+            if flush:
+                um.flush_deferred("default")
+            cur.execute("CREATE INDEX zz_child_parent ON zz_child (parent_id)")
+
+    def test_without_a_check_the_index_is_refused(self):
+        with self.assertRaises(OperationalError) as caught:
+            with transaction.atomic():
+                self._pending_then_index(flush=False)
+        self.assertEqual(um.sqlstate(caught.exception), "55006")
+
+    def test_a_check_after_the_data_step_lets_the_index_through(self):
+        with transaction.atomic():
+            self._pending_then_index(flush=True)
+
+    def test_run_python_steps_are_followed_by_a_check(self):
+        from django.db import migrations
+
+        from core.management.commands.migrate import Command
+
+        seen = []
+        step = migrations.RunPython(lambda apps, editor: seen.append("ran"))
+        sql = migrations.RunSQL("SELECT 1")
+        mig = SimpleNamespace(app_label="api", name="0184", atomic=True,
+                              operations=[step, sql])
+        cmd = Command(stdout=StringIO())
+        cmd.verbosity = 0
+        with patch("core.upgrade_migrate.flush_deferred",
+                   side_effect=lambda alias: seen.append(f"flush {alias}")):
+            with um._flush_at_boundaries("default"):
+                cmd.migration_progress_callback("apply_start", mig)
+                cmd.migration_progress_callback("apply_start", mig)  # wraps once
+            step.code(None, None)
+        self.assertEqual(seen, ["ran", "flush default"])
+        self.assertEqual(sql.sql, "SELECT 1")
+
+    def test_no_wrapping_outside_one_transaction(self):
+        from django.db import migrations
+
+        from core.management.commands.migrate import Command
+
+        code = lambda apps, editor: None  # noqa: E731
+        step = migrations.RunPython(code)
+        cmd = Command(stdout=StringIO())
+        cmd.verbosity = 0
+        cmd.migration_progress_callback(
+            "apply_start", SimpleNamespace(app_label="api", name="0184", operations=[step]))
+        self.assertIs(step.code, code)
+
+
+class DiscardTransactionTests(SimpleTestCase):
+    """A schema editor whose deferred SQL fails never closes its savepoint,
+    so leaving the outer atomic block only rolls back to it and the
+    transaction stays open; the retry must not run inside it."""
+
+    databases = {"default"}
+
+    def test_the_left_open_transaction_is_rolled_back(self):
+        outer = transaction.atomic()
+        outer.__enter__()
+        with connection.cursor() as cur:
+            cur.execute("CREATE TABLE zz_discard_probe (id int)")
+        transaction.atomic().__enter__()  # never exited, like the failed schema editor
+        outer.__exit__(RuntimeError, RuntimeError("deferred SQL failed"), None)
+        self.assertTrue(connection.in_atomic_block)  # what the retry used to run in
+
+        um.discard_transaction("default")
+
+        self.assertFalse(connection.in_atomic_block)
+        self.assertTrue(connection.get_autocommit())
+        with connection.cursor() as cur:
+            cur.execute("SELECT to_regclass('zz_discard_probe')")
+            self.assertIsNone(cur.fetchone()[0])
 
 
 class VerifyTests(TestCase):

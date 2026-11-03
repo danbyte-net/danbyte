@@ -79,7 +79,4 @@ class Migration(migrations.Migration):
         # Last: the update leaves deferred FK checks pending, which would
         # refuse any later ALTER TABLE or CREATE INDEX on these tables.
         migrations.RunPython(backfill_site, migrations.RunPython.noop),
-        # Last: the update leaves deferred FK checks pending, which would
-        # refuse any later ALTER TABLE or CREATE INDEX on these tables.
-        migrations.RunPython(backfill_site, migrations.RunPython.noop),
     ]
