@@ -1884,14 +1884,22 @@ function TopologyPage() {
       return JSON.stringify(a) === JSON.stringify(b) ? prev : undefined
     },
   })
+  const routingShown = useMemo(
+    () =>
+      rq.data
+        ? shownRouting(rq.data, routingSettings.layers, hidden)
+        : undefined,
+    [rq.data, routingSettings.layers, hidden]
+  )
   /** Where the Routing tab's cards and AS boxes stand: one undo step. The
-   * cards this user cannot see keep the places others gave them. */
+   * cards not drawn - out of this user's sight, or hidden - keep the places
+   * they had. */
   const setRoutingArrangement = (p: PosMap | null, z: Zone[]) => {
     edit({
       type: "setPositions",
       style: "routing",
       positions: p,
-      seen: rq.data?.nodes.map((n) => n.id),
+      seen: p ? routingShown?.nodes.map((n) => n.id) : undefined,
     })
     edit({ type: "setRegions", style: "routing", regions: z })
   }
@@ -1914,13 +1922,6 @@ function TopologyPage() {
       },
     ])
   }
-  const routingShown = useMemo(
-    () =>
-      rq.data
-        ? shownRouting(rq.data, routingSettings.layers, hidden)
-        : undefined,
-    [rq.data, routingSettings.layers, hidden]
-  )
 
   /** Everything the query returned plus the LLDP ghosts and BGP sessions
    * between those cards - what the sidebar lists, hidden or not. */
