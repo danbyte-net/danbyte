@@ -1,5 +1,5 @@
-Django>=5.2,<5.3
-djangorestframework>=3.15.2,<3.17
+Django>=5.2.17,<5.3
+djangorestframework>=3.18.3,<3.19
 drf-spectacular>=0.28            # OpenAPI 3 schema generation for the REST API
 drf-spectacular-sidecar         # bundles Swagger UI / ReDoc assets (offline / airgapped)
 django-filter>=24.3
@@ -29,12 +29,12 @@ openpyxl>=3.1
 jinja2>=3.1               # export templates and device config rendering (sandboxed)
 zensical>=0.0.45
 # Monitoring / check engine
-cryptography>=43.0        # secrets-at-rest (Fernet) for check credentials
+cryptography>=50.0.2        # secrets-at-rest (Fernet) for check credentials
 lxml>=5                   # XML parsing for SAML (manylinux wheel; no system libxml2 needed)
 signxml>=4                # pure-Python XML-DSig verify for SAML (rides lxml + cryptography, no xmlsec1)
 acme>=4,<5                # ACME client (RFC 8555) for certificate issuance
 josepy>=2                 # JOSE/JWK for the acme client (acme 4.x needs josepy 2)
-dnspython>=2             # RFC2136/TSIG dynamic DNS for ACME DNS-01 auto-publish
+dnspython>=2.9.1             # RFC2136/TSIG dynamic DNS for ACME DNS-01 auto-publish
 icmplib>=3.0              # async, unprivileged ICMP for the ping checker
 httpx>=0.27               # async HTTP checker
 asyncssh>=2.18            # async SSH checker
@@ -50,3 +50,13 @@ django-auth-ldap>=5.0     # optional LDAP/AD auth (pulls python-ldap; needs
 
 # Dev / CI tooling
 coverage>=7.6              # test coverage (CI + `make coverage`)
+
+# Security floors for packages pulled in by the ones above: each is the first
+# release without known advisories at the time it was set. Raise, never lower.
+pillow>=13.0.0            # via weasyprint / reportlab
+PyJWT>=2.15.1             # via djangorestframework-simplejwt
+certifi>=2026.10.18       # distrusted emSign root removed
+pyasn1>=0.6.5             # via pysnmp / python-ldap
+brotli>=1.2.1             # via weasyprint (fonttools)
+msgpack>=1.2.4            # via channels-redis
+autobahn>=26.10.2         # via daphne
