@@ -275,3 +275,115 @@ class DeleteAndPermissionTests(_CustomBase):
         p.actions = ["view", "add", "change", "delete"]
         p.save()
         self.ok(self.client.post(URL, {"label": "New"}, format="json"), 201)
+
+
+class BulkTests(_CustomBase):
+    """The list's bulk delete keeps a product in use with the single
+    delete's reason; the bulk edit writes the link and the notes. Both stay
+    inside the caller's tenant and grant."""
+
+    def setUp(self):
+        super().setUp()
+        self.free = EolProduct.objects.get(pk=self.create(label="Spare")["id"])
+        self.used = EolProduct.objects.get(pk=self.create(label="Acme ERP")["id"])
+        self.pg.eol_source, self.pg.eol_product = "custom", "acme-erp"
+        self.pg.save()
+        self.theirs = EolProduct.objects.create(tenant=self.other, source="custom",
+                                                name="theirs", label="Theirs")
+
+    def post(self, action, ids, **body):
+        return self.client.post(f"{URL}{action}/", {"ids": [str(i) for i in ids], **body},
+                                format="json")
+
+    def member(self, actions):
+        user = User.objects.create_user("member", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        p = ObjectPermission.objects.create(name="m", object_types=["eolproduct"],
+                                            actions=list(actions))
+        p.users.add(user)
+        p.tenants.add(self.tenant)
+        self.login(user)
+
+    def test_dry_run_names_the_products_in_use_and_deletes_nothing(self):
+        body = self.ok(self.post("bulk-delete", [self.free.id, self.used.id], dry_run=True))
+        self.assertEqual(body["deleted_ids"], [str(self.free.id)])
+        self.assertEqual(body["skipped"], [{
+            "id": str(self.used.id), "name": "Acme ERP",
+            "reason": "In use by 1 application - map them to another product first.",
+        }])
+        self.assertEqual(EolProduct.objects.filter(tenant=self.tenant).count(), 2)
+
+    def test_only_the_free_products_go_each_with_a_log_entry(self):
+        body = self.ok(self.post("bulk-delete", [self.free.id, self.used.id, self.theirs.id]))
+        self.assertEqual(body["deleted"], 1)
+        self.assertFalse(EolProduct.objects.filter(pk=self.free.pk).exists())
+        self.assertTrue(EolProduct.objects.filter(pk=self.used.pk).exists())
+        self.assertTrue(EolProduct.objects.filter(pk=self.theirs.pk).exists())
+        self.assertTrue(ChangeLogEntry.objects.filter(
+            object_type="compliance.eolproduct", object_id=str(self.free.pk),
+            action="delete").exists())
+
+    def test_a_catalog_product_never_falls_in(self):
+        fetched = EolProduct.objects.create(source="endoflife_date", name="x", label="X")
+        body = self.ok(self.post("bulk-delete", [fetched.id]))
+        self.assertEqual(body["deleted"], 0)
+        self.assertTrue(EolProduct.objects.filter(pk=fetched.pk).exists())
+
+    def test_bulk_delete_needs_the_delete_grant(self):
+        self.member(["view", "change"])
+        self.assertEqual(self.post("bulk-delete", [self.free.id]).status_code, 403)
+        self.assertTrue(EolProduct.objects.filter(pk=self.free.pk).exists())
+
+    def test_describes_its_fields(self):
+        body = self.ok(self.client.get(f"{URL}bulk-edit-fields/"))
+        self.assertEqual([f["key"] for f in body["fields"]], ["link", "notes"])
+        self.assertFalse(body["tags"])
+
+    def test_writes_link_and_notes_in_the_tenant_only(self):
+        body = self.ok(self.post("bulk-update", [self.free.id, self.used.id, self.theirs.id],
+                                 fields={"notes": "Vendor matrix",
+                                         "link": "https://acme.example/eol"}))
+        self.assertEqual(body["updated"], 2)
+        for p in (self.free, self.used):
+            p.refresh_from_db()
+            self.assertEqual((p.notes, p.link), ("Vendor matrix", "https://acme.example/eol"))
+        self.theirs.refresh_from_db()
+        self.assertEqual(self.theirs.notes, "")
+
+    def test_the_key_cycles_and_a_bad_link_are_refused(self):
+        for fields in ({"name": "x"}, {"releases": []}, {"label": "x"},
+                       {"link": "ftp://acme.example"}):
+            r = self.post("bulk-update", [self.free.id], fields=fields)
+            self.assertEqual(r.status_code, 400, fields)
+        self.free.refresh_from_db()
+        self.assertEqual((self.free.name, self.free.link), ("spare", ""))
+
+    def test_export_and_import_round_trip_the_tenants_products(self):
+        r = self.client.get("/api/io/eolproduct/export/?fmt=json")
+        self.assertEqual(r.status_code, 200)
+        text = b"".join(r.streaming_content).decode()
+        self.assertIn("acme-erp", text)
+        self.assertNotIn("theirs", text)
+        r = self.client.post("/api/io/eolproduct/import/", {
+            "format": "csv", "content": "label,notes\nNew Product,From a file\n",
+            "dry_run": False,
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual((r.json()["created"], r.json()["errors"]), (1, []))
+        row = EolProduct.objects.get(tenant=self.tenant, label="New Product")
+        self.assertEqual((row.source, row.name, row.notes),
+                         ("custom", "new-product", "From a file"))
+        # The key matches the row again rather than making a second one.
+        r = self.client.post("/api/io/eolproduct/import/", {
+            "format": "csv", "content": "name,label,notes\nnew-product,New Product,Again\n",
+            "dry_run": False,
+        }, format="json")
+        self.assertEqual((r.json()["created"], r.json()["updated"]), (0, 1), r.json())
+        row.refresh_from_db()
+        self.assertEqual(row.notes, "Again")
+
+    def test_bulk_edit_needs_the_change_grant(self):
+        self.member(["view", "delete"])
+        self.assertEqual(self.post("bulk-update", [self.free.id],
+                                   fields={"notes": "x"}).status_code, 403)
+        self.assertEqual(self.client.get(f"{URL}bulk-edit-fields/").status_code, 403)

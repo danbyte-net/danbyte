@@ -539,6 +539,14 @@ class ModelIOHandler:
             )
         return matches[0] if matches else None
 
+    def new_object(self, tenant):
+        """The unsaved row a create starts from: the tenant set, plus
+        whatever the type's API sets on create that no column carries."""
+        obj = self.model()
+        if _is_tenant_scoped(self.model):
+            obj.tenant = tenant
+        return obj
+
     def apply(self, existing, row, tenant, user=None, request=None):
         """Build/mutate + validate (no save). Returns
         ``(obj, action, changes, tag_names)``. ``tag_names`` is ``None`` when the
@@ -554,9 +562,7 @@ class ModelIOHandler:
         kept on the object, and :meth:`commit` saves through the viewset's
         own create/update hooks (#364, #365)."""
         if existing is None:
-            obj = self.model()
-            if _is_tenant_scoped(self.model):
-                obj.tenant = tenant
+            obj = self.new_object(tenant)
             action = "create"
             old = {}
             old_cf = {}

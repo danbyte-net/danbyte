@@ -12,6 +12,10 @@ import touches it (``eol.store_catalog`` writes the source's rows only).
 object type. Each save refills the mappings on the product and redoes the
 cycles of the installs that name it (``eol.apply_custom``). A product an
 application or a platform still names cannot be deleted.
+
+The list has the shared bulk endpoints of :class:`~api.bulk_edit.BulkEditMixin`:
+``bulk-update`` / ``bulk-edit-fields`` for the link and the notes, and
+``bulk-delete``, which keeps a product in use with the single delete's reason.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ from rest_framework import serializers
 from rest_framework import status as drf_status
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.views import _get_active_tenant
 from api.viewsets import TenantScopedViewSet
 
@@ -215,6 +220,18 @@ def _usage(product) -> tuple[int, int]:
     return apps, platforms
 
 
+def _in_use_reason(apps: int, platforms: int) -> str | None:
+    """Why a product named this often may not be deleted, or None."""
+    parts = []
+    if apps:
+        parts.append(f"{apps} application{'' if apps == 1 else 's'}")
+    if platforms:
+        parts.append(f"{platforms} platform{'' if platforms == 1 else 's'}")
+    if not parts:
+        return None
+    return f"In use by {' and '.join(parts)} - map them to another product first."
+
+
 def _count(qs):
     return Coalesce(
         Subquery(qs.order_by().values("tenant_id").annotate(c=Count("pk")).values("c")[:1],
@@ -223,11 +240,13 @@ def _count(qs):
     )
 
 
-class EolCustomProductViewSet(TenantScopedViewSet):
+class EolCustomProductViewSet(BulkEditMixin, TenantScopedViewSet):
     """The active tenant's custom end-of-life products."""
 
     serializer_class = EolCustomProductSerializer
     queryset = EolProduct.objects.filter(source=CUSTOM).order_by("label", "name")
+    # The key is fixed and the cycles belong to one product: not bulk edits.
+    bulk_edit = BulkEditSpec(fields=("link", "notes"), tags=False)
 
     def get_queryset(self):
         from api.models import Application
@@ -261,16 +280,22 @@ class EolCustomProductViewSet(TenantScopedViewSet):
 
     def destroy(self, request, *args, **kwargs):
         product = self.get_object()
-        apps, platforms = _usage(product)
-        if apps or platforms:
-            parts = []
-            if apps:
-                parts.append(f"{apps} application{'' if apps == 1 else 's'}")
-            if platforms:
-                parts.append(f"{platforms} platform{'' if platforms == 1 else 's'}")
-            return Response(
-                {"detail": f"In use by {' and '.join(parts)} - map them to "
-                           "another product first."},
-                status=drf_status.HTTP_409_CONFLICT,
-            )
-        return super().destroy(request, *args, **kwargs)
+        reason = _in_use_reason(*_usage(product))
+        if reason:
+            return Response({"detail": reason}, status=drf_status.HTTP_409_CONFLICT)
+        return TenantScopedViewSet.destroy(self, request, *args, **kwargs)
+
+    def bulk_blockers(self, rows) -> dict:
+        """The single delete's rule for every row at once, from the counts
+        ``get_queryset`` annotates - across the tenant, not only the rows
+        the caller may view."""
+        out = super().bulk_blockers(rows)
+        for obj in rows:
+            apps = getattr(obj, "application_count", None)
+            platforms = getattr(obj, "platform_count", None)
+            if apps is None or platforms is None:
+                apps, platforms = _usage(obj)
+            reason = _in_use_reason(apps, platforms)
+            if reason:
+                out.setdefault(obj.pk, reason)
+        return out
