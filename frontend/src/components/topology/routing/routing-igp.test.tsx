@@ -214,7 +214,7 @@ const map: RoutingTopology = {
   meta: {
     layers: { ...DEFAULT_LAYERS, cables: true },
     requested: ["ospf", "isis", "static"],
-    vrf: "global",
+    vrf: "all",
     vrfs: [{ id: "v", name: "red", color: "#ef4444" }],
   },
   checks: [check],
@@ -265,10 +265,14 @@ describe("IGP and static lines", () => {
 describe("VRF and Checks settings", () => {
   it("read and save the table and the chip", () => {
     const id = "0b5e2a4c-1f2d-4e5f-8a9b-0c1d2e3f4a5b"
-    expect(readVrf(undefined)).toBe("global")
-    expect(readVrf("red")).toBe("global")
-    expect(readVrf("all")).toBe("all")
+    // Nothing picked (a view saved before the picker) is every table.
+    expect(readVrf(undefined)).toBe("all")
+    expect(readVrf("red")).toBe("all")
+    expect(readVrf("global")).toBe("global")
     expect(readVrf(id.toUpperCase())).toBe(id)
+    const old = readRoutingDisplay({ mode: "simple" })
+    expect(old.vrf).toBe("all")
+    expect(routingDisplay(old)).toEqual({ mode: "simple" })
     const s = readRoutingDisplay({ vrf: id, checks: true })
     expect([s.vrf, s.checks]).toEqual([id, true])
     expect(routingDisplay(s)).toEqual({
@@ -276,19 +280,20 @@ describe("VRF and Checks settings", () => {
       vrf: id,
       checks: true,
     })
+    expect(routingDisplay({ ...old, vrf: "global" }).vrf).toBe("global")
     expect(routingDisplay(readRoutingDisplay({}))).toEqual({ mode: "detailed" })
   })
 
-  it("offers Global, every table and the map's VRFs", () => {
-    expect(vrfOptions(map.meta.vrfs!, "global").map((o) => o.name)).toEqual([
-      "Global",
+  it("offers every table, Global and the map's VRFs", () => {
+    expect(vrfOptions(map.meta.vrfs!, "all").map((o) => o.name)).toEqual([
       "All tables",
+      "Global",
       "red",
     ])
     // A view's VRF with no line on this map is still the one picked.
     expect(vrfOptions([], "x").map((o) => o.value)).toEqual([
-      "global",
       "all",
+      "global",
       "x",
     ])
   })

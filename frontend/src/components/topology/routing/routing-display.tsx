@@ -20,15 +20,16 @@ import { PopoverField } from "../filters-popover"
 import { ROUTING_FIELDS, ROUTING_LAYERS } from "./routing-model"
 import type { RoutingSettings } from "./routing-model"
 
-/** The tables the VRF picker offers: Global, every one, then the map's
- * VRFs - the one picked kept while the map has no line in it. */
+/** The tables the VRF picker offers: every one (the default), Global,
+ * then the map's VRFs - the one picked kept while the map has no line in
+ * it. */
 export function vrfOptions(
   vrfs: readonly (RoutingRef & { color?: string | null })[],
   picked: RoutingVrf
 ): { value: RoutingVrf; name: string; color?: string | null }[] {
   const out: { value: RoutingVrf; name: string; color?: string | null }[] = [
-    { value: "global", name: "Global" },
     { value: "all", name: "All tables" },
+    { value: "global", name: "Global" },
     ...vrfs.map((v) => ({ value: v.id, name: v.name, color: v.color })),
   ]
   if (!out.some((o) => o.value === picked))

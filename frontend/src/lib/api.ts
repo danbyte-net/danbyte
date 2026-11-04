@@ -5029,7 +5029,7 @@ export interface RoutingDisplay {
   layers?: Partial<Record<RoutingLayer, boolean>>
   /** The card lines; absent = the default list. */
   fields?: RoutingCardField[]
-  /** The table drawn; absent = the global one. */
+  /** The table drawn; absent = every table. */
   vrf?: RoutingVrf
   /** The Checks chip on; absent = off. */
   checks?: boolean

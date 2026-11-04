@@ -62,12 +62,13 @@ export const FETCHED_LAYERS: readonly RoutingLayer[] = [
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** A table the picker can name: `global`, `all` or a VRF id. Anything
- * else reads as the global table. */
+/** A table the picker can name: `all`, `global` or a VRF id. Anything
+ * else - nothing picked, as in a view saved before the picker - reads as
+ * every table. */
 export function readVrf(raw: unknown): RoutingVrf {
-  if (raw === "all") return "all"
+  if (raw === "global") return "global"
   if (typeof raw === "string" && UUID_RE.test(raw)) return raw.toLowerCase()
-  return "global"
+  return "all"
 }
 
 /** What each Checks item is called in the chip's list. */
@@ -158,7 +159,7 @@ export function routingDisplay(s: RoutingSettings): RoutingDisplay {
     s.fields.length === DEFAULT_FIELDS.length &&
     s.fields.every((f, i) => f === DEFAULT_FIELDS[i])
   if (!same) out.fields = s.fields
-  if (s.vrf !== "global") out.vrf = s.vrf
+  if (s.vrf !== "all") out.vrf = s.vrf
   if (s.checks) out.checks = true
   return out
 }

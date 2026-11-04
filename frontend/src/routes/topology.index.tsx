@@ -382,8 +382,8 @@ export interface TopologySearch {
   /** Logical tab. */
   vlangroup?: string
   vms?: boolean
-  /** Routing tab: the table drawn - `all` or a VRF id (absent = the
-   * view's, else the global table). */
+  /** Routing tab: the table drawn - `global` or a VRF id (absent = the
+   * view's, else every table). */
   vrf?: string
 }
 
@@ -2195,7 +2195,7 @@ function TopologyPage() {
         lag: lagMode,
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
         // The Routing tab's table, the URL's.
-        ...(doc.doc.filters.routing !== undefined || routingVrf !== "global"
+        ...(doc.doc.filters.routing !== undefined || routingVrf !== "all"
           ? {
               routing: routingDisplay({ ...routingSettings, vrf: routingVrf }),
             }

@@ -666,13 +666,14 @@ it, saved with the view, and a line's own eye hides that one line. A layer
 you may not see is not offered.
 
 **VRF.** **Display ▸ VRF** picks the table the routing lines are drawn
-for: **Global** (the default), one of the VRFs the map's processes and
-routes run in (each in its color), or **All tables**. It narrows every
-routing layer - eBGP, iBGP, OSPF, IS-IS, static - to that table; a VRF
+for: **All tables** (the default when none is picked, so a view saved
+before the picker shows what it always did), **Global**, or one of the
+VRFs the map's processes and routes run in (each in its color). Global or
+a VRF narrows every routing layer - eBGP, iBGP, OSPF, IS-IS, static - to that table; a VRF
 also keeps the global table's VPNv4/VPNv6 BGP lines between two routers
 that run it (the PEs' transport), so an L3VPN shows its PE-CE eBGP and
 the VPN iBGP between its PEs. Circuits and cables belong to no table and
-always show. The pick is in the URL (`?vrf=all` or `?vrf=<id>`) and saved
+always show. The pick is in the URL (`?vrf=global` or `?vrf=<id>`) and saved
 with the view (`filters.routing.vrf`).
 
 **Checks.** **Display ▸ Checks** (off by default, saved with the view as
@@ -1792,7 +1793,7 @@ back button and a reload all keep it.
 | `chassis` | with `devices`: the virtual chassis placed on that map, comma-separated, up to 200 |
 | `q` | the **Find on map** box (never an edit of a saved view) |
 | `vlangroup` `vms` | Logical view: VLAN group, `vms=0` hides VMs |
-| `vrf` | Routing view: the table drawn - `all` or a VRF id (the view's, else the global table, by default) |
+| `vrf` | Routing view: the table drawn - `global` or a VRF id (the view's, else every table, by default) |
 
 A setting on its default is left out, so a link stays short. A bare
 `/topology` opens the tenant's [default view](#default-view), or No view
@@ -2346,8 +2347,8 @@ The query is the graph endpoint's: `site`, `location`, `role`, `status`,
 routing hops around the router, over the lines drawn), plus `layers` - a
 comma-separated (or JSON) list of `ebgp`, `ibgp`, `ospf`, `isis`,
 `static`, `circuits`, `cables`, default all but `cables` - and `vrf`, the
-table the routing lines are drawn for: `global` (the default), `all` or a
-VRF id. An unknown layer, a `vrf` that is none of those or a malformed id
+table the routing lines are drawn for: `all` (every table, the default),
+`global` or a VRF id. An unknown layer, a `vrf` that is none of those or a malformed id
 is a 400, no `device.view` a 403. A VM has
 no location: a `location` filter or a hand-picked set leaves VMs out.
 
@@ -2426,7 +2427,7 @@ no location: a `location` filter or a hand-picked set leaves VMs out.
   "meta": {"layers": {"ebgp": true, "ibgp": true, "ospf": true, "isis": true,
                       "static": true, "circuits": false, "cables": true},
            "requested": ["circuits", "ebgp", "ibgp", "isis", "ospf", "static"],
-           "vrf": "global",
+           "vrf": "all",
            "vrfs": [{"id": "…", "name": "red", "color": "#ef4444"}]}
 }
 ```
@@ -2464,9 +2465,10 @@ no location: a `location` filter or a hand-picked set leaves VMs out.
 - **VRF.** `vrf_id` (and `vrf`, its name) is a routing line's table. With
   `vrf=global` only the global table's lines come; with a VRF id that
   VRF's, plus the global table's BGP lines with VPNv4/VPNv6 between two
-  routers that run that VRF; with `all` every table's. `meta.vrfs` lists
-  the VRFs the map's processes and static routes run in (whatever is
-  drawn), `meta.vrf` the table drawn. Circuits and cables are never
+  routers that run that VRF; with `all` - or no `vrf` at all - every
+  table's. `meta.vrfs` lists the VRFs the map's processes and static
+  routes run in (whatever is drawn), `meta.vrf` the table drawn (`all`
+  when none was asked for). Circuits and cables are never
   narrowed.
 - **Checks** (`checks`) are worked out over the routing lines returned:
   `bgp_one_sided`, `bgp_as_mismatch`, `ospf_area` (cabled only),
@@ -2549,7 +2551,7 @@ earlier versions load and save unchanged.
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
-| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, ospf, isis, static, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status], vrf: global\|all\|<VRF id>, checks: bool}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`; absent `vrf` the global table; absent `checks` off. |
+| `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, ospf, isis, static, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status], vrf: global\|all\|<VRF id>, checks: bool}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`; absent `vrf` every table (`all`); absent `checks` off. |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
 | `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |

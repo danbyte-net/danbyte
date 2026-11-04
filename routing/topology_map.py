@@ -30,7 +30,7 @@ tag`` narrow the set, ``devices`` (with ``chassis``) is a hand-picked map and
 ``device``/``depth`` focuses on one router and its routing neighbours that
 many hops out. ``layers`` names the lines wanted (default every one but
 ``cables``). ``vrf`` is the table the routing lines are drawn for:
-``global`` (the default), a VRF id or ``all``. A VRF keeps, besides its own
+``all`` (every table, the default), ``global`` or a VRF id. A VRF keeps, besides its own
 lines, the global table's VPNv4/VPNv6 BGP lines between two routers that
 run it. Circuits and cables belong to no table.
 
@@ -106,7 +106,7 @@ LAYERS = ("ebgp", "ibgp", "ospf", "isis", "static", "circuits", "cables")
 DEFAULT_LAYERS = frozenset(LAYERS) - {"cables"}
 #: The layers whose lines belong to one routing table (the VRF picker's).
 TABLE_LAYERS = frozenset({"ebgp", "ibgp", "ospf", "isis", "static"})
-#: ``vrf``: the global table (the default), every table, or a VRF id.
+#: ``vrf``: every table (the default), the global table, or a VRF id.
 VRF_GLOBAL = "global"
 VRF_ALL = "all"
 #: The global-table families that carry a VRF's routes between its PEs.
@@ -146,13 +146,13 @@ def _layers_param(params):
 
 
 def _vrf_param(params):
-    """``global``, ``all`` or a VRF id (a 400 for anything else)."""
+    """``all`` (absent too), ``global`` or a VRF id (a 400 for anything else)."""
     raw = params.get("vrf")
     text = "" if raw is None else str(raw).strip()
-    if text in ("", VRF_GLOBAL):
-        return VRF_GLOBAL
-    if text == VRF_ALL:
+    if text in ("", VRF_ALL):
         return VRF_ALL
+    if text == VRF_GLOBAL:
+        return VRF_GLOBAL
     return _parse_uuid(text, "vrf")
 
 
@@ -1228,8 +1228,8 @@ _PARAMS = [
         ("depth", f"Routing hops around the focus (1-{MAX_DEPTH}, default 1)."),
         ("layers", "Comma-separated lines: ebgp, ibgp, ospf, isis, static, "
                    "circuits, cables (default all but cables)."),
-        ("vrf", "The table the routing lines are drawn for: global (default), "
-                "a VRF id, or all."),
+        ("vrf", "The table the routing lines are drawn for: all (default), global, "
+                "or a VRF id."),
     )
 ]
 
@@ -1254,7 +1254,7 @@ def routing_topology_view(request):
     if tenant is None:
         return Response({"nodes": [], "edges": [], "as_groups": [], "checks": [],
                          "meta": {"layers": {k: False for k in LAYERS}, "requested": [],
-                                  "vrf": VRF_GLOBAL, "vrfs": []}})
+                                  "vrf": VRF_ALL, "vrfs": []}})
     graph = build_routing_map(request.user, tenant, _query_params(request))
     if graph is None:
         return Response({"detail": "device.view required."}, status=403)

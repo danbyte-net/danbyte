@@ -199,8 +199,12 @@ class OSPFTests(_IGPBase):
         self._cable(c, d)
         self._iface(self.o1, c)
         self._iface(self.o2, d)
-        g = self._get()
+        g = self._get("vrf=global")
         self.assertEqual(g["meta"]["vrf"], "global")
+        # Unpicked is every table, as before the picker.
+        g_all = self._get()
+        self.assertEqual(g_all["meta"]["vrf"], "all")
+        self.assertEqual(len(self._edges(g_all, "ospf")), 2)
         self.assertEqual(g["meta"]["vrfs"],
                          [{"id": str(red.id), "name": "red", "color": None}])
         self.assertEqual([e["data"]["vrf"] for e in self._edges(g, "ospf")], [None])
@@ -292,7 +296,7 @@ class StaticTests(_IGPBase):
         # In red, 10.0.0.2 is nobody; 10.9.9.2 is r2.
         self._route("10.1.0.0/16", "10.0.0.2", vrf=self.red)
         self._route("10.2.0.0/16", "10.9.9.2", vrf=self.red)
-        self.assertFalse(self._edges(self._get(), "static"))
+        self.assertFalse(self._edges(self._get("vrf=global"), "static"))
         [e] = self._edges(self._get(f"vrf={self.red.id}"), "static")
         self.assertEqual([r["prefix"] for r in e["data"]["routes"]], ["10.2.0.0/16"])
         self.assertEqual(e["data"]["vrf"], "red")
@@ -334,8 +338,12 @@ class BGPChecksAndVrfTests(_IGPBase):
         self._session(v1, ce, 65050, "192.0.2.2")
         g = self._get(f"vrf={red.id}")
         self.assertEqual(sorted(e["type"] for e in g["edges"]), ["ebgp", "ibgp"])
-        g = self._get()
+        g = self._get("vrf=global")
         self.assertEqual([e["type"] for e in g["edges"]], ["ibgp"])
+        # Unpicked: every table, the VRF's line too (as before the picker).
+        g = self._get()
+        self.assertEqual(g["meta"]["vrf"], "all")
+        self.assertEqual(sorted(e["type"] for e in g["edges"]), ["ebgp", "ibgp"])
 
 
 class LayerAccessTests(_IGPBase):
