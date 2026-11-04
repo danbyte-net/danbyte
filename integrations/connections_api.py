@@ -14,6 +14,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.models import VRF
 from api.serializers import TenantScopedPrimaryKeyRelatedField
 from api.viewsets import TenantScopedViewSet
@@ -158,10 +159,17 @@ class WindowsServerConnectionSerializer(
                             *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
 
-class WindowsServerConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class WindowsServerConnectionViewSet(
+    BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet
+):
     integration_keys = ("dhcp", "dns")
     queryset = WindowsServerConnection.objects.all().order_by("name")
     serializer_class = WindowsServerConnectionSerializer
+    # The switches and the poll interval; host, login and VRF stay per server.
+    bulk_edit = BulkEditSpec(
+        fields=("enabled", "dhcp_enabled", "dns_enabled", "poll_interval_minutes"),
+        tags=False,
+    )
 
     def get_queryset(self):
         # Leases across the connection's scopes + its zones - two reverse
@@ -362,10 +370,15 @@ class VirtualizationSourceSerializer(
                             *AddressPlacementSerializerMixin.PLACEMENT_READ_ONLY]
 
 
-class VirtualizationSourceViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+class VirtualizationSourceViewSet(BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet):
     integration_keys = ("virtualization",)
     queryset = VirtualizationSource.objects.all().order_by("name")
     serializer_class = VirtualizationSourceSerializer
+    # The switch, the mode and the poll interval; the API, login and sync scope
+    # stay per source.
+    bulk_edit = BulkEditSpec(
+        fields=("enabled", "sync_mode", "poll_interval_minutes"), tags=False
+    )
 
     def get_queryset(self):
         qs = super().get_queryset()

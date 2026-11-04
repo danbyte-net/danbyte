@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api, type DnsZone, type Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { RowActions } from "@/components/row-actions"
+import { buildDnsZoneColumns } from "@/components/columns/dns-zone-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { TableActions } from "@/components/table-actions"
 import { DnsZoneDialog } from "@/components/integrations/dns-zone-dialog"
 import { useFacetRail } from "@/lib/use-facet-rail"
 import { useUrlSearch } from "@/lib/url-filters"
@@ -27,8 +27,11 @@ function DnsZonesPage() {
   const { canDo } = useMe()
   const [q, setQ] = useUrlSearch()
   const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<DnsZone[]>([])
   const canManage = canDo("dnszone", "add")
+  const canEdit = canDo("dnszone", "change")
   const canDelete = canDo("dnszone", "delete")
+  const selectable = canEdit || canDelete
   const query = useQuery({
     queryKey: ["dns-zones", "all", q],
     queryFn: () =>
@@ -48,132 +51,26 @@ function DnsZonesPage() {
     onError: (e) => apiErrorToast(e),
   })
 
-  const columns = useMemo<ColumnDef<DnsZone>[]>(
-    () => [
-      {
-        id: "name",
-        accessorKey: "name",
-        header: ({ column }) => <SortHeader column={column} label="Zone" />,
-        cell: ({ row }) => (
-          <span className="inline-flex items-center gap-1.5">
-            <Link
-              to="/dns-zones/$id"
-              params={{ id: row.original.id }}
-              className="link font-mono text-xs font-medium"
-            >
-              {row.original.name}
-            </Link>
-            {row.original.managed && (
-              <Badge
-                variant="outline"
-                className="text-[9px] text-muted-foreground"
-                title="Authored in Danbyte - not mirrored from a server"
-              >
-                managed
-              </Badge>
-            )}
-          </span>
-        ),
-      },
-      {
-        id: "type",
-        accessorKey: "zone_type",
-        header: "Type",
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.zone_type}
-            {row.original.is_reverse ? " · reverse" : ""}
-          </span>
-        ),
-      },
-      {
-        id: "server",
-        accessorKey: "connection_name",
-        header: "Server",
-        cell: ({ row }) =>
-          row.original.connection ? (
-            <Link
-              to="/windows-servers/$id"
-              params={{ id: row.original.connection }}
-              className="link text-xs"
-            >
-              {row.original.connection_name}
-            </Link>
-          ) : (
-            <span className="text-xs text-muted-foreground">Local</span>
-          ),
-      },
-      {
-        id: "records",
-        accessorKey: "record_count",
-        header: ({ column }) => <SortHeader column={column} label="Records" />,
-        cell: ({ row }) =>
-          row.original.sync && row.original.record_count > 0 ? (
-            <Link
-              to="/dns-records"
-              search={{ zone: row.original.id }}
-              className="num link"
-            >
-              {row.original.record_count}
-            </Link>
-          ) : (
-            <span className="num">
-              {row.original.sync ? row.original.record_count : "-"}
-            </span>
-          ),
-      },
-      {
-        id: "reconcile",
-        header: "Reconcile",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.sync ? (
-            <Badge variant="success" className="text-[10px]">
-              on
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">off</span>
-          ),
-      },
-      {
-        id: "drift",
-        header: "Drift",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.drift_count > 0 ? (
-            <Badge variant="destructive" className="text-[10px]">
-              {row.original.drift_count}
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">-</span>
-          ),
-      },
-      // The zone name is the Open link; a zone's settings (reconcile,
-      // auto-add) live on its detail page, so there is no row Edit. Delete
-      // only applies to Danbyte-authored zones - a synced zone would just
-      // return on the next sync. With no managed zones every cell would be
-      // empty, so the column itself is dropped rather than left as a sliver.
-      ...(canDelete && rows.some((z) => z.managed)
-        ? [
-            {
-              id: "actions",
-              header: "",
-              enableSorting: false,
-              cell: ({ row }) => (
-                <RowActions
-                  onDelete={
-                    row.original.managed
-                      ? () => del.mutate(row.original)
-                      : undefined
-                  }
-                  deleteLabel="Delete zone"
-                />
-              ),
-            } satisfies ColumnDef<DnsZone>,
-          ]
-        : []),
-    ],
-    [canDelete, del, rows]
+  // The zone name is the Open link; a zone's settings (reconcile, auto-add)
+  // live on its detail page, so there is no row Edit. Delete only applies to
+  // Danbyte-authored zones - a synced zone would just return on the next
+  // sync. With no managed zones every cell would be empty, so the column
+  // itself is dropped rather than left as a sliver.
+  const hasManaged = rows.some((z) => z.managed)
+  const columns = useMemo(
+    () =>
+      buildDnsZoneColumns<DnsZone>({
+        selection: selectable,
+        actions:
+          canDelete && hasManaged
+            ? {
+                onDelete: (z) => del.mutate(z),
+                canDelete: (z) => z.managed,
+                deleteLabel: "Delete zone",
+              }
+            : undefined,
+      }),
+    [selectable, canDelete, hasManaged, del]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -208,11 +105,14 @@ function DnsZonesPage() {
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter zones…" }}
       actions={
-        canManage ? (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" /> Add zone
-          </Button>
-        ) : undefined
+        <>
+          <TableActions ioType="dnszone" />
+          {canManage && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="h-3.5 w-3.5" /> Add zone
+            </Button>
+          )}
+        </>
       }
     >
       {rows.length === 0 && query.data && !q ? (
@@ -227,8 +127,20 @@ function DnsZonesPage() {
           columns={columns}
           tableId="dns-zones-all"
           flexColumn="name"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/dns-zones/"
+        noun={["zone", "zones"]}
+        invalidate={[["dns-zones"], ["dns-records"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="dnszone"
+      />
       {creating && <DnsZoneDialog onOpenChange={setCreating} />}
     </ListPageShell>
   )

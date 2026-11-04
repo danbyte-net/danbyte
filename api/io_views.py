@@ -199,7 +199,7 @@ def io_fields_view(request, slug):
 
 
 def _scoped_qs(request, tenant, handler, model, action):
-    qs = model._default_manager.filter(tenant=tenant)
+    qs = handler.tenant_rows(tenant)
     qs = rbac.restrict_queryset(qs, request.user, tenant, handler.slug, action)
     return handler.export_queryset(qs)
 

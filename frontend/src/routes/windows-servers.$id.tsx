@@ -32,17 +32,15 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { DhcpReservationDialog } from "@/components/integrations/dhcp-reservation-dialog"
 import { DnsPanel } from "@/components/integrations/dns-panel"
 import { WindowsConnectionDialog } from "@/components/integrations/windows-connection-dialog"
-import { SyncStatusBadge, roleBadges } from "./windows-servers.index"
+import {
+  SyncStatusBadge,
+  roleBadges,
+} from "@/components/columns/windows-server-columns"
 
 const OBJECT_TYPE = "integrations.windowsserverconnection"
 
 type Tab =
-  | "overview"
-  | "reservations"
-  | "leases"
-  | "dns"
-  | "journal"
-  | "history"
+  "overview" | "reservations" | "leases" | "dns" | "journal" | "history"
 const TABS: readonly Tab[] = [
   "overview",
   "reservations",

@@ -6646,10 +6646,12 @@ class ClusterViewSet(TenantScopedViewSet):
         return Response({"output": output, "template": tmpl.name})
 
 
-class VirtualSwitchViewSet(TenantScopedViewSet):
+class VirtualSwitchViewSet(BulkEditMixin, TenantScopedViewSet):
     queryset = VirtualSwitch.objects.all().order_by(NATURAL_NAME)
     serializer_class = VirtualSwitchSerializer
     pagination_class = StandardPagination
+    # The VRF is what a switch's page edits; the rest comes from the sync.
+    bulk_edit = BulkEditSpec(fields=("vrf_id",), tags=False)
 
     def get_queryset(self):
         qs = (
@@ -9726,7 +9728,11 @@ class TunnelTerminationViewSet(TenantScopedViewSet):
         forget_visible(serializer.instance)
 
 
-class L2VPNViewSet(TenantScopedViewSet):
+class L2VPNViewSet(BulkEditMixin, TenantScopedViewSet):
+    # The VRF is checked per row: only an EVPN overlay carries one.
+    bulk_edit = BulkEditSpec(
+        fields=("status_id", "vrf_id", "description"), custom_fields=True
+    )
     queryset = (
         L2VPN.objects
         .select_related("status", "vrf")

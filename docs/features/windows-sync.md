@@ -31,6 +31,17 @@ roles. A connection carries:
 (DHCP) and zone count (DNS), so a permission or role problem shows up before
 the first sync.
 
+On **Integrations → Windows servers**, tick rows - with the `change` or
+`delete` grant on Windows server connections - for the bulk bar:
+
+- **Export** downloads the selected connections as CSV, Excel or JSON. The
+  password is never a column.
+- **Edit** sets **Enabled**, **Sync DHCP**, **Sync DNS** and the **Poll
+  interval** on every selected server. Host, login and VRF stay per server.
+- **Delete** shows a preview first - the synced scopes and zones that go with
+  the servers - then removes them, as a single delete does. Prefixes,
+  addresses and records the sync created stay in IPAM.
+
 !!! tip "Service account, not domain admin"
     Use a dedicated service account in the **DHCP Administrators** group (and
     with DNS management rights if syncing DNS). Windows DHCP has no per-scope
@@ -150,6 +161,30 @@ or overwriting. Resolve each flag with **Accept** (take the server's version)
 or **Push ours** (re-assert Danbyte's). Reservations that only ever lived on
 the server simply mirror it and are never flagged.
 
+### Bulk actions on the DHCP lists {#dhcp-bulk}
+
+Tick rows on **DHCP scopes**, **DHCP reservations** or **DHCP leases** for the
+bulk bar. What it offers follows what a single row allows:
+
+| List | Who can tick | Export | Edit | Delete |
+| --- | --- | --- | --- | --- |
+| DHCP scopes | `change` or `delete` on scopes | yes | **Lease sync** | yes |
+| DHCP reservations | `change` or `delete` on reservations | yes | - | yes |
+| DHCP leases | `view` on leases | yes | - | - |
+
+- **Export** downloads the selected rows as CSV, Excel or JSON - synced and
+  local rows alike. These types are export-only: their writes go to the
+  Windows server, which only the API does.
+- **Edit** on scopes sets **Lease sync**, the one Danbyte-side switch a scope
+  has. Reservations have no bulk edit: each edit is pushed to its server.
+- **Delete** shows a preview first - for scopes, the reservations and leases
+  that go with them. Each pushed scope or reservation is then removed on its
+  server, as its single delete does; one the server refuses stays, listed
+  with the server's message, and the rest still go. Local rows have no server
+  to ask.
+
+Leases come from the server and change with it, so they take no write.
+
 ## Windows DNS
 
 Enable the **Windows DNS sync** toggle and tick the DNS role on the
@@ -181,6 +216,19 @@ someone fixed it on either side - clears itself on the next sync.
 Out of scope for now: CNAME/MX/SRV/TXT management, creating zones, and
 DNSSEC. Point the connection at one server of an AD-replicated set; AD
 replication carries pushed records to the rest.
+
+### Bulk actions on the DNS zones list {#dns-zone-bulk}
+
+Tick zones on **DNS zones** - with the `change` or `delete` grant on DNS
+zones - for the bulk bar:
+
+- **Export** downloads the selected zones, synced and local, as CSV, Excel or
+  JSON (export-only, like the DHCP lists).
+- **Edit** sets **Reconcile** and **Auto-add to IPAM** on every selected
+  zone.
+- **Delete** shows a preview first. A zone mirrored from a server is kept,
+  with the reason its own delete gives - only zones authored in Danbyte can be
+  deleted - and the authored ones go with their records.
 
 ### The zone page and record cross-links
 

@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from api.bulk_edit import BulkEditMixin, BulkEditSpec
 from api.models import IPAddress
 from api.serializers import (
     NumIdModelSerializer,
@@ -55,12 +56,19 @@ class DnsZoneWriteSerializer(TenantScopedModelSerializer):
         return name
 
 
-class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
+#: Why a synced zone stays, for the single and the bulk delete alike.
+MIRRORED_ZONE = ("Only zones authored in Danbyte can be deleted; this one is "
+                 "mirrored from the server.")
+
+
+class DnsZoneViewSet(BulkEditMixin, IntegrationToggleMixin, TenantScopedViewSet):
     """Zones are read from sync; the per-zone ``sync`` / ``auto_create`` opt-ins
     are PATCHable. A zone can also be **authored** here (POST) - stored as a
     Danbyte-owned ``managed`` zone that sync never prunes - and a managed zone
     can be removed (DELETE). Synced zones can't be deleted (sync would recreate
-    them)."""
+    them); the bulk delete keeps them with the same reason."""
+
+    bulk_edit = BulkEditSpec(fields=("sync", "auto_create"), tags=False)
 
     # No integration gate: zones are a first-class IPAM feature. The DNS
     # toggle only governs the Windows-sync machinery (connections, drift).
@@ -68,7 +76,7 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     http_method_names = ["get", "post", "patch", "delete"]
     queryset = DnsZone.objects.select_related("connection").order_by("name")
     serializer_class = DnsZoneSerializer
-    rbac_action_map = {"records": "view"}
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "records": "view"}
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -105,11 +113,11 @@ class DnsZoneViewSet(IntegrationToggleMixin, TenantScopedViewSet):
 
     def perform_destroy(self, instance):
         if not instance.managed:
-            raise ValidationError(
-                {"detail": "Only zones authored in Danbyte can be deleted; this "
-                           "one is mirrored from the server."}
-            )
+            raise ValidationError({"detail": MIRRORED_ZONE})
         instance.delete()
+
+    def bulk_blocker(self, obj) -> str | None:
+        return None if obj.managed else MIRRORED_ZONE
 
     def get_queryset(self):
         from django.db.models import Count, Q

@@ -1,18 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
 import { useMemo, useState } from "react"
 import { FileSignature } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { CertificateRequest, Paginated } from "@/lib/api"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { TimeCell } from "@/components/cells/time-ago"
-import { dash } from "@/components/cells/dash"
+import { buildCertificateRequestColumns } from "@/components/columns/certificate-request-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
 import { useUrlTableFilters } from "@/components/table-filters"
 import { RequestCertificateDialog } from "@/components/monitoring/request-certificate-dialog"
 import { useMe } from "@/lib/use-me"
@@ -21,18 +19,13 @@ export const Route = createFileRoute("/certificate-requests/")({
   component: CertificateRequestsPage,
 })
 
-const STATUS_VARIANT: Record<
-  CertificateRequest["status"],
-  "secondary" | "success" | "outline"
-> = {
-  generated: "secondary",
-  issued: "success",
-  cancelled: "outline",
-}
-
 function CertificateRequestsPage() {
   const [requestOpen, setRequestOpen] = useState(false)
+  const [selected, setSelected] = useState<CertificateRequest[]>([])
   const { canDo } = useMe()
+  const canEdit = canDo("certificaterequest", "change")
+  const canDelete = canDo("certificaterequest", "delete")
+  const selectable = canEdit || canDelete
 
   const query = useQuery({
     queryKey: ["certificate-requests"],
@@ -43,84 +36,12 @@ function CertificateRequestsPage() {
   })
   const rows = useMemo(() => query.data?.results ?? [], [query.data])
 
-  const columns = useMemo<ColumnDef<CertificateRequest>[]>(
-    () => [
-      {
-        id: "common_name",
-        accessorFn: (r) => r.common_name,
-        header: ({ column }) => (
-          <SortHeader column={column} label="Common name" />
-        ),
-        cell: ({ row }) => (
-          <Link
-            to="/certificate-requests/$id"
-            params={{ id: row.original.id }}
-            className="link font-medium"
-          >
-            {row.original.common_name}
-          </Link>
-        ),
-      },
-      {
-        id: "key",
-        accessorFn: (r) => r.key_spec_display,
-        header: "Key",
-        cell: ({ row }) => (
-          <span className="text-xs">{row.original.key_spec_display}</span>
-        ),
-        meta: {
-          facet: {
-            kind: "enum",
-            label: "Key",
-            get: (r: CertificateRequest) => r.key_spec_display,
-          },
-        },
-      },
-      {
-        id: "status",
-        accessorFn: (r) => r.status,
-        header: "Status",
-        cell: ({ row }) => (
-          <Badge
-            variant={STATUS_VARIANT[row.original.status]}
-            className="text-xs"
-          >
-            {row.original.status_display}
-          </Badge>
-        ),
-        meta: {
-          facet: {
-            kind: "enum",
-            label: "Status",
-            get: (r: CertificateRequest) => r.status_display,
-          },
-        },
-      },
-      {
-        id: "issued",
-        header: "Issued certificate",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.issued_certificate ? (
-            <Link
-              to="/certificates/$id"
-              params={{ id: row.original.issued_certificate }}
-              className="link text-xs font-medium"
-            >
-              {row.original.issued_certificate_subject_cn || "View"}
-            </Link>
-          ) : (
-            dash
-          ),
-      },
-      {
-        id: "created",
-        accessorFn: (r) => r.created_at,
-        header: ({ column }) => <SortHeader column={column} label="Created" />,
-        cell: ({ row }) => <TimeCell iso={row.original.created_at} />,
-      },
-    ],
-    []
+  const columns = useMemo(
+    () =>
+      buildCertificateRequestColumns<CertificateRequest>({
+        selection: selectable,
+      }),
+    [selectable]
   )
 
   const {
@@ -162,8 +83,20 @@ function CertificateRequestsPage() {
           columns={wiredColumns}
           flexColumn="common_name"
           tableId="certificate-requests"
+          onSelectedRowsChange={selectable ? setSelected : undefined}
+          selectedRows={selectable ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/monitoring/certificate-requests/"
+        noun={["certificate request", "certificate requests"]}
+        invalidate={[["certificate-requests"]]}
+        onCleared={() => setSelected([])}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        ioType="certificaterequest"
+      />
 
       <RequestCertificateDialog
         open={requestOpen}

@@ -1,23 +1,29 @@
-import { useMemo } from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { useMemo, useState } from "react"
+import { createFileRoute } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { type ColumnDef } from "@tanstack/react-table"
 
 import { api, type DhcpLease, type Paginated } from "@/lib/api"
-import { DataTable, SortHeader } from "@/components/data-table"
+import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
-import { TimeCell } from "@/components/cells/time-ago"
-import { dash } from "@/components/kv-card"
+import { buildDhcpLeaseColumns } from "@/components/columns/dhcp-lease-columns"
+import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
+import { TableActions } from "@/components/table-actions"
 import { useFacetRail } from "@/lib/use-facet-rail"
+import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
 export const Route = createFileRoute("/dhcp-leases/")({
   component: DhcpLeasesPage,
 })
 
+/** Leases are synced from the server and read-only: a selection exports,
+ * nothing more. */
 function DhcpLeasesPage() {
   const [q, setQ] = useUrlSearch()
+  const [selected, setSelected] = useState<DhcpLease[]>([])
+  const { canDo } = useMe()
+  const canView = canDo("dhcplease", "view")
   const query = useQuery({
     queryKey: ["dhcp-leases", "all", q],
     queryFn: () =>
@@ -27,83 +33,9 @@ function DhcpLeasesPage() {
   })
   const rows = query.data?.results ?? []
 
-  const columns = useMemo<ColumnDef<DhcpLease>[]>(
-    () => [
-      {
-        id: "ip",
-        accessorKey: "ip",
-        header: ({ column }) => <SortHeader column={column} label="IP" />,
-        cell: ({ row }) =>
-          row.original.ip_address ? (
-            <Link
-              to="/ips/$id"
-              params={{ id: row.original.ip_address }}
-              className="link font-mono text-xs"
-            >
-              {row.original.ip}
-            </Link>
-          ) : (
-            <span className="font-mono text-xs">{row.original.ip}</span>
-          ),
-      },
-      {
-        id: "mac",
-        accessorKey: "mac",
-        header: ({ column }) => <SortHeader column={column} label="MAC" />,
-        cell: ({ row }) =>
-          row.original.mac ? (
-            <Link
-              to="/macs/$mac"
-              params={{ mac: row.original.mac }}
-              className="link font-mono text-[11px]"
-            >
-              {row.original.mac}
-            </Link>
-          ) : (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              -
-            </span>
-          ),
-      },
-      {
-        id: "hostname",
-        accessorKey: "hostname",
-        header: ({ column }) => <SortHeader column={column} label="Hostname" />,
-        cell: ({ row }) => row.original.hostname || dash,
-      },
-      {
-        id: "scope",
-        accessorKey: "scope_display",
-        header: ({ column }) => <SortHeader column={column} label="Scope" />,
-        cell: ({ row }) => (
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {row.original.scope_display}
-          </span>
-        ),
-      },
-      {
-        id: "state",
-        accessorKey: "address_state",
-        header: ({ column }) => <SortHeader column={column} label="State" />,
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.address_state || "-"}
-          </span>
-        ),
-      },
-      {
-        id: "expires",
-        header: "Expires",
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.expires_at ? (
-            <TimeCell iso={row.original.expires_at} />
-          ) : (
-            dash
-          ),
-      },
-    ],
-    []
+  const columns = useMemo(
+    () => buildDhcpLeaseColumns<DhcpLease>({ selection: canView }),
+    [canView]
   )
 
   const { rail, filtered } = useFacetRail(rows, [
@@ -129,6 +61,7 @@ function DhcpLeasesPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "IP, MAC or hostname…" }}
+      actions={<TableActions ioType="dhcplease" />}
     >
       {rows.length === 0 && query.data && !q ? (
         <EmptyState title="No leases synced.">
@@ -140,8 +73,20 @@ function DhcpLeasesPage() {
           data={filtered}
           columns={columns}
           tableId="dhcp-leases-all"
+          onSelectedRowsChange={canView ? setSelected : undefined}
+          selectedRows={canView ? selected : undefined}
         />
       )}
+      <SafeBulkEditBar
+        selected={selected}
+        endpoint="/api/dhcp-leases/"
+        noun={["lease", "leases"]}
+        invalidate={[["dhcp-leases"]]}
+        onCleared={() => setSelected([])}
+        canEdit={false}
+        canDelete={false}
+        ioType="dhcplease"
+      />
     </ListPageShell>
   )
 }
