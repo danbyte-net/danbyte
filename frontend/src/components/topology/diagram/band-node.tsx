@@ -30,6 +30,7 @@ import {
 } from "lucide-react"
 
 import { ColorBadge } from "@/components/cells/color-badge"
+import { TruncatedText } from "@/components/ui/truncated-text"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   Command,
@@ -760,12 +761,12 @@ function LayerList({
                   {by === "role" ? (
                     <ColorBadge name={o.name} color={o.color ?? undefined} />
                   ) : (
-                    <span className="truncate">{o.name}</span>
+                    <TruncatedText>{o.name}</TruncatedText>
                   )}
                   {o.held && !on && o.held !== o.name && (
-                    <span className="ml-auto min-w-0 truncate text-[11px] text-muted-foreground">
+                    <TruncatedText className="ml-auto text-[11px] text-muted-foreground">
                       {o.held}
-                    </span>
+                    </TruncatedText>
                   )}
                 </CommandItem>
               )
